@@ -171,7 +171,7 @@ def no_console_password() -> None:
 
 @then("every provider key the UI can bind to is an os.environ name the pod already exports")
 def provider_keys_exported() -> None:
-    doc = (ROOT / "docs" / "how-to" / "onboarding" / "litellm.md").read_text()
+    doc = (ROOT / "docs" / "onboarding" / "litellm.md").read_text()
     named = set(re.findall(r"os\.environ/([A-Z_]+_API_KEY)", doc))
     exported = set(re.findall(r"([A-Z_]+_API_KEY)=\1", (CLUSTER / "external-secret.yaml").read_text()))
     assert named and named <= exported, named - exported

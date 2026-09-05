@@ -27,45 +27,21 @@ case "$cmd" in
     bundle=$("$IDP/bin/idp-cloud" secret get tailscale-operator 2>/tmp/tailscale-policy.err) || { echo "BLIND   tailscale-policy  $(head -1 /tmp/tailscale-policy.err | cut -c1-120); run: gh workflow run vault-seed.yml -f entry=tailscale-operator"; exit 2; }
     client_id=$(jq -r .client_id <<<"$bundle"); client_secret=$(jq -r .client_secret <<<"$bundle")
     [ -n "$client_id" ] && [ "$client_id" != null ] || { echo "BLIND   tailscale-policy  vault entry tailscale-operator has no client_id"; exit 2; }
-    # Two keys now, read the same way and guarded the same way. FOUNDER_TAILNET_USER is the
-    # founder's tailnet login, and it is a DIFFERENT thing from FOUNDER_MAC_USER: the first is who
-    # he is to Tailscale, the second is the Unix account on the Mac. crew#562 needs both -- the
-    # policy names the login as the only member of group:founder and the account as the ssh user.
-    # Every key added here must also be added to the envsubst allow-list below, which is a
-    # single-variable list on purpose: a variable missing from it is PUT as the literal string
-    # "${NAME}", which Tailscale accepts as a user that does not exist, and the rule then matches
-    # nobody with a 200 back (peer review, session 78caaa17 on idp#606).
-    read_cfg() { python3 -c "
+    mac_user=$(python3 -c "
 import yaml, sys
 for doc in yaml.safe_load_all(open('$ESTATE_CONFIG')):
     if doc and doc.get('kind') == 'ConfigMap' and doc['metadata']['name'] == 'estate-config':
-        print(doc['data'].get('$1', ''))
+        print(doc['data'].get('FOUNDER_MAC_USER', ''))
         sys.exit(0)
 sys.exit(1)
-"; }
-    mac_user=$(read_cfg FOUNDER_MAC_USER) || { echo "BLIND   tailscale-policy  FOUNDER_MAC_USER not readable from $ESTATE_CONFIG"; exit 2; }
+") || { echo "BLIND   tailscale-policy  FOUNDER_MAC_USER not readable from $ESTATE_CONFIG"; exit 2; }
     [ -n "$mac_user" ] || { echo "BLIND   tailscale-policy  FOUNDER_MAC_USER is empty in $ESTATE_CONFIG (crew#516 CP5, founder hand: fill it in)"; exit 2; }
-    ts_user=$(read_cfg FOUNDER_TAILNET_USER) || { echo "BLIND   tailscale-policy  FOUNDER_TAILNET_USER not readable from $ESTATE_CONFIG"; exit 2; }
     token=$(curl -sS -u "$client_id:$client_secret" "https://api.tailscale.com/api/v2/oauth/token" -d "grant_type=client_credentials" | jq -r .access_token) || { echo "BLIND   tailscale-policy  oauth token exchange failed"; exit 2; }
     [ -n "$token" ] && [ "$token" != null ] || { echo "BLIND   tailscale-policy  oauth token exchange answered no token"; exit 2; }
-    # crew#562, founder 2026-08-28 "seamless security, no founder friction": the tailnet login that
-    # group:founder names is not typed by anyone. FOUNDER_TAILNET_USER in estate-config is an
-    # override, empty by default (LAW 46); when it is empty the tailnet's own owner record answers
-    # (GET /api/v2/tailnet/-/users, role "owner"; the client carries users:read for exactly this).
-    # A tailnet with no single owner, or an API that will not say, is BLIND, never a guess.
-    if [ -z "$ts_user" ]; then
-      ts_user=$(curl -sS -H "Authorization: Bearer $token" "https://api.tailscale.com/api/v2/tailnet/-/users" \
-                | jq -r '[.users[]? | select(.role == "owner")] | if length == 1 then .[0].loginName else "" end') || ts_user=""
-      [ -n "$ts_user" ] && [ "$ts_user" != null ] || { echo "BLIND   tailscale-policy  FOUNDER_TAILNET_USER is empty in $ESTATE_CONFIG and the tailnet did not name exactly one owner (GET /tailnet/-/users; does the client carry users:read?); set FOUNDER_TAILNET_USER in $ESTATE_CONFIG to override"; exit 2; }
-    fi
-    rendered=$(FOUNDER_MAC_USER="$mac_user" FOUNDER_TAILNET_USER="$ts_user" \
-                 envsubst '${FOUNDER_MAC_USER},${FOUNDER_TAILNET_USER}' < "$FILE")
-    case "$rendered" in
-      *'${'*) echo "FAIL    tailscale-policy  a \${...} placeholder survived substitution; it would be PUT as a literal and match nobody"; exit 1;;
-    esac
+    rendered=$(FOUNDER_MAC_USER="$mac_user" envsubst '${FOUNDER_MAC_USER}' < "$FILE")
     code=$(curl -sS -o /tmp/tailscale-policy.resp -w '%{http_code}' -H "Authorization: Bearer $token" -H "Content-Type: application/hujson" --data-binary "$rendered" "https://api.tailscale.com/api/v2/tailnet/-/acl")
     case "$code" in
-      2??) echo "ok      tailscale-policy  applied ${FILE#$IDP/} (ssh user: $mac_user, tailnet member: $ts_user)";;
+      2??) echo "ok      tailscale-policy  applied ${FILE#$IDP/} (users: $mac_user)";;
       *) echo "FAIL    tailscale-policy  PUT acl answered $code: $(cut -c1-200 /tmp/tailscale-policy.resp)"; exit 1;;
     esac
     ;;

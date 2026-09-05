@@ -43,19 +43,6 @@ Phase 2 — Network & virtual display:
       oke-check's apply job) — no admin-console edit, no ACL step here. Separate from the
       "Remote Login (SSH)" toggle above, which the iOS Shortcut uses; this one is what Otto's
       sidecar (`platform/hermes-agent/tailscale.yaml`) reaches through `mac-run`.
-      Tagging the Mac takes your user identity off it ("applying a tag to a device removes any
-      user-based authentication", tailscale.com/kb/1068/tags), and that policy file is
-      deny-by-default, so your phone reaches the Mac only through a rule that names it. That rule
-      is in the file (crew#562): `group:founder` to `tag:founder-mac` on 22 and 47984-48010, the
-      block Sunshine listens on. It names your login rather than "anyone in the tailnet", so the
-      next person added to the tailnet does not inherit your desktop. It is noted here because
-      before crew#562 the file had only the cluster's rule, and applying it would have stopped
-      your stream with nothing turning red.
-- [x] Nothing to tell anyone: your Mac's short username and tailnet IP were measured on the Mac
-      and sit in `clusters/oke/estate-config.yaml` (`FOUNDER_MAC_USER`, `FOUNDER_MAC_TS_IP`); your
-      Tailscale login is read from the tailnet's owner record by `bin/idp-tailscale-policy`
-      (`FOUNDER_TAILNET_USER` stays empty in git and only overrides). The remote desk waits on the
-      pairing PIN and nothing else.
 - [ ] DeskPad: create a virtual display at 1170x2532, scaled/HiDPI, mode Extended (not Mirrored)
 - [ ] Sunshine Web UI (`https://localhost:47990`): set admin username/password
       (`<SUNSHINE_ADMIN_USER>` / `<SUNSHINE_ADMIN_PASSWORD>`, kept by the founder)

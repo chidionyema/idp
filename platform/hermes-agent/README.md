@@ -18,13 +18,13 @@ of its own, never the container's own sandbox.
   policy that allows it (`tag:k8s` → `tag:founder-mac`) lives in `platform/tailscale/policy.hujson`
   and is applied by `bin/idp-tailscale-policy`, run from CI (`oke-check`'s apply job).
 
-## Founder hand, total: one (and none for the config)
+## Founder hand, total: one
 
 Two repository secrets, `SEED_TAILSCALE_OAUTH_CLIENT_ID` and `SEED_TAILSCALE_OAUTH_CLIENT_SECRET`,
 carry the one Tailscale OAuth client this estate needs (scope `auth_keys` + `policy_file`, tag
 `tag:k8s`) — the same seeding path every other provider key in this estate uses (Minimax,
-Anthropic, R2, GitHub App: `.github/workflows/vault-seed.yml`, entry `tailscale-operator`). `FOUNDER_MAC_USER` and `FOUNDER_MAC_TS_IP` in `clusters/oke/estate-config.yaml`
-are measured on the Mac and already filled; the tailnet login is read from the API. Run
+Anthropic, R2, GitHub App: `.github/workflows/vault-seed.yml`, entry `tailscale-operator`). Fill
+`FOUNDER_MAC_USER` and `FOUNDER_MAC_TS_IP` in `clusters/oke/estate-config.yaml`, and run
 `tailscale up --ssh --advertise-tags=tag:founder-mac` on the Mac (`docs/founder/mac-remote-desk/README.md`).
 Nothing else here needs a hand.
 

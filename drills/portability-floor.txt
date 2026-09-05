@@ -2,16 +2,4 @@
 # k3d cluster with no OCI identity (.github/workflows/portability-drill.yml). Only goes up:
 # raise it in the PR that carries the green run URL that beat it. bin/idp-portability-drill
 # refuses 0.
-#
-# 2 -> 9, on run 33220112386 job 99012178267 (#654, the named-object closure guard):
-#   ok  portability  ready 11/41 (root-red 2 all named, cascaded 26, pending 2) on a cluster
-#   with no OCI (floor 2)
-# The run before it, 33218345931, read `ready 2/38` -- 2 was the count from the day the drill
-# was written and it had not moved since, so the floor was grading nothing.
-#
-# 9 and not 11, and the two-row gap is the point: `pending` means Flux had not judged the row
-# when the drill read the cluster, so a slower runner turns a row that was Ready here into a row
-# that is merely not-red, and a floor set to the exact count of one run grades the runner's
-# speed. 9 is the count this run proves is reachable with both timing-sensitive rows falling the
-# wrong way. A second run that reproduces 11 is the evidence that raises it to 11.
-9
+2

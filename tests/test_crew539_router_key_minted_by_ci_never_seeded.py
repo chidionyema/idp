@@ -7,6 +7,7 @@ writes vault entry <consumer> field `key`. Proved both ways here with fakes on P
 IDP_CLOUD / IDP_VAULT_PUT (no socket is opened): a router-accepted key is kept, a refused or
 missing one is minted and written, no value reaches stdout.
 """
+import os
 import re
 import stat
 import subprocess

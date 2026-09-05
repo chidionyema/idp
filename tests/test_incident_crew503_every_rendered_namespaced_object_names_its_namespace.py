@@ -9,6 +9,7 @@ Guard (LAW 45): every overlay a Flux Kustomization in clusters/*/ points at is r
 namespaced object in it must carry metadata.namespace. Runs kustomize only; no socket.
 """
 import glob
+import os
 import pathlib
 import shutil
 import subprocess

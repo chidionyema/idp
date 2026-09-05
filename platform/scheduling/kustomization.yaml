@@ -1,12 +1,13 @@
-# crew#539: scheduling immunity. The Kyverno policies that keep the radio-room set honest, plus
-# the balloon Deployment in its own namespace. The PriorityClasses themselves moved out to
-# platform/priority-classes in crew#488 CP5 -- this layer waits on edge, and edge names one of
-# them, so a class created here could never exist in time on a cluster with no history.
+# crew#539: scheduling immunity. Cluster-scoped PriorityClasses and the Kyverno policy, plus the
+# balloon Deployment in its own namespace. Rows that carry infrastructure-critical
+# (observability, mcp, hermes-agent, cluster-state) depend on this row in clusters/oke/platform.yaml so
+# the class exists before a pod names it.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: scheduling
 resources:
   - namespace.yaml
+  - priorityclasses.yaml
   - balloon.yaml
   - require-priority-class.yaml
   - require-availability.yaml

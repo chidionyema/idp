@@ -102,12 +102,6 @@ jobs:
           PR_REPORT_DIR: ${{ runner.temp }}/pr-report
           PR_NUMBER: ${{ inputs.pr_number != '' && inputs.pr_number || github.event.pull_request.number }}
           COMMENT: ${{ inputs.comment && '--comment' || '' }}
-        # No actions/setup-python and no `cache: pip` here, and that is deliberate (crew#488 CP6,
-        # named in tests/test_incident_crew488_cp6_pip_resolves_from_the_index_every_run.py): this
-        # workflow checks the CALLER out to `.`, so any cache-dependency-path it names is hashed
-        # inside hermes-v2 or crew, where .github/requirements/ does not exist. A key that matches
-        # no file never hits while reading as though it does, and one pyyaml wheel is cheaper than
-        # the setup-python step that would carry it.
         run: |
           pip install -q pyyaml
           "$IDP_ROOT/bin/pr-report" "$PR_NUMBER" $COMMENT

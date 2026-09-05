@@ -2,7 +2,7 @@
 UpdateNodePool, and step() printed only the last 8 lines, which were tofu's footer. The cause line
 was never on screen (LAW 28). Rule: a failing step prints its Error/Message lines, whatever the
 tail holds. Rung 4, incident test."""
-import re, subprocess, textwrap
+import os, re, subprocess, textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]

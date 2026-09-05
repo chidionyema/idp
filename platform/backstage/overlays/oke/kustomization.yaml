@@ -12,9 +12,6 @@ resources:
   - availability.yaml
   - backstage-external-secret.yaml
   - httproute.yaml
-  - edge-manners.yaml
-  # crew#562: tailnet egress Service to Sunshine on the founder's Mac + its Basic-auth secret.
-  - sunshine-egress.yaml
   # crew#503 CP6: backstage/founder is a kustomization of its own (a directory base may live anywhere;
   # a file outside the overlay may not, and plain `kustomize build` in the tests refuses it).
   - ../../../../backstage/founder
@@ -34,9 +31,17 @@ images:
   - name: postgres
     newName: docker.io/library/postgres
 patches:
-  # The availability.idp/tier label moved with the Namespace to
-  # platform/backstage/namespace/overlays/oke. The object is no longer rendered here, so a patch
-  # targeting it here would have no target (crew#488).
+  # The label that arms admission. platform/scheduling/require-availability.yaml refuses a
+  # Deployment below the standard in any namespace carrying it, and bin/idp-availability-gate
+  # FAILS a namespace it graded green that does not. It is set here and not in the base because
+  # the base is the k3d shape: one node, one replica, where the policy would refuse correct work.
+  - target:
+      kind: Namespace
+      name: backstage
+    patch: |
+      - op: add
+        path: /metadata/labels/availability.idp~1tier
+        value: founder-facing
   # ghcr packages under this account are private (anonymous manifest GET: 403, 2026-08-25).
   # idp-flux-bootstrap writes ghcr-pull in every namespace that pulls; catalog.yaml uses it too.
   - target:
@@ -101,17 +106,6 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value: {name: APP_BASE_URL, value: "https://catalogue.${ESTATE_ZONE}"}
-      # crew#562: Sunshine's Basic-auth header as a mounted file for the /sunshine proxy
-      # endpoint (app-config.container.yaml). optional: false, like backstage-env: a pod that
-      # cannot pair the founder's phone is not a pod that should report Ready.
-      - op: add
-        path: /spec/template/spec/volumes/-
-        value:
-          name: sunshine-auth
-          secret: {secretName: sunshine-auth, optional: false}
-      - op: add
-        path: /spec/template/spec/containers/0/volumeMounts/-
-        value: {name: sunshine-auth, mountPath: /run/secrets/sunshine, readOnly: true}
       # crew#503 CP6: the founder's surfaces reach the portal from git through Flux, never from a
       # laptop push. The ConfigMap carries backstage/founder/catalog-info.yaml; Flux postBuild
       # substitutes ${ESTATE_ZONE} in it like every other manifest here, and app-config.container

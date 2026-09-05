@@ -18,6 +18,7 @@ import stat
 import subprocess
 from pathlib import Path
 
+import pytest
 
 IDP = Path(__file__).resolve().parents[1]
 PLAYBOOK = IDP / "bin" / "idp-oke-break-glass"

@@ -31,6 +31,16 @@ spec:
   loadBalancerClass: service.k8s.aws/nlb-eks.amazonaws.com
   ports: [{port: 80}]
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: claim-on-oci-bv
+  namespace: apps
+spec:
+  storageClassName: oci-bv
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

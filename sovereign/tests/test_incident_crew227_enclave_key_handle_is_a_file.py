@@ -3,8 +3,10 @@ because the Secure Enclave key handle lived in the login keychain, and every ad 
 helper was a new identity to the keychain ACL, so macOS raised a consent dialog nobody was at the
 screen to click. Rule (rung 4): the key handle is a 0600 file under $ESTATE_HOME/sovereign, named by
 config, and the helper is told where it is on every call, so no keychain and no dialog is involved."""
+import os
 from pathlib import Path
 
+import pytest
 
 from sovereign.trust import anchor
 from sovereign.trust import config_keys as ck

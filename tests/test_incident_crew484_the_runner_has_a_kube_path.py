@@ -36,7 +36,7 @@ def _bin(tmp: Path, nodes_out: str, nodes_rc: int = 0) -> Path:
     (b / "idp-cloud").write_text(
         "#!/bin/sh\n"
         'case "$1 $2" in\n'
-        '  "cluster list") echo "estate ocid1.cluster.fake.abc";;\n'
+        '  "cluster list") echo "oke ocid1.cluster.fake.abc";;\n'
         '  "cluster nodepools") echo "pool ACTIVE";;\n'
         '  "cluster kubeconfig") shift 2; cid=""; f=""; while [ $# -gt 0 ]; do case "$1" in --file) f="$2"; shift 2;; *) cid="$1"; shift;; esac; done; oci ce cluster create-kubeconfig --cluster-id "$cid" --file "$f" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT;;\n'
         "esac\n"
@@ -47,7 +47,6 @@ def _bin(tmp: Path, nodes_out: str, nodes_rc: int = 0) -> Path:
     (b / "idp-no-toil").write_text("#!/bin/sh\necho 'PASS    no-toil gate (2 document(s))'\n")  # crew#66 hourly row
     (b / "idp-github-app").write_text("#!/bin/sh\necho 'ok      github-tokens 2 token(s) re-minted from the App'\n")  # crew#577 hourly token row
     (b / "idp-root-trust").write_text("#!/bin/sh\necho 'PASS    root-trust: every entry registered, every MEETS row has its bootstrapper'\n")  # crew#66 root-trust row (crew#580)
-    (b / "idp-loop-meter").write_text("#!/bin/sh\necho 'ok    loop-meter: median PR wall-clock this week 274s (n=27), last week 400s (n=31)'\n")  # crew#584 CP4 loop row
     for f in b.iterdir():
         f.chmod(f.stat().st_mode | stat.S_IEXEC)
     # the script reads idp-cluster-state beside itself: run a copy of the script from the fake bin
@@ -77,7 +76,7 @@ def test_a_ready_node_read_through_the_api_server_is_an_ok_row(tmp_path: Path) -
     _token(tmp_path)
     r = _run(tmp_path, b)
     assert "ok      kube         1/1 node(s) Ready through the API server" in r.stdout, r.stdout + r.stderr
-    assert r.returncode == 0 and "9/9 rows green" in r.stdout
+    assert r.returncode == 0 and "8/8 rows green" in r.stdout
     args = (tmp_path / "kc-args").read_text()
     assert "--token-version 2.0.0" in args and "--cluster-id ocid1.cluster.fake.abc" in args   # the exec plugin, not a static token
     assert not (tmp_path / "kc").exists(), "the kubeconfig outlived the run"

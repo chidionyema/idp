@@ -31,28 +31,6 @@ spec:
   prune: false
   wait: true
 ---
-# crew#488 CP5: the policy engine before the policies. platform/edge and platform/scheduling carry
-# ClusterPolicies; Flux dry-runs them against the CRD this chart installs, so they wait on it.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: kyverno
-  namespace: flux-system
-spec:
-  interval: 10m
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  path: ./platform/kyverno
-  prune: true
-  wait: true
-  timeout: 10m
-  healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: kyverno
-      namespace: kyverno
----
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -62,8 +40,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: gateway-api-crds
-    - name: kyverno
-    - name: priority-classes
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -94,14 +70,8 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  # crew#488 CP5: an admission webhook that is still booting (ESO 'ca cert not yet ready') fails the
-  # first apply; without this the next try is the 10m interval and a fresh cluster reads red for it.
-  retryInterval: 1m
   dependsOn:
     - name: edge
-    # Three ExternalSecrets (cloudflare-api-token, prospector-engine-env, prospector-store-api-env)
-    # are in this row and dry-ran before the ESO CRDs existed on an empty cluster (crew#488).
-    - name: external-secrets
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -162,15 +132,8 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  # crew#488 CP5: an admission webhook that is still booting (ESO 'ca cert not yet ready') fails the
-  # first apply; without this the next try is the 10m interval and a fresh cluster reads red for it.
-  retryInterval: 1m
   dependsOn:
     - name: edge
-    # crew#488 CP5, run 33216301296: external-dns mounts secret cloudflare-api-token, which the
-    # prospector-platform row's ExternalSecret creates; with no vault the pod never starts and dns read
-    # as a root break instead of the cascade it is.
-    - name: prospector-platform
   sourceRef:
     kind: GitRepository
     name: flux-system

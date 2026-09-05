@@ -67,7 +67,7 @@ OLD=$(active); n_old=$(printf '%s\n' "$OLD" | grep -c . || true)
 [ "$n_old" -eq 1 ] || { echo "surge: expected 1 ACTIVE node in pool $POOL, found $n_old; refusing"; exit 3; }
 echo "surge: pool $POOL, old node $OLD, growing to 2"
 # crew#539 CP4: the pool is autoscaler-managed; a surge by hand needs the autoscaler scaled to 0 first
-# (docs/how-to/onboarding/autoscaler.md, "Do not"), or the two fight over `size`.
+# (docs/onboarding/autoscaler.md, "Do not"), or the two fight over `size`.
 oci ce node-pool update --node-pool-id "$POOL" --size 2 --force >/dev/null
 NEW=""
 for _ in $(seq 1 "${SURGE_WAIT_ROUNDS:-60}"); do

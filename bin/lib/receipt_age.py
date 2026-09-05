@@ -39,10 +39,7 @@ instrument that cannot measure says so (LAW 45 step 5).
 from __future__ import annotations
 
 import sys
-# `datetime` is referenced only from the string annotation on served_now, and that is a use
-# ruff resolves: dropping it is F821, not F401 (idp#683, run 33225725402). `timezone` is
-# gone for the reason this module exists — no local clock enters the subtraction (crew#583).
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 # How far the receipt may be stamped ahead of the clock that served it. Both come from the same
@@ -50,45 +47,6 @@ from email.utils import parsedate_to_datetime
 # been written after the read that found it, which is not a thing that happens. Small and non-zero
 # only because a store may round or a replica may lag a beat.
 FUTURE_GRACE = timedelta(seconds=60)
-
-
-def served_now(run=None) -> "datetime | None":
-    """GitHub's own clock, read off the `Date` header of a response GitHub has just served.
-
-    `receipt_age` gets both clocks out of one object-head response because the caller is holding
-    that response. A script that is handed pre-fetched JSON -- `gh search prs --json ...` -- has no
-    response object to take a clock out of, and until this function existed those scripts fell back
-    to `datetime.now(timezone.utc)`: this machine's clock, subtracted from a stamp GitHub wrote.
-    The whole crew#583 class is that subtraction, and a flat battery is enough to make it lie.
-
-    So the clock comes from GitHub. `rate_limit` is the cheapest authenticated endpoint it has --
-    it does not itself count against the limit -- and RFC 9110 6.6.1 requires an origin server to
-    send `Date` on every response. That is the same authority that stamped `created_at` and
-    `merged_at`, so the subtraction is still one clock minus itself, and this machine's RTC cannot
-    reach it.
-
-    None, never a fallback, when `gh` is missing, the call fails, or the header is absent or
-    unreadable. Falling back to the local clock here is the defect with a longer code path. What
-    the caller does with None is the caller's: a row it can no longer measure reads BLIND, and a
-    page that cannot be built at all exits rather than rewriting yesterday's.
-    """
-    import subprocess  # local: this module is imported by scripts that never shell out
-    run = run or subprocess.run
-    try:
-        p = run(["gh", "api", "-i", "rate_limit"], capture_output=True, text=True, timeout=30)
-    except Exception:  # noqa: BLE001 - gh missing, no network, or a hang is all the same answer
-        return None
-    if p.returncode != 0:
-        return None
-    for line in (p.stdout or "").splitlines():
-        if not line.strip():  # end of the header block; the body is JSON and holds no clock
-            break
-        if line.lower().startswith("date:"):
-            try:
-                return parsedate_to_datetime(line.split(":", 1)[1].strip())
-            except Exception:  # noqa: BLE001 - a malformed Date is not a clock
-                return None
-    return None
 
 
 def receipt_age(head: dict, per_unit: float, row: str) -> float:
@@ -133,3 +91,53 @@ def receipt_age(head: dict, per_unit: float, row: str) -> float:
               "written after the read that found it, which is the store disagreeing with itself, "
               "not a fresh drill" % (stamped_raw, served_raw))
     return delta.total_seconds() / per_unit
+
+
+def local_ledger_age(rows: list, keys: tuple, per_unit: float, row: str, now) -> float:
+    """Time since the newest stamp in a locally-appended ledger, in units of `per_unit` seconds.
+
+    This is the weaker sibling of receipt_age() above and it says so in its name. A filesystem read
+    brings back no `date` header: there is no second clock travelling with the stamps, so the one in
+    the subtraction is this machine's and no amount of care removes it. What it removes instead is
+    the silent green, which is the thing crew#583 was opened for.
+
+    The flat-RTC case moves this machine *behind* the entries it is grading -- an RTC that resets to
+    1970 makes `now - hours` older than every 2026 stamp in the file, so `ledger_fresh` printed a
+    green research row on a ledger that had been dead for years. That direction is detectable with
+    no authority at all: a stamp later than `now` is the clock disagreeing with the data in front of
+    it, and this refuses rather than guesses which one is right. The other direction -- a clock far
+    ahead -- makes every entry look old, which is a loud exit 1 and sends somebody to look. So no
+    clock error can make a row that uses this print green, and that is the whole claim.
+
+    A caller that needs the stronger property, the local clock nowhere in the arithmetic, does not
+    belong here: put the stamp in the store and use receipt_age(), which subtracts the store's own
+    clock from its own stamp. This exists for the rows that have no store to ask.
+
+    `rows` are parsed ledger records, `keys` the stamp field names to try in order, `now` the
+    caller's own clock reading (passed in, not taken here, so a test can move it without patching
+    the module). Returns +inf when the ledger holds no stamp at all: nothing is not fresh.
+    """
+    def blind(why: str) -> None:
+        print("BLIND   %s  %s" % (row, why))
+        sys.exit(2)
+
+    stamps = []
+    for rec in rows:
+        for k in keys:
+            if k in rec:
+                try:
+                    s = datetime.fromisoformat(str(rec[k]).replace("Z", "+00:00"))
+                except ValueError:
+                    break
+                stamps.append(s if s.tzinfo else s.replace(tzinfo=timezone.utc))
+                break
+    if not stamps:
+        return float("inf")
+
+    newest = max(stamps)
+    if newest > now + FUTURE_GRACE:
+        blind("the newest entry is stamped %s but this machine says it is %s -- the clock grading "
+              "this ledger is behind the ledger, which is the flat-battery RTC reset crew#583 was "
+              "opened for, and it used to read as a fresh row. Refusing to guess which of the two "
+              "is right" % (newest.isoformat(), now.isoformat()))
+    return (now - newest).total_seconds() / per_unit

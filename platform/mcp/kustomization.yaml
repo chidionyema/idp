@@ -10,7 +10,6 @@ resources:
   - github-mcp.yaml
   - estate-mcp.yaml
   - httproute.yaml
-  - edge-manners.yaml
 images:
   # build-multiarch pushes ghcr.io/chidionyema/estate-mcp:main-<run>-<sha> (crew#458 row 3, crew#516 CP3).
   # The first main build after this file merges writes the tag; until then the Deployment cannot

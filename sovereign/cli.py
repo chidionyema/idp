@@ -214,41 +214,6 @@ def cmd_consensus(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_fork(args: argparse.Namespace) -> int:
-    """cp12: `sb fork <name> --json` -- a zero-cost, copy-on-write branch
-    pointer under .estate/heads/<name>, created in under fork.max_ms with
-    no row of the legacy DB touched."""
-    from sovereign.engine import fork
-
-    _emit(fork.create(args.name), args.json)
-    return 0
-
-
-def cmd_switch(args: argparse.Namespace) -> int:
-    """cp12: `sb switch <name>` -- moves the one working-branch pointer to
-    an existing fork or back to production (shadow_main)."""
-    from sovereign.engine import fork
-
-    try:
-        _emit(fork.switch(args.name), args.json)
-        return 0
-    except fork.UnknownForkError as exc:
-        print(f"no such branch: {exc}", file=sys.stderr)
-        return config.CLI_EXIT_USAGE_ERROR
-
-
-def cmd_drop(args: argparse.Namespace) -> int:
-    """cp12: `sb drop <name>` -- removes a fork's head pointer only; its
-    DAG nodes and receipts remain on disk, archived, never deleted."""
-    from sovereign.engine import fork
-
-    try:
-        _emit(fork.drop(args.name), args.json)
-        return 0
-    except fork.UnknownForkError as exc:
-        print(f"no such branch: {exc}", file=sys.stderr)
-        return config.CLI_EXIT_USAGE_ERROR
-
 def cmd_flip(args: argparse.Namespace) -> int:
     """cp13: `sb flip --by <who> --signed` sets the legacy DB read-only
     and signs one "flip" receipt; `sb flip --rollback --by <who> --signed`
@@ -746,21 +711,6 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("consensus", help="cp11 -- legacy versus DAG dual-read match rate")
     _add_json(p)
     p.set_defaults(func=cmd_consensus)
-
-    p = sub.add_parser("fork", help="cp12 -- create a zero-cost, copy-on-write branch off production")
-    p.add_argument("name")
-    _add_json(p)
-    p.set_defaults(func=cmd_fork)
-
-    p = sub.add_parser("switch", help="cp12 -- move the working branch pointer to an existing fork or production")
-    p.add_argument("name")
-    _add_json(p)
-    p.set_defaults(func=cmd_switch)
-
-    p = sub.add_parser("drop", help="cp12 -- remove a fork's pointer; its DAG nodes and receipts stay archived")
-    p.add_argument("name")
-    _add_json(p)
-    p.set_defaults(func=cmd_drop)
 
     p = sub.add_parser("flip", help="cp13 -- flip the DAG to primary, legacy DB to read-only (or --rollback)")
     p.add_argument("--rollback", action="store_true")

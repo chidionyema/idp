@@ -16,18 +16,7 @@ spec:
   hostnames:
     - "auth.${ESTATE_ZONE}"
   rules:
-    - filters:
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: friendly-errors
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: edge-headers
-      backendRefs:
+    - backendRefs:
         - name: oauth2-proxy
           port: 80
 ---

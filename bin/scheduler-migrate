@@ -14,7 +14,7 @@ Environment (nothing here names a machine, LAW 46):
   MIGRATE_LEDGER   audit file, default $IDP/run/migrations.jsonl
 
 Every apply and rollback appends who, when, git sha, previous state hash and
-verification hash to the ledger (R19 step 4). Runbook: docs/how-to/migrations/scheduler.md.
+verification hash to the ledger (R19 step 4). Runbook: docs/migrations/scheduler.md.
 """
 import getpass
 import hashlib

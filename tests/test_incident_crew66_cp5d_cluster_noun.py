@@ -8,6 +8,7 @@ test_incident_crew516_verify_drill_cluster_row_tolerates_resize.py). The script-
 outside a comment" (the cp5b test uses the same comment-excluding pattern)."""
 import base64
 import json
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -70,11 +71,10 @@ def test_a_one_cluster_two_active_pools_is_an_ok_row(tmp_path: Path) -> None:
     _fake(b, "idp-no-toil", "echo 'PASS    no-toil gate (2 document(s))'")  # crew#66 hourly row
     _fake(b, "idp-github-app", "echo 'ok      github-tokens 2 token(s) re-minted from the App'")  # crew#577 hourly token row
     _fake(b, "idp-root-trust", "echo 'PASS    root-trust: every entry registered, every MEETS row has its bootstrapper'")  # crew#66 root-trust row (crew#580)
-    _fake(b, "idp-loop-meter", "echo 'ok    loop-meter: median PR wall-clock this week 274s (n=27), last week 400s (n=31)'")  # crew#584 CP4 loop row
     # the layer: one cluster, two ACTIVE pools, kubeconfig write
     _fake(b, "idp-cloud", '''
         case "$1 $2" in
-          "cluster list") echo "estate ocid1.cluster.fake.abc";;
+          "cluster list") echo "oke ocid1.cluster.fake.abc";;
           "cluster nodepools") printf "pool-a ACTIVE\\npool-b ACTIVE\\n";;
           "cluster kubeconfig") f=""; shift 2; while [ $# -gt 0 ]; do [ "$1" = --file ] && f="$2"; shift; done; echo fake > "$f";;
         esac
@@ -84,7 +84,7 @@ def test_a_one_cluster_two_active_pools_is_an_ok_row(tmp_path: Path) -> None:
     _token(tmp_path)
     r = _run(tmp_path, b)
     assert "ok      cluster      1 cluster ACTIVE, 2/2 node pool(s) ACTIVE" in r.stdout, r.stdout + r.stderr
-    assert r.returncode == 0 and "9/9 rows green" in r.stdout
+    assert r.returncode == 0 and "8/8 rows green" in r.stdout
 
 
 def test_a_updating_pool_keeps_the_cluster_row_ok_and_names_it(tmp_path: Path) -> None:
@@ -104,10 +104,9 @@ def test_a_updating_pool_keeps_the_cluster_row_ok_and_names_it(tmp_path: Path) -
     _fake(b, "idp-no-toil", "echo 'PASS    no-toil gate (2 document(s))'")  # crew#66 hourly row
     _fake(b, "idp-github-app", "echo 'ok      github-tokens 2 token(s) re-minted from the App'")  # crew#577 hourly token row
     _fake(b, "idp-root-trust", "echo 'PASS    root-trust: every entry registered, every MEETS row has its bootstrapper'")  # crew#66 root-trust row (crew#580)
-    _fake(b, "idp-loop-meter", "echo 'ok    loop-meter: median PR wall-clock this week 274s (n=27), last week 400s (n=31)'")  # crew#584 CP4 loop row
     _fake(b, "idp-cloud", '''
         case "$1 $2" in
-          "cluster list") echo "estate ocid1.cluster.fake.abc";;
+          "cluster list") echo "oke ocid1.cluster.fake.abc";;
           "cluster nodepools") printf "pool-a ACTIVE\\npool-b UPDATING\\n";;
           "cluster kubeconfig") f=""; shift 2; while [ $# -gt 0 ]; do [ "$1" = --file ] && f="$2"; shift; done; echo fake > "$f";;
         esac
@@ -135,7 +134,6 @@ def test_a_layer_exit_2_on_cluster_list_makes_the_row_blind(tmp_path: Path) -> N
     _fake(b, "idp-no-toil", "echo 'PASS    no-toil gate (2 document(s))'")  # crew#66 hourly row
     _fake(b, "idp-github-app", "echo 'ok      github-tokens 2 token(s) re-minted from the App'")  # crew#577 hourly token row
     _fake(b, "idp-root-trust", "echo 'PASS    root-trust: every entry registered, every MEETS row has its bootstrapper'")  # crew#66 root-trust row (crew#580)
-    _fake(b, "idp-loop-meter", "echo 'ok    loop-meter: median PR wall-clock this week 274s (n=27), last week 400s (n=31)'")  # crew#584 CP4 loop row
     _fake(b, "idp-cloud", '''
         case "$1 $2" in
           "cluster list") echo "compartment unreadable" >&2; exit 2;;

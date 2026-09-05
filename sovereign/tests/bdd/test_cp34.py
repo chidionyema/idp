@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pytest_bdd import scenarios, then, when
+from pytest_bdd import parsers, scenarios, then, when
 
 scenarios("features/sovereign-bus/cp34_audit_verify.feature")
 

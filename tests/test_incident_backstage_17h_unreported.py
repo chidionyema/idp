@@ -84,13 +84,11 @@ def test_telegram_channel_survives_substitution_as_a_string():
 # crew#344: the HelmRelease rows are generated from the Flux render by bin/idp-alert-rows, so
 # a new namespace is covered without anyone remembering to type it. Both ways: the checked-in
 # file must be current, and a file missing a namespace must be refused.
-def _alert_rows(root, *args, env=None):
-    import os
+def _alert_rows(root, *args):
     import subprocess
     import sys
 
-    return subprocess.run([sys.executable, str(ROOT / "bin/idp-alert-rows"), *args], capture_output=True, text=True,
-                          cwd=root, env={**os.environ, **(env or {})})
+    return subprocess.run([sys.executable, str(ROOT / "bin/idp-alert-rows"), *args], capture_output=True, text=True, cwd=root)
 
 
 def test_incident_crew344_alert_rows_are_generated_and_current():
@@ -98,13 +96,14 @@ def test_incident_crew344_alert_rows_are_generated_and_current():
     assert r.returncode == 0 and r.stdout.startswith("ok      alert-rows"), r.stdout + r.stderr
 
 
-def test_incident_crew344_a_missing_namespace_row_is_refused(tmp_path):
-    # never mutate the real alert.yaml: under pytest -n auto another worker reads it in the same second
-    # (idp#638 bdd run 33204318695: crew406 saw an eventSource with no namespace)
-    keep = (ROOT / "platform/alerts/alert.yaml").read_text()
-    assert '      namespace: temporal\n' in keep
-    mutated = tmp_path / "alert.yaml"
-    mutated.write_text(keep.replace('      namespace: temporal\n', '', 1))
-    r = _alert_rows(ROOT, "--check", env={"IDP_ALERT_FILE": str(mutated)})
-    assert r.returncode == 1 and "stale" in r.stdout, r.stdout + r.stderr
-    assert (ROOT / "platform/alerts/alert.yaml").read_text() == keep
+def test_incident_crew344_a_missing_namespace_row_is_refused(tmp_path, monkeypatch):
+    import shutil
+
+    alert = ROOT / "platform/alerts/alert.yaml"
+    keep = alert.read_text()
+    try:
+        alert.write_text(keep.replace('      namespace: temporal\n', '', 1))
+        r = _alert_rows(ROOT, "--check")
+        assert r.returncode == 1 and "stale" in r.stdout, r.stdout + r.stderr
+    finally:
+        alert.write_text(keep)

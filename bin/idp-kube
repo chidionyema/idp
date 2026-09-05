@@ -28,13 +28,10 @@ fresh=0
 if [ "$refresh" -eq 0 ] && [ -f "$KC" ] && [ -n "$(find "$KC" -mmin "-$MAX_MIN" 2>/dev/null)" ]; then fresh=1; fi
 if [ "$fresh" -eq 0 ]; then
   cl=$("$IDP/bin/idp-cloud" cluster list 2>&1) || blind "cluster list failed: $(printf '%s' "$cl" | tail -1 | cut -c1-160) -- refresh the session with bin/idp-oci-login"
-  # crew#345: the cluster is picked by name (OCI_CLUSTER_NAME, default estate), never by position;
-  # a compartment with several ACTIVE clusters made NR==1 mint a kubeconfig for the wrong one.
-  want="${OCI_CLUSTER_NAME:-estate}"
-  cid=$(printf '%s\n' "$cl" | awk -v n="$want" '$1==n{print $2; exit}')
-  [ -n "$cid" ] || blind "no ACTIVE cluster named $want; ACTIVE: $(printf '%s\n' "$cl" | awk '{print $1}' | paste -sd, -) -- set OCI_CLUSTER_NAME"
+  cid=$(printf '%s\n' "$cl" | awk 'NR==1{print $2}')
+  [ -n "$cid" ] || blind "no ACTIVE cluster in the compartment"
   mkdir -p "$STATE" && chmod 700 "$STATE"
-  out=$("$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$KC" 2>&1) || blind "create-kubeconfig failed ($want): $(printf '%s' "$out" | tail -1 | sed -E 's/.*"code": "([^"]+)".*"message": "([^"]+)".*/\1: \2/' | cut -c1-240)"
+  out=$("$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$KC" 2>&1) || blind "create-kubeconfig failed: $(printf '%s' "$out" | tail -1 | cut -c1-160)"
   chmod 600 "$KC"
 fi
 if [ $# -eq 0 ]; then printf 'ok      kube  kubeconfig %s\n' "$KC"; exit 0; fi

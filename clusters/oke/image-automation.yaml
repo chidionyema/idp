@@ -1,4 +1,4 @@
-# crew#267: catalogue image automation. Flux's git writer is the deploy key in flux-writer.yaml; the GitHub App ExternalSecret (github-app) lives in platform/alerts-github with its only consumer, the githubdispatch Provider, so llm, identity and the Telegram alerts never wait on it (crew#284, crew#406). After backstage-namespace, which is the namespace its RBAC lands in and not the portal row (crew#539).
+# crew#267: catalogue image automation. Flux's git writer is the deploy key in flux-writer.yaml; the GitHub App ExternalSecret (github-app) lives in platform/alerts-github with its only consumer, the githubdispatch Provider, so llm, identity and the Telegram alerts never wait on it (crew#284, crew#406). After backstage
 # (the Deployment it rolls). The two image controllers come from flux-system/gotk-components.yaml
 # (flux install --components-extra=image-reflector-controller,image-automation-controller).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -10,10 +10,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: secret-store
-    # crew#539: the namespace, not the portal. Role/RoleBinding/ServiceAccount ghcr-pull-reader
-    # land in namespace backstage and need it to exist; this row must never wait on
-    # Deployment/catalogue being healthy (crew#488).
-    - name: backstage-namespace
   sourceRef:
     kind: GitRepository
     name: flux-system

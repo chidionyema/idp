@@ -12,11 +12,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  # crew#584 CP-C: the 60 s gate every heavy job below waits for (fast-gate.yml).
-  fast-gate:
-    uses: ./.github/workflows/fast-gate.yml
   offline-gate:
-    needs: fast-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -35,16 +31,12 @@ jobs:
         # workspace, so this is a clone. The repo is public: no credential, no secret.
         run: git clone --depth 1 https://github.com/chidionyema/prospector "$RUNNER_TEMP/kyverno-policies"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: sovereign/requirements*.txt
+        with: { python-version: "3.12" }
       - name: tools
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q shellcheck jq sqlite3 age
           pip install -q check-jsonschema sqlite-utils pyyaml dagster dagster-webserver
           pip install -q -r sovereign/requirements-dev.txt   # crew#219 R39: the bdd acceptance leg
-          pip install -q "mkdocs<2" mkdocs-techdocs-core   # bin/idp-ci rung 8c: docs site builds --strict (ADR 0002)
           curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
           # bin/idp-ci rung 9: helm + kyverno CLI judge HelmRelease renders against the ClusterPolicies
           curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
@@ -59,13 +51,7 @@ jobs:
       - run: bin/idp-ci
         env:
           IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
-          # crew#584 zero-bottleneck law: on a PR the kyverno rung judges the platform dirs the
-          # diff touches (fetch-depth 0 above makes the three-dot diff real); empty on main = every dir
-          IDP_CI_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
           MIGRATE_HEALTH_WAIT: "240"
-          # crew#584: the bdd job below runs the bdd and incident suites once, strictly; this job
-          # ran the same 132 s again (run 33202098401). Locally bin/idp-ci still runs them.
-          IDP_CI_SKIP_PYTEST: "1"
 
   # crew#286: the Estate-as-Platform operating model as a gate. One job, one script, the
   # same conftest CI already installs; deny lines come back as a PR comment (CP10).
@@ -74,7 +60,6 @@ jobs:
   # copy of the gate, and idp is not a special case of it. The push-to-main skip
   # lives in the reusable workflow now.
   operating-model-gate:
-    needs: fast-gate
     uses: ./.github/workflows/operating-model-gate.yml
     permissions: { contents: read, pull-requests: write }
 
@@ -85,21 +70,19 @@ jobs:
   # every pending mark without a named owner -- into a failure. On every
   # other target it is the same command with the same permissive verdict, so
   # the two branches differ only in what a skip means, never in what runs.
-  # Definition of Done v2.1, section 3.3 (docs/reference/policy/definition-of-done.md):
+  # Definition of Done v2.1, section 3.3 (docs/policy/definition-of-done.md):
   # secrets in git history, known-vulnerable dependencies, and a security
   # policy row without a proof each block merge. The check is
   # bin/estate-security-scan, the same command that prints the receipt on the
   # founder machine; this job only installs its tools. Pinned by checksum, the
   # way conftest above is pinned by version (bin/actions-pinned covers uses:).
   security-scan:
-    needs: fast-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/security-scan   # the steps every active estate repo runs
 
   spec-gate:
-    needs: fast-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,7 +96,6 @@ jobs:
   # The PR body is judged twice on purpose and it costs nothing: the same rego is in policy/,
   # so bin/pr-report's conftest run in operating-model-gate above sees it too.
   no-toil-gate:
-    needs: fast-gate
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions: { contents: read, pull-requests: read }
@@ -127,7 +109,6 @@ jobs:
         run: bin/idp-no-toil "${{ github.event.pull_request.number }}"
 
   bdd:
-    needs: fast-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -145,10 +126,7 @@ jobs:
         # workspace, so this is a clone. The repo is public: no credential, no secret.
         run: git clone --depth 1 https://github.com/chidionyema/prospector "$RUNNER_TEMP/kyverno-policies"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: sovereign/requirements*.txt
+        with: { python-version: "3.12" }
       - name: tools
         run: |
           pip install -q -r sovereign/requirements.txt -r sovereign/requirements-dev.txt
@@ -171,61 +149,10 @@ jobs:
           IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
         run: |
           echo "base_ref=${{ github.base_ref }} SB_BDD_STRICT=$SB_BDD_STRICT"
-          cd sovereign && python -m pytest tests/bdd -q -p no:cacheprovider -n auto --durations=10   # crew#584: four cores; the ten slowest are printed
+          cd sovereign && python -m pytest tests/bdd -q -p no:cacheprovider
       - name: ruff (crew#325 step 3; the rule set is pyproject.toml)
         run: pip install -q ruff==0.15.18 && ruff check .
       - name: pytest tests (crew#325 step 2, every file under tests/ in one run)
         env:
           IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
-        run: python -m pytest tests -q -p no:cacheprovider -n auto --durations=10   # crew#584: four cores; the ten slowest are printed
-
-  # crew#584 PR B: the "Enable platform feature" Backstage template opens a pull request that
-  # adds one row to platform/features/requests.yaml; it never runs `bin/idp-features enable`
-  # itself (no runner in the scaffolder). This is the check that fills the gap instead --
-  # `plan` prices the requested row and the answer lands on the check summary before a
-  # reviewer merges. bin/idp-features itself lands with crew#584 PR A
-  # (feat/crew584-feature-register); until that merges this step says so and exits clean
-  # rather than failing every unrelated pull request on a script that is not there yet.
-  feature-request-plan:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { fetch-depth: 0 }   # need the base sha to diff requests.yaml
-      - name: price the requested row, if this pull request adds one
-        run: |
-          base="${{ github.event.pull_request.base.sha }}"
-          head="${{ github.event.pull_request.head.sha }}"
-          if ! git diff --name-only "$base" "$head" -- platform/features/requests.yaml | grep -qx 'platform/features/requests.yaml'; then
-            echo "ok    this pull request does not touch platform/features/requests.yaml, nothing to price"
-            exit 0
-          fi
-          if [ ! -x bin/idp-features ]; then
-            {
-              echo "### Feature request plan"
-              echo "bin/idp-features is not on this branch yet (crew#584 PR A, feat/crew584-feature-register, has not merged). This step is a no-op until it lands -- nothing invented here."
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "ok    bin/idp-features not present yet, skipping (crew#584 PR A not merged)"
-            exit 0
-          fi
-          added=$(git diff "$base" "$head" -- platform/features/requests.yaml | grep '^+' | grep -v '^+++')
-          feature=$(printf '%s\n' "$added" | grep -oP '(?<=feature:\s).*' | tail -1 | tr -d '"'"'"'"' | xargs)
-          tier=$(printf '%s\n' "$added" | grep -oP '(?<=tier:\s).*' | tail -1 | tr -d '"'"'"'"' | xargs)
-          if [ -z "$feature" ] || [ -z "$tier" ]; then
-            echo "BLIND could not read a feature/tier pair out of the requests.yaml diff"
-            exit 1
-          fi
-          # Informational: the reviewer reads the cost/fits line before merging, but a "fits:
-          # no" answer is a review signal, not a reason to red every other check on this pull
-          # request, so a non-zero exit here is captured, not propagated.
-          set +e
-          plan_out=$(bin/idp-features plan --set "$feature=$tier" 2>&1)
-          rc=$?
-          set -e
-          {
-            echo "### Feature request plan for \`$feature=$tier\`"
-            echo '```'
-            echo "$plan_out"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          [ "$rc" -eq 0 ] || echo "note: bin/idp-features plan exited $rc; see the check summary"
+        run: python -m pytest tests -q -p no:cacheprovider

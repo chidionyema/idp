@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 
+import pytest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -43,12 +44,13 @@ def test_every_way_of_coupling_is_refused_by_the_rule_written_for_it():
         ("apps/Service/lb-with-oci-shape", "no-provider-annotations"),
         ("apps/Service/lb-with-aws-annotation", "no-provider-annotations"),
         ("apps/Service/lb-with-provider-class", "no-provider-load-balancer-class"),
+        ("apps/PersistentVolumeClaim/claim-on-oci-bv", "no-provider-storage-class"),
         ("apps/StatefulSet/db-on-gp3", "no-provider-storage-class-in-templates"),
         # autogen: the Pod rule is carried onto the Deployment's template by Kyverno itself.
         ("apps/Deployment/pod-with-oci-csi", "autogen-no-provider-csi-driver"),
         ("default/ClusterSecretStore/second-door", "one-provider-secret-door"),
     }, out
-    assert _summary(out)["fail"] == 6, out  # 7 until the PersistentVolumeClaim rule was removed (2026-08-29)
+    assert _summary(out)["fail"] == 7, out
 
 
 def test_a_clean_tree_and_the_one_declared_hole_pass():

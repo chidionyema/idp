@@ -21,17 +21,6 @@ const accentSoft = '#f2b64b';
 const navy = '#141a26';
 const navyRaised = '#1c2433';
 
-// crew#612 CP4: the only colours that mean something. Down is red, up is green,
-// stale is the accent, not checked is grey. Named once, used through the palette.
-const status = {
-  ok: '#2e7d32',
-  warning: '#b85a1c',
-  error: '#c62828',
-  pending: '#6b7280',
-  running: '#2b3a55',
-  aborted: '#6b7280',
-};
-
 const pageThemes = {
   home: genPageTheme({ colors: [navy, '#2b3a55'], shape: shapes.wave }),
   documentation: genPageTheme({ colors: ['#2b3a55', navy], shape: shapes.wave2 }),
@@ -90,7 +79,6 @@ export const estateLightTheme = createUnifiedTheme({
   ...createBaseThemeOptions({
     palette: {
       ...palettes.light,
-      status,
       primary: { main: '#b85a1c' },
       secondary: { main: '#2b3a55' },
       navigation: sidebar,
@@ -106,7 +94,6 @@ export const estateDarkTheme = createUnifiedTheme({
   ...createBaseThemeOptions({
     palette: {
       ...palettes.dark,
-      status: { ...status, ok: '#4caf50', error: '#ef5350', pending: '#9aa3b2' },
       primary: { main: accentSoft },
       secondary: { main: '#9fb3d9' },
       navigation: sidebar,

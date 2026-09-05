@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - traefik.yaml
-  - status-page.yaml
   - cert-manager.yaml
   - langfuse-exception.yaml
   - k8s-infra-namespace.yaml
@@ -13,12 +12,7 @@ resources:
   - hindsight-exception.yaml
   - robusta-exception.yaml
   - tailscale-operator-exception.yaml
-  - external-dns-exception.yaml
-  - protect-namespaces.yaml
-  # crew#341, wired 2026-08-28 (crew#488 CP5): the file sat here unreferenced since PR #259, so
-  # the cluster never held it. Audit mode until bin/idp-ci's kyverno row reports zero violations.
-  - kyverno-secrets-policy.yaml
+  - kyverno.yaml
   - provider-independence.yaml
-  - dev-loop-policy.yaml
   - provider-edge-exception.yaml
   - provider-storage-exception.yaml

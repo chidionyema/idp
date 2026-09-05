@@ -43,13 +43,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { repository: chidionyema/crew, path: crew }   # a sibling of idp/, inside the workspace: checkout refuses any path above it
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: idp/.github/requirements/catalog-render.txt
+        with: { python-version: "3.12" }
       - name: tools
         run: |
-          pip install -q -r idp/.github/requirements/catalog-render.txt
+          pip install -q pyyaml
           sudo apt-get install -y -qq rclone >/dev/null
       - uses: fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e # v2.9.4 -- idp-catalog-push needs the flux CLI (run 33099170685: "BLIND flux missing")
       - name: inventory from the bucket (estate#9 writes it; the `at` field is the receipt)
@@ -82,8 +79,6 @@ jobs:
           ESTATE_CODE: ${{ github.workspace }}
           ESTATE_ENV: dev
           MODE: ${{ inputs.mode || 'dry-run' }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_HOME_CHANNEL: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
         run: |
           set -uo pipefail
           git config user.name "estate-catalog-render"
@@ -102,5 +97,5 @@ jobs:
           ESTATE_CODE: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          pip install -q -r .github/requirements/catalog-render.txt
+          pip install -q sqlite-utils
           SU="$(command -v sqlite-utils)" bin/idp-estate-db-push | tee -a "$GITHUB_STEP_SUMMARY"

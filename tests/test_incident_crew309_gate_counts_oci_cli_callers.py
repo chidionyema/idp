@@ -59,12 +59,4 @@ def test_the_live_number_is_the_one_the_audit_measured():
     # 18 measured on branch feat/crew66-root-trust, 2026-08-28 (main 15 + 3): bin/idp-bootstrap-cloudflare,
     # bin/idp-bootstrap-tailscale, bin/idp-bootstrap-vendors write the vendor credentials the root of trust mints
     # into the vault through the secret-write primitive (crew#66 root trust); they go when bin/idp-secret lands.
-    # 20 measured on branch feat/crew290-github-escrow, 2026-08-28 (main 016a843 is 18, + 2):
-    # .github/workflows/estate-escrow.yml and bin/idp-escrow. The escrow writes the bundles to R2 and
-    # reads that bucket's credentials out of the vault (`oci kms management vault list`, bin/idp-escrow:51)
-    # over the exchanged OIDC session -- the same "through the CLI until the primitive layer lands" case
-    # as idp#441's recover-drill and the bootstrap-* trio above, and they go together when bin/idp-secret
-    # lands. Noted while raising it (crew#290): the escrow is the last-resort copy of every repository, and
-    # it currently cannot run at all if OCI is the thing that is down -- tracked so the reason to lower this
-    # number again is on the record, not just the count.
-    assert n <= 20, f"{n} operator files call the oci CLI; the measured ceiling is 20 — a new one needs its own reason"
+    assert n <= 18, f"{n} operator files call the oci CLI; the measured ceiling is 18 — a new one needs its own reason"

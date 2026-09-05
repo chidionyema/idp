@@ -1,6 +1,0 @@
-# conscience.yml installs the OCI CLI and the two tools its tenet rows call. Same reason as
-# login-drill.txt: the cache key hashes .github/requirements/*.txt, so a package installed by a
-# bare `pip install` on a run: line is a package the key cannot see.
--r oci-cli.txt
-pyyaml
-ruff==0.15.18

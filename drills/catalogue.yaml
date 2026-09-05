@@ -109,7 +109,7 @@ drills:
       written from inside on the node's instance principal. Twenty-four green rows in a row is crew#345's acceptance
       criterion: live verification with nobody logged in. Since crew#66 root trust the same run also
       grades the root-trust row (bin/idp-root-trust): every vault entry an ExternalSecret reads is
-      registered in docs/reference/policy/root-trust.md with a bootstrapper on disk or a ticket, hourly.
+      registered in docs/policy/root-trust.md with a bootstrapper on disk or a ticket, hourly.
 
   - name: kini-finish
     workflow: oke-check.yml
@@ -185,15 +185,3 @@ drills:
       rows per science.source in ClickHouse over the last 24 hours and writes the count as a receipt;
       at least one source is the only green, and a backend that cannot answer is BLIND
       (crew#516 CP5, LAW 50: the lane is graded by querying the backend, never by scanning files).
-
-  - name: estate-escrow
-    workflow: estate-escrow.yml
-    job: escrow
-    schedule: "29 */6 * * *"
-    max_age_hours: 13
-    proves: >-
-      GitHub is not the only copy of the estate: a runner on the exchanged OIDC session mints a
-      read-only App token, writes a full git bundle of every repository the installation sees to
-      Cloudflare R2 (mirrors/<owner>/<repo>/latest.bundle), and reads each one back -- the store's
-      MD5 equals the file's and `git bundle verify` passes on the download. A repository whose refs
-      have not moved is skipped. No laptop and no founder account in the loop (crew#290 layer 4).

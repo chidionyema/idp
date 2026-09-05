@@ -31,10 +31,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  fast-gate:   # crew#584 CP-C: lint red never boots this workflow's heavy jobs
-    uses: ./.github/workflows/fast-gate.yml
   discover:
-    needs: fast-gate
     runs-on: ubuntu-latest
     outputs:
       dockerfiles: ${{ steps.find.outputs.list }}

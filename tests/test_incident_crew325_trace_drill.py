@@ -20,8 +20,7 @@ def test_langfuse_public_api_bypasses_the_login_forward_auth() -> None:
     api = _route("langfuse-api", f)
     assert api["metadata"]["annotations"]["idp.estate/auth"] == "langfuse-project-keys"
     paths = [m["path"] for r in api["spec"]["rules"] for m in r["matches"]]
-    # crew#503 added /api/auth/ (next-auth OIDC round-trip; password sign-in is off in langfuse-sso).
-    assert paths == [{"type": "PathPrefix", "value": "/api/public/"}, {"type": "PathPrefix", "value": "/api/auth/"}], paths
+    assert paths == [{"type": "PathPrefix", "value": "/api/public/"}], paths
     assert not any(r.get("filters") for r in api["spec"]["rules"]), "the public API route must carry no ForwardAuth filter"
     assert api["spec"]["rules"][0]["backendRefs"][0]["name"] == "langfuse-web"
     # The browser route keeps the login on every path except the /oauth2/ redirect.

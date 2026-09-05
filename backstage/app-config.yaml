@@ -18,25 +18,6 @@ app:
         config:
           path: /
 
-    # crew#612 CP5: no empty tab on an entity page. The TechDocs content ships with no filter,
-    # so every one of the 338 entities grew a "TechDocs" tab and 334 of them opened on an
-    # error; the api-docs "APIs" content shows on every Component and none provides an API.
-    # Each tab now appears only where it has something to show, and the Docs tab says "Docs".
-    - entity-content:techdocs:
-        config:
-          title: Docs
-          filter:
-            metadata.annotations.backstage.io/techdocs-ref: { $exists: true }
-    - entity-content:api-docs/apis:
-        config:
-          filter:
-            # config.filter replaces the plugin's own filter (kind: component), so it is kept here.
-            $all:
-              - kind: component
-              - $any:
-                  - relations: { $contains: { type: providesApi } }
-                  - relations: { $contains: { type: consumesApi } }
-
 organization:
   name: Mumchimp
 
@@ -184,13 +165,6 @@ catalog:
     # option, and the pull request that lands its output is graded by the same rule.
     - type: file
       target: ../../templates/external-integration/template.yaml
-      rules:
-        - allow: [Template]
-
-    # crew#584: requests a tier from platform/features/features.yaml by opening a reviewed
-    # pull request, never by running bin/idp-features enable from the scaffolder itself.
-    - type: file
-      target: ../../templates/enable-platform-feature/template.yaml
       rules:
         - allow: [Template]
 

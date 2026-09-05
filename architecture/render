@@ -6,7 +6,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 out="$here/out"
-page="$here/../docs/explanation/architecture/index.md"
+page="$here/../docs/architecture/index.md"
 
 docker run --rm -v "$here":/work -w /work structurizr/structurizr \
   export -workspace workspace.dsl -format mermaid -output /work/out >/dev/null

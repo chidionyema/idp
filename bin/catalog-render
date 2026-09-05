@@ -2,7 +2,7 @@
 """catalog-render: put the live architecture page on main on a schedule, through a pull request.
 
 crew#236 row 2, second half. bin/catalog-gen and bin/estate-diagram already turn the inventory
-into catalog/catalog-info.yaml and docs/explanation/architecture/live.md; this job runs them after every
+into catalog/catalog-info.yaml and docs/architecture/live.md; this job runs them after every
 inventory run (scheduler/schedule.yml: com.estate.catalog-render, after: com.estate.inventory)
 and lands the page on main. Nothing here is a new collector or renderer.
 
@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 WT = Path(os.environ.get("IDP_STATE_WORKTREE") or ROOT.parent / ".idp-state")
 BRANCH = "state/live-diagram"
-PAGE = "docs/explanation/architecture/live.md"
+PAGE = "docs/architecture/live.md"
 SHOWCASE = "docs/SHOWCASE.md"
 TRACE = "docs/TRACE-MATRIX.md"          # crew#495 CP1
 NEXT = "docs/NEXT.md"                   # crew#403 CP6
@@ -115,10 +115,7 @@ def main(argv: list[str]) -> int:
     # crew#403 CP6: planned / blocking / when, before the showcase so its bar can quote it.
     step("estate-next", [sys.executable, str(WT / "bin" / "estate-next")], WT)
     # crew#412 (R38): the founder's three questions, from GitHub, on the same schedule.
-    # crew#596: the same goal block is the pinned GOAL message in the home channel (Otto's), refreshed here;
-    # --dry-run and a runner with no token leave the pin alone.
-    telegram = ["--telegram"] if not dry and os.environ.get("TELEGRAM_BOT_TOKEN") else []
-    step("estate-founder", [sys.executable, str(WT / "bin" / "estate-founder"), *telegram], WT, 300)
+    step("estate-founder", [sys.executable, str(WT / "bin" / "estate-founder")], WT, 300)
     step("estate-showcase", [sys.executable, str(WT / "bin" / "estate-showcase")], WT)
     # crew#495 CP1: the trace matrix is rendered from the same worktree, on the same schedule.
     step("trace-matrix", [sys.executable, str(WT / "bin" / "trace-matrix")], WT)

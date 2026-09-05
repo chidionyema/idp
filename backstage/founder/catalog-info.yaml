@@ -34,7 +34,7 @@ kind: Component
 metadata:
   name: founder-gods-view
   title: "Founder: what shipped, what changed for you, what is stuck"
-  description: "The three questions, answered from GitHub every render: every pull request merged in the last 24 hours by repository, model and session; the Use: line of each one that changed something you touch; every pull request with no review verdict and every checkpoint that waits on you. Never typed by a session."
+  description: "The three questions, answered from GitHub every render (crew#412, R38): every PR merged in 24h by repository, model and session; the Use: line of each one that changed something you touch; every PR with no REVIEW: verdict and every checkpoint that waits on you. Never typed by a session."
   annotations:
     idp/updated-by: "bin/estate-founder, run by catalog-render four times a day (docs/FOUNDER.md lands on main through the render PR)"
     backstage.io/techdocs-ref: url:https://github.com/chidionyema/idp/tree/main/
@@ -49,9 +49,6 @@ metadata:
     - title: "Planned, blocking, when (NEXT.md)"
       url: "https://github.com/chidionyema/idp/blob/main/docs/NEXT.md"
       icon: dashboard
-    - title: "Where this is tracked"
-      url: "https://github.com/chidionyema/crew/issues/412"
-      icon: docs
 spec:
   type: founder-surface
   lifecycle: production
@@ -63,7 +60,7 @@ kind: Component
 metadata:
   name: founder-model-router
   title: "Model router (llm)"
-  description: "Every model call in the estate goes through here. Pick and add models, keys, teams and budgets in the admin console (/ui); sign in with your estate login (the same as this catalogue); there is no console password."
+  description: "Every model call in the estate goes through here. Pick and add models, keys, teams and budgets in the admin console (/ui); sign in with your estate login (the same as this catalogue); there is no console password. Tutorial: docs/onboarding/litellm.md (crew#400)."
   annotations:
     backstage.io/kubernetes-namespace: llm
     backstage.io/kubernetes-label-selector: "app.kubernetes.io/name=litellm"
@@ -81,12 +78,6 @@ metadata:
     - title: "Model list (source)"
       url: "https://github.com/chidionyema/idp/blob/main/platform/llm/config.yaml"
       icon: dashboard
-    - title: "Tutorial"
-      url: "https://github.com/chidionyema/idp/blob/main/docs/how-to/onboarding/litellm.md"
-      icon: docs
-    - title: "Where this is tracked"
-      url: "https://github.com/chidionyema/crew/issues/400"
-      icon: docs
 spec:
   type: founder-surface
   lifecycle: production
@@ -119,7 +110,7 @@ kind: Component
 metadata:
   name: founder-telemetry
   title: "Telemetry (SigNoz)"
-  description: "Every workload's traces, metrics and logs land here. The telemetry-coverage receipt in the cluster check is the count of pods this backend has seen; the alert rules are declared against it."
+  description: "Every workload's traces, metrics and logs land here (LAW 50). The telemetry-coverage receipt in oke-check is the count of pods this backend has seen; the SLO alert rules (crew#495) are declared against it."
   annotations:
     idp/updated-by: "Flux from platform/observability; rows arrive live from the OTel collector"
   tags: [founder]
@@ -127,9 +118,6 @@ metadata:
     - title: "Open"
       url: "https://signoz.${ESTATE_ZONE}"
       icon: dashboard
-    - title: "Alert rules, where they are tracked"
-      url: "https://github.com/chidionyema/crew/issues/495"
-      icon: docs
 spec:
   type: founder-surface
   lifecycle: production
@@ -141,7 +129,7 @@ kind: Component
 metadata:
   name: founder-jobs
   title: "Jobs (healthchecks)"
-  description: "Every scheduled job pings here when it finishes; a job that did not run goes red. This is the dead-man switch for the estate's scheduled work."
+  description: "Every scheduled job pings here when it finishes; a job that did not run goes red. Standards row 21 (crew#177), the dead-man switch for the estate's cron."
   annotations:
     idp/updated-by: "Flux from platform/healthchecks; pings arrive live from hc-wrap.sh"
   tags: [founder]
@@ -152,9 +140,6 @@ metadata:
     - title: "Health"
       url: "https://hc.${ESTATE_ZONE}/api/v3/status/"
       icon: dashboard
-    - title: "Where this is tracked"
-      url: "https://github.com/chidionyema/crew/issues/177"
-      icon: docs
 spec:
   type: founder-surface
   lifecycle: production
@@ -185,7 +170,7 @@ kind: Component
 metadata:
   name: founder-crew-board
   title: "Crew board (every founder request)"
-  description: "Each thing you ask for is an issue here. P1 = a fire. STATE.md is the hourly estate snapshot: every row is a command and its output. The Docs tab renders the crew docs: standards, rulings, the science showcase."
+  description: "Each thing the founder asks for is an issue here (LAW 18). P1 = a fire. STATE.md is the hourly estate snapshot: every row is a command and its output. The Docs tab renders crew/docs: standards, rulings, the science showcase (R38, crew#412)."
   annotations:
     github.com/project-slug: "chidionyema/crew"
     backstage.io/source-location: "url:https://github.com/chidionyema/crew/tree/main/"
@@ -219,7 +204,7 @@ kind: Component
 metadata:
   name: founder-showcase
   title: "Science showcase and founder demo"
-  description: "Every science and research capability on one page, generated from the lane's own stores four times a day. A capability that cannot describe and demo itself is refused in CI. The demo is one command: bin/founder-demo in crew."
+  description: "Every science and research capability on one page, generated from the lane's own stores four times a day (crew#403). A capability that cannot describe and demo itself is refused in CI. The demo is one command: bin/founder-demo in crew."
   annotations:
     github.com/project-slug: "chidionyema/crew"
     backstage.io/source-location: "url:https://github.com/chidionyema/crew/tree/main/"
@@ -232,7 +217,7 @@ metadata:
     - title: "Founder demo (bin/founder-demo)"
       url: "https://github.com/chidionyema/crew/blob/main/bin/founder-demo"
       icon: docs
-    - title: "Where this is tracked"
+    - title: "Tracked item crew#403"
       url: "https://github.com/chidionyema/crew/issues/403"
       icon: dashboard
 spec:
@@ -246,7 +231,7 @@ kind: Component
 metadata:
   name: founder-mcp-gateway
   title: "MCP gateway (tools for every agent session)"
-  description: "The one MCP row: a gateway on the cluster fronting the GitHub MCP server, behind the estate login and a per-session API key. A session points its MCP url at /github/mcp here instead of a container on your Mac."
+  description: "The one MCP row (crew#458): agentgateway on the cluster fronting the GitHub MCP server, behind the estate login and a per-session API key. A session points its MCP url at /github/mcp here instead of a container on the founder Mac."
   annotations:
     github.com/project-slug: chidionyema/idp
     backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/platform/mcp/"
@@ -258,9 +243,6 @@ metadata:
       icon: cloud
     - title: "Gateway config"
       url: "https://github.com/chidionyema/idp/blob/main/platform/mcp/agentgateway.yaml"
-      icon: docs
-    - title: "Where this is tracked"
-      url: "https://github.com/chidionyema/crew/issues/458"
       icon: docs
 spec:
   type: founder-surface
@@ -295,7 +277,7 @@ metadata:
       url: "https://github.com/chidionyema/idp/blob/main/docs/index.md"
       icon: dashboard
     - title: "Live diagram"
-      url: "https://github.com/chidionyema/idp/blob/main/docs/explanation/architecture/live.md"
+      url: "https://github.com/chidionyema/idp/blob/main/docs/architecture/live.md"
       icon: dashboard
 spec:
   type: founder-surface
@@ -403,7 +385,7 @@ kind: Component
 metadata:
   name: founder-kini-finish
   title: "Finish KINI (one word)"
-  description: "Comment `FINISH: KINI` on any idp issue, or press Run workflow. The cluster runs the seven KINI checkpoints with retries and self-healing; the receipt is the kini-state row of the cluster check. Nothing after the word needs a laptop."
+  description: "Comment `FINISH: KINI` on any idp issue, or press Run workflow. The cluster runs the seven KINI checkpoints with retries and self-healing (crew#396); the receipt is the kini-state row of oke-check. Nothing after the word needs a laptop."
   annotations:
     github.com/project-slug: "chidionyema/idp"
     backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/"
@@ -419,9 +401,6 @@ metadata:
     - title: "Receipt reader (bin/idp-kini-state)"
       url: "https://github.com/chidionyema/idp/blob/main/bin/idp-kini-state"
       icon: dashboard
-    - title: "Where this is tracked"
-      url: "https://github.com/chidionyema/crew/issues/396"
-      icon: docs
 spec:
   type: founder-surface
   lifecycle: production
@@ -433,7 +412,7 @@ kind: Component
 metadata:
   name: founder-store
   title: "The store (mumchimp)"
-  description: "The one place a customer pays this estate: the storefront and the Medusa API behind it. Revenue is read by the crew science outcomes script. No API health link here: the api hostname answers 404 on every path, so the Medusa API is not published there; the link returns when mumchimp-medusa publishes one."
+  description: "The one place a customer pays this estate: the storefront and the Medusa API behind it. Revenue is read by crew science/outcomes.py revenue (crew#70). No API health link here: api.<zone> answers 404 on every path from a Kestrel server (crew#503 probe), so the Medusa API is not published on that hostname; the link returns when mumchimp-medusa publishes one. Registered here because catalogue-drift found the three hostnames live and unlisted (oke-check run 33034521953)."
   annotations:
     github.com/project-slug: chidionyema/mumchimp-medusa
     backstage.io/source-location: "url:https://github.com/chidionyema/mumchimp-medusa/tree/main/"
@@ -449,15 +428,6 @@ metadata:
     - title: "Source"
       url: "https://github.com/chidionyema/mumchimp-medusa"
       icon: github
-    - title: "Revenue reader, where it is tracked"
-      url: "https://github.com/chidionyema/crew/issues/70"
-      icon: docs
-    - title: "Why the API link is missing (probe)"
-      url: "https://github.com/chidionyema/crew/issues/503"
-      icon: docs
-    - title: "The run that found the hostnames unlisted"
-      url: "https://github.com/chidionyema/idp/actions/runs/33034521953"
-      icon: docs
 spec:
   type: founder-surface
   lifecycle: production
@@ -469,7 +439,7 @@ kind: Component
 metadata:
   name: founder-otto
   title: "Otto (the Architect agent)"
-  description: "The one agent that acts for you from anywhere: message @Ottototbot on Telegram (see the founder-telegram surface) in, a pull request or a run URL out. Runs in-cluster with a single Telegram poller (two pollers on one token block each other) and executes its shell tools on your Mac through a wrapper that reaches your machine over its own Tailscale sidecar, so it always has your machine's tools and files. Model calls route through the estate's one router (see founder-model-router); traces land in Langfuse (see founder-traces). No ssh key is ever held by this pod; the tailnet does the authenticating."
+  description: "The one agent that acts for you from anywhere (crew#516): message @Ottototbot on Telegram (see the founder-telegram surface) in, a PR or a run URL out. Runs in-cluster with a single Telegram poller (replicas 1, strategy Recreate — two pollers on one token 409 each other) and, since CP5, executes its shell tools on your Mac through mac-run, a wrapper that reaches your machine over its own Tailscale sidecar instead of the container's own sandbox, so it always has your machine's tools and files. Model calls route through the estate's one router (see founder-model-router); traces land in Langfuse (see founder-traces). No ssh key is ever held by this pod — the tailnet does the authenticating."
   annotations:
     backstage.io/kubernetes-id: hermes-agent-gateway
     backstage.io/kubernetes-namespace: hermes-agent
@@ -489,105 +459,8 @@ metadata:
     - title: "Executor (what it is allowed to run, and where)"
       url: "https://github.com/chidionyema/idp/blob/main/platform/hermes-agent/estate.yaml"
       icon: docs
-    - title: "Where this is tracked"
+    - title: "Tracked item crew#516"
       url: "https://github.com/chidionyema/crew/issues/516"
-      icon: dashboard
-spec:
-  type: founder-surface
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/estate
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: founder-screen
-  title: "Estate Mac screen (in the browser)"
-  description: "One of the three ways to reach the estate Mac: its screen in the browser, behind the one login. Setup and use: docs/how-to/onboarding/founder-screen-access.md. Needs one switch on the Mac, once: System Settings > General > Sharing > Screen Sharing on (the estate alerts you while it is off). Then: Open, pick 'Estate Mac', type the Mac login when asked (it is never stored). Fine for logs, files and settings; for a desktop at full speed use Pair my phone."
-  annotations:
-    idp/updated-by: "platform/guacamole (Flux row guacamole); the connection is seeded by the pod's init container from platform/guacamole/guacamole.yaml"
-  tags: [founder]
-  links:
-    - title: "Open"
-      url: "https://catalogue.${ESTATE_ZONE}/screen/"
-      icon: dashboard
-spec:
-  type: founder-surface
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/estate
----
-# crew#562 (ADR 0009 decision founder-screen-access, path 1 of 3): Sunshine on the estate Mac,
-# Moonlight on the phone; the PIN goes from the founder's thumb to the Mac through this page.
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: founder-pair-phone
-  title: "Pair my phone (see and drive the estate Mac)"
-  description: "Open Moonlight on the phone, tap the Mac, type the 4-digit PIN it shows into this page. The PIN reaches Sunshine on the Mac over the tailnet in one step; no chat, no waiting on a session. After the first pairing it is one tap in Moonlight for ever. Paths 2 and 3 (Guacamole in the browser, Apple Screen Sharing) follow the matrix order in docs/decisions/decision-matrix.yaml."
-  annotations:
-    idp/updated-by: "backstage/packages/app/src/modules/home/PairPhone.tsx ships with the portal image; the Mac side is the Sunshine service on the estate Mac (platform/hermes-agent/mac-run.yaml row)"
-  tags: [founder]
-  links:
-    - title: "Open"
-      url: "https://catalogue.${ESTATE_ZONE}/pair"
-      icon: dashboard
-spec:
-  type: founder-surface
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/estate
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: company-mumchimp
-  title: "Mumchimp: the store"
-  description: "Everything that takes a customer's money: the storefront, its API, the cluster it runs on and the jobs that keep it up. Open it to see every product and asset the store owns, and what is red."
-  annotations:
-    idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
-  tags: [founder, company]
-  links:
-    - title: "Open (everything this company owns)"
-      url: "https://catalogue.${ESTATE_ZONE}/catalog/default/domain/mumchimp"
-      icon: dashboard
-spec:
-  type: founder-surface
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/estate
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: company-prospector
-  title: "Prospector: finds and qualifies prospects"
-  description: "The product you sell, whatever the platform under it does. Open it to see its repositories, its jobs and its data, and what is red."
-  annotations:
-    idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
-  tags: [founder, company]
-  links:
-    - title: "Open (everything this company owns)"
-      url: "https://catalogue.${ESTATE_ZONE}/catalog/default/domain/prospector"
-      icon: dashboard
-spec:
-  type: founder-surface
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/estate
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: company-hermes
-  title: "Hermes: acts for you from anywhere"
-  description: "Telegram in, a pull request or a run out. Open it to see the gateway, its schedules and its receipts, and what is red."
-  annotations:
-    idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
-  tags: [founder, company]
-  links:
-    - title: "Open (everything this company owns)"
-      url: "https://catalogue.${ESTATE_ZONE}/catalog/default/domain/hermes-v2"
       icon: dashboard
 spec:
   type: founder-surface

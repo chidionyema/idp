@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # estate-security-scan: the "Security passes" evidence named by the Definition
-# of Done v2.1 (docs/reference/policy/definition-of-done.md, Gate 3 and section 3.3).
+# of Done v2.1 (docs/policy/definition-of-done.md, Gate 3 and section 3.3).
 #
 # Three questions, each answered by a mature tool rather than by this file:
 #

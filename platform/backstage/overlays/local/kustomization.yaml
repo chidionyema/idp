@@ -10,10 +10,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # The namespace moved out of the base into its own directory so OKE can order it as a
-  # separate Flux row (crew#488). `make catalogue-deploy` applies this overlay by hand with
-  # nothing to order it, so it takes both.
-  - ../../namespace/base
   - ../../base
 configMapGenerator:
   - name: estate-catalog

@@ -18,7 +18,6 @@ langfuse:
     url: https://langfuse.${ESTATE_ZONE}   # substituted by Flux postBuild (clusters/oke/platform.yaml)
   additionalEnvFrom:
     - secretRef: { name: langfuse-init }
-    - secretRef: { name: langfuse-sso }   # crew#503: OIDC client for the front-door identity, written by tofu
   # Incident 2026-08-26 (crew#325): Langfuse 4.x defaults LANGFUSE_MIGRATION_V4_WRITE_MODE to
   # events_only, and langfuse-web logged "Rejected 2 event(s) from the legacy /api/public/ingestion
   # endpoint ... These events were not stored" for every routed call. The router's `langfuse`

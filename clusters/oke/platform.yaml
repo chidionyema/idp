@@ -1,27 +1,3 @@
-# crew#488 / crew#539: the portal's namespace, on its own, before anything that lands in it.
-#
-# cluster-state, spire and image-automation all apply objects into namespace backstage, and on a
-# cluster with no history they ran before it existed (`namespaces "backstage" not found`, drill run
-# 33214748124). The edge they wanted -- dependsOn: [backstage] -- is the one crew#539 forbids: the
-# portal row waits on Deployment/catalogue being healthy, so that edge makes a stalled catalogue
-# rollout hold the platform, which is the incident crew#539 exists for.
-#
-# One object, no workload, nothing that can be unhealthy. It is what those rows wait for.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: backstage-namespace
-  namespace: flux-system
-spec:
-  interval: 10m
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  path: ./platform/backstage/namespace/overlays/oke
-  prune: true
-  wait: true
-  timeout: 2m
----
 # ADR 0004 step 3. `flux bootstrap github --path clusters/oke` writes flux-system/ beside this
 # file; everything below is what Flux then reconciles. Secrets reach the
 # cluster from OCI Vault through External Secrets (platform/secret-store); no sops key in cluster.
@@ -37,18 +13,6 @@ spec:
     name: flux-system
   path: ./platform/backstage/overlays/oke
   prune: true
-  # crew#488 CP5: the overlay carries an ExternalSecret (backstage-env). Without these two rows
-  # Flux dry-ran it before the CRD existed and the portal read as a root portability break;
-  # platform rows still never wait on the portal (crew#539), the portal waits on its secrets.
-  dependsOn:
-    - name: backstage-namespace
-    - name: external-secrets
-    - name: secret-store
-    # The overlay also carries HTTPRoute/catalogue and Middleware/login-forward-auth, whose CRDs
-    # come from gateway-api-crds and the Traefik chart in `edge` -- so on an empty cluster the row
-    # dry-ran those two before either existed. Found by the closure-aware CRD-before-CR guard,
-    # which the flat PRE_INSTALLED set had been widened past (crew#488).
-    - name: edge
   postBuild:
     substituteFrom:
       # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
@@ -99,8 +63,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: chaos-mesh
-    # crew#488: the langfuse alert drill's Schedule and Workflow land in the observability namespace.
-    - name: observability
     - name: monitoring   # crew#539 DoD 2: langfuse-alert-drill asks kps-alertmanager and kps-prometheus
     - name: backstage   # the experiments kill portal pods; they are the one row that waits for it
   sourceRef:
@@ -113,31 +75,6 @@ spec:
 # crew#258 CP2: SigNoz, the one metrics/traces/logs store (crew/docs/STANDARDS.md "Observability").
 # Was ordered after backstage "so the portal keeps first claim on the single node's CPU" — the single
 # node is gone (4 OCPU shape, crew#289 CP3) and the edge held the whole store behind one portal rollout.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: observability-collector
-  namespace: flux-system
-spec:
-  # crew#584 traces/lean: the node agent alone. Enterprise adds the `observability` row (SigNoz
-  # store + Langfuse) on top; lean points otelCollectorEndpoint at an external OTLP endpoint.
-  interval: 10m
-  dependsOn:
-    - name: scheduling
-    - name: edge   # platform/edge/k8s-infra-namespace.yaml and the hostPath waiver live there
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  path: ./platform/observability-collector
-  prune: true
-  wait: true
-  timeout: 10m
-  healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: k8s-infra
-      namespace: observability-agent
----
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -154,12 +91,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
-    # crew#584: the collector row owns k8s-infra now; ordering it first means the objects are
-    # relabelled to the new owner before this row's prune sees them as strays.
-    - name: observability-collector
-    # Four ExternalSecrets (clickhouse-auth, langfuse-init, otlp-ingest-users, signoz-root) are in
-    # this row; external-secrets.io only exists once the ESO chart has landed (crew#488).
-    - name: external-secrets
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -401,9 +332,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
-    # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
-    # needs it to exist; it must never wait on Deployment/catalogue being healthy.
-    - name: backstage-namespace
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -449,9 +377,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
-    # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
-    # needs it to exist; it must never wait on Deployment/catalogue being healthy.
-    - name: backstage-namespace
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -539,38 +464,6 @@ spec:
       name: hindsight
       namespace: hindsight
 ---
-# Founder screen access, path 2 (crew#562, ADR 0009 decision founder-screen-access): Apache
-# Guacamole at catalogue.<zone>/screen/, VNC to the estate Mac over the Tailscale operator's
-# egress. After identity (the front door answers its ForwardAuth), secret-store (the vault entry
-# bin/idp-estate-seed mints) and tailscale (the operator that rewrites the egress Service).
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: guacamole
-  namespace: flux-system
-spec:
-  interval: 10m
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  path: ./platform/guacamole
-  prune: true
-  dependsOn:
-    - name: identity
-    - name: secret-store
-    - name: tailscale
-  wait: true
-  timeout: 10m
-  healthChecks:
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: guacamole
-      namespace: guacamole
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: estate-config
----
 # crew#539 CP4: the node pool grows and shrinks by itself (platform/oci/autoscaler).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -594,27 +487,9 @@ spec:
       name: cluster-autoscaler
       namespace: kube-system
 ---
-# crew#488 CP5: the PriorityClasses, before anything that names one. See
-# platform/priority-classes/kustomization.yaml for the deadlock this ends.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: priority-classes
-  namespace: flux-system
-spec:
-  interval: 10m
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  path: ./platform/priority-classes
-  prune: true
-  wait: true
-  timeout: 2m
----
-# crew#539: scheduling immunity. The balloon and the Kyverno policies that keep the radio-room set
-# honest. After edge (Kyverno CRDs) and after priority-classes, which is where the two classes now
-# live: the rows that name infrastructure-critical still depend on this one, and reach
-# priority-classes through its dependsOn below.
+# crew#539: scheduling immunity. The two PriorityClasses, the balloon and the Kyverno policy that
+# keeps the radio-room set honest. After edge (Kyverno CRDs); the rows that name
+# infrastructure-critical depend on this one so the class exists before a pod asks for it.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -624,7 +499,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: edge
-    - name: priority-classes
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -793,9 +667,8 @@ spec:
     name: flux-system
   path: ./platform/drills
   prune: true
-  # crew#488 CP5: alerts-github owns the App Secret and itself waits on secret-store; naming
-  # secret-store here twice over made this row read as a vault casualty on a cluster with none.
   dependsOn:
+    - name: secret-store
     - name: alerts-github
   wait: true
   timeout: 5m

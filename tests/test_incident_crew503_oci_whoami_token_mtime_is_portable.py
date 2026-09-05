@@ -6,6 +6,7 @@ return an integer mtime on whichever OS runs it. No socket."""
 import os
 import pathlib
 import subprocess
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "bin" / "idp-oci-whoami"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Root trust for Cloudflare, one command, no hands (crew#66 founder 2026-08-28; docs/reference/policy/root-trust.md; crew#578).
+# Root trust for Cloudflare, one command, no hands (crew#66 founder 2026-08-28; docs/policy/root-trust.md; crew#578).
 #   bin/idp-bootstrap-cloudflare              mint the DNS token and the R2 credential, write vault entries cloudflare-api-token + prospector-engine-env.R2_*
 #   bin/idp-bootstrap-cloudflare --preflight  prove the vault, the browser driver and the dashboard reachability, write nothing
 #   bin/idp-bootstrap-cloudflare --rotate     mint anew even though the vault entries already verify

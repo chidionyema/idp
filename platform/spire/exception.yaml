@@ -6,7 +6,7 @@
 # 59 rule failures across 14 policies; every failing policy is listed below and no other
 # (tests/test_spire_row.py refuses a waiver for a policy the chart already passes, and proves the
 # same objects are still refused in any other namespace).
-# It lives in namespace kyverno because platform/kyverno/kyverno.yaml restricts exceptions to it.
+# It lives in namespace kyverno because platform/edge/kyverno.yaml restricts exceptions to it.
 apiVersion: kyverno.io/v2
 kind: PolicyException
 metadata:

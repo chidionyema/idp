@@ -76,46 +76,9 @@ def checkpoints(issues: list[dict]) -> list[dict]:
     return rows
 
 
-def feed_clock(feed_text: str) -> datetime | None:
-    """The newest handoff stamp in the feed: this page's only clock (crew#583 CP6).
-
-    Nothing on this page is stamped by the machine rendering it -- the handoffs come from sessions
-    on other machines, the checkpoints from GitHub. So the machine rendering it is not asked what
-    time it is, for the lane window or for the header: both read the newest thing the estate wrote.
-    """
-    stamps = list(_stamps(feed_text))
-    return max(stamps) if stamps else None
-
-
-def _stamps(feed_text: str):
-    for line in feed_text.splitlines():
-        h = HANDOFF_RE.match(line)
-        if not h:
-            continue
-        try:
-            yield datetime.strptime(h.group(1)[:16], "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-
-
 def lanes(feed_text: str, now: datetime | None = None) -> dict[str, dict]:
-    """Newest handoff per lane inside LANE_WINDOW_H: its 🔴 and 🟡 lines and the issues each names.
-
-    `now` is the newest stamp in the feed, not this machine's clock (crew#583 CP6). Every handoff
-    here was stamped by some session on some machine, so "is this lane still live" was two clocks
-    subtracted while looking like one: a laptop whose battery reset its RTC read every lane as
-    live, or none of them, depending which way the reset landed. Measuring each handoff against the
-    newest handoff asks the better question anyway -- is this lane still writing, relative to the
-    last thing the estate wrote -- and it fails in the safe direction: a session stamping from a
-    clock set ahead makes other lanes look *ended*, never makes an ended lane look live.
-
-    An empty feed has no reference and therefore no live lanes, which is the same answer a feed of
-    nothing but ancient handoffs gives.
-    """
-    if now is None:
-        now = feed_clock(feed_text)
-        if now is None:
-            return {}
+    """Newest handoff per lane inside LANE_WINDOW_H: its 🔴 and 🟡 lines and the issues each names."""
+    now = now or datetime.now(timezone.utc)
     latest: dict[str, dict] = {}
     cur = None
     for line in feed_text.splitlines():
@@ -189,23 +152,17 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--issues", help="JSON file of issues (number,title,body,url); default: gh issue list")
     ap.add_argument("--feed", default=str(FEED))
     ap.add_argument("--out", default=str(OUT))
-    ap.add_argument("--taken", help="timestamp to print; default: the newest handoff in the feed")
-    ap.add_argument("--now", help="clock for the lane window, YYYY-MM-DDTHH:MMZ (tests); default: the newest handoff in the feed, never this machine")
+    ap.add_argument("--taken", help="timestamp to print; default now UTC")
+    ap.add_argument("--now", help="clock for the lane window, YYYY-MM-DDTHH:MMZ (tests); default now UTC")
     ap.add_argument("--check", action="store_true", help="exit 1 when the page on disk differs from the inputs")
     a = ap.parse_args(argv)
     issues = json.loads(Path(a.issues).read_text()) if a.issues else fetch_issues(REPO)
     feed = Path(a.feed)
     now = datetime.strptime(a.now[:16], "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc) if a.now else None
-    feed_text = feed.read_text(encoding="utf-8", errors="ignore") if feed.is_file() else ""
-    by_lane = lanes(feed_text, now) if feed.is_file() else {}
+    by_lane = lanes(feed.read_text(encoding="utf-8", errors="ignore"), now) if feed.is_file() else {}
     if not feed.is_file():
         print(f"BLIND estate-next: no feed at {feed}; every row grades on the issue alone", file=sys.stderr)
-    # The header carries the same clock the lane window uses, and it is not this machine's: a page
-    # that dated itself from a reset RTC would say 1970 over rows aged correctly off the feed, which
-    # is worse than saying it does not know (crew#583).
-    stamped = now or feed_clock(feed_text)
-    taken = a.taken or (stamped.strftime("%Y-%m-%dT%H:%MZ") if stamped
-                        else "an unknown time (no dated handoff in the feed)")
+    taken = a.taken or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
     page = render(checkpoints(issues), by_lane, taken)
     out = Path(a.out)
     body = lambda s: s.split("\n", 3)[3]  # everything after the GENERATED line's timestamp

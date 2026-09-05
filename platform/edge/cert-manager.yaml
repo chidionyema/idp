@@ -70,7 +70,7 @@ spec:
 # cainjector is the one cert-manager container the chart renders with no probe (helm template
 # cert-manager v1.21.1: probes on controller and webhook only, none under cainjector), so Kyverno
 # require-pod-probes refuses it. The exception covers that one rule for that one workload and
-# lives in namespace kyverno, the only namespace platform/kyverno/kyverno.yaml honours exceptions from.
+# lives in namespace kyverno, the only namespace platform/edge/kyverno.yaml honours exceptions from.
 apiVersion: kyverno.io/v2
 kind: PolicyException
 metadata:

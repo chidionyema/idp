@@ -83,7 +83,7 @@ def test_chaos_mesh_is_admitted_with_its_exception_and_refused_without(tmp_path)
 def test_kyverno_honours_exceptions_from_the_namespace_the_row_uses():
     exc = _docs(MESH / "exception.yaml")[0]
     assert exc["kind"] == "PolicyException"
-    hr = next(d for d in _docs(ROOT / "platform" / "kyverno" / "kyverno.yaml") if d["kind"] == "HelmRelease")
+    hr = next(d for d in _docs(ROOT / "platform" / "edge" / "kyverno.yaml") if d["kind"] == "HelmRelease")
     feat = hr["spec"]["values"]["features"]["policyExceptions"]
     assert feat["enabled"] is True
     assert feat["namespace"] == exc["metadata"]["namespace"], (feat, exc["metadata"])

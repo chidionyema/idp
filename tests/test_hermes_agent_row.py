@@ -9,6 +9,7 @@ entry the pod reads is the one oke-check seeds. Proved both ways with a mutated 
 """
 from __future__ import annotations
 
+import copy
 import re
 import subprocess
 from pathlib import Path

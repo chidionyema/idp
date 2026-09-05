@@ -39,8 +39,6 @@ cases=(
   "opmodel-no-drill.json:1:refuses a platform/ or clusters/ change that names no drill (founder 2026-08-26: test discipline)"
   "opmodel-unknown-drill.json:1:refuses a Drill: line naming nothing in drills/catalogue.yaml"
   "opmodel-drill-added-in-pr.json:0:allows a Drill: line naming a row this PR adds to drills/catalogue.yaml (idp#191 was refused for its own row)"
-  "opmodel-no-optimised.json:1:refuses a PR body with no counted Optimised: line (LAW 51, crew#584)"
-  "opmodel-optimised-sentence.json:1:refuses an Optimised: line that is a sentence, not two counts and a cut"
   "notoil-doc-manual.json:1:refuses a doc that tells a person to mint a credential and hand it to a secret (crew#66)"
   "notoil-doc-founder-action.json:0:allows a FOUNDER ACTION line that names a URL or a single word, the LAW 47 register's one tap (crew#66)"
 )

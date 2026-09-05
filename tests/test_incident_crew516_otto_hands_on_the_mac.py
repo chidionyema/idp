@@ -160,34 +160,19 @@ def _policy_hujson():
     return json.loads(no_trailing_commas)
 
 
-def test_policy_carries_one_ssh_rule_per_named_source_and_no_open_one():
-    """crew#516 locked one rule (tag:k8s -> tag:founder-mac, check). crew#562 measured that the same
-    file locks the founder's own iPhone out of his tagged Mac (tagging removes user identity,
-    kb/1068), so the spec now names TWO sources and nothing else: the cluster, and group:founder,
-    whose only member is his tailnet login. LAW 45 still holds: no rule takes an open source
-    (autogroup:member, *, autogroup:members) and no destination is repeated across rules."""
+def test_policy_carries_exactly_one_ssh_rule_tag_k8s_to_tag_founder_mac():
     pol = _policy_hujson()
-    rules = pol["ssh"]
-    assert [r["src"] for r in rules] == [["tag:k8s"], ["group:founder"]], "exactly the two named sources, in that order"
-    assert [r["action"] for r in rules] == ["check", "accept"]
-    for r in rules:
-        assert r["dst"] == ["tag:founder-mac"]
-        assert r["users"] == ["${FOUNDER_MAC_USER}"], "LAW 46: no literal founder username in git"
-    assert pol["groups"] == {"group:founder": ["${FOUNDER_TAILNET_USER}"]}, "LAW 46: the login is substituted, never typed"
+    assert len(pol["ssh"]) == 1, "LAW 45: the paste/by-hand-ACL mistake does not come back as a second rule"
+    rule = pol["ssh"][0]
+    assert rule["action"] == "check"
+    assert rule["src"] == ["tag:k8s"] and rule["dst"] == ["tag:founder-mac"]
+    assert rule["users"] == ["${FOUNDER_MAC_USER}"], "LAW 46: no literal founder username in git"
 
 
 def test_policy_acl_and_tag_owners_match_the_locked_spec():
     pol = _policy_hujson()
     assert {"tag:k8s", "tag:founder-mac"} <= set(pol["tagOwners"])
-    assert pol["acls"] == [
-        {"action": "accept", "src": ["tag:k8s"], "dst": ["tag:founder-mac:22"]},
-        {"action": "accept", "src": ["group:founder"], "dst": ["tag:founder-mac:22", "tag:founder-mac:47984-48010"]},
-    ]
-    open_sources = {"*", "autogroup:member", "autogroup:members", "autogroup:tagged"}
-    for section in ("acls", "ssh"):
-        for r in pol[section]:
-            assert not open_sources & set(r["src"]), f"{section}: an open source is the lockout the spec forbids"
-
+    assert pol["acls"] == [{"action": "accept", "src": ["tag:k8s"], "dst": ["tag:founder-mac:22"]}]
 
 
 def test_tailscale_policy_script_exists_executable_and_reads_the_estate_config():

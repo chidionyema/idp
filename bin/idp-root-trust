@@ -2,7 +2,7 @@
 """Root-trust gate (crew#66 ruling 5453747447, crew#580): every vault entry an ExternalSecret
 reads is born by a bootstrapper, or is ticketed.
 
-Reads the register table in docs/reference/policy/root-trust.md and every ExternalSecret under platform/.
+Reads the register table in docs/policy/root-trust.md and every ExternalSecret under platform/.
 Grades three things, never a proxy:
   1. every vault key an ExternalSecret reads (data[].remoteRef.key, dataFrom[].extract.key) has a
      register row; an unregistered key is a credential born nobody knows how -> FAIL;
@@ -23,7 +23,7 @@ import yaml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IDP = os.environ.get("IDP_ROOT") or os.path.dirname(HERE)
-REGISTER = os.path.join(IDP, "docs", "reference", "policy", "root-trust.md")
+REGISTER = os.path.join(IDP, "docs", "policy", "root-trust.md")
 BIN = os.path.join(IDP, "bin")
 PLATFORM = os.path.join(IDP, "platform")
 IN_ESTATE = ("ESO generator", "Terraform")

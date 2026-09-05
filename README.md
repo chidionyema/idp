@@ -6,8 +6,8 @@ Products (`prospector`, `hermes-v2`) run on it; they do not carry copies of it.
 Two generated pages describe it and are refreshed by `make diagrams`; a hand-drawn page is refused
 by `bin/estate-diagram --check`:
 
-- `docs/explanation/architecture/index.md` — the C4 model, rendered from `architecture/workspace.dsl`.
-- `docs/explanation/architecture/live.md` — what is actually listening, scheduled and guarded, rendered from
+- `docs/architecture/index.md` — the C4 model, rendered from `architecture/workspace.dsl`.
+- `docs/architecture/live.md` — what is actually listening, scheduled and guarded, rendered from
   the catalogue that `bin/catalog-gen` generates.
 
 ## Layers
@@ -53,7 +53,7 @@ A rule that has no gate is not a rule here. `AGENTS.md` is the table of rules fo
 each with a must-fail and a must-pass fixture; `bin/idp-ci` parses that table. Every PR that changes
 code also changes an executable spec (a `.feature`, a test, or a generator), or `spec-gate` refuses it.
 Architecture decisions are in `docs/decisions/`; the operating model and the definition of done are
-in `docs/reference/policy/`.
+in `docs/policy/`.
 
 ## Local
 

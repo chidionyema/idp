@@ -9,4 +9,3 @@ resources:
   - healthchecks.yaml
   - availability.yaml
   - httproute.yaml
-  - edge-manners.yaml

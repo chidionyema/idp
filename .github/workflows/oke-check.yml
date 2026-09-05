@@ -19,7 +19,7 @@ on:
       playbook:
         description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose and architect-doctor are read-only."
         type: choice
-        options: [diagnose, architect-doctor, cilium-unchain, cilium-replace, helm-retry, namespace-unstick, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll]
+        options: [diagnose, architect-doctor, cilium-unchain, cilium-replace, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll]
         default: diagnose
   pull_request:
     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
@@ -44,15 +44,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
+        with: { python-version: "3.12" }
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with: { tofu_version: "1.12.6", tofu_wrapper: false }
       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: token exchange receipt (claims of the job token, and the domain's answer; never the tokens)
         env:
           OIDC: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
@@ -108,7 +105,6 @@ jobs:
       # bin/idp-verify-drill; no PAT is ever pasted. Exit 2 is BLIND (App not installed yet).
       - name: bin/idp-github-app refresh (crew#577)
         if: ${{ always() && inputs.mode == 'apply' }}
-        timeout-minutes: 5   # run 33223929243 hung here 20 min and, through the concurrency group, held every break-glass run behind it (2026-08-29)
         env:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
@@ -188,17 +184,6 @@ jobs:
           ESTATE_ENV_FILE="$f" bin/idp-vault-put --merge hermes-agent-env $args
           rm -f "$f"
 
-      # crew#562 path 1: the Basic-auth credential the portal's /pair proxy sends to Sunshine on the
-      # estate Mac, born on this runner and written to vault `sunshine-auth`; a complete entry is
-      # kept. The Mac adopts it over the tailnet from the hermes-agent pod (bin/idp-bootstrap-sunshine
-      # header), never from a paste.
-      - name: bin/idp-bootstrap-sunshine (crew#562)
-        if: ${{ always() && inputs.mode == 'apply' }}
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-        run: bin/idp-bootstrap-sunshine
-
       # crew#539 CP4: the Cluster Autoscaler's node pool id, found by name after the apply, so the
       # row platform/oci/autoscaler never carries an OCID. Exit 2 is BLIND (no ACTIVE pool yet).
       - name: bin/idp-autoscaler-seed (crew#539 CP4)
@@ -223,12 +208,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
+        with: { python-version: "3.12" }
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -254,12 +236,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
+        with: { python-version: "3.12" }
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -285,12 +264,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
+        with: { python-version: "3.12" }
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -315,12 +291,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
+        with: { python-version: "3.12" }
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -395,12 +368,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
+        with: { python-version: "3.12" }
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -426,12 +396,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
+        with: { python-version: "3.12" }
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -457,12 +424,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
+        with: { python-version: "3.12" }
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:

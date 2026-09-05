@@ -18,8 +18,7 @@
 #   ok      no-toil      no README, doc or platform file asks a person for a hand (N document(s))
 #   ok      root-trust   every entry registered, every MEETS row has its bootstrapper, every miss its ticket
 #   ok      github-tokens 2 token(s) re-minted from the App
-#   ok      loop-meter   median PR wall-clock this week 274s (n=27), last week 400s (n=31)
-#   ok      verify-drill 9/9 rows green
+#   ok      verify-drill 8/8 rows green
 #
 # The receipt row is the cluster's own word, written every 15 minutes from inside by
 # platform/state/cluster-state.yaml on the node's instance principal and graded by
@@ -80,17 +79,11 @@ else
     # --- kube: the same exchanged session, spoken to the API server (crew#484). The kubeconfig's
     # exec plugin runs `oci ce cluster generate-token` under OCI_CLI_AUTH=security_token, so no
     # second credential exists. A 403 is the IAM gap named on the row, never a silent skip.
-    # crew#345, 2026-08-28: three clusters are ACTIVE in the compartment and `awk NR==1` took the
-    # first by name -- not the estate -- so create-kubeconfig failed on every hourly run (12 red in
-    # a row, 14:03-19:50Z) while oke-check, which names its cluster, stayed green. The cluster is
-    # named, the same way oke-check names it; a missing name is BLIND with the list on the row.
-    want="${OCI_CLUSTER_NAME:-estate}"
-    cid=$(printf '%s\n' "$cl" | awk -v n="$want" '$1==n{print $2; exit}')
+    cid=$(printf '%s\n' "$cl" | awk 'NR==1{print $2}')
     kc="${KUBECONFIG_OUT:-${TMPDIR:-/tmp}/idp-verify-drill-kubeconfig}"
     if ! command -v kubectl >/dev/null; then bl kube "kubectl is not installed on this runner"
-    elif [ -z "$cid" ]; then bl kube "no ACTIVE cluster named $want; ACTIVE: $(printf '%s\n' "$cl" | awk '{print $1}' | paste -sd, -) -- set OCI_CLUSTER_NAME"
     elif ! out=$("$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$kc" 2>&1); then
-      bl kube "create-kubeconfig failed ($want): $(printf '%s' "$out" | tail -1 | sed -E 's/.*"code": "([^"]+)".*"message": "([^"]+)".*/\1: \2/' | cut -c1-240)"
+      bl kube "create-kubeconfig failed: $(printf '%s' "$out" | tail -1 | cut -c1-160)"
     else
       # The exit code is the verdict; the body is only read on failure (idp#447 review: a healthy
       # node's resourceVersion 12403 must never read as a 403).
@@ -155,7 +148,7 @@ case "$con_rc" in
 esac
 
 # --- root-trust: every vault entry an ExternalSecret reads is born by a bootstrapper or ticketed
-# (crew#66 ruling 5453747447, crew#580, docs/reference/policy/root-trust.md). Hourly so an entry that
+# (crew#66 ruling 5453747447, crew#580, docs/policy/root-trust.md). Hourly so an entry that
 # lands by hand through any door is red within the hour, like every other row.
 rt_out=$("$(dirname "$0")/idp-root-trust" 2>&1); rt_rc=$?
 case "$rt_rc" in
@@ -175,16 +168,6 @@ case "$gt_rc" in
   *) fail github-tokens "$(printf '%s\n' "$gt_out" | tail -1 | cut -c1-160)";;
 esac
 
-# --- loop-meter: the dev loop gets faster, or the row is red (crew#584 CP4, founder 2026-08-28
-# "get faster at getting faster"). Median wall-clock of a green pull_request ci run this week
-# against last week, read from the runs GitHub already keeps; >20% slower is red.
-lm_out=$("$(dirname "$0")/idp-loop-meter" 2>&1); lm_rc=$?
-case "$lm_rc" in
-  0) say ok loop-meter "$(printf '%s\n' "$lm_out" | tail -1 | sed -E 's/^ok +loop-meter: //' | cut -c1-160)";;
-  1) fail loop-meter "$(printf '%s\n' "$lm_out" | tail -1 | sed -E 's/^FAIL +loop-meter: //' | cut -c1-160)";;
-  *) bl loop-meter "$(printf '%s\n' "$lm_out" | tail -1 | cut -c1-160)";;
-esac
-
 if [ "$red" -gt 0 ]; then say FAIL verify-drill "$red row(s) red, $blind blind"; exit 1; fi
 if [ "$blind" -gt 0 ]; then say BLIND verify-drill "$blind row(s) not measured"; exit 2; fi
-say ok verify-drill "9/9 rows green on the machine identity"
+say ok verify-drill "8/8 rows green on the machine identity"

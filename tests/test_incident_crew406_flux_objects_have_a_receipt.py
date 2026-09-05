@@ -5,6 +5,7 @@ and an Alert that named GitRepository but no image kind. The rule: every Flux ob
 condition is in the state/cluster receipt, the grader fails on any that is not Ready, and the
 image kinds page. Rung 4, incident test."""
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path

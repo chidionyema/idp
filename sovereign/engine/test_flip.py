@@ -8,6 +8,7 @@ pattern as sovereign/sidecar/test_sidecar.py.
 from __future__ import annotations
 
 import sqlite3
+import stat
 import tempfile
 import unittest
 from pathlib import Path

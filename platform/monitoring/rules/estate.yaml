@@ -22,14 +22,6 @@ spec:
           annotations:
             summary: "founder surface {{ $labels.instance }} is down"
             description: "The in-cluster probe of {{ $labels.instance }} has failed for 5 minutes (blackbox module founder)."
-        - alert: MacScreenSharingOff
-          expr: probe_success{job="founder-mac-screen-sharing"} == 0
-          for: 10m
-          labels:
-            severity: warning
-          annotations:
-            summary: "the estate Mac is not sharing its screen"
-            description: "Nothing answers on the Mac's screen-sharing port over the tailnet, so 'Estate Mac screen (in the browser)' and Apple Screen Sharing both refuse to connect. One switch fixes it: on the Mac, System Settings > General > Sharing > Screen Sharing on. This alert clears on its own within 10 minutes of the switch (crew#562)."
     - name: estate.gateway
       rules:
         - alert: GatewayRefusals

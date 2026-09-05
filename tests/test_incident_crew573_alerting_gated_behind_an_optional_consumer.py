@@ -31,6 +31,7 @@ import collections
 import pathlib
 import re
 
+import pytest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]

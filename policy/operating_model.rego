@@ -86,7 +86,7 @@ deny contains msg if {
 # `DENY: <word>` comment from the repository owner's login (bin/pr-report pr.denials) is refused.
 # No word, no APPROVE, and a green PR merges. The word said on Telegram is still not evidence.
 
-founder_facing_prefixes := {"backstage/", "platform/identity/", "platform/edge/", "docs/reference/policy/", "estate-defaults.yaml"}
+founder_facing_prefixes := {"backstage/", "platform/identity/", "platform/edge/", "docs/policy/", "estate-defaults.yaml"}
 
 touches_founder_facing if {
 	some f in input.pr.files
@@ -192,11 +192,6 @@ deny contains msg if {
 # grades the shape of the line (a `/`, a backtick, an `->`, or `n/a: <reason>`); whether the
 # command proves the law is the reviewer's job, and the per-law mechanical gates land as the
 # layers do (LAW 1 bin/cloud-agnostic-gate is live).
-#
-# PAUSED 2026-08-28 (founder, crew#254 5456132029, after the gate refused idp#625 twice): "lets pause
-# this for now", "causing delivery friction, needs to be betetr designed", "agents dont undertnd the
-# languae used", "needs nore precision". The section is still read and printed as a warning; it
-# never blocks a merge until the four laws are rewritten as one command each, in plain words.
 
 laws := {"1": "zero-gravity", "2": "fractal", "3": "nervous system", "4": "calibration"}
 
@@ -208,82 +203,16 @@ law_line_ok(n) if {
 
 # Only a PR input is graded: the other fixtures in policy/fixtures (node pools, placement,
 # commands) carry no pr at all and are not pull requests.
-warn contains msg if {
+deny contains msg if {
 	is_string(input.pr.body)
 	not has_laws_heading
 	msg := "rule=architecture_laws | the PR body has no `## Architecture laws` section | fix: copy the four-line checklist from crew/docs/ARCHITECTURE_LAWS.md into the body; each line a command, a path or `n/a: <reason>`"
 }
 
-warn contains msg if {
+deny contains msg if {
 	is_string(input.pr.body)
 	has_laws_heading
 	some n, slug in laws
 	not law_line_ok(n)
 	msg := sprintf("rule=architecture_laws | `- LAW %s %s:` is missing or is a sentence | fix: make it the command or path that proves the law for this change, or `n/a: <reason>`", [n, slug])
-}
-
-# --- matrix_cited (ADR 0009, crew#562) ------------------------------------------------------
-# Founder, 2026-08-28: "we need a matrix for decision making — rather than asking these
-# questions it should be auto — for all requirements" and "i like the matrix, enforce it".
-# A pull request that makes a build-or-buy decision names the scored entry in
-# docs/decisions/decision-matrix.yaml with a `Matrix: <slug>` line. Two shapes of PR are that
-# decision: one that adds an ADR (a `# NNNN.` title line under docs/decisions/), and one that
-# brings a new chart onto a platform layer (an added `kind: HelmRelease`). input.matrix is the
-# slug list bin/matrix-gate --slugs prints from idp main; a slug the PR itself adds counts.
-
-adds_adr if {
-	some f in input.pr.files
-	regex.match(`^docs/decisions/\d{4}-.+\.md$`, f)
-	regex.match(`(?m)^\+# \d{4}\. `, input.pr.added)
-}
-
-adds_helmrelease if {
-	touches_drilled_layer
-	regex.match(`(?m)^\+kind:\s*HelmRelease\s*$`, input.pr.added)
-}
-
-decides if adds_adr
-decides if adds_helmrelease
-
-matrix_line := m[0][1] if {
-	m := regex.find_all_string_submatch_n(`(?m)^Matrix:\s*(\S+)`, input.pr.body, 1)
-}
-
-slugs_added_in_pr contains s if {
-	"docs/decisions/decision-matrix.yaml" in input.pr.files
-	some m in regex.find_all_string_submatch_n(`(?m)^\+\s*-\s*slug:\s*(\S+)`, input.pr.added, -1)
-	s := m[1]
-}
-
-deny contains msg if {
-	decides
-	not matrix_line
-	msg := "rule=matrix_cited | the PR adds an ADR or a new HelmRelease and names no scored decision | fix: add `Matrix: <slug>` to the PR body, naming an entry in docs/decisions/decision-matrix.yaml (score it in this PR if none covers the choice; every cell needs evidence)"
-}
-
-deny contains msg if {
-	decides
-	matrix_line
-	not matrix_line in input.matrix
-	not matrix_line in slugs_added_in_pr
-	msg := sprintf("rule=matrix_cited | `Matrix: %s` names no entry in docs/decisions/decision-matrix.yaml | fix: use a scored slug, or add the decision to the matrix in this PR", [matrix_line])
-}
-
-# --- optimised_plan (LAW 51, crew#584) ------------------------------------------------------
-# Founder, 2026-08-29: "optimise before build ... note this process down as it will become law ...
-# how to plan and optimise before starting any execution ... i want to trial and if successful to
-# enforce this process". Trial measured on crew#584 5459773413: go -> three PRs merged in 12 min
-# against a 45-minute estimate. The body carries one `Optimised:` line of the shape the procedure
-# fixes (~/AGENTS-FULL.md): `Optimised: <steps before> -> <after>, <round trips before> -> <after>;
-# cut: <what, why>`. The gate grades the shape: a number on each side of an `->` and a `cut:` clause.
-# A sentence ("we made it faster") is not a plan that was counted.
-
-optimised_line_ok if {
-	regex.match(`(?m)^Optimised: [^\n]*\d[^\n]*->[^\n]*\d[^\n]*; *cut: \S[^\n]*$`, input.pr.body)
-}
-
-deny contains msg if {
-	is_string(input.pr.body)
-	not optimised_line_ok
-	msg := "rule=optimised_plan | the PR body has no counted `Optimised:` line (LAW 51) | fix: plan first, then add `Optimised: <steps before> -> <after>, <round trips before> -> <after>; cut: <what, why>` — numbers on both sides of the arrow and a cut clause; the procedure is in ~/AGENTS-FULL.md"
 }

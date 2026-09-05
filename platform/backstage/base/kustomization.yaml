@@ -1,5 +1,5 @@
 # The estate catalogue on Kubernetes. Phase 2 of docs/decisions/0004: the SAME
-# image backstage/Dockerfile builds (idp/backstage:local), unchanged, with the
+# image backstage/compose.yml builds (idp/backstage:local), unchanged, with the
 # database moved from a compose sidecar to a StatefulSet. Nothing in the image
 # knows which of the two it is running under.
 #
@@ -10,10 +10,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: backstage
-# The Namespace is NOT here: it is `platform/backstage/namespace`, its own Flux row, so that
-# cluster-state, spire and image-automation can wait for the namespace without waiting for the
-# portal to be healthy (crew#539 forbids that edge; crew#488 needs the ordering).
 resources:
+  - namespace.yaml
   - postgres.yaml
   - catalogue.yaml
   - rbac.yaml

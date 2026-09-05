@@ -71,59 +71,6 @@ def dirs_with_routes():
     return sorted(d for d in out if not any(o != d and d.startswith(o + os.sep) for o in out))
 
 
-def dirs_that_hold_namespace(name):
-    """Kustomize directories whose render can carry the Namespace `name`.
-
-    Found by walking, never by naming a path. crew#488 lifted the backstage Namespace out of the
-    portal's kustomization into a directory of its own so OKE could order it as its own Flux row,
-    and the admission row below then failed a namespace nothing was wrong with: it assumed a
-    Namespace renders alongside the workloads inside it, which grades where a manifest sits instead
-    of what the cluster will hold.
-
-    Two walks, because a Namespace and the label that arms admission need not be in one place: the
-    directory whose manifests declare it, and every overlay of the same component that a Flux
-    Kustomization under clusters/ tells a cluster to apply -- that overlay is the shape the cluster
-    actually gets, and the tier label is added there so the one-node k3d base is not refused by the
-    policy the label arms (LAW 38).
-    """
-    declared = []
-    for base, _, files in os.walk(os.path.join(ROOT, "platform")):
-        if "kustomization.yaml" not in files:
-            continue
-        for f in sorted(files):
-            if not f.endswith(".yaml"):
-                continue
-            try:
-                docs = list(yaml.safe_load_all(
-                    open(os.path.join(base, f), encoding="utf-8", errors="ignore")))
-            except yaml.YAMLError:
-                continue
-            if any(isinstance(d, dict) and d.get("kind") == "Namespace"
-                   and (d.get("metadata") or {}).get("name") == name for d in docs):
-                declared.append(os.path.relpath(base, ROOT))
-                break
-    components = {tuple(d.split(os.sep)[:2]) for d in declared}
-    applied = []
-    for base, _, files in os.walk(os.path.join(ROOT, "clusters")):
-        for f in sorted(files):
-            if not f.endswith((".yaml", ".yml")):
-                continue
-            try:
-                docs = list(yaml.safe_load_all(
-                    open(os.path.join(base, f), encoding="utf-8", errors="ignore")))
-            except yaml.YAMLError:
-                continue
-            for d in docs:
-                if not isinstance(d, dict) or d.get("kind") != "Kustomization":
-                    continue
-                if "kustomize.toolkit.fluxcd.io" not in str(d.get("apiVersion", "")):
-                    continue
-                path = ((d.get("spec") or {}).get("path") or "").lstrip("./").rstrip("/")
-                if path and tuple(path.split(os.sep)[:2]) in components:
-                    applied.append(path)
-    return sorted(set(declared) | set(applied))
-
-
 def load_config():
     """(waivers by surface, front doors by gateway, list of also_graded)."""
     doc = {}
@@ -268,11 +215,9 @@ def main(argv):
     ns_labels, passed = {}, set()
 
     def note_namespaces(objs):
-        # Merged, not replaced: one Namespace declared in a base and patched in an overlay is one
-        # object, and which render happens to be walked last must not decide whether it is labelled.
         for o in objs:
             if o.get("kind") == "Namespace":
-                ns_labels.setdefault(o["metadata"]["name"], {}).update(o["metadata"].get("labels") or {})
+                ns_labels[o["metadata"]["name"]] = o["metadata"].get("labels") or {}
 
     for d in targets:
         objs, err = render(d)
@@ -472,17 +417,6 @@ def main(argv):
     # that never sees a PR can put it back on one pod and admission will take it. This is the row
     # that keeps the two halves of the standard from drifting apart.
     for ns in sorted({sfc.partition("/")[0] for sfc in passed}):
-        if ns not in ns_labels:
-            # A namespace ordered as its own Flux row renders in a directory of its own; find it
-            # before failing the surfaces inside it (crew#488).
-            for d in dirs_that_hold_namespace(ns):
-                objs, err = render(d)
-                if objs is None:
-                    blind += 1
-                    row("BLIND", "%-26s namespace %s: kustomize build %s failed: %s"
-                        % ("(admission)", ns, d, err))
-                else:
-                    note_namespaces(objs)
         if ns not in ns_labels:
             failed.append(ns)
             row("FAIL", "%-26s namespace %s renders no Namespace object here, so the gate cannot "

@@ -8,7 +8,7 @@
 # door is refused, and bin/idp-kyverno-render judges these same rules against every rendered PR
 # so the refusal happens before merge. The one hole is declared beside it: provider-edge-exception.yaml
 # names the traefik Service that clusters/oke/edge.yaml patches with the load-balancer shape.
-# Written control: docs/reference/policy/provider-independence.md. Proof it refuses and passes:
+# Written control: docs/policy/provider-independence.md. Proof it refuses and passes:
 # tests/test_incident_crew66_provider_independence_policy.py (LAW 38: applied to every plain
 # manifest under platform/ with zero violations before it merged).
 # The provider names below are regex text inside a rule; bin/cloud-agnostic-gate hunts the
@@ -33,8 +33,7 @@ spec:
       match:
         any:
           - resources:
-              kinds: [Service, Ingress]   # never PersistentVolumeClaim: the CSI provisioner and scheduler write annotations on live claims (2026-08-29)
-              operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect; judging it left the portal namespace Terminating (run 33227815539)
+              kinds: [Service, Ingress, PersistentVolumeClaim]
       validate:
         failureAction: Enforce
         message: >-
@@ -47,18 +46,28 @@ spec:
                   {{ keys(request.object.metadata.annotations || `{}`) | [?regex_match('^(service\.beta\.kubernetes\.io/(oci|aws|azure)-|oci\.oraclecloud\.com/|alb\.ingress\.kubernetes\.io/|cloud\.google\.com/|networking\.gke\.io/)', @)] | length(@) }}
                 operator: GreaterThan
                 value: 0
-    # There is deliberately NO rule on PersistentVolumeClaim here. The API server injects the
-    # cluster's default StorageClass (oci-bv on OKE) before admission, so a rule judging the
-    # claim's class judges the cluster, not the platform, and refused every new claim on
-    # 2026-08-29 (run 33229461240; the portal's database never came back). What we write is
-    # judged where it is written: bin/cloud-agnostic-gate refuses a provider class in platform/,
-    # and the portability-k3s drill boots the same tree on another provider.
+    - name: no-provider-storage-class
+      match:
+        any:
+          - resources:
+              kinds: [PersistentVolumeClaim]
+      validate:
+        failureAction: Enforce
+        message: >-
+          R43: a PersistentVolumeClaim names a provider StorageClass; leave it to the cluster
+          default so the same claim binds on OKE, k3s or any other cluster
+        deny:
+          conditions:
+            any:
+              - key: >-
+                  {{ regex_match('^(oci|gp[23]$|io[12]$|ebs|efs|pd-|standard-rwo|premium-rwo|managed-csi|managed-premium|azure)', request.object.spec.storageClassName || '') }}
+                operator: Equals
+                value: true
     - name: no-provider-storage-class-in-templates
       match:
         any:
           - resources:
               kinds: [StatefulSet]
-              operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect; judging it left the portal namespace Terminating (run 33227815539)
       validate:
         failureAction: Enforce
         message: >-
@@ -76,7 +85,6 @@ spec:
         any:
           - resources:
               kinds: [Service]
-              operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect; judging it left the portal namespace Terminating (run 33227815539)
       validate:
         failureAction: Enforce
         message: >-
@@ -94,7 +102,6 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect; judging it left the portal namespace Terminating (run 33227815539)
       validate:
         failureAction: Enforce
         message: >-
@@ -114,7 +121,6 @@ spec:
               kinds:
                 - external-secrets.io/v1/ClusterSecretStore
                 - external-secrets.io/v1/SecretStore
-              operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect
       validate:
         failureAction: Enforce
         message: >-

@@ -7,7 +7,6 @@ The runs below are against a throwaway git repo with a fake python that records 
 """
 import os
 import pathlib
-import re
 import subprocess
 
 IDP = pathlib.Path(__file__).resolve().parents[1]
@@ -68,49 +67,7 @@ def test_sovereign_files_run_from_sovereign_and_root_files_from_root(tmp_path):
     out = subprocess.run([str(repo / "bin/idp-tests-for"), "--base", "HEAD"], text=True, capture_output=True,
                          env={**os.environ, "IDP_PY": str(fake)})
     assert out.returncode == 0, out.stderr
-    # crew#562: outside CI the script appends "-n <TESTS_FOR_WORKERS>" to cap pytest workers; strip it
-    # here since this test asserts selection (which files, which cwd), not worker count.
-    calls = [re.sub(r" -n \d+", "", l) for l in log.read_text().splitlines()]
-    assert calls == [
+    assert log.read_text().splitlines() == [
         f"{repo} -m pytest -q tests/test_router.py",
         f"{repo}/sovereign -m pytest -q tests/bdd/test_policy.py",
     ]
-
-
-def _run(repo, env=None):
-    return subprocess.run([str(repo / "bin/idp-tests-for"), "--list", "--base", "HEAD"], text=True,
-                          capture_output=True, env={**os.environ, **(env or {})})
-
-
-def test_a_docs_only_diff_runs_nothing_and_says_so(tmp_path):
-    """Founder 2026-08-28: "if you change only docs, comments, or trivial files, the hook skips tests"."""
-    repo = _repo(tmp_path)
-    (repo / "docs").mkdir()
-    (repo / "docs" / "x.md").write_text("# hi\n")
-    (repo / "README.md").write_text("platform/router.yaml is read by test_router\n")  # names a test's path on purpose
-    out = _run(repo)
-    assert out.returncode == 0, out.stderr
-    assert "all docs or comment-only (SKIP_TESTS_ON_TRIVIAL), nothing to run" in out.stdout, out.stdout
-    assert "test_router.py" not in out.stdout
-
-
-def test_a_comment_only_edit_is_trivial_but_a_value_edit_is_not(tmp_path):
-    repo = _repo(tmp_path)
-    (repo / "platform" / "router.yaml").write_text("# a comment\na: 1\n")
-    out = _run(repo)
-    assert "nothing to run" in out.stdout and "test_router.py" not in out.stdout, out.stdout
-    (repo / "platform" / "router.yaml").write_text("# a comment\na: 2\n")
-    out = _run(repo)
-    assert "tests/test_router.py" in out.stdout, out.stdout
-
-
-def test_skip_tests_on_trivial_zero_keeps_docs_in_the_selection(tmp_path):
-    repo = _repo(tmp_path)
-    (repo / "tests" / "test_readme.py").write_text('def test_r():\n    assert "README.md"\n')
-    (repo / "README.md").write_text("v1\n")
-    _git(repo, "add", "tests", "README.md")
-    _git(repo, "commit", "-q", "-m", "readme")
-    (repo / "README.md").write_text("v2\n")
-    assert "test_readme.py" not in _run(repo).stdout
-    out = _run(repo, {"SKIP_TESTS_ON_TRIVIAL": "0"})
-    assert "tests/test_readme.py" in out.stdout, out.stdout

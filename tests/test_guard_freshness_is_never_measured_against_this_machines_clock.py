@@ -55,6 +55,16 @@ NOT_YET_MIGRATED = {
     # here would have collided with work in flight. crew#583 CP2.
     "bin/idp-cluster-state",
     "bin/idp-telemetry-coverage",
+    # Found by this guard rather than by the sweep that wrote it, which is the point of writing it:
+    # hours_since() subtracts a GitHub timestamp from the local clock for every row of the founder's
+    # report, and its `except ValueError: return 0.0` turns a stamp it cannot parse into "0 hours
+    # ago" -- a second way for the same page to read new when it is not. crew#583 CP5, unowned.
+    "bin/estate-founder",
+    # Also found by the guard. lanes() ages each feed entry against the local clock to decide
+    # whether a lane is still live (bin/estate-next:89-92), and the feed is written by other
+    # sessions on other machines -- so this is two clocks even when it looks like one. crew#583
+    # CP6, unowned.
+    "bin/estate-next",
 }
 
 # Not offenders, and not a migration backlog: the writer of the stamps. A file here has to be the

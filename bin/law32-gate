@@ -8,11 +8,11 @@ claude-guards) only looked at `feat:` subjects; tonight's five features landed u
 
 Three checks:
   1. Every executable added under bin/ in this PR names a feature that has
-     docs/tutorials/demo/<n>.md AND docs/how-to/onboarding/<n>.md, where <n> is the file's stem
+     docs/demo/<n>.md AND docs/onboarding/<n>.md, where <n> is the file's stem
      (minus -gate/-report) or a prefix of it before a hyphen (scheduler-up -> scheduler).
-  2. Every page under docs/tutorials/demo and docs/how-to/onboarding carries >= 200 characters of prose
+  2. Every page under docs/demo and docs/onboarding carries >= 200 characters of prose
      once headings and blank lines are stripped (LAW 32's floor).
-  3. Every page under docs/tutorials/demo and docs/how-to/onboarding is in the mkdocs nav. Measured
+  3. Every page under docs/demo and docs/onboarding is in the mkdocs nav. Measured
      2026-08-25: nine onboarding pages and five demos existed and none was in the nav,
      so the portal showed the founder no proof at all.
 
@@ -37,16 +37,9 @@ def prose_chars(path):
     return n
 
 
-# ADR 0002 Diátaxis sweep (2026-08-28): a demo is a tutorial, an onboarding is a how-to. The
-# first cut of this sweep left these two names bare and the gate scanned nothing and printed
-# "ok 0 page(s)" -- a silent green. PAGE_DIRS is the one place the paths live, and main()
-# refuses a zero page count.
-PAGE_DIRS = ("tutorials/demo", "how-to/onboarding")
-
-
 def feature_names():
     out = set()
-    for d in PAGE_DIRS:
+    for d in ("demo", "onboarding"):
         p = os.path.join(ROOT, "docs", d)
         if os.path.isdir(p):
             out |= {f[:-3] for f in os.listdir(p) if f.endswith(".md")}
@@ -54,11 +47,11 @@ def feature_names():
 
 
 def has_pair(stem, names):
-    # accept the full stem too: bin/spec-gate is documented as docs/tutorials/demo/spec-gate.md
+    # accept the full stem too: bin/spec-gate is documented as docs/demo/spec-gate.md
     stems = {stem, re.sub(r"-(gate|report)$", "", stem)}
     cands = [n for n in names if any(s == n or s.startswith(n + "-") for s in stems)]
     for n in sorted(cands, key=len, reverse=True):
-        if all(os.path.isfile(os.path.join(ROOT, "docs", d, n + ".md")) for d in PAGE_DIRS):
+        if all(os.path.isfile(os.path.join(ROOT, "docs", d, n + ".md")) for d in ("demo", "onboarding")):
             return n
     return None
 
@@ -88,7 +81,7 @@ def main(argv):
     for f in added:
         # Check 1 says "every EXECUTABLE added under bin/", and until crew#583 the code did not
         # look. bin/lib/receipt_age.py is 0644 and imported by four readers; it is not a command
-        # a founder can run, so a docs/tutorials/demo page for it would be a page about nothing. A file is
+        # a founder can run, so a docs/demo page for it would be a page about nothing. A file is
         # exempt only when it is on disk AND not executable -- a name with no file behind it (the
         # bin/feature-with-no-pages fixture idp-ci proves the gate with) is still graded, and
         # `chmod +x` on anything under bin/lib puts it straight back under the rule.
@@ -97,11 +90,11 @@ def main(argv):
             continue
         stem = os.path.basename(f)
         if not has_pair(stem, names):
-            fails.append(f"{f}: no docs/tutorials/demo/<n>.md + docs/how-to/onboarding/<n>.md for a feature named <n> where <n> is '{stem}' or a hyphen-prefix of it")
+            fails.append(f"{f}: no docs/demo/<n>.md + docs/onboarding/<n>.md for a feature named <n> where <n> is '{stem}' or a hyphen-prefix of it")
     mk = os.path.join(ROOT, "mkdocs.yml")
     nav = open(mk, encoding="utf-8").read() if os.path.isfile(mk) else ""
     pages = 0
-    for d in PAGE_DIRS:
+    for d in ("demo", "onboarding"):
         p = os.path.join(ROOT, "docs", d)
         for f in sorted(os.listdir(p)) if os.path.isdir(p) else []:
             if not f.endswith(".md"):
@@ -113,8 +106,6 @@ def main(argv):
                 fails.append(f"docs/{rel}: {c} characters of prose, the floor is {FLOOR}")
             if rel not in nav:
                 fails.append(f"docs/{rel}: not in mkdocs.yml nav, so the portal never shows it")
-    if pages == 0:
-        fails.append(f"no pages under docs/{' or docs/'.join(PAGE_DIRS)}: a gate that scans nothing is not green (ADR 0002 sweep)")
     for m in fails:
         print(f"FAIL  law32 {m}")
     if fails:

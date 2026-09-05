@@ -1,80 +1,22 @@
 // crew#516 CP5, founder's locked spec (crew#66 5451926212, Phase 2), verbatim shape: "access is
 // structurally locked down by identity, allowing only the Kubernetes cluster tag (tag:k8s) to
-// communicate with the Mac host (tag:founder-mac)". ${FOUNDER_MAC_USER} and ${FOUNDER_TAILNET_USER}
-// are the two placeholders this file carries (LAW 46: no literal login in git); they are different
-// things -- the Unix account on the Mac, and who the founder is to Tailscale.
-// bin/idp-tailscale-policy substitutes both from clusters/oke/estate-config.yaml before PUTting the
-// ACL, the same substitution source Flux uses for the Kubernetes manifests, and refuses to PUT a
-// body with a surviving ${...}. Applied by CI (bin/idp-tailscale-policy apply, oke-check's apply
-// job), never by hand in the admin console — the no-toil rule this file exists to satisfy.
-//
-// crew#562 refines that spec, and the refinement is why the second acl rule below exists. The
-// founder then asked for iPhone -> Mac remote desk over this same tailnet (Moonlight to Sunshine,
-// plus an iOS Shortcut that SSHes `caffeinate -u -t 2`), and his acceptance line is "i see it
-// seanlessly nno firction". Applying THIS file as it stood would have made that impossible,
-// silently, and only after it had already been seen working:
-//
-//   - A policy file with an `acls` section is deny-by-default; the tailnet's default "allow all"
-//     rule is replaced, not extended (tailscale.com/kb/1018/acls: "Using a default deny policy
-//     prevents communication between devices without explicit access to each other").
-//   - "Applying a tag to a device removes any user-based authentication ... A device cannot
-//     simultaneously use tag-based and user-based identities" (tailscale.com/kb/1068/tags). The
-//     moment the Mac runs `--advertise-tags=tag:founder-mac` it stops being the founder's device
-//     and becomes a tagged one, so his phone reaches it only through a rule that names it.
-//
-// So with one rule (tag:k8s -> tag:founder-mac:22) his own iPhone matches nothing: Moonlight gets
-// no route to Sunshine and the Shortcut's SSH is refused. Nothing would have gone red — the ACL
-// PUT succeeds, the operator is happy, and the only symptom is the founder's stream not starting.
-// It has not bitten yet purely because the OAuth client the applier reads does not exist, so the
-// policy has never actually been PUT; the day someone creates it, the remote desk breaks.
-//
-// The `acls` rule and the `ssh` rule are both required and neither replaces the other:
-// "For a connection to be permitted, the tailnet policy file must contain rules permitting both
-// network access and SSH access" (tailscale.com/kb/1193/tailscale-ssh). `tailscale up --ssh` adds
-// the second gate; it does not remove the first. So `tag:founder-mac:22` in the acls dst below is
-// load-bearing even though an ssh rule names the same connection, and deleting it as redundant
-// refuses SSH while the ssh rule still sits there looking correct
-// (peer review, session 78caaa17 on idp#606; `test_tailscale_ssh_needs_the_acls_rule_as_well`).
-//
-// The lock-down the founder asked for is about which MACHINES may reach the Mac, and his own
-// devices are him — but the src is `group:founder`, the named login, not `autogroup:member`.
-// `autogroup:member` is every member of the tailnet and is dynamic: the first person added later
-// — a buyer's engineer in diligence, a contractor, a second account — would silently get Moonlight
-// streaming of the founder's desktop and SSH as ${FOUNDER_MAC_USER}, with nothing red and no PUT
-// failure. Membership is not identity, and his spec says identity (same review). The ports are
-// named rather than `*`: 22 for the Shortcut, and 47984-48010, the block Sunshine listens on (TCP
-// 47984/47989/47990/48010 and UDP 47998/47999/48000/48002/48010, docs.lizardbyte.dev network
-// configuration). The cluster still gets exactly port 22 and nothing else.
+// communicate with the Mac host (tag:founder-mac)". ${FOUNDER_MAC_USER} is the one placeholder
+// this file carries (LAW 46: no literal username in git); bin/idp-tailscale-policy substitutes it
+// from clusters/oke/estate-config.yaml before PUTting the ACL, the same substitution source Flux
+// uses for the Kubernetes manifests. Applied by CI (bin/idp-tailscale-policy apply, oke-check's
+// apply job), never by hand in the admin console — the no-toil rule this file exists to satisfy.
 {
-  "groups": {
-    // One member today. A second one is a deliberate edit to this file with a review on it, which
-    // is the entire point of naming the login instead of taking whoever is in the tailnet.
-    "group:founder": ["${FOUNDER_TAILNET_USER}"],
-  },
   "tagOwners": {
     "tag:k8s":          [],
     "tag:founder-mac":  [],
   },
   "acls": [
     {"action": "accept", "src": ["tag:k8s"], "dst": ["tag:founder-mac:22"]},
-    // crew#562: the founder's own phone and laptop reaching his tagged Mac. Without this the
-    // remote desk cannot work at all, because tagging took his user identity off the device.
-    // The :22 here is not redundant with the ssh rule below — see the header, kb/1193.
-    {"action": "accept", "src": ["group:founder"],
-     "dst":    ["tag:founder-mac:22", "tag:founder-mac:47984-48010"]},
   ],
   "ssh": [
     {
       "action": "check",
       "src":    ["tag:k8s"],
-      "dst":    ["tag:founder-mac"],
-      "users":  ["${FOUNDER_MAC_USER}"],
-    },
-    // crew#562, second half of the same trap. Once the founder's sitting runs `tailscale up --ssh`,
-    // a connection needs BOTH the acls rule above and this one; an acls rule alone is refused.
-    {
-      "action": "accept",
-      "src":    ["group:founder"],
       "dst":    ["tag:founder-mac"],
       "users":  ["${FOUNDER_MAC_USER}"],
     },

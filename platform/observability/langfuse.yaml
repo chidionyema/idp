@@ -43,41 +43,6 @@ spec:
     - secretKey: user_password
       remoteRef: { key: langfuse-init-user-password }
 ---
-# crew#503: the second login hop. Langfuse signs the founder in with its own OIDC client against
-# the estate identity domain (the app is platform/oci/identity main.tf `langfuse`, the id and
-# secret are written to the vault by tofu). AUTH_CUSTOM_ISSUER is the domain URL because that is
-# where IDCS serves /.well-known/openid-configuration (the `issuer` claim inside it is
-# identity.oraclecloud.com, which serves nothing -- measured 2026-08-29, HTTP 000). ID_TOKEN is
-# off so next-auth reads the profile from userinfo and never compares the two issuer strings.
-# Username+password is disabled: the front door is the only way in, and the LANGFUSE_INIT_*
-# user above is linked to the SSO identity by email (ALLOW_ACCOUNT_LINKING). The callback
-# /api/auth/callback/custom stays behind the ForwardAuth on purpose: the browser only reaches
-# Langfuse through the front door, so the cookie is already there when IDCS sends it back.
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: langfuse-sso
-spec:
-  refreshInterval: 1h
-  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
-  target:
-    name: langfuse-sso
-    template:
-      data:
-        AUTH_CUSTOM_CLIENT_ID: "{{ .client_id }}"
-        AUTH_CUSTOM_CLIENT_SECRET: "{{ .client_secret }}"
-        AUTH_CUSTOM_ISSUER: "${ESTATE_OIDC_DOMAIN_URL}"
-        AUTH_CUSTOM_NAME: "Bytesync estate"
-        AUTH_CUSTOM_SCOPE: "openid email profile"
-        AUTH_CUSTOM_ID_TOKEN: "false"
-        AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING: "true"
-        AUTH_DISABLE_USERNAME_PASSWORD: "true"
-  data:
-    - secretKey: client_id
-      remoteRef: { key: langfuse-sso-client-id }
-    - secretKey: client_secret
-      remoteRef: { key: langfuse-sso-client-secret }
----
 # The ClickHouse admin password. SigNoz reads it through valuesFrom (signoz.yaml); Langfuse reads
 # it as auth.existingSecret. The chart's default (27ff0399-…) never reaches the cluster.
 apiVersion: external-secrets.io/v1

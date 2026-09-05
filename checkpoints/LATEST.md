@@ -4,7 +4,7 @@
 
 Branch `feat/crew66-root-trust` (from crew459-portal-polish worktree): root-trust gate PR
 for crew#66 ruling 5453747447 / crew#580. Files: bin/idp-root-trust (+ test
-tests/test_incident_crew66_root_trust_register.py, 5 passed), docs/reference/policy/root-trust.md
+tests/test_incident_crew66_root_trust_register.py, 5 passed), docs/policy/root-trust.md
 (register, 33 entries, MEETS 11 / PARTIAL 1 / MISS 19), bin/idp-bootstrap-tailscale (written,
 not run end to end), security-policy row, idp-ci + verify-drill rows, stale comments fixed,
 vault-seed tailscale entry refused. Next: commit, push, bin/pr-report, PR (Tracked: crew#66,

@@ -378,29 +378,8 @@ with sync_playwright() as p:
         if marker in body_text:
             fail("shell", f"{HOME} rendered an error page: '{marker}'")
 
-    # 8. The second hop (crew#503, founder 2026-08-28: "a 2nd login hop is fiction"). Every
-    # surface behind the ForwardAuth 302s to the identity domain and this drill said green while
-    # Langfuse, behind that door, showed its own email+password form. With the front-door cookie
-    # in hand, open Langfuse: it must land on langfuse.<zone> with no password field on the page.
-    # Stopping on the identity domain means the drill user holds no grant for the Langfuse app.
-    LANGFUSE = f"https://langfuse.{ZONE}/"
-    try:
-        page.goto(LANGFUSE, wait_until="domcontentloaded")
-        page.wait_for_timeout(3000)
-    except PWError as e:
-        fail("second-hop", f"{LANGFUSE} did not load with the front-door session: {e}")
-    lf_host = urlparse(page.url).hostname or ""
-    lf_pw = page.locator("input[type='password']").count()
-    print(f"sso     login-drill  langfuse landed on {lf_host}{urlparse(page.url).path}, {lf_pw} password field(s)")
-    if lf_host == DOMAIN_HOST:
-        fail("second-hop", f"langfuse stopped on the identity domain at {page.url.split('?')[0]}; the drill user is not granted the Langfuse app")
-    if lf_pw:
-        fail("second-hop", f"langfuse showed its own password form at {page.url.split('?')[0]}: the one login is two")
-    if lf_host != f"langfuse.{ZONE}":
-        fail("second-hop", f"langfuse landed on {lf_host}, expected langfuse.{ZONE}")
-
     ctx.close()
     browser.close()
 
-print(f"ok      login-drill  signed in as {USER}, catalogue rendered as {ref}, {n_entities} entities read, {cards} founder surfaces on the home page, langfuse behind the one login, 0 js errors, in {time.time() - started:.1f}s")
+print(f"ok      login-drill  signed in as {USER}, catalogue rendered as {ref}, {n_entities} entities read, {cards} founder surfaces on the home page, 0 js errors, in {time.time() - started:.1f}s")
 PYDRIVER

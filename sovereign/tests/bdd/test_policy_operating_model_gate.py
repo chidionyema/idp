@@ -164,13 +164,10 @@ def _laws_bad(state: dict) -> None:
     state["fixtures"] += ["opmodel-no-laws.json", "opmodel-laws-sentence.json", "opmodel-ok.json"]
 
 
-@then("it exits 0 and prints rule=architecture_laws as a warning, never a refusal")
-def _laws_warned(state: dict) -> None:
-    # founder 2026-08-28 (crew#254 5456132029): paused -- the gate refused idp#625 twice on wording
-    for name in ("opmodel-no-laws.json", "opmodel-laws-sentence.json"):
-        r = state["runs"][name]
-        assert r.returncode == 0, name + " refused: " + r.stdout
-        assert "rule=architecture_laws" in r.stdout and "WARN" in r.stdout, (name, r.stdout)
+@then("it exits 1 with rule=architecture_laws")
+def _laws_refused(state: dict) -> None:
+    _refused_with(state, "opmodel-no-laws.json", "architecture_laws")
+    _refused_with(state, "opmodel-laws-sentence.json", "architecture_laws")
 
 
 @then("a body whose four law lines are commands, paths or n/a with a reason passes")

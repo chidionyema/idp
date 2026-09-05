@@ -21,48 +21,9 @@ import {
 } from '@backstage/core-components';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
-import { Chip, Grid, Typography, makeStyles } from '@material-ui/core';
+import { Grid, Typography, makeStyles } from '@material-ui/core';
 
 export const FOUNDER_SURFACE_TYPE = 'founder-surface';
-
-// crew#612 CP3: the page answers "what is down, what needs me" before anything
-// else, on a phone. Health comes from the catalogue: bin/catalog-gen probes the
-// first door of every founder surface and stamps `estate/health` ("ok 200" or
-// "FAIL ...") and `estate/health-checked-at`. A surface nobody has probed, or a
-// probe older than STALE_AFTER_MS, is never shown green (silent green is the
-// defect class): it says so in plain words.
-export const STALE_AFTER_MS = 3 * 60 * 60 * 1000;
-
-export type Health = 'down' | 'stale' | 'unchecked' | 'up';
-
-export const HEALTH_LABEL: Record<Health, string> = {
-  down: 'Down',
-  stale: 'Not checked lately',
-  unchecked: 'Not checked',
-  up: 'Up',
-};
-
-const HEALTH_ORDER: Record<Health, number> = { down: 0, stale: 1, unchecked: 2, up: 3 };
-
-export const healthOf = (entity: Entity, now: number = Date.now()): Health => {
-  const ann = entity.metadata.annotations ?? {};
-  const verdict = ann['estate/health'];
-  if (!verdict) return 'unchecked';
-  if (verdict.startsWith('FAIL')) return 'down';
-  const at = Date.parse(ann['estate/health-checked-at'] ?? '');
-  if (Number.isNaN(at) || now - at > STALE_AFTER_MS) return 'stale';
-  return 'up';
-};
-
-/** Down and stale first, then unchecked, then up; ties by title. */
-export const triage = (surfaces: Entity[], now: number = Date.now()): Entity[] =>
-  [...surfaces].sort((a, b) => {
-    const d = HEALTH_ORDER[healthOf(a, now)] - HEALTH_ORDER[healthOf(b, now)];
-    if (d !== 0) return d;
-    return (a.metadata.title ?? a.metadata.name).localeCompare(b.metadata.title ?? b.metadata.name);
-  });
-
-export const needsYou = (h: Health) => h === 'down' || h === 'stale';
 
 const useStyles = makeStyles(theme => ({
   card: {
@@ -88,22 +49,6 @@ const useStyles = makeStyles(theme => ({
     fontWeight: 700,
     lineHeight: 1,
   },
-  countRed: {
-    color: theme.palette.status.error,
-  },
-  pill: {
-    alignSelf: 'flex-start',
-    marginBottom: theme.spacing(1),
-    fontWeight: 600,
-    color: '#ffffff',
-  },
-  pillDown: { backgroundColor: theme.palette.status.error },
-  pillStale: { backgroundColor: theme.palette.status.warning },
-  pillUnchecked: { backgroundColor: theme.palette.status.pending },
-  pillUp: { backgroundColor: theme.palette.status.ok },
-  band: {
-    marginBottom: theme.spacing(3),
-  },
 }));
 
 type Loaded =
@@ -111,15 +56,11 @@ type Loaded =
   | { state: 'error'; error: Error }
   | { state: 'ready'; surfaces: Entity[]; totals: Record<string, number> };
 
-const pillClass = (classes: ReturnType<typeof useStyles>, h: Health) =>
-  ({ down: classes.pillDown, stale: classes.pillStale, unchecked: classes.pillUnchecked, up: classes.pillUp })[h];
-
-/** One card per founder surface: its state in one word, title, what it is, and its doors. */
-export const SurfaceCard = ({ entity, now }: { entity: Entity; now?: number }) => {
+/** One card per founder surface: title, what it is, and its doors. */
+export const SurfaceCard = ({ entity }: { entity: Entity }) => {
   const classes = useStyles();
   const title = entity.metadata.title ?? entity.metadata.name;
   const links = entity.metadata.links ?? [];
-  const health = healthOf(entity, now);
   const entityPath = `/catalog/${entity.metadata.namespace ?? 'default'}/${entity.kind.toLowerCase()}/${entity.metadata.name}`;
   return (
     <InfoCard
@@ -128,13 +69,6 @@ export const SurfaceCard = ({ entity, now }: { entity: Entity; now?: number }) =
       deepLink={{ title: 'Catalogue entry', link: entityPath }}
       data-testid={`surface-${entity.metadata.name}`}
     >
-      <Chip
-        size="small"
-        label={HEALTH_LABEL[health]}
-        className={`${classes.pill} ${pillClass(classes, health)}`}
-        data-testid={`health-${entity.metadata.name}`}
-        data-health={health}
-      />
       <Typography variant="body2" className={classes.description}>
         {entity.metadata.description}
       </Typography>
@@ -155,15 +89,13 @@ export const SurfaceCard = ({ entity, now }: { entity: Entity; now?: number }) =
   );
 };
 
-const Total = ({ label, value, to, red }: { label: string; value: number; to: string; red?: boolean }) => {
+const Total = ({ label, value, to }: { label: string; value: number; to: string }) => {
   const classes = useStyles();
   return (
     <Grid item xs={6} sm={3}>
       <InfoCard>
         <Link to={to} underline="none" color="inherit">
-          <Typography className={`${classes.count} ${red && value > 0 ? classes.countRed : ''}`} data-testid={`total-${label}`}>
-            {value}
-          </Typography>
+          <Typography className={classes.count}>{value}</Typography>
           <Typography variant="overline">{label}</Typography>
         </Link>
       </InfoCard>
@@ -172,7 +104,6 @@ const Total = ({ label, value, to, red }: { label: string; value: number; to: st
 };
 
 export const EstateHome = () => {
-  const classes = useStyles();
   const catalogApi = useApi(catalogApiRef);
   const config = useApi(configApiRef);
   const title = config.getOptionalString('app.title') ?? 'Estate';
@@ -196,7 +127,11 @@ export const EstateHome = () => {
         if (!cancelled) {
           setLoaded({
             state: 'ready',
-            surfaces: triage(surfaces.items),
+            surfaces: [...surfaces.items].sort((a, b) =>
+              (a.metadata.title ?? a.metadata.name).localeCompare(
+                b.metadata.title ?? b.metadata.name,
+              ),
+            ),
             totals,
           });
         }
@@ -211,12 +146,9 @@ export const EstateHome = () => {
 
   return (
     <Page themeId="home">
-      <Header title={title} subtitle="What is up, what is down, and what needs you">
+      <Header title={title} subtitle="Every door into the estate, read from the catalogue">
         {loaded.state === 'ready' && (
-          <HeaderLabel
-            label="Needs you"
-            value={String(loaded.surfaces.filter(e => needsYou(healthOf(e))).length)}
-          />
+          <HeaderLabel label="Surfaces" value={String(loaded.surfaces.length)} />
         )}
       </Header>
       <Content>
@@ -225,49 +157,22 @@ export const EstateHome = () => {
         {loaded.state === 'ready' && (
           <>
             <Grid container spacing={2} style={{ marginBottom: 16 }}>
-              <Total
-                label="Needs you"
-                value={loaded.surfaces.filter(e => needsYou(healthOf(e))).length}
-                to="/catalog?filters[kind]=component&filters[type]=founder-surface&filters[tags]=unhealthy"
-                red
-              />
-              <Total label="Doors" value={loaded.surfaces.length} to="/catalog?filters[kind]=component&filters[type]=founder-surface" />
-              <Total label="Services" value={loaded.totals.Component ?? 0} to="/catalog?filters[kind]=component" />
-              <Total label="Things they run on" value={loaded.totals.Resource ?? 0} to="/catalog?filters[kind]=resource" />
+              <Total label="Components" value={loaded.totals.Component ?? 0} to="/catalog?filters[kind]=component" />
+              <Total label="Systems" value={loaded.totals.System ?? 0} to="/catalog?filters[kind]=system" />
+              <Total label="Resources" value={loaded.totals.Resource ?? 0} to="/catalog?filters[kind]=resource" />
+              <Total label="APIs" value={loaded.totals.API ?? 0} to="/api-docs" />
             </Grid>
+            <ContentHeader title="Founder surfaces" />
             {loaded.surfaces.length === 0 ? (
               <Typography data-testid="no-surfaces">
                 The catalogue holds no {FOUNDER_SURFACE_TYPE} entity yet.
               </Typography>
             ) : (
-              <>
-                {(() => {
-                  const attention = loaded.surfaces.filter(e => needsYou(healthOf(e)));
-                  const rest = loaded.surfaces.filter(e => !needsYou(healthOf(e)));
-                  return (
-                    <>
-                      <section className={classes.band} data-testid="band-needs-you">
-                        <ContentHeader title={attention.length === 0 ? 'Nothing needs you' : `Needs you (${attention.length})`} />
-                        {attention.length > 0 && (
-                          <ItemCardGrid>
-                            {attention.map(entity => (
-                              <SurfaceCard key={entity.metadata.name} entity={entity} />
-                            ))}
-                          </ItemCardGrid>
-                        )}
-                      </section>
-                      <section className={classes.band} data-testid="band-doors">
-                        <ContentHeader title="Every door" />
-                        <ItemCardGrid>
-                          {rest.map(entity => (
-                            <SurfaceCard key={entity.metadata.name} entity={entity} />
-                          ))}
-                        </ItemCardGrid>
-                      </section>
-                    </>
-                  );
-                })()}
-              </>
+              <ItemCardGrid>
+                {loaded.surfaces.map(entity => (
+                  <SurfaceCard key={entity.metadata.name} entity={entity} />
+                ))}
+              </ItemCardGrid>
             )}
           </>
         )}

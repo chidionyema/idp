@@ -1,44 +1,58 @@
 #!/usr/bin/env bash
-# Root trust for Tailscale, one command, no hands after the seed (crew#66; docs/reference/policy/root-trust.md).
-#   bin/idp-bootstrap-tailscale              mint the operator OAuth client through the API and write vault entry `tailscale-operator`
-#   bin/idp-bootstrap-tailscale --check      exit 0 when the vault entry still exchanges for a token, 1 when it does not
-#   bin/idp-bootstrap-tailscale --rotate     mint a new client even though the vault entry already works, and delete the old one
-#   bin/idp-bootstrap-tailscale --seed       the one human step, once: read the seed client from a hidden prompt into vault `tailscale-seed`
+# Root trust for Tailscale, one command, no hands (crew#66, founder 2026-08-28: "The founder will
+# never copy-paste a secret or click through web UI settings"; docs/policy/root-trust.md).
+#   bin/idp-bootstrap-tailscale              mint the estate's OAuth client and write the vault entry `tailscale-operator`
+#   bin/idp-bootstrap-tailscale --preflight  prove the vault, the browser driver and the console reachability, write nothing
+#   bin/idp-bootstrap-tailscale --rotate     mint a new client even though the vault entry already works
 #
-# What the provider allows, measured 2026-08-28 from the vendor's own SDK
-# (github.com/tailscale/tailscale-client-go-v2 keys.go, KeysResource.CreateOAuthClient):
-#   POST /api/v2/tailnet/-/keys  {"keyType":"client","scopes":[...],"tags":[...],"description":...}
-# creates an OAuth client and answers {"id":..,"key":<secret>,..}; "keyType":"federated" creates a
-# federated identity the same way. The earlier header of this file said no endpoint creates one and
-# drove the admin console with a browser instead; that was measured from the console, not the API,
-# and was wrong (crew#590 sheet, docs/vendors/tailscale.md). The bootstrap problem is real all the
-# same: creating a credential needs a credential. The seed is ONE OAuth client, scope `oauth_keys`
-# only, made once by a person in the console and never used for anything but minting. OAuth clients
-# do not expire (tailscale.com/kb/1215), so --check is a drift check, not a renewal.
-# Scopes minted: auth_keys (tag:k8s) + devices:core, the two the founder named, and policy_file, which
-# bin/idp-tailscale-policy exchanges this same client for. Nothing is printed but key NAMES and ids.
+# What the provider allows, measured 2026-08-28 from tailscale.com/docs/reference/trust-credentials:
+# the `oauth_keys` scope grants only GET/DELETE /api/v2/tailnet/:tailnet/keys/:keyID; no scope and no
+# endpoint creates an OAuth client, an access token or a federated identity. Those are born only in
+# the admin console's Trust credentials page, behind the founder's SSO. So this script drives that
+# page itself (Playwright, a persistent browser profile under ~/.estate): the founder's whole part is
+# the SSO login when the profile has no live session, and nothing else. The client ID and secret are
+# read by the driver, exchanged for an access token at https://api.tailscale.com/api/v2/oauth/token
+# (proof the credential works and carries the scopes asked for), written to the vault through
+# bin/idp-vault-put in-process, and the browser closes. Nothing is printed but key NAMES.
+# Rejected: POST /api/v2/tailnet/-/oauth-apps — creates an OAuth *app* (authorization-code flow, scope
+# auth_keys:create:once), not a client-credentials client, and itself needs an admin access token.
+# Rejected: SEED_TAILSCALE_OAUTH_CLIENT_* repository secrets set by hand (the retired path).
+# Scopes: auth_keys (tag:k8s) + devices:core, the two the founder named, and policy_file, which
+# bin/idp-tailscale-policy already exchanges this same client for.
 set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 SECRET=tailscale-operator
-SEED=tailscale-seed
+CONSOLE=${TAILSCALE_CONSOLE_URL:-https://login.tailscale.com/admin/settings/oauth}
 API=${TAILSCALE_API_URL:-https://api.tailscale.com}
 TAG=${TAILSCALE_K8S_TAG:-tag:k8s}
-SCOPES='["auth_keys","devices:core","policy_file","users:read"]'   # users:read: bin/idp-tailscale-policy reads the tailnet owner for group:founder (crew#562)
-CONSOLE=${TAILSCALE_CONSOLE_URL:-https://console.tailscale.com/admin/settings/trust-credentials}
-VAULT_PUT=${IDP_VAULT_PUT:-$IDP/bin/idp-vault-put}   # tests point these at shims; no network, no vault
-CLOUD=${IDP_CLOUD:-$IDP/bin/idp-cloud}
-WHOAMI=${IDP_OCI_WHOAMI:-$IDP/bin/idp-oci-whoami}
+HOME_DIR=${ESTATE_HOME:-$HOME/.estate}
+PROFILE="$HOME_DIR/tailscale-browser"   # the founder's SSO session, this script's only state
+VENV="$HOME_DIR/bootstrap-venv"          # playwright lives here, installed once by this script
 MODE=${1:-mint}
-case "$MODE" in mint|--check|--rotate|--seed) ;; *) sed -n 2,6p "$0"; exit 2;; esac
+case "$MODE" in mint|--preflight|--rotate) ;; *) sed -n 2,6p "$0"; exit 2;; esac
 
 say()  { printf '%-7s %-20s %s\n' "$1" "$2" "$3"; }
 fail() { say FAIL "$1" "$2"; exit 1; }
 bl()   { say BLIND "$1" "$2"; exit 2; }
-for t in curl jq; do command -v "$t" >/dev/null || bl deps "$t missing"; done
-umask 077; P=$(mktemp -d); trap 'rm -rf "$P"' EXIT
 
-# 1. the vault must be reachable before any one-time material exists (crew#503 lesson in idp-vault-put).
-if ! OCI_CLI_PROFILE=$("$WHOAMI" 2>/dev/null); then
+for t in python3 curl jq; do command -v "$t" >/dev/null || bl deps "$t missing"; done
+mkdir -p "$HOME_DIR"; chmod 700 "$HOME_DIR"
+
+# 0. the browser driver, installed once into the estate's own venv (never the system python)
+if ! "$VENV/bin/python" -c 'import playwright' >/dev/null 2>&1; then
+  say "" driver "installing playwright into $VENV (once)"
+  python3 -m venv "$VENV" >/dev/null
+  "$VENV/bin/pip" install -q playwright >/dev/null
+  "$VENV/bin/playwright" install chromium >/dev/null
+fi
+PY="$VENV/bin/python"
+say ok driver "playwright $("$PY" -c 'import playwright,importlib.metadata as m;print(m.version("playwright"))')"
+
+# 1. the vault must be writable before any one-time material exists (crew#503 lesson in idp-vault-put).
+# The vault sits behind the founder's OCI session; when none is live, the same browser SSO that
+# bin/idp-oci-bootstrap uses opens once (the estate's second and last SSO consent of this command).
+if ! OCI_CLI_PROFILE=$("$IDP/bin/idp-oci-whoami" 2>/dev/null); then
+  # region and tenancy name come from the sops vault beside the main checkout, the way bin/idp-oci-bootstrap reads them (LAW 46)
   MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
   SV="${ESTATE_SECRETS:-$(dirname "$MAIN")/estate-secrets}/secrets/${OCI_ENV:-dev}"
   export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
@@ -46,70 +60,99 @@ if ! OCI_CLI_PROFILE=$("$WHOAMI" 2>/dev/null); then
   [ -n "$region" ] && [ -n "$tenancy" ] || bl oci "no live session and the sops vault at $SV has no OCI_REGION / OCI_TENANCY_NAME to sign in with"
   say "" oci "no live session: the browser opens once for OCI SSO (token lives one hour)"
   oci session authenticate --region "$region" --tenancy-name "$tenancy" --profile-name estate-bootstrap >/dev/null || bl oci "session sign-in did not complete"
-  OCI_CLI_PROFILE=$("$WHOAMI") || bl oci "signed in, but no session profile is live"
+  OCI_CLI_PROFILE=$("$IDP/bin/idp-oci-whoami") || bl oci "signed in, but no session profile is live"
 fi
 export OCI_CLI_PROFILE OCI_CLI_AUTH=security_token
-VAULT_PUT_PREFLIGHT=1 "$VAULT_PUT" "$SECRET" --preflight | sed 's/^/        /' || bl vault "not reachable as $OCI_CLI_PROFILE"
+VAULT_PUT_PREFLIGHT=1 "$IDP/bin/idp-vault-put" "$SECRET" --preflight | sed 's/^/        /' || bl vault "not reachable as $OCI_CLI_PROFILE"
 
-token_for() { # <client_id> <client_secret> -> access-token JSON on stdout; the pair reaches curl on stdin, never argv
-  printf 'user = "%s:%s"\n' "$1" "$2" | curl -sS -K - "$API/api/v2/oauth/token" -d grant_type=client_credentials
+# 2. does the entry already work? (idempotent: a working client is kept unless --rotate)
+token_for() { # <client_id> <client_secret> -> access-token JSON on stdout; never echoes inputs
+  curl -sS -u "$1:$2" "$API/api/v2/oauth/token" -d grant_type=client_credentials
 }
-vault_pair() { # <entry> -> sets cid/csec from the vault, or returns 1
-  local cur; cur=$("$CLOUD" secret get "$1" 2>/dev/null) && [ -n "$cur" ] || return 1
-  cid=$(jq -r '.client_id // empty' <<<"$cur"); csec=$(jq -r '.client_secret // empty' <<<"$cur")
-  [ -n "$cid" ] && [ -n "$csec" ]
-}
-vault_write() { # <entry> <client_id> <client_secret>, through a file the vault helper reads; never an argv
-  printf 'V_client_id=%s\nV_client_secret=%s\n' "$2" "$3" > "$P/env"
-  ESTATE_ENV_FILE="$P/env" "$VAULT_PUT" "$1" client_id=V_client_id client_secret=V_client_secret
-}
+if [ "$MODE" != --rotate ]; then
+  if current=$("$IDP/bin/idp-cloud" secret get "$SECRET" 2>/dev/null) && [ -n "$current" ]; then
+    cid=$(jq -r '.client_id // empty' <<<"$current"); csec=$(jq -r '.client_secret // empty' <<<"$current")
+    if [ -n "$cid" ] && [ -n "$csec" ] && token_for "$cid" "$csec" | jq -e '.access_token' >/dev/null 2>&1; then
+      say ok "$SECRET" "vault entry exchanges for an access token; kept (--rotate to mint anew)"
+      exit 0
+    fi
+    say "" "$SECRET" "vault entry present but does not exchange for a token; minting a new client"
+  fi
+fi
 
-# --seed: the one human step. The seed client is made in the console with exactly one scope,
-# `oauth_keys` (write), and pasted here into a hidden prompt; it is never printed and never used
-# for anything but minting. FOUNDER ACTION wording per LAW 47.
-if [ "$MODE" = --seed ]; then
-  say "" seed "FOUNDER ACTION: at $CONSOLE/add choose OAuth, description estateseed, tab Keys: tick OAuth keys WRITE, nothing else, Generate credential; then paste below"
-  read -r -p 'seed client id: ' cid; read -r -s -p 'seed client secret (hidden): ' csec; echo
-  token_for "$cid" "$csec" | jq -e '.access_token' >/dev/null || fail seed "the pasted seed does not exchange for a token"
-  vault_write "$SEED" "$cid" "$csec"; unset cid csec
-  say ok "$SEED" "written; run $0 to mint the operator client"
+
+if [ "$MODE" = --preflight ]; then
+  code=$(curl -sS -o /dev/null -w '%{http_code}' "$CONSOLE") || code=curl-failed
+  case "$code" in 200|302|303) say ok console "$CONSOLE answers $code";; *) fail console "$CONSOLE answers $code";; esac
+  say ok preflight "vault, driver and console reachable; nothing written"
   exit 0
 fi
 
-# 2. does the operator entry already work? (idempotent: a working client is kept unless --rotate)
-old_id=""
-if vault_pair "$SECRET"; then
-  if token_for "$cid" "$csec" | jq -e '.access_token' >/dev/null 2>&1; then
-    [ "$MODE" = --check ] && { say ok "$SECRET" "vault entry exchanges for an access token"; exit 0; }
-    [ "$MODE" = mint ] && { say ok "$SECRET" "vault entry exchanges for an access token; kept (--rotate to mint anew)"; exit 0; }
-    old_id=$cid
-  else
-    [ "$MODE" = --check ] && fail "$SECRET" "vault entry present but does not exchange for a token; run $0 to mint"
-    say "" "$SECRET" "vault entry present but does not exchange for a token; minting a new client"
-  fi
-else
-  [ "$MODE" = --check ] && fail "$SECRET" "no vault entry; run $0 to mint"
-fi
+# 4. drive the Trust credentials page. Output of the driver is exactly two lines on fd 3: client_id, client_secret.
+P=$(mktemp -d); trap 'rm -rf "$P"' EXIT; umask 077
+DESC="estate-operator $(date -u +%Y-%m-%dT%H:%MZ)"
+say "" console "opening $CONSOLE in the estate browser profile; if Tailscale asks you to sign in, complete SSO — that is the only hand"
+"$PY" - "$CONSOLE" "$PROFILE" "$DESC" "$TAG" "$P/cred" <<'PY'
+import re, sys, time
+from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+console, profile, desc, tag, out = sys.argv[1:6]
+SSO_WAIT_S = 300
+def step(name): print(f"        step    {name}", flush=True)
+with sync_playwright() as p:
+    ctx = p.chromium.launch_persistent_context(profile, headless=False, viewport={"width": 1280, "height": 900})
+    page = ctx.pages[0] if ctx.pages else ctx.new_page()
+    page.goto(console, wait_until="domcontentloaded")
+    step("console opened")
+    # SSO: the page is ours once the Trust credentials heading renders; until then the founder is signing in.
+    deadline = time.time() + SSO_WAIT_S
+    heading = page.get_by_role("heading", name=re.compile(r"trust credentials|oauth clients", re.I))
+    while time.time() < deadline:
+        if heading.count() and heading.first.is_visible():
+            break
+        time.sleep(2)
+    else:
+        sys.exit("FAIL    console   no Trust credentials page after 5 minutes; SSO not completed")
+    step("signed in")
+    page.get_by_role("button", name=re.compile(r"generate oauth client", re.I)).first.click()
+    step("generate dialog")
+    dialog = page.get_by_role("dialog").first
+    dialog.wait_for(state="visible", timeout=15000)
+    desc_box = dialog.get_by_label(re.compile(r"description", re.I)).first
+    desc_box.fill(desc)
+    # every scope row carries a Write checkbox; tick the three we need. Write implies read.
+    for scope in ("auth_keys", "devices:core", "policy_file"):
+        row = dialog.locator("tr, li, div", has_text=re.compile(rf"^\s*{re.escape(scope)}\b", re.I)).filter(
+            has=dialog.get_by_role("checkbox")).first
+        box = row.get_by_role("checkbox", name=re.compile(r"write", re.I)).first
+        if not box.count():
+            box = row.get_by_role("checkbox").last
+        box.check()
+        step(f"scope {scope} write")
+    # auth_keys asks for tags; the tag picker appears once the scope is ticked.
+    tags = dialog.get_by_placeholder(re.compile(r"tag", re.I)).or_(dialog.get_by_label(re.compile(r"tags?", re.I))).first
+    tags.click(); tags.fill(tag); tags.press("Enter")
+    step(f"tag {tag}")
+    dialog.get_by_role("button", name=re.compile(r"^generate( client)?$", re.I)).first.click()
+    step("generated")
+    # The secret is shown exactly once: read it from the field/code block Tailscale renders, never screenshot it.
+    result = page.get_by_role("dialog").first
+    result.wait_for(state="visible", timeout=15000)
+    text = result.inner_text()
+    cid = re.search(r"\b(k[A-Za-z0-9]{10,})\b", text)
+    sec = re.search(r"\b(tskey-client-[A-Za-z0-9-]+)\b", text)
+    if not (cid and sec):
+        sys.exit("FAIL    console   generated, but the client id / secret were not found on the result dialog (selector drift); revoke the client named " + desc + " and rerun after the driver is fixed")
+    with open(out, "w") as f:
+        f.write(cid.group(1) + "\n" + sec.group(1) + "\n")
+    done = result.get_by_role("button", name=re.compile(r"done|close", re.I))
+    if done.count(): done.first.click()
+    ctx.close()
+PY
+cid=$(sed -n 1p "$P/cred"); csec=$(sed -n 2p "$P/cred")
+[ -n "$cid" ] && [ -n "$csec" ] || fail console "driver produced no credential"
 
-# 3. the seed, and an access token from it
-vault_pair "$SEED" || fail seed "no vault entry $SEED; the one human step is: $0 --seed"
-seed_json=$(token_for "$cid" "$csec"); unset cid csec
-seed_tok=$(jq -r '.access_token // empty' <<<"$seed_json")
-[ -n "$seed_tok" ] || fail seed "vault entry $SEED does not exchange for a token; make a new seed with $0 --seed"
-seed_scopes=$(jq -r '.scope // ""' <<<"$seed_json")
-case "$seed_scopes" in ""|oauth_keys|oauth_keys:*) ;; *) fail seed "the seed carries more than oauth_keys ($seed_scopes); a seed is one scope, make a new one with $0 --seed";; esac
-say ok seed "exchanges for an access token; scopes: ${seed_scopes:-not reported by the token endpoint}"
-
-# 4. mint the operator client through the API (the SDK's CreateOAuthClient, verbatim body)
-desc="estate-operator-$(date -u +%Y%m%dT%H%MZ)"
-body=$(jq -cn --argjson s "$SCOPES" --arg t "$TAG" --arg d "$desc" '{keyType:"client",scopes:$s,tags:[$t],description:$d}')
-resp=$(curl -sS -H "Authorization: Bearer $seed_tok" -H 'Content-Type: application/json' -d "$body" "$API/api/v2/tailnet/-/keys")
-new_id=$(jq -r '.id // empty' <<<"$resp"); new_sec=$(jq -r '.key // empty' <<<"$resp")
-[ -n "$new_id" ] && [ -n "$new_sec" ] || fail mint "POST /keys keyType=client answered no id/key: $(jq -r '.message // .error // "no message"' <<<"$resp" | cut -c1-120)"
-say ok mint "OAuth client $new_id ($desc) scopes $SCOPES tag $TAG"
-
-# 5. prove the credential before anything is stored (LAW 15: the API said so, the token endpoint must agree)
-tok=$(token_for "$new_id" "$new_sec") || fail verify "token exchange did not answer"
+# 5. prove the credential before anything is stored (LAW 15: the console said so, the API must agree)
+tok=$(token_for "$cid" "$csec") || fail verify "token exchange did not answer"
 jq -e '.access_token' <<<"$tok" >/dev/null || fail verify "the minted client does not exchange for a token: $(jq -r '.message // .error // "no message"' <<<"$tok")"
 scopes=$(jq -r '.scope // ""' <<<"$tok")
 for s in auth_keys devices:core policy_file; do
@@ -117,10 +160,8 @@ for s in auth_keys devices:core policy_file; do
 done
 say ok verify "client exchanges for an access token; scopes: ${scopes:-not reported by the token endpoint}"
 
-# 6. vault, then retire the client this one replaces (the operator reads the vault within its 1h refresh)
-vault_write "$SECRET" "$new_id" "$new_sec"; unset new_sec tok
+# 6. the vault, in-process, key names only (the same path bin/idp-github-app uses)
+printf 'V_client_id=%s\nV_client_secret=%s\n' "$cid" "$csec" > "$P/env"
+ESTATE_ENV_FILE="$P/env" "$IDP/bin/idp-vault-put" "$SECRET" client_id=V_client_id client_secret=V_client_secret
+unset cid csec tok
 say ok "$SECRET" "written; ExternalSecret tailscale/tailscale-operator-secret picks it up within its 1h refresh (flux reconcile kustomization tailscale to hurry it)"
-if [ -n "$old_id" ] && [ "$old_id" != "$new_id" ]; then
-  code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE -H "Authorization: Bearer $seed_tok" "$API/api/v2/tailnet/-/keys/$old_id" || echo curl-failed)
-  case "$code" in 200|204) say ok rotate "old client $old_id deleted";; *) fail rotate "old client $old_id NOT deleted (DELETE answered $code); the superseded credential is still live, delete it in the console";; esac
-fi

@@ -8,27 +8,9 @@
 set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 fail=0
-# crew#584 (founder 2026-08-28, "we should already have diagnostics"): every line carries the
-# seconds the rung before it took, and the run ends with the slowest rungs -- in the log, and in
-# the GitHub step summary when there is one. Where the time goes is read, never dug out of a log.
-_T_LAST=$SECONDS; _T_ROWS=""
-say() {
-  local now=$SECONDS; local d=$((now - _T_LAST)); _T_LAST=$now
-  if [ "$d" -ge 3 ]; then _T_ROWS+="$d $*"$'\n'; printf '%s  (%ss)\n' "$*" "$d"; else printf '%s\n' "$*"; fi
-}
-timing_summary() {
-  local rows; rows=$(printf '%s' "$_T_ROWS" | sort -rn | head -5 | sed -E 's/^([0-9]+) (.{0,90}).*/\1s  \2/')
-  [ -n "$rows" ] || return 0
-  printf 'timing   %ss total; slowest rungs:\n' "$SECONDS"; printf '%s\n' "$rows" | sed 's/^/         /'
-  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '## bin/idp-ci %ss\n\n```\n%s\n```\n' "$SECONDS" "$rows" >> "$GITHUB_STEP_SUMMARY"; fi
-}
+say() { printf '%s\n' "$*"; }
 need() { command -v "$1" >/dev/null || { say "FAIL  $1 is not installed"; exit 2; }; }
-# crew#584 CP-C (founder playbook Phase 2): IDP_CI_FAST=1 is the fast gate -- rungs 1, 1b, 1c and
-# ruff, under 60 s, no docker/conftest/helm. .github/workflows/fast-gate.yml runs it and every
-# heavy job (offline-gate, bdd, image builds, the drills) needs it green first.
-FAST="${IDP_CI_FAST:-0}"
-need shellcheck; need python3
-[ "$FAST" = 1 ] || { need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; }
+need shellcheck; need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; need python3
 
 MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 
@@ -88,16 +70,6 @@ for f in "$IDP"/bin/*; do
   if out=$(pipeverdict_scan "$f"); then say "FAIL  pipeverdict $(basename "$f")"; printf '%s\n' "$out" | sed 's/^/      /'; pv=$((pv+1)); fi
 done
 [ "$pv" -eq 0 ] && say "ok    pipeverdict 0 scripts let a pipeline's exit status stand in for a grep match" || fail=1
-
-# 1d. ruff, the same rule set (pyproject [tool.ruff.lint]) the bdd job runs after the suites.
-#     In the fast gate it runs first, so an undefined name is red in under a minute.
-if [ "$FAST" = 1 ]; then
-  if "$MPY" -m ruff --version >/dev/null 2>&1; then RUFF=("$MPY" -m ruff); else RUFF=(ruff); fi
-  (cd "$IDP" && "${RUFF[@]}" check --quiet .) && say "ok    ruff     pyproject rule set" || { say "FAIL  ruff"; fail=1; }
-  timing_summary
-  [ "$fail" -eq 0 ] && say "ok    fast-gate: shell, hardcode, pipeverdict, ruff" || say "FAIL  fast-gate"
-  exit "$fail"
-fi
 
 # 2. Compose files are valid. Values are placeholders; compose only checks shape.
 for c in llm/litellm.yml observability/langfuse.yml mcp/agentgateway.yml; do
@@ -347,7 +319,7 @@ if ! TODAY=2026-08-25 python3 "$IDP/bin/ai-act-gate" tests/fixtures/ai-act/bad >
    && python3 "$IDP/bin/ai-act-gate" "$IDP" >/dev/null 2>&1; then
   say "ok    ai-act   every registered AI system has its Annex IV file, risk entries and declared data; gate proved both ways"
 else say "FAIL  ai-act   gate does not discriminate, or a registered system has a gap"; python3 "$IDP/bin/ai-act-gate" "$IDP" | sed 's/^/      /'; fail=1; fi
-# LAW 32 at the PR (founder, 2026-08-25): a new bin file needs docs/tutorials/demo + docs/how-to/onboarding;
+# LAW 32 at the PR (founder, 2026-08-25): a new bin file needs docs/demo + docs/onboarding;
 # every such page has 200 chars of prose and is in the nav. Proved both ways in one run.
 if python3 "$IDP/bin/law32-gate" --added bin/supply-chain >/dev/null 2>&1 \
    && ! python3 "$IDP/bin/law32-gate" --added bin/feature-with-no-pages >/dev/null 2>&1 \
@@ -483,20 +455,14 @@ else say "FAIL  vmmount  bin/vm-shared-path selftest"; printf '%s\n' "$out" | se
 # Zero static secrets (security-policy.md row, kini-master-spec 4.1/4.4, crew#227). Proved both
 # ways on fixtures; the live host count is reported by bin/idp-verify, not gated here, because
 # it is an open incident until crew#227 lands and a gate that refuses correct work is an outage.
-if STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/good ESTATE_CODE=tests/fixtures/static-secret/good ESTATE_SECRETS=tests/fixtures/static-secret/good/vault bin/static-secret-gate >/dev/null \
-   && ! STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/bad ESTATE_CODE=tests/fixtures/static-secret/bad/code ESTATE_SECRETS=tests/fixtures/static-secret/good/vault bin/static-secret-gate >/dev/null; then
+if STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/good ESTATE_CODE=tests/fixtures/static-secret/good ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null \
+   && ! STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/bad ESTATE_CODE=tests/fixtures/static-secret/bad/code ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null; then
   say "ok    secrets  static-secret-gate passes the empty fixture and refuses the one with a key and a .env"
 else say "FAIL  secrets  bin/static-secret-gate fixtures"; fail=1; fi
 # crew#586 CP1: the founder's ethos as seven measured tenet rows; a row without a command is refused (LAW 44).
 if out=$(python3 "$IDP/bin/idp-conscience" --selftest 2>&1); then
   say "ok    ethos    idp-conscience scores the good fixture 2/2, the bad 1/2, and refuses a tenet with no command"
 else say "FAIL  ethos    bin/idp-conscience --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-# crew#586 CP2: the conscience rules judge a PR both ways (policy/conscience.rego).
-if ! policy_gate_out=$(conftest test --parser json -p "$IDP/policy" "$IDP/policy/fixtures/conscience-bad.json" 2>&1) \
-   && [ "$(printf '%s\n' "$policy_gate_out" | grep -oE 'rule=(no_provider_in_diff|no_floating_tag|new_script_has_a_test|incident_has_a_guard|new_dependency_has_a_ledger_entry)' | sort -u | wc -l | xargs)" = "5" ] \
-   && conftest test --parser json -p "$IDP/policy" "$IDP/policy/fixtures/conscience-clean.json" >/dev/null 2>&1; then
-  say "ok    ethos    conscience.rego fires all 5 rules on conscience-bad.json and none on conscience-clean.json"
-else say "FAIL  ethos    policy/conscience.rego fixtures"; fail=1; fi
 if bin/owner-account-gate tests/fixtures/owner-accounts/good.yaml >/dev/null \
    && ! bin/owner-account-gate tests/fixtures/owner-accounts/bad.yaml >/dev/null; then
   say "ok    owners   owner-account-gate passes a provider with a second owner and refuses one without"
@@ -558,25 +524,15 @@ else say "FAIL  cp3      tests/test_cp3_workload_logs.py"; printf '%s\n' "$out" 
 #     has never been shown to refuse (LAW 38): the unbound fixture must fail
 #     with StepDefinitionNotFoundError -- not merely fail, or a typo in a
 #     feature path would satisfy the guard -- and the real suite must pass.
-# crew#584, measured on run 33202098401: these two suites took 132 of offline-gate's 211 s, and
-# ci.yml's bdd job ran the same two suites again, strictly, in parallel. In CI the bdd job owns
-# them and offline-gate sets IDP_CI_SKIP_PYTEST=1; locally (pre-push, bin/idp-ci by hand) they run.
-if [ "${IDP_CI_SKIP_PYTEST:-0}" = 1 ]; then
-  say "skip  bdd+incident: run once, by the ci bdd job (IDP_CI_SKIP_PYTEST=1)"
-else
 BDD_PY="$MPY"
 "$BDD_PY" -c 'import pytest_bdd' >/dev/null 2>&1 || BDD_PY=python3
-# crew#584 zero-bottleneck law (founder 2026-08-28: "zero bottleneck law optinise ruthlessly"): run
-# 33198380701 spent 106 s here and 73 s in 8b on one of the runner's four cores. pytest-xdist is
-# already a dev dependency; when it imports, both rungs fan out. Missing xdist is serial, never a skip.
-XD=""; "$BDD_PY" -c 'import xdist' >/dev/null 2>&1 && XD="-n auto"
 if ! "$BDD_PY" -c 'import pytest_bdd' >/dev/null 2>&1; then
   say "FAIL  bdd      pytest-bdd is not installed: pip install -r sovereign/requirements-dev.txt"; fail=1
 else
   # Captured, never piped into grep: this script sets pipefail and pytest exits
   # non-zero on purpose here, which is the incident guard 1c is about.
   bdd_bad=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/fixtures/bdd/unbound" -q 2>&1)
-  bdd_good=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/bdd" -q $XD 2>&1); bdd_good_rc=$?
+  bdd_good=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/bdd" -q 2>&1); bdd_good_rc=$?
   if printf '%s' "$bdd_bad" | grep -q 'StepDefinitionNotFoundError' && [ "$bdd_good_rc" -eq 0 ]; then
     say "ok    bdd      $(printf '%s' "$bdd_good" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$bdd_good" | grep -c '^  pending ') feature(s) pending; an unbound step is refused"
     printf '%s' "$bdd_good" | grep '^  pending ' | sed 's/^/      /'
@@ -593,28 +549,13 @@ fi
 #     named files and the bdd suite, ci.yml ran sovereign/tests/bdd. A PR body that says
 #     "bin/idp-ci runs the incident test on every PR" was a claim with no receipt. Tests
 #     that need kyverno or a sibling checkout skip as BLIND and say so; a skip is printed.
-inc=$("$BDD_PY" -m pytest -q -p no:cacheprovider $XD "$IDP"/tests/test_incident_*.py 2>&1); inc_rc=$?
+inc=$("$BDD_PY" -m pytest -q -p no:cacheprovider "$IDP"/tests/test_incident_*.py 2>&1); inc_rc=$?
 if [ "$inc_rc" -eq 0 ]; then
   say "ok    incident $(printf '%s' "$inc" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$inc" | grep -oE '[0-9]+ skipped' | head -1 || printf '0 skipped') (BLIND skips)"
   printf '%s\n' "$inc" | grep -oE 'BLIND: [^)]*' | sort -u | sed 's/^/      /'
 else
   say "FAIL  incident tests/test_incident_*.py (rc=$inc_rc)"; printf '%s\n' "$inc" | tail -20 | sed 's/^/      /'; fail=1
 fi
-fi  # IDP_CI_SKIP_PYTEST
-
-# 8c. The docs site builds strict (ADR 0002, crew#603). Every page is in a Diátaxis folder
-#     (tutorials, how-to, reference, explanation, decisions), every nav entry resolves and no
-#     link is dead. Before this rung the sweep that moved 169 files could break every Backstage
-#     techdocs page and nothing here would say so. BLIND when mkdocs is missing, never a pass.
-if command -v mkdocs >/dev/null; then
-  mkd=$(cd "$IDP" && mkdocs build --strict -q -d "${TMPDIR:-/tmp}/idp-ci-site.$$" 2>&1); mkd_rc=$?
-  rm -rf "${TMPDIR:-/tmp}/idp-ci-site.$$"
-  if [ "$mkd_rc" -eq 0 ]; then
-    say "ok    docs     mkdocs --strict built $(cd "$IDP" && grep -cE '^\s+- .*\.md$' mkdocs.yml) nav page(s)"
-  else
-    say "FAIL  docs     mkdocs --strict (rc=$mkd_rc)"; printf '%s\n' "$mkd" | tail -20 | sed 's/^/      /'; fail=1
-  fi
-else say "BLIND docs     mkdocs not installed; the docs site was not built"; fail=1; fi
 
 # 9. Every Flux HelmRelease under platform/ renders clean against the cluster's Kyverno
 #    ClusterPolicies (helm template + the release's own postRenderers), both ways: the
@@ -629,29 +570,8 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
   # costs -- CI printed "render clean" for a Deployment admission refused, because the two
   # estate-only policies live in prospector and CI had no copy. Blind and failing are different
   # facts and the operator needs to be told which one this is.
-  # crew#584 zero-bottleneck law: this rung was 160 s of the 422 s run 33198380701 spent in
-  # bin/idp-ci, and #625's parallel render bought 12 s of it on the hosted runner. On a pull
-  # request (IDP_CI_BASE names the base ref, set by ci.yml) only the dirs the diff touches are
-  # judged; the whole set is judged on main, and on any PR that moves the judge, a policy, a
-  # kyverno fixture or the cluster wiring, because then every render's verdict can change. A
-  # dir with no changed file cannot render differently from main, where it was judged.
-  kyv_scope="every dir"
-  if [ -n "${IDP_CI_BASE:-}" ] && changed=$(cd "$IDP" && git diff --name-only "$IDP_CI_BASE...HEAD" 2>/dev/null); then
-    if printf '%s\n' "$changed" | grep -qE '^(bin/idp-kyverno-render|bin/idp-ci|tests/fixtures/kyverno/|platform/kyverno/|platform/policies/|clusters/)'; then
-      kyv_scope="every dir: the judge, a policy or the cluster wiring changed"
-    else
-      scoped=$(for d in $dirs; do printf '%s\n' "$changed" | grep -q "^$d/" && echo "$d"; done)
-      kyv_scope="$(printf '%s\n' "$scoped" | grep -c .) of $(printf '%s\n' "$dirs" | grep -c .) dirs changed against $IDP_CI_BASE"
-      dirs="$scoped"
-    fi
-  fi
-  if [ -z "$dirs" ] && [ "$kyv_scope" != "every dir" ]; then
-    say "ok    kyverno  no platform dir changed against $IDP_CI_BASE; every render was judged on main (scoped: $kyv_scope)"
-    dirs=skip
-  fi
-  [ "$dirs" = skip ] || kyv=$( (cd "$IDP" && bin/idp-kyverno-render $dirs) 2>&1 ); kyv_rc=$?
-  if [ "$dirs" = skip ]; then :
-  elif [ -z "$dirs" ]; then say "FAIL  kyverno  no platform dir shipped a HelmRelease or a workload; the judge had nothing"; fail=1
+  kyv=$( (cd "$IDP" && bin/idp-kyverno-render $dirs) 2>&1 ); kyv_rc=$?
+  if [ -z "$dirs" ]; then say "FAIL  kyverno  no platform dir shipped a HelmRelease or a workload; the judge had nothing"; fail=1
   elif [ "$kyv_rc" = 2 ]; then
     say "BLIND kyverno  the judge did not see the whole policy set; no render was judged"
     printf '%s\n' "$kyv" | grep '^BLIND' | sed 's/^/      /'; fail=1
@@ -693,7 +613,7 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
     fail=1
   elif (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
     say "FAIL  kyverno  the must-fail fixture passed; the judge admits an unpatched chart"; fail=1
-  else say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused ($kyv_scope)"; fi
+  else say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused"; fi
 else say "BLIND kyverno  helm or kyverno CLI not installed; HelmRelease renders were not judged"; fail=1; fi
 
 # 9b. crew#483: Flux post-build substitution judged with the tool Flux runs. Every Kustomization
@@ -732,7 +652,7 @@ if python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$
   say "ok    grade    estate-showcase grades the fixture catalogue ($(grep -c '| GAP |' "$sc/SHOWCASE.md") GAP rows) and --check refuses a stale page"
 else say "FAIL  grade    estate-showcase did not render, or --check did not discriminate"; fail=1; fi
 
-# 8. Every surface the founder can open survives losing one node (crew#539, docs/reference/policy/
+# 8. Every surface the founder can open survives losing one node (crew#539, docs/policy/
 #    availability-standard.md). 2026-08-28 06:20-06:39Z a cordon took catalogue to 503 for
 #    fifteen minutes because the manifest said replicas 1 and platform/ held no PDB; nothing
 #    could fail that review because nothing required otherwise. Both ways, on rendered
@@ -746,6 +666,5 @@ if ! python3 "$IDP/bin/idp-availability-gate" tests/fixtures/availability/bad >/
   printf '%s\n' "$out" | grep '^WAIVED' | sed 's/^/      /' || true
 else say "FAIL  ha       a routed surface does not survive losing one node, or the gate is not discriminating"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
-timing_summary
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"

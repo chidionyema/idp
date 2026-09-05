@@ -40,23 +40,6 @@ auth:
       # tests/test_incident_backstage_image_critical_cve.py holds that rule.
       dangerouslyAllowOutsideDevelopment: true
 
-# crew#562 (ADR 0009 decision founder-screen-access, path 1): the portal's /pair page posts
-# Moonlight's PIN to Sunshine on the founder's Mac through this endpoint. The target is the
-# tailnet egress Service (platform/backstage/overlays/oke/sunshine-egress.yaml); Sunshine's
-# certificate is self-signed, hence secure: false on a link that never leaves the tailnet. The
-# Authorization header is a mounted secret file, never an env var (secrets-not-from-env-vars).
-proxy:
-  endpoints:
-    '/sunshine':
-      target: https://sunshine-mac.backstage.svc.cluster.local:47990
-      changeOrigin: true
-      secure: false
-      allowedMethods: [GET, POST]
-      credentials: dangerously-allow-unauthenticated
-      headers:
-        Authorization:
-          $file: /run/secrets/sunshine/AUTHORIZATION
-
 backend:
   baseUrl: ${APP_BASE_URL}
   listen:
@@ -133,13 +116,6 @@ catalog:
     # the zero-touch authentication path instead of an agent inventing one.
     - type: file
       target: /app/templates/external-integration/template.yaml
-      rules:
-        - allow: [Template]
-
-    # crew#584: requests a tier from platform/features/features.yaml by opening a reviewed
-    # pull request, never by running bin/idp-features enable from the scaffolder itself.
-    - type: file
-      target: /app/templates/enable-platform-feature/template.yaml
       rules:
         - allow: [Template]
 

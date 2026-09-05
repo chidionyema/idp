@@ -35,7 +35,7 @@ def docs(rel):
 
 
 def test_priority_classes_are_the_founders_values():
-    by_name = {d["metadata"]["name"]: d for d in docs("platform/priority-classes/priorityclasses.yaml")}
+    by_name = {d["metadata"]["name"]: d for d in docs("platform/scheduling/priorityclasses.yaml")}
     assert by_name["infrastructure-critical"]["value"] == 1000000
     assert by_name["balloon"]["value"] == -1
     assert by_name["balloon"]["preemptionPolicy"] == "Never", "a balloon must never evict a real pod"
@@ -98,7 +98,7 @@ def test_flux_rows_seat_the_class_before_anyone_names_it():
         assert "scheduling" in deps, row
     assert {d["name"] for d in rows["healing"]["spec"]["dependsOn"]} >= {"scheduling", "llm"}
     kust = yaml.safe_load((SCHED / "kustomization.yaml").read_text())
-    assert set(kust["resources"]) == {"namespace.yaml", "balloon.yaml", "require-priority-class.yaml", "capacity-affinity.yaml", "require-availability.yaml"}
+    assert set(kust["resources"]) == {"namespace.yaml", "priorityclasses.yaml", "balloon.yaml", "require-priority-class.yaml", "capacity-affinity.yaml", "require-availability.yaml"}
 
 
 def test_ping_lives_outside_the_cluster_and_pages_the_existing_bot():

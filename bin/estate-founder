@@ -17,9 +17,6 @@ memory, on the same schedule and through the same PR as docs/NEXT.md.
                         nothing the founder touches, and says so
     What is stuck       open pull requests with no `REVIEW:` verdict after REVIEW_H hours, and
                         every open checkpoint that waits on the founder himself
-    The goal            every open crew issue labelled `goal` with its checkboxes ticked or not
-                        (crew#596); --telegram edits the pinned GOAL message in the home channel
-                        so Otto and the founder see the same ticks
 
     estate-founder                       write docs/FOUNDER.md from gh
     estate-founder --merged f.json --open f.json --issues f.json --out p.md   from files (tests)
@@ -40,13 +37,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "FOUNDER.md"
-
-#: crew#583 CP5. The clock every age on this page is measured against comes from GitHub, not from
-#: this machine, and bin/lib/receipt_age.py is the one module in the estate allowed near that
-#: arithmetic -- so the function lives there and this file borrows it rather than keeping a second
-#: copy to get wrong (LAW 2).
-sys.path.insert(0, str(ROOT / "bin" / "lib"))
-from receipt_age import served_now  # noqa: E402 - path has to be set before the import
 CREW = os.environ.get("ESTATE_CREW_REPO", "chidionyema/crew")
 OWNER = os.environ.get("ESTATE_GITHUB_OWNER", CREW.split("/")[0])
 WINDOW_H = int(os.environ.get("ESTATE_FOUNDER_WINDOW_H", "24"))
@@ -86,8 +76,7 @@ def fetch_open(run=subprocess.run) -> list[dict]:
 
 def fetch_issues(run=subprocess.run) -> list[dict]:
     rows = gh_json([f"repos/{CREW}/issues?state=open&per_page=100",
-                    "--jq", '.[] | {number, title, body, url: .html_url, pr: (.pull_request != null), '
-                            'labels: [.labels[].name]}'], run)
+                    "--jq", '.[] | {number, title, body, url: .html_url, pr: (.pull_request != null)}'], run)
     return [r for r in rows if not r.get("pr")]
 
 
@@ -161,84 +150,12 @@ def founder_checkpoints(issues: list[dict]) -> list[dict]:
     return rows
 
 
-BOX_RE = re.compile(r"^\s*- \[([ xX])\]\s*(.*)$")
-
-
-def goals(issues: list[dict]) -> list[dict]:
-    """Every open crew issue labelled `goal`, with its checkboxes: the founder's one goal and the ticks toward it
-    (crew#596, founder 2026-08-28: "on Otto and founder surface set goal and tick to it")."""
-    rows = []
-    for issue in issues:
-        if "goal" not in (issue.get("labels") or []):
-            continue
-        boxes = [{"done": m.group(1) != " ", "what": m.group(2).strip()}
-                 for m in map(BOX_RE.match, (issue.get("body") or "").splitlines()) if m]
-        rows.append({"issue": issue["number"], "url": issue.get("url", ""), "title": issue.get("title") or "",
-                     "boxes": boxes, "done": sum(b["done"] for b in boxes)})
-    return rows
-
-
-def goal_lines(goal_rows: list[dict], markdown: bool = True) -> list[str]:
-    """The goal block, one line per tick. markdown=False is the Telegram text (no link syntax)."""
-    if not goal_rows:
-        return ["No open crew issue carries the `goal` label: the goal is unset, and that is the defect."]
-    out = []
-    for g in goal_rows:
-        head = f"{g['title']} — {g['done']}/{len(g['boxes'])} ticked"
-        out.append(f"**[crew#{g['issue']}]({g['url']})** {head}" if markdown else f"crew#{g['issue']} {head}\n{g['url']}")
-        for b in g["boxes"]:
-            what = b["what"] if markdown else re.sub(r"`", "", b["what"])
-            out.append(f"- {'☑' if b['done'] else '☐'} {what[:220]}")
-    return out
-
-
-def telegram_pin(text: str, urlopen=None) -> str:
-    """Edit the pinned GOAL message in the home channel, or send and pin one. Returns the message id.
-    Otto lives in this channel: the pin is the goal he and the founder tick toward."""
-    import urllib.parse
-    import urllib.request
-    urlopen = urlopen or urllib.request.urlopen
-    token, chat = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_HOME_CHANNEL")
-    if not token or not chat:
-        raise SystemExit("estate-founder --telegram: TELEGRAM_BOT_TOKEN and TELEGRAM_HOME_CHANNEL are not set")
-
-    def call(method: str, **kw) -> dict:
-        data = urllib.parse.urlencode({"chat_id": chat, **kw}).encode()
-        return json.loads(urlopen(f"https://api.telegram.org/bot{token}/{method}", data=data, timeout=30).read())["result"]
-
-    pinned = call("getChat").get("pinned_message") or {}
-    if (pinned.get("text") or "").startswith("GOAL"):
-        try:
-            call("editMessageText", message_id=pinned["message_id"], text=text)
-            return str(pinned["message_id"])
-        except Exception as e:  # Telegram refuses an edit to identical text; that is the up-to-date case
-            if "not modified" in str(getattr(e, "read", lambda: b"")() or str(e)):
-                return str(pinned["message_id"])
-            raise
-    sent = call("sendMessage", text=text, disable_web_page_preview="true")
-    call("pinChatMessage", message_id=sent["message_id"], disable_notification="true")
-    return str(sent["message_id"])
-
-
-def hours_since(ts: str, now: "datetime | None") -> "float | None":
-    """Hours between `now` and a stamp GitHub wrote, or None when that cannot be measured.
-
-    None rather than 0.0 (crew#583 CP5). `except ValueError: return 0.0` read an unparseable
-    stamp as "0 hours ago", which is not a refusal to measure -- it is the freshest possible
-    answer, on the page whose whole job is to say what has been waiting too long.
-
-    A negative age is also None: both stamps come from GitHub, so `now` earlier than the stamp is
-    not skew, it is a pull request claiming to have been opened after the response that listed
-    it. Neither direction is allowed to read as "not stuck".
-    """
-    if now is None:
-        return None
+def hours_since(ts: str, now: datetime) -> float:
     try:
         t = datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
     except ValueError:
-        return None
-    h = (now - t).total_seconds() / 3600
-    return None if h < 0 else h
+        return 0.0
+    return (now - t).total_seconds() / 3600
 
 
 def render(merged: list[dict], open_prs: list[dict], issues: list[dict], by_repo_trailers: dict[str, dict[str, int]],
@@ -251,14 +168,9 @@ def render(merged: list[dict], open_prs: list[dict], issues: list[dict], by_repo
     # Stuck is scoped to the repositories the estate is shipping to: a May PR on a parked repository is
     # not a reviewer's debt this week (live 06:31Z listed haworks#5, 2987h). No merge in the window, no row.
     live_repos = set(by_repo)
-    #: An unreviewed pull request whose age cannot be measured is carried, not dropped. The old
-    #: filter compared an age to REVIEW_H and a None or a negative silently fell out of the list,
-    #: which reads on the page as "nothing is waiting on a reviewer" (crew#583 CP5).
-    unreviewed = [(pr, hours_since(pr["created_at"], now)) for pr in open_prs
-                  if pr["repo"] in live_repos and not pr.get("verdict")]
-    stuck = [(pr, h) for pr, h in unreviewed if h is None or h >= REVIEW_H]
+    stuck = [pr for pr in open_prs if pr["repo"] in live_repos and not pr.get("verdict")
+             and hours_since(pr["created_at"], now) >= REVIEW_H]
     waiting = founder_checkpoints(issues)
-    goal_rows = goals(issues)
     out = [
         "# Founder: what shipped, what changed for you, what is stuck",
         "",
@@ -272,10 +184,6 @@ def render(merged: list[dict], open_prs: list[dict], issues: list[dict], by_repo
         f"- Changed for you: **{len(changed)}** of them carry a `Use:` line (something you touch); the rest changed nothing you touch",
         f"- Stuck: **{len(stuck)} pull requests** with no `REVIEW:` verdict after {REVIEW_H}h; **{len(waiting)} checkpoints wait on you**",
         "",
-        "## The goal",
-        "",
-        *goal_lines(goal_rows),
-        "",
         "## What changed for you",
         "",
     ]
@@ -288,11 +196,8 @@ def render(merged: list[dict], open_prs: list[dict], issues: list[dict], by_repo
     out += ["", "## What is stuck", ""]
     if stuck or waiting:
         out += ["| Who | What | Waiting since | Link |", "|---|---|---|---|"]
-        for pr, h in sorted(stuck, key=lambda c: c[0]["created_at"]):
-            waited = (f"{h:.0f}h, no REVIEW: line" if h is not None else
-                      "BLIND: GitHub's clock did not come back with the listing, so no age here "
-                      "is measurable; no REVIEW: line")
-            out.append(f"| reviewer | {pr['title'].replace('|', '/')[:100]} | {waited} | "
+        for pr in sorted(stuck, key=lambda p: p["created_at"]):
+            out.append(f"| reviewer | {pr['title'].replace('|', '/')[:100]} | {hours_since(pr['created_at'], now):.0f}h, no REVIEW: line | "
                        f"[{pr['repo'].split('/')[-1]}#{pr['number']}]({pr['url']}) |")
         for r in sorted(waiting, key=lambda r: (r["issue"], r["cp"])):
             out.append(f"| you | {r['cp']} {r['what'].replace('|', '/')} | open | [crew#{r['issue']}]({r['url']}) |")
@@ -326,19 +231,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--taken", help="timestamp to print; default now UTC")
     ap.add_argument("--now", help="clock, YYYY-MM-DDTHH:MMZ (tests); default now UTC")
     ap.add_argument("--check", action="store_true", help="exit 1 when the page on disk differs from the inputs")
-    ap.add_argument("--telegram", action="store_true", help="also edit (or send and pin) the GOAL message in TELEGRAM_HOME_CHANNEL")
     a = ap.parse_args(argv)
-    #: crew#583 CP5: GitHub's clock, or the one a test names, and no third option. There is no
-    #: `datetime.now` in this file on purpose -- the guard in
-    #: tests/test_guard_freshness_is_never_measured_against_this_machines_clock.py holds it that way.
-    now = (datetime.strptime(a.now[:16], "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
-           if a.now else served_now())
-    if now is None:
-        #: The search window needs a clock too. Without one the page cannot say what merged in the
-        #: last 24 hours at all, so this is the one place a missing clock is fatal rather than BLIND.
-        print("BLIND estate-founder: GitHub did not send a Date header, and this machine's clock is "
-              "not a substitute for it (crew#583). Nothing written.", file=sys.stderr)
-        return 2
+    now = datetime.strptime(a.now[:16], "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc) if a.now else datetime.now(timezone.utc)
     since = (now - timedelta(hours=WINDOW_H)).strftime("%Y-%m-%dT%H:%M:%SZ")
     offline = bool(a.merged or a.open or a.issues)
     merged = json.loads(Path(a.merged).read_text()) if a.merged else fetch_merged(since)
@@ -363,9 +257,6 @@ def main(argv: list[str]) -> int:
         return 1
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page, encoding="utf-8")
-    if a.telegram:
-        text = "GOAL " + taken + "\n" + "\n".join(goal_lines(goals(issues), markdown=False))
-        print(f"estate-founder: telegram GOAL pin message_id={telegram_pin(text)}")
     print(f"estate-founder: {len(merged)} merged, {sum(1 for p in open_prs if not p.get('verdict'))} unreviewed, "
           f"{len(founder_checkpoints(issues))} on the founder -> {os.path.relpath(out)}")
     return 0

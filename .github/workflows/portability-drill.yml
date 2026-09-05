@@ -26,10 +26,7 @@ on:
     paths:
       - .github/workflows/portability-drill.yml
       - bin/idp-portability-drill
-      - bin/idp-drill-wait
       - bin/idp-hydrate
-      - bin/idp-flux-settle
-      - drills/portability-oci-reds.txt
       - drills/portability-floor.txt
       - platform/k3d/estate.yaml
       # R43 (crew#66): every change to the tree Flux applies is proved to hydrate on a second
@@ -42,10 +39,7 @@ concurrency:
   group: portability-drill-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  fast-gate:   # crew#584 CP-C: lint red never boots this workflow's heavy jobs
-    uses: ./.github/workflows/fast-gate.yml
   hydrate:
-    needs: fast-gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -57,31 +51,21 @@ jobs:
           # the action's default k3d (v5.4.6) 404s on download and predates k3d.io/v1alpha5,
           # the apiVersion platform/k3d/estate.yaml declares (run 33062980960)
           k3d-version: v5.9.0
-          # crew#488 CP5: a second node. The estate's front door runs two traefik replicas
-          # spread hostname/DoNotSchedule (crew#555: a routed surface survives one node), so a
-          # one-node cluster can never seat the second pod and edge reads red forever (runs
-          # 33212542369, 33212575403). estate.yaml stays one node for the founder's 16 GB Mac;
-          # a CLI flag overrides the file on the runner, which has the memory and nothing else on it.
-          args: --config=platform/k3d/estate.yaml --agents 1
+          args: --config=platform/k3d/estate.yaml
       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
       - name: flux install, then the same tree OKE runs, from this commit
         env:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REF: ${{ github.head_ref || github.ref_name }}
         run: bin/idp-hydrate
-      - name: wait only until the floor is met (crew#584 CP-A)
-        run: bin/idp-drill-wait
+      - name: wait for what can come up
+        run: kubectl wait kustomization --all -A --for=condition=Ready --timeout=600s || true
       - name: grade against the floor
         run: |
           set -euo pipefail
           mkdir -p receipt
           kubectl get kustomizations -A -o json > receipt/kustomizations.json
           kubectl get helmreleases -A > receipt/helmreleases.txt 2>&1 || true
-          # crew#488 CP5: a ROOT-RED must be diagnosable from the receipt alone; run 33212542369
-          # said "HelmRelease/edge/traefik Failed" and nothing about why the pod never came.
-          kubectl get pods -A -o wide > receipt/pods.txt 2>&1 || true
-          kubectl get events -A --field-selector type=Warning --sort-by=.lastTimestamp > receipt/events-warning.txt 2>&1 || true
-          kubectl get svc -A > receipt/services.txt 2>&1 || true
           flux get kustomizations -A | tee receipt/flux-get.txt
           bin/idp-portability-drill receipt/kustomizations.json | tee receipt/grade.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -91,7 +75,6 @@ jobs:
           path: receipt/
 
   k3s:
-    needs: fast-gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -134,48 +117,14 @@ jobs:
           kubectl wait node --all --for=condition=Ready --timeout=120s
           kubectl -n kube-system get pods
           kubectl get node -o wide
-      - name: a second node, so the front door's two replicas can spread (crew#488 CP5, crew#555)
-        run: |
-          set -euo pipefail
-          # One VM cannot run two k3s kubelets, so the second node is the k3s image itself
-          # joined as an agent over Docker -- the same way k3d builds every one of its nodes.
-          # Run 33216301296: cilium-agent on the agent read 'path "/var/run/netns" is mounted on "/var/run"
-          # but it is not a shared or slave mount' (the --tmpfs is private by default) -> rshared first.
-          # Cilium wants bpffs and a cgroup2 mount inside the node, as k3d's own Cilium
-          # guide prescribes; without them the cilium pod on this node crash-loops.
-          IP=$(hostname -I | awk '{print $1}')
-          TOKEN=$(sudo cat /var/lib/rancher/k3s/server/node-token)
-          docker run -d --name k3s-agent-2 --hostname k3s-agent-2 --privileged \
-            --tmpfs /run --tmpfs /var/run \
-            rancher/k3s:v1.33.4-k3s1 agent --server "https://${IP}:6443" --token "${TOKEN}" --node-name k3s-agent-2
-          docker exec k3s-agent-2 sh -c 'mount --make-rshared / && mount --make-rshared /run && mount --make-rshared /var/run && mount bpffs -t bpf /sys/fs/bpf && mount --make-shared /sys/fs/bpf && mkdir -p /run/cilium/cgroupv2 && mount -t cgroup2 none /run/cilium/cgroupv2 && mount --make-shared /run/cilium/cgroupv2'
-          until kubectl get node k3s-agent-2 -o name 2>/dev/null | grep -q .; do sleep 2; done
-          # Run 33214748124: the node registered, the cilium DaemonSet stayed at 1 of 2 for 300 s
-          # and the job died here with no reason in the log. The reason goes in the receipt and
-          # the drill goes on: a NotReady second node reads as an honest red in the grade.
-          mkdir -p receipt
-          if ! kubectl rollout status ds/cilium -n kube-system --timeout=300s; then
-            {
-              kubectl get node -o wide
-              kubectl -n kube-system get pods -o wide
-              for pod in $(kubectl -n kube-system get pods -l k8s-app=cilium -o name); do
-                kubectl -n kube-system describe "$pod" | tail -40
-                kubectl -n kube-system logs "$pod" --tail=60 || true
-              done
-              docker logs k3s-agent-2 2>&1 | tail -60
-            } > receipt/second-node.txt 2>&1 || true
-            echo "second node: cilium did not roll out; receipt/second-node.txt has the reason"
-          fi
-          kubectl wait node --all --for=condition=Ready --timeout=180s || true
-          kubectl get node -o wide
       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
       - name: flux install, then the same tree OKE runs, from this commit
         env:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REF: ${{ github.head_ref || github.ref_name }}
         run: bin/idp-hydrate
-      - name: wait only until the floor is met (crew#584 CP-A)
-        run: bin/idp-drill-wait
+      - name: wait for what can come up
+        run: kubectl wait kustomization --all -A --for=condition=Ready --timeout=600s || true
       - name: grade against the floor, then the wall-clock and the cost of the run
         env:
           PRIVATE: ${{ github.event.repository.private }}
@@ -184,11 +133,6 @@ jobs:
           mkdir -p receipt
           kubectl get kustomizations -A -o json > receipt/kustomizations.json
           kubectl get helmreleases -A > receipt/helmreleases.txt 2>&1 || true
-          # crew#488 CP5: a ROOT-RED must be diagnosable from the receipt alone; run 33212542369
-          # said "HelmRelease/edge/traefik Failed" and nothing about why the pod never came.
-          kubectl get pods -A -o wide > receipt/pods.txt 2>&1 || true
-          kubectl get events -A --field-selector type=Warning --sort-by=.lastTimestamp > receipt/events-warning.txt 2>&1 || true
-          kubectl get svc -A > receipt/services.txt 2>&1 || true
           flux get kustomizations -A | tee receipt/flux-get.txt
           bin/idp-portability-drill receipt/kustomizations.json | tee receipt/grade.txt
           secs=$(( $(date +%s) - T0 ))

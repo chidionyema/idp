@@ -18,41 +18,6 @@ OUT = os.environ.get("OUT") or os.path.join(os.path.dirname(os.path.dirname(os.p
 OWNER = "group:default/platform"
 SYSTEM = "system:default/estate"
 
-# crew#612 CP2: the hierarchy the founder reads the estate through. Bytesync Ltd is the parent
-# (a Group of type organization: Backstage has no level above Domain); each company is a
-# Domain; each tracked repository is a product System inside its company; every asset's
-# spec.system is the product of the repository that holds it. A repository is placed by its
-# name only -- no path, host or account is typed here (LAW 46) -- and one that matches no
-# company is the platform's, which is what a buyer's engineer would assume anyway.
-ORG = ("bytesync", "Bytesync Ltd", "The parent company: every company, product and asset in this catalogue belongs to it.")
-COMPANIES = {
-    # 4th field: where the company is live, for a Domain page whose code is not in a tracked
-    # checkout on this machine (mumchimp runs on OKE; its repos are not in the inventory).
-    "mumchimp": ("Mumchimp", ("mumchimp", "medusa", "ecommerce", "ebookstore", "store"),
-                 "The store: the storefront, its API and everything that takes a customer's money.",
-                 ("The store, live", "https://mumchimp.com")),
-    "prospector": ("Prospector", ("prospector",),
-                   "The product that finds and qualifies prospects; stays the product whatever the platform does.",
-                   ("Prospector on GitHub", "https://github.com/chidionyema/prospector")),
-    "hermes-v2": ("Hermes", ("hermes",),
-                  "The agent that acts for the founder from anywhere: Telegram in, a pull request or a run out.",
-                  ("Hermes on GitHub", "https://github.com/chidionyema/hermes-v2")),
-    "platform": ("Platform", (),
-                 "The one platform every product runs on: catalogue, routing, traces, identity, secrets, scheduling, CI."),
-}
-
-
-def company_of(repo_name: str) -> str:
-    n = (repo_name or "").lower()
-    for key, (_title, needles, *_rest) in COMPANIES.items():
-        if any(needle in n for needle in needles):
-            return key
-    return "platform"
-
-
-def product_ref(repo_name: str) -> str:
-    return f"system:default/product-{repo_name}"
-
 # ENVIRONMENT. Founder, 2026-08-24: "backstge call this nachine production, this is dev not
 # prod. ens dev, stage prod". Every Component this file emitted carried a literal
 # `lifecycle: production`, so the portal told anyone who opened it that a laptop was the
@@ -138,22 +103,6 @@ def y(v):
             or re.fullmatch(r"0[xXoObB][0-9a-fA-F_]+", s):
         return "'" + s.replace("'", "''") + "'"
     return s
-
-HIER_LINKS = []  # every Domain/System/Group link, so the interfaces card carries them too
-
-
-def links_yaml(links):
-    """metadata.links lines for the literal Domain/System/Group docs (crew#612 CP2: every
-    entity carries a link a person can open). Empty when there is nothing openable: a
-    link that 404s is the crew#503 'no broken link' defect, so none beats a guess."""
-    out = []
-    if links:
-        out.append("  links:")
-        for t, u in links:
-            out += [f"    - title: {y(t)}", f"      url: {y(u)}"]
-            HIER_LINKS.append((t, u))
-    return out
-
 
 def entity(kind, name, title, etype, annotations, tags, links=(), depends_on=(),
            system=None, description=""):
@@ -496,71 +445,22 @@ def main() -> int:
 
     # Domain and System take no spec.type/spec.system, so they are written out
     # literally rather than through entity(), which exists for the 194 rows.
-    # github slug + real root per tracked repository; the Domain/System/Group docs below and
-    # code_link() in pass 2 both read it.
-    repo_gh = {names[id(r)]: (github_slug(r.get("remote")), os.path.realpath((r.get("path") or "").rstrip("/")))
-               for r in rows if r.get("kind") == "repo"}
-    def company_links(key):
-        """One 'Source' link per tracked repository in the company, so a Domain page
-        opens onto real code. Sorted by name so the render is byte-stable."""
-        out = list(COMPANIES.get(key, ((),) * 4)[3:4])
-        for rn in sorted(repo_gh):
-            gh_slug = repo_gh[rn][0]
-            url = f"https://github.com/{gh_slug}"
-            if gh_slug and company_of(rn) == key and url not in {u for _, u in out}:
-                out.append((f"{rn} on GitHub", url))
-        return out
-
-    def org_links():
-        owners = sorted({s.split("/")[0] for s, _ in repo_gh.values() if s})
-        return [(f"Every repository ({o})", f"https://github.com/{o}") for o in owners]
     docs.append("\n".join([
         "apiVersion: backstage.io/v1alpha1", "kind: Domain", "metadata:",
         "  name: platform", "  title: Platform",
         f"  description: {y('Everything the estate runs, owns or depends on.')}",
-        *links_yaml(company_links("platform")),
         "spec:", f"  owner: {OWNER}"]))
     docs.append("\n".join([
         "apiVersion: backstage.io/v1alpha1", "kind: System", "metadata:",
         "  name: estate", "  title: The estate",
         f"  description: {y('Every asset the estate owns, generated from the inventory at ' + str(inv.get('at')))}",
-        *links_yaml(company_links("platform")),
         "spec:", f"  owner: {OWNER}", "  domain: platform"]))
     docs.append("\n".join([
         "apiVersion: backstage.io/v1alpha1", "kind: Group", "metadata:",
         "  name: platform", "  title: Platform",
         f"  description: {y('The team that owns every generated entity in this catalogue.')}",
-        *links_yaml(org_links()),
-        "spec:", "  type: team", f"  parent: group:default/{ORG[0]}",
+        "spec:", "  type: team",
         "  children: []"]))
-    docs.append("\n".join([
-        "apiVersion: backstage.io/v1alpha1", "kind: Group", "metadata:",
-        f"  name: {ORG[0]}", f"  title: {y(ORG[1])}",
-        f"  description: {y(ORG[2])}",
-        *links_yaml(org_links()),
-        "spec:", "  type: organization",
-        "  children:", "    - platform"]))
-    # One Domain per company (crew#612 CP2); `platform` stays the Domain the estate System
-    # and every stack System already point at.
-    for key, (title, _needles, desc, *_home) in COMPANIES.items():
-        if key == "platform":
-            continue
-        docs.append("\n".join([
-            "apiVersion: backstage.io/v1alpha1", "kind: Domain", "metadata:",
-            f"  name: {key}", f"  title: {y(title)}",
-            f"  description: {y(desc)}",
-            *links_yaml(company_links(key)),
-            "spec:", f"  owner: {OWNER}"]))
-    # One product System per tracked repository, inside its company.
-    repo_rows = [r for r in rows if r.get("kind") == "repo"]
-    for r in repo_rows:
-        rn = names[id(r)]
-        docs.append("\n".join([
-            "apiVersion: backstage.io/v1alpha1", "kind: System", "metadata:",
-            f"  name: product-{rn}", f"  title: {y(rn + ' (product)')}",
-            f"  description: {y('Everything the ' + rn + ' repository holds and runs: its code, its guards, its jobs, its data.')}",
-            *links_yaml([("Source", f"https://github.com/{repo_gh[rn][0]}")] if repo_gh.get(rn, (None,))[0] else []),
-            "spec:", f"  owner: {OWNER}", f"  domain: {company_of(rn)}"]))
 
     # One System per running compose project. Backstage's System is "a collection
     # of resources and components that exposes one or several public APIs", and
@@ -576,7 +476,6 @@ def main() -> int:
             "apiVersion: backstage.io/v1alpha1", "kind: System", "metadata:",
             f"  name: stack-{slug(st)}", f"  title: {y(st + ' stack')}",
             f"  description: {y(str(len(members)) + ' running containers, compose project ' + st)}",
-            *links_yaml([("Its containers, in this catalogue", f"/catalog?filters%5Btags%5D=stack-{slug(st)}")]),
             "spec:", f"  owner: {OWNER}", "  domain: platform"]))
 
     # Ports. The catalog is the port registry: every listening port is an entity
@@ -624,21 +523,6 @@ def main() -> int:
 
     # ---- pass 2: the entities ----
     all_links = []
-    # crew#612 CP2: every asset inside a tracked repository links to where it lives in the
-    # code, on the repository's default branch (tree/HEAD never rots when a branch merges).
-    # Only paths git itself tracks get the link: an untracked file would be a 404.
-
-    def code_link(repo_name, path):
-        gh_slug, root = repo_gh.get(repo_name, (None, None))
-        if not gh_slug or not path or not root:
-            return None
-        rel = os.path.relpath(os.path.realpath(path), root)
-        if rel.startswith(".."):
-            return None
-        ok = subprocess.run(["git", "-C", root, "ls-files", "--error-unmatch", "--", rel],
-                            capture_output=True, text=True).returncode == 0
-        return ("Where it lives in the code", f"https://github.com/{gh_slug}/tree/HEAD/{rel}") if ok else None
-
     for r in rows:
         k = r.get("kind")
         if k not in MAP:
@@ -653,7 +537,6 @@ def main() -> int:
         deps = []
         if r.get("coupling") and r.get("coupling") != "none":
             deps.append(f"resource:default/vendor-{slug(r['coupling'])}")
-        owner_repo = name if k == "repo" else None
         if k != "repo":
             owner_repo = owning_repo(r.get("path"))
             if owner_repo:
@@ -761,18 +644,10 @@ def main() -> int:
             links.append(("Source", f"https://github.com/{gh_link}"))
         if k == "listener" and r.get("bind") in ("127.0.0.1", "*", "0.0.0.0", "[::1]", "::"):
             links.append(("Open", f"http://127.0.0.1:{r.get('port')}"))
-        if k != "repo" and owner_repo:
-            cl = code_link(owner_repo, r.get("path"))
-            if cl:
-                links.append(cl)
 
         sysref = SYSTEM
         if k == "container" and r.get("project") and r.get("project") != "(none)":
             sysref = f"system:default/stack-{slug(r['project'])}"
-        elif owner_repo:
-            # crew#612 CP2: company -> product -> asset. An asset in no tracked repository
-            # stays on the estate System, tagged outside-any-repo above.
-            sysref = product_ref(owner_repo)
         docs.append(entity(bkind, name, r.get("id") or name, btype, ann, tags, links,
                            deps, system=sysref, description=describe(r)))
         all_links += [(f"{r.get('id') or name}: {t}", u) for t, u in links]
@@ -793,7 +668,7 @@ def main() -> int:
     for d in front + founder:
         m = yaml_links(d)
         all_links += m
-    all_links = sorted(set(all_links) | set(HIER_LINKS))
+    all_links = sorted(set(all_links))
     docs.append(entity("Component", "interfaces", "Every interface URL", "website",
                        {"links": len(all_links)}, ["interfaces"], all_links,
                        description=f"Every URL the estate publishes, {len(all_links)} links collected from the catalogue itself; open one here instead of searching for it."))
@@ -813,7 +688,7 @@ def main() -> int:
                  "GENERATED by idp/bin/catalog-gen from the inventory taken " + str(inv.get("at")) + ".",
                  "The catalog is the port registry: every row here is a Resource of type `port` in",
                  "catalog-info.yaml, and catalog-gen refuses to run when two things claim one port.",
-                 "To claim a port, bind it and run the inventory; to read the rule, see docs/how-to/onboarding/ports.md.",
+                 "To claim a port, bind it and run the inventory; to read the rule, see docs/onboarding/ports.md.",
                  "", "| Port | Bind | Owner | Process | Open |", "|---|---|---|---|---|"]
         for r in ports:
             url = f"http://127.0.0.1:{r['port']}"

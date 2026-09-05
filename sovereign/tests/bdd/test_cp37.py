@@ -145,6 +145,7 @@ def _get_path(cockpit: Any, response: dict[str, Any], path: str) -> None:
     response["status"] = status
     response["body"] = body
     response["text"] = body.decode("utf-8", errors="replace")
+    ctype = "application/json"
     try:
         response["json"] = json.loads(body) if body else None
     except json.JSONDecodeError:

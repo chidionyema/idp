@@ -6,17 +6,12 @@ plugins:
   - techdocs-core
 nav:
   - Home: index.md
-  - Definition of Done: reference/policy/definition-of-done.md
-  - Documentation policy: reference/policy/documentation.md
+  - Definition of Done: policy/definition-of-done.md
   - Architecture:
-      - explanation/architecture/index.md
-      - Live estate: explanation/architecture/live.md
+      - architecture/index.md
+      - Live estate: architecture/live.md
   - Estate showcase: SHOWCASE.md
-  - Conscience: CONSCIENCE.md
   - "Founder: shipped, changed for you, stuck": FOUNDER.md
-  - "Union: the founder and the crew":
-      - The road to 9D (two stages): /docs/default/component/crew/ROAD-TO-9D/
-      - Depth-psychology audit, 2026-08-28: /docs/default/component/crew/audits/depth-psychology-founder-and-crew-2026-08-28/
   - Planned, blocking, when: NEXT.md
   - Decisions:
       - 0001 Gateway API is the routing standard: decisions/0001-gateway-api-is-the-routing-standard.md
@@ -25,136 +20,125 @@ nav:
       - 0004 Oracle OKE is the Kubernetes target: decisions/0004-oracle-oke-is-the-kubernetes-target.md
       - 0005 Chaos Mesh is the chaos framework: decisions/0005-chaos-mesh-is-the-chaos-framework.md
       - 0006 The platform answers for itself over one MCP: decisions/0006-the-platform-answers-for-itself-over-one-mcp.md
-      - 0007 The front door is federated login: decisions/0007-the-front-door-is-federated-login-with-no-local-password.md
-      - 0008 Every founder action is a portal button: decisions/0008-every-founder-action-is-a-portal-button.md
-      - 0009 Every requirement is scored on the reference matrix: decisions/0009-every-requirement-is-scored-on-the-founders-reference-matrix.md
   - Specs:
-      - KINI.AI master spec: reference/specs/kini-master-spec.md
-      - Phone idea flow: reference/specs/phone-idea-flow.md
-      - Fortress stack: reference/specs/fortress-stack.md
+      - KINI.AI master spec: specs/kini-master-spec.md
+      - Phone idea flow: specs/phone-idea-flow.md
+      - Fortress stack: specs/fortress-stack.md
   - Tutorials: tutorials/index.md
   - How-to: how-to/index.md
   - Reference:
       - reference/index.md
       - Oracle tenancy: reference/oci-tenancy.md
       - Security policy: reference/security-policy.md
-      - Laws and guards (generated): reference/laws-and-guards.md
       - EU AI Act: reference/eu-ai-act.md
   - AI systems:
       - ai-systems/index.md
       - Prospector technical file: ai-systems/prospector/technical-file.md
-  - Explanation:
-      - explanation/index.md
-      - Founder self-service, the field (crew#66): explanation/founder-self-service-research.md
+  - Explanation: explanation/index.md
   - Demo:
-      - Portal: tutorials/demo/idp.md
-      - Conscience: tutorials/demo/conscience.md
-      - Estate showcase: tutorials/demo/estate-showcase.md
-      - Estate next: tutorials/demo/estate-next.md
-      - Trace matrix: tutorials/demo/trace-matrix.md
-      - Matrix gate: tutorials/demo/matrix.md
-      - Plist gate: tutorials/demo/plist.md
-      - Namespace fences: tutorials/demo/ns-fence-gate.md
-      - k8s-infra: tutorials/demo/k8s-infra.md
-      - Oracle identity: tutorials/demo/oci.md
-      - Flux on OKE: tutorials/demo/oke.md
-      - Cloud-agnostic: tutorials/demo/cloud-agnostic.md
-      - Estate zone: tutorials/demo/estate-zone.md
-      - MCP: tutorials/demo/mcp.md
-      - Sovereign bus: tutorials/demo/sb.md
-      - VM-shared path guard: tutorials/demo/vm-shared-path.md
-      - Placement: tutorials/demo/placement.md
-      - Scheduler: tutorials/demo/scheduler.md
-      - Supply chain: tutorials/demo/supply-chain.md
-      - Security policy: tutorials/demo/security-policy.md
-      - EU AI Act: tutorials/demo/ai-act.md
-      - LAW 32 gate: tutorials/demo/law32.md
-      - Actions pinned: tutorials/demo/actions-pinned.md
-      - Scheduling immunity: tutorials/demo/scheduling-immunity.md
-      - Front-door login drill: tutorials/demo/idp-login-drill.md
-      - Portability drill: tutorials/demo/idp-portability-drill.md
-      - Free-tier allowance row: tutorials/demo/idp-free-tier.md
-      - PR report (operating-model gate): tutorials/demo/pr-report.md
-      - Estate security scan: tutorials/demo/estate-security-scan.md
-      - Estate security rollout: tutorials/demo/estate-security-rollout.md
-      - Spec gate: tutorials/demo/spec-gate.md
-      - Estate diagram: tutorials/demo/estate-diagram.md
-      - Catalog render: tutorials/demo/catalog-render.md
-      - owner-account: tutorials/demo/owner-account.md
-      - static-secret: tutorials/demo/static-secret.md
-      - Bind audit: tutorials/demo/bind-audit.md
-      - Build image: tutorials/demo/build-image.md
-      - Catalog: tutorials/demo/catalog.md
-      - Conformity report: tutorials/demo/conformity.md
-      - DB gen: tutorials/demo/db-gen.md
-      - Dockerfiles: tutorials/demo/dockerfiles.md
-      - Langfuse: tutorials/demo/langfuse.md
-      - LiteLLM: tutorials/demo/litellm.md
-      - KINI: tutorials/demo/kini.md
-      - Migration gate: tutorials/demo/migration.md
-      - Multiarch gate: tutorials/demo/multiarch.md
-      - Policy test: tutorials/demo/policy-test.md
-      - Port gate: tutorials/demo/port.md
-      - Repo rulesets: tutorials/demo/repo-rulesets.md
-      - Telemetry coverage: tutorials/demo/telemetry-coverage.md
-      - Wake blocked: tutorials/demo/wake-blocked.md
-      - Founder god's view: tutorials/demo/estate-founder.md
+      - Portal: demo/idp.md
+      - Estate showcase: demo/estate-showcase.md
+      - Estate next: demo/estate-next.md
+      - Trace matrix: demo/trace-matrix.md
+      - Plist gate: demo/plist.md
+      - Namespace fences: demo/ns-fence-gate.md
+      - k8s-infra: demo/k8s-infra.md
+      - Oracle identity: demo/oci.md
+      - Flux on OKE: demo/oke.md
+      - Cloud-agnostic: demo/cloud-agnostic.md
+      - Estate zone: demo/estate-zone.md
+      - MCP: demo/mcp.md
+      - Sovereign bus: demo/sb.md
+      - VM-shared path guard: demo/vm-shared-path.md
+      - Placement: demo/placement.md
+      - Scheduler: demo/scheduler.md
+      - Supply chain: demo/supply-chain.md
+      - Security policy: demo/security-policy.md
+      - EU AI Act: demo/ai-act.md
+      - LAW 32 gate: demo/law32.md
+      - Actions pinned: demo/actions-pinned.md
+      - Scheduling immunity: demo/scheduling-immunity.md
+      - Front-door login drill: demo/idp-login-drill.md
+      - Portability drill: demo/idp-portability-drill.md
+      - Free-tier allowance row: demo/idp-free-tier.md
+      - PR report (operating-model gate): demo/pr-report.md
+      - Estate security scan: demo/estate-security-scan.md
+      - Estate security rollout: demo/estate-security-rollout.md
+      - Spec gate: demo/spec-gate.md
+      - Estate diagram: demo/estate-diagram.md
+      - Catalog render: demo/catalog-render.md
+      - owner-account: demo/owner-account.md
+      - static-secret: demo/static-secret.md
+      - Bind audit: demo/bind-audit.md
+      - Build image: demo/build-image.md
+      - Catalog: demo/catalog.md
+      - Conformity report: demo/conformity.md
+      - DB gen: demo/db-gen.md
+      - Dockerfiles: demo/dockerfiles.md
+      - Langfuse: demo/langfuse.md
+      - LiteLLM: demo/litellm.md
+      - KINI: demo/kini.md
+      - Migration gate: demo/migration.md
+      - Multiarch gate: demo/multiarch.md
+      - Policy test: demo/policy-test.md
+      - Port gate: demo/port.md
+      - Repo rulesets: demo/repo-rulesets.md
+      - Telemetry coverage: demo/telemetry-coverage.md
+      - Wake blocked: demo/wake-blocked.md
+      - Founder god's view: demo/estate-founder.md
   - Onboarding:
-      - Trace matrix: how-to/onboarding/trace-matrix.md
-      - Namespace fences: how-to/onboarding/ns-fence-gate.md
-      - Portal: how-to/onboarding/idp.md
-      - Estate Mac screen: how-to/onboarding/founder-screen-access.md
-      - Conscience: how-to/onboarding/conscience.md
-      - Estate showcase: how-to/onboarding/estate-showcase.md
-      - Estate next: how-to/onboarding/estate-next.md
-      - Plist gate: how-to/onboarding/plist.md
-      - Decision matrix: how-to/onboarding/matrix.md
-      - Oracle identity: how-to/onboarding/oci.md
-      - Flux on OKE: how-to/onboarding/oke.md
-      - Cloud-agnostic: how-to/onboarding/cloud-agnostic.md
-      - Cluster autoscaler: how-to/onboarding/autoscaler.md
-      - Estate zone: how-to/onboarding/estate-zone.md
-      - k8s-infra: how-to/onboarding/k8s-infra.md
-      - Langfuse: how-to/onboarding/langfuse.md
-      - Manifests: how-to/onboarding/manifests.md
-      - MCP: how-to/onboarding/mcp.md
-      - Sovereign bus: how-to/onboarding/sb.md
-      - VM-shared path guard: how-to/onboarding/vm-shared-path.md
-      - Placement: how-to/onboarding/placement.md
-      - Ports: how-to/onboarding/ports.md
-      - Reconcile: how-to/onboarding/reconcile.md
-      - Scheduler: how-to/onboarding/scheduler.md
-      - Supply chain: how-to/onboarding/supply-chain.md
-      - Security policy: how-to/onboarding/security-policy.md
-      - EU AI Act: how-to/onboarding/ai-act.md
-      - LAW 32 gate: how-to/onboarding/law32.md
-      - Actions pinned: how-to/onboarding/actions-pinned.md
-      - Front-door login drill: how-to/onboarding/idp-login-drill.md
-      - Portability drill: how-to/onboarding/idp-portability-drill.md
-      - Free-tier allowance row: how-to/onboarding/idp-free-tier.md
-      - PR report (operating-model gate): how-to/onboarding/pr-report.md
-      - Monitoring (Prometheus, Alertmanager): how-to/onboarding/monitoring.md
-      - Estate security scan: how-to/onboarding/estate-security-scan.md
-      - Estate security rollout: how-to/onboarding/estate-security-rollout.md
-      - Spec gate: how-to/onboarding/spec-gate.md
-      - Estate diagram: how-to/onboarding/estate-diagram.md
-      - Catalog render: how-to/onboarding/catalog-render.md
-      - owner-account: how-to/onboarding/owner-account.md
-      - static-secret: how-to/onboarding/static-secret.md
-      - Bind audit: how-to/onboarding/bind-audit.md
-      - Build image: how-to/onboarding/build-image.md
-      - Catalog: how-to/onboarding/catalog.md
-      - Conformity report: how-to/onboarding/conformity.md
-      - DB gen: how-to/onboarding/db-gen.md
-      - Dockerfiles: how-to/onboarding/dockerfiles.md
-      - LiteLLM: how-to/onboarding/litellm.md
-      - KINI: how-to/onboarding/kini.md
-      - Migration gate: how-to/onboarding/migration.md
-      - Multiarch gate: how-to/onboarding/multiarch.md
-      - Policy test: how-to/onboarding/policy-test.md
-      - Port gate: how-to/onboarding/port.md
-      - Repo rulesets: how-to/onboarding/repo-rulesets.md
-      - Telemetry coverage: how-to/onboarding/telemetry-coverage.md
-      - Wake blocked: how-to/onboarding/wake-blocked.md
-      - Scheduling immunity: how-to/onboarding/scheduling-immunity.md
-      - Founder god's view: how-to/onboarding/estate-founder.md
+      - Trace matrix: onboarding/trace-matrix.md
+      - Namespace fences: onboarding/ns-fence-gate.md
+      - Portal: onboarding/idp.md
+      - Estate showcase: onboarding/estate-showcase.md
+      - Estate next: onboarding/estate-next.md
+      - Plist gate: onboarding/plist.md
+      - Oracle identity: onboarding/oci.md
+      - Flux on OKE: onboarding/oke.md
+      - Cloud-agnostic: onboarding/cloud-agnostic.md
+      - Cluster autoscaler: onboarding/autoscaler.md
+      - Estate zone: onboarding/estate-zone.md
+      - k8s-infra: onboarding/k8s-infra.md
+      - Langfuse: onboarding/langfuse.md
+      - Manifests: onboarding/manifests.md
+      - MCP: onboarding/mcp.md
+      - Sovereign bus: onboarding/sb.md
+      - VM-shared path guard: onboarding/vm-shared-path.md
+      - Placement: onboarding/placement.md
+      - Ports: onboarding/ports.md
+      - Reconcile: onboarding/reconcile.md
+      - Scheduler: onboarding/scheduler.md
+      - Supply chain: onboarding/supply-chain.md
+      - Security policy: onboarding/security-policy.md
+      - EU AI Act: onboarding/ai-act.md
+      - LAW 32 gate: onboarding/law32.md
+      - Actions pinned: onboarding/actions-pinned.md
+      - Front-door login drill: onboarding/idp-login-drill.md
+      - Portability drill: onboarding/idp-portability-drill.md
+      - Free-tier allowance row: onboarding/idp-free-tier.md
+      - PR report (operating-model gate): onboarding/pr-report.md
+      - Monitoring (Prometheus, Alertmanager): onboarding/monitoring.md
+      - Estate security scan: onboarding/estate-security-scan.md
+      - Estate security rollout: onboarding/estate-security-rollout.md
+      - Spec gate: onboarding/spec-gate.md
+      - Estate diagram: onboarding/estate-diagram.md
+      - Catalog render: onboarding/catalog-render.md
+      - owner-account: onboarding/owner-account.md
+      - static-secret: onboarding/static-secret.md
+      - Bind audit: onboarding/bind-audit.md
+      - Build image: onboarding/build-image.md
+      - Catalog: onboarding/catalog.md
+      - Conformity report: onboarding/conformity.md
+      - DB gen: onboarding/db-gen.md
+      - Dockerfiles: onboarding/dockerfiles.md
+      - LiteLLM: onboarding/litellm.md
+      - KINI: onboarding/kini.md
+      - Migration gate: onboarding/migration.md
+      - Multiarch gate: onboarding/multiarch.md
+      - Policy test: onboarding/policy-test.md
+      - Port gate: onboarding/port.md
+      - Repo rulesets: onboarding/repo-rulesets.md
+      - Telemetry coverage: onboarding/telemetry-coverage.md
+      - Wake blocked: onboarding/wake-blocked.md
+      - Scheduling immunity: onboarding/scheduling-immunity.md
+      - Founder god's view: onboarding/estate-founder.md

@@ -61,7 +61,7 @@ def test_flux_row_substitutes_the_zone_and_waits_on_both_releases():
     assert rules["spec"]["path"] == "./platform/monitoring/rules" and rules["spec"]["dependsOn"] == [{"name": "monitoring"}]
     assert {"kind": "ConfigMap", "name": "estate-config"} in rules["spec"]["postBuild"]["substituteFrom"]
     kz2 = yaml.safe_load((MON / "rules/kustomization.yaml").read_text())
-    assert set(kz2["resources"]) == {"estate.yaml", "founder-surfaces-probe.yaml", "founder-mac-screen-sharing-probe.yaml", "agentgateway-servicemonitor.yaml"}
+    assert set(kz2["resources"]) == {"estate.yaml", "founder-surfaces-probe.yaml", "agentgateway-servicemonitor.yaml"}
     ns = one("platform/monitoring/namespace.yaml", "Namespace")
     assert ns["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"
 
@@ -141,7 +141,7 @@ def test_probe_targets_are_exactly_the_founder_surfaces_and_the_module_accepts_4
 def test_estate_rules_carry_founder_surface_down_and_the_cp14_pvc_alert():
     pr = one("platform/monitoring/rules/estate.yaml", "PrometheusRule", "estate")
     rules = {r["alert"]: r for g in pr["spec"]["groups"] for r in g["rules"]}
-    assert set(rules) == {"FounderSurfaceDown", "MacScreenSharingOff", "PersistentVolumeAlmostFull", "GatewayRefusals", "GatewayMetricsAbsent"}
+    assert set(rules) == {"FounderSurfaceDown", "PersistentVolumeAlmostFull", "GatewayRefusals", "GatewayMetricsAbsent"}
     assert rules["FounderSurfaceDown"]["expr"] == 'probe_success{job="founder-surfaces"} == 0'
     assert rules["FounderSurfaceDown"]["labels"]["severity"] == "critical"
     pvc = rules["PersistentVolumeAlmostFull"]
@@ -197,7 +197,7 @@ def test_broken_workload_alert_lists_namespace_monitoring():
     alert = one("platform/alerts/alert.yaml", "Alert", "broken-workload")
     ns = {s["namespace"] for s in alert["spec"]["eventSources"] if s["kind"] == "HelmRelease"}
     assert "monitoring" in ns
-    assert (IDP / "docs/how-to/onboarding/monitoring.md").exists()
+    assert (IDP / "docs/onboarding/monitoring.md").exists()
     (row,) = [r for r in yaml.safe_load((IDP / "drills/catalogue.yaml").read_text())["drills"] if r["name"] == "cluster-state"]
     assert "Watchdog" in row["proves"]
 

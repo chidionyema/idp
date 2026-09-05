@@ -48,7 +48,7 @@ for want in no-optional-secret-references money-rail-single-writer; do
 done
 
 # PolicyExceptions are handed to the CLI as admission sees them: Kyverno honours only the ones in
-# namespace kyverno (platform/kyverno/kyverno.yaml features.policyExceptions), wherever in the estate
+# namespace kyverno (platform/edge/kyverno.yaml features.policyExceptions), wherever in the estate
 # they are declared, so every path a clusters/oke Kustomization points at is rendered once here.
 # Incident 2026-08-26 (crew#325): the langfuse exception sat beside the release it excused, the
 # directory's namespace transformer rewrote it to observability, and this judge passed a render
@@ -82,19 +82,10 @@ print(f"policies  +{est} estate ClusterPolicies from clusters/oke paths (platfor
 PY
 
 rc=0
-# 2026-08-28 (crew#584, founder: "tests were supposed to be 9x faster"): this loop ran the 16 platform
-# dirs one after another -- kustomize, then `helm template` pulling the chart over the network, then
-# one `kyverno apply` per object -- and was 4m10s of offline-gate's 8 min (run 33195096448, 17:36:33
-# to 17:40:43). The dirs are independent, so they render together; IDP_RENDER_JOBS caps the fan-out.
-jobs="${IDP_RENDER_JOBS:-8}"
-_slot() { while [ "$(jobs -rp | wc -l)" -ge "$jobs" ]; do sleep 0.2; done; }
-_slug() { echo "$1" | tr '/' '_'; }
-
-render_dir() {
-  local dir="$1" slug; slug="$(_slug "$1")"
-  kubectl kustomize "$dir" > "$S/kz-$slug.yaml"
-  python3 - "$S" "$S/kz-$slug.yaml" <<'PY'
-import sys, os, yaml, subprocess, pathlib, json
+for dir in "$@"; do
+  kubectl kustomize "$dir" > "$S/kz.yaml"
+  python3 - "$S" "$S/kz.yaml" <<'PY'
+import sys, yaml, subprocess, pathlib, json
 S = pathlib.Path(sys.argv[1]); docs = [d for d in yaml.safe_load_all(open(sys.argv[2])) if d]
 repos = {d["metadata"]["name"]: d["spec"]["url"] for d in docs if d["kind"] == "HelmRepository"}
 cms = {d["metadata"]["name"]: d.get("data", {}) for d in docs if d["kind"] == "ConfigMap"}
@@ -119,21 +110,8 @@ for hr in (d for d in docs if d["kind"] == "HelmRelease"):
     url = repos[spec["sourceRef"]["name"]]
     chart_ref = ([f"{url.rstrip('/')}/{spec['chart']}"] if url.startswith("oci://")
                  else [spec["chart"], "--repo", url])
-    # crew#584 (idp#631, run 33201855349): eight dirs render at once, and three bdd tests under
-    # `-n auto` each render again, so up to two dozen `helm template --repo` calls wrote helm's one
-    # shared repository cache (index.yaml + chart .tgz) at the same time -- a docs-only PR went red
-    # on `helm template signoz` and the log could not say why because stderr was DEVNULL (LAW 28).
-    # Every template call gets its own cache under $S, and its stderr reaches render-err verbatim.
-    hcache = S / f"helm-{name}"; hcache.mkdir(exist_ok=True)
-    henv = {**os.environ, "HELM_REPOSITORY_CACHE": str(hcache), "HELM_CACHE_HOME": str(hcache),
-            "HELM_REPOSITORY_CONFIG": str(hcache / "repositories.yaml")}
-    r = subprocess.run(["helm", "template", release, *chart_ref, "--version", str(spec["version"]),
-                        "-n", ns, "-f", str(vals)], text=True, capture_output=True, env=henv)
-    if r.returncode != 0:
-        sys.stderr.write(f"helm template {release} ({spec['chart']} {spec['version']} from {url}) "
-                         f"exited {r.returncode}:\n{r.stderr}")
-        raise SystemExit(1)
-    out = r.stdout
+    out = subprocess.check_output(["helm", "template", release, *chart_ref,
+        "--version", str(spec["version"]), "-n", ns, "-f", str(vals)], text=True, stderr=subprocess.DEVNULL)
     # helm prints `Pulled:`/`Digest:` for an OCI chart on stdout before the first document; kustomize
     # reads that as a resource with no metadata. The render starts at the first `---`.
     render.write_text(out[out.index("\n---\n") + 1:] if out.startswith(("Pulled:", "Digest:")) else out)
@@ -151,43 +129,26 @@ for hr in (d for d in docs if d["kind"] == "HelmRelease"):
 PY
   # Plain workloads in the same kustomize output, judged as they are. Services, Ingresses, claims
   # and secret stores too (crew#66, R43): provider-independence refuses those, not only pods.
-  python3 - "$S/kz-$slug.yaml" "$S/plain-$slug.yaml" <<'PY2'
+  python3 - "$S/kz.yaml" "$S/plain-$(echo "$dir" | tr '/' '_').yaml" <<'PY2'
 import sys, yaml
 kinds = {"Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Pod",
          "Service", "Ingress", "PersistentVolumeClaim", "ClusterSecretStore", "SecretStore"}
 docs = [d for d in yaml.safe_load_all(open(sys.argv[1])) if d and d.get("kind") in kinds]
 open(sys.argv[2], "w").write(yaml.safe_dump_all(docs) if docs else "")
 PY2
-}
-
-for dir in "$@"; do
-  _slot; render_dir "$dir" > "$S/releases-$(_slug "$dir").txt" 2> "$S/render-err-$(_slug "$dir").txt" &
-done
-wait
-: > "$S/releases.txt"
-for dir in "$@"; do
-  slug="$(_slug "$dir")"
-  # A render that died before any verdict (kustomize `must build at directory`, a chart that will
-  # not pull) says so here, verbatim, and the judge exits 1 -- the shape crew#292's tests hold.
-  if [ -s "$S/render-err-$slug.txt" ]; then cat "$S/render-err-$slug.txt" >&2; echo "FAIL  render   $dir: the render did not complete (above)"; rc=1; fi
-  cat "$S/releases-$slug.txt" >> "$S/releases.txt"
-done
-[ "$rc" = 0 ] || exit "$rc"
-
-_exc() { for x in "$S"/exceptions/*.yaml; do [ -f "$x" ] && printf -- '--exception\n%s\n' "$x"; done; }
-judge() {  # judge <label-kind> <label> <resource-file>: one verdict block; exit 1 on a failed policy
-  local kind="$1" label="$2" res="$3" out summary
-  mapfile -t exc < <(_exc)
-  out=$(kyverno apply "$S/policies.yaml" --resource "$res" "${exc[@]}" 2>&1 || true)
+done > "$S/releases.txt"
+for plain in "$S"/plain-*.yaml; do
+  [ -s "$plain" ] || continue
+  label=$(basename "$plain" .yaml | sed 's/^plain-//; s/_/\//g')
+  exc=(); for x in "$S"/exceptions/*.yaml; do [ -f "$x" ] && exc+=(--exception "$x"); done
+  out=$(kyverno apply "$S/policies.yaml" --resource "$plain" "${exc[@]}" 2>&1 || true)
   summary=$(printf '%s\n' "$out" | grep -E '^pass:' | tail -1)
   if printf '%s\n' "$out" | grep -qE '^policy .* failed'; then
-    echo "FAIL  $kind $label: $summary"
-    printf '%s\n' "$out" | grep -E '^policy .* failed' | sed 's/^/      /'; return 1
-  else echo "ok    $kind $label: $summary"; fi
-}
-
-prepare_release() {  # kustomize the post-rendered chart and shape it the way admission sees it
-  local name="$1"
+    echo "FAIL  plain    $label: $summary"
+    printf '%s\n' "$out" | grep -E '^policy .* failed' | sed 's/^/      /'; rc=1
+  else echo "ok    plain    $label: $summary"; fi
+done
+while read -r name ns npatch; do
   kubectl kustomize "$S/$name.kz" > "$S/$name.final.yaml"
   # helm test hooks never reach the cluster (HelmRelease test.enable is off); drop them before judging.
   # Every other hook (pre/post-install, pre/post-upgrade, ...) is admitted like any pod and is
@@ -216,19 +177,12 @@ for d in list(docs):
         "labels": (tpl.get("metadata") or {}).get("labels") or {}, "ownerReferences": [{"apiVersion": "batch/v1", "kind": "Job", "name": d["metadata"]["name"], "uid": "offline"}]}, "spec": tpl["spec"]})
 open(p, "w").write(yaml.safe_dump_all(docs))
 PY
-}
-
-n=0; order=()
-for plain in "$S"/plain-*.yaml; do
-  [ -s "$plain" ] || continue
-  label=$(basename "$plain" .yaml | sed 's/^plain-//; s/_/\//g')
-  n=$((n+1)); order+=("$S/verdict-$n.txt")
-  _slot; { judge "plain   " "$label" "$plain" > "$S/verdict-$n.txt" || echo 1 > "$S/verdict-$n.rc"; } &
-done
-while read -r name ns npatch; do
-  n=$((n+1)); order+=("$S/verdict-$n.txt")
-  _slot; { prepare_release "$name" && judge "render  " "$name ($ns, $npatch patches)" "$S/$name.final.yaml"; } > "$S/verdict-$n.txt" 2>&1 || echo 1 > "$S/verdict-$n.rc" &
+  exc=(); for x in "$S"/exceptions/*.yaml; do [ -f "$x" ] && exc+=(--exception "$x"); done
+  out=$(kyverno apply "$S/policies.yaml" --resource "$S/$name.final.yaml" "${exc[@]}" 2>&1 || true)
+  summary=$(printf '%s\n' "$out" | grep -E '^pass:' | tail -1)
+  if printf '%s\n' "$out" | grep -qE '^policy .* failed'; then
+    echo "FAIL  render   $name ($ns, $npatch patches): $summary"
+    printf '%s\n' "$out" | grep -E '^policy .* failed' | sed 's/^/      /'; rc=1
+  else echo "ok    render   $name ($ns, $npatch patches): $summary"; fi
 done < "$S/releases.txt"
-wait
-for v in "${order[@]}"; do cat "$v"; [ -f "${v%.txt}.rc" ] && rc=1; done
 exit $rc

@@ -75,5 +75,5 @@ def test_grader_is_parametrised_and_run_by_oke_check_under_the_catalogue_row():
     cat = yaml.safe_load((ROOT / "drills/catalogue.yaml").read_text())
     row = next(d for d in cat["drills"] if d["name"] == "alert-drill")
     assert row["workflow"] == "oke-check.yml" and row["job"] == "alert-drill"
-    doc = (ROOT / "docs/how-to/onboarding/monitoring.md").read_text()
+    doc = (ROOT / "docs/onboarding/monitoring.md").read_text()
     assert "bin/idp-chaos-drill langfuse-alert-drill alert-drill" in doc

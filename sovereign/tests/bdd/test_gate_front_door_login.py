@@ -76,9 +76,7 @@ def _oauth2_proxy_in_front(state: dict) -> None:
             # The trace store's public API (crew#325): Langfuse enforces the project keys on
             # /api/public/, so the route may expose that path and nothing else.
             paths = [m.get("path", {}) for r in d["spec"]["rules"] for m in r.get("matches", [])]
-            # crew#503: /api/auth/ is next-auth (OIDC signin/callback/session); password sign-in is off.
-            open_paths = ({"type": "PathPrefix", "value": "/api/public/"}, {"type": "PathPrefix", "value": "/api/auth/"})
-            assert paths and all(x in open_paths for x in paths), f"{p}: langfuse-project-keys route exposes {paths}"
+            assert paths and all(x == {"type": "PathPrefix", "value": "/api/public/"} for x in paths), f"{p}: langfuse-project-keys route exposes {paths}"
             keys = (p.parent / "langfuse.yaml").read_text()
             assert "langfuse-init-public-key" in keys and "langfuse-init-secret-key" in keys, f"{p}: langfuse.yaml pulls no project keys"
             continue

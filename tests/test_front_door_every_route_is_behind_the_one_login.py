@@ -99,11 +99,8 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
     # pulls the two project keys Langfuse enforces on that path (langfuse.yaml, from the vault).
     if (route["metadata"].get("annotations") or {}).get("idp.estate/auth") == "langfuse-project-keys":
         paths = [m.get("path", {}) for rule in route["spec"]["rules"] for m in rule.get("matches", [])]
-        # crew#503: /api/auth/ is next-auth (OIDC signin/callback/session); password sign-in is
-        # off in langfuse-sso, so those endpoints only round-trip with the identity domain.
-        open_paths = ({"type": "PathPrefix", "value": "/api/public/"}, {"type": "PathPrefix", "value": "/api/auth/"})
-        assert paths and all(p in open_paths for p in paths), \
-            f"{f}: annotated langfuse-project-keys but exposes a path other than /api/public/ or /api/auth/: {paths}"
+        assert paths and all(p == {"type": "PathPrefix", "value": "/api/public/"} for p in paths), \
+            f"{f}: annotated langfuse-project-keys but exposes a path other than /api/public/: {paths}"
         keys = (pathlib.Path(f).parent / "langfuse.yaml").read_text()
         assert "langfuse-init-public-key" in keys and "langfuse-init-secret-key" in keys, \
             f"{f}: annotated langfuse-project-keys but langfuse.yaml pulls no project keys"
@@ -134,25 +131,18 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
     guarded = 0
     for rule in route["spec"]["rules"]:
         refs = [flt["extensionRef"] for flt in rule.get("filters", []) if flt.get("type") == "ExtensionRef"]
-        forward_auth_mws = []
-        for ref in refs:
-            mw = MIDDLEWARES.get((ns, ref["name"]))
-            assert mw, f"{f}: Middleware {ns}/{ref['name']} not found in the route's namespace"
-            if "forwardAuth" not in mw["spec"]:
-                # Other manners-layer Middlewares (friendly-errors, edge-headers, ...) may ride
-                # along on the same rule; only the ForwardAuth one has to point at oauth2-proxy.
-                continue
-            forward_auth_mws.append(mw)
-        if not forward_auth_mws:
+        if not refs:
             paths = [m.get("path", {}) for m in rule.get("matches", [])]
             assert paths and all(p == {"type": "PathPrefix", "value": "/oauth2/"} for p in paths), \
-                f"{f}: route {route['metadata']['name']} has a rule with no ForwardAuth Middleware that is not the /oauth2/ login path"
+                f"{f}: route {route['metadata']['name']} has a rule with no ExtensionRef that is not the /oauth2/ login path"
             assert all(b["name"] == "oauth2-proxy" and b.get("namespace") == "identity" for b in rule["backendRefs"]), \
                 f"{f}: the /oauth2/ path must go to identity/oauth2-proxy, nowhere else"
             continue
         guarded += 1
-        assert any("oauth2-proxy.identity" in mw["spec"]["forwardAuth"]["address"] for mw in forward_auth_mws), \
-            f"{f}: route {route['metadata']['name']} has a ForwardAuth Middleware not pointed at oauth2-proxy.identity"
+        for ref in refs:
+            mw = MIDDLEWARES.get((ns, ref["name"]))
+            assert mw, f"{f}: Middleware {ns}/{ref['name']} not found in the route's namespace"
+            assert "oauth2-proxy.identity" in mw["spec"]["forwardAuth"]["address"], mw["spec"]
     assert guarded, f"{f}: route {route['metadata']['name']} has no guarded rule"
 
 
@@ -160,17 +150,7 @@ def test_no_manifest_holds_a_user_database():
     """ADR 0007: the estate holds no password for a person."""
     for f, d in _docs():
         text = yaml.safe_dump(d)
-        assert "users_database" not in text, f"{f}: a user database"
-        if "password_hash" in text:
-            # crew#562 path 2: Guacamole's schema makes the column NOT NULL, so the seed row that
-            # lets the founder's connection be granted before first sign-in must fill it. The
-            # only value allowed is fresh kernel randomness with no salt -- a hash of nothing a
-            # person knows, matched by no password. Graded on the SQL, not on a comment.
-            sql = "\n".join(v for v in d.get("data", {}).values() if isinstance(v, str)) if d.get("kind") == "ConfigMap" else ""
-            hashes = re.findall(r"INSERT INTO \w+ \([^)]*password_hash[^)]*\)\s*(?:VALUES|SELECT)\s*([^\n]+)", sql)
-            assert hashes, f"{f}: password_hash outside a seed INSERT is a user database"
-            for values in hashes:
-                assert "decode(md5(random()::text), 'hex'), NULL" in values, f"{f}: a password_hash that is not pure randomness with no salt: {values}"
+        assert "users_database" not in text and "password_hash" not in text, f"{f}: a user database"
         if d.get("kind") == "Middleware":
             assert "authelia" not in text, f"{f}: Middleware still points at authelia"
 

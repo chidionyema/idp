@@ -14,8 +14,8 @@ cluster-up: ## Create the local k3d cluster from platform/k3d/estate.yaml
 	@echo
 	@$(MAKE) --no-print-directory bind-audit
 
-catalogue-deploy: ## Build the catalogue image from backstage/Dockerfile through bin/build-image, import it into k3d, apply platform/backstage/overlays/local, port-forward 127.0.0.1:3100
-	bin/build-image --load -t idp/backstage:local -f backstage/Dockerfile backstage
+catalogue-deploy: ## Build the catalogue image, import it into k3d, apply platform/backstage/overlays/local, port-forward 127.0.0.1:3100
+	docker compose -f backstage/compose.yml build catalogue
 	k3d image import idp/backstage:local -c estate
 	KUBECONFIG=$$(k3d kubeconfig write estate) kubectl kustomize --load-restrictor LoadRestrictionsNone platform/backstage/overlays/local | KUBECONFIG=$$(k3d kubeconfig write estate) kubectl apply -f -
 	KUBECONFIG=$$(k3d kubeconfig write estate) kubectl -n backstage rollout status deploy/catalogue --timeout=240s

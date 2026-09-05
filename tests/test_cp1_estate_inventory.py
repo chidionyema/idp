@@ -17,6 +17,7 @@ has it). Wired into bin/idp-ci. Exit 0 pass, 1 fail.
 """
 import datetime as dt
 import os
+import random
 import re
 import sys
 import tempfile
@@ -90,6 +91,7 @@ def _run():
 
         # --- property: many (entity count x ceiling) pairs, payload never exceeds ceiling ---
         synth_state_md(st, now - dt.timedelta(minutes=5))
+        rng = random.Random(0)
         ceilings_ok = True
         counts_ok = True
         for n in [0, 1, 5, 50, 200, 1000, 5000]:

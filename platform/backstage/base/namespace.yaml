@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: backstage
+  labels:
+    # Pod Security Admission, enforced at the namespace so no manifest here can
+    # run privileged, as root, or with a host namespace. Same class of fence as
+    # the caps allow-list in bin/idp-apply.
+    pod-security.kubernetes.io/enforce: restricted
+    idp.estate/edge-attach: "true"   # the shared Gateway selects route namespaces by this label
+    # Chaos Mesh runs with enableFilterNamespace: true (platform/chaos/mesh/helmrelease.yaml), so
+    # it injects only into namespaces carrying this label. Without it the weekly
+    # backstage-pod-kill Schedule is accepted and then does nothing (crew#292 CP4, 2026-08-26:
+    # Schedule 5h old, status.time null, namespace unlabelled).
+    chaos-mesh.org/inject: enabled

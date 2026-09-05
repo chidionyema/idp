@@ -3,7 +3,7 @@
 # estate names its load balancer (R36, crew#250). The exception is scoped to that one Service so a
 # second cluster row (clusters/k3s) that patches nothing has nothing to excuse, and any other
 # Service carrying a provider annotation is still refused. Namespace kyverno: admission honours
-# exceptions from nowhere else (platform/kyverno/kyverno.yaml features.policyExceptions, crew#325).
+# exceptions from nowhere else (platform/edge/kyverno.yaml features.policyExceptions, crew#325).
 apiVersion: kyverno.io/v2
 kind: PolicyException
 metadata:

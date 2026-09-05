@@ -44,10 +44,3 @@ spec:
             follow_redirects: true
             preferred_ip_protocol: ip4
             valid_status_codes: [200, 201, 202, 203, 204, 301, 302, 303, 307, 308, 401, 405]
-        # crew#562 path 2: is the estate Mac's Screen Sharing switch on? A TCP open on 5900 over the
-        # tailnet egress Service is the only honest signal; the browser page is up either way.
-        mac_screen_sharing:
-          prober: tcp
-          timeout: 10s
-          tcp:
-            preferred_ip_protocol: ip4

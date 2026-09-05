@@ -11,18 +11,7 @@ const estateHomePage = PageBlueprint.make({
   },
 });
 
-// /pair: the founder types Moonlight's PIN into the portal and it reaches Sunshine on the
-// Mac over the proxy (crew#562, founder-screen-access path 1). Listed as a founder surface
-// in backstage/founder/catalog-info.yaml so the crew#401 gate and the god view carry it.
-const pairPhonePage = PageBlueprint.make({
-  name: 'pair',
-  params: {
-    path: '/pair',
-    loader: () => import('./PairPhone').then(m => <m.PairPhone />),
-  },
-});
-
 export const homeModule = createFrontendModule({
   pluginId: 'home',
-  extensions: [estateHomePage, pairPhonePage],
+  extensions: [estateHomePage],
 });

@@ -94,6 +94,4 @@ def test_incident_crew516_the_feed_receipt_is_the_file_and_the_push_needs_no_vau
     assert _wf()["permissions"].get("packages") == "write"
     push = (ROOT / "bin" / "idp-catalog-push").read_text()
     assert "for t in flux kubectl git; do" in push, "sops must not be a hard requirement"
-    code = "\n".join(l for l in push.splitlines() if not l.lstrip().startswith("#"))
-    assert "sops" not in code, "crew#227 CP3: the push reads no vault file; gh (GITHUB_TOKEN on Actions) is the only token"
-    assert re.search(r"gh auth token >/dev/null 2>&1 \|\| \{ echo \"BLIND gh holds no token", push), "no token is BLIND, never a vault read"
+    assert re.search(r"gh auth token >/dev/null 2>&1 \|\| command -v sops", push), "sops is the fallback after gh"

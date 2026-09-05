@@ -55,39 +55,18 @@ if jq -e '.files | index("drills/catalogue.yaml")' "$REPORTS/pr-meta.json" >/dev
   fi
 fi
 drills=$("$IDP/bin/idp-drill-names" "${cats[@]}" 2>/dev/null || echo '[]')
-# ADR 0009 (crew#562): the scored decisions a PR may cite with `Matrix: <slug>`; the rule
-# matrix_cited also accepts a slug the PR itself adds to the matrix.
-matrix=$(python3 "$IDP/bin/matrix-gate" --slugs 2>/dev/null || echo '[]')
-jq -n --slurpfile m "$REPORTS/pr-meta.json" --slurpfile w "$REPORTS/pr-words.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" --argjson d "$drills" --argjson x "$matrix" \
-  '{pr: ($m[0] + {added: $a} + $w[0]), budget_monthly_usd: $b, drills: $d, matrix: $x}' > "$REPORTS/pr.json"
+jq -n --slurpfile m "$REPORTS/pr-meta.json" --slurpfile w "$REPORTS/pr-words.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" --argjson d "$drills" \
+  '{pr: ($m[0] + {added: $a} + $w[0]), budget_monthly_usd: $b, drills: $d}' > "$REPORTS/pr.json"
 out=$(conftest test --parser json -p "$IDP/policy" "$REPORTS/pr.json" 2>&1); rc=$?
 if [ "$src" -eq 1 ]; then
   out=$(printf '%s\nFAIL - pr.json - main - rule=no_secret_added fix: gitleaks flagged an added line (bin/idp-pr-secrets reports/pr-added.txt); rename the field or remove the value, never allow-list it\n' "$out"); rc=1
 fi
-printf '%s\n' "$out" | grep -E 'FAIL|WARN|rule=' | sed -E 's/^.*(FAIL|WARN) - [^-]*- main - //'
-# crew#586 CP2: the conscience score. The seven tenet rows in conscience/tenets.yaml each name
-# the rule that judges a PR (policy/conscience.rego, plus no_secret_added and drill_named); a
-# row is green when its rule did not fire, warn or deny alike. The line is posted on every PR
-# when --comment is given, so the founder never has to ask "is this aligned?".
-tenet_rules=$(python3 -c "import yaml,sys; print(' '.join(r['pr_rule'] for r in yaml.safe_load(open(sys.argv[1]))['tenets']))" "$IDP/conscience/tenets.yaml" 2>/dev/null || echo "")
-tenets=0; fired=0
-for r in $tenet_rules; do
-  [ "$r" = "no_static_secret_in_diff" ] && r=no_secret_added
-  tenets=$((tenets+1)); printf '%s\n' "$out" | grep -q "rule=$r " && fired=$((fired+1))
-done
-score=$((tenets-fired))
-if [ "$tenets" -gt 0 ]; then
-  if [ "$score" -eq "$tenets" ]; then brain="🧠 $score/$tenets — every tenet green; the estate is more itself than it was"
-  else brain="🧠 $score/$tenets — $fired tenet rule(s) fired; each line below names the tenet and the fix"; fi
-  echo "$brain"
-fi
-if [ "$comment" = "--comment" ]; then
+printf '%s\n' "$out" | grep -E 'FAIL|rule=' | sed 's/^.*FAIL - [^-]*- main - //'
+if [ "$rc" -ne 0 ] && [ "$comment" = "--comment" ]; then
   # crew#66: policy/no-manual-steps.rego's deny is the founder's sentence verbatim and carries no
   # rule= prefix, so the comment grep reads it by its own opening words or the author gets a red
   # cross with an empty comment under it.
-  if [ "$rc" -ne 0 ]; then head_line='operating-model gate (policy/operating_model.rego) refused this PR. Each line names the rule and the fix.'
-  else head_line='operating-model gate passed.'; fi
-  body=$(printf '%s\n\n%s\n\n' "${brain:-}" "$head_line"; printf '%s\n' "$out" | grep -oE '(rule=|Policy Violation:).*' | sed 's/^/- /'; printf '\nRe-run: bin/pr-report %s\n' "$n")
+  body=$(printf 'operating-model gate (policy/operating_model.rego) refused this PR. Each line names the rule and the fix.\n\n'; printf '%s\n' "$out" | grep -oE '(rule=|Policy Violation:).*' | sed 's/^/- /'; printf '\nRe-run: bin/pr-report %s\n' "$n")
   gh pr comment "$n" -b "$body" >/dev/null && echo "commented on #$n"
 fi
 [ "$rc" -eq 0 ] && echo "PASS    operating-model gate #$n" || echo "FAIL    operating-model gate #$n"

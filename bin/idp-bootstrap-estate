@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The estate's root trust in one command (crew#66 founder 2026-08-28: "The founder will never
-# copy-paste a secret or click through web UI settings"; docs/reference/policy/root-trust.md; crew#575–#580).
+# copy-paste a secret or click through web UI settings"; docs/policy/root-trust.md; crew#575–#580).
 #   bin/idp-bootstrap-estate               run every bootstrapper in dependency order; each keeps what already works
 #   bin/idp-bootstrap-estate --preflight   every bootstrapper's preflight; nothing written
 #

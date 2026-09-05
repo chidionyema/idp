@@ -4,7 +4,7 @@
 # volumeClaimTemplates are immutable, so moving them onto a cluster-named StorageClass is a data
 # migration (crew#66 follow-up), not a values edit. Scoped to exactly those three names: any new
 # StatefulSet naming a provider storage class is still refused. Namespace kyverno: admission
-# honours exceptions from nowhere else (platform/kyverno/kyverno.yaml features.policyExceptions).
+# honours exceptions from nowhere else (platform/edge/kyverno.yaml features.policyExceptions).
 apiVersion: kyverno.io/v2
 kind: PolicyException
 metadata:
@@ -29,7 +29,7 @@ spec:
 # is immutable on a PersistentVolumeClaim once it exists, so dropping the field from the values file
 # is a data migration (delete and recreate the claim, losing the SeaweedFS volume), not a values
 # edit; the values file stays on oci-bv until that migration is planned. Namespace kyverno:
-# admission honours exceptions from nowhere else (platform/kyverno/kyverno.yaml features.policyExceptions).
+# admission honours exceptions from nowhere else (platform/edge/kyverno.yaml features.policyExceptions).
 apiVersion: kyverno.io/v2
 kind: PolicyException
 metadata:

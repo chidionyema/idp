@@ -101,7 +101,7 @@ def test_the_flux_row_waits_on_the_vault_and_the_router_and_the_gateway_points_a
 
 def _renderer_helm_block():
     src = (ROOT / "bin/idp-kyverno-render").read_text()
-    m = re.search(r'python3 - "\$S" "\$S/kz-?[^"]*\.yaml" <<\'PY\'\n(.*?)\nPY\n', src, re.S)
+    m = re.search(r'python3 - "\$S" "\$S/kz.yaml" <<\'PY\'\n(.*?)\nPY\n', src, re.S)
     assert m, "the helm block moved; update the test"
     return m.group(1)
 

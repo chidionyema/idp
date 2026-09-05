@@ -75,9 +75,6 @@ if [ -z "$live" ]; then
   exit 2
 fi
 
-# idp#619: the ok line goes to stderr and the bare name to stdout, as line 19 promises; the three
-# bootstrappers capture stdout as OCI_CLI_PROFILE and every vault call failed as "ok oci-whoami: ...".
-echo "ok      oci-whoami: live profile is '$live'" >&2
-echo "$live"
+echo "ok      oci-whoami: live profile is '$live'"
 export OCI_CLI_AUTH=security_token
 export OCI_CLI_PROFILE="$live"

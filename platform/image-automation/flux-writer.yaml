@@ -2,7 +2,7 @@
 # `github-app` that bin/idp-github-app writes (crew#66 root trust, 2026-08-28; crew#575).
 # Until this, idp-writer authenticated with a read-write deploy key a person minted by hand
 # (ssh-keygen + `gh api repos/.../keys`) and pasted into SEED_FLUX_WRITER_* (crew#325) — a MISS on
-# docs/reference/policy/root-trust.md. Nothing in the App's lanes can create a deploy key (administration is
+# docs/policy/root-trust.md. Nothing in the App's lanes can create a deploy key (administration is
 # not a permission the App holds, platform/github-app/manifest.json), and it does not need one:
 # source-controller v1.9 (clusters/oke/flux-system/gotk-components.yaml) authenticates a
 # GitRepository as a GitHub App (`provider: github`) and image-automation-controller pushes with the

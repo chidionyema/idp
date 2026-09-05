@@ -1,7 +1,7 @@
 # crew#539 DoD item 1 (founder, 2026-08-27, "nothing watched the estate"): the one Prometheus and
 # the one Alertmanager. kube-prometheus-stack (LAW 43: Prometheus Operator + Alertmanager +
 # kube-state-metrics + the upstream rule set) — not a curl loop, not a second SigNoz alert path.
-# SigNoz stays the long store for every signal (docs/how-to/onboarding/k8s-infra.md); this Prometheus
+# SigNoz stays the long store for every signal (docs/onboarding/k8s-infra.md); this Prometheus
 # keeps two days, exists to evaluate rules, and pages through Alertmanager -> Telegram
 # (platform/monitoring/alertmanager-config.yaml) and -> Robusta (crew#539 CP14).
 #

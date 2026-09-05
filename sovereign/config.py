@@ -18,9 +18,9 @@ import os
 import socket
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 try:
     import tomllib  # py311+
@@ -251,12 +251,6 @@ KEYS: dict[str, KeySpec] = {
     "dualread.max_overhead_ms": KeySpec(15, "int", "SB_DUALREAD_MAX_OVERHEAD_MS", "cp10: p95 budget for the dual-read router's added cost (DAG walk + receipt) over the legacy-only read, measured over 1000 reads"),
     "dualread.latency_round_ndigits": KeySpec(4, "int", None, "cp10: decimal places dual-read latencies are rounded to before entering a receipt"),
     "time.ms_per_second": KeySpec(1000, "int", None, "milliseconds per second, for every perf_counter() duration reported in ms"),
-
-    "fork.dir": KeySpec(str(_estate_home() / "sovereign" / "forks"), "path", "SB_FORK_DIR", "cp12: disk-backed fork state/dag/receipts root, used once fork.max_parallel is exceeded"),
-    "fork.max_ms": KeySpec(1000, "int", "SB_FORK_MAX_MS", "cp12: budget for `sb fork`'s elapsed_ms -- a fork is one pointer-file copy, never a data copy, so this is a correctness bound, not a target to tune toward"),
-    "fork.max_parallel": KeySpec(3, "int", "SB_FORK_MAX_PARALLEL", "cp12: in-memory forks allowed open at once before a new fork spills to fork.dir on disk"),
-    "fork.working_pointer_filename": KeySpec("working_branch", "str", None, "cp12: file under sovereign/ naming the branch `sb switch` last pointed at"),
-    "fork.memory_dsn": KeySpec(":memory:", "str", None, "cp12: sqlite3.connect() DSN for an in-memory fork, below fork.max_parallel"),
 
     "telegram.bot_token": KeySpec(_ENV_FILE_VALUES.get("TELEGRAM_BOT_TOKEN"), "str", "TELEGRAM_BOT_TOKEN", "", secret=True),
     "telegram.home_channel": KeySpec(_ENV_FILE_VALUES.get("TELEGRAM_HOME_CHANNEL"), "str", "TELEGRAM_HOME_CHANNEL", ""),
@@ -680,11 +674,6 @@ VIEWS_MAIN_FILENAME: str = _R["views.main_filename"].value
 DUALREAD_MAX_OVERHEAD_MS: int = _R["dualread.max_overhead_ms"].value
 DUALREAD_LATENCY_ROUND_NDIGITS: int = _R["dualread.latency_round_ndigits"].value
 MS_PER_SECOND: int = _R["time.ms_per_second"].value
-FORK_DIR: Path = Path(_R["fork.dir"].value)
-FORK_MAX_MS: int = _R["fork.max_ms"].value
-FORK_MAX_PARALLEL: int = _R["fork.max_parallel"].value
-FORK_WORKING_POINTER: Path = SOVEREIGN_HOME / _R["fork.working_pointer_filename"].value
-FORK_MEMORY_DSN: str = _R["fork.memory_dsn"].value
 RECEIPTS_KEYCHAIN_SERVICE: str = _R["receipts.keychain_service"].value
 RECEIPTS_KEYCHAIN_ACCOUNT: str = _R["receipts.keychain_account"].value
 RECEIPTS_KEYCHAIN_TIMEOUT_S: int = _R["receipts.keychain_timeout_s"].value

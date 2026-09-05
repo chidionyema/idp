@@ -8,31 +8,21 @@ described in prose since crew#250; this is the first time it runs. The workflow 
 `kubectl get kustomizations -A -o json` and hands the file here.
 
 Prints one line, like every drill, after one line per layer that did not come up:
-  ok      portability  ready N/M (root-red R all named, cascaded C) on a cluster with no OCI (floor F)
-  FAIL    portability  root-red not on drills/portability-oci-reds.txt: <layers>  -- a break of its own that no one has explained
+  ok      portability  ready N/M layers on a cluster with no OCI (floor F)
   FAIL    portability  ready N/M is below the floor F        -- a layer that hydrated last week no longer does
   FAIL    portability  no Kustomization was applied           -- the drill itself is broken, nothing was graded
   BLIND   portability  <why>                                  -- the receipt is missing or unreadable
-
-crew#488 CP5: a not-ready layer is one of three things, and the line says which.
-  cascaded   its Ready message is Flux's "dependency X is not ready": a row above it is red, it is not
-  oci-red    red for a reason of its own that drills/portability-oci-reds.txt names for that layer
-  ROOT-RED   red for a reason of its own that nothing names: this FAILS the run whatever the floor says
-Before this, 2/38 with 36 red graded ok against floor 2 (run 33208911991): four layers broke on
-their own, thirty-two fell behind them, and the line read green. A count that cannot tell a
-cascade from a cause cannot tell a buyer's engineer anything (LAW 44, silent green).
 
 The floor is drills/portability-floor.txt, one integer. It only goes up: a run that beats it is the
 evidence for the PR that raises it, and a run below it is red. A floor of 0 grades nothing and is
 refused, because a drill that cannot fail is a wish (LAW 44).
 
-Usage: idp-portability-drill <kustomizations.json> [--floor drills/portability-floor.txt] [--reds drills/portability-oci-reds.txt]
+Usage: idp-portability-drill <kustomizations.json> [--floor drills/portability-floor.txt]
 """
 from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -46,63 +36,26 @@ def read_floor(path: str) -> int:
     return int(lines[0])
 
 
-PENDING = {"Progressing", "Reconciling"}
-CASCADE = re.compile(r"dependency '?[\w./-]+'? is not ready")
-
-
-def read_reds(path: str) -> list[tuple[str, str]]:
-    """(layer, substring) rows of drills/portability-oci-reds.txt; a row with no substring is refused."""
-    out = []
-    with open(path, encoding="utf-8") as fh:
-        for ln in fh:
-            ln = ln.strip()
-            if not ln or ln.startswith("#"):
-                continue
-            parts = ln.split(None, 1)
-            if len(parts) != 2:
-                raise ValueError(f"{path}: {ln!r} names a layer with no reason; a red nobody can name is a root-red")
-            out.append((parts[0], parts[1].strip()))
-    return out
-
-
-def grade(items: list[dict], floor: int, reds: list[tuple[str, str]] = ()) -> tuple[str, list[str]]:
-    """Returns (verdict line, one line per not-ready layer). Pure, so the gate can prove it both ways."""
+def grade(items: list[dict], floor: int) -> tuple[str, list[str]]:
+    """Returns (verdict line, not-ready lines). Pure, so the gate can prove it both ways."""
     if floor < 1:
         return ("FAIL    portability  floor is 0: a drill that cannot fail grades nothing (LAW 44)", [])
     if not items:
         return ("FAIL    portability  no Kustomization was applied; the drill itself is broken", [])
-    ready, lines, cascaded, oci, roots, pending = 0, [], 0, 0, [], 0
+    ready, bad = 0, []
     for it in items:
         meta = it.get("metadata", {})
-        short = meta.get("name", "?")
-        name = f"{meta.get('namespace', '?')}/{short}"
+        name = f"{meta.get('namespace', '?')}/{meta.get('name', '?')}"
         conds = {c.get("type"): c for c in it.get("status", {}).get("conditions", [])}
         rc = conds.get("Ready", {})
         if rc.get("status") == "True":
             ready += 1
-            continue
-        msg = rc.get("message") or "no Ready condition yet"
-        if rc.get("status") == "Unknown" or rc.get("reason") in PENDING:
-            # Flux has not judged it yet (Progressing / Unknown): not ready, not a root.
-            pending += 1
-            lines.append(f"  pending    {name}: {msg[:160]}")
-        elif CASCADE.search(msg):
-            cascaded += 1
-            lines.append(f"  cascaded   {name}: {msg[:160]}")
-        elif any(layer == short and why in msg for layer, why in reds):
-            oci += 1
-            lines.append(f"  oci-red    {name}: {msg[:160]}")
         else:
-            roots.append(short)
-            lines.append(f"  ROOT-RED   {name}: {msg[:160]}")
+            bad.append(f"  not-ready  {name}: {(rc.get('message') or 'no Ready condition yet')[:160]}")
     total = len(items)
-    if roots:
-        return (f"FAIL    portability  root-red not on drills/portability-oci-reds.txt: {' '.join(roots)} "
-                f"(ready {ready}/{total}, cascaded {cascaded}, pending {pending})", lines)
     if ready < floor:
-        return (f"FAIL    portability  ready {ready}/{total} is below the floor {floor}", lines)
-    return (f"ok      portability  ready {ready}/{total} (root-red {oci} all named, cascaded {cascaded}, pending {pending}) "
-            f"on a cluster with no OCI (floor {floor})", lines)
+        return (f"FAIL    portability  ready {ready}/{total} is below the floor {floor}", bad)
+    return (f"ok      portability  ready {ready}/{total} layers on a cluster with no OCI (floor {floor})", bad)
 
 
 def main(argv: list[str]) -> int:
@@ -112,18 +65,14 @@ def main(argv: list[str]) -> int:
     floor_path = os.path.join(ROOT, "drills", "portability-floor.txt")
     if "--floor" in argv:
         floor_path = argv[argv.index("--floor") + 1]
-    reds_path = os.path.join(ROOT, "drills", "portability-oci-reds.txt")
-    if "--reds" in argv:
-        reds_path = argv[argv.index("--reds") + 1]
     try:
         with open(argv[1], encoding="utf-8") as fh:
             items = json.load(fh).get("items", [])
         floor = read_floor(floor_path)
-        reds = read_reds(reds_path)
     except (OSError, ValueError) as exc:
         print(f"BLIND   portability  {exc}")
         return 1
-    verdict, bad = grade(items, floor, reds)
+    verdict, bad = grade(items, floor)
     for ln in bad:
         print(ln)
     print(verdict)

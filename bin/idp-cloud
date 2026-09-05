@@ -23,43 +23,6 @@ set -uo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 BACKEND=${IDP_CLOUD_BACKEND:-oci}
 blind() { printf 'BLIND   cloud  %s\n' "$1" >&2; exit 2; }
-# OCI accepts a secret create/update and returns while the secret is still CREATING (or the new
-# version is not yet CURRENT); a read-back a few seconds later says NotFound. Every bootstrapper
-# reads back right after `put`, so `put` does not return until the bundle reads as what was written
-# (bin/idp-bootstrap-sunshine, oke-check apply run 33217075374, 2026-08-28: "written but does not
-# read back complete"). Bounded: 24 tries, 5 s apart.
-settle_secret() { # <base64 payload> -> 0 once `secret get` returns it; exit 2 (BLIND) after 120 s
-  local want="$1" got
-  for _ in $(seq 1 24); do
-    got=$("$0" secret get "$NAME" 2>/dev/null | base64 | tr -d '\n') && [ "$got" = "$want" ] && return 0
-    sleep 5
-  done
-  blind "secret $NAME was written but did not read back within 120 s"
-}
-# OCI caps a secret at 30 active versions and 30 pending deletion. hermes-agent-env.GITHUB_TOKEN is
-# re-minted hourly (bin/idp-verify-drill, crew#577), so the cap arrived in ~30 h: oke-check apply run
-# 33222486010, 2026-08-29, "LimitExceeded ... The limit for this tenancy has been exceeded" on the
-# update, then the sunshine step never ran. Before every update: versions that are only
-# PREVIOUS/DEPRECATED (never CURRENT, PENDING or LATEST), the newest IDP_CLOUD_KEEP_VERSIONS kept,
-# are scheduled for deletion at the earliest OCI allows (+1 day). Hourly rotation then holds ~24
-# pending, under 30. A prune that cannot run never fails the put; the update's own error does.
-prune_secret_versions() { # <secret ocid> -> schedules deprecated versions for deletion; prints one ok line when it did
-  local sid="$1" keep="${IDP_CLOUD_KEEP_VERSIONS:-2}" versions old when c=0 v
-  versions=$(oci vault secret-version list --secret-id "$sid" --all --output json 2>/dev/null) || return 0
-  old=$(printf '%s' "$versions" | python3 -c '
-import json, sys
-d = json.load(sys.stdin).get("data") or []
-live = [v for v in d if not v.get("time-of-deletion")]
-keep = {"CURRENT", "PENDING", "LATEST"}
-old = sorted((v["version-number"] for v in live if not (keep & set(v.get("stages") or []))), reverse=True)
-print("\n".join(str(n) for n in old[int(sys.argv[1]):]))' "$keep" 2>/dev/null) || return 0
-  [ -n "$old" ] || return 0
-  when=$(python3 -c 'import datetime as d; print((d.datetime.now(d.timezone.utc)+d.timedelta(days=1, minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ"))')
-  for v in $old; do
-    oci vault secret-version schedule-deletion --secret-id "$sid" --secret-version-number "$v" --time-of-deletion "$when" >/dev/null 2>&1 && c=$((c+1))
-  done
-  [ "$c" = 0 ] || printf 'ok      cloud  secret %s: %s deprecated version(s) scheduled for deletion (OCI cap 30)\n' "$NAME" "$c" >&2
-}
 # A grading line is one line. Fold a multi-line CLI diagnosis onto it, drop anything shaped like
 # a bearer token or key so a diagnosis can never become a leak, and cap it so one row stays one row.
 oneline() { printf '%s' "$1" | tr '\n\r\t' '   ' | sed -E 's/[A-Za-z0-9_-]{40,}/<redacted>/g; s/  +/ /g; s/^ //' | cut -c1-300; }
@@ -254,15 +217,12 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             sid=$(printf '%s\n' "$ids" | head -1)
             payload=$(base64 < "$FILE" | tr -d '\n')
             if [ -n "$sid" ] && [ "$sid" != null ]; then
-              prune_secret_versions "$sid"
               oci vault secret update-base64 --secret-id "$sid" --secret-content-content "$payload" >/dev/null
-              settle_secret "$payload"
               printf '%s' updated
             else
               V=${ESTATE_VAULT_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_id)}
               K=${ESTATE_VAULT_KEY_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_key_id)}
               oci vault secret create-base64 --compartment-id "$C" --vault-id "$V" --key-id "$K" --secret-name "$NAME" --secret-content-content "$payload" >/dev/null
-              settle_secret "$payload"
               printf '%s' created
             fi
             ;;

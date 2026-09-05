@@ -5,7 +5,7 @@
 #   bin/idp-estate-seed --preflight     prove the vault is writable, list every entry/key it would mint, write nothing
 #   bin/idp-estate-seed --rotate <entry>  mint that entry's estate-born keys anew (the workload rolls on the ExternalSecret refresh)
 #
-# Root trust (docs/reference/policy/root-trust.md, crew#66 founder 2026-08-28, crew#575, crew#576): a Postgres
+# Root trust (docs/policy/root-trust.md, crew#66 founder 2026-08-28, crew#575, crew#576): a Postgres
 # password, an internal API key, a cookie secret, a JWT signing key, a router master key are born by
 # the estate, not by a person. Before this each one was a SEED_* repository secret somebody generated
 # in a terminal and pasted into the GitHub console (vault-seed.yml), and `prospector-store-api-env`
@@ -50,7 +50,6 @@ ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG" 2>/dev/null || true)
 # so two sides of one shared secret never drift), const:<value> (derived from the zone, not secret).
 PLAN=$(cat <<EOF
 temporal-db               password                    hex32
-guacamole                 postgres-password           hex32
 hindsight                 postgres-password           hex32
 hindsight                 HINDSIGHT_API_LLM_BASE_URL  const:https://llm.$ZONE
 mcp-gateway               MCP_GATEWAY_KEY             hex32

@@ -9,7 +9,7 @@
 # CI proves the label is on every namespace the cluster must enforce.
 #
 # StatefulSets are deliberately out of scope: every database here is one instance by design and
-# docs/reference/policy/availability-standard.md says so out loud rather than pretending otherwise.
+# docs/policy/availability-standard.md says so out loud rather than pretending otherwise.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -33,7 +33,6 @@ spec:
         any:
           - resources:
               kinds: [Deployment]
-              operations: [CREATE, UPDATE]
               namespaceSelector:
                 matchLabels: { availability.idp/tier: founder-facing }
       validate:
@@ -52,7 +51,6 @@ spec:
         any:
           - resources:
               kinds: [Deployment]
-              operations: [CREATE, UPDATE]
               namespaceSelector:
                 matchLabels: { availability.idp/tier: founder-facing }
       validate:
@@ -79,7 +77,6 @@ spec:
         any:
           - resources:
               kinds: [PodDisruptionBudget]
-              operations: [CREATE, UPDATE]
       validate:
         failureAction: Enforce
         message: >-
@@ -114,7 +111,6 @@ spec:
         any:
           - resources:
               kinds: [Deployment]
-              operations: [CREATE, UPDATE]
       preconditions:
         all:
           # Only Deployments that require a node of their own can deadlock. Everything else may

@@ -25,14 +25,7 @@ def test_k3s_job_is_a_second_distribution_on_the_runner_vm_not_docker() -> None:
     assert re.fullmatch(r"v\d+\.\d+\.\d+\+k3s\d+", install["env"]["INSTALL_K3S_VERSION"]), "k3s version must be pinned"
     assert "--disable traefik" in install["env"]["INSTALL_K3S_EXEC"], "the estate's traefik comes from the Flux tree"
     assert "get.k3s.io" in install["run"] and "k3d" not in install["run"]
-    assert "docker" not in install["run"], "CP2 is a second distribution, not k3d under another name"
-    # crew#488 CP5: the front door's DoNotSchedule spread (crew#555) needs a second node and one VM
-    # cannot run two kubelets, so the second node is the k3s image joined as an agent over Docker.
-    # The distribution under test is still the k3s installed on the VM: the server, the CNI and
-    # the API are its own; only the extra kubelet is a container.
-    agent = next(s for s in k3s["steps"] if "second node" in s.get("name", ""))
-    assert "agent --server" in agent["run"] and "get.k3s.io" not in agent["run"]
-    assert "docker" not in yaml.dump([s for s in k3s["steps"] if s is not agent])
+    assert "docker" not in yaml.dump(k3s), "CP2 is a second distribution, not k3d under another name"
 
 
 def test_both_providers_run_the_one_hydration_script_at_the_same_commit() -> None:

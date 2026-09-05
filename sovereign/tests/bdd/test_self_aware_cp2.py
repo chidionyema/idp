@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pytest_bdd import given, scenarios, then, when
+from pytest_bdd import given, parsers, scenarios, then, when
 
 from . import _self_aware as sa
 

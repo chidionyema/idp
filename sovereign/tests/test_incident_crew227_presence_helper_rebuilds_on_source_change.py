@@ -3,6 +3,8 @@ and never again; a706e26 (16:29 the same day) added --pubkey and --verify-sig to
 the founder's Mac `enroll()` got {"error":"unknown command"} and failed closed. Rule (rung 4): a
 cached build artifact is invalidated by its source's content, not by its existence."""
 import hashlib
+import os
+import stat
 from pathlib import Path
 
 import pytest

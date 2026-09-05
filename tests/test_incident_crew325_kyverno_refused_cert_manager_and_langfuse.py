@@ -4,7 +4,7 @@ langfuse HelmRelease stayed refused for 2.5 hours. Two causes, both Kyverno:
 * require-requests-limits refused every cert-manager pod (requests set, no limits), and
   require-pod-probes refused cainjector, the one container the chart renders without a probe.
 * the langfuse PolicyException was created in `observability`, but Kyverno runs with
-  --exceptionNamespace=kyverno (platform/kyverno/kyverno.yaml) and ignores every other namespace.
+  --exceptionNamespace=kyverno (platform/edge/kyverno.yaml) and ignores every other namespace.
 
 Rules, not code: every cert-manager component carries limits, and every PolicyException in
 platform/ lives in the one namespace Kyverno reads. Rung 4 (incident test)."""
@@ -38,7 +38,7 @@ def test_incident_crew325_cainjector_has_a_probe_exception() -> None:
 def test_incident_crew325_every_policy_exception_lives_where_kyverno_reads() -> None:
     # Graded on the rendered output, not the file: platform/observability/kustomization.yaml sets
     # `namespace: observability`, which rewrote an exception whose file said `kyverno`.
-    kyverno = next(d for d in _docs("platform/kyverno/kyverno.yaml") if d["kind"] == "HelmRelease")
+    kyverno = next(d for d in _docs("platform/edge/kyverno.yaml") if d["kind"] == "HelmRelease")
     exceptions = kyverno["spec"]["values"]["features"]["policyExceptions"]
     assert exceptions == {"enabled": True, "namespace": "kyverno"}
     paths = sorted(

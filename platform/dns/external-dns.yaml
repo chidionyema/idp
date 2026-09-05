@@ -4,7 +4,7 @@
 #
 # Policy is upsert-only with a TXT registry: it creates and updates only records it owns and
 # never deletes. Records that predate it (the Fly CNAMEs) are foreign to it and are removed once
-# by hand; docs/how-to/onboarding/oci.md has the step.
+# by hand; docs/onboarding/oci.md has the step.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:

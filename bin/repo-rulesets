@@ -38,23 +38,11 @@ jobs_on_main() {  # true when the caller workflow, or a ci.yml carrying both job
   gh api "/repos/$OWNER/$1/contents/.github/workflows/security-scan.yml" -q .sha >/dev/null 2>&1 && return 0
   gh api "/repos/$OWNER/$1/contents/.github/workflows/ci.yml" -q .content 2>/dev/null | base64 -d 2>/dev/null | grep -q '^  spec-gate:'
 }
-# crew#586 CP5: under GitHub's "first_time_contributors" policy every pull request opened by
-# github-actions (bot/conscience-page, state/live-diagram, flux/image-updates) sits in
-# action_required until a person approves its runs -- an auto-merge PR nobody approves is a
-# daily hand. platform/github/actions-pr-approval.json pins the policy per repository.
-APPROVAL="$IDP/platform/github/actions-pr-approval.json"
-apply_pr_approval() {
-  repo="$1"; want="$(jq -r .approval_policy "$APPROVAL")"
-  live="$(gh api "/repos/$OWNER/$repo/actions/permissions/fork-pr-contributor-approval" -q .approval_policy 2>/dev/null)" || { echo "BLOCKED $repo: pr-approval policy unreadable"; blocked=$((blocked+1)); return; }
-  [ "$live" = "$want" ] && return
-  if [ $apply = 1 ]; then gh api -X PUT "/repos/$OWNER/$repo/actions/permissions/fork-pr-contributor-approval" --input "$APPROVAL" >/dev/null && echo "FIXED   $repo: pr-approval $live -> $want" && return; fi
-  echo "DRIFT   $repo: pr-approval is $live, spec says $want (bot PRs sit in action_required)"; drift=$((drift+1))
-}
 waiting=0
 ACTIVE_DAYS="${ACTIVE_DAYS:-30}"
 since="$(date -u -v-"${ACTIVE_DAYS}"d +%Y-%m-%d 2>/dev/null || date -u -d "-${ACTIVE_DAYS} days" +%Y-%m-%d)"
 repos="$(gh repo list "$OWNER" --limit 200 --no-archived --json name,pushedAt -q '.[] | .name+" "+.pushedAt[:10]' | sort)"
-while read -r repo _; do apply_spec "$repo" "$DEFAULT"; apply_pr_approval "$repo"; done <<< "$repos"
+while read -r repo _; do apply_spec "$repo" "$DEFAULT"; done <<< "$repos"
 for f in "$IDP"/platform/github/ruleset.*.*.json; do
   [ -e "$f" ] || break
   r="$(basename "$f")"; r="${r#ruleset.}"; r="${r%%.*}"

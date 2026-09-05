@@ -26,16 +26,5 @@ data:
   # (platform/hermes-agent/README.md, "Founder hand"); mac-run fails closed (ssh has nothing to
   # connect to) until then, same as the tailscale sidecar's own health check waits on the vault
   # secret below.
-  # Filled 2026-08-28 by measurement on the founder's Mac (`whoami`, `tailscale ip -4`), not by a
-  # hand (founder: "seamless security, no founder friction"). This file is the one place they may be.
-  FOUNDER_MAC_USER: "chidionyema"
-  FOUNDER_MAC_TS_IP: "100.93.240.113"
-  # crew#562: the founder's tailnet LOGIN, which is not the same thing as FOUNDER_MAC_USER above --
-  # that one is the Unix account on the Mac. platform/tailscale/policy.hujson names this one as the
-  # only member of group:founder, the rule that lets his iPhone reach his own tagged Mac (Moonlight
-  # to Sunshine, and the Shortcut's SSH). Deliberately a named login rather than autogroup:member:
-  # membership is dynamic, so the first person added to the tailnet later would inherit streaming of
-  # his desktop with nothing red. Empty means: bin/idp-tailscale-policy asks the tailnet itself
-  # (GET /tailnet/-/users, the single "owner"); no owner answer is BLIND, never a PUT naming nobody.
-  # A value here overrides the API answer. Nobody's hand is needed.
-  FOUNDER_TAILNET_USER: ""
+  FOUNDER_MAC_USER: ""
+  FOUNDER_MAC_TS_IP: ""

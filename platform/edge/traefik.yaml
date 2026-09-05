@@ -61,23 +61,11 @@ spec:
         # Middleware CRs (ForwardAuth, ADR 0003) are ExtensionRef filters on HTTPRoutes and
         # need this provider on; IngressRoute stays unused (ADR 0001: Gateway API only).
         enabled: true
-        # friendly-errors (every route namespace) answers with edge/status-page: a Middleware
-        # may only name a Service in another namespace when this is on.
-        allowCrossNamespace: true
     gateway:
       enabled: false
     ingressRoute:
       dashboard:
         enabled: false
-    # The front door writes one JSON line per request to stdout, where the estate collector reads
-    # it (LAW 50). Without it, "the store was slow at 14:02" has no evidence at the edge.
-    accessLog:
-      enabled: true
-      format: json
-      fields:
-        headers:
-          defaultMode: drop
-          names: { User-Agent: keep, Referer: keep }
     service:
       # `spec:`, not `type:` at this level. The chart passes this map straight into the Service
       # spec (values.yaml: "Additional entries here will be added to the Service spec"); a bare

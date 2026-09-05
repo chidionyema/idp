@@ -3,12 +3,11 @@ kind: Kustomization
 namespace: observability
 resources:
   - namespace.yaml
-  - helmrepository.yaml
   - signoz.yaml
+  - k8s-infra.yaml
   - telemetry-coverage.yaml
   - langfuse.yaml
   - httproute.yaml
-  - edge-manners.yaml
 configMapGenerator:
   - name: signoz-values
     files:

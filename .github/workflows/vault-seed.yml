@@ -1,6 +1,6 @@
 # crew#284 CP1/CP2, crew#248: the estate vault is written by the machine identity, never a laptop
 # (crew#227 deleted the OCI API key; crew#247: infra is never Mac-bound). crew#66 root trust
-# (5453747447, docs/reference/policy/root-trust.md): an entry a bootstrapper births is never seeded from a
+# (5453747447, docs/policy/root-trust.md): an entry a bootstrapper births is never seeded from a
 # pasted GitHub secret; this workflow now carries only github-app (the four keys bin/idp-github-app
 # convert produces when no OCI session is live) and k8sgpt (a router key minted here, never pasted).
 # Every other entry chosen by name is refused with the command that owns it. Values travel from the
@@ -30,14 +30,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
+        with: { python-version: "3.12" }
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with: { tofu_version: "1.12.6", tofu_wrapper: false }
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -72,7 +69,7 @@ jobs:
           env | sed -n 's/^SEED_//p' > "$ESTATE_ENV_FILE"
           put() { bin/idp-vault-put "$@"; }
           if [ -n "${{ inputs.delete }}" ]; then bin/idp-vault-put --delete "${{ inputs.delete }}"; exit; fi
-          # crew#66 root trust (5453747447, docs/reference/policy/root-trust.md): an entry a bootstrapper births is
+          # crew#66 root trust (5453747447, docs/policy/root-trust.md): an entry a bootstrapper births is
           # never seeded from a pasted secret. Chosen by name it is refused with the command that owns it;
           # under `all` those entries are skipped, so `all` still writes what this workflow owns.
           #   tailscale-operator: born by bin/idp-bootstrap-tailscale, never seeded by hand (crew#576)

@@ -24,32 +24,11 @@ while [ $# -gt 0 ]; do
 done
 changed=$( { git -C "$IDP" diff --name-only "$base"...HEAD; git -C "$IDP" diff --name-only HEAD; git -C "$IDP" ls-files --others --exclude-standard; } | sort -u )
 if [ -z "$changed" ]; then echo "ok    tests-for: nothing changed against $base, nothing to run"; exit 0; fi
-# SKIP_TESTS_ON_TRIVIAL (founder 2026-08-28, crew#584: "if you change only docs, comments, or trivial
-# files, the hook skips tests entirely"). A file is trivial when it is prose (.md/.txt/.rst, docs/,
-# reports/, LICENSE) or when every changed line in it is blank or a comment (#, //, --). Trivial files
-# are dropped from the selection; a diff that is only trivial files runs nothing. Set
-# SKIP_TESTS_ON_TRIVIAL=0 to keep them.
-trivial() {
-  case "$1" in *.md|*.txt|*.rst|docs/*|reports/*|LICENSE*|CODEOWNERS|.gitignore) return 0 ;; esac
-  [ -f "$IDP/$1" ] || return 1
-  git -C "$IDP" ls-files --error-unmatch "$1" >/dev/null 2>&1 || return 1
-  ! { git -C "$IDP" diff -U0 "$base"...HEAD -- "$1"; git -C "$IDP" diff -U0 HEAD -- "$1"; } \
-      | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -qvE '^[+-][[:space:]]*(#|//|--|$)'
-}
-if [ "${SKIP_TESTS_ON_TRIVIAL:-1}" = 1 ]; then
-  kept=""; dropped=0
-  for f in $changed; do
-    if trivial "$f"; then dropped=$((dropped + 1)); else kept="$kept$f"$'\n'; fi
-  done
-  changed=$(printf '%s' "$kept" | sort -u)
-  if [ -z "$changed" ]; then echo "ok    tests-for: $dropped changed file(s), all docs or comment-only (SKIP_TESTS_ON_TRIVIAL), nothing to run"; exit 0; fi
-  [ "$dropped" -gt 0 ] && echo "tests-for: $dropped docs/comment-only file(s) skipped (SKIP_TESTS_ON_TRIVIAL)"
-fi
 sel=$(
   for f in $changed; do
-    case "$f" in tests/test_*.py|sovereign/tests/*/*.py) [ -f "$IDP/$f" ] && echo "$f" ;; esac   # a deleted test file made pytest collect nothing: "no tests ran" and the push refused (2026-08-29)
+    case "$f" in tests/test_*.py|sovereign/tests/*/*.py) echo "$f" ;; esac
     b=$(basename "$f")
-    grep -rlF --include='*.py' -e "$f" -e "$b" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" | grep -v '/fixtures/' || true   # a fixture under tests/fixtures is proof material, not a test (test_unbound.py fails by design)
+    grep -rlF --include='*.py' -e "$f" -e "$b" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" || true
   done | sort -u
 )
 if [ -z "$sel" ]; then echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l | tr -d ' ') changed file(s), no test names them (CI runs the suite)"; exit 0; fi
@@ -68,16 +47,7 @@ root_sel=$(printf '%s\n' "$sel" | grep -v '^sovereign/' || true)
 sov_sel=$(printf '%s\n' "$sel" | grep '^sovereign/' | sed 's#^sovereign/##' || true)
 rc=0
 # shellcheck disable=SC2086
-# Worker cap (crew#562, 2026-08-29). pyproject addopts says `-n auto`: one worker per core, 12 on the
-# estate Mac. Tests that spawn bin/idp-verify-drill under a 60 s subprocess timeout
-# (test_incident_crew484_the_runner_has_a_kube_path.py, test_incident_crew292_drills_row_is_read_hourly.py,
-# test_incident_crew66_cp5d_cluster_noun.py) then time out on CPU contention: two pushes of idp#659 were
-# refused with 4-6 TimeoutExpired and 0 real failures, and the same files pass alone (17 passed, 126 s).
-# CI runners are clean and few-cored, so this only binds a laptop: outside CI, at most
-# TESTS_FOR_WORKERS (default 4) workers. Overrides pyproject because the last -n wins.
-workers=""
-if [ -z "${CI:-}" ]; then workers="-n ${TESTS_FOR_WORKERS:-4}"; fi
-if [ -n "$root_sel" ]; then (cd "$IDP" && "$py" -m pytest -q $workers $root_sel) || rc=$?; fi
+if [ -n "$root_sel" ]; then (cd "$IDP" && "$py" -m pytest -q $root_sel) || rc=$?; fi
 # shellcheck disable=SC2086
-if [ -n "$sov_sel" ]; then (cd "$IDP/sovereign" && "$py" -m pytest -q $workers $sov_sel) || rc=$?; fi
+if [ -n "$sov_sel" ]; then (cd "$IDP/sovereign" && "$py" -m pytest -q $sov_sel) || rc=$?; fi
 exit $rc
