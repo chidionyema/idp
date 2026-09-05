@@ -59,3 +59,39 @@ subjects:
   - kind: User
     name: founder
     apiGroup: rbac.authorization.k8s.io
+---
+# WHY THE PAGE WAS EMPTY (founder 2026-09-05: "this i still howing no data
+# https://catalogue.mumchimp.com/deploy/applications").
+#
+# The server runs with --insecure-no-authentication-user=founder, and that flag does not mean "act
+# as yourself": every call the dashboard makes is an *impersonated* call as the Kubernetes user
+# "founder" (core/clustersmngr/cluster/single.go GetUserClient). The founder user had the read
+# rules above, but the pod's own ServiceAccount was never allowed to impersonate anyone, so the
+# API server refused each call before RBAC on "founder" was ever consulted and the Applications
+# page rendered with nothing in it. Measured on the running cluster:
+#   kubectl auth can-i impersonate users --as=system:serviceaccount:weave-gitops:weave-gitops
+#   no
+# resourceNames pins it to the single username above: this ServiceAccount may become "founder" and
+# no one else, so the blast radius stays exactly the read-and-reconcile rules in this file.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: weave-gitops-impersonate-founder
+rules:
+  - apiGroups: [""]
+    resources: [users]
+    verbs: [impersonate]
+    resourceNames: [founder]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: weave-gitops-impersonate-founder
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: weave-gitops-impersonate-founder
+subjects:
+  - kind: ServiceAccount
+    name: weave-gitops
+    namespace: weave-gitops
