@@ -55,6 +55,13 @@ spec:
       rbacAssessmentScannerEnabled: false
       infraAssessmentScannerEnabled: false
       clusterComplianceEnabled: false
+    # The chart renders one ClusterComplianceReport per spec listed here even with the
+    # compliance scanner off, and the install failed on every retry because Kyverno's
+    # validate webhook (failurePolicy Fail) could not map that kind while its discovery
+    # cache predated the CRD the same release had just created (2026-09-05). No spec, no
+    # object to admit; the scanner is off above, so nothing is lost.
+    compliance:
+      specs: []
       sbomGenerationEnabled: false
       # Scan jobs land in this namespace, not the scanned workload's (chart default is already
       # `false`, kept and named on purpose): trivy-system is the one namespace fenced for this

@@ -63,6 +63,13 @@ spec:
               value: /run/secrets/notify
             - name: APPRISE_ATTACH_SIZE
               value: "0"  # attachments off: nothing sends files and /attach is read-only here
+            # gunicorn's default worker count is 2 x CPUs + 1 of the node, not of the 50m
+            # request, so on an OKE worker it booted 8+ workers that each import every plugin
+            # and the container was OOMKilled (exit 137, 5s after start) against the 512Mi
+            # limit on every restart (2026-09-05 12:33Z, restarts=5 on all three pods). Two
+            # workers carry the estate's notification rate with headroom to spare.
+            - name: APPRISE_WORKER_COUNT
+              value: "2"
           ports:
             - { containerPort: 8000, name: http }
           securityContext:
