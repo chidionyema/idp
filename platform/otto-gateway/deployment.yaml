@@ -43,6 +43,12 @@ spec:
         app.kubernetes.io/name: otto-gateway
         app.kubernetes.io/part-of: idp
     spec:
+      # The one ingress door for every channel, so it is seated before the workloads it serves:
+      # the class's own description is "monitoring and routing are seated before anything else on
+      # the node" (platform/priority-classes/priorityclasses.yaml), and this is the routing. With
+      # no class named at all the scheduler ranks it at zero, below platform-batch's nightly jobs,
+      # and under CPU pressure the estate would evict its front door to finish a batch run.
+      priorityClassName: infrastructure-critical
       # DoNotSchedule and not ScheduleAnyway, the same choice otto-golden makes: two doors on
       # one node are one eviction, and bin/idp-availability-gate refuses the softer form for
       # a routed surface. On an estate with one node the second pod stays pending until a
@@ -146,14 +152,17 @@ spec:
             # "policy defect: model 'fast' is in no family mapping", logged as
             # worker.answer_failed on every inbound message (founder's log, 2026-09-05,
             # ~/.claude/docs/founder/2026-09-05T0218Z-eed-seed-sql-25-notice-relation-channel-binding-d1240816.md).
-            # `gemini` is in that map, its family (google) differs from judgment's minimax as
-            # the distinct-family guard requires, and on the estate router `gemini` and `fast`
-            # are the same model (gemini/gemini-2.5-flash, platform/llm/config.yaml:52 and :73),
-            # so nothing about the model or its cost changes. The map knowing only vendor
-            # identifiers, while this estate configures lanes by router alias (LAW 34), is the
-            # defect underneath and it is hermes-v2's to fix.
-            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "gemini" }
-            - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "gemini" }
+            # The value has to clear two independent checks, and `gemini` only clears one.
+            # It is in the family map (google, distinct from judgment's minimax), but the
+            # running router does not serve it: `GET /model/info` with the gateway pod's own
+            # key returned exactly `kimi` and `minimax` (measured from inside the pod,
+            # 2026-09-05). The rows in platform/llm/config.yaml are not all in the running
+            # router. `kimi` clears both -- served, and family moonshot -- so it is the value
+            # that actually lets a message through. The map knowing only vendor identifiers,
+            # while this estate configures lanes by router alias (LAW 34), is the defect
+            # underneath: hermes-v2#77 adds every estate alias to it.
+            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "kimi" }
+            - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "kimi" }
             - { name: PYTHONUNBUFFERED, value: "1" }
           ports:
             - { containerPort: 8080, name: http }
