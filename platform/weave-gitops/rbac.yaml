@@ -60,19 +60,27 @@ subjects:
     name: founder
     apiGroup: rbac.authorization.k8s.io
 ---
-# WHY THE PAGE WAS EMPTY (founder 2026-09-05: "this i still howing no data
-# https://catalogue.mumchimp.com/deploy/applications").
+# THIS ROLE DID NOT FIX THE EMPTY PAGE, AND THE COMMENT THAT SAID IT DID WAS WRONG.
 #
-# The server runs with --insecure-no-authentication-user=founder, and that flag does not mean "act
-# as yourself": every call the dashboard makes is an *impersonated* call as the Kubernetes user
-# "founder" (core/clustersmngr/cluster/single.go GetUserClient). The founder user had the read
-# rules above, but the pod's own ServiceAccount was never allowed to impersonate anyone, so the
-# API server refused each call before RBAC on "founder" was ever consulted and the Applications
-# page rendered with nothing in it. Measured on the running cluster:
+# The reasoning was sound as far as it went: the server runs with
+# --insecure-no-authentication-user=founder, and that flag does not mean "act as yourself" -- every
+# call the dashboard makes is an impersonated call as the Kubernetes user "founder"
+# (core/clustersmngr/cluster/single.go GetUserClient), so the ServiceAccount must be allowed to
+# impersonate that user. What was wrong was the measurement behind it. The probe used was
 #   kubectl auth can-i impersonate users --as=system:serviceaccount:weave-gitops:weave-gitops
-#   no
-# resourceNames pins it to the single username above: this ServiceAccount may become "founder" and
-# no one else, so the blast radius stays exactly the read-and-reconcile rules in this file.
+# which answers "no" for a grant pinned to a single name, because it asks about every user. The
+# probe that matches the grant is
+#   kubectl auth can-i impersonate users/founder --as=system:serviceaccount:weave-gitops:weave-gitops
+# and on 2026-09-05 that answered "yes" -- from the chart's own ClusterRole, created 2026-09-04
+# 08:55:49Z from the rbac.impersonationResourceNames value in weave-gitops.yaml, five seconds
+# before the pods started. The permission has been in place since the install. The Applications
+# page is empty for some other reason, and weave-gitops.yaml now runs the server at debug so the
+# next page load says which.
+#
+# The role is kept because it states the grant in this repository instead of leaving it implicit in
+# a chart value, and resourceNames pins it to the single username above: this ServiceAccount may
+# become "founder" and no one else, so the blast radius stays exactly the read-and-reconcile rules
+# in this file.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
