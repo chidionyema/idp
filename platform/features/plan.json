@@ -179,15 +179,6 @@
       "storage_gb": 0,
       "title": "no customer identity layer; whichever product needs customers holds its own sign-in code, which is what this feature exists to end",
       "note": ""
-    },
-    {
-      "name": "test-prove-crew857",
-      "tier": "off",
-      "cpu": 0,
-      "memory_gb": 0,
-      "storage_gb": 0,
-      "title": "",
-      "note": ""
     }
   ],
   "total": {
