@@ -18,3 +18,6 @@ Headlamp credential prompt: the minted kubeconfig now carries the absolute oci p
 
 ## RESUME HERE (2026-09-05 13:25Z, Otto lanes)
 Probe otto-answer-probe-29810160: bulk and verify lanes point at deepseek, which the router does not serve (400); Otto key allowlist was kimi,minimax,deepseek so gemini and embed were 403. PR fix/otto-lanes-gemini moves bulk+verify to gemini in the three lane files and sets the key rows in bin/idp-estate-seed to minimax,gemini,embed (agent-workforce: minimax,fast,embed). After merge: gh workflow run oke-check.yml -f mode=apply so idp-router-key updates the live keys.
+
+## 2026-09-05T22:28Z RESUME HERE (session 102eafc6, inventory lane)
+Assembling docs/inventory/otto-capabilities.md on branch docs/otto-capability-inventory from origin/main 4177b3a2. Inputs: scratchpad inv-board.md, inv-platform.md, plus otto/ and fork agent results. Next: commit, push, PR, comment crew#717/#768/#773.
