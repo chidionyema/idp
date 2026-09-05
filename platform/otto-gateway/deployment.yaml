@@ -43,6 +43,12 @@ spec:
         app.kubernetes.io/name: otto-gateway
         app.kubernetes.io/part-of: idp
     spec:
+      # The one ingress door for every channel, so it is seated before the workloads it serves:
+      # the class's own description is "monitoring and routing are seated before anything else on
+      # the node" (platform/priority-classes/priorityclasses.yaml), and this is the routing. With
+      # no class named at all the scheduler ranks it at zero, below platform-batch's nightly jobs,
+      # and under CPU pressure the estate would evict its front door to finish a batch run.
+      priorityClassName: infrastructure-critical
       # DoNotSchedule and not ScheduleAnyway, the same choice otto-golden makes: two doors on
       # one node are one eviction, and bin/idp-availability-gate refuses the softer form for
       # a routed surface. On an estate with one node the second pod stays pending until a
