@@ -16,4 +16,4 @@ resources:
 # deployment.yaml so the marker sits on one line the automation owns.
 images:
   - name: ghcr.io/chidionyema/cyrus
-    newTag: main-5228-ac4dee5bbee4de2b69248ff9b90341b820b0e378 # {"$imagepolicy": "flux-system:cyrus:tag"}
+    newTag: main-5234-c9748a2802273f89feb264eafad04300952ad058 # {"$imagepolicy": "flux-system:cyrus:tag"}
