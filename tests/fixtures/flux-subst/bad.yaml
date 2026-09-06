@@ -1,0 +1,14 @@
+# must-fail: a shell default expansion in a container command. Flux postBuild
+# substitution rewrites ${HERMES_ENV_DIR:-} to "" before the pod runs it.
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+        - name: gateway
+          args:
+            - |
+              if [ -n "${HERMES_ENV_DIR:-}" ] && [ -d "$HERMES_ENV_DIR" ]; then
+                echo exported
+              fi

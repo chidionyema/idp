@@ -153,7 +153,12 @@ spec:
               # entrypoint does (hermes-v2 deploy/k8s/entrypoint.sh), since this command
               # replaces that entrypoint. A missing mount exports nothing and the door
               # answers as before, hands empty.
-              if [ -n "${HERMES_ENV_DIR:-}" ] && [ -d "$HERMES_ENV_DIR" ]; then
+              # Only the unbraced form of the variable, never ${HERMES_ENV_DIR:-}: Flux's
+              # postBuild substitution reads that as its own default syntax and rewrote it
+              # to "" before the pod ever saw it, so the test was always false and gh in
+              # the live pod reported "not logged into any GitHub hosts" while every
+              # credential file sat mounted beside it (gate: flux_subst_scan).
+              if [ -d "$HERMES_ENV_DIR" ]; then
                 for f in "$HERMES_ENV_DIR"/*; do
                   [ -f "$f" ] || continue
                   n=$(basename "$f")
