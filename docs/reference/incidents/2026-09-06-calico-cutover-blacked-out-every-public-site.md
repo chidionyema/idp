@@ -45,7 +45,7 @@ fence let the real traffic through.
 ## What changed so it cannot repeat
 
 - The generator emits `allow-same-namespace` for every namespace and `allow-public-ingress`
-  from `ingress_public`, and `tests/test_incident_crew102_calico_cutover_blacked_out_every_public_site.py`
+  from `ingress_public`, and `tests/test_ns_fence_gen_every_allowance_row_becomes_its_policy.py`
   holds it to the three flows the outage lacked.
 - `bin/idp-oke-break-glass ns-fences` applies the fences from a branch through the oke-check
   workflow, so the next fence change can be proved live before it is merged.
