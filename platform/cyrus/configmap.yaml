@@ -4,6 +4,11 @@
 # Transports: GitHub and Linear together (crew#834 CP3). Cyrus ships both, an issue can arrive
 # from either board, and neither is removed -- a capability the component already supports is
 # offered as a set of roads, not narrowed to one.
+# serverHost is 0.0.0.0 because kubelet probes the pod IP, not loopback. cyrus-edge-worker
+# defaults it to "localhost" (EdgeWorker.js: `config.serverHost || "localhost"`), so without it
+# both probes were refused and the pod restarted every 30 seconds while its own log said
+# "Edge worker started successfully". R20 fences a host's listeners, not a pod's: this container
+# sits behind the namespace default-deny NetworkPolicy and is reachable only through the gateway.
 # The agent holds no cluster verbs: it opens a pull request and Flux reconciles it. kubectl and
 # flux were in the first version of this file and are gone, because the estate is strictly GitOps.
 apiVersion: v1
@@ -90,6 +95,8 @@ data:
           "routingLabels": ["claude", "codex", "cursor", "gemini", "opencode"]
         }
       ],
+      "serverHost": "0.0.0.0",
+      "serverPort": 3456,
       "transports": {
         "github": {
           "enabled": true,

@@ -38,10 +38,12 @@ spec:
             # cyrus does on boot -- ensureRequiredDirectories() -- tried to mkdir /.cyrus/repos
             # on a read-only root and exited:
             #   [ERROR] [CLI] Failed to create directory /.cyrus/repos: ENOENT
-            # The writable volume for this was already mounted at /home/node; nothing pointed
-            # HOME at it. Setting it is the whole fix.
+            # A writable volume for this was already mounted; nothing pointed HOME at it.
+            # It is /var/lib/cyrus and not a path under the users' home tree because the
+            # hardcode gate refuses any /home/<name>/ literal (LAW 46) and is right to: a
+            # per-user home path in a manifest is the exact shape that broke 17 scripts.
             - name: HOME
-              value: /home/node
+              value: /var/lib/cyrus
             # GitHub token from ExternalSecret
             - name: GH_TOKEN_FILE
               value: /secrets/github/token
@@ -53,18 +55,30 @@ spec:
               value: /secrets/webhook/linear-api-token
             - name: GITHUB_WEBHOOK_SECRET_FILE
               value: /secrets/webhook/github-webhook-secret
-            # Cyrus configuration
-            - name: CYRUS_CONFIG_PATH
-              value: /config/config.json
+            # CYRUS_CONFIG_PATH was set here and is read by nothing: `cyrus` resolves its
+            # config from --cyrus-home, which defaults to ~/.cyrus (dist/src/app.js), and the
+            # ConfigMap was mounted at /config where nothing looked for it. The pod started,
+            # logged "Edge worker started successfully", and then said "No repositories
+            # configured" with three repositories sitting in the ConfigMap. The mount below
+            # puts config.json where cyrus actually reads it.
             - name: CYRUS_SERVER_PORT
               value: "3456"
+            # The two writable volumes this pod already carries, named explicitly rather than
+            # left to default under ~/.cyrus on an emptyDir.
+            - name: CYRUS_REPOS_DIR
+              value: /repo
+            - name: CYRUS_WORKTREES_DIR
+              value: /worktrees
             # The public URL Linear and GitHub deliver to. The zone is substituted by Flux from
             # estate-config; a literal hostname here would be a hardcoded machine name (LAW 46).
             - name: CYRUS_BASE_URL
               value: "https://cyrus.${ESTATE_ZONE}"
           volumeMounts:
+            # subPath, so the rest of ~/.cyrus stays on the writable home volume: cyrus
+            # creates repos, worktrees and mcp-configs beside this file at startup.
             - name: config
-              mountPath: /config
+              mountPath: /var/lib/cyrus/.cyrus/config.json
+              subPath: config.json
               readOnly: true
             - name: github-secret
               mountPath: /secrets/github
@@ -79,15 +93,18 @@ spec:
             - name: tmp
               mountPath: /tmp
             - name: home
-              mountPath: /home/node
+              mountPath: /var/lib/cyrus
             - name: npm-cache
               mountPath: /.npm
+          # /status, not /health: cyrus serves no /health. EdgeWorker registers GET /status
+          # and GET /version and the shared server registers the webhook and OAuth routes;
+          # nothing answers /health, so both probes were 404 from the first second.
           livenessProbe:
-            httpGet: { path: /health, port: 3456 }
+            httpGet: { path: /status, port: 3456 }
             initialDelaySeconds: 30
             periodSeconds: 30
           readinessProbe:
-            httpGet: { path: /health, port: 3456 }
+            httpGet: { path: /status, port: 3456 }
             initialDelaySeconds: 10
             periodSeconds: 10
           resources:
