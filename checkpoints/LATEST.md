@@ -28,3 +28,12 @@ that reaches idp, crew and hermes-v2 (200/200/200).
 Still open after that: move the Linear webhook registration
 (id 5c755f6e-c32e-477e-9382-be9eab8921a8) from /webhook to /linear-webhook, then drop the
 deprecated alias from httproute.yaml and the gate's open_paths.
+
+## RESUME HERE (2026-09-06T07:40Z, session d6e854d8)
+Fire: PR 1978 escaped `${X:-d}` to `$${X:-d}` in platform/llm/spend-breaker-digest.yaml,
+but that CronJob carries `kustomize.toolkit.fluxcd.io/substitute: disabled`, so the live
+spend-velocity-check job reads `$7{SPEND_VELOCITY_MAX_DOLLARS:-10.0}` and bc refuses it
+(job spend-velocity-check-29811325, BackoffLimitExceeded). Branch
+`fix/spend-breaker-substitute-disabled` reverts the three lines and teaches
+bin/idp-flux-subst-gate to grade an opted-out document as plain. Founder doc:
+~/.claude/docs/founder/2026-09-06T0721Z-answer-pls-6064aa62.md
