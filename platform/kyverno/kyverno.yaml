@@ -50,6 +50,20 @@ spec:
       # production guidance is more than one admission-controller replica; this cluster has two
       # nodes, and the chart's default anti-affinity puts one pod on each.
       replicas: 2
+      # Git/Flux-driven rolling restart of the admission controller, NOT a hand `kubectl rollout`.
+      # 2026-09-06: applying the tigera-operator HelmRelease (Calico v3.32.2 via flux) fails at
+      # admission with `resource goldmanes not found in group operator.tigera.io/v1` from the
+      # validate.kyverno.svc-fail webhook (failurePolicy: Fail), even though the CRD is live and
+      # served (kubectl get --raw /apis/operator.tigera.io/v1 lists all 16 resources). Kyverno has
+      # run continuously since before the operator.tigera.io group appeared (CRDs landed today at
+      # 05:25/06:04/06:07Z) and does not hot-index a CRD group created after its informer sync;
+      # under failurePolicy: Fail its stale discovery scan rejects the whole apply, which wedges
+      # the Calico CNI install. A rolling restart forces a fresh discovery resync against the API,
+      # clearing the reject without relaxing admission. Durable Option B (admit the
+      # operator.tigera.io group in-git) is staged after Calico is verified live.
+      # Bump this value to re-trigger a roll; the chart renders it into the pod template.
+      podAnnotations:
+        estate.idp/webhooks-restart-reason: calico-readmit-2026-09-06
       container:
         resources:
           requests:
