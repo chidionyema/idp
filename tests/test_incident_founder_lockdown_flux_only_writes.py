@@ -24,9 +24,12 @@ FOUNDER_KEY = "ESTATE_FOUNDER_USER"
 
 # The founder's laptop key as measured on 2026-09-03 (`auth whoami` over ~/.kube/oke-estate-apikey):
 # an OCI user OCID for the username, system:masters in the groups. Any other user OCID looks the same.
+# Since 2026-09-06 the founder's own user is excused, so the laptop key that must still be refused
+# is any other user OCID in the same groups: same shape, not his value.
 A_LAPTOP_KEY = (
-    "ocid1.user.oc1..aaaaaaaay4rrvpfuz7rkyexkbduyc3qgvift2bm67x7zsbvsy5yzxkwzbncq"
+    "ocid1.user.oc1..aaaaaaaanotthefounderq7rkyexkbduyc3qgvift2bm67x7zsbvsy5yzxkwz"
 )
+OTHER_USER = A_LAPTOP_KEY
 FLUX = "system:serviceaccount:flux-system:kustomize-controller"
 
 FLUX_PROBE = """apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -146,24 +149,45 @@ def test_the_founder_may_force_a_flux_reconcile(tmp_path: Path) -> None:
     assert "pass: 1" in out and "fail: 0" in out, out
 
 
-def test_the_founders_hole_is_update_of_flux_objects_and_nothing_else(
+def test_the_founder_is_excused_on_every_verb_and_every_kind(tmp_path: Path) -> None:
+    """Founder 2026-09-06: "i dnt wnt to see denied whenn in running a connna donn nny own
+    syste". The narrow UPDATE-on-Flux hole of 2026-09-05 is gone; his identity is excused the
+    way the deploy workflow is. Any other user OCID in the same groups is still refused."""
+    groups = ["system:masters", "system:authenticated"]
+    for probe, operation in (
+        (FLUX_PROBE, "CREATE"),
+        (FLUX_PROBE, "DELETE"),
+        (PROBE, "UPDATE"),
+    ):
+        out = _apply(
+            tmp_path, _founder_user(), groups, probe=probe, operation=operation
+        )
+        assert "pass: 1" in out and "fail: 0" in out, (operation, out)
+    other = _apply(tmp_path, OTHER_USER, groups, probe=PROBE, operation="UPDATE")
+    assert "fail: 1" in other, other
+
+
+def test_the_edge_row_substitutes_the_identities_the_policy_names(
     tmp_path: Path,
 ) -> None:
-    """Three conditions, all required: his identity, the UPDATE verb, a Flux toolkit group.
-    Drop any one and the lockdown still refuses him, so the exception cannot become drift."""
-    groups = ["system:masters", "system:authenticated"]
-    creating_a_flux_object = _apply(
-        tmp_path, _founder_user(), groups, probe=FLUX_PROBE, operation="CREATE"
-    )
-    assert "fail: 1" in creating_a_flux_object, creating_a_flux_object
-    deleting_a_flux_object = _apply(
-        tmp_path, _founder_user(), groups, probe=FLUX_PROBE, operation="DELETE"
-    )
-    assert "fail: 1" in deleting_a_flux_object, deleting_a_flux_object
-    updating_anything_else = _apply(
-        tmp_path, _founder_user(), groups, probe=PROBE, operation="UPDATE"
-    )
-    assert "fail: 1" in updating_anything_else, updating_anything_else
+    """Measured 2026-09-06 21:10Z: the live ClusterPolicy carried the literal text
+    ${ESTATE_FOUNDER_USER} because the edge row had no postBuild. A placeholder the row does
+    not substitute is a rule that matches nobody."""
+    rows = [
+        d
+        for d in yaml.safe_load_all((ROOT / "clusters/oke/edge.yaml").read_text())
+        if d and d.get("kind") == "Kustomization" and d["metadata"]["name"] == "edge"
+    ]
+    assert len(rows) == 1
+    sources = rows[0]["spec"].get("postBuild", {}).get("substituteFrom", [])
+    assert {"kind": "ConfigMap", "name": "estate-config"} in sources, sources
+    for name in (KEY, FOUNDER_KEY):
+        assert (
+            name
+            in yaml.safe_load((ROOT / "clusters/oke/estate-config.yaml").read_text())[
+                "data"
+            ]
+        )
 
 
 def test_flux_writes_are_never_judged(tmp_path: Path) -> None:

@@ -12,13 +12,18 @@
 # The value lives in clusters/oke/estate-config.yaml (LAW 46, R70: one place for every name)
 # and Flux postBuild substitutes it on the edge row.
 #
-# Founder break-glass, 2026-09-05: the lockdown also refused `flux reconcile`, which is an UPDATE
-# of the reconcile.fluxcd.io/requestedAt annotation on a Flux object -- so during an incident the
-# founder could not force the sync that applies the fix git already holds. ${ESTATE_FOUNDER_USER}
-# (his OCI user, named once in estate-config beside the one above) may UPDATE resources in the
-# *.toolkit.fluxcd.io groups and nothing else: not CREATE, not DELETE, and no other kind. That is
-# exactly `flux reconcile` / `flux suspend` / `flux resume`; every object those touch is still
-# defined by git, so the narrow hole cannot become drift -- the next reconcile overwrites it.
+# Founder break-glass, 2026-09-05: the lockdown also refused `flux reconcile`, so during an
+# incident the founder could not force the sync that applies the fix git already holds. A narrow
+# hole (his user, UPDATE, Flux kinds) was written for that, and it never worked: the edge row in
+# clusters/oke/platform.yaml carried no substituteFrom, so the cluster held the literal text
+# `${ESTATE_FOUNDER_USER}` and `${ESTATE_BREAK_GLASS_USER}` (measured 2026-09-06 21:10Z on the
+# live ClusterPolicy) and refused him again on 2026-09-06 21:05Z for `kubectl annotate
+# kustomization cyrus`. Founder, 2026-09-06, verbatim: "i dnt wnt to see denied whenn in running a
+# connna donn nny own syste". So: ${ESTATE_FOUNDER_USER} (his OCI user, named once in
+# estate-config beside the one above) is excused from this rule the same way the deploy workflow
+# is, every verb and every kind. The lockdown still binds every other ocid1.user.* principal,
+# which is every agent and every laptop key that is not his. Git remains the writer of record:
+# whatever he changes by hand, the next reconcile overwrites.
 # Proof it refuses and passes: tests/test_incident_founder_lockdown_flux_only_writes.py.
 # What this does not cover, on purpose: kube-system and the kyverno namespace (the chart's
 # webhook excludes them, so the control plane's own addons keep working) and reads.
@@ -75,16 +80,14 @@ spec:
           Founder lockdown 2026-09-03: {{ request.userInfo.username }} may not
           {{ request.operation }} {{ request.kind.kind }} {{ request.namespace }}/{{ request.name }}.
           Git is the only writer of this cluster; change the file on main and Flux applies it.
-          The only excused identity is the oke-check apply workflow's service user.
+          The excused identities are the oke-check apply workflow's service user and the founder.
         deny:
           conditions:
             all:
               - key: "{{ request.userInfo.username }}"
                 operator: NotEquals
                 value: "${ESTATE_BREAK_GLASS_USER}"
-              # The founder forcing a Flux reconcile during an incident: his identity, the UPDATE
-              # verb, and a Flux toolkit group, all three or the deny stands. One expression
-              # because Kyverno's deny conditions are a flat AND with no nested any/all.
-              - key: "{{ request.userInfo.username == '${ESTATE_FOUNDER_USER}' && request.operation == 'UPDATE' && contains(request.object.apiVersion || '', 'toolkit.fluxcd.io') }}"
-                operator: Equals
-                value: false
+              # The founder on his own cluster (2026-09-06, above): any verb, any kind.
+              - key: "{{ request.userInfo.username }}"
+                operator: NotEquals
+                value: "${ESTATE_FOUNDER_USER}"
