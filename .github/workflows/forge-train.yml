@@ -3,6 +3,8 @@
 # mints the two Modal secrets the launcher reads (code mints the rest, R52), trains, and leaves the
 # run as an experiment record under forge/experiments/ on a pull request. Refused runs leave a record
 # too and fail red. A run with no record did not happen.
+# button: Train a model in the Forge
+# founder: Trains a small task model on a GPU from a task file and its labelled data, grades it against the task's gates, and files the run as an experiment record on a pull request; a dry run grades without publishing.
 name: forge-train
 on:
   workflow_dispatch:
