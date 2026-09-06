@@ -1,10 +1,11 @@
 # ruff: noqa: S603,S607  argv lists, our own scripts and the oras binary baked into the image
 """Ephemeral GPU launcher. The base weights live on a Modal Volume so a run never downloads.
 
-modal run forge/modal_app.py --task voice-gate [--dry-run] [--max-steps 10]
+modal run forge/modal_app.py --task example-classify [--dry-run] [--max-steps 10]
 """
 
 import os
+import pathlib
 import subprocess
 import time
 
@@ -37,9 +38,16 @@ app = modal.App("model-forge")
     ],
     volumes={"/root/.cache/huggingface": hf_cache},
 )
-def run_forge(task: str, dry_run: bool = False, max_steps: int = -1) -> str:
+def run_forge(
+    task: str, data: bytes | None, dry_run: bool = False, max_steps: int = -1
+) -> str:
     env = {**os.environ, "DATASET_NAME": task}
-    subprocess.run(["python", "export_langfuse.py"], cwd=REMOTE, env=env, check=True)
+    if data:  # a client file, the default road; Langfuse export is the optional one
+        pathlib.Path(REMOTE, "dataset.jsonl").write_bytes(data)
+    else:
+        subprocess.run(
+            ["python", "export_langfuse.py"], cwd=REMOTE, env=env, check=True
+        )
     subprocess.run(
         ["python", "train.py", "--max-steps", str(max_steps)],
         cwd=REMOTE,
@@ -79,5 +87,11 @@ def run_forge(task: str, dry_run: bool = False, max_steps: int = -1) -> str:
 
 
 @app.local_entrypoint()
-def main(task: str = "voice-gate", dry_run: bool = False, max_steps: int = -1):
-    print(run_forge.remote(task, dry_run, max_steps))
+def main(
+    task: str = "example-classify",
+    data: str = "",
+    dry_run: bool = False,
+    max_steps: int = -1,
+):
+    payload = pathlib.Path(data).read_bytes() if data else None
+    print(run_forge.remote(task, payload, dry_run, max_steps))

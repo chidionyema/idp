@@ -5,5 +5,5 @@ Spec: `docs/specs/2026-09-06-model-forge-edge-runtime.md`, section 4. One artifa
 container; the Runtime never talks to a registry (LAW 43: oras is the mature OCI client).
 
     EDGE_ARTIFACT_DIR=./artifact cargo run --release
-    curl -s 127.0.0.1:8421/v1/infer -d '{"task":"voice-gate","input":"..."}' -H 'content-type: application/json'
+    curl -s 127.0.0.1:8421/v1/infer -d '{"task":"example-classify","input":"..."}' -H 'content-type: application/json'
     curl -s 127.0.0.1:8421/v1/health

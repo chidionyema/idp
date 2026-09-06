@@ -15,7 +15,7 @@ def main() -> None:
         secret_key=os.environ["LANGFUSE_SECRET_KEY"],
         host=os.environ["LANGFUSE_HOST"],
     )
-    name = os.environ.get("DATASET_NAME", "voice-gate")
+    name = os.environ.get("DATASET_NAME", "example-classify")
     out = os.environ.get("DATASET_OUT", "dataset.jsonl")
     ds = lf.get_dataset(name)
     records = [

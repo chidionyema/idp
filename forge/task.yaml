@@ -1,14 +1,14 @@
-# Tenant 0, Voice Gate. Spec: docs/specs/2026-09-06-model-forge-edge-runtime.md section 3.
-task: voice-gate
+# Example task. A client task is this file plus a JSONL. Spec: docs/specs/2026-09-06-model-forge-edge-runtime.md section 3.
+task: example-classify
 base: unsloth/Qwen2.5-1.5B-Instruct   # candle 0.6 serves Qwen2 GGUF; Qwen3 when candle does
 kind: classify
 prompt_template: |
-  Classify as customer ready (0) or internal engine leak (1).
+  Classify the text as class 0 or class 1.
   Text: {input}
   Verdict:
 labels:
-  "0": customer_ready
-  "1": internal_leak
+  "0": class_0
+  "1": class_1
 abstain_below: 0.80      # margin between the top two label probabilities
 min_agreement: 0.95
 kv_cache_prefix: true

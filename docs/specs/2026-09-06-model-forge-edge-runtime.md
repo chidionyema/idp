@@ -152,8 +152,10 @@ Gate calls it over loopback for its Tier 2 verdict and keeps its own Tier 1 rule
 | 2 Extraction | messy listing text to a strict JSON schema | JSON | prospector listings with teacher extractions in Langfuse |
 | 3 PR review | flag the estate's own anti-patterns before a human reads the diff | label + span | the AGENTS.md gates and their fixtures |
 
-Tenant 0 goes first because its examples exist today and its cost is a leak on a public site,
-not a token bill.
+The Forge is estate-wide and client-facing: a tenant is any task with examples, inside the estate
+or a customer's. Voice Gate is one tenant among many and is owned by its own session; nothing here
+waits on it. The first tenants are chosen by the router's spend logs (the tasks that cost the most
+today), and the lead session is the teacher that labels them (founder, 2026-09-06, in session: "you are the teacher"; "this is our general training capability").
 
 ## 5a. Overlap with the Voice Gate session (record 0755Z)
 
@@ -261,7 +263,9 @@ Rule: no model ships without its eval; twenty unchecked models a day is twenty l
 
 ## 11. Teacher arbitrage
 
-A paid model is worth paying exactly once per example, as a teacher. Three moves:
+The teacher is the lead session first (founder, 2026-09-06, in session: "you are the teacher"), so round-one
+labels cost nothing on the router; a paid model is the teacher only when the session is not there,
+and then exactly once per example. Four moves:
 
 1. **Reuse before regenerate.** Every teacher answer already paid for is in Langfuse. Tenant
    0 to 3 datasets start there at zero marginal cost.
