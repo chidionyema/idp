@@ -1,5 +1,5 @@
 {
-  "_comment": "Permissions an installation token is narrowed to at mint time (POST /app/installations/{id}/access_tokens). A lane never gets more than the App's default_permissions in manifest.json. The recovery lane (crew#290/crew#300) is read-only: bin/idp-escrow and bin/idp-recover-drill clone with it and can never write to a repository. The vault-writer lane (crew#568) writes one sops file into estate-secrets from vault-seed.yml: a router virtual key for the founder's Mac, encrypted to the age recipient the repo names, so the runner never holds a decryption key. The agent-workforce lane (crew#729) is the agent workforce's only GitHub identity: it can open and update pull requests and push to a branch, and it can never merge, dispatch a workflow or reach a cluster; deleting the lane from this file is its kill switch, because `token agent-workforce` is refused before the vault is read.",
+  "_comment": "Permissions an installation token is narrowed to at mint time (POST /app/installations/{id}/access_tokens). A lane never gets more than the App's default_permissions in manifest.json. The recovery lane (crew#290/crew#300) is read-only: bin/idp-escrow and bin/idp-recover-drill clone with it and can never write to a repository. The vault-writer lane (crew#568) writes one sops file into estate-secrets from vault-seed.yml: a router virtual key for the founder's Mac, encrypted to the age recipient the repo names, so the runner never holds a decryption key. The agent-workforce lane (crew#729) is the agent workforce's only GitHub identity: it can open and update pull requests and push to a branch, and it can never merge, dispatch a workflow or reach a cluster; deleting the lane from this file is its kill switch, because `token agent-workforce` is refused before the vault is read. The backstage lane (2026-09-06: scaffolder github:actions:dispatch failed 'No token available for host: github.com') is the portal's only GitHub identity: it reads the catalog and dispatches workflows, and it can never push, open a pull request or read a secret.",
   "platform-engineer": {
     "metadata": "read",
     "contents": "write",
@@ -40,5 +40,10 @@
     "issues": "write",
     "actions": "read",
     "checks": "read"
+  },
+  "backstage": {
+    "metadata": "read",
+    "contents": "read",
+    "actions": "write"
   }
 }
