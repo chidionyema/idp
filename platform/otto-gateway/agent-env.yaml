@@ -1,0 +1,80 @@
+# Step 5 of docs/specs/otto-door-hands-and-senses.md: the door pod holds what its hands need.
+# The same vault entry, generator and transform platform/hermes-agent/gateway.yaml gives the
+# agent, copied into this namespace: one credential root per provider (LAW 52), minted here
+# because the consumer lives here. Nothing in this file is a value; every value is minted or
+# read from the vault at reconcile time.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: hermes-agent-env
+  namespace: otto-gateway
+spec:
+  # 45m keeps every mint inside the GitHub token's 60-minute life (see hermes-agent/gateway.yaml).
+  refreshInterval: 45m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target: { name: hermes-agent-env, creationPolicy: Owner }
+  dataFrom:
+    # Telegram fields renamed on the way in, as in hermes-agent: this pod's Telegram credential is
+    # otto-gateway-channels, and the fork's loader must never find a second TELEGRAM_BOT_TOKEN.
+    - extract: { key: hermes-agent-env }
+      rewrite:
+        - regexp: { source: "^TELEGRAM_(.*)$", target: "DISABLED_TELEGRAM_$1" }
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: GithubAccessToken
+          name: hermes-agent-github
+      rewrite:
+        - transform: { template: "GITHUB_TOKEN" }
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: GithubAccessToken
+metadata:
+  name: hermes-agent-github
+  namespace: otto-gateway
+spec:
+  appID: ${githubAppIDQuoted}
+  installID: ${githubAppInstallationIDQuoted}
+  permissions:
+    metadata: read
+    contents: write
+    pull_requests: write
+    issues: write
+    checks: read
+  auth:
+    privateKey:
+      secretRef:
+        name: github-app-pem
+        key: key
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: otto-gateway-github-app-pem
+  namespace: otto-gateway
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: github-app-pem
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        key: "{{ .pem_b64 | b64dec }}"
+  dataFrom:
+    - extract: { key: github-app }
+---
+# The estate MCP key, projected into the env dir as ESTATE_MCP_KEY (platform/hermes-agent/mcp-key.yaml).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: hermes-agent-mcp
+  namespace: otto-gateway
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target: { name: hermes-agent-mcp, creationPolicy: Owner }
+  data:
+    - secretKey: ESTATE_MCP_KEY
+      remoteRef: { key: mcp-gateway, property: MCP_GATEWAY_KEY }

@@ -491,11 +491,17 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
+      # The estate-agents App's id and installation id for the GithubAccessToken generator in
+      # platform/otto-gateway/agent-env.yaml (step 5), rendered by platform/alerts-github.
+      - kind: Secret
+        name: github-app
   dependsOn:
     - name: scheduling
     - name: secret-store
     - name: edge
     - name: event-bus
+    # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
+    - name: alerts-github
     # estate-db-migrate is deliberately absent. It guarded a one-time copy of this
     # gateway's Postgres data onto the estate cluster, because this row is what deletes the
     # old server and the data would have been pruned ahead of being moved. That copy has
