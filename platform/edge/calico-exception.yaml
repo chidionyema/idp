@@ -41,8 +41,24 @@ spec:
       ruleNames: ["*"]
     - policyName: restrict-volume-types
       ruleNames: ["*"]
+    # calico-typha is Calico's internal L3/L4 datapath relay between the calico-node agents and
+    # the API-controllers; it is not a door a person opens. The Calico operator mints this Service
+    # itself (tigera/operator component renderer) and it cannot carry a backstage.io/kubernetes-id
+    # catalogue label, so require-catalogue-entity (Enforce, service-names-its-entity) refuses the
+    # operator's own reconcile and calico-node never comes up (observed 2026-09-06 once the
+    # operator booted after #2031/#2033). Same carve-out rationale as the ACME solver and
+    # prometheus-operated in catalogue-entity-operator-children: an operator-minted Service that
+    # is never a portal door gets an exception, not a fake label. Only typha is Service-having in
+    # Calico OSS -- calico-node (DaemonSet) and calico-kube-controllers (Deployment) expose
+    # nothing, so this is the complete set, not an open slice.
+    - policyName: require-catalogue-entity
+      ruleNames: [service-names-its-entity]
   match:
     any:
       - resources:
           kinds: [Pod, Deployment, DaemonSet, ReplicaSet, Job]
           namespaces: [tigera-operator, calico-system, calico-apiserver]
+      - resources:
+          kinds: [Service]
+          namespaces: [calico-system]
+          names: [calico-typha]
