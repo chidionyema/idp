@@ -86,3 +86,12 @@ spec:
           kinds: [Service]
           namespaces: [calico-system]
           names: ["calico-*"]
+      # Road B (platform/calico/raw, #2112): the same calico-node DaemonSet and
+      # calico-kube-controllers Deployment installed without the operator, into
+      # kube-system. The CNI holds the node's network namespace and host paths by
+      # design; main went red on 2026-09-06 (run 34063312266) the moment the gate
+      # judged the raw dir, 30 refusals across the ten policies above.
+      - resources:
+          kinds: [Pod, Deployment, DaemonSet, ReplicaSet]
+          namespaces: [kube-system]
+          names: [calico-node, "calico-node-*", calico-kube-controllers, "calico-kube-controllers-*"]

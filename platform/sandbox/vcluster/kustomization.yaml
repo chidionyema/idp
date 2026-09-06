@@ -24,6 +24,11 @@ configMapGenerator:
   # bin/idp-sandbox-sweep byte for byte, the way tests/test_llm_row.py holds the router
   # config to llm/config.yaml.
   - name: sandbox-sweeper-script
+    # The generator carries no namespace of its own and this Kustomization sets none,
+    # so the ConfigMap rendered with none; Flux refused the whole row ("namespace not
+    # specified") and the sandbox the founder launched at 22:26Z on 2026-09-06 never
+    # booted. The CronJob that mounts it lives in demo-sandbox (sweeper.yaml).
+    namespace: demo-sandbox
     files:
       - idp-sandbox-sweep
 generatorOptions:
