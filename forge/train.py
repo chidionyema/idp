@@ -1,5 +1,5 @@
 """Unsloth LoRA on the base named in task.yaml, held-out eval over the label tokens only,
-GGUF q4_k_m export, model-card.yaml and eval.json. Refuses under min_agreement.
+GGUF q4_k_m export, the LoRA adapter, model-card.yaml and eval.json. Refuses under min_agreement.
 
     python train.py [--task task.yaml] [--data dataset.jsonl] [--out artifact] [--max-steps N]
 """
@@ -145,6 +145,9 @@ def main() -> None:
     gguf = next(n for n in os.listdir(args.out) if n.endswith(".gguf"))
     os.replace(os.path.join(args.out, gguf), os.path.join(args.out, "model.gguf"))
     tokenizer.save_pretrained(args.out)  # tokenizer.json, read by the Runtime
+    # the adapter alone, a few MB: re-export at another quantisation, merge with other tasks'
+    # adapters, or serve per client without a second copy of the base (adopt note 2026-09-06)
+    model.save_pretrained(os.path.join(args.out, "adapter"))
     card = {
         k: task[k]
         for k in (

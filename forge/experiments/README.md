@@ -20,6 +20,15 @@ artifact, commit) so the folder can be graded by a script, then seven sections:
 6. **Provenance**: trace, artifact reference, dataset hash, commit, run.
 7. **Reproduce**: the three commands, with this run's arguments.
 
+**What a task may try.** Anything. `kind`, `base`, model size and GPU are the task file's choice;
+the Forge refuses a run before launch on one ground only, the `compute.budget_usd` in the task
+file against the worst case the GPU and `timeout_s` could bill (`forge/common.py` `cost_gate`,
+founder 2026-09-06). Every record carries the actual `usd` next to the budget.
+
+**Forgetting.** A model is its hashed dataset plus one recorded run. To remove a client's rows,
+delete them from the JSONL, run again, publish the new artifact; the old one is retired by tag.
+That is exact unlearning, at the cost of one run, and the two records prove the rows are gone.
+
 **Pre-registration.** Before the first run of a task, a `NNNN-<task>-plan.md` states hypothesis,
 data plan and gates. The run's record then sits next to it; the plan is never edited after the run.
 

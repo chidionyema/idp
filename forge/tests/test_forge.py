@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import grade, label_probs, split  # noqa: E402
+from common import compute_plan, cost_gate, grade, label_probs, split, usd_for  # noqa: E402
 
 
 def rows(n):
@@ -49,10 +49,30 @@ def test_task_yaml_matches_card_contract():
         "abstain_below",
         "min_agreement",
         "kv_cache_prefix",
+        "compute",
     ):
         assert key in task
     assert "{input}" in task["prompt_template"]
     assert 0 < task["abstain_below"] < 1
+    assert cost_gate(task) is None, "the shipped task file must fit its own budget"
+
+
+def test_cost_gate_refuses_only_on_money():
+    # a bigger model on a bigger GPU is fine when the budget covers the worst case
+    assert (
+        cost_gate({"compute": {"gpu": "H100", "timeout_s": 1800, "budget_usd": 2.0}})
+        is None
+    )
+    # the same run over budget is refused, and the reason names the numbers
+    reason = cost_gate(
+        {"compute": {"gpu": "H100", "timeout_s": 3600, "budget_usd": 2.0}}
+    )
+    assert reason and "3.95" in reason and "2.00" in reason
+    # an unpriced GPU cannot be budgeted: fail closed
+    assert "no price" in cost_gate({"compute": {"gpu": "TPU", "budget_usd": 100}})
+    # no compute block means the defaults, which fit
+    assert compute_plan({})["gpu"] == "T4" and cost_gate({}) is None
+    assert usd_for("T4", 3600) == 0.59
 
 
 # --- teacher labelling: the pure pieces, no network -------------------------------------
