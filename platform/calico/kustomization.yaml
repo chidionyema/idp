@@ -2,12 +2,13 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 # Road B final converge: the raw operatorless calico-node deck (kubernetes datastore).
 #
-# Prior state (preserved as history, no longer converged): `crds/` + `calico.yaml` were the
-# tigera-operator HelmRelease route that wedged (typha + tiers the operator cannot disable on a
-# 2-node estate; phantom `.218` underlay). Road B (founder-approved, 2026-09-06) tears that
-# route out and converges on the plain non-operator calico-node. The operator deck files remain
-# on disk for history and are still referenced by calico-exception.yaml / alerts / kyverno
-# comments, but this kustomization no longer lists them, so Flux converges ONLY `raw/`.
+# Prior state (removed, 2026-09-06): `crds/` + `calico.yaml` were the tigera-operator HelmRelease
+# route that wedged (typha + tiers the operator cannot disable on a 2-node estate; phantom `.218`
+# underlay). Road B (founder-approved) tears that route out and converges on the plain
+# non-operator calico-node. The operator deck was DELETED (not merely unlisted) so the repo's
+# disk == converged truth gates stay consistent: a dangling unconverged HelmRelease would trip
+# the alert-coverage test, and raw calico-node owns the crd.projectcalico.org kinds itself. This
+# kustomization converges ONLY `raw/`.
 #
 # !!! LANDING ORDER — do not reconcile before the operator is gone from the cluster.
 # The operator's calico-node and raw calico-node cannot BOTH write crd.projectcalico.org
