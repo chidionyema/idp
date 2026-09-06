@@ -16,14 +16,29 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["id", "pattern", "message"],
-              "properties": {
-                "id": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9-]*$" },
-                "pattern": { "type": "string", "minLength": 1 },
-                "message": { "type": "string", "minLength": 1 },
-                "flags": { "type": "string", "pattern": "^[im]*$" }
-              },
-              "additionalProperties": false
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": ["id", "pattern", "message"],
+                  "properties": {
+                    "id": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9-]*$" },
+                    "pattern": { "type": "string", "minLength": 1 },
+                    "message": { "type": "string", "minLength": 1 },
+                    "flags": { "type": "string", "pattern": "^[im]*$" }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": ["id", "phrase", "message"],
+                  "properties": {
+                    "id": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9-]*$" },
+                    "phrase": { "type": "string", "minLength": 1 },
+                    "message": { "type": "string", "minLength": 1 }
+                  },
+                  "additionalProperties": false
+                }
+              ]
             }
           },
           "inherit": { "type": "array", "items": { "type": "string" } },

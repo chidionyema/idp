@@ -5,6 +5,7 @@
 use regex_automata::meta::Regex;
 use serde::Serialize;
 
+use crate::phrase::{CompiledPhrase, PhraseSpan};
 use crate::policy::{Lane, VoicePolicy};
 use crate::prose::ProseStripper;
 
@@ -30,10 +31,17 @@ pub enum Tier1Error {
     Compile { id: String, detail: String },
 }
 
+enum Matcher {
+    /// A hand-written `pattern:` regex rule; a finding is the whole match span.
+    Regex(Regex),
+    /// A register_lint `phrase:` rule; a finding is the guards-free phrase span.
+    Phrase(CompiledPhrase),
+}
+
 struct CompiledRule {
     id: String,
     message: String,
-    re: Regex,
+    matcher: Matcher,
 }
 
 pub struct Tier1 {
@@ -48,11 +56,25 @@ impl Tier1 {
         for (name, lane) in &policy.lanes {
             let mut compiled = Vec::with_capacity(lane.deny_patterns.len());
             for p in &lane.deny_patterns {
-                let flags = p.flags.clone().unwrap_or_else(|| "i".to_string());
-                let re = Regex::new(&format!("(?{}m){}", flags, p.pattern)).map_err(|e| {
-                    Tier1Error::Compile { id: p.id.clone(), detail: e.to_string() }
-                })?;
-                compiled.push(CompiledRule { id: p.id.clone(), message: p.message.clone(), re });
+                let matcher = if let Some(phrase) = &p.phrase {
+                    let fp = CompiledPhrase::new(phrase).map_err(|detail| Tier1Error::Compile {
+                        id: p.id.clone(),
+                        detail,
+                    })?;
+                    Matcher::Phrase(fp)
+                } else {
+                    let pattern = p.pattern.as_deref().unwrap_or_default();
+                    let flags = p.flags.clone().unwrap_or_else(|| "i".to_string());
+                    let re = Regex::new(&format!("(?{}m){}", flags, pattern)).map_err(|e| {
+                        Tier1Error::Compile { id: p.id.clone(), detail: e.to_string() }
+                    })?;
+                    Matcher::Regex(re)
+                };
+                compiled.push(CompiledRule {
+                    id: p.id.clone(),
+                    message: p.message.clone(),
+                    matcher,
+                });
             }
             rules.insert(name.clone(), compiled);
         }
@@ -77,15 +99,31 @@ impl Tier1 {
         let mut findings = Vec::new();
         if let Some(rules) = self.rules.get(lane_name) {
             for rule in rules {
-                for m in rule.re.find_iter(&prose) {
-                    findings.push(Finding {
-                        rule_id: rule.id.clone(),
-                        lane: lane_name.to_string(),
-                        field: field.to_string(),
-                        span: Span { start: m.start(), end: m.end() },
-                        detail: rule.message.clone(),
-                        tier: "tier1",
-                    });
+                match &rule.matcher {
+                    Matcher::Regex(re) => {
+                        for m in re.find_iter(&prose) {
+                            findings.push(Finding {
+                                rule_id: rule.id.clone(),
+                                lane: lane_name.to_string(),
+                                field: field.to_string(),
+                                span: Span { start: m.start(), end: m.end() },
+                                detail: rule.message.clone(),
+                                tier: "tier1",
+                            });
+                        }
+                    }
+                    Matcher::Phrase(fp) => {
+                        for PhraseSpan { start, end } in fp.find(&prose) {
+                            findings.push(Finding {
+                                rule_id: rule.id.clone(),
+                                lane: lane_name.to_string(),
+                                field: field.to_string(),
+                                span: Span { start, end },
+                                detail: rule.message.clone(),
+                                tier: "tier1",
+                            });
+                        }
+                    }
                 }
             }
         }

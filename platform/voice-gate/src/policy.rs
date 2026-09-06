@@ -42,12 +42,24 @@ pub struct RawLane {
 #[derive(Debug, Clone, Deserialize)]
 pub struct DenyPattern {
     pub id: String,
-    pub pattern: String,
+    /// Exactly one of `pattern` / `phrase` is present (enforced by the policy JSONSchema).
+    #[serde(default)]
+    pub pattern: Option<String>,
+    #[serde(default)]
+    pub phrase: Option<String>,
     pub message: String,
-    /// Regex flags: "i" (case-insensitive) and/or "m" (multiline). Default "i".
-    /// EE1 is "" (case-sensitive): a caps verdict LABEL fires, the English verb never does.
+    /// Regex flags for `pattern`-rules: "i" (case-insensitive) and/or "m" (multiline).
+    /// Default "i". EE1 is "" (case-sensitive): a caps verdict LABEL fires, the English
+    /// verb never does. `phrase`-rules are always case-insensitive (register_lint re.I).
     #[serde(default)]
     pub flags: Option<String>,
+}
+
+impl DenyPattern {
+    /// The human-readable rule source, for diagnostics: a regex or a phrase.
+    pub fn source(&self) -> &str {
+        self.phrase.as_deref().or(self.pattern.as_deref()).unwrap_or_default()
+    }
 }
 
 /// One lane with inheritance fully resolved.

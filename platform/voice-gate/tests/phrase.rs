@@ -104,3 +104,19 @@ fn phrase_after_leading_punctuation_or_quote_still_matches() {
     assert_eq!(hits, vec![(14, 22)]);
     assert_eq!(&t[14..22], "seamless");
 }
+
+#[test]
+fn curly_apostrophe_equals_straight_at_unchanged_offsets() {
+    // register_lint `_normalise` maps curly → straight before matching. The deny gate and
+    // the harness do NOT pre-normalise (that would shift a span's byte offsets and break
+    // the diff, which slices the original text). So the phrase compiler reproduces the
+    // judge-MENTS as a position-preserving class: a straight `'` in the body also accepts
+    // the three curly code points, and the span keeps pointing at the source bytes.
+    let t = "the child’s seamless shoes";
+    let hits = spans("child's", t);
+    assert_eq!(hits, vec![(4, 13)]); // ’ occupies bytes 9..12, so phrase ends after s at 13
+    assert_eq!(&t[hits[0].0..hits[0].1], "child’s");
+
+    let straight = "the child's seamless shoes";
+    assert_eq!(spans("child's", straight), vec![(4, 11)]);
+}

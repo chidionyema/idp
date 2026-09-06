@@ -18,6 +18,12 @@
 //! reports (its lookaround consumed nothing), and the corpus match-set diff compares these
 //! spans byte-for-byte on both runtimes — so shrink-or-not is the whole parity question.
 //!
+//! Apostrophes: register_lint runs `_normalise` first, which maps every curly form
+//! (`…’…‘…‛`) to the straight `'` before any matching. To reproduce that **without changing
+//! the byte length of the prose** (a finding's span maps back to the original text), each
+//! straight apostrophe in a phrase token is compiled as a class that also accepts the three
+//! curly forms — the net judgement of "curly equals straight" with positions intact.
+//!
 //! Cases a phrase must *not* fire on live here too: the phrase as a bare substring of a
 //! longer word (`turn` in `downturn`), adjacent to a hyphen (`seamless` in
 //! `fully-seamless`), and a phrase followed by a word suffix (`seamless` vs `seamlessly`).
@@ -26,9 +32,9 @@
 
 use regex_automata::meta::Regex;
 
-/// A phrase compiled to a DFA the same shape a deny pattern uses. It has no notion of
-/// apostrophes: register_lint normalises curly→straight before matching, which upstream
-/// does (or must) once, so a phrase body carries only the straight form.
+/// A phrase compiled to a DFA the same shape a deny pattern uses. Apostrophes: the token
+/// class below lets a straight `'` stand for any of the curly forms register_lint's
+/// `_normalise` maps to straight before matching, at unchanged byte positions.
 pub struct CompiledPhrase {
     re: Regex,
 }
@@ -55,7 +61,7 @@ impl CompiledPhrase {
         if tokens.is_empty() {
             return Err("phrase has no tokens".to_string());
         }
-        let body: Vec<String> = tokens.iter().map(|w| regex_escape(w)).collect();
+        let body: Vec<String> = tokens.iter().map(|w| escape_token(w)).collect();
         let joined = body.join(r"\s+");
         // `(?:^|[^\w-])(BODY)(?:[^\w-]|$)` — group 1 is the guards-free phrase. The `m`
         // flag is intentionally absent (see module doc). Compiled with `i` for parity.
@@ -83,8 +89,27 @@ impl CompiledPhrase {
     }
 }
 
-/// Minimal regex-escape for phrase tokens: only the handful of metacharacters matter for
-/// body literals (register_lint uses `re.escape`, which escapes every non-alphanumeric).
+/// Escaped phrase token with apostrophes widened. `re.escape` in register_lint leaves a
+/// straight `'` literal in the body (it is not a metacharacter); here that literal is
+/// replaced so it also matches the three curly apostrophe code points, reproducing
+/// `_normalise`'s curly→straight sweep without shifting any byte offset.
+fn escape_token(s: &str) -> String {
+    let escaped = regex_escape(s);
+    if !escaped.contains('\'') {
+        return escaped;
+    }
+    let mut out = String::with_capacity(escaped.len() + 16);
+    for c in escaped.chars() {
+        if c == '\'' {
+            // straight + right/left single quote + single high-reversed-9
+            out.push_str("[\\u2018\\u2019\\u201B']");
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn regex_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {

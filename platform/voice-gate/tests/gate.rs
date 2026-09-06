@@ -109,3 +109,71 @@ fn unknown_lane_is_distinct_from_clean() {
     let (p, _t) = gate();
     assert!(p.lane("does-not-exist").is_none(), "server maps this to 422");
 }
+
+// ---------------------------------------------------------------------------
+// Item 3 — phrase-rule grading (the register_lint lexicon as deny_patterns).
+// ---------------------------------------------------------------------------
+
+/// A policy carrying two register-like `phrase:` rules, one straight and one with an
+/// apostrophe, plus one ordinary `pattern:` rule, in one evidence lane.
+const PHRASE_POLICY: &str = r#"
+version: 1
+lanes:
+  storefront:
+    description: marketing copy
+    deny_patterns: []
+  evidence-export:
+    inherit: [storefront]
+    deny_patterns:
+    - id: PHR1
+      phrase: a testament to
+      message: testimonial cliche
+    - id: PHR2
+      phrase: 'it''s worth noting that'
+      message: throat-clearer
+    - id: EE2
+      pattern: '\bpassages?\b'
+      message: research-mode reference
+      flags: i
+rules: {}
+"#;
+
+fn phrase_gate() -> (VoicePolicy, Tier1) {
+    let policy = VoicePolicy::from_str(PHRASE_POLICY).expect("phrase policy is valid");
+    let tier1 = Tier1::new(&policy).expect("phrase rules compile");
+    (policy, tier1)
+}
+
+#[test]
+fn phrase_rule_grades_through_tier1_with_guardsfree_span() {
+    let (p, t) = phrase_gate();
+    let lane = p.lane("evidence-export").unwrap();
+    let text = "This draft is a testament to the team.";
+    let hits = t.grade("evidence-export", lane, "reason", text);
+    let phr1 = hits.iter().find(|f| f.rule_id == "PHR1").expect("PHR1 fired");
+    // guards-free span points at the phrase inside the ORIGINAL text
+    assert_eq!(&text[phr1.span.start..phr1.span.end], "a testament to");
+}
+
+#[test]
+fn phrase_rule_handles_curly_apostrophe_across_prose() {
+    let (p, t) = phrase_gate();
+    let lane = p.lane("evidence-export").unwrap();
+    // source uses a curly apostrophe; register_lint normalises it to straight, so the
+    // straight-form phrase must still fire, and the span must index the source as-is.
+    let text = "First point. It’s worth noting that the numbers hold.";
+    let hits = t.grade("evidence-export", lane, "reason", text);
+    let phr2 = hits.iter().find(|f| f.rule_id == "PHR2").expect("PHR2 fired");
+    assert_eq!(&text[phr2.span.start..phr2.span.end], "It’s worth noting that");
+}
+
+#[test]
+fn phrase_and_pattern_rules_coexist_in_a_lane() {
+    let (p, t) = phrase_gate();
+    let lane = p.lane("evidence-export").unwrap();
+    let text = "It’s worth noting that the passages show the plan.";
+    let hits = t.grade("evidence-export", lane, "reason", text);
+    // PHR2 (phrase) and EE2 (pattern) both fire on the same string
+    assert!(hits.iter().any(|f| f.rule_id == "PHR2"));
+    assert!(hits.iter().any(|f| f.rule_id == "EE2"));
+}
