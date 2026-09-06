@@ -33,6 +33,15 @@ spec:
         - name: cyrus
           image: ghcr.io/chidionyema/cyrus
           env:
+            # Cyrus resolves its state directory from HOME. The container runs as uid 10001,
+            # which has no passwd entry, so node resolved HOME to "/" and the first thing
+            # cyrus does on boot -- ensureRequiredDirectories() -- tried to mkdir /.cyrus/repos
+            # on a read-only root and exited:
+            #   [ERROR] [CLI] Failed to create directory /.cyrus/repos: ENOENT
+            # The writable volume for this was already mounted at /home/node; nothing pointed
+            # HOME at it. Setting it is the whole fix.
+            - name: HOME
+              value: /home/node
             # GitHub token from ExternalSecret
             - name: GH_TOKEN_FILE
               value: /secrets/github/token
