@@ -2,7 +2,8 @@
 // "clicking needs more detail and overview"): the estate facts bin/catalog-gen wrote on the
 // entity, its category membership, and that a linked relation takes a person deeper into the
 // catalogue instead of leaving it. No layout words, no selectors (R53); visible text finds it.
-import { renderInTestApp } from '@backstage/frontend-test-utils';
+import { renderInTestApp, TestApiProvider } from '@backstage/frontend-test-utils';
+import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import { EntityProvider } from '@backstage/plugin-catalog-react';
 import { Entity } from '@backstage/catalog-model';
 import { screen } from '@testing-library/react';
@@ -107,14 +108,36 @@ const handAuthored = (): Entity => ({
   spec: { type: 'service', owner: 'group:default/platform' },
 });
 
-const renderOne = (entity: Entity, now: number = Date.now()) =>
-  renderInTestApp(
-    <EntityProvider entity={entity}>
-      <EstateOverview now={now} />
-    </EntityProvider>,
+/** Entities the card's relation read can resolve, keyed by entityRef. Tests that assert a
+ * real neighbour set one up; the default (no neighbours) keeps the assertions about honesty
+ * (a surface nobody references states that plainly, never a fabricated wire). */
+let neighbours: Record<string, Entity> = {};
+
+/** A catalog service that answers relation refs the way the live catalogue does: getEntitiesByRefs
+ * returns the keyed neighbours and null for anything not present. */
+const catalogStub = () => ({
+  getEntitiesByRefs: async ({ entityRefs }: { entityRefs: string[] }) => ({
+    items: entityRefs.map(ref => neighbours[ref] ?? null),
+  }),
+  getEntities: async () => ({ items: [] as Entity[] }),
+});
+
+const renderOne = (entity: Entity, now: number = Date.now()) => {
+  const api = catalogStub();
+  return renderInTestApp(
+    <TestApiProvider apis={[[catalogApiRef, api as any]]}>
+      <EntityProvider entity={entity}>
+        <EstateOverview now={now} />
+      </EntityProvider>
+    </TestApiProvider>,
   );
+};
 
 describe('EstateOverview (the owned estate entity detail tab)', () => {
+  beforeEach(() => {
+    neighbours = {};
+  });
+
   it('renders the title and the generated estate facts', async () => {
     await renderOne(generatedLedger());
     // The owner of the page.
@@ -204,5 +227,89 @@ describe('EstateOverview (the owned estate entity detail tab)', () => {
     expect(screen.queryByText('Up')).not.toBeInTheDocument();
     expect(screen.queryByText('Down')).not.toBeInTheDocument();
     expect(screen.queryByText(/checked /)).not.toBeInTheDocument();
+  });
+
+  it("reads what a component depends on from its real catalogue relations, not a guessed list", async () => {
+    // `spec.dependsOn`-style outbound relation: this component names a real catalogue member
+    // it talks to, and the estate resolves it to an in-portal deep link.
+    neighbours['component:default/heartbeat'] = {
+      apiVersion: 'backstage.io/v1alpha1',
+      kind: 'Component',
+      metadata: { name: 'heartbeat', namespace: 'default', title: 'Heartbeat' },
+      spec: { type: 'platform-layer' },
+    };
+    const host: Entity = {
+      apiVersion: 'backstage.io/v1alpha1',
+      kind: 'Component',
+      metadata: {
+        name: 'founder-inbox',
+        namespace: 'default',
+        title: 'Founder inbox',
+        description: "Where the day's decisions land.",
+      },
+      relations: [
+        {
+          type: 'dependsOn',
+          targetRef: 'component:default/heartbeat',
+        },
+      ],
+      spec: { type: 'founder-surface', owner: 'group:default/platform' },
+    };
+    await renderOne(host);
+    await screen.findByText('Heartbeat - platform-layer');
+    expect(screen.getByText('What it talks to')).toBeInTheDocument();
+    expect(screen.getByText('It depends on')).toBeInTheDocument();
+    expect(screen.getByText('Heartbeat - platform-layer').closest('a')?.getAttribute('href')).toBe(
+      '/catalog/component/default/heartbeat',
+    );
+  });
+
+  it("says who is built on this surface from the inverse catalogue relation", async () => {
+    // The catalogue materialises `dependencyOf` on the target when another entry depends on
+    // it, so this is the honest "what is built on this" answer, straight from the graph.
+    neighbours['component:default/founder-console'] = {
+      apiVersion: 'backstage.io/v1alpha1',
+      kind: 'Component',
+      metadata: {
+        name: 'founder-console',
+        namespace: 'default',
+        title: 'Founder console',
+      },
+      spec: { type: 'founder-surface' },
+    };
+    const base: Entity = {
+      apiVersion: 'backstage.io/v1alpha1',
+      kind: 'Component',
+      metadata: {
+        name: 'inbox-api',
+        namespace: 'default',
+        title: 'Inbox API',
+      },
+      relations: [
+        {
+          type: 'dependencyOf',
+          targetRef: 'component:default/founder-console',
+        },
+      ],
+      spec: { type: 'platform-layer' },
+    };
+    await renderOne(base);
+    await screen.findByText('Founder console - founder-surface');
+    expect(screen.getByText('Used by')).toBeInTheDocument();
+    expect(screen.getByText('Founder console - founder-surface').closest('a')?.getAttribute('href')).toBe(
+      '/catalog/component/default/founder-console',
+    );
+  });
+
+  it("states plainly when nothing in the catalogue is wired to it, never inventing a neighbour", async () => {
+    await renderOne(unprobedSurface());
+    await screen.findByText('Nothing else in the catalogue is wired to it yet.');
+    expect(screen.getByText('What it talks to')).toBeInTheDocument();
+    expect(
+      screen.getByText('Nothing else in the catalogue is wired to it yet.'),
+    ).toBeInTheDocument();
+    // No fabricated relation names anywhere.
+    expect(screen.queryByText(/Heartbeat/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Founder console/)).not.toBeInTheDocument();
   });
 });
