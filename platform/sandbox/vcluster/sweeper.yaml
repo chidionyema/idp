@@ -105,7 +105,9 @@ spec:
             - name: sweep
               securityContext:
                 allowPrivilegeEscalation: false
-                readOnlyRootFilesystem: false
+                # require-ro-rootfs (kyverno): the script's only writes are mktemp -d and the
+                # clone inside it, so /tmp is the one writable path, an emptyDir.
+                readOnlyRootFilesystem: true
                 capabilities: { drop: [ALL] }
                 seccompProfile: { type: RuntimeDefault }
               # git, sh, base64, date; nothing else. The script is POSIX sh for exactly this image.
@@ -120,9 +122,11 @@ spec:
                 # this is the estate's own name, not a machine path).
                 - { name: GITHUB_REPOSITORY, value: "chidionyema/idp" }
                 - { name: SANDBOX_SWEEPER_TOKEN_FILE, value: /run/secrets/github/token }
+                - { name: HOME, value: /tmp }
               volumeMounts:
                 - { name: github, mountPath: /run/secrets/github, readOnly: true }
                 - { name: script, mountPath: /work, readOnly: true }
+                - { name: tmp, mountPath: /tmp }
               resources:
                 requests: { cpu: 10m, memory: 32Mi }
                 limits: { cpu: 100m, memory: 64Mi }
@@ -133,3 +137,5 @@ spec:
               secret: { secretName: sandbox-sweeper-github, optional: false }
             - name: script
               configMap: { name: sandbox-sweeper-script }
+            - name: tmp
+              emptyDir: { sizeLimit: 256Mi }
