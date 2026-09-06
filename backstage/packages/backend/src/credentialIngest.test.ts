@@ -21,7 +21,10 @@ function mockRes() {
   return res;
 }
 
-const SECRET = 'lin_api_7f2c1a9be4d05e63_2026';
+// A clearly-fake value (not a real key shape, so the security scan stays green) with enough
+// stable bytes that the tests below can grep every surface for its exact text to prove the door
+// never reproduced it past the sha256 prefix.
+const SECRET = 'EXAMPLE_NOT_A_REAL_SECRET_7f2c1a9be4d05e63';
 const sha8 = (s: string) => crypto.createHash('sha256').update(s, 'utf8').digest('hex').slice(0, 8);
 
 interface LogSink {
@@ -54,10 +57,10 @@ function makeHandler(over: {
   allow?: Map<string, Set<string>>;
   stores?: Map<string, { write: boolean }>;
   failWrite?: boolean;
-  logger?: any;
-  emits?: LogSink;
 } = {}) {
-  const { s, logger, emitSpan } = over.emits ? { s: over.emits, logger: over.logger ?? { info(){}, error(){} }, emitSpan: (a: object) => over.emits!.spans.push(a) } : sinks();
+  // Every test grades the real handler's leak surfaces through the auto-sink below (s.info,
+  // s.error, s.spans); no test overrides the sink or logger, so there is no dead second arm.
+  const { s, logger, emitSpan } = sinks();
   const writes: string[][] = [];
   const handler = buildIngestHandler({
     readAllowList: async () => over.allow ?? allowList,
