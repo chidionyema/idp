@@ -136,6 +136,11 @@ flows:
     # The key for it is already mounted (platform/hermes-agent/mcp-key.yaml, ESTATE_MCP_KEY);
     # hermes-v2 config.yaml names the server. Both directions declared, as everywhere else.
     egress: [hindsight, observability, mcp]
+    # The Tailscale sidecar logs in to controlplane.tailscale.com and relays over DERP on 443,
+    # and the gateway calls api.telegram.org and the router's public door on the same port.
+    # Without this the sidecar times out on `tailscale up` and the pod never goes Ready
+    # (2026-09-06: 4 restarts, `dial log.tailscale.com:443: i/o timeout`).
+    egress_internet: [443]
     ingress_from: [edge]
   agent-workforce:
     egress: [observability, llm]
