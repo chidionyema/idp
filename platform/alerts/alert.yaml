@@ -91,9 +91,6 @@ spec:
       namespace: temporal
     - kind: HelmRelease
       name: "*"
-      namespace: tigera-operator
-    - kind: HelmRelease
-      name: "*"
       namespace: trivy-system
     - kind: HelmRelease
       name: "*"
