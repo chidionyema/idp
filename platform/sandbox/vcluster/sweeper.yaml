@@ -1,0 +1,124 @@
+# The sandbox's own clock, in-cluster (2026-09-06). Until this row the only sweeper was the
+# GitHub cron in .github/workflows/demo-sandbox.yml, and GitHub's hosted scheduler dropped
+# twelve consecutive quarter-hour slots: the 03:06 sandbox outlived its one-hour hold by
+# over an hour with a demo shop a buyer could still walk into. The deletion guarantee a
+# buyer's engineer reads in the template's own words ("it removes itself when the hold runs
+# out") cannot rest on a scheduler GitHub calls best-effort.
+#
+# Shape: this CronJob only exists while a sandbox is held, because it lives in this
+# (moving) kustomization. Flux substitutes the hold's own timestamps into it at launch, so
+# it needs no API read and no RBAC: before the expiry it exits 0; past it, it force-pushes
+# the idle commit to branch sandbox/launch, the launch lane (platform/sandbox/launch) then
+# drops this row, and prune removes the sandbox and this sweeper together. The GitHub cron
+# stays as the outer fallback; its sweep reads the branch, finds state idle, and exits
+# "nothing to sweep". The script is bin/idp-sandbox-sweep, carried by the ConfigMap below
+# (the pin holds the copy byte-identical, the way tests/test_llm_row.py holds the router
+# config to its source).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: sandbox-sweeper-github
+  namespace: demo-sandbox
+spec:
+  # 45m like hermes-agent (crew#736): the only job is staying inside the token's 60-minute life.
+  refreshInterval: 45m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target: { name: sandbox-sweeper-github, creationPolicy: Owner }
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: GithubAccessToken
+          name: sandbox-sweeper-github
+      rewrite:
+        - transform: { template: "token" }
+---
+# ${githubAppIDQuoted} / ${githubAppInstallationIDQuoted} are substituted by Flux from the
+# flux-system/github-app Secret (the launch row's substituteFrom, written by
+# .github/workflows/demo-sandbox.yml). Account identifiers never typed in git (LAW 46).
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: GithubAccessToken
+metadata:
+  name: sandbox-sweeper-github
+  namespace: demo-sandbox
+spec:
+  appID: ${githubAppIDQuoted}
+  installID: ${githubAppInstallationIDQuoted}
+  # Mirrors the sandbox-sweeper lane in platform/github-app/lanes.json: contents write is
+  # what force-pushing sandbox/launch takes; nothing else is granted.
+  permissions:
+    metadata: read
+    contents: write
+  auth:
+    privateKey:
+      secretRef:
+        name: github-app-pem
+        key: key
+---
+# The App's private key for the generator, from the one vault entry `github-app` that
+# bin/idp-github-app writes. Same shape as hermes-agent-github-app-pem.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: sandbox-sweeper-github-app-pem
+  namespace: demo-sandbox
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: github-app-pem
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        key: "{{ .pem_b64 | b64dec }}"
+  dataFrom:
+    - extract: { key: github-app }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sandbox-sweeper
+  namespace: demo-sandbox
+spec:
+  # Five minutes, not the workflow's fifteen: the hold is one hour and the worst-case
+  # overshoot is part of what the buyer is shown.
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        metadata:
+          labels: { app.kubernetes.io/name: sandbox-sweeper }
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sweep
+              # git, sh, base64, date; nothing else. The script is POSIX sh for exactly this image.
+              image: docker.io/alpine/git:2.54.0
+              command: ["/bin/sh", "/work/idp-sandbox-sweep"]
+              env:
+                - { name: SANDBOX_EXPIRES_AT, value: "${SANDBOX_EXPIRES_AT}" }
+                - { name: SANDBOX_LAUNCHED_AT, value: "${SANDBOX_LAUNCHED_AT}" }
+                - { name: SANDBOX_HOLD, value: "${SANDBOX_HOLD}" }
+                # The one repository the sandbox branch lives on; the lane's installation
+                # token is scoped to it at mint time regardless (LAW 46 exempts no one, and
+                # this is the estate's own name, not a machine path).
+                - { name: GITHUB_REPOSITORY, value: "chidionyema/idp" }
+                - { name: SANDBOX_SWEEPER_TOKEN_FILE, value: /run/secrets/github/token }
+              volumeMounts:
+                - { name: github, mountPath: /run/secrets/github, readOnly: true }
+                - { name: script, mountPath: /work, readOnly: true }
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 100m, memory: 64Mi }
+          volumes:
+            - name: github
+              # optional: false, like backstage-env: a sweeper without its credential is a
+              # sandbox that never ends.
+              secret: { secretName: sandbox-sweeper-github, optional: false }
+            - name: script
+              configMap: { name: sandbox-sweeper-script }
