@@ -5,7 +5,8 @@
 `~/.claude/docs/founder/2026-09-06T0740Z-3-the-4-step-playbook-to-cut-reliance-d75d416a.md`,
 `~/.claude/docs/founder/2026-09-06T0741Z-5-src-tier2-rs-arm-native-local-inference-e410c62e.md`,
 `~/.claude/docs/founder/2026-09-06T0750Z-that-distinction-changes-everything-and-separating-those-two-0a0fa055.md`,
-`~/.claude/docs/founder/2026-09-06T0755Z-also-work-is-already-underway-for-the-voice-ec3c584d.md`.
+`~/.claude/docs/founder/2026-09-06T0755Z-also-work-is-already-underway-for-the-voice-ec3c584d.md`,
+`~/.claude/docs/founder/2026-09-06T0810Z-since-hwethis-is-an-elite-mathematically-sound-zero-8ab57ee7.md` (Gemini's review, reviewed in section 12).
 **Roles:** this session leads (spec, review, integration, proof); Gemini web is the contractor and
 writes most of the code from the briefs in section 7.
 **Convention:** every checkpoint ends in a command that proves it (LAW 33); done means live proof
@@ -67,6 +68,12 @@ not a rewrite.
 `task.yaml` → merge → GGUF `q4_k_m` → held-out eval against the teacher labels → artifact push
 → Langfuse trace of the run (LAW 50) → a comment on the tenant's ticket with the eval table.
 
+**Warm start (accepted from the contractor review):** the Modal image bakes the Python
+dependencies and a `modal.Volume` holds the HuggingFace cache, so the base weights download
+once, not per run. `task.yaml: init_from: previous` starts from the last shipped adapter at a
+lower learning rate for a delta dataset; the held-out eval still runs over the full set, never
+the delta alone, so a regression on old cases cannot ship.
+
 **Refusals:** a run whose held-out agreement with the teacher is below `task.yaml: min_agreement`
 pushes nothing and says why. A dataset under 500 examples is refused.
 
@@ -91,6 +98,8 @@ prompt_template: |          # exact text the Runtime renders, {input} is the onl
   Text: {input}
 
   Verdict:
+kv_cache_prefix: true       # Runtime precomputes the KV cache for the text before {input};
+                            # the text after {input} is short by design (it is recomputed per call)
 labels:                     # classify: first-token candidates the Runtime compares
   "0": customer_ready
   "1": internal_leak
@@ -104,8 +113,18 @@ eval: { held_out: 500, agreement: 0.97, abstain_rate: 0.06 }
 Rust, in `platform/edge-runtime/`. It is a separate crate from `platform/voice-gate/`; Voice
 Gate calls it over loopback for its Tier 2 verdict and keeps its own Tier 1 rules.
 
-- **Engine:** `candle-core` + `candle-transformers::quantized_llama` loading the GGUF by mmap;
-  CPU device; the arm64 build sets `target-cpu=neoverse-n1`.
+- **Engine:** `candle-core` + `candle-transformers::quantized_llama` loading the GGUF through
+  an explicit mmap (never a read into a heap buffer, so a 400 MB artifact is file-backed pages
+  the kernel can drop); CPU device. `.cargo/config.toml` sets
+  `[target.aarch64-unknown-linux-gnu] rustflags = ["-C", "target-cpu=neoverse-n1"]`, scoped to
+  that target so the laptop's x86 build is untouched.
+- **Batching:** one request per forward pass in v1. A micro-batching channel is a later PR,
+  opened only if CP4 shows p95 under concurrent load above the target; on CPU prefill the gain
+  is real but not "four for the price of one", so it is earned by a measurement.
+- **Prefix cache:** at artifact load, one forward pass over the template text before
+  `{input}` is run once and its KV cache kept; each call clones it and computes only the input
+  and the short suffix. The template's static text therefore goes first and the suffix stays
+  under a handful of tokens. The saving is measured at CP4, not quoted.
 - **Classify:** render the template, one forward pass over the prompt, read the logits of the
   next token for each label's first token, softmax over those candidates only. Answer
   `{label, p, margin, latency_ms}`; `abstain` when `margin < abstain_below`.
@@ -256,5 +275,27 @@ A paid model is worth paying exactly once per example, as a teacher. Three moves
    training set. Each retrain shrinks the abstain share; the paid bill converges on the hard
    cases only.
 
+4. **Active learning (accepted from the contractor review).** Between retrains the Forge runs
+   the unlabelled backlog through the current student and sends only the lowest-margin cases
+   (the boundary) to the teacher, capped per run in `task.yaml: label_budget`. The teacher
+   labels the cases the student finds hardest, not a random sample.
+
 Labelling cost is measured from `LiteLLM_SpendLogs` under the Forge's own router key
 `forge-teacher`, never quoted here; teacher spend is a line of its own.
+
+## 12. Contractor review, 2026-09-06 (record 0810Z): what was taken and what was not
+
+| Proposal | Verdict | Where |
+|---|---|---|
+| Modal Volume for the HuggingFace cache, deps baked in the image | Taken | section 2, warm start |
+| Incremental LoRA from the previous adapter | Taken, with the full held-out eval as the guard | section 2, `init_from` |
+| Parallel tokenisation across ten CPU containers | Not taken: a 5,000-row dataset tokenises in seconds on one CPU; ten containers is the bigger road (LAW 23) | — |
+| KV-cache prefix precomputation | Taken; template static text first, short suffix, `kv_cache_prefix` in the card | sections 3 and 4 |
+| Micro-batching channel | Deferred behind a CP4 measurement | section 4, batching |
+| Active learning by lowest margin | Taken | section 11, move 4 |
+| Explicit mmap | Already the design; now stated as a rule | section 4, engine |
+| `target-cpu=neoverse-n1` in `.cargo/config.toml` | Taken, scoped to the aarch64 target only; a global flag would break the laptop build | section 4, engine |
+| "150 ms to under 20 ms", "mathematical certainty" | Not written; every latency is a CP4 number | section 1 |
+
+Order for the contractor: Brief A first (it produces the artifact the bleed-stop needs), then
+Brief B. Each is one PR, reviewed here against this file.
