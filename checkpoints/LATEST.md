@@ -28,3 +28,11 @@ that reaches idp, crew and hermes-v2 (200/200/200).
 Still open after that: move the Linear webhook registration
 (id 5c755f6e-c32e-477e-9382-be9eab8921a8) from /webhook to /linear-webhook, then drop the
 deprecated alias from httproute.yaml and the gate's open_paths.
+Founder doc: ~/.claude/docs/founder/2026-09-06T0355Z-otto-s-observer-writes-json-to-stdout-yet-e68777e1.md
+
+## RESUME HERE (2026-09-06T07:30Z, session d6e854d8)
+PR 1978 and 1979 are merged. Main carries `bin/idp-flux-subst-gate` without the
+`files_under` root-path skip, so the gate reports 8 false hits on main; the fix is
+commit 1e47109d, being re-opened as branch `fix/flux-subst-gate-root-rescan` from
+worktree scratchpad/wt-otto. Founder question of 07:21Z (docs/founder/2026-09-06T0721Z-answer-pls-6064aa62.md)
+about the oke-check: answer is in the reply, not on a menu.
