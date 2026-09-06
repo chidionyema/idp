@@ -56,6 +56,13 @@ Nothing to do: the hold elapses, the next fifteen-minute sweep empties the branc
 prunes the sandbox. To end it early, press the same button with *End the one that is
 running* — the branch is emptied on the spot and the sweep confirms it.
 
+## If the shop pod mounts nothing
+
+A seed that changes between launches can orphan the mirror: the syncer matches host objects
+to inner ones by uid, a fresh inner page has a new uid, and the stale pair deletes itself
+both ways (hit on the first upgrade, 2026-09-06). The designed recovery is the product's
+own: press *End*, then *Launch* again — a throwaway is rebuilt, never repaired.
+
 ## Where the guarantees live
 
 Every bound above is pinned by `tests/test_demo_sandbox_is_defined_and_expires.py`: the
