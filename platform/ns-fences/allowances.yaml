@@ -136,6 +136,11 @@ flows:
     # The key for it is already mounted (platform/hermes-agent/mcp-key.yaml, ESTATE_MCP_KEY);
     # hermes-v2 config.yaml names the server. Both directions declared, as everywhere else.
     egress: [hindsight, observability, mcp]
+    # The Tailscale sidecar logs in to controlplane.tailscale.com and relays over DERP on 443,
+    # and the gateway calls api.telegram.org and the router's public door on the same port.
+    # Without this the sidecar times out on `tailscale up` and the pod never goes Ready
+    # (2026-09-06: 4 restarts, `dial log.tailscale.com:443: i/o timeout`).
+    egress_internet: [443]
     ingress_from: [edge]
   agent-workforce:
     egress: [observability, llm]
@@ -173,7 +178,9 @@ flows:
     # egress rule for it already; the router's side did not name this namespace, so a
     # default-deny would have refused the conversation at the far end -- the same
     # one-direction-only defect recorded on the hindsight block below.
-    egress: [observability, event-bus, estate-db, hindsight, llm]
+    # mcp: step 5 of the build, the estate MCP (agentgateway.mcp.svc:3000) for the estate* tools.
+    # It was hand-added to the generated file and not here, so the next regen deleted it.
+    egress: [observability, event-bus, estate-db, hindsight, llm, mcp]
     # The answering lane calls api.telegram.org to deliver a reply, and the registration
     # reconciler calls the same host to keep the webhook pointed at this namespace's door.
     # Without this the fence is a silent gag on every answer Otto sends.

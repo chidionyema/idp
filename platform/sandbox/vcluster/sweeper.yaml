@@ -95,8 +95,19 @@ spec:
           labels: { app.kubernetes.io/name: sandbox-sweeper }
         spec:
           restartPolicy: Never
+          # restrict-seccomp-strict (Kyverno, offline-gate): every pod names its seccomp
+          # profile; the alpine/git image runs fine under RuntimeDefault as a non-root user.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile: { type: RuntimeDefault }
           containers:
             - name: sweep
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                capabilities: { drop: [ALL] }
+                seccompProfile: { type: RuntimeDefault }
               # git, sh, base64, date; nothing else. The script is POSIX sh for exactly this image.
               image: docker.io/alpine/git:2.54.0
               command: ["/bin/sh", "/work/idp-sandbox-sweep"]
