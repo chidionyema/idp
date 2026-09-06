@@ -173,6 +173,21 @@ def test_the_portal_button_is_generated_and_current(tmp_path=None):
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
+def test_the_seed_is_admitted_like_any_host_pod():
+    # The estate admits the mirrored pods like any other (first launch, 2026-09-06):
+    # probes and a read-only root on the shop, RuntimeDefault seccomp on the chart's coredns.
+    (shop,) = [d for d in seeded() if d["kind"] == "Deployment"]
+    container = shop["spec"]["template"]["spec"]["containers"][0]
+    assert container["securityContext"]["readOnlyRootFilesystem"] is True
+    assert "livenessProbe" in container and "readinessProbe" in container
+    security = helmrelease()["spec"]["values"]["controlPlane"]["coredns"]["security"]
+    assert security["podSecurityContext"]["seccompProfile"]["type"] == "RuntimeDefault"
+    assert (
+        security["containerSecurityContext"]["seccompProfile"]["type"]
+        == "RuntimeDefault"
+    )
+
+
 def test_the_launch_rows_substitution_parses_over_the_build():
     # The demo-sandbox row lives on branch sandbox/launch, so no committed Kustomization
     # covers it: this is the substitution Flux runs for it, with the row's own variables.

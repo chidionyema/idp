@@ -412,9 +412,9 @@ def _oauth2_proxy_in_front(state: dict) -> None:
                 assert "env" not in c and "envFrom" not in c, (
                     f"{p}: seeded shop container {c['name']} takes env"
                 )
-            assert all(set(v) == {"name", "configMap"} for v in pod["volumes"]), (
-                f"{p}: seeded shop mounts {pod['volumes']}"
-            )
+            assert all(
+                set(v) <= {"name", "configMap", "emptyDir"} for v in pod["volumes"]
+            ), f"{p}: seeded shop mounts {pod['volumes']}"
             continue
         assert auth == "bearer-master-key", (
             f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs}) and no idp.estate/auth annotation"
