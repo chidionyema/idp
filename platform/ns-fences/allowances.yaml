@@ -236,6 +236,18 @@ flows:
     egress: [estate-db, event-bus, observability]
   kyverno:
     ingress_from: [backstage]
+  prospector:
+    # The shared storefront. It is a served product, not an east-west caller: the Gateway's data
+    # plane (edge, the traefik controller pods) dials into it to answer apex/www/api, and it is
+    # banned from dialing the rest of the estate -- the commerce block above says the same in the
+    # other direction. So it takes ingress from edge and no declared egress: the generator still
+    # gives it DNS and the observability collector automatically, and its store pods reach each
+    # other and their own database inside the namespace with no fence rule needed. It was missing
+    # from flows/ entirely, which left network/prospector.yaml a default-deny with no ingress
+    # allow from anyone -- harmless only while a CNI lets east-west traffic through, and the moment
+    # one enforces, the storefront answers 30s hangs the way this estate has already seen on the
+    # CNI cutover (prospector-store-web/api on Calico 10.244.3.x unreachable from edge on flannel).
+    ingress_from: [edge]
   edge:
     egress: [backstage, dagster, guacamole, healthchecks, hermes-agent, identity, llm, mcp,
-             monitoring, observability, otto-gateway, otto-golden, hindsight]
+             monitoring, observability, otto-gateway, otto-golden, hindsight, prospector]

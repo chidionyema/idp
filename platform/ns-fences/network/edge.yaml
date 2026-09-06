@@ -84,3 +84,6 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: otto-golden
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: prospector
