@@ -69,6 +69,36 @@ spec:
         - protocol: TCP
           port: 3456
 ---
+# The clone-repos init and GitService both reach github.com to fetch and maintain the
+# worktree bases that /repo's emptyDir starts without (entrypoint.sh clone_repos, and
+# `git worktree add` with cwd at repositoryPath). Under a CNI that enforces east-west
+# (the Calico cutover) the default-deny-all above became real and a fresh init could no
+# longer reach github:443 -- `Failed to connect to github.com port 443 after 130s`. Git
+# over https is port 443 only. This mirrors the estate's allow-internet-egress grant
+# (otto-gateway/llm/robusta/hermes-agent): external internet only, RFC1918/link-local/
+# CGNAT excluded so no peer or advertised-range traffic rides this rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-internet-egress
+  namespace: cyrus
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+      ports:
+        - protocol: TCP
+          port: 443
+---
 apiVersion: v1
 kind: LimitRange
 metadata:
