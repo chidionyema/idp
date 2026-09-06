@@ -11,6 +11,8 @@ resources:
   - ../../base
   - availability.yaml
   - backstage-external-secret.yaml
+  # The portal's GitHub App token (installation token, backstage lane of lanes.json).
+  - github-token.yaml
   - healthchecks-ro-external-secret.yaml
   - httproute.yaml
   - edge-manners.yaml
@@ -174,6 +176,17 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/volumeMounts/-
         value: {name: sunshine-auth, mountPath: /run/secrets/sunshine, readOnly: true}
+      # 2026-09-06: the minted GitHub App token from github-token.yaml, as a file like every
+      # other secret here. optional: false, like backstage-env: a portal that cannot dispatch
+      # the founder's workflows (scaffolder github:actions:dispatch) is not Ready.
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: backstage-github
+          secret: {secretName: backstage-github, optional: false}
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value: {name: backstage-github, mountPath: /run/secrets/backstage-github, readOnly: true}
       # crew#503 CP6: the founder's surfaces reach the portal from git through Flux, never from a
       # laptop push. The ConfigMap carries backstage/founder/catalog-info.yaml; Flux postBuild
       # substitutes ${ESTATE_ZONE} in it like every other manifest here, and app-config.container

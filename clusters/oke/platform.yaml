@@ -76,12 +76,20 @@ spec:
     # Postgres for the estate) -- it must report Ready first or the data would be pruned
     # ahead of being moved.
     - name: estate-db-migrate
+    # github-token.yaml substitutes ${githubAppIDQuoted}/${githubAppInstallationIDQuoted}
+    # from the flux-system/github-app Secret; strict envsubst fails the row until the
+    # alerts-github row has rendered it.
+    - name: alerts-github
   postBuild:
     substituteFrom:
       # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
       # optional, a missing ConfigMap must fail the row rather than publish '${ESTATE_ZONE}'.
       - kind: ConfigMap
         name: estate-config
+      # The estate-agents App's id and installation id for the GithubAccessToken generator
+      # that mints the portal's GitHub token (platform/backstage/overlays/oke/github-token.yaml).
+      - kind: Secret
+        name: github-app
   wait: true
   timeout: 10m
   healthChecks:

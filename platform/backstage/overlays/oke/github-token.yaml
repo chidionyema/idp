@@ -1,0 +1,76 @@
+# The portal's GitHub credential, minted in-cluster the way hermes-agent mints Otto's
+# (platform/hermes-agent/gateway.yaml, idp#852): external-secrets' GithubAccessToken generator
+# mints a fresh installation token of the estate-agents App on every refresh, narrowed to the
+# backstage lane of platform/github-app/lanes.json -- read the catalog, dispatch a workflow,
+# never push or open a pull request.
+#
+# 2026-09-06: the scaffolder's github:actions:dispatch (template run-demo-sandbox) failed with
+# "No token available for host: github.com, with owner chidionyema, and repo idp". The
+# deployment never set GITHUB_TOKEN, and the estate refuses secrets in env vars
+# (platform/edge/kyverno-secrets-policy.yaml), so the token reaches the config as a file:
+# app-config.container.yaml reads it with $file from /run/secrets/backstage-github.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: backstage-github
+  namespace: backstage
+spec:
+  # 45m, not 10m: crew#736 measured that a 10m mint rolls the pod 4.5x too often through the
+  # Reloader, and a mint's only job is to stay inside the token's 60-minute life.
+  refreshInterval: 45m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target: { name: backstage-github, creationPolicy: Owner }
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: GithubAccessToken
+          name: backstage-github
+      rewrite:
+        - transform: { template: "GITHUB_TOKEN" }
+---
+# ${githubAppIDQuoted} / ${githubAppInstallationIDQuoted} are substituted by Flux from the
+# flux-system/github-app Secret (platform/alerts-github/github-app.yaml; the backstage row's
+# substituteFrom in clusters/oke/platform.yaml). The Quoted variants carry their own double
+# quotes because kustomize build re-emits every scalar plain and a bare numeral types
+# spec.appID as an int (incident run 33339964930). Account identifiers never typed in git
+# (LAW 46).
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: GithubAccessToken
+metadata:
+  name: backstage-github
+  namespace: backstage
+spec:
+  appID: ${githubAppIDQuoted}
+  installID: ${githubAppInstallationIDQuoted}
+  # Mirrors the backstage lane in platform/github-app/lanes.json.
+  permissions:
+    metadata: read
+    contents: read
+    actions: write
+  auth:
+    privateKey:
+      secretRef:
+        name: github-app-pem
+        key: key
+---
+# The App's private key for the generator, rendered the way flux-writer renders it
+# (platform/image-automation/flux-writer.yaml): from the one vault entry `github-app` that
+# bin/idp-github-app writes. Same shape as hermes-agent-github-app-pem.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: backstage-github-app-pem
+  namespace: backstage
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: github-app-pem
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        key: "{{ .pem_b64 | b64dec }}"
+  dataFrom:
+    - extract: { key: github-app }
