@@ -48,9 +48,9 @@ impl Tier1 {
         for (name, lane) in &policy.lanes {
             let mut compiled = Vec::with_capacity(lane.deny_patterns.len());
             for p in &lane.deny_patterns {
-                let re = Regex::new(&format!("(?im){}", p.pattern)).map_err(|e| Tier1Error::Compile {
-                    id: p.id.clone(),
-                    detail: e.to_string(),
+                let flags = p.flags.clone().unwrap_or_else(|| "i".to_string());
+                let re = Regex::new(&format!("(?{}m){}", flags, p.pattern)).map_err(|e| {
+                    Tier1Error::Compile { id: p.id.clone(), detail: e.to_string() }
                 })?;
                 compiled.push(CompiledRule { id: p.id.clone(), message: p.message.clone(), re });
             }

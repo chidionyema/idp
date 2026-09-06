@@ -44,6 +44,10 @@ pub struct DenyPattern {
     pub id: String,
     pub pattern: String,
     pub message: String,
+    /// Regex flags: "i" (case-insensitive) and/or "m" (multiline). Default "i".
+    /// EE1 is "" (case-sensitive): a caps verdict LABEL fires, the English verb never does.
+    #[serde(default)]
+    pub flags: Option<String>,
 }
 
 /// One lane with inheritance fully resolved.

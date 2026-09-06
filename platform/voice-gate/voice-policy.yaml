@@ -1,34 +1,45 @@
 version: 1
 lanes:
   storefront:
-    description: "Marketing copy a visitor reads"
+    description: Marketing copy a visitor reads
     deny_patterns: []
   evidence-export:
-    description: "Research artefacts rendered as customer copy"
-    inherit: [storefront]
+    description: Research artefacts rendered as customer copy
+    inherit:
+    - storefront
     deny_patterns:
-      - id: EE1
-        pattern: '\b(SUPPORTED|REFUTED|PARTIALLY SUPPORTED|UNVERIFIED)\b'
-        message: "verdict label is engine scaffolding, not copy"
-      - id: EE2
-        pattern: '\bpassages?\b'
-        message: "research-mode reference to evidence passages"
-      - id: EE3
-        pattern: '\b(the strongest case (for|against)|premortem|adversarial review)\b'
-        message: "internal diligence framing"
-      - id: EE4
-        pattern: '^\s*\d+\s+[a-z0-9.-]+\.(com|org|uk|net)\s*$'
-        message: "numbered citation line in prose"
-      - id: EE5
-        pattern: '\b(no (passage|evidence) (shows|provides|establishes)|appears open in these passages)\b'
-        message: "hedged research-speak"
+    - id: EE1
+      pattern: \b(SUPPORTED|REFUTED|PARTIALLY SUPPORTED|UNVERIFIED)\b|\b(?i:verdict):\s*(?i:supported|refuted|unverified)\b
+      message: verdict label is engine scaffolding, not copy
+      flags: ''
+    - id: EE2
+      pattern: \bpassages?\b
+      message: research-mode reference to evidence passages
+      flags: i
+    - id: EE3
+      pattern: \b(the strongest case (for|against)|premortem|adversarial review)\b
+      message: internal diligence framing
+      flags: i
+    - id: EE4
+      pattern: ^\s*\d+\s+[a-z0-9.-]+\.(com|org|uk|net)\s*$
+      message: numbered citation line in prose
+      flags: i
+    - id: EE5
+      pattern: \b(appears open in these passages|cannot be determined from (this|the)
+        evidence|is not shown to be)\b
+      message: hedged research-speak
+      flags: i
 rules: {}
 tier2:
-  model: "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
-  fallback_model: "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
-  confidence_floor: 0.80
-  frontier_alias: "cheap"
+  model: Llama-3.2-1B-Instruct-Q4_K_M.gguf
+  fallback_model: Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+  confidence_floor: 0.8
+  frontier_alias: cheap
   max_prompt_exemplars: 6
 tier3:
   max_iterations: 2
-  preserve: [numbers, named_entities, urls, dates]
+  preserve:
+  - numbers
+  - named_entities
+  - urls
+  - dates

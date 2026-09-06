@@ -20,8 +20,17 @@ fn grade(t: &Tier1, p: &VoicePolicy, lane: &str, field: &str, text: &str) -> usi
 #[test]
 fn ee1_verdict_label_fails() {
     let (p, t) = gate();
-    assert_eq!(grade(&t, &p, "evidence-export", "reason", "Do incumbents already own the space?\nSUPPORTED\nNo passage shows a dominant UK incumbent."), 3);
+    assert_eq!(grade(&t, &p, "evidence-export", "reason", "Do incumbents already own the space?\nSUPPORTED\nNo passage shows a dominant UK incumbent."), 2);
     assert_eq!(grade(&t, &p, "evidence-export", "reason", "The niche is open and rivals are fragmented."), 0);
+}
+
+#[test]
+fn ee1_english_verb_never_fires_but_caps_label_does() {
+    let (p, t) = gate();
+    // "supported" the verb is ordinary prose; SUPPORTED the caps label is scaffolding.
+    assert_eq!(grade(&t, &p, "evidence-export", "reason", "having supported over 100,000 students"), 0);
+    assert!(grade(&t, &p, "evidence-export", "reason", "SUPPORTED") >= 1);
+    assert!(grade(&t, &p, "evidence-export", "reason", "Verdict: refuted.") >= 1);
 }
 
 #[test]
