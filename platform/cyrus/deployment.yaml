@@ -101,6 +101,23 @@ spec:
             # hosted service and verifies no signature at all (EdgeWorker.js:566).
             - name: CYRUS_HOST_EXTERNAL
               value: "true"
+            # The flag above moved GitHub to signature mode. It does nothing for Linear:
+            # EdgeWorker.js:477 reads a different variable entirely, and without it the Linear
+            # transport verifies deliveries against CYRUS_API_KEY -- the bearer token of cyrus's
+            # own hosted service, which this estate does not use and does not have --
+            # instead of against the Linear HMAC.
+            #   const useDirectWebhooks =
+            #       process.env.LINEAR_DIRECT_WEBHOOKS?.toLowerCase() === "true";
+            #   const secret = useDirectWebhooks
+            #       ? process.env.LINEAR_WEBHOOK_SECRET || ""
+            #       : process.env.CYRUS_API_KEY || "";
+            # Measured on the running pod before this line existed: "Linear event transport
+            # registered (proxy mode)" beside "GitHub event transport registered (signature
+            # mode)". The signing secret is already mounted and already exported -- the pod
+            # logs no "not readable" line for any of the four -- so this is the only thing
+            # standing between a Linear delivery and its own signature check.
+            - name: LINEAR_DIRECT_WEBHOOKS
+              value: "true"
             # CYRUS_CONFIG_PATH was set here and is read by nothing: `cyrus` resolves its
             # config from --cyrus-home, which defaults to ~/.cyrus (dist/src/app.js), and the
             # ConfigMap was mounted at /config where nothing looked for it. The pod started,

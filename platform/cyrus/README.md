@@ -194,3 +194,33 @@ become an OAuth access token (plus its refresh token as `linearRefreshToken`, wi
 reach this pod. An OAuth token is born the same way the key was, in a browser, once: a Linear
 OAuth application in the workspace and one consent. Until that exists the Linear transport
 is `MEASURED_FAIL` at the first API call, and the GitHub transport is the door in use.
+
+### 9. GitHub verified its signatures and Linear did not, on the same pod
+
+`CYRUS_HOST_EXTERNAL=true` moved the GitHub transport to signature mode. The Linear transport
+stayed in proxy mode on the same boot, and the startup log said so plainly:
+
+```
+[LinearEventTransport] Registered POST /linear-webhook endpoint (proxy mode)
+[GitHubEventTransport] Registered POST /github-webhook endpoint (signature mode)
+```
+
+The flag is not the knob. `EdgeWorker.js:477` reads a different variable, and the secret it
+picks follows from it:
+
+```js
+const useDirectWebhooks = process.env.LINEAR_DIRECT_WEBHOOKS?.toLowerCase() === "true";
+const secret = useDirectWebhooks
+  ? process.env.LINEAR_WEBHOOK_SECRET || ""
+  : process.env.CYRUS_API_KEY || "";
+```
+
+So in proxy mode a Linear delivery is checked against `CYRUS_API_KEY`, the bearer token of
+cyrus's own hosted service. This estate does not use that service and holds no such token, so
+the variable is unset and the secret is the empty string. `LINEAR_DIRECT_WEBHOOKS=true` puts the
+Linear HMAC back in the path. The signing secret was already mounted and already exported --
+the main container logs no `not readable` line for any of the four credential files -- so
+nothing else had to move.
+
+This is the same class as wall 3: a manifest that reads as though a credential is configured,
+and a running process that reads a different name. The only reliable test is the boot log.
