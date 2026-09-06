@@ -84,3 +84,19 @@ spec:
             encapsulation: VXLAN
             natOutgoing: Enabled
             nodeSelector: all()
+    # The chart's values.yaml defaults ALL of these to enabled: true. The estate runs Calico OSS
+    # as a cloud-agnostic L3/L4 datapath under R36; apiServer, tigera (management) instances,
+    # goldmane and whisker are Calico Enterprise control planes with no role here and must not be
+    # rendered. Leaving them unset lets them default on and the live operator (observed
+    # 2026-09-06, once the CRD-gap admission deny was cleared and the operator finally booted)
+    # degrades against them: tigerastatus shows `calico/summary` Degraded, `goldmane` and
+    # `whisker` Degraded/False as the operator tries to install their enterprise controllers
+    # (the very surfaces the founder barred under R36), so the calico-node DaemonSet never comes
+    # up. The CRDs for these kinds are still vendored (the chart renders them and Kubernetes must
+    # recognise the kinds or the whole install fails), but the resources themselves stay off.
+    apiServer:
+      enabled: false
+    goldmane:
+      enabled: false
+    whisker:
+      enabled: false
