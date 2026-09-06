@@ -28,7 +28,11 @@ spec:
     - "cyrus.${ESTATE_ZONE}"
   rules:
     - matches:
-        - path: { type: PathPrefix, value: /webhook }
+        - path: { type: Exact, value: /linear-webhook }
+        - path: { type: Exact, value: /github-webhook }
+        # The deprecated alias, kept until the Linear webhook registration is moved to
+        # /linear-webhook, so the two changes are never in flight at the same moment.
+        - path: { type: Exact, value: /webhook }
       backendRefs:
         - name: cyrus
           port: 3456
