@@ -38,10 +38,12 @@ spec:
             # cyrus does on boot -- ensureRequiredDirectories() -- tried to mkdir /.cyrus/repos
             # on a read-only root and exited:
             #   [ERROR] [CLI] Failed to create directory /.cyrus/repos: ENOENT
-            # The writable volume for this was already mounted at /home/node; nothing pointed
-            # HOME at it. Setting it is the whole fix.
+            # A writable volume for this was already mounted; nothing pointed HOME at it.
+            # It is /var/lib/cyrus and not a path under the users' home tree because the
+            # hardcode gate refuses any /home/<name>/ literal (LAW 46) and is right to: a
+            # per-user home path in a manifest is the exact shape that broke 17 scripts.
             - name: HOME
-              value: /home/node
+              value: /var/lib/cyrus
             # GitHub token from ExternalSecret
             - name: GH_TOKEN_FILE
               value: /secrets/github/token
@@ -75,7 +77,7 @@ spec:
             # subPath, so the rest of ~/.cyrus stays on the writable home volume: cyrus
             # creates repos, worktrees and mcp-configs beside this file at startup.
             - name: config
-              mountPath: /home/node/.cyrus/config.json
+              mountPath: /var/lib/cyrus/.cyrus/config.json
               subPath: config.json
               readOnly: true
             - name: github-secret
@@ -91,7 +93,7 @@ spec:
             - name: tmp
               mountPath: /tmp
             - name: home
-              mountPath: /home/node
+              mountPath: /var/lib/cyrus
             - name: npm-cache
               mountPath: /.npm
           # /status, not /health: cyrus serves no /health. EdgeWorker registers GET /status
