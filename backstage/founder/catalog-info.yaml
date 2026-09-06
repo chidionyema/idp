@@ -265,23 +265,18 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: founder-showcase
-  title: "Science showcase and founder demo"
-  description: "Read what the science team can show today and run the one-command demo."
+  title: "Showcase: the estate on one page, live"
+  description: "The page a buyer's engineer opens first: how the whole estate is graded against the elite bar, how every system is doing right now drawn from the cluster, and what Otto can do on the door today with the file that proves each line. Nothing on it is a link to a manifest."
   annotations:
     estate/group: "AI and models"
-    github.com/project-slug: "chidionyema/crew"
-    backstage.io/source-location: "url:https://github.com/chidionyema/crew/tree/main/"
-    idp/updated-by: "Dagster com.founder.sciencecollect (37 1,7,13,19 * * *) runs science/showcase.py; verify.d/27-showcase-check.sh on every crew PR"
+    idp/updated-by: "backstage/packages/app/src/modules/home/Showcase.tsx ships with the portal image; the grade is written to the state branch by bin/estate-showcase in .github/workflows/catalog-render.yml, the Otto inventory is docs/specs/otto-capability-inventory.md on the same branch, the systems are read from the cluster on the page"
   tags: [founder, science]
   links:
-    - title: "Showcase (generated page)"
-      url: "https://github.com/chidionyema/crew/blob/main/docs/science/SHOWCASE.md"
+    - title: "Open"
+      url: "https://catalogue.${ESTATE_ZONE}/showcase"
       icon: dashboard
-    - title: "Founder demo (bin/founder-demo)"
-      url: "https://github.com/chidionyema/crew/blob/main/bin/founder-demo"
-      icon: docs
     - title: "Where this is tracked"
-      url: "https://github.com/chidionyema/crew/issues/403"
+      url: "https://github.com/chidionyema/crew/issues/474"
       icon: dashboard
 spec:
   type: founder-surface
