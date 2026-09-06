@@ -54,6 +54,25 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: allow-apiserver-egress
+  namespace: otto-gateway
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: ${ESTATE_APISERVER_CIDR}
+    ports:
+    - protocol: TCP
+      port: 6443
+    - protocol: TCP
+      port: 12250
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: allow-declared-egress
   namespace: otto-gateway
 spec:

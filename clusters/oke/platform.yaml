@@ -1365,6 +1365,10 @@ spec:
   prune: true
   wait: true
   timeout: 10m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
 ---
 # The estate's network policy enforcement layer (crew#839). This row converges ./platform/calico
 # onto the Road B (founder-approved, 2026-09-06) plain non-operator calico-node migration

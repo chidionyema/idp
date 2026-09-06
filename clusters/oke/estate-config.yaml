@@ -88,6 +88,9 @@ data:
   # observability-collector row; the http(s):// scheme and the 4318 HTTP port are load-bearing
   # (crew#483: the otlphttp exporter takes this value verbatim and a bare host:4317 exports
   # nothing). tests/test_incident_crew483_k8s_infra_endpoint_scheme.py judges the value here.
+  # The control plane's own address as the kubernetes Endpoints object reports it; the one
+  # place it is written. bin/idp-ns-fence-gen opens every namespace fence to it (crew#102).
+  ESTATE_APISERVER_CIDR: "10.0.0.11/32"
   OTLP_ENDPOINT: "http://signoz-otel-collector.observability.svc:4318"
   # decision 0017: the Bitwarden organisation and project the human secret door reads
   # (platform/human-vault/store.yaml). Public identifiers, not secrets - the same rule as

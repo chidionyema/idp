@@ -75,3 +75,12 @@ def test_the_checked_in_fences_carry_the_three_flows_the_outage_lacked():
     assert {"default-deny-all", "allow-same-namespace", "allow-internet-egress"} <= set(
         live
     )
+
+
+def test_every_namespace_may_reach_the_api_server_through_one_substituted_address():
+    gen = _gen()
+    for ns, flows in (("backstage", {"egress": ["estate-db"]}), ("commerce", {})):
+        spec = _by_name(gen.policy_docs(ns, flows))["allow-apiserver-egress"]
+        rule = spec["egress"][0]
+        assert rule["to"] == [{"ipBlock": {"cidr": "${ESTATE_APISERVER_CIDR}"}}]
+        assert sorted(p["port"] for p in rule["ports"]) == [6443, 12250]

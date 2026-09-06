@@ -120,7 +120,9 @@ flows:
     # own proxy plugin, so the conversation is backstage -> robusta and it is declared on both
     # sides. On 2026-09-05 hindsight was cut off from its own database because only one side
     # of the same conversation had been written down; that is not repeated here.
-    egress: [dagster, identity, kyverno, robusta]
+    # estate-db: the catalogue plugin's own Postgres (crew#102 follow-up, 2026-09-06: the enforced
+    # replica on node-159 hung in its 14-plugin startup because the fence had never declared it).
+    egress: [dagster, estate-db, identity, kyverno, robusta]
     ingress_from: [edge]
   guacamole:
     egress: [identity]
@@ -228,7 +230,7 @@ flows:
   event-bus:
     ingress_from: [otto-gateway, commerce]
   estate-db:
-    ingress_from: [otto-gateway, hindsight, temporal, llm, observability, commerce, dagster]
+    ingress_from: [backstage, otto-gateway, hindsight, temporal, llm, observability, commerce, dagster]
   temporal:
     # 2026-09-06: estate-db-copy-temporal-r2 timed out on estate-rw from this namespace once Calico
     # enforced the fence; estate-db named temporal on its ingress side, this side named nothing.
