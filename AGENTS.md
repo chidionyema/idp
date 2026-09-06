@@ -17,6 +17,7 @@ Row format, one rule per row. `gate` is a shell function or command defined in `
 | rule | gate | must-fail | must-pass |
 |---|---|---|---|
 | No file names where the checkout, home directory or machine lives (LAW 46) | hardcode_scan | tests/fixtures/hardcoded-path.bad.sh | tests/fixtures/hardcoded-path.good.sh |
+| No shell parameter expansion (`${NAME:-...}` and kin) in a Flux-reconciled manifest; Flux substitution rewrites it before the pod runs it (incident 2026-09-06, otto-gateway) | flux_subst_scan | tests/fixtures/flux-subst/bad.yaml | tests/fixtures/flux-subst/good.yaml |
 | No dependency whose licence blocks a sale; a scan with no licences is not clean (LAW 40) | policy_gate | policy/fixtures/sell-blocking.json | policy/fixtures/clean.json |
 | No scheduled job on this laptop that runs in the sleep window or is never pinged (LAW 28) | policy_gate | policy/fixtures/placement-misplaced.json | policy/fixtures/placement-ok.json |
 | Paid capacity is auto-defaulted up to estate-defaults.yaml node_pool.budget_monthly_usd and refused above it (crew#289, R14) | policy_gate | policy/fixtures/capacity-over-cap.json | policy/fixtures/capacity-under-cap.json |

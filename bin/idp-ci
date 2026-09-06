@@ -55,6 +55,13 @@ while IFS= read -r f; do
 done < <(cd "$IDP" && git ls-files bin llm observability mcp launchd '*.py' '*.yml' '*.yaml' '*.json' 2>/dev/null | grep -v '^tests/fixtures/')
 [ "$hits" -eq 0 ] && say "ok    hardcode 0 files hardcode a checkout path" || fail=1
 
+# 1b2. A shell parameter expansion in a manifest whose Kustomization substitutes
+#     variables. Incident 2026-09-06, otto-gateway: Flux rewrote
+#     `${HERMES_ENV_DIR:-}` to "" and the fork's credentials were never exported.
+#     Which paths substitute is read from clusters/, not guessed: bin/idp-flux-subst-gate.
+if out=$(python3 "$IDP/bin/idp-flux-subst-gate"); then say "ok    flux-subst no manifest hands Flux a shell expansion"
+else say "FAIL  flux-subst"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
 # 1c. A conditional whose verdict is a pipeline into grep, in a script that sets
 #     `pipefail`. Incident 2026-08-25: the portprobe test read
 #     `port-gate | grep -q '<message>'`, port-gate exited 1 on purpose, pipefail
@@ -469,6 +476,7 @@ main_verdict_gate() { python3 "$IDP/bin/main-verdict-gate" "$1" >/dev/null 2>&1;
 # sibling with `from .describe import`, passed every offline check, and put the live
 # code location in PythonError the moment it reloaded. So: load it the way it runs.
 prose_pin_scan() { python3 "$IDP/bin/test-prose-gate" "$1" >/dev/null 2>&1; }
+flux_subst_scan() { python3 "$IDP/bin/idp-flux-subst-gate" "$1" >/dev/null 2>&1; }
 # decision 0021 two-hats: grades a platform/otto-gateway seed.sql for the three rules in
 # bin/idp-tenant-split. Takes one file (the fixture path, per the table convention), exits 0
 # when that file is clean of cross-plane leaks, 1 otherwise.

@@ -1,0 +1,16 @@
+# must-pass: the unbraced form says the same thing to the shell and nothing to
+# Flux; a plain ${NAME} with no operator is a Flux substitution and stays legal.
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+        - name: gateway
+          env:
+            - { name: FOUNDER_MAC_USER, value: "${FOUNDER_MAC_USER}" }
+          args:
+            - |
+              if [ -d "$HERMES_ENV_DIR" ]; then
+                echo exported
+              fi

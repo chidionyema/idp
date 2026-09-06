@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Refuse a shell parameter expansion Flux will rewrite before the pod runs it.
+
+Incident 2026-09-06: platform/otto-gateway/deployment.yaml tested
+``[ -n "${HERMES_ENV_DIR:-}" ]`` in its container command. The otto-gateway
+Kustomization substitutes variables (postBuild), and Flux's envsubst reads
+``${NAME:-default}`` as its own default syntax: the live pod's command read
+``[ -n "" ]``, the loop exporting the fork's credentials never ran, and ``gh``
+in the pod was "not logged into any GitHub hosts" beside a mounted GITHUB_TOKEN.
+The same class sat in platform/llm/spend-breaker-digest.yaml, where every
+``${X:-default}`` threshold had been frozen to its default.
+
+Rules, per manifest, decided by the Kustomization whose ``path`` holds it:
+  substituting path : ``${NAME<op>...`` with a shell operator (``:-`` ``-``
+                      ``:=`` ``:?`` ``:+`` ``#`` ``%`` ``/`` ``^`` ``,``) is
+                      refused; write ``$${NAME<op>...}`` (Flux unescapes it) or
+                      the unbraced ``$NAME``. Plain ``${NAME}`` is Flux's own
+                      substitution and stays legal.
+  plain path        : ``$${`` is refused, because nothing will ever unescape it
+                      and the shell reads ``$$`` as its pid.
+
+Usage: idp-flux-subst-gate            scan the repository by that map
+       idp-flux-subst-gate FILE...    scan the files as if their path substitutes
+Exit 0 clean, 1 on any hit, 2 when the map cannot be built.
+"""
+import glob
+import os
+import re
+import sys
+
+import yaml
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SHELL_FORM = re.compile(r"(?<!\$)\$\{[A-Za-z_][A-Za-z0-9_]*[:#%/^,-]")
+ESCAPED = re.compile(r"\$\$\{")
+COMMENT = re.compile(r"^\s*#")
+
+
+def kustomization_map():
+    subst, plain = set(), set()
+    for f in glob.glob(os.path.join(ROOT, "clusters", "**", "*.y*ml"), recursive=True):
+        try:
+            docs = list(yaml.safe_load_all(open(f)))
+        except yaml.YAMLError:
+            continue
+        for d in docs:
+            if not (isinstance(d, dict) and d.get("kind") == "Kustomization"
+                    and "kustomize.toolkit" in d.get("apiVersion", "")):
+                continue
+            path = os.path.normpath(d.get("spec", {}).get("path", "") or "")
+            (subst if d["spec"].get("postBuild") else plain).add(path)
+    return subst, plain
+
+
+def scan(path, substituting):
+    hits = []
+    try:
+        lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+    except OSError:
+        return hits
+    for n, line in enumerate(lines, 1):
+        if COMMENT.match(line):
+            continue
+        if substituting and SHELL_FORM.search(line):
+            hits.append(f"{path}:{n}: shell expansion Flux will rewrite: {line.strip()}")
+        if not substituting and ESCAPED.search(line):
+            hits.append(f"{path}:{n}: $${{ escape under a Kustomization that never substitutes: {line.strip()}")
+    return hits
+
+
+def files_under(rel):
+    for ext in ("*.yaml", "*.yml"):
+        for f in glob.glob(os.path.join(ROOT, rel, "**", ext), recursive=True):
+            # normpath: the estate-catalog row's path is ".", and without this its
+            # hits arrive as ROOT/./x -- a different string from ROOT/x, so `seen`
+            # never deduped and the whole repo was rescanned as plain (CI run
+            # 34010815583 flagged every $${ under substituting rows).
+            f = os.path.normpath(f)
+            # Gate fixtures are graded by their own gates with explicit paths
+            # (the AGENTS.md table); a repo-wide verdict must not regrade them,
+            # like the hardcode scan's `grep -v '^tests/fixtures/'`.
+            if os.path.relpath(f, ROOT).startswith("tests/fixtures/"):
+                continue
+            yield f
+
+
+def main(argv):
+    hits = []
+    if argv:
+        for f in argv:
+            hits += scan(f, substituting=True)
+    else:
+        subst, plain = kustomization_map()
+        if not subst:
+            print("idp-flux-subst-gate: no substituting Kustomization found under clusters/", file=sys.stderr)
+            return 2
+        seen = set()
+        for rel in sorted(subst | plain, key=len, reverse=True):
+            for f in files_under(rel):
+                if f in seen:
+                    continue
+                seen.add(f)
+                hits += scan(f, substituting=rel in subst)
+    for h in hits:
+        print(os.path.relpath(h, ROOT) if h.startswith("/") else h)
+    return 1 if hits else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
