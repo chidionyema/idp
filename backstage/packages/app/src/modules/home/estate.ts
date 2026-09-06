@@ -116,6 +116,38 @@ export const checkedAgo = (
   return label ? `checked ${label}` : undefined;
 };
 
+/** The bare owner name from a Backstage group ref (`group:default/platform` -> `platform`).
+ * When the estate holds no owner for the entity (spec.owner absent) the estate's own rule
+ * (openReds.ts) treats that as itself a gap, so a tile must say none plainly. */
+export const ownerOf = (e: Entity): string | undefined => {
+  const ref = (e.spec as { owner?: string } | undefined)?.owner;
+  if (!ref) return undefined;
+  const afterKind = ref.includes(':') ? ref.slice(ref.lastIndexOf(':') + 1) : ref;
+  return afterKind.includes('/')
+    ? afterKind.slice(afterKind.lastIndexOf('/') + 1)
+    : afterKind;
+};
+
+/** How long a red/needs state has held, honestly: the object's own Flux last-transition when a
+ * layer records one, else how long ago the live probe last checked the surface when the door
+ * records a checked time. Returns undefined when there is no real time to claim (rule 13). */
+export const heldSinceAgo = (
+  e: Entity,
+  st: Pick<LayerState, 'since'>,
+  now: number = Date.now(),
+): string | undefined => {
+  if (st.since) {
+    const label = ago(new Date(st.since).toISOString(), now);
+    return label ? `since ${label}` : undefined;
+  }
+  const at = Date.parse(
+    e.metadata?.annotations?.['estate/health-checked-at'] ?? '',
+  );
+  if (Number.isNaN(at)) return undefined;
+  const l = ago(new Date(at).toISOString(), now);
+  return l ? `last checked ${l}` : undefined;
+};
+
 const cond = (o: FluxObject, type: string) =>
   (o.status?.conditions ?? []).find(c => c.type === type);
 
