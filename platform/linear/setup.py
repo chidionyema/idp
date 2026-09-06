@@ -313,6 +313,62 @@ def ensure_projects(team_id: str, initiatives: dict[str, str]) -> dict[str, str]
     return have
 
 
+# Four saved views, because a 206-issue board is only readable through a filter. Each one is
+# a lever the founder or the crew actually pulls, not a slice for its own sake.
+VIEWS = [
+    (
+        "Waiting on a priority",
+        "Every issue nobody has graded. 171 of 206 on the day this was written, which is why "
+        "the board reads as a pile: Linear sorts on the priority field and most rows have none.",
+        {"priority": {"eq": 0}},
+    ),
+    (
+        "Founder asks",
+        "Everything he asked for directly. LAW 18: every founder request is a tracked item, so "
+        "this view is the register.",
+        {"labels": {"some": {"name": {"eq": "founder-request"}}}},
+    ),
+    (
+        "Ready for an agent",
+        "Scoped, unblocked, and labelled for a session to pick up. Cyrus routes on the engine "
+        "labels; this is the queue it draws from.",
+        {"labels": {"some": {"name": {"eq": "ready-for-agent"}}}},
+    ),
+    (
+        "Not in a project",
+        "An issue with no project has no answer to 'what is this for'. This view should stay "
+        "empty; anything landing in it needs a project or does not belong on the board.",
+        {"project": {"null": True}},
+    ),
+]
+
+
+def ensure_views(team_id: str) -> None:
+    have = {
+        n["name"]
+        for n in gql("{ customViews(first:50) { nodes { id name } } }")["customViews"][
+            "nodes"
+        ]
+    }
+    for name, blurb, flt in VIEWS:
+        if name in have:
+            continue
+        gql(
+            """mutation($in:CustomViewCreateInput!) {
+                 customViewCreate(input:$in) { success customView { id name } } }""",
+            {
+                "in": {
+                    "name": name,
+                    "description": blurb,
+                    "teamId": team_id,
+                    "shared": True,
+                    "filterData": flt,
+                }
+            },
+        )
+        print(f"view created: {name}")
+
+
 def all_issues() -> list[dict]:
     out, cursor = [], None
     while True:
@@ -410,6 +466,7 @@ def main() -> None:
     team_settings(team["id"])
     initiatives = ensure_initiatives()
     projects = ensure_projects(team["id"], initiatives)
+    ensure_views(team["id"])
     issues = all_issues()
     print(f"active issues: {len(issues)}")
     place_and_prioritise(issues, projects)
