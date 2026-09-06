@@ -5,6 +5,46 @@ import random
 
 MIN_EXAMPLES = 500
 
+# Modal on-demand list prices, USD per GPU-hour, read from modal.com/pricing on 2026-09-06. A GPU
+# not in this table is refused: an unpriced run cannot be budgeted (fail closed).
+GPU_USD_PER_HOUR = {
+    "T4": 0.59,
+    "L4": 0.80,
+    "A10G": 1.10,
+    "L40S": 1.95,
+    "A100": 2.10,
+    "A100-80GB": 2.50,
+    "H100": 3.95,
+    "H200": 4.54,
+    "B200": 6.25,
+}
+DEFAULT_COMPUTE = {"gpu": "T4", "timeout_s": 3600, "budget_usd": 1.00}
+
+
+def compute_plan(task: dict) -> dict:
+    """The task's compute block with defaults filled; the worst case a run may bill."""
+    return {**DEFAULT_COMPUTE, **(task.get("compute") or {})}
+
+
+def usd_for(gpu: str, seconds: float) -> float:
+    return round(GPU_USD_PER_HOUR[gpu] * seconds / 3600, 4)
+
+
+def cost_gate(task: dict) -> str | None:
+    """None when the worst-case bill fits the task's budget, else the refusal. Kind, base and
+    model size are never grounds for refusal; cost is the only pre-launch gate."""
+    plan = compute_plan(task)
+    gpu = str(plan["gpu"])
+    if gpu not in GPU_USD_PER_HOUR:
+        return f"GPU {gpu!r} has no price in GPU_USD_PER_HOUR; an unpriced run cannot be budgeted"
+    worst = usd_for(gpu, float(plan["timeout_s"]))
+    if worst > float(plan["budget_usd"]):
+        return (
+            f"worst case ${worst:.2f} ({gpu} x {plan['timeout_s']}s) exceeds budget_usd "
+            f"{float(plan['budget_usd']):.2f}; lower timeout_s, pick a cheaper GPU or raise the budget"
+        )
+    return None
+
 
 def split(
     records: list[dict],

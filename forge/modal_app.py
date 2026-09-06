@@ -13,13 +13,18 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 import time
 
 import modal
+import yaml
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common import compute_plan, cost_gate, usd_for  # noqa: E402
 
 ORAS_VERSION = "1.2.0"
 REMOTE = "/root/forge"
-GPU = "T4"
+GPU = "T4"  # the decorator default; main() rebinds gpu and timeout from the task's compute block
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -51,6 +56,7 @@ def run_forge(
     dry_run: bool = False,
     max_steps: int = -1,
     task_file: str = "task.yaml",
+    gpu: str = GPU,
 ) -> dict:
     env = {**os.environ, "DATASET_NAME": task}
     if data:  # a client file, the default road; Langfuse export is the optional one
@@ -71,8 +77,9 @@ def run_forge(
         "task_file": task_file,
         "dry_run": dry_run,
         "max_steps": max_steps,
-        "gpu": GPU,
+        "gpu": gpu,
         "seconds": round(time.time() - started),
+        "usd": usd_for(gpu, time.time() - started),
         "trace": None,
         "artifact": None,
     }
@@ -130,7 +137,36 @@ def main(
     record: str = "forge-run.json",
 ):
     payload = pathlib.Path(data).read_bytes() if data else None
-    result = run_forge.remote(task, payload, dry_run, max_steps, task_file)
+    task_yaml = yaml.safe_load(
+        pathlib.Path(os.path.dirname(os.path.abspath(__file__)), task_file).read_text(
+            encoding="utf-8"
+        )
+    )
+    plan = compute_plan(task_yaml)
+    refusal = cost_gate(task_yaml)
+    if refusal:  # the one pre-launch gate: nothing is billed, the record still says why
+        result = {
+            "task": task,
+            "task_file": task_file,
+            "dry_run": dry_run,
+            "max_steps": max_steps,
+            "gpu": plan["gpu"],
+            "seconds": 0,
+            "usd": 0.0,
+            "budget_usd": plan["budget_usd"],
+            "trace": None,
+            "artifact": None,
+            "verdict": "refused",
+            "eval": {"verdict": "refused", "refusal": refusal},
+        }
+    else:
+        fn = run_forge.with_options(
+            gpu=str(plan["gpu"]), timeout=int(plan["timeout_s"])
+        )
+        result = fn.remote(
+            task, payload, dry_run, max_steps, task_file, str(plan["gpu"])
+        )
+        result["budget_usd"] = plan["budget_usd"]
     pathlib.Path(record).write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps(result))
     if result["verdict"] == "refused":

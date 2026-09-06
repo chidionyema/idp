@@ -14,6 +14,10 @@ min_agreement: 0.95       # on answered held-out rows; the floor for shipping
 max_abstain: 0.20        # of held-out rows; agreement bought by abstaining is refused
 kv_cache_prefix: true
 schema: null
+compute:                  # the only gate on what a task may try (founder 2026-09-06)
+  gpu: T4                 # any Modal GPU name; kind, base and size are the task's choice
+  timeout_s: 3600
+  budget_usd: 1.00        # refused before launch when gpu rate x timeout exceeds it
 lora:
   r: 16
   alpha: 32
