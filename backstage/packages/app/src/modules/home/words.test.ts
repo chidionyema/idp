@@ -202,3 +202,31 @@ describe('inventory words', () => {
     expect(NO_ADDRESS_WORDS).toBe('No address yet');
   });
 });
+
+describe('role grouping (directive 3: kind reads as one thing, not a tag split)', () => {
+  it('gives each band-of-kind a role, in the estate plain voice', () => {
+    // Screens, Kubernetes tooling and Sign-in pages are the same kind of thing a person opens.
+    // The role line lets a reader see that instead of three unrelated tag bands.
+    expect(SECTIONS.screens.role).toBe('Pages you open');
+    expect(SECTIONS.kubernetes.role).toBe('Pages you open');
+    expect(SECTIONS.doors.role).toBe('Pages you open');
+  });
+
+  it('keeps the role a single short phrase in the shared plain vocabulary', () => {
+    for (const s of [SECTIONS.screens, SECTIONS.kubernetes, SECTIONS.doors]) {
+      expect(s.role).toBeTruthy();
+      // No banned insider jargon smuggled into the grouping line.
+      for (const banned of [
+        'k8s',
+        'kustomization',
+        'flux',
+        'entity',
+        'catalogue',
+        'tag',
+        'band',
+      ]) {
+        expect((s.role as string).toLowerCase()).not.toContain(banned);
+      }
+    }
+  });
+});

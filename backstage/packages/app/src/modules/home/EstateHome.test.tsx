@@ -258,6 +258,25 @@ describe('EstateHome', () => {
     expect(screen.getByTestId('count-red')).toHaveTextContent('2');
     expect(screen.getByTestId('count-blind')).toHaveTextContent('1');
     expect(screen.getByTestId('count-good')).toHaveTextContent('2');
+    // directive 1: the leading mark carries the worst present state, gradeable by data-state,
+    // and its announcement is the same full verdict sentence (never a bare number beside a word).
+    const dominant = screen.getByTestId('dominant');
+    expect(dominant).toHaveAttribute('data-state', 'red');
+    expect(dominant).toHaveTextContent(/2 of 5 services are failing right now/);
+    // directive 2: the two red items are pulled into the top needs-your-hand band, each with
+    // its own now-* id (so no tile id is duplicated), above the by-system bands.
+    const bandNow = screen.getByTestId('band-now');
+    expect(screen.getByTestId('now-layer-kyverno')).toHaveAttribute(
+      'data-state',
+      'red',
+    );
+    expect(screen.getByTestId('now-grafana')).toHaveAttribute(
+      'data-state',
+      'red',
+    );
+    // the actionable band is above the Everything band, not buried beneath it
+    expect(bandNow.compareDocumentPosition(screen.getByTestId('band-everything')) &
+      Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByTestId('system-delivery')).toHaveTextContent('Delivery');
     expect(screen.getByTestId('system-edge')).toHaveTextContent('Edge');
     expect(screen.getByTestId('layer-layer-kyverno')).toHaveAttribute(
@@ -337,6 +356,10 @@ describe('EstateHome', () => {
     const kube = screen.getByTestId('band-kubernetes');
     expect(kube).toHaveTextContent('Kubernetes tooling');
     expect(kube).toHaveTextContent('3');
+    // directive 3: the three band-of-kind groups carry the same role, so the tag split reads as
+    // one kind of thing (pages you open) rather than three unrelated bands.
+    expect(band).toHaveTextContent('Pages you open');
+    expect(kube).toHaveTextContent('Pages you open');
     expect(kube).toContainElement(screen.getByTestId('screen-flux'));
     expect(band).not.toContainElement(screen.getByTestId('screen-flux'));
     expect(screen.getByTestId('screen-flux')).toHaveAttribute(
@@ -401,6 +424,8 @@ describe('EstateHome', () => {
     expect(screen.getByTestId('verdict')).toHaveTextContent(
       /1 of 2 services cannot be read at all/,
     );
+    // nothing is red or needs-you here, so there is no needs-your-hand band to render
+    expect(screen.queryByTestId('band-now')).toBeNull();
     expect(screen.getByTestId('read-at')).toHaveTextContent(
       'Not live: we could not reach the machines just now',
     );
@@ -423,6 +448,8 @@ describe('EstateHome', () => {
     expect(screen.getByTestId('verdict')).toHaveTextContent(
       /We have nothing to show yet/,
     );
+    // no actionable burden at all: the needs-your-hand band stays absent, not an empty shell
+    expect(screen.queryByTestId('band-now')).toBeNull();
   }, 15_000);
 
   it('narrows by typing and stays honest about the catalogue failing', async () => {
