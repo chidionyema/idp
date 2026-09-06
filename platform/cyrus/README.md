@@ -116,5 +116,15 @@ group-writable, and `fsGroup` does not reach it. Cyrus creates `repos`, `worktre
 `mcp-configs` beside its config file on its first action, so it died there every time.
 
 The ConfigMap now mounts read-only at `/etc/cyrus` and the entrypoint makes `~/.cyrus` as
-the running uid and links the config in. A ConfigMap change still reaches cyrus through
-the link.
+the running uid. The first cut linked the config in, and the next boot (image main-5270,
+2026-09-06 03:26Z) died one line later:
+
+```
+[INFO ] [CLI] [Migration] Added "Skill" to allowedTools for repository: crew
+[ERROR] [CLI] Failed to start edge application: EROFS: read-only file system,
+  open '/var/lib/cyrus/.cyrus/config.json'
+```
+
+Cyrus rewrites its config in place after migrating it, and a link into a read-only
+ConfigMap cannot take that write. The entrypoint now copies the file in on every start,
+so a ConfigMap change reaches cyrus on its next start, and cyrus owns the copy it edits.
