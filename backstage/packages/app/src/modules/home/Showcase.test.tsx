@@ -89,7 +89,8 @@ const render = (missing: string[] = []) =>
         [
           fetchApiRef,
           {
-            fetch: async (url: string) => {
+            fetch: (async (input: RequestInfo | URL) => {
+              const url = String(input);
               const file = Object.keys(docs).find(f => url.endsWith(f));
               const ok = Boolean(file) && !missing.includes(file!);
               return {
@@ -98,7 +99,7 @@ const render = (missing: string[] = []) =>
                 json: async () => ({}),
                 text: async () => (ok ? docs[file!] : ''),
               };
-            },
+            }) as unknown as typeof fetch,
           },
         ],
       ]}

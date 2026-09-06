@@ -35,6 +35,7 @@ spec:
         - https://catalogue.${ESTATE_ZONE}/screen/
         - https://catalogue.${ESTATE_ZONE}/screen/#dagster
         - https://catalogue.${ESTATE_ZONE}/screen/#ollama
+        - https://catalogue.${ESTATE_ZONE}/showcase
         - https://catalogue.${ESTATE_ZONE}/tools
         - https://cloud.oracle.com/?region=uk-london-1
         - https://cursor.com/dashboard/integrations
