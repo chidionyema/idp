@@ -57,7 +57,7 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: llm
-    - namespaceSelector:   # step 5: the estate MCP (agentgateway.mcp.svc:3000) for the estate* tools
+    - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: mcp
     - namespaceSelector:
