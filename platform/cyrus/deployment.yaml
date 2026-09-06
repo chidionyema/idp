@@ -43,10 +43,11 @@ spec:
           env:
             - name: HOME
               value: /var/lib/cyrus
+            - name: CYRUS_CONFIG_JSON
+              value: /etc/cyrus/config.json
           volumeMounts:
             - name: config
-              mountPath: /var/lib/cyrus/.cyrus/config.json
-              subPath: config.json
+              mountPath: /etc/cyrus
               readOnly: true
             - name: github-secret
               mountPath: /secrets/github
@@ -119,11 +120,16 @@ spec:
             - name: CYRUS_BASE_URL
               value: "https://cyrus.${ESTATE_ZONE}"
           volumeMounts:
-            # subPath, so the rest of ~/.cyrus stays on the writable home volume: cyrus
-            # creates repos, worktrees and mcp-configs beside this file at startup.
+            # The ConfigMap mounts at its own read-only path and the entrypoint links it
+            # into ~/.cyrus. The obvious shape -- a subPath mount straight at
+            # ~/.cyrus/config.json -- was tried and crash-looped the pod: kubelet creates
+            # the intermediate ~/.cyrus for a subPath mount owned by root and not
+            # group-writable, fsGroup does not reach it, and cyrus exited on its first
+            # action with
+            #   EACCES: permission denied, mkdir '/var/lib/cyrus/.cyrus/mcp-configs'
+            # because it creates repos, worktrees and mcp-configs beside that file.
             - name: config
-              mountPath: /var/lib/cyrus/.cyrus/config.json
-              subPath: config.json
+              mountPath: /etc/cyrus
               readOnly: true
             - name: github-secret
               mountPath: /secrets/github

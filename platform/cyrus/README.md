@@ -100,3 +100,21 @@ git authenticates through a `GIT_ASKPASS` helper that cats the mounted secret. A
 every invocation rather than capturing it once, because the value is a GitHub App
 installation token: valid for an hour, rewritten by External Secrets every ten minutes. A
 long-lived pod that cached it would begin failing after an hour with no change to blame.
+
+### 5. The obvious way to mount one file made the home directory unwritable
+
+Mounting `config.json` with a `subPath` straight at `~/.cyrus/config.json` is the shape the
+Kubernetes documentation reaches for, and it crash-looped the pod:
+
+```
+[ERROR] [CLI] Failed to create directory /var/lib/cyrus/.cyrus/mcp-configs:
+  Error: EACCES: permission denied, mkdir '/var/lib/cyrus/.cyrus/mcp-configs'
+```
+
+Kubelet creates the intermediate directory for a `subPath` mount itself, root-owned and not
+group-writable, and `fsGroup` does not reach it. Cyrus creates `repos`, `worktrees` and
+`mcp-configs` beside its config file on its first action, so it died there every time.
+
+The ConfigMap now mounts read-only at `/etc/cyrus` and the entrypoint makes `~/.cyrus` as
+the running uid and links the config in. A ConfigMap change still reaches cyrus through
+the link.

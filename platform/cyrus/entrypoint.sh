@@ -69,12 +69,27 @@ clone_repos() {
 	                | "\(.repositoryPath)\t\(.githubUrl)"' "$config")
 }
 
+# ~/.cyrus has to be made by this uid, not by kubelet: a subPath mount at
+# ~/.cyrus/config.json leaves the directory root-owned and cyrus dies creating
+# mcp-configs beside it. The ConfigMap stays at its own read-only path and the config is
+# linked in, so a ConfigMap change still reaches cyrus through the link.
+CONFIG_SRC=${CYRUS_CONFIG_JSON:-/etc/cyrus/config.json}
+link_config() {
+	mkdir -p "$HOME/.cyrus"
+	[ -r "$CONFIG_SRC" ] || {
+		echo "cyrus-entrypoint: no config at $CONFIG_SRC" >&2
+		return 0
+	}
+	ln -sfn "$CONFIG_SRC" "$HOME/.cyrus/config.json"
+}
+
 case "${1:-}" in
 clone)
-	clone_repos "${CYRUS_CONFIG_JSON:-$HOME/.cyrus/config.json}"
+	clone_repos "$CONFIG_SRC"
 	echo "cyrus-entrypoint: checkouts ready"
 	;;
 *)
+	link_config
 	exec cyrus "$@"
 	;;
 esac
