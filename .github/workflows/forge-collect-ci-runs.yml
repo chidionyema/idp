@@ -1,0 +1,89 @@
+# button: Collect the CI flake-triage dataset
+# founder: Reads this repo's failed and green workflow runs on GitHub's machines and commits the
+#          labelled dataset to the branch you name. Nothing runs on the workstation.
+# crew#885: forge/collect_ci_runs.py needs ~2,500 GitHub API calls and half an hour with eight
+# workers. On 2026-09-06 that pass ran on the founder's laptop and took the load average to 460
+# (founder: nothing heavy runs on the workstation; Oracle and GitHub carry it). This job is the
+# only place the collector runs. It writes forge/datasets/ci-flake-triage.jsonl, commits it to
+# the branch it was dispatched on (a pull request branch, so the dataset lands in that PR), and
+# pushes with the flux-writer deploy key so ci.yml grades the commit (a GITHUB_TOKEN push fires
+# nothing, crew#439). The App token carries the API budget GITHUB_TOKEN's 1,000/hour cannot.
+name: forge-collect-ci-runs
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: first day of runs to read (YYYY-MM-DD)
+        required: true
+        default: "2026-08-01"
+      until:
+        description: last day (YYYY-MM-DD, default today)
+        required: false
+        default: ""
+      top_up:
+        description: keep the committed rows and add flakes until real:flake is 9:1 or better
+        type: boolean
+        default: true
+permissions:
+  contents: read
+  actions: read
+  id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)
+concurrency:
+  group: forge-collect-ci-runs-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      OUTPUT: forge/datasets/ci-flake-triage.jsonl
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - id: app
+        uses: ./.github/actions/github-app-token
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+      - name: collect
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SINCE: ${{ inputs.since }}
+          UNTIL: ${{ inputs.until }}
+          TOP_UP: ${{ inputs.top_up }}
+        run: |
+          set -euo pipefail
+          until_arg=(); [ -n "$UNTIL" ] && until_arg=(--until "$UNTIL")
+          if [ "$TOP_UP" = "true" ] && [ -s "$OUTPUT" ]; then
+            python forge/collect_ci_runs.py --repo "$GITHUB_REPOSITORY" --since "$SINCE" "${until_arg[@]}" \
+              --output "$OUTPUT" --workers 8 --top-up
+          else
+            python forge/collect_ci_runs.py --repo "$GITHUB_REPOSITORY" --since "$SINCE" "${until_arg[@]}" \
+              --output "$OUTPUT" --workers 8
+            python forge/collect_ci_runs.py --repo "$GITHUB_REPOSITORY" --since "$SINCE" "${until_arg[@]}" \
+              --output "$OUTPUT" --workers 8 --top-up
+          fi
+          rows=$(wc -l < "$OUTPUT"); flakes=$(grep -c '"output": "1"' "$OUTPUT" || true)
+          echo "rows=$rows flakes=$flakes real=$((rows-flakes))" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: { name: ci-flake-triage, path: forge/datasets/ci-flake-triage.jsonl }
+      - name: commit the dataset to this branch (LAW 24)
+        env:
+          WRITER_KEY_B64: ${{ secrets.SEED_FLUX_WRITER_IDENTITY_B64 }}
+        run: |
+          set -euo pipefail
+          git add "$OUTPUT"
+          git diff --cached --quiet && { echo "dataset unchanged, nothing to commit"; exit 0; }
+          test -n "$WRITER_KEY_B64" || { echo "FAIL    forge-collect-ci-runs  SEED_FLUX_WRITER_IDENTITY_B64 is not set (capabilities register: flux-writer)"; exit 1; }
+          umask 077; mkdir -p ~/.ssh; printf '%s' "$WRITER_KEY_B64" | base64 -d > ~/.ssh/flux-writer
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/flux-writer -o IdentitiesOnly=yes"
+          git config user.name chidionyema; git config user.email "377396+chidionyema@users.noreply.github.com"  # idp#363: an unknown author leaves every check at action_required
+          git commit -qm "forge: ci-flake-triage dataset collected on GitHub Actions, run ${GITHUB_RUN_ID} (crew#885)"
+          git push "git@github.com:${GITHUB_REPOSITORY}.git" "HEAD:${GITHUB_REF_NAME}"
