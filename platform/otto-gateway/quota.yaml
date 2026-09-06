@@ -20,9 +20,15 @@ metadata:
   name: otto-gateway-ceiling
   namespace: otto-gateway
 spec:
+  # 2026-09-06: the ceiling must hold two gateway replicas (50m/192Mi requested, 400m/384Mi
+  # limits each), one more of the same while a rollout surges, and the one-off
+  # otto-memory-store Job (50m/128Mi requested, 500m/512Mi limits) beside them. At 1200m the
+  # Job's pod was refused ("exceeded quota: otto-gateway-ceiling, requested: limits.cpu=500m,
+  # used: limits.cpu=800m") and the memory store never migrated (LAW 38: a fence that refuses
+  # correct work is an outage).
   hard:
     requests.cpu: 300m
-    requests.memory: 640Mi
-    limits.cpu: 1200m
-    limits.memory: 1536Mi
+    requests.memory: 768Mi
+    limits.cpu: 1800m
+    limits.memory: 1792Mi
     pods: "6"
