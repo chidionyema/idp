@@ -350,16 +350,31 @@ def _oauth2_proxy_in_front(state: dict) -> None:
             # deliveries signed with an HMAC, and neither delivery fleet can follow an OAuth
             # redirect -- so the signature IS the authentication. As everywhere else in this
             # file the annotation is a label and a label is not a proof, so two things are
-            # checked: the route reaches /webhook and nothing else, and the directory ships an
-            # ExternalSecret that actually pulls the signing secrets it verifies against.
+            # checked: the route reaches the webhook delivery paths and nothing else, and the
+            # directory ships an ExternalSecret that actually pulls the signing secrets it
+            # verifies against.
+            #
+            # The set below is exact, not a prefix. `PathPrefix: /webhook` was what stood here,
+            # and it admitted neither path cyrus actually registers: EdgeWorker serves
+            # POST /linear-webhook and POST /github-webhook, and /webhook alone is a third,
+            # deprecated alias. Every GitHub delivery was refused at the gateway with a 404 while
+            # this assertion read green. A prefix would also admit anything under /webhook*, so
+            # each door is named.
+            open_paths = (
+                {"type": "Exact", "value": "/linear-webhook"},
+                {"type": "Exact", "value": "/github-webhook"},
+                # The alias, kept only until the Linear webhook registration is moved to
+                # /linear-webhook, so the two changes are never in flight at once.
+                {"type": "Exact", "value": "/webhook"},
+            )
             paths = [
                 m.get("path", {})
                 for r in d["spec"]["rules"]
                 for m in r.get("matches", [])
             ]
-            assert paths and all(
-                x == {"type": "PathPrefix", "value": "/webhook"} for x in paths
-            ), f"{p}: webhook-hmac-signature route exposes {paths}"
+            assert paths and all(x in open_paths for x in paths), (
+                f"{p}: webhook-hmac-signature route exposes {paths}"
+            )
             es = (p.parent / "external-secret.yaml").read_text()
             assert "webhook-secret" in es or "webhook_secret" in es, (
                 f"{p}: annotated webhook-hmac-signature but external-secret.yaml pulls no signing secret"
