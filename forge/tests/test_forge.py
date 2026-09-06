@@ -112,7 +112,7 @@ def test_params_carry_schema_with_every_label_and_unsure():
 
 def test_parse_maps_label_name_to_train_key():
     row, reject = teacher.parse_message(
-        TASK, "x", _Msg('{"label": "class_1", "reason": "because"}'), "m"
+        TASK, "x", _Msg('{"label": "positive", "reason": "because"}'), "m"
     )
     assert reject is None
     assert row == {"input": "x", "output": "1", "reason": "because", "teacher": "m"}

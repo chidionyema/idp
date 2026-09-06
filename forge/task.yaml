@@ -3,12 +3,12 @@ task: example-classify
 base: unsloth/Qwen2.5-1.5B-Instruct   # candle 0.6 serves Qwen2 GGUF; Qwen3 when candle does
 kind: classify
 prompt_template: |
-  Classify the text as class 0 or class 1.
+  Classify the sentiment of the movie review sentence as 0 (negative) or 1 (positive).
   Text: {input}
   Verdict:
 labels:
-  "0": class_0
-  "1": class_1
+  "0": negative
+  "1": positive
 abstain_below: 0.80      # margin between the top two label probabilities
 min_agreement: 0.95       # on answered held-out rows; the floor for shipping
 max_abstain: 0.20        # of held-out rows; agreement bought by abstaining is refused

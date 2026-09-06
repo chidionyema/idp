@@ -37,11 +37,16 @@ Both gates are graded before export; a run that clears agreement by abstaining i
 
 ## Data plan
 
-1. Raw inputs: one JSONL of real texts for the task (ours from router traffic, or a client's
-   file). No public benchmark. The example task's labels `class_0` / `class_1` carry no
-   definitions, so the first real run replaces `forge/task.yaml` labels with real ones first;
-   the teacher marks undefined classes unsure by design (proved 2026-09-06 on two rows: one
-   labelled, one unsure).
+1. Raw inputs: measured 2026-09-06, router traffic cannot feed a dataset: the router redacts
+   every prompt before it reaches Langfuse (`platform/llm/config.base.yaml`
+   `turn_off_message_logging: true`; every generation's input reads `redacted-by-litellm`).
+   Logging prompts for a lane is a privacy decision the founder owns, not a task file. So the
+   first run boots the loop on a public gold set instead of waiting for it: 600 sentences from
+   `stanfordnlp/sst2` (Hugging Face, read-only), labels `0` negative and `1` positive, sampled
+   with seed 0 and split 480/120 by `forge/common.py split`. sha256
+   `52715ac5db045cbd90c19072ff61c5e43d3cd979d3a34ae75e141a6bb13d017f`. No teacher is needed for
+   gold labels; the `teacher` field says `stanfordnlp/sst2 gold`. The first real task swaps in
+   an estate-owned lane the moment its prompts may be logged.
 2. Teacher: `forge/generate_teacher_dataset.py` through the router's default lane, structured
    output, one label plus a reason per row, `--batch` for the full set.
 3. Persistence, all three before training: Langfuse datasets `<task>` and `<task>-unsure`,
