@@ -37,6 +37,19 @@ spec:
       ruleNames: ["*"]
     - policyName: disallow-host-path
       ruleNames: ["*"]
+    # disallow-privileged-containers and require-run-as-non-root-user are the parent ClusterPolicies
+    # whose autogen-* rules load onto the calico-node DaemonSet's own pod template (autogen-
+    # privileged-containers at /spec/template/spec/initContainers/, autogen-run-as-non-root-user at
+    # the same initContainers runAsUser). calico-node's init container installs the CNI binaries
+    # into /opt/cni/bin on the host and its containers live on the host network namespace and
+    # program the host's routes and iptables: that is privileged and root by definition, the same
+    # reason the other hardening policies are exempted above. The two bare-rule policies
+    # (require-run-as-nonroot, disallow-capabilities) are listed above and do not catch these
+    # autogen names; observed 2026-09-06 once the operator got past the catalogue deny in #2037.
+    - policyName: disallow-privileged-containers
+      ruleNames: ["*"]
+    - policyName: require-run-as-non-root-user
+      ruleNames: ["*"]
     - policyName: require-pod-probes
       ruleNames: ["*"]
     - policyName: restrict-volume-types
