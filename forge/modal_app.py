@@ -118,6 +118,7 @@ def run_forge(
             "eval.json:application/json",
             "tokenizer.json:application/json",
             "dataset.jsonl:application/jsonl",
+            "adapter:application/vnd.forge.lora-adapter.tar",  # oras tars a directory
         ],
         cwd=f"{REMOTE}/artifact",
         check=True,
