@@ -37,6 +37,8 @@ spec:
       ruleNames: ["*"]
     - policyName: disallow-host-path
       ruleNames: ["*"]
+    - policyName: disallow-host-ports
+      ruleNames: ["host-ports-none"]
     # disallow-privileged-containers and require-run-as-non-root-user are the parent ClusterPolicies
     # whose autogen-* rules load onto the calico-node DaemonSet's own pod template (autogen-
     # privileged-containers at /spec/template/spec/initContainers/, autogen-run-as-non-root-user at
@@ -54,6 +56,12 @@ spec:
       ruleNames: ["*"]
     - policyName: restrict-volume-types
       ruleNames: ["*"]
+    # disallow-host-ports (host-ports-none) above is typha's own Pod carve-out, not a Service one:
+    # typha binds hostPort 5473 (calico-node fd's fan-out relay). Until disallow-host-ports was
+    # exempted it denied the typha Pod outright, so calico-typha had 0 ready, calico-node
+    # crash-looped hunting a ready typha, and both nodes tainted NetworkUnavailable=True
+    # (observed 2026-09-06 ~08:03Z -- no new Pod in the whole cluster could then schedule,
+    # including the store-web #819/#820 rollout, which is why the clean live copy never shipped).
     # calico-typha is Calico's internal L3/L4 datapath relay between the calico-node agents and
     # the API-controllers; calico-kube-controllers-metrics is the kube-controllers' Prometheus
     # scrape endpoint. Both are operator-minted internal Services, never doors a person opens --
