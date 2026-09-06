@@ -49,6 +49,20 @@ fence let the real traffic through.
   holds it to the three flows the outage lacked.
 - `bin/idp-oke-break-glass ns-fences` applies the fences from a branch through the oke-check
   workflow, so the next fence change can be proved live before it is merged.
+- Recovery proof, after #2128 applied: `curl -o /dev/null -w '%{http_code} %{time_total}'
+  https://mumchimp.com/` answered 200 in 0.29 to 0.45 s across five calls, and the
+  prospector-store-web log held zero `ConnectTimeoutError` lines in the ten minutes after.
+- The blackout's failed immutable Jobs (estate-db-copy-temporal, otto-memory-store) sat under a
+  `wait: true` Flux row that every other row depended on, so one failed copy froze llm,
+  observability, dagster, backstage and research-engine for an hour. #2135 re-runs the Jobs under
+  new names, declares temporal -> estate-db, and sets that row to `wait: false` so a failed Job
+  is its own alert and never a freeze (founder record 2026-09-06T2143Z, "a single failed
+  data-copy or migration job should never take down or freeze your entire platform").
+- The Backstage catalogue pod scheduled onto the enforced node hung in its 14-plugin startup:
+  from inside it, kyverno (declared) answered and `10.96.0.1:443` and `estate-rw:5432`
+  (undeclared) timed out. The generator now emits `allow-apiserver-egress` for every namespace
+  with the control plane's address as one estate-config value Flux substitutes, and backstage
+  declares estate-db both ways (#2135).
 - The remaining gap, on purpose: nothing yet reads Calico's deny counters after a fence change.
   `platform/calico`'s README and the `calico_denyflow_gate` row in AGENTS.md hold that work.
 
@@ -62,5 +76,7 @@ fence let the real traffic through.
   `GITHUB_TOKEN` and `GH_TOKEN` from the shell it gives the model
   (`tools/environments/local.py`, blocklist), and `gh` has no stored login under `/data`. Its
   process holds the minted token and `gh auth status` inside the pod logs in as
-  `estate-agents[bot]` when given it. The fix is a `gh auth login --with-token` in the image's
-  entrypoint; not landed in this session.
+  `estate-agents[bot]` when given it. Fixed in #2132: the boot script writes a `gh` shim under
+  `$HERMES_HOME/bin` that reads the minted token from the env directory, and inside the pod
+  `env -u GITHUB_TOKEN -u GH_TOKEN gh auth status` now answers "Logged in to github.com account
+  estate-agents[bot]".
