@@ -1271,11 +1271,18 @@ YAML
 #   4. Patch the Installation finalizers to null and delete the Installation (the wedged object).
 #   5. Delete the operator-owned calico-system objects the operator created but abandoned
 #      (calico-node DS, calico-typha, calico-kube-controllers) -- idempotent deletes.
-#   6. Restart coredns onto a flannel-only chain (same reason cilium-unchain does).
-#   7. Reconcile flux-system so it converges on the tree.
-#   8. Prove it: flannel DS ready, no calico-system workload left, and a live dns probe answers.
+#   6. Land what git holds under platform/calico/raw (Road B, #2112/#2113) from the runner's own
+#      checkout, when that directory exists. install-cni left 10-calico.conflist on every node, so
+#      after step 5 no felix routes the pods kubelet keeps creating on it; Flux cannot converge
+#      the same tree itself while coredns is unreachable (2026-09-06: the .221 operator node
+#      autodetected the phantom cilium_host underlay and VXLAN never peered). Same content, same
+#      writer identity, Flux takes over the moment DNS answers.
+#   7. Restart coredns onto the surviving chain (same reason cilium-unchain does).
+#   8. Reconcile flux-system so it converges on the tree.
+#   9. Prove it: flannel DS ready, no calico-system workload left, node underlay addresses, and a
+#      live dns probe answers.
 # Rollback: nothing in here removes or alters flannel, so the estate is left exactly as it was on
-# the datapath. Re-landing is a git change to platform/calico, not this playbook.
+# the datapath. Re-landing anything else is a git change to platform/calico, not this playbook.
 pb_tigera_reset() {
   # Guard 1: flannel must be present and scheduling on both nodes; never run if it is not.
   local fl_ready fe susp
@@ -1297,6 +1304,12 @@ pb_tigera_reset() {
 
   # The operator pod is what re-adds the Installation finalizer we are about to remove; take it
   # down so nothing fights the clear. scale-0 first so deletion is clean, fall back to delete.
+  # helm-controller re-templates the operator deck (Deployment AND Installation) on any later
+  # upgrade of its orphaned HelmRelease; suspending is the reversible stopper. Deleting the
+  # HelmRelease would helm-uninstall the chart's CRDs and with them every ippool and IPAM block.
+  if $K get helmrelease tigera-operator -n tigera-operator >/dev/null 2>&1; then
+    step helmrelease-suspended $K patch helmrelease tigera-operator -n tigera-operator --type=merge -p '{"spec":{"suspend":true}}'
+  fi
   if $K scale deploy/tigera-operator -n tigera-operator --replicas=0 >/dev/null 2>&1; then
     step operator-stopped $K delete deploy/tigera-operator -n tigera-operator --ignore-not-found --wait=false
   else
@@ -1304,7 +1317,10 @@ pb_tigera_reset() {
   fi
   # The Installation is the object holding the finalizers only the operator clears; with the
   # operator gone we clear them by hand, the same patch namespace-unstick uses on a namespace.
-  step installation-unfinalize $K patch installation default --type=merge -p '{"metadata":{"finalizers":null}}' --ignore-not-found
+  # kubectl patch has no --ignore-not-found (run 2026-09-06 19:58Z failed on it); guard with a get.
+  if $K get installation default >/dev/null 2>&1; then
+    step installation-unfinalize $K patch installation default --type=merge -p '{"metadata":{"finalizers":null}}'
+  fi
   step installation-gone $K delete installation default --ignore-not-found --wait=false
   # Operator-owned calico objects it stopped repairing. None of them is the datapath while
   # flannel routes; idempotent deletes, --wait=false so we never block on a stuck pod.
@@ -1312,6 +1328,14 @@ pb_tigera_reset() {
   step deploy-typha-gone $K delete deploy -n calico-system calico-typha --ignore-not-found --wait=false
   step deploy-kubecontrollers-gone $K delete deploy -n calico-system calico-kube-controllers --ignore-not-found --wait=false
   step service-typha-gone $K delete svc -n calico-system calico-typha --ignore-not-found --wait=false
+  # Step 6: the operator's calico-node pods must be gone before raw calico-node binds the same
+  # host ports; then land git's raw deck and wait for it on every node.
+  if [ -d "$IDP/platform/calico/raw" ]; then
+    step operator-calico-node-drained $K wait pod -n calico-system -l k8s-app=calico-node --for=delete --timeout=180s
+    step raw-calico-node-applied $K apply -k "$IDP/platform/calico/raw"
+    step raw-calico-node-ready $K rollout status ds/calico-node -n kube-system --timeout=300s
+    show node-underlay $K get nodes -o 'custom-columns=NAME:.metadata.name,CALICO_IP:.metadata.annotations.projectcalico\.org/IPv4Address,VXLAN:.metadata.annotations.projectcalico\.org/IPv4VXLANTunnelAddr'
+  fi
   # A CNI fight stranded the coredns pods in dead sandboxes before (cilium-unchain run
   # 33133317589); roll them onto the flannel-only chain the same narrow way.
   step coredns-restart $K rollout restart deploy/coredns -n kube-system
