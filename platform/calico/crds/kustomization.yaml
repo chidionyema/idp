@@ -1,12 +1,17 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# The operator.tigera.io CRDs the tigera-operator helm chart needs but does not ship. Kept to the
-# three kinds an open-source, cloud-agnostic Calico datapath reconciles (Installation, APIServer,
-# Tigerastatus) -- SOURCE.md records why the rest of the 25-CRD upstream catalog is deliberately
-# not vendored. Listed FIRST in platform/calico/kustomization.yaml so the API server holds these
-# kinds before this Flux Kustomization's HelmRelease tries to render an Installation and an
-# APIServer custom resource.
+# The operator.tigera.io CRDs the tigera-operator helm chart needs but does not ship. This is the
+# complete set of operator-group CRDs whose kinds the stored v3.32.2 chart's render path delivers
+# to Kubernetes: Installation, APIServer, Goldmane and Whisker custom resources all render under
+# the chart's default .Values (each *_ .enabled defaults to true), and Tigerastatus for a truthful
+# reconcile-status read. Proven by the live failure set: supplying Installation/APIServer alone
+# advanced the HelmRelease error to the next unrecognized kind (Goldmane, then Whisker) -- a CRD
+# missing for ANY kind the chart hands to the API server fails the whole install. SOURCE.md records
+# the scope decision and the trace. Listed FIRST in platform/calico/kustomization.yaml so the API
+# server holds these kinds before this Flux Kustomization's HelmRelease reconciles.
 resources:
   - operator/operator.tigera.io_apiservers.yaml
+  - operator/operator.tigera.io_goldmanes.yaml
   - operator/operator.tigera.io_installations.yaml
   - operator/operator.tigera.io_tigerastatuses.yaml
+  - operator/operator.tigera.io_whiskers.yaml
