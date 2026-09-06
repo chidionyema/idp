@@ -1,0 +1,140 @@
+# button: Launch the buyer sandbox
+# founder: Starts a throwaway cluster-in-a-cluster with a demo shop at sandbox.<zone> for one hour or four; it removes itself when the hold runs out, and Ending it early works the same way.
+
+# The buyer sandbox's one button (crew#805 tier 3; founder 2026-09-05: "need this demoed in the
+# sandbox and need the sandbox accessible"). Nothing here holds a cluster credential: this job
+# writes branch sandbox/launch and the cluster reads it (clusters/oke/sandbox.yaml). While a
+# sandbox is held the branch carries the Flux row demo-sandbox and a ConfigMap the portal's
+# Showcase page reads for the hold and the expiry; between sandboxes it carries the ConfigMap
+# alone, saying idle. The schedule below is the clock: every fifteen minutes the same job reads the
+# expiry off the branch and empties it once the hold has run out. Pin:
+# tests/test_demo_sandbox_is_defined_and_expires.py.
+name: demo-sandbox
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Launch a sandbox, or end the one that is running"
+        type: choice
+        options: [launch, end]
+        default: launch
+      hold:
+        description: "How long the sandbox stays before it removes itself"
+        type: choice
+        options: [1h, 4h]
+        default: 1h
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: demo-sandbox-branch
+  cancel-in-progress: false
+
+jobs:
+  sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - name: write the launch branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ACTION: ${{ github.event_name == 'schedule' && 'sweep' || inputs.action }}
+          HOLD: ${{ inputs.hold || '1h' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH: sandbox/launch
+        run: |
+          set -euo pipefail
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          # the branch as it stands: state and expiry, or idle when the branch has never been written
+          state=idle; expires=""; launched=""; hold_was=""
+          if git fetch -q origin "$BRANCH" 2>/dev/null; then
+            read_key() { git show "origin/$BRANCH:state.yaml" | sed -n "s/^  $1: \"\(.*\)\"$/\1/p"; }
+            state=$(read_key state); expires=$(read_key expires_at); launched=$(read_key launched_at); hold_was=$(read_key hold)
+          fi
+          case "$ACTION" in
+            launch)
+              state=launched; launched=$now; hold_was=$HOLD
+              expires=$(date -u -d "$now + ${HOLD%h} hours" +%Y-%m-%dT%H:%M:%SZ) ;;
+            end)
+              state=idle ;;
+            sweep)
+              if [ "$state" = launched ] && [ "$(date -u -d "$expires" +%s)" -le "$(date -u -d "$now" +%s)" ]; then
+                echo "expired $expires; ending the sandbox"; state=idle
+              else
+                echo "ok      sandbox  $state${expires:+, expires $expires}; nothing to sweep"; exit 0
+              fi ;;
+          esac
+          out=$(mktemp -d)
+          {
+            echo "# Written by .github/workflows/demo-sandbox.yml, run $RUN_URL. Read by clusters/oke/sandbox.yaml."
+            echo "apiVersion: kustomize.config.k8s.io/v1beta1"
+            echo "kind: Kustomization"
+            echo "resources:"
+            echo "  - state.yaml"
+            [ "$state" = launched ] && echo "  - demo-sandbox.yaml"
+          } > "$out/kustomization.yaml"
+          cat > "$out/state.yaml" <<STATE
+          # What the portal's Showcase page reads: the sandbox's state, hold and expiry.
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: sandbox-launch
+            namespace: flux-system
+          data:
+            state: "$state"
+            hold: "$hold_was"
+            launched_at: "$launched"
+            expires_at: "$expires"
+            written_at: "$now"
+            run_url: "$RUN_URL"
+          STATE
+          if [ "$state" = launched ]; then
+            cat > "$out/demo-sandbox.yaml" <<ROW
+          # The sandbox row: platform/sandbox/vcluster on main, applied until the sweep removes this file.
+          apiVersion: kustomize.toolkit.fluxcd.io/v1
+          kind: Kustomization
+          metadata:
+            name: demo-sandbox
+            namespace: flux-system
+            annotations:
+              sandbox.idp/expires-at: "$expires"
+              sandbox.idp/hold: "$hold_was"
+          spec:
+            interval: 10m
+            retryInterval: 1m
+            sourceRef:
+              kind: GitRepository
+              name: flux-system
+            path: ./platform/sandbox/vcluster
+            prune: true
+            wait: true
+            timeout: 10m
+            postBuild:
+              substitute:
+                SANDBOX_EXPIRES_AT: "$expires"
+                SANDBOX_HOLD: "$hold_was"
+              substituteFrom:
+                - kind: ConfigMap
+                  name: estate-config
+          ROW
+          fi
+          cd "$out"
+          git init -q -b "$BRANCH"
+          git config user.name "demo-sandbox"
+          git config user.email "demo-sandbox@users.noreply.github.com"
+          git add -A
+          git commit -q -m "sandbox: $state${expires:+ until $expires} ($ACTION, run $GITHUB_RUN_ID)"
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          git -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)" push --force origin "HEAD:refs/heads/$BRANCH"
+          echo "ok      sandbox  $state${expires:+, expires $expires}; the cluster reads branch $BRANCH within a minute"
+        shell: bash
+      - name: say where to look
+        if: github.event_name != 'schedule'
+        run: |
+          echo "Showcase page on the portal: the sandbox tile turns live within about two minutes of a launch."

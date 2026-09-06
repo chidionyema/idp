@@ -29,7 +29,7 @@ ALERT = pathlib.Path(
 ALERT_NAME = "broken-workload"
 EXCLUDED: dict[str, str] = {}  # namespace -> why its HelmReleases page nobody
 # Layers launched by hand, on purpose, so no clusters/ row names them: the buyer sandbox is
-# created imperatively (docs/runbooks/demo-sandbox.md) and reaped after an hour. While it lives
+# launched by the founder's portal button (docs/runbooks/demo-sandbox.md) and reaped after an hour. While it lives
 # its HelmRelease can break like any other, so its namespace is listed the same way.
 IMPERATIVE_PATHS = ["platform/sandbox/vcluster"]
 

@@ -1,0 +1,15 @@
+# The sandbox's area of the cluster, STANDING: it lives in the launch lane, which the estate
+# always applies, so it exists before the first sandbox and between sandboxes. It must stand
+# for the same reason the shop's route stands beside it (launch/httproute.yaml): a door and
+# its address cannot wait on the thing they let in. The prune marker stays as the hard stop:
+# deleting a namespace is refused at admission by the estate's protection policy, so nothing
+# that ever prunes a row pointing here may sweep this object and hang on a finalizer forever.
+# An empty namespace between sandbox runs costs nothing.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-sandbox
+  labels:
+    idp.estate/edge-attach: "true"   # the shared Gateway selects route areas by this label
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled

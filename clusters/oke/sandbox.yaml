@@ -1,0 +1,31 @@
+# The buyer sandbox's launch lane (crew#805 tier 3; founder 2026-09-05: "need this demoed in the
+# sandbox and need the sandbox accessible"). Nothing in continuous integration holds a cluster
+# credential, and nothing should: a workflow that could create Flux rows could create any row.
+# So the founder's button (.github/workflows/demo-sandbox.yml) writes a branch, and this row makes
+# the cluster read it. platform/sandbox/launch holds the source that tracks branch sandbox/launch
+# and the row that applies whatever the branch says: one Flux Kustomization named demo-sandbox
+# while a sandbox is held, and nothing while it is not. The branch is the clock: the same
+# workflow sweeps every fifteen minutes and empties the branch once the hold has run out, and
+# prune removes the sandbox. Pin: tests/test_demo_sandbox_is_defined_and_expires.py.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sandbox-launch
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  dependsOn:
+    - name: edge
+    - name: kyverno
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/sandbox/launch
+  prune: true
+  wait: true
+  timeout: 5m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config

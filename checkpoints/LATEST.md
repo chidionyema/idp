@@ -18,3 +18,14 @@ Headlamp credential prompt: the minted kubeconfig now carries the absolute oci p
 
 ## RESUME HERE (2026-09-05 13:25Z, Otto lanes)
 Probe otto-answer-probe-29810160: bulk and verify lanes point at deepseek, which the router does not serve (400); Otto key allowlist was kimi,minimax,deepseek so gemini and embed were 403. PR fix/otto-lanes-gemini moves bulk+verify to gemini in the three lane files and sets the key rows in bin/idp-estate-seed to minimax,gemini,embed (agent-workforce: minimax,fast,embed). After merge: gh workflow run oke-check.yml -f mode=apply so idp-router-key updates the live keys.
+
+## 2026-09-06 00:40Z — showcase lane, resumed (pi session)
+Branch feat/backstage-showcase-sandbox in scratchpad wt-showcase. Sandbox plumbing finished and
+the 9-row pin green: fixed the workflow YAML (unquoted colon) and the HelmRelease's duplicated
+seeded Service; generated the portal button (bin/idp-portal-buttons); rewrote the runbook to the
+button design. Design correction on top of the 23:55Z note: the shop's namespace and HTTPRoute
+moved to the STANDING launch lane (platform/sandbox/launch) — external-dns publishes only from
+routes that exist, and cert-manager re-validates every listener hostname at each renewal, so a
+route pruned with the sandbox would fail the whole edge certificate between sandboxes (crew#684).
+Next: bin/idp-ci green, PR, then the prospector https-sandbox listener (merge after the idp PR),
+then the /showcase page itself (research: scratchpad showcase-marketing.md).
