@@ -9,9 +9,11 @@
 # (required), SANDBOX_BRANCH (default sandbox/launch), SANDBOX_RUN_REF (provenance; default
 # ${HOSTNAME:-sandbox-sweeper}), SANDBOX_SWEEPER_REMOTE (TEST SEAM: overrides the push URL;
 # tests point it at a local bare repo. Never set in the CronJob).
-# busybox ash and macOS sh both honour pipefail; the container never sees another shell.
-# shellcheck disable=SC3040 # both shells this ever runs on (busybox ash, macOS sh) have it
-set -euo pipefail
+# busybox ash and macOS sh honour pipefail; Debian dash (GitHub's /bin/sh) does not, so it is
+# opted in only where the shell accepts it instead of dying on line one.
+set -eu
+# shellcheck disable=SC3040
+(set -o pipefail 2>/dev/null) && set -o pipefail
 
 blind() {
 	echo "BLIND   sandbox-sweep  $1"
