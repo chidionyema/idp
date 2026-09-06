@@ -1329,7 +1329,14 @@ spec:
     name: flux-system
   path: ./platform/estate-db/migrate
   prune: true
-  wait: true
+  # No health wait: a Job is immutable, so one copy Job that fails for a reason outside itself
+  # (estate-db-copy-temporal-r2, timed out in the 2026-09-06 Calico blackout) held this row at
+  # not-ready and, through dependsOn, froze llm, observability, dagster, backstage, healthchecks,
+  # guacamole, agent-workforce, healing, hindsight, science, chaos and research-engine (which had
+  # never been applied at all). Ordering stays: the copies are applied before their consumers;
+  # a copy's own failure is its Job's status, read in the estate-db board, never a brake on the
+  # estate. Founder record: ~/.claude/docs/founder/2026-09-06T2143Z-you-are-completely-right-architecturally-a-single-failed-dafa113f.md
+  wait: false
   timeout: 20m
 ---
 # crew#839: every namespace's request defaults and its ceiling, generated in one pass by
@@ -1358,6 +1365,10 @@ spec:
   prune: true
   wait: true
   timeout: 10m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
 ---
 # The estate's network policy enforcement layer (crew#839). This row converges ./platform/calico
 # onto the Road B (founder-approved, 2026-09-06) plain non-operator calico-node migration

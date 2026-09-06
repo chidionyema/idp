@@ -499,10 +499,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: estate-db-copy-temporal-r2
+  name: estate-db-copy-temporal-r3
   namespace: temporal
   labels:
-    app.kubernetes.io/name: estate-db-copy-temporal-r2
+    app.kubernetes.io/name: estate-db-copy-temporal-r3
     app.kubernetes.io/part-of: idp
     backstage.io/kubernetes-id: layer-estate-db
 spec:
@@ -510,7 +510,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: estate-db-copy-temporal-r2
+        app.kubernetes.io/name: estate-db-copy-temporal-r3
         app.kubernetes.io/part-of: idp
     spec:
       restartPolicy: Never

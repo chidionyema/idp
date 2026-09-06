@@ -104,6 +104,12 @@ NOT_THE_INTERNET = [
 ]
 
 
+# Substituted by Flux from the estate-config ConfigMap (clusters/oke/platform.yaml, ns-fences
+# row, postBuild.substituteFrom); the literal never lives in a generated file.
+APISERVER_CIDR = "${ESTATE_APISERVER_CIDR}"
+APISERVER_PORTS = (6443, 12250)
+
+
 def internet_egress_doc(ns: str, ports: list) -> dict:
     return {
         "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
@@ -143,6 +149,21 @@ def policy_docs(ns: str, flows: dict) -> list[dict]:
                  "ingress": [{"from": [{"podSelector": {}}]}],
                  "egress": [{"to": [{"podSelector": {}}]}]},
     }]
+    docs.append({
+        # Every pod that watches the cluster (Backstage's kubernetes and catalogue plugins,
+        # kyverno, the operators) reaches the API server through the kubernetes Service, and
+        # kube-proxy rewrites that to the control plane's own address, which is outside the pod
+        # network and outside every namespace selector, so only an ipBlock can name it. The
+        # address is one estate-config value, set once (LAW 46), and Flux substitutes it on
+        # apply; the two ports are the ones OKE's control plane listens on. Found live 2026-09-06
+        # (crew#102 follow-up): the catalogue pod on the enforced node timed out on 10.96.0.1:443
+        # inside its startup while its twin with a flannel address answered.
+        "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+        "metadata": {"name": "allow-apiserver-egress", "namespace": ns},
+        "spec": {"podSelector": {}, "policyTypes": ["Egress"], "egress": [{
+            "to": [{"ipBlock": {"cidr": APISERVER_CIDR}}],
+            "ports": [{"protocol": "TCP", "port": p} for p in APISERVER_PORTS]}]},
+    })
     egress = list(flows.get("egress") or [])
     if ns != "observability":
         egress.append("observability")  # LAW 50: every workload emits to the one collector.
