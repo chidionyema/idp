@@ -1,12 +1,17 @@
 """The buyer sandbox (crew#805 tier 3): defined, bounded, reachable, and mortal.
 
-Every file that names this test (platform/sandbox/vcluster/kustomization.yaml,
-docs/runbooks/demo-sandbox.md, clusters/oke/sandbox.yaml, .github/workflows/demo-sandbox.yml)
-promised it existed; until 2026-09-06 it did not. Each test grades parsed structure (R76).
+The guarantees here are graded where the values land, not where they are typed: the two
+sandbox folders are rendered with kustomize (the same build Flux runs) and every claim is
+asserted on the rendered objects; the button workflow's launch script must parse under
+bash -n; the portal button is proved by running the generator in --check mode, not by
+reading its output file. Pin readers: platform/sandbox/vcluster/kustomization.yaml,
+docs/runbooks/demo-sandbox.md, clusters/oke/sandbox.yaml, .github/workflows/demo-sandbox.yml.
 """
 
 import pathlib
 import re
+import subprocess
+import sys
 
 import yaml
 
@@ -14,21 +19,47 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SANDBOX = ROOT / "platform/sandbox/vcluster"
 LAUNCH = ROOT / "platform/sandbox/launch"
 WORKFLOW = ROOT / ".github/workflows/demo-sandbox.yml"
-TEMPLATE = ROOT / "backstage/templates/founder-actions/demo-sandbox/template.yaml"
+
+
+def render(path):
+    """What Flux will apply: kustomize build, parsed into documents."""
+    proc = subprocess.run(
+        ["kustomize", "build", str(path)],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+    return [d for d in yaml.safe_load_all(proc.stdout) if d]
 
 
 def docs(path):
     return [d for d in yaml.safe_load_all(path.read_text()) if d]
 
 
-def one(path, kind):
-    found = [d for d in docs(path) if d.get("kind") == kind]
-    assert len(found) == 1, f"{path} must carry exactly one {kind}"
-    return found[0]
+def one(found, kind):
+    got = [d for d in found if d.get("kind") == kind]
+    assert len(got) == 1, f"expected exactly one {kind}, rendered {len(got)}"
+    return got[0]
+
+
+def helmrelease():
+    return one(render(SANDBOX), "HelmRelease")
+
+
+def seeded():
+    hr = helmrelease()
+    return [
+        d
+        for d in yaml.safe_load_all(
+            hr["spec"]["values"]["experimental"]["deploy"]["vcluster"]["manifests"]
+        )
+        if d
+    ]
 
 
 def test_the_control_plane_is_the_open_source_build_and_bounded():
-    hr = one(SANDBOX / "helmrelease.yaml", "HelmRelease")
+    hr = helmrelease()
     sts = hr["spec"]["values"]["controlPlane"]["statefulSet"]
     assert "vcluster-oss" in sts["image"]["repository"]
     cpu = sts["resources"]["requests"]["cpu"]
@@ -37,7 +68,7 @@ def test_the_control_plane_is_the_open_source_build_and_bounded():
 
 
 def test_the_area_stands_and_attaches_to_the_edge():
-    ns = one(LAUNCH / "namespace.yaml", "Namespace")
+    ns = one(render(LAUNCH), "Namespace")
     assert (
         ns["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
     )
@@ -45,8 +76,9 @@ def test_the_area_stands_and_attaches_to_the_edge():
 
 
 def test_the_shop_is_reachable_on_a_zone_host_through_the_shared_gateway():
-    route = one(LAUNCH / "httproute.yaml", "HTTPRoute")
+    route = one(render(LAUNCH), "HTTPRoute")
     assert route["spec"]["hostnames"] == ["sandbox.${ESTATE_ZONE}"]
+    assert route["metadata"]["annotations"]["idp.estate/auth"] == "public-demo-page"
     (parent,) = route["spec"]["parentRefs"]
     assert (parent["name"], parent["namespace"], parent["sectionName"]) == (
         "prospector-edge",
@@ -54,13 +86,8 @@ def test_the_shop_is_reachable_on_a_zone_host_through_the_shared_gateway():
         "https-sandbox",
     )
     backend = route["spec"]["rules"][0]["backendRefs"][0]
-    hr = one(SANDBOX / "helmrelease.yaml", "HelmRelease")
-    seeded = list(
-        yaml.safe_load_all(
-            hr["spec"]["values"]["experimental"]["deploy"]["vcluster"]["manifests"]
-        )
-    )
-    services = [d for d in seeded if d and d["kind"] == "Service"]
+    hr = helmrelease()
+    services = [d for d in seeded() if d["kind"] == "Service"]
     assert len(services) == 1
     svc = services[0]
     # vCluster mirrors <name>-x-<namespace>-x-<vcluster> onto the host; the route must name that
@@ -69,7 +96,7 @@ def test_the_shop_is_reachable_on_a_zone_host_through_the_shared_gateway():
         == f"{svc['metadata']['name']}-x-{svc['metadata']['namespace']}-x-{hr['metadata']['name']}"
     )
     assert backend["port"] == svc["spec"]["ports"][0]["port"]
-    policies = docs(SANDBOX / "network-policy.yaml")
+    policies = [d for d in render(SANDBOX) if d["kind"] == "NetworkPolicy"]
     ingress = [p for p in policies if "Ingress" in p["spec"]["policyTypes"]]
     assert (
         ingress
@@ -78,8 +105,9 @@ def test_the_shop_is_reachable_on_a_zone_host_through_the_shared_gateway():
 
 
 def test_the_seeded_page_is_dated_by_the_launch_row_not_typed():
-    hr = one(SANDBOX / "helmrelease.yaml", "HelmRelease")
-    manifests = hr["spec"]["values"]["experimental"]["deploy"]["vcluster"]["manifests"]
+    manifests = helmrelease()["spec"]["values"]["experimental"]["deploy"]["vcluster"][
+        "manifests"
+    ]
     for var in ("SANDBOX_EXPIRES_AT", "SANDBOX_HOLD"):
         assert "${" + var + "}" in manifests
         assert re.search(
@@ -89,11 +117,14 @@ def test_the_seeded_page_is_dated_by_the_launch_row_not_typed():
         )
 
 
-def test_the_folder_lists_every_file_and_the_root_never_applies_it():
-    listed = set(
-        yaml.safe_load((SANDBOX / "kustomization.yaml").read_text())["resources"]
-    )
-    assert listed == {p.name for p in SANDBOX.glob("*.yaml")} - {"kustomization.yaml"}
+def test_the_folders_list_every_file_and_the_root_never_applies_the_sandbox():
+    for folder in (SANDBOX, LAUNCH):
+        listed = set(
+            yaml.safe_load((folder / "kustomization.yaml").read_text())["resources"]
+        )
+        assert listed == {p.name for p in folder.glob("*.yaml")} - {
+            "kustomization.yaml"
+        }
     for row in docs(ROOT / "clusters/oke" / "sandbox.yaml"):
         assert row["spec"]["path"] != "./platform/sandbox/vcluster"
     root = yaml.safe_load((ROOT / "clusters/oke/kustomization.yaml").read_text())
@@ -101,16 +132,16 @@ def test_the_folder_lists_every_file_and_the_root_never_applies_it():
 
 
 def test_the_cluster_reads_the_branch_the_button_writes():
-    source = one(LAUNCH / "gitrepository.yaml", "GitRepository")
+    source = one(render(LAUNCH), "GitRepository")
     wf = yaml.safe_load(WORKFLOW.read_text())
     env = wf["jobs"]["sandbox"]["steps"][1]["env"]
     assert source["spec"]["ref"]["branch"] == env["BRANCH"]
     assert source["spec"]["interval"] == "1m"
     assert source["spec"]["url"] == "ssh://git@github.com/${ESTATE_GITHUB_REPO}"
-    live = one(LAUNCH / "live.yaml", "Kustomization")
+    live = one(render(LAUNCH), "Kustomization")
     assert live["spec"]["sourceRef"]["name"] == source["metadata"]["name"]
     assert live["spec"]["prune"] is True
-    launcher = one(ROOT / "clusters/oke/sandbox.yaml", "Kustomization")
+    launcher = one(docs(ROOT / "clusters/oke/sandbox.yaml"), "Kustomization")
     assert launcher["spec"]["path"] == "./platform/sandbox/launch"
     assert launcher["spec"]["postBuild"]["substituteFrom"][0]["name"] == "estate-config"
 
@@ -131,17 +162,23 @@ def test_the_button_offers_launch_or_end_and_a_bounded_hold_and_sweeps_on_a_cloc
     assert head[0].startswith("# button: ") and head[1].startswith("# founder: ")
 
 
-def test_the_portal_button_is_generated_from_the_workflow():
-    template = one(TEMPLATE, "Template")
-    step = template["spec"]["steps"][0]
-    assert step["input"]["workflowId"] == WORKFLOW.name
-    props = template["spec"]["parameters"][0]["properties"]
-    assert props["action"]["enum"] == ["launch", "end"]
-    assert props["hold"]["enum"] == ["1h", "4h"]
+def test_the_portal_button_is_generated_and_current(tmp_path=None):
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "bin/idp-portal-buttons"), "--check"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
-def test_the_sweep_ends_an_expired_hold_and_leaves_a_live_one():
+def test_the_sweep_ends_an_expired_hold_and_leaves_a_live_one(tmp_path):
     run = yaml.safe_load(WORKFLOW.read_text())["jobs"]["sandbox"]["steps"][1]["run"]
+    # The launch script must be a script: bash refuses a broken heredoc or a dangling case.
+    script = tmp_path / "launch.sh"
+    script.write_text(run)
+    proc = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
     arms = re.findall(r"^\s+(\w+)\)", run, re.M)
     assert arms == ["launch", "end", "sweep"]
     sweep = run.split("sweep)", 1)[1]
