@@ -70,5 +70,13 @@ RUN mkdir -p /worktrees /repo
 # Set working directory
 WORKDIR /app
 
-# Default command runs Cyrus
-CMD ["cyrus"]
+# The entrypoint turns the vault's mounted files into the environment cyrus reads and
+# makes the configured checkouts exist. `entrypoint.sh clone` is the init container's
+# job; with no argument it execs cyrus. Its header carries the measurement that made it
+# necessary: cyrus 0.2.71 reads no *_FILE credential variable.
+COPY entrypoint.sh /usr/local/bin/cyrus-entrypoint
+RUN chmod 0755 /usr/local/bin/cyrus-entrypoint \
+    && bash -n /usr/local/bin/cyrus-entrypoint
+
+ENTRYPOINT ["/usr/local/bin/cyrus-entrypoint"]
+CMD []

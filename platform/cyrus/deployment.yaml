@@ -29,6 +29,43 @@ spec:
         fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        # GitService never clones. It runs `git worktree add` with cwd set to
+        # repositoryPath and reports `<path> is not a git repository` when that path is
+        # absent (GitService.js:476), while the repos volume is an emptyDir that starts
+        # empty on every restart. The three repositories in config.json therefore have to
+        # be cloned before cyrus starts. It runs here rather than in the main container
+        # because a clone that outlasts initialDelaySeconds would be killed by the
+        # liveness probe halfway through.
+        - name: clone-repos
+          image: ghcr.io/chidionyema/cyrus
+          args: ["clone"]
+          env:
+            - name: HOME
+              value: /var/lib/cyrus
+            - name: CYRUS_CONFIG_JSON
+              value: /etc/cyrus/config.json
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cyrus
+              readOnly: true
+            - name: github-secret
+              mountPath: /secrets/github
+              readOnly: true
+            - name: repos
+              mountPath: /repo
+            - name: tmp
+              mountPath: /tmp
+            - name: home
+              mountPath: /var/lib/cyrus
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
       containers:
         - name: cyrus
           image: ghcr.io/chidionyema/cyrus
@@ -44,17 +81,26 @@ spec:
             # per-user home path in a manifest is the exact shape that broke 17 scripts.
             - name: HOME
               value: /var/lib/cyrus
-            # GitHub token from ExternalSecret
-            - name: GH_TOKEN_FILE
-              value: /secrets/github/token
+            # The four *_FILE variables that stood here are gone. Cyrus 0.2.71 reads none
+            # of them -- grepping the installed dist for GH_TOKEN_FILE,
+            # LINEAR_WEBHOOK_SECRET_FILE, LINEAR_API_TOKEN_FILE and
+            # GITHUB_WEBHOOK_SECRET_FILE returns zero files -- so the pod ran with no
+            # credentials while the manifest read as though it had four. GH_TOKEN_FILE also
+            # named /secrets/github/token, and the ExternalSecret writes the key
+            # CYRUS_GITHUB_TOKEN, so even a cyrus that read the variable would have found
+            # nothing there. entrypoint.sh reads the files and exports the names cyrus
+            # does read; the secrets never enter this manifest, which is what the edge
+            # policy is protecting.
+            #
             # Claude runs on the Max subscription through `claude -p`. The estate holds no
             # Anthropic API key, so none is set here and none is pulled from the vault.
-            - name: LINEAR_WEBHOOK_SECRET_FILE
-              value: /secrets/webhook/linear-webhook-secret
-            - name: LINEAR_API_TOKEN_FILE
-              value: /secrets/webhook/linear-api-token
-            - name: GITHUB_WEBHOOK_SECRET_FILE
-              value: /secrets/webhook/github-webhook-secret
+            #
+            # Self-hosted: GitHub and Linear deliver to this pod through the gateway, so
+            # cyrus verifies their signatures itself. Without this flag it registers every
+            # transport in "proxy mode", which expects a bearer token from cyrus's own
+            # hosted service and verifies no signature at all (EdgeWorker.js:566).
+            - name: CYRUS_HOST_EXTERNAL
+              value: "true"
             # CYRUS_CONFIG_PATH was set here and is read by nothing: `cyrus` resolves its
             # config from --cyrus-home, which defaults to ~/.cyrus (dist/src/app.js), and the
             # ConfigMap was mounted at /config where nothing looked for it. The pod started,
@@ -74,11 +120,16 @@ spec:
             - name: CYRUS_BASE_URL
               value: "https://cyrus.${ESTATE_ZONE}"
           volumeMounts:
-            # subPath, so the rest of ~/.cyrus stays on the writable home volume: cyrus
-            # creates repos, worktrees and mcp-configs beside this file at startup.
+            # The ConfigMap mounts at its own read-only path and the entrypoint links it
+            # into ~/.cyrus. The obvious shape -- a subPath mount straight at
+            # ~/.cyrus/config.json -- was tried and crash-looped the pod: kubelet creates
+            # the intermediate ~/.cyrus for a subPath mount owned by root and not
+            # group-writable, fsGroup does not reach it, and cyrus exited on its first
+            # action with
+            #   EACCES: permission denied, mkdir '/var/lib/cyrus/.cyrus/mcp-configs'
+            # because it creates repos, worktrees and mcp-configs beside that file.
             - name: config
-              mountPath: /var/lib/cyrus/.cyrus/config.json
-              subPath: config.json
+              mountPath: /etc/cyrus
               readOnly: true
             - name: github-secret
               mountPath: /secrets/github
