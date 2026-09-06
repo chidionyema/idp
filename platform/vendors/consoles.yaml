@@ -23,6 +23,12 @@
 # repository secrets; and `refuse_when` in `verify` is a regex the response body must NOT match,
 # for a vendor that grades a credential by refusing it rather than by answering 2xx. Every vendor
 # without those three behaves exactly as before.
+#
+# Modal (the Forge's GPU, forge/modal_app.py) is not a row: its API is gRPC only (modal client 1.5.5
+# names no HTTPS endpoint a `verify:` could call), so the bootstrapper cannot grade it. Its root is
+# the pair SEED_MODAL_TOKEN_ID / SEED_MODAL_TOKEN_SECRET, set once by `bin/idp-set-root modal`; the
+# forge-train workflow proves the pair against the provider (`modal secret list`) before it mints
+# the two Modal secrets the launcher reads. Same R52 shape, different prover.
 vendors:
   # Anthropic was removed on 2026-09-04. Founder: "estate will never use antropic api keys",
   # "we only use the pro nax nothly subscriptio", "final and end of". Claude reaches the estate

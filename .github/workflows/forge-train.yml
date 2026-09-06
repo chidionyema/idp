@@ -1,0 +1,137 @@
+# The Forge's one road to a GPU (crew#885). Founder 2026-09-06: no terminal, no token on a laptop.
+# The root is the pair `bin/idp-set-root modal` sets once; this run proves it against the provider,
+# mints the two Modal secrets the launcher reads (code mints the rest, R52), trains, and leaves the
+# run as an experiment record under forge/experiments/ on a pull request. Refused runs leave a record
+# too and fail red. A run with no record did not happen.
+name: forge-train
+on:
+  workflow_dispatch:
+    inputs:
+      task_file:
+        description: task YAML under forge/ (name, base, labels, gates)
+        default: forge/task.yaml
+      data:
+        description: JSONL under forge/datasets/; blank = forge/datasets/<task>.jsonl
+        default: ""
+      dry_run:
+        description: grade the gates, push nothing
+        type: boolean
+        default: true
+      max_steps:
+        description: cap training steps (-1 = the epochs in the task file)
+        default: "-1"
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write   # the run's GITHUB_TOKEN is the GHCR credential the launcher pushes with
+  id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.task_file }}
+  cancel-in-progress: false   # a training run is paid for; never cancel one to start another
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.SEED_MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.SEED_MODAL_TOKEN_SECRET }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --quiet modal==1.5.5 pyyaml==6.0.2
+      - name: prove the Modal root against the provider
+        run: |
+          set -euo pipefail
+          test -n "$MODAL_TOKEN_ID" && test -n "$MODAL_TOKEN_SECRET" \
+            || { echo "FAIL    forge-train  no Modal root: run bin/idp-set-root modal once (R52)"; exit 1; }
+          modal secret list >/dev/null || { echo "FAIL    forge-train  Modal refused the root pair; rotate it with bin/idp-set-root modal"; exit 1; }
+          echo "ok      modal root answers"
+      - name: mint the Modal secrets the launcher reads (code mints the rest)
+        env:
+          GHCR_PAT: ${{ secrets.GITHUB_TOKEN }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          ZONE=$(awk '$1=="ESTATE_ZONE:"{print $2; exit}' clusters/*/estate-config.yaml)
+          modal secret create --force estate-ghcr GHCR_USER="$GITHUB_REPOSITORY_OWNER" GHCR_PAT="$GHCR_PAT" >/dev/null
+          if [ -n "$LANGFUSE_PUBLIC_KEY" ] && [ -n "$LANGFUSE_SECRET_KEY" ]; then
+            modal secret create --force estate-langfuse LANGFUSE_HOST="https://langfuse.$ZONE" \
+              LANGFUSE_PUBLIC_KEY="$LANGFUSE_PUBLIC_KEY" LANGFUSE_SECRET_KEY="$LANGFUSE_SECRET_KEY" >/dev/null
+            echo "ok      estate-langfuse minted; the run will trace"
+          else
+            modal secret create --force estate-langfuse LANGFUSE_HOST="https://langfuse.$ZONE" >/dev/null
+            echo "warn    no LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY repository secret; the run records to git and the artifact only"
+          fi
+          echo "ok      estate-ghcr minted"
+      - name: resolve task and data
+        id: task
+        run: |
+          set -euo pipefail
+          TASK=$(python -c 'import sys,yaml;print(yaml.safe_load(open(sys.argv[1]))["task"])' "${{ inputs.task_file }}")
+          DATA="${{ inputs.data }}"; [ -n "$DATA" ] || DATA="forge/datasets/$TASK.jsonl"
+          { echo "task=$TASK"; echo "data=$DATA"; echo "task_rel=${{ inputs.task_file }}"; } | sed 's#task_rel=forge/#task_rel=#' >> "$GITHUB_OUTPUT"
+          if [ -s "$DATA" ]; then echo "have_data=true" >> "$GITHUB_OUTPUT"; echo "ok      $DATA, $(wc -l < "$DATA") rows"
+          else echo "have_data=false" >> "$GITHUB_OUTPUT"; echo "warn    no dataset at $DATA; root proved and secrets minted, nothing to train (label with forge/generate_teacher_dataset.py)"; fi
+      - name: train on Modal
+        if: steps.task.outputs.have_data == 'true'
+        id: train
+        run: |
+          set -euo pipefail
+          DRY=""; [ "${{ inputs.dry_run }}" = "true" ] && DRY="--dry-run"
+          # a refusal exits 1 and still writes the record; the record step runs either way
+          # shellcheck disable=SC2086
+          if modal run forge/modal_app.py --task "${{ steps.task.outputs.task }}" --task-file "${{ steps.task.outputs.task_rel }}" \
+               --data "${{ steps.task.outputs.data }}" --max-steps "${{ inputs.max_steps }}" --record forge-run.json $DRY; then
+            echo "refused=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "refused=true" >> "$GITHUB_OUTPUT"
+          fi
+          test -s forge-run.json || { echo "FAIL    forge-train  the launcher left no forge-run.json"; exit 1; }
+      - name: write the experiment record
+        if: steps.task.outputs.have_data == 'true'
+        run: |
+          set -euo pipefail
+          ESTATE_ZONE=$(awk '$1=="ESTATE_ZONE:"{print $2; exit}' clusters/*/estate-config.yaml) \
+            python forge/experiment_record.py --task "${{ inputs.task_file }}" --run forge-run.json --data "${{ steps.task.outputs.data }}" --out forge/experiments
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.task.outputs.have_data == 'true'
+        with:
+          name: forge-run-${{ steps.task.outputs.task }}-${{ github.run_id }}
+          path: |
+            forge-run.json
+            forge/experiments/*.md
+      - id: app
+        if: steps.task.outputs.have_data == 'true'
+        uses: ./.github/actions/github-app-token
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+      - name: open the pull request that files the record
+        if: steps.task.outputs.have_data == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          BR="forge/experiment-${{ steps.task.outputs.task }}-${{ github.run_id }}"
+          git config user.name "estate-agents[bot]"; git config user.email "estate-agents[bot]@users.noreply.github.com"
+          git checkout -b "$BR"
+          git add forge/experiments/
+          REC=$(git diff --cached --name-only | head -1)
+          git commit -q -m "forge: experiment record for ${{ steps.task.outputs.task }} (run ${{ github.run_id }})"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:$BR"
+          gh pr create --base main --head "$BR" --title "forge: experiment ${{ steps.task.outputs.task }}, ${{ steps.train.outputs.refused == 'true' && 'refused' || 'graded' }}" \
+            --body "$(printf 'Experiment record: %s\nRun: %s/%s/actions/runs/%s\n\nEvidence: forge-run.json on the run artifact.' "$REC" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")"
+      - name: verdict
+        if: steps.task.outputs.have_data == 'true'
+        run: |
+          python - <<'PY'
+          import json,sys; r=json.load(open("forge-run.json")); e=r.get("eval",{})
+          print(f"{r['verdict']:8s} {r['task']}  held_out={e.get('held_out')} agreement={e.get('agreement')} abstain={e.get('abstain_rate')} artifact={r.get('artifact')} trace={r.get('trace')}")
+          sys.exit(1 if r["verdict"]=="refused" else 0)
+          PY

@@ -1,0 +1,28 @@
+# Forge experiments
+
+Every Forge run is an experiment and leaves a record here, named `<UTC stamp>-<task>.md`. Refused
+runs and dry runs leave one too. A run with no record did not happen. Records are written by
+`forge/experiment_record.py` from the run's `forge-run.json` (what `forge/modal_app.py` returns) and
+filed on a pull request by `.github/workflows/forge-train.yml`; nobody writes one by hand except a
+pre-registration (below).
+
+Each record has a YAML front matter (verdict, agreement, abstain rate, dataset hash, trace,
+artifact, commit) so the folder can be graded by a script, then seven sections:
+
+1. **Hypothesis**: what the student is expected to reach, stated before the run. Set `hypothesis:`
+   in the task YAML to override the default sentence.
+2. **Setup**: base model, LoRA shape, steps, GPU, wall time, forge commit, CI run.
+3. **Data**: rows, split, sha256, per-label counts, teacher(s), the Langfuse dataset name.
+4. **Pre-registered gates**: the numbers from the task YAML the run was graded against. They are
+   read from the same file the trainer read; a record cannot quote a threshold the run did not use.
+5. **Results**: held-out agreement and abstain rate, whether each gate was met, and what the
+   held-out count can actually resolve.
+6. **Provenance**: trace, artifact reference, dataset hash, commit, run.
+7. **Reproduce**: the three commands, with this run's arguments.
+
+**Pre-registration.** Before the first run of a task, a `NNNN-<task>-plan.md` states hypothesis,
+data plan and gates. The run's record then sits next to it; the plan is never edited after the run.
+
+**Reading a result.** 100 held-out rows resolve agreement to roughly ±4 points at 95%. A reading
+inside that band of the gate is not settled either way: label more rows (the second round is
+student-margin sampled; spec §5) before trusting it.
