@@ -290,4 +290,28 @@ lanes:
     - id: LEX-087
       phrase: "substantially"
       message: "(give the number)"
+    - id: CTA-01
+      pattern: "(?:^|[.!?])\\s+(?:Ultimately|Essentially|Fundamentally|Importantly|Notably|Crucially|Interestingly|Moreover|Furthermore|Additionally|In essence|In short|Simply put|Put simply|That said|Indeed)\\b"
+      message: "empty opener - the first five words carry the point"
+    - id: CTA-02
+      pattern: ",\\s+(?:ensuring|allowing|enabling|helping|providing|offering|creating|driving|making|highlighting|underscoring|reflecting|leveraging|thereby)\\b"
+      message: "a trailing '-ing' clause bolted on - start a new sentence and name who does it"
+    - id: CTA-03
+      pattern: "(?:^|[^.!?\\w-])(?:not|is not|are not|isn't|aren't|wasn't|weren't)\\s+just\\b"
+      message: "the 'not just X, but Y' shape - say what it is, drop what it is not"
+    - id: CTA-04
+      pattern: "(?:^|[^.!?\\w-])it'?s\\s+not\\b"
+      message: "the 'It's not X. It's Y.' reveal - state the thing once"
+    - id: CTA-05
+      pattern: "(?:^|[^.!?\\w-])not\\s+only\\b[^.\\n!?]{1,120}\\bbut\\s+also\\b"
+      message: "'not only... but also' - two sentences, or one list"
+    - id: CTA-06
+      pattern: "(?:^|[^.!?\\w-])whether\\s+you'?re\\b"
+      message: "'whether you're a X or a Y' - name the one reader this is for"
+    - id: CTA-07
+      pattern: "\\?\\s+(?:Absolutely|Simply put|In short|Yes[.,]|No[.,])\\b"
+      message: "a rhetorical question answered by the writer - ask nothing, or answer a real one"
+    - id: CTA-08
+      pattern: "(?:^|[^.!?\\w-])the\\s+(?:beauty|magic|trick|secret)\\s+of\\b"
+      message: "a flourish standing in for the fact - say the fact"
 rules: {}
