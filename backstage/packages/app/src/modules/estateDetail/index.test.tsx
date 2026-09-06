@@ -41,6 +41,29 @@ const founderSurface = ({
   spec: { type: 'founder-surface', owner: 'group:default/platform' },
 });
 
+/** A founder-surface the probe has NOT yet reached: it carries only the well-known backstage
+ * keys (no estate/health / no estate/health-checked-at, as in the library / non-probe catalogue
+ * render). Stone-2: the authored overview still belongs to it (owner, system, links) without
+ * any fabricated live claim. */
+const unprobedSurface = (): Entity => ({
+  apiVersion: 'backstage.io/v1alpha1',
+  kind: 'Component',
+  metadata: {
+    name: 'founder-inbox',
+    namespace: 'default',
+    title: 'Founder inbox',
+    description: "Where the day's decisions land.",
+    annotations: { 'github.com/project-slug': 'example/founder-inbox' },
+    tags: ['founder'],
+    links: [{ url: 'https://example.com/inbox', title: 'Open inbox' }],
+  },
+  spec: {
+    type: 'founder-surface',
+    system: 'system:default/product-estate',
+    owner: 'group:default/platform',
+  },
+});
+
 /** A generated estate ledger row, as bin/catalog-gen writes it (in the estate-internals
  * system after the de-noise change: estate/* annotations present, estate-internal tag). */
 const generatedLedger = (): Entity => ({
@@ -112,12 +135,17 @@ describe('EstateOverview (the owned estate entity detail tab)', () => {
     expect(screen.getByText('Open ledger')).toBeInTheDocument();
   });
 
-  it('claims no estate fact for a hand-authored entity', async () => {
+  it("authors a plain service component's click-through without inventing an estate fact", async () => {
     await renderOne(handAuthored());
     expect(screen.getByText('The dashboard')).toBeInTheDocument();
-    // No estate/ fact block is rendered for a non-generated entry.
+    // No estate/ fact block is rendered because there were none generated for it.
     expect(screen.queryByText('Rows')).not.toBeInTheDocument();
     expect(screen.queryByText('Coupling')).not.toBeInTheDocument();
+    // The owned overview names who owns it (its group), so a click is not a stock stub.
+    expect(screen.getByText(/Owner/)).toBeInTheDocument();
+    expect(screen.getByText('platform').closest('a')?.getAttribute('href')).toMatch(
+      /^\/catalog\/group\//,
+    );
   });
 
   it('turns a home founder-surface click into a live overview, not a stub (founder note: clicking needs more detail)', async () => {
@@ -160,6 +188,21 @@ describe('EstateOverview (the owned estate entity detail tab)', () => {
     expect(screen.getByText('Founder console')).toBeInTheDocument();
     expect(screen.queryByText('Down')).not.toBeInTheDocument();
     expect(screen.queryByText('Up')).not.toBeInTheDocument();
+    expect(screen.queryByText(/checked /)).not.toBeInTheDocument();
+  });
+
+  it('gives an unprobed founder-surface an authored overview, with no invented live claim', async () => {
+    // Stone 2: a surface the probe has not yet stamped (library / non-probe catalogue render)
+    // must still not be a stock stub - the estate authors who owns it and what system it serves.
+    await renderOne(unprobedSurface());
+    expect(screen.getByText('Founder inbox')).toBeInTheDocument();
+    expect(screen.getByText(/Owner/)).toBeInTheDocument();
+    expect(screen.getByText('product-estate').closest('a')?.getAttribute('href')).toMatch(
+      /^\/catalog\/system\//,
+    );
+    // It is NOT probed, so no live Up/Down/checked may be claimed (rule 13).
+    expect(screen.queryByText('Up')).not.toBeInTheDocument();
+    expect(screen.queryByText('Down')).not.toBeInTheDocument();
     expect(screen.queryByText(/checked /)).not.toBeInTheDocument();
   });
 });
