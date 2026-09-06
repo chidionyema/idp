@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Road B raw operatorless calico-node (kubernetes datastore). Replaces the tigera-operator
+# HelmRelease route that wedged on this cluster (phantom underlay, calico-node CrashLoop).
+#
+# Deliberately does NOT vendor CRDs here: the crd.projectcalico.org kinds Calico OSS registers
+# already exist on the cluster from the prior operator install, and Operatorless Calico creates
+# them itself on first node boot. Registering them again would collide with the live set.
+#
+# Review-only in this PR. The `calico` Flux Kustomization in clusters/oke/platform.yaml stays
+# `suspend: true`; wiring this path in (un-suspend + operator teardown) is a separate
+# cluster-control change that only runs after this manifest passes review.
+resources:
+  - calico-config.yaml
+  - rbac.yaml
+  - calico-node.yaml
+  - calico-kube-controllers.yaml

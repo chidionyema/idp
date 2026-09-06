@@ -1,0 +1,390 @@
+# RBAC for the operatorless calico-node / calico-kube-controllers / calico-cni-plugin, in the
+# kubernetes datastore. Byte-source: Calico v3.32.2 `manifests/calico.yaml` RBAC section
+# (ServiceAccounts, ClusterRoles, ClusterRoleBindings). No CRDs here (they pre-exist from the
+# operator install). RBAC names are unprefixed and re-appliable because the prior operator deck
+# used the operator's own namespaced accounts (calico-system/calico-kube-controllers,
+# tigera-operator), which never collide with these kube-system accounts.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: calico-kube-controllers
+  namespace: kube-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: calico-node
+  namespace: kube-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: calico-cni-plugin
+  namespace: kube-system
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: calico-kube-controllers
+  namespace: kube-system
+  labels:
+    k8s-app: calico-kube-controllers
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      k8s-app: calico-kube-controllers
+---
+# calico-kube-controllers ClusterRole + binding.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: calico-kube-controllers
+rules:
+  # Nodes are watched to monitor for deletions.
+  - apiGroups: [""]
+    resources:
+      - nodes
+    verbs:
+      - watch
+      - list
+      - get
+  # Pods are watched for IPAM controller existence checks.
+  - apiGroups: [""]
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  # Namespaces are watched for LoadBalancer IP allocation with namespace selector support.
+  - apiGroups: [""]
+    resources:
+      - namespaces
+    verbs:
+      - get
+      - list
+      - watch
+  # Services monitored for service LoadBalancer IP allocation.
+  - apiGroups: [""]
+    resources:
+      - services
+      - services/status
+    verbs:
+      - get
+      - list
+      - update
+      - watch
+  # IPAM resources are manipulated in response to node and block updates, and periodic triggers.
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - ipreservations
+    verbs:
+      - list
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - blockaffinities
+      - ipamblocks
+      - ipamhandles
+      - ipamconfigurations
+      - ipamconfigs
+      - tiers
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - delete
+      - watch
+  # Pools watched to maintain a mapping of blocks to IP pools.
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - ippools
+    verbs:
+      - list
+      - watch
+  # kube-controllers manages hostendpoints.
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - hostendpoints
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - delete
+      - watch
+  # Needs access to update clusterinformations.
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - clusterinformations
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - watch
+  # KubeControllersConfiguration is where it gets its config.
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - kubecontrollersconfigurations
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - watch
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - kubecontrollersconfigurations/status
+    verbs:
+      - get
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: calico-kube-controllers
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: calico-kube-controllers
+subjects:
+  - kind: ServiceAccount
+    name: calico-kube-controllers
+    namespace: kube-system
+---
+# calico-node ClusterRole + binding.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: calico-node
+rules:
+  # Used for creating service account tokens for the CNI plugin.
+  - apiGroups: [""]
+    resources:
+      - serviceaccounts/token
+    resourceNames:
+      - calico-cni-plugin
+    verbs:
+      - create
+  # The CNI plugin needs to get pods, nodes, and namespaces.
+  - apiGroups: [""]
+    resources:
+      - pods
+      - nodes
+      - namespaces
+    verbs:
+      - get
+  # EndpointSlices used for Service-based network policy enforcement.
+  - apiGroups: ["discovery.k8s.io"]
+    resources:
+      - endpointslices
+    verbs:
+      - watch
+      - list
+  - apiGroups: [""]
+    resources:
+      - endpoints
+      - services
+    verbs:
+      - watch
+      - list
+      # Used to discover Typhas.
+      - get
+  # Pod CIDR auto-detection on kubeadm needs access to config maps.
+  - apiGroups: [""]
+    resources:
+      - configmaps
+    verbs:
+      - get
+  - apiGroups: [""]
+    resources:
+      - nodes/status
+    verbs:
+      - patch
+      - update
+  # Watch for changes to Kubernetes NetworkPolicies.
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - networkpolicies
+    verbs:
+      - watch
+      - list
+  # Watch for changes to Kubernetes ClusterNetworkPolicies.
+  - apiGroups: ["policy.networking.k8s.io"]
+    resources:
+      - clusternetworkpolicies
+    verbs:
+      - watch
+      - list
+  # Used by Calico for policy information.
+  - apiGroups: [""]
+    resources:
+      - pods
+      - namespaces
+      - serviceaccounts
+    verbs:
+      - list
+      - watch
+  # The CNI plugin patches pods/status.
+  - apiGroups: [""]
+    resources:
+      - pods/status
+    verbs:
+      - patch
+  # Calico monitors various CRDs for config.
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - globalfelixconfigs
+      - globalbgpconfigs
+      - felixconfigurations
+      - bgppeers
+      - bgpfilters
+      - bgpconfigurations
+      - ippools
+      - ipreservations
+      - ipamblocks
+      - globalnetworkpolicies
+      - stagedglobalnetworkpolicies
+      - networkpolicies
+      - stagednetworkpolicies
+      - stagedkubernetesnetworkpolicies
+      - globalnetworksets
+      - networksets
+      - clusterinformations
+      - hostendpoints
+      - blockaffinities
+      - caliconodestatuses
+      - tiers
+    verbs:
+      - get
+      - list
+      - watch
+  # Calico creates some tiers on startup.
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - tiers
+    verbs:
+      - create
+  # Calico must create and update some CRDs on startup.
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - ippools
+      - felixconfigurations
+      - bgpconfigurations
+      - clusterinformations
+    verbs:
+      - create
+      - update
+  # Calico must update some CRDs.
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - caliconodestatuses
+    verbs:
+      - update
+  # Calico stores some configuration information on the node.
+  - apiGroups: [""]
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+  # Required for per-node policy sync / network policy persistence on the node.
+  - apiGroups: [""]
+    resources:
+      - endpointslices
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: calico-node
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: calico-node
+subjects:
+  - kind: ServiceAccount
+    name: calico-node
+    namespace: kube-system
+---
+# calico-cni-plugin ClusterRole + binding: the CNI plugin allocates pod IPs via the datastore,
+# using a token that calico-node mints for the calico-cni-plugin ServiceAccount.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: calico-cni-plugin
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - nodes
+      - namespaces
+    verbs:
+      - get
+  - apiGroups: [""]
+    resources:
+      - pods/status
+    verbs:
+      - patch
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - blockaffinities
+      - ipamblocks
+      - ipamhandles
+      - clusterinformations
+      - ippools
+      - ipreservations
+      - ipamconfigurations
+      - ipamconfigs
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: calico-cni-plugin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: calico-cni-plugin
+subjects:
+  - kind: ServiceAccount
+    name: calico-cni-plugin
+    namespace: kube-system
+---
+# calico-tier-getter ClusterRole + binding: lets kube-controller-manager GC Tiers / tiered
+# policies, mirroring the operator render of the same RoleBinding.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: calico-tier-getter
+rules:
+  - apiGroups:
+      - "projectcalico.org"
+    resources:
+      - "tiers"
+    verbs:
+      - "get"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: calico-tier-getter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: calico-tier-getter
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: system:kube-controller-manager
