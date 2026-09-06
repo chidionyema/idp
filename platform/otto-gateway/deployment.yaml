@@ -165,7 +165,27 @@ spec:
                   case "$n" in [A-Z_][A-Z0-9_]*) export "$n=$(cat "$f")" ;; esac
                 done
               fi
-              mkdir -p "$HERMES_HOME"
+              mkdir -p "$HERMES_HOME/skills" "$HERMES_HOME/bin"
+              # The image's skills (82 SKILL.md under /app/hermes-agent/skills on main-92) never
+              # reached HERMES_HOME because this command replaces the image entrypoint: the
+              # door answered "skills_list: 0" on 2026-09-06 while they sat one directory over.
+              # No clobber, so a skill edited on the volume survives an image update.
+              cp -Rn /app/hermes-agent/skills/. "$HERMES_HOME/skills/" 2>/dev/null || true
+              # gh in the model's shell. hermes-agent's terminal tool strips GH_TOKEN and
+              # GITHUB_TOKEN from the environment it hands the model (tools/environments/
+              # local.py), so the token exported above never reaches gh, and the live pod
+              # answered "You are not logged into any GitHub hosts" (2026-09-06, the
+              # "unverified" Telegram replies). The token is the one-hour installation token
+              # the GithubAccessToken generator mints (agent-env.yaml), so a one-time
+              # `gh auth login` would go stale within the hour; this wrapper reads the
+              # mounted file, which kubelet refreshes, on every call. Git borrows the same
+              # wrapper for its credential.
+              printf '#!/bin/sh\nGH_TOKEN=$(cat %s/GITHUB_TOKEN) exec /usr/local/bin/gh "$@"\n' "$HERMES_ENV_DIR" > "$HERMES_HOME/bin/gh"
+              chmod 0755 "$HERMES_HOME/bin/gh"
+              PATH="$HERMES_HOME/bin:$PATH"
+              export PATH
+              git config --global credential.helper "!$HERMES_HOME/bin/gh auth git-credential"
+              git config --global --add safe.directory '*'
               exec python -m otto.ingress
           env:
             - { name: OTTO_INGRESS_PORT, value: "8080" }
