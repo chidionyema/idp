@@ -1,8 +1,34 @@
-# RESUME HERE (session 217a491c, 2026-09-06 10:25Z)
-Task: crew#885 own models. MERGED today: idp#2068 (Modal road), idp#2016 (sweeper), idp#2075 (cost is the only gate, adapter pushed), idp#2079 (600 SST-2 gold rows behind example-classify; router prompts are redacted, turn_off_message_logging: true, so no traffic dataset).
-Founder ran bin/idp-set-root modal from the idp checkout (on the Cyrus branch, no modal provider); told to run /Users/chidionyema/dev/code/idp-main/bin/idp-set-root modal (worktree of main). Not yet confirmed run.
-Staged: second Forge task ci-flake-triage: rows = failing step log tail of failed `ci` runs, label flake when same sha later green on same workflow else real (measured 60-sample: 15 flake, 45 real). Collector PR next; STAGED 10:20Z, 60 min.
-Next: (1) once Modal root exists, dry run then real run of example-classify via forge-train workflow; (2) build ci-flake-triage collector + task file + plan 0002.
-Held: oke-check apply, Telegram 29881, founder said pause.
-Records: ~/.claude/docs/founder/2026-09-06T0938Z-what-can-the-platforn-and-estate-take-forn-00fc0405.md, ~/.claude/docs/founder/2026-09-06T0947Z-ok-so-aything-to-adopt-here-yes-i-3ceca499.md
-Overlap: Voice Gate session owns platform/voice-gate; Cyrus session owns platform/cyrus; do not touch.
+# LATEST
+
+## RESUME HERE — cyrus delivery door, 2026-09-06 13:45 GMT+1
+
+Founder ask: ", ensure cyruus is working properly lso"
+(`~/.claude/docs/founder/2026-09-06T0248Z-deepseek-agent-appeas-stucj-a9476b49.md`)
+and the Live Proof Protocol in
+`~/.claude/docs/founder/2026-09-06T0310Z-to-ensure-pr-1954-fully-resolves-these-failure-79fbe16e.md`.
+
+Cyrus is UP: `cyrus-78fbc48cc8-hmq9v 1/1 Running`, 0 restarts, 4h44m, image
+main-5324-778422de, "📦 Managing 3 repositories". Eight walls found and merged:
+#1949, #1954, #1957, #1967, #1971, #1979.
+
+Live proof passed: all three checkouts clean (`## main...origin/main`),
+`/var/lib/cyrus/.cyrus` writable with mcp-configs present, no credential in the pod
+manifest (0 secret values in `kubectl describe`), unsigned POST refused on every door
+(/linear-webhook 401, /github-webhook 403, /webhook 401).
+
+Open, wall 9: the Linear transport is still in **proxy mode**. EdgeWorker.js:477 reads
+`LINEAR_DIRECT_WEBHOOKS`, not CYRUS_HOST_EXTERNAL:
+    const useDirectWebhooks = process.env.LINEAR_DIRECT_WEBHOOKS?.toLowerCase() === "true";
+    const secret = useDirectWebhooks ? process.env.LINEAR_WEBHOOK_SECRET || ""
+                                     : process.env.CYRUS_API_KEY || "";
+So Linear is verified against a hosted-service bearer token that this estate does not
+have, instead of the Linear HMAC. GitHub is already `signature mode`. Fix: add
+`LINEAR_DIRECT_WEBHOOKS: "true"` to platform/cyrus/deployment.yaml. All four secret
+files are readable in the main container (0 "not readable" lines), so the secret is there.
+
+Also open: one pod Pending on a newer ReplicaSet (cyrus-5574899496-h448b), reason not yet
+read — the cluster API was timing out at 13:40.
+
+Then: move the Linear webhook registration (id 5c755f6e-c32e-477e-9382-be9eab8921a8) from
+/webhook to /linear-webhook, and drop the deprecated alias from httproute.yaml and from
+open_paths in sovereign/tests/bdd/test_gate_front_door_login.py.
