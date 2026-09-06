@@ -146,6 +146,77 @@ def vendor_software(r) -> bool:
     return r.get("kind") == "scheduled_job" and str(r.get("path") or "").startswith(VENDOR_TREES)
 
 
+# Founder, 2026-09 ("claude directives are polluting the catalogue and are mostly noise; they
+# should have a lesser section away from the rest"). The estate inventory holds 303 ledger
+# rows; 293 live under ~/.claude, and the generated catalogue shipped 196 Resource-ledgers,
+# 188 of them under system:default/product-claude - which became the largest "product" system
+# in the catalogue (240 members), ahead of real products. Measured over the live inventory:
+# the mass is NOT the estate's canonical op-state boards (hook-outcomes, ledger, goal-net,
+# founder-actions, drills, ESTATE_BOARD, DECISIONS, ...) but per-session and per-worktree
+# scratch - a per-project directives/*.jsonl, per-session state/prompt-ledger/<uuid>, .claude/
+# jobs/*/timeline.jsonl, and shadow copies under .claude/scripts/.wt-*/ and worktrees/. These
+# are ephemeral agent logs, not estate surfaces. They must render in a clearly secondary
+# place, apart from real products, and remain recoverable (never deleted). Durable canonical
+# op boards keep their current place.
+ESTATE_INTERNALS_SYSTEM = "system:default/estate-internals"
+# Durable .claude op-state boards the live estate reads (openReds reads hook-outcomes; the
+# loop reads goal-net; guards/drills read their state) never count as noise, however long the
+# path. A shadow copy of one under a worktree is a separate file and still counts: it is
+# per-worktree churn, not the canonical board. Canonical boards live at ~/.claude/<name>.jsonl
+# or ~/.claude/state/<name>[-/...].jsonl; /state/logs//stuck-detector and agent-cert/history
+# are also canonical.
+_DURABLE_STATE = {"hook-outcomes", "ledger", "goal-net", "founder-actions", "drills",
+                   "ESTATE_BOARD", "DECISIONS", "estate-spend-history", "history",
+                   "tickets", "close-guard-observe", "estate-push", "estate-bundle-push",
+                   "board-deadletter", "aiden-ticks", "pi-bridge-runs", "ci-reach",
+                   "toolguard", "stuck-detector", "consult", "would-have-fired"}
+# directory markers that make a .claude ledger per-session/per-worktree scratch rather than a
+# canonical op board.
+_SESSION_DIRS = (".claude/directives/", ".claude/state/prompt-ledger/", ".claude/jobs/",
+                 ".claude/.wt-", ".claude/scripts/.wt-", "worktrees/", ".claude/state/one-branch/",
+                 ".claude/logs/", ".claude/toolguard/")
+_SESSION_MARKS = ("scratchpad", "private-tmp", "/T-", "slot-", "claude-runner", "-runner-repo")
+
+
+def is_ephemeral_ledger(r) -> bool:
+    """True for a .claude ledger that is per-session/per-worktree scratch - the noise a catalogue
+    buyer should not scroll past. False for an estate record and for a durable canonical op board.
+
+    A ledger path under ~/.claude is ephemeral unless it is a canonical op board: a known
+    durable board's own file sitting directly at ~/.claude/<name>.jsonl, ~/.claude/state/<name>.jsonl,
+    or as the directoried canonical under ~/.claude/state/logs|toolguard|agent-cert. Everything
+    else under ~/.claude - directives/*, prompt-ledger/*, jobs/*, a .wt-* or worktrees/ shadow
+    copy, and any nested scratch - is per-session/per-worktree and counts as noise. A ledger
+    anywhere else (estate repo, .estate/** record, launchd) is never agent scratch.
+    """
+    i = r.get("id") or ""
+    p = (r.get("path") or "").replace("\\", "/") or i
+    if ".claude" not in i and ".claude" not in (r.get("path") or ""):
+        return False                      # estate repo / .estate record: keep in place
+    # Reject any visible per-session / per-worktree shape first.
+    if "/.wt-" in p or p.startswith(".claude/.wt-") or ".wt-" in i:
+        return True                       # .wt-* shadow duplicate of a board
+    if "worktrees/" in p or "/one-branch/" in p:
+        return True                       # nested-worktree copies
+    for m in ("scratchpad", "private-tmp", "/T-", "slot-", "claude-runner", "-runner-repo"):
+        if m in p:
+            return True                   # claude session scratch
+    # Deterministic canonical op-board parents under ~/.claude:
+    head, _, tail = p.partition(".claude/")
+    rel = p if p.startswith(".claude/") else tail            # strip home dir
+    base = rel.rsplit("/", 1)[-1].replace(".jsonl", "") if rel.endswith(".jsonl") else rel.rsplit("/", 1)[-1]
+    ok_parent = (
+        ("/" not in rel)                                          # ~/.claude/<board>.jsonl
+        or rel == "state/" + base + ".jsonl" or rel == "state/" + base          # ~/.claude/state/<n>
+        or rel.startswith("state/logs/") or rel.startswith("state/toolguard/")
+        or rel.startswith("agent-cert/") or rel == "state/tickets"
+    )
+    if base in _DURABLE_STATE and ok_parent:
+        return False                      # the canonical op board, honest record
+    # Per-project per-session dirs and anything else nested under ~/.claude is noise.
+    return True
+
+
 def human_title(r, fallback):
     rid = str(r.get("id") or fallback)
     if not LABEL_RE.match(rid):
@@ -803,6 +874,13 @@ def main() -> int:
         *links_yaml(company_links("platform")),
         "spec:", f"  owner: {OWNER}", "  domain: platform"]))
     docs.append("\n".join([
+        "apiVersion: backstage.io/v1alpha1", "kind: System", "metadata:",
+        "  name: estate-internals", "  title: Internal agent records",
+        f"  description: {y('Per-session and per-worktree Claude ledger noise, set apart from the real estate surface so the catalogue speaks about what we run and own. Never a product: these are the agent\'s own scratch logs, recoverable but not first-class. Founder, 2026-09.')}",
+        "  tags:", "    - estate-internal",
+        *links_yaml(company_links("platform")),
+        "spec:", f"  owner: {OWNER}", "  domain: platform"]))
+    docs.append("\n".join([
         "apiVersion: backstage.io/v1alpha1", "kind: Group", "metadata:",
         "  name: platform", "  title: Platform",
         f"  description: {y('The team that owns every generated entity in this catalogue.')}",
@@ -1045,6 +1123,15 @@ def main() -> int:
         sysref = SYSTEM
         if k == "container" and r.get("project") and r.get("project") != "(none)":
             sysref = f"system:default/stack-{slug(r['project'])}"
+        elif k == "ledger" and is_ephemeral_ledger(r):
+            # Founder, 2026-09: "claude directives are polluting the catalogue ... a lesser
+            # section away from the rest". A per-session/per-worktree .claude log is not a
+            # product member: send it to the estate-internals System and tag it, so it stops
+            # making product-claude the catalogue's biggest "product" and renders in a lesser,
+            # recoverable group - never deleted. A durable op board stays on its product/estate
+            # System above.
+            sysref = ESTATE_INTERNALS_SYSTEM
+            tags.append("estate-internal")
         elif owner_repo:
             # crew#612 CP2: company -> product -> asset. An asset in no tracked repository
             # stays on the estate System, tagged outside-any-repo above.

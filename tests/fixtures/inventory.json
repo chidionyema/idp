@@ -81,6 +81,42 @@
    "root": "(outside)",
    "coupling": "none",
    "owner": "python3"
+  },
+  {
+   "kind": "ledger",
+   "id": "claude/directives/-Users-chidionyema-dev-code-idp-board",
+   "root": "(outside)",
+   "path": "/Users/chidionyema/.claude/directives/-Users-chidionyema-dev-code-idp-board.jsonl",
+   "rows": 3,
+   "referenced": true,
+   "coupling": "anthropic"
+  },
+  {
+   "kind": "ledger",
+   "id": "claude/state/prompt-ledger/dev",
+   "root": "(outside)",
+   "path": "/Users/chidionyema/.claude/state/prompt-ledger/dev.jsonl",
+   "rows": 4,
+   "referenced": true,
+   "coupling": "anthropic"
+  },
+  {
+   "kind": "ledger",
+   "id": "claude/state/hook-outcomes",
+   "root": "(outside)",
+   "path": "/Users/chidionyema/.claude/state/hook-outcomes.jsonl",
+   "rows": 500,
+   "referenced": true,
+   "coupling": "anthropic"
+  },
+  {
+   "kind": "ledger",
+   "id": "estate/knowledge/board/estate-board",
+   "root": "(outside)",
+   "path": "/Users/chidionyema/.estate/knowledge/board/estate-board.jsonl",
+   "rows": 100,
+   "referenced": true,
+   "coupling": "none"
   }
  ]
 }

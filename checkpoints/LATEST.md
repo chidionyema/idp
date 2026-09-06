@@ -23,3 +23,16 @@ Probe otto-answer-probe-29810160: bulk and verify lanes point at deepseek, which
 Assembling docs/inventory/otto-capabilities.md on branch docs/otto-capability-inventory from origin/main 4177b3a2. Inputs: scratchpad inv-board.md, inv-platform.md, plus otto/ and fork agent results. Next: commit, push, PR, comment crew#717/#768/#773.
 
 ## 2026-09-05T22:44Z inventory lane: PR #1901 open (05a87867), board told on crew#717/#768/#773. Next: merge on green; DeepSeek executes the spec under the crew#768 claim.
+
+## RESUME HERE (2026-09-06T02:40Z, session 102eafc6, sandbox door fix)
+
+Founder asked for a status report on shipped, WIP, local branches and DeepSeek WIP. While gathering it the
+live sandbox (launched 02:02Z, run 34005433636) answered 503: host admission refuses the mirrored pods
+(vcluster syncer log 02:31Z: demo-shop fails `validate-readOnlyRootFilesystem`, coredns fails
+`check-seccomp-strict`). Claimed on crew#805 (comment 5556369214). Fix lane: worktree
+scratchpad/wt-door, branch fix/sandbox-admission-denies-shop from origin/main; edit
+platform/sandbox/vcluster/helmrelease.yaml (shop container readOnlyRootFilesystem + emptyDir /tmp,
+`controlPlane.coredns.security.*` seccomp RuntimeDefault — chart keys confirmed from loft repo 0.36.1),
+extend tests/test_demo_sandbox_is_defined_and_expires.py, PR, then re-launch from the button.
+Then write the report (facts already gathered: idp merged #1918 #1924 #1926 #1937 #1941 #1942; open
+#1944 #1938; hermes-v2 #88 #89 green to merge, #90 delete; 454 local idp branches).

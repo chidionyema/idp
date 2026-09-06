@@ -73,3 +73,10 @@ styles/Microsoft/
 
 # migrate-domain keeps a resumable state file here, per run (crew#838 CP1).
 .migration/
+
+/.crew/
+/.crew
+!.crew/artifacts/
+!.crew/graphs/
+!.crew/artifacts/.gitkeep
+!.crew/graphs/.gitkeep
