@@ -379,6 +379,10 @@ describe('EstateHome', () => {
     // a plain door is still a door, not a screen
     expect(screen.queryByTestId('screen-github')).toBeNull();
     expect(screen.getByTestId('surface-github')).toBeInTheDocument();
+    // directive 4: the door row carries live estate evidence of when it was last health-checked,
+    // beyond a bare button; the github door was checked at fixture-now, so a recency line is on.
+    expect(screen.getByTestId('health-github')).toBeInTheDocument();
+    expect(screen.getByTestId('age-github')).toHaveTextContent(/^checked /);
     // the count of everything we hold, by what it is, and each chip lists them
     expect(screen.getByTestId('band-everything')).toHaveTextContent(
       'We hold 7 things.',
