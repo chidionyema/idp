@@ -21,8 +21,10 @@
 //
 // The ACL rules are what remains of "locked down by identity", and they are exact:
 //   - `tag:k8s` (the operator's egress proxies and the hermes-agent sidecar; tagOwners below) may
-//     reach the Mac on 22 (mac-run, sshd) and 5900 (Guacamole's VNC egress,
-//     platform/guacamole/mac-egress.yaml) and nothing else.
+//     reach the Mac on 22 (mac-run, sshd), 5900 (Guacamole's VNC egress,
+//     platform/guacamole/mac-egress.yaml) and 47989/47990 (the portal's "Pair my phone"
+//     relay to Sunshine on the Mac, platform/backstage/overlays/oke/sunshine-egress.yaml) and
+//     nothing else.
 //   - `group:founder` (his login, and only his) may reach the Mac on any port: the iOS Shortcut's
 //     `caffeinate` over 22, Moonlight to Sunshine on 47984-48010, screen sharing. His untagged
 //     devices also reach each other (`autogroup:self`, kb/1337: "devices where the same user is
@@ -63,7 +65,8 @@
   },
   "acls": [
     {"action": "accept", "src": ["tag:k8s"],
-     "dst":    ["tag:founder-mac:22", "tag:founder-mac:5900"]},
+     "dst":    ["tag:founder-mac:22", "tag:founder-mac:5900",
+                "tag:founder-mac:47989", "tag:founder-mac:47990"]},
     {"action": "accept", "src": ["group:founder"],
      "dst":    ["tag:founder-mac:*", "autogroup:self:*"]},
     // His phone reads the cluster through the bridge, and only the one port the bridge serves.
