@@ -477,6 +477,9 @@ tenant_split_gate() { python3 "$IDP/bin/idp-tenant-split" "$1" >/dev/null 2>&1; 
 # bin/idp-fence-enforcement. Very deliberately NOT a no-argument gate: it takes ONE fixture path so
 # the rung below can prove it both ways in a single run, exactly like tenant_split_gate above.
 fence_enforcement_gate() { python3 "$IDP/bin/idp-fence-enforcement" "$1" >/dev/null 2>&1; }
+# platform/calico README cutover (work order item 0): parses ONE calico-packet deny feed with
+# bin/idp-calico-deny-log. Takes one fixture path so the rung can prove it both ways in one run.
+calico_denyflow_gate() { python3 "$IDP/bin/idp-calico-deny-log" "$1" >/dev/null 2>&1; }
 defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
 # 6a. main's verdict, against the live workflows rather than the fixtures (crew#865). On 2026-09-05
 #     nine of twelve ci runs on main were cancelled by the commit after them, so the one branch the
@@ -519,6 +522,18 @@ if fence_enforcement_gate "$IDP/tests/fixtures/fence-drill/gate-good.json" \
   say "ok    fencdrill fence-enforcement drops a denied packet, fails closed when the probe could not run"
 else
   say "FAIL  fencdrill fence-enforcement cannot tell a dropped packet from a leak or a dead probe (ZT step 1)"; fail=1
+fi
+
+# 6d. platform/calico cutover gate (work order item 0): the 39 generated policies stay unwired
+#     until a deny feed has been read over a full cycle and allowances.yaml corrected. Proved two
+#     ways in one run: a feed that carries real calico-packet deny lines must parse into flows
+#     (PASS), while a feed with no parsed deny line must FAIL closed -- an empty or foreign log is
+#     not evidence of a clean bill.
+if calico_denyflow_gate "$IDP/tests/fixtures/calico-denyflow/feed-with-deny.log" \
+   && ! calico_denyflow_gate "$IDP/tests/fixtures/calico-denyflow/feed-no-evidence.log"; then
+  say "ok    denyflow calico deny-feed parses into flows; an empty feed fails closed (README cutover)"
+else
+  say "FAIL  denyflow calico deny-feed cannot tell a denied flow from no evidence (platform/calico README)"; fail=1
 fi
 
 # 6b. The namespace fence, against the estate rather than against its own fixtures (crew#839).
