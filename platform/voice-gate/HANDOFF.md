@@ -180,3 +180,22 @@ by the earlier commits below; items 5-6 primitives added oracle locks this sessi
 
 Policy source of truth stays one: `voice-policy.yaml` here is byte-identical to
 `prospector/prospector/voice_policy.yaml`.
+
+### Four acceptance greens, re-verified this session (2026-09-06)
+
+Read from the receipts on disk, run today, not quoted from a commit:
+
+    store/voice_gate/conformance-diff.json    {"leaves":1758,"diffs":[],"ok":true}
+    store/voice_gate/conformance-fuzz.json    {"cases":2000,"mismatch_count":0,"ok":true}
+    store/voice_gate/conformance-golden.json  {"rows":17,"agreement":1.0,"ok":true}
+    cargo test (this directory)               35 passed; 0 failed (run, not asserted)
+
+What the harness grades — a scoping fact that governs item 5b: `voice_gate_conformance.py`
+compares only the deny lane (`findings_for` / register_lint lexicons over `evidence-export`
+leaves). It has NO grammar/copy_lint mode, and no grammar output enters any diff. So item 5b
+(a Rust harper shell-out) has no oracle or receipt that could prove parity until the item-7
+wiring decides whether grammar joins the graded lane at all — the Python half itself treats
+harper as a self-described debug tool, fail-open and advisory (`copy_lint.py:385`,
+`grammar_check_unavailable`). Building an un-read harper mirror now would be an instrument
+nobody reads (LAW 28) with no empirical signal to converge (empirical-proof rule). Its port
+belongs to the item 7/8 decision, with harper already installed at `/usr/local/bin/harper-cli`.
