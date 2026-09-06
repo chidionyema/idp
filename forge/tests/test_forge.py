@@ -141,3 +141,54 @@ def test_dataset_items_round_trip_the_export_shape_and_upsert_ids():
     assert items[1]["metadata"]["why"] == "unsure"
     assert items[0]["id"] == teacher.item_id("t", "a") != teacher.item_id("u", "a")
     assert teacher.dataset_items("t", rows, rejected) == items
+
+
+def test_experiment_record_front_matter_parses_to_the_run():
+    import experiment_record as er
+
+    task = yaml.safe_load((Path(__file__).parents[1] / "task.yaml").read_text())
+    run = {
+        "task": task["task"],
+        "dry_run": False,
+        "max_steps": -1,
+        "gpu": "T4",
+        "seconds": 321,
+        "trace": "tr_1",
+        "artifact": None,
+        "verdict": "refused",
+        "eval": {
+            "held_out": 100,
+            "agreement": 0.91,
+            "abstain_rate": 0.05,
+            "verdict": "refused",
+            "refusal": "held-out agreement 0.9100 below 0.95",
+        },
+        "dataset": {
+            "rows": 500,
+            "train": 400,
+            "eval": 100,
+            "sha256": "ab" * 32,
+            "langfuse_dataset": task["task"],
+        },
+    }
+    data = [{"input": "x", "output": "1", "split": "train", "teacher": "default"}] * 3
+    ctx = {
+        "stamp": "20260906T1200Z",
+        "sha": "deadbeef",
+        "run_url": None,
+        "langfuse_host": "https://lf.example",
+        "task_path": "forge/task.yaml",
+        "data_path": None,
+    }
+    md = er.render(task, run, data, ctx)
+    front = yaml.safe_load(md.split("---")[1])
+    assert front["verdict"] == "refused"
+    assert front["agreement"] == pytest.approx(0.91)
+    assert front["dataset_sha256"] == "ab" * 32
+    assert front["experiment"] == f"20260906T1200Z-{task['task']}"
+    assert er.data_summary(data) == {
+        "per_label": {"1": 3},
+        "teachers": ["default"],
+        "splits": {"train": 3},
+    }
+    assert er.half_width(0.95, 100) == pytest.approx(0.0427, abs=1e-3)
