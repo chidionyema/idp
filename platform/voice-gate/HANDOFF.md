@@ -157,3 +157,26 @@ Python path becomes the oracle used only by the harness, and it is one engine.
 
 Specs: `~/dev/code/prospector-main/specs/voice-gate-2026-09-06.md` and
 `specs/voice-gate-execution-2026-09-06.md`, both on that repo's `main`.
+
+---
+
+## Milestone status (2026-09-06, recorded per objective), branch `fix/cyrus-webhook-routes`
+
+Up to date: `cargo test` runs 35 tests green in this directory today. Items 1-4 were closed
+by the earlier commits below; items 5-6 primitives added oracle locks this session.
+
+| item | state | evidence (commit/worktree) |
+|---|---|---|
+| 1 receipts | done | `store/voice_gate/conformance-{diff,fuzz,golden}.json` (prospector) |
+| 2 phrase compiler + span shrink | done | `638b452c` |
+| 3 lexicons into policy, diff empty | done | `256eee16`,`9e7168b7`,`4abc6a28`,`82a71bfb` (1758 leaves, diff & fuzz empty) |
+| 4 golden.jsonl live | done | `prospector/prospector/voice_gate/golden.jsonl` |
+| 5a prose_target bands | done, ORACLE-EQUAL | `0b929ead` (`house_measure.rs` + `tests/house_measure.rs`, fixtures measured by Python) |
+| 5b harper `check_grammar` shell-out | NOT BUILT - deferred. Grammar lane has no live grader until item 7 wiring; a faithful un-wired wrapper is an instrument nobody reads (LAW 28). Harper is installed (`/usr/local/bin/harper-cli`) so it is buildable on the item-7 decision. |
+| 6 splitting + orphan-open-quote | done, ORACLE-EQUAL | `de026d5b` (`split_sentences` locked word-for-word over 24 python sentences in `tests/sentence_split.rs`; `orphan_openers` locked to 13; both lookbehind-free) |
+| 7 platform wiring | not started (catalogue entity, gate ownership, namespace fence, collector telemetry, bind decision) |
+| 8 cutover | not started |
+| semantic tier2 | not started, as decided |
+
+Policy source of truth stays one: `voice-policy.yaml` here is byte-identical to
+`prospector/prospector/voice_policy.yaml`.
