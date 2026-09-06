@@ -39,7 +39,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: otto-memory-store-4
+  name: otto-memory-store-5
   namespace: otto-gateway
   labels:
     app.kubernetes.io/name: otto-memory-store
@@ -52,7 +52,7 @@ metadata:
     # image bump of this kustomization. Without this, the second bump after the Job
     # was created fails the dry run and holds every other object in the namespace,
     # the gateway Deployment included, on the old image (2026-09-05: main-84 sat
-    # unapplied behind otto-memory-store-4). Force tells Flux to delete and recreate
+    # unapplied behind otto-memory-store-5). Force tells Flux to delete and recreate
     # the Job instead; the run is idempotent (it skips rows it has already written),
     # so a recreate costs one pass over rows that are already there.
     kustomize.toolkit.fluxcd.io/force: enabled
