@@ -28,10 +28,11 @@ import {
 } from '../theme/tokens';
 import {
   LayerState,
+  Counts,
   ago,
   count,
-  doorState,
-  entityPath,
+  dominantState,
+  doorState,  entityPath,
   hasNoAddress,
   isScreen,
   isKubernetes,
@@ -76,6 +77,43 @@ export type { Health } from './estate';
 
 const useStyles = makeStyles(theme => ({
   wrap: { display: 'flex', flexDirection: 'column', gap: theme.spacing(3) },
+  // The dominant state leader (directive 1): a full-width strip tinted by the worst present
+  // state, read from across the room. Background/ink/edge come in as inline style from the
+  // state tint; this class only sets the strip's layout and type scale.
+  dominant: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1.5),
+    flexWrap: 'wrap',
+    border: `1px solid`,
+    borderRadius: 14,
+    padding: theme.spacing(2),
+  },
+  dominantWord: {
+    fontSize: 'clamp(28px, 6vw, 44px)',
+    fontWeight: 800,
+    lineHeight: 1,
+    letterSpacing: '-0.02em',
+  },
+  dominantText: {
+    fontSize: 'clamp(15px, 2.4vw, 19px)',
+    fontWeight: 500,
+    lineHeight: 1.35,
+    minWidth: 0,
+    flex: '1 1 220px',
+  },
+  // The one-sentence role a band plays (directive 3): an eyebrow under the heading that says,
+  // in the estate's plain voice, what kind of thing its members are. Screens, Kubernetes
+  // tooling and the Sign-in pages each carry the same role line, so a reader sees the tag-split
+  // as one kind of thing (pages you open) rather than three unrelated bands.
+  hRole: {
+    display: 'block',
+    fontSize: 13,
+    fontWeight: 600,
+    letterSpacing: '0.02em',
+    textTransform: 'uppercase',
+    color: theme.palette.text.secondary,
+  },
   // The verdict is a sentence, never a bare number beside a word. The title and the lead
   // above it are the shared page shell's (modules/shell), the same on every page.
   verdict: {
@@ -692,6 +730,46 @@ const LiveChip = ({ estate }: { estate: Estate }) => {
   );
 };
 
+/**
+ * The dominant state leader (directive 1): the worst present state, said as the one word and
+ * the verdict sentence in a full-width strip tinted by that state, above the verdict text. A
+ * founder should read the estate's condition from across the room, not from a 17px sentence.
+ * The strip is graded by its data-state/word, never colour-only (estate WCAG discipline), and
+ * the visible text is the whole verdict sentence, so no bare number-with-word rule is broken.
+ */
+const DominantMark = ({
+  counts,
+  total,
+}: {
+  counts: Counts;
+  total: number;
+}) => {
+  const classes = useStyles();
+  const dominant = dominantState(counts);
+  const tint = useTint()[dominant];
+  return (
+    <div
+      className={classes.dominant}
+      data-testid="dominant"
+      data-state={dominant}
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      style={{
+        color: tint.ink,
+        background: tint.bg,
+        borderColor: tint.edge,
+      }}
+    >
+      <Dot state={dominant} />
+      <span className={classes.dominantWord}>{STATE_WORD[dominant]}</span>
+      <span className={classes.dominantText}>
+        {total <= 0 ? verdict(counts, total) : verdictSentence(counts, total)}
+      </span>
+    </div>
+  );
+};
+
 const Loading = () => {
   const classes = useStyles();
   const Bone = ({ height }: { height: number }) => (
@@ -862,6 +940,7 @@ const Ready = ({ estate }: { estate: Estate }) => {
 
   return (
     <div className={classes.wrap}>
+      <DominantMark counts={counts} total={all.length} />
       <p
         className={classes.verdict}
         data-testid="verdict"
@@ -933,7 +1012,12 @@ const Ready = ({ estate }: { estate: Estate }) => {
       >
         <h2 className={classes.h}>
           <SectionIcon section="screens" />
-          {SECTIONS.screens.title}
+          <span>{SECTIONS.screens.title}</span>
+          {SECTIONS.screens.role && (
+            <span className={classes.hRole} role="doc-subtitle">
+              {SECTIONS.screens.role}
+            </span>
+          )}
           <span className={classes.hCount}>
             {screens.length === allScreens.length
               ? `${screens.length}`
@@ -961,7 +1045,12 @@ const Ready = ({ estate }: { estate: Estate }) => {
       >
         <h2 className={classes.h}>
           <SectionIcon section="kubernetes" />
-          {SECTIONS.kubernetes.title}
+          <span>{SECTIONS.kubernetes.title}</span>
+          {SECTIONS.kubernetes.role && (
+            <span className={classes.hRole} role="doc-subtitle">
+              {SECTIONS.kubernetes.role}
+            </span>
+          )}
           <span className={classes.hCount}>
             {kube.length === allKube.length
               ? `${kube.length}`
@@ -1071,7 +1160,12 @@ const Ready = ({ estate }: { estate: Estate }) => {
       <section className={classes.section} data-testid="band-doors">
         <h2 className={classes.h}>
           <SectionIcon section="doors" />
-          {SECTIONS.doors.title}
+          <span>{SECTIONS.doors.title}</span>
+          {SECTIONS.doors.role && (
+            <span className={classes.hRole} role="doc-subtitle">
+              {SECTIONS.doors.role}
+            </span>
+          )}
           <span className={classes.hCount}>
             {doors.length === estate.doors.length
               ? `${estate.doors.length}`

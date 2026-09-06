@@ -150,7 +150,7 @@ export const STATE_MEANING: Record<State, StateMeaning> = {
   },
 };
 
-export type SectionWords = { title: string; blurb: string };
+export type SectionWords = { title: string; blurb: string; role?: string };
 
 export const SECTIONS: {
   screens: SectionWords;
@@ -162,11 +162,13 @@ export const SECTIONS: {
 } = {
   screens: {
     title: 'Screens',
+    role: 'Pages you open',
     blurb:
       'The screens you open and sign in to, each in a new tab, already knowing who you are. A grey one runs but has no address yet.',
   },
   kubernetes: {
     title: 'Kubernetes tooling',
+    role: 'Pages you open',
     blurb:
       'Every tool that runs the cluster underneath everything: what deploys, routes, scales, secures and watches it. A grey one is running, but has no screen or no address yet; its manifest is the truth.',
   },
@@ -182,6 +184,7 @@ export const SECTIONS: {
   },
   doors: {
     title: 'Sign-in pages',
+    role: 'Pages you open',
     blurb:
       'The places you sign in to; choose one and it opens in a new tab, already knowing who you are.',
   },

@@ -231,6 +231,19 @@ export const verdict = (c: Counts, total: number): string => {
   return `Everything we run is good. ${total} services checked.`;
 };
 
+/**
+ * The one state the page should dominate as its headline mark: the worst present state in
+ * STATE_ORDER (red > needs > stale > blind > running), else `good` when every checked item is
+ * good. Mirrors the worst-first precedence verdict() and verdictSentence() already use, so the
+ * mark and the sentence can never disagree about which state leads (directive 1).
+ */
+export const dominantState = (c: Counts): State => {
+  for (const s of STATE_ORDER) {
+    if ((c?.[s] ?? 0) > 0) return s;
+  }
+  return 'good';
+};
+
 export const templatePath = (t: Entity): string =>
   `/create/templates/${t.metadata.namespace ?? 'default'}/${t.metadata.name}`;
 
