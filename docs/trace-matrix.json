@@ -77,6 +77,116 @@
   "ticket": "crew#284"
  },
  {
+  "feature": "features/portal-product/cp1-showcase-live.feature",
+  "title": "the showcase page reads live state, never a markdown file",
+  "scenarios": [
+   "the showcase page answers with data read on this load, not a stored file",
+   "every system on the showcase page carries a live health value",
+   "the five Otto capabilities are read from their proof file, not retyped"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318d",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
+  "feature": "features/portal-product/cp2-sandbox-launch-countdown.feature",
+  "title": "a person launches the buyer sandbox from the showcase page, and watches it expire",
+  "scenarios": [
+   "the launch button dispatches the documented command, unchanged",
+   "the countdown reflects the Kustomization's own TTL label",
+   "after expiry the showcase page shows the sandbox is gone, not stale",
+   "no new agent capability is created"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318d",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
+  "feature": "features/portal-product/cp3-vendor-proxies.feature",
+  "title": "the vendor dashboards show one live fact on the card, not only a link",
+  "scenarios": [
+   "a Langfuse proxy exists and answers",
+   "a SigNoz proxy exists and answers",
+   "a Superset proxy exists and answers",
+   "a proxy failure is shown, not hidden"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318d",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
+  "feature": "features/portal-product/cp4-platform-layer-card.feature",
+  "title": "every platform layer's entity page draws its own live state",
+  "scenarios": [
+   "the layer card is one component reused by every platform layer",
+   "the layer card's Ready state matches the cluster, not the manifest",
+   "adding the card to one layer adds it to all"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318d",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
+  "feature": "features/portal-product/cp5-no-link-only-founder-surfaces.feature",
+  "title": "no founder-surface entity ships with zero live content",
+  "scenarios": [
+   "every founder-surface entity carries a kubernetes-label-selector",
+   "the previously link-only entities render the layer card"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318d",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
+  "feature": "features/portal-product/cp6-agent-door-status-pill.feature",
+  "title": "the agent doors show a live status pill, not a manifest link",
+  "scenarios": [
+   "the Otto door's pill reflects its own healthz answer",
+   "the MCP gateway's pill is read through a proxy, never a hardcoded host"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318d",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
+  "feature": "features/portal-product/cp7-drills-and-board-live-counts.feature",
+  "title": "drills and the crew board show live counts, not bare links",
+  "scenarios": [
+   "the drills card shows the last verdict per drill",
+   "the crew board card shows live issue counts"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318d",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
+  "feature": "features/portal-product/cp8-screenshot-evidence-in-login-drill.feature",
+  "title": "the hourly login drill is the standing screenshot evidence for this spec",
+  "scenarios": [
+   "the scheduled login drill captures the showcase, tools and ops pages",
+   "a red login drill is a red Demo gate"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318d",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
   "feature": "features/sovereign-bus/cp10_dual_read.feature",
   "title": "Dual-read router \u2014 every read runs twice, legacy and DAG, and is compared",
   "scenarios": [
