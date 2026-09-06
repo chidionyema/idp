@@ -393,7 +393,7 @@ LAYERS = {
 
 
 # Layers launched by hand, on purpose, so they never sit in clusters/<cluster>/*.yaml: the buyer
-# sandbox is created imperatively by the founder (docs/runbooks/demo-sandbox.md) and reaped on a
+# sandbox is launched by the founder's portal button (docs/runbooks/demo-sandbox.md) and reaped on a
 # one-hour timer. The catalogue still records it -- the launch stamps exactly the label the
 # selector below matches, so the page lights up while the sandbox lives and reads empty after.
 IMPERATIVE = [

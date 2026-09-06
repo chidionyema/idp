@@ -56,6 +56,15 @@ waivers:
       second one does not serve, it waits. What a lost webhook costs is latency, not delivery,
       because the GitRepository still polls every minute underneath it.
     issue: chidionyema/idp#544
+  - surface: demo-sandbox/demo-shop-x-demo-x-demo-sandbox
+    reason: >-
+      The shop is a Service vCluster mirrors onto the host at runtime from the seeded
+      Deployment in platform/sandbox/vcluster/helmrelease.yaml, so no kustomization this gate
+      scans renders it; the seed itself is graded by
+      tests/test_demo_sandbox_is_defined_and_expires.py. A replica count is the wrong lever
+      regardless: the sandbox is a one-hour throwaway whose deletion on schedule is the
+      product, and the backend exists only while a launch holds it.
+    issue: chidionyema/crew#805
 
 
 # ## front_doors

@@ -365,6 +365,57 @@ def _oauth2_proxy_in_front(state: dict) -> None:
                 f"{p}: annotated webhook-hmac-signature but external-secret.yaml pulls no signing secret"
             )
             continue
+        if auth == "public-demo-page":
+            # The buyer sandbox's shop (crew#805 tier 3): a buyer's engineer has no estate
+            # login, so the demo door cannot sit behind one. Public is correct only while
+            # there is nothing behind the door to protect, and that claim is checked, not
+            # trusted: the route must be exactly the seeded shop (the demo-sandbox area, the
+            # one catch-all match, the vCluster mirror backend), and the seed it points at
+            # must hold no credentials -- no env on its containers, no Secret in the seed,
+            # every volume the page ConfigMap.
+            assert d["metadata"]["namespace"] == "demo-sandbox", (
+                f"{p}: public-demo-page outside the sandbox area"
+            )
+            assert d["spec"]["hostnames"] == ["sandbox.${ESTATE_ZONE}"], (
+                f"{p}: public-demo-page on {d['spec']['hostnames']}"
+            )
+            matches = [m for r in d["spec"]["rules"] for m in r.get("matches", [])]
+            backends = [b for r in d["spec"]["rules"] for b in r.get("backendRefs", [])]
+            assert matches == [{"path": {"type": "PathPrefix", "value": "/"}}], (
+                f"{p}: public-demo-page matches {matches}"
+            )
+            assert backends == [
+                {"name": "demo-shop-x-demo-x-demo-sandbox", "port": 8080}
+            ], f"{p}: public-demo-page serves {backends}"
+            hr = next(
+                doc
+                for doc in yaml.safe_load_all(
+                    (PLATFORM / "sandbox/vcluster/helmrelease.yaml").read_text()
+                )
+                if doc and doc.get("kind") == "HelmRelease"
+            )
+            seed = [
+                doc
+                for doc in yaml.safe_load_all(
+                    hr["spec"]["values"]["experimental"]["deploy"]["vcluster"][
+                        "manifests"
+                    ]
+                )
+                if doc
+            ]
+            assert not [doc for doc in seed if doc["kind"] == "Secret"], (
+                f"{p}: the seeded shop holds a Secret"
+            )
+            (shop,) = [doc for doc in seed if doc["kind"] == "Deployment"]
+            pod = shop["spec"]["template"]["spec"]
+            for c in pod["containers"]:
+                assert "env" not in c and "envFrom" not in c, (
+                    f"{p}: seeded shop container {c['name']} takes env"
+                )
+            assert all(set(v) == {"name", "configMap"} for v in pod["volumes"]), (
+                f"{p}: seeded shop mounts {pod['volumes']}"
+            )
+            continue
         assert auth == "bearer-master-key", (
             f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs}) and no idp.estate/auth annotation"
         )

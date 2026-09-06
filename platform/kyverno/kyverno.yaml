@@ -57,24 +57,12 @@ spec:
             memory: 128Mi
     backgroundController:
       enabled: false
-    # The cleanup controller is the sandbox clock (crew#805 tier 3): the buyer sandbox's
-    # launch row carries the label cleanup.kyverno.io/ttl and this controller deletes that
-    # row on schedule, which makes the sandbox expire. Readers (LAW 28):
-    # tests/test_demo_sandbox_is_defined_and_expires.py, docs/runbooks/demo-sandbox.md.
+    # The cleanup controller stays on for time-to-live labels on ordinary objects. It is no longer
+    # the buyer sandbox's clock: since 2026-09-06 the sandbox row comes from branch sandbox/launch
+    # through Flux (clusters/oke/sandbox.yaml), and a row Flux owns would be recreated a minute
+    # after this controller deleted it. The launch workflow's sweep is the clock instead.
     cleanupController:
       enabled: true
-      rbac:
-        clusterRole:
-          # The reaper may delete exactly one extra kind: the Flux row the sandbox rides on.
-          extraResources:
-            - apiGroups:
-                - kustomize.toolkit.fluxcd.io
-              resources:
-                - kustomizations
-              verbs:
-                - list
-                - watch
-                - delete
     reportsController:
       enabled: false
     features:

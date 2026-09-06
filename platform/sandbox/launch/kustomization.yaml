@@ -1,0 +1,13 @@
+# Applied by clusters/oke/sandbox.yaml. Two kinds of rows stand here. The moving lane: the
+# source tracks branch sandbox/launch of this repository and the live row applies that
+# branch's content, written only by the founder's button (.github/workflows/demo-sandbox.yml);
+# a person launches, agents never deploy. The standing pieces: the sandbox's namespace and the
+# shop's front door (httproute.yaml), which must exist before the first sandbox and between
+# sandboxes — the certificate and the address cannot wait on the thing they let in.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - httproute.yaml
+  - gitrepository.yaml
+  - live.yaml

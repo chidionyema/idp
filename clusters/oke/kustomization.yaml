@@ -24,6 +24,7 @@ resources:
   - human-vault.yaml
   - image-automation.yaml
   - platform.yaml
+  - sandbox.yaml
   - secrets.yaml
   - verification.yaml
 patches:

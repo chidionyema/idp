@@ -1,0 +1,43 @@
+# The sandbox's front door (founder 2026-09-05: "need the sandbox accessible"). STANDING, on
+# purpose: it lives here in the launch lane, which the estate always applies, and not with the
+# sandbox it serves. Two reasons. One, the certificate: the prospector edge's one Secret is
+# ordered from every listener hostname on the Gateway, and a Let's Encrypt renewal re-validates
+# every name on it. external-dns publishes only from routes that exist (sources:
+# gateway-httproute), so a route pruned with the sandbox would leave sandbox.<zone> without DNS
+# between sandboxes, and a renewal landing then would fail the whole estate's certificate —
+# crew#684's lesson, that listener hostnames and their routes stand together. Two, the demo:
+# the route's backend is the Service vCluster mirrors onto the host while a sandbox lives
+# (demo-shop-x-demo-x-demo-sandbox, named from the seeded Service in
+# platform/sandbox/vcluster/helmrelease.yaml). Between sandboxes that backend does not exist and
+# the edge answers 503; while one lives the same standing route serves the shop with no DNS or
+# certificate work per launch. cert-manager's HTTP-01 solver route carries the more specific
+# /.well-known/acme-challenge path, so a challenge always wins over this route's catch-all.
+# The listener https-sandbox lives with the Gateway in the prospector repository
+# (deploy/k8s/base/edge.yaml), the same way otto and hc got theirs.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: demo-shop
+  namespace: demo-sandbox
+  labels:
+    backstage.io/kubernetes-id: demo-sandbox
+  annotations:
+    # A buyer's engineer has no estate login, so this door is public by design. The label is
+    # not the proof: sovereign/tests/bdd/test_gate_front_door_login.py re-checks the route's
+    # shape and the seed it serves (no env, no Secret, the page ConfigMap only) on every run.
+    idp.estate/auth: public-demo-page
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-sandbox
+  hostnames:
+    - "sandbox.${ESTATE_ZONE}"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: demo-shop-x-demo-x-demo-sandbox
+          port: 8080

@@ -1,0 +1,36 @@
+# What the sandbox may talk to. The namespace fence generator (bin/idp-ns-fence-gen) closes every
+# live namespace both ways once it exists; these two openings are declared with the sandbox so the
+# fence never cuts the door or the control plane off mid-demo. Ingress: only the edge, only the
+# shop's port. Egress: the host API server, which the sandbox control plane must reach to mirror
+# its Services and Pods onto the host; nothing else, and the fence's DNS exception covers names.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-edge
+  namespace: demo-sandbox
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: edge
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-host-api
+  namespace: demo-sandbox
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443

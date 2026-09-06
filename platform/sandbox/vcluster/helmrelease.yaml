@@ -140,6 +140,50 @@ spec:
                           memory: 64Mi
                         limits:
                           memory: 128Mi
+                      volumeMounts:
+                        - name: page
+                          mountPath: /usr/share/nginx/html
+                          readOnly: true
+                  volumes:
+                    - name: page
+                      configMap:
+                        name: demo-shop-page
+            ---
+            # The page a buyer's engineer sees at sandbox.<zone>: served from inside the sandbox,
+            # by a container that did not exist a minute before, and dated with the hold the
+            # founder chose. The two ${...} values are filled by the launch row's postBuild
+            # (.github/workflows/demo-sandbox.yml writes them), never typed here.
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: demo-shop-page
+              namespace: demo
+            data:
+              index.html: |
+                <!doctype html>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>Your sandbox is alive</title>
+                <style>
+                  body { font: 18px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1.5rem; color: #1b1b1b; }
+                  h1 { font-size: 2.2rem; margin-bottom: .25rem; }
+                  .clock { font-size: 3rem; font-variant-numeric: tabular-nums; margin: 1rem 0; }
+                  small { color: #555; }
+                </style>
+                <h1>Your sandbox is alive</h1>
+                <p>This page is served by a container inside a cluster of your own. It did not exist before you pressed the button, and it will be removed on schedule, leaving nothing behind.</p>
+                <p class="clock" id="left">counting</p>
+                <p>Hold: ${SANDBOX_HOLD}. Expires at <span id="at">${SANDBOX_EXPIRES_AT}</span>.</p>
+                <p><small>A sandbox is a real Kubernetes control plane running inside the estate's cluster, bounded to a quarter of one processor core, with no storage and no way out. Deploy into it, break it, and watch it go.</small></p>
+                <script>
+                  const at = new Date(document.getElementById('at').textContent);
+                  const el = document.getElementById('left');
+                  const tick = () => {
+                    const s = Math.max(0, Math.floor((at - Date.now()) / 1000));
+                    el.textContent = s > 0 ? String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0') + ' left' : 'gone';
+                  };
+                  tick(); setInterval(tick, 1000);
+                </script>
             ---
             apiVersion: v1
             kind: Service
@@ -152,5 +196,5 @@ spec:
               selector:
                 app: demo-shop
               ports:
-                - port: 80
+                - port: 8080
                   targetPort: 8080
