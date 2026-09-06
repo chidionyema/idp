@@ -1359,25 +1359,31 @@ spec:
   wait: true
   timeout: 10m
 ---
-# The estate's network policy enforcement layer (crew#839). This row is LIVE -- it carries no
-# suspend field, and has not since it merged in 0c0075b0.
+# The estate's network policy enforcement layer (crew#839). This row REPLACED the datapath in
+# the original cutover plan, and lived without a suspend field from 0c0075b0. As of 2026-09-06
+# (Road B, founder-approved) the tigera-operator route is being rolled back: the operator auto-
+# enabled typha + a policy/tsu tiers stack that is waste on a 2-node estate and cannot reach
+# Ready, and there is no supported operator switch to zero typha. Road B replaces the operator
+# with the plain non-operator flannel->calico migration (calico-node in kube-system,
+# DATASTORE_TYPE=kubernetes, no typha, no tiers).
 #
-# Before it, nothing in this cluster enforced NetworkPolicy: the CNI was flannel, which routes pods
-# and does not read policy objects, so the policies already in git had never denied a packet.
-# Oracle refuses the policy-only-beside-flannel arrangement in writing, so this row REPLACES the
-# datapath.
+# This row is therefore SUSPENDED for the duration of the operator teardown. Suspending is the
+# non-destructive stopper bin/idp-oke-break-glass tigera-reset guards on: while suspended, Flux
+# leaves the existing operator objects in place but stops converging ./platform/calico, so a
+# teardown run cannot race a reconcile that re-creates what it removes. The flannel add-on is
+# untouched and remains the live datapath throughout; nothing is disabled until ns-fence-gate
+# --live returns a clean line after raw Calico is up. Re-suspend false and re-point ./platform/
+# calico at the raw migration only after the teardown is proven.
 #
-# Calico is installed FIRST, while flannel is still routing. The order in Oracle's page --
-# remove flannel, then apply Calico -- deadlocks here: `tigera-operator` is an ordinary pod, so
-# with no CNI configuration on the node it can never start, and nothing would ever install the
-# replacement. calico-node runs on the host network and does not have that problem. So this row
-# is live, and the second half of the cutover is the one step Flux cannot take: disabling
-# Oracle's flannel add-on, which is what stops its controller putting flannel back.
+# Earlier history, preserved: Before calico, nothing in this cluster enforced NetworkPolicy; the
+# CNI was flannel, which routes pods and does not read policy objects. Oracle refuses the
+# policy-only-beside-flannel arrangement in writing. The installation-ordering deadlock that
+# motivated operator-first (tigera-operator is an ordinary pod and cannot start with no CNI):
+# Road B's flannel->calico migration controller does the reverse (calico under flannel, then a
+# rolling node swap) which is why it needs flannel up when it runs.
 #
-# `wait: false` deliberately: the health of this row is the cluster's own network, and a
-# Kustomization that blocks waiting for the network it is installing has nothing left to report
-# through. `bin/ns-fence-gate --live` is the receipt instead -- it refuses to report a pass while
-# no CNI enforces policy, so a clean line from it means the cutover worked.
+# `wait: false` kept: the health of this row is the cluster's own network, and bin/ns-fence-gate
+# --live is the receipt -- it refuses to report a pass while no CNI enforces policy.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -1389,6 +1395,7 @@ spec:
     kind: GitRepository
     name: flux-system
   path: ./platform/calico
+  suspend: true
   prune: false
   wait: false
   timeout: 15m
