@@ -80,6 +80,19 @@ const investigatePage = PageBlueprint.make({
   },
 });
 
+// /showcase (docs/specs/backstage-as-a-product.md CP1, founder 2026-09-05: "showcase needs to
+// wow and impress"): the page a buyer's engineer opens first. The graded estate bar off the state
+// branch, every system's health drawn live from the cluster, and what Otto does on the door today
+// with a receipt per line. Listed as a founder surface in backstage/founder/catalog-info.yaml so
+// the crew#401 gate and the login drill carry it.
+const showcasePage = PageBlueprint.make({
+  name: 'showcase',
+  params: {
+    path: '/showcase',
+    loader: () => import('./Showcase').then(m => <m.Showcase />),
+  },
+});
+
 export const homeModule = createFrontendModule({
   pluginId: 'home',
   extensions: [
@@ -90,5 +103,6 @@ export const homeModule = createFrontendModule({
     opsPage,
     reportsPage,
     investigatePage,
+    showcasePage,
   ],
 });
