@@ -224,3 +224,37 @@ never prose (R76); `bin/idp-ci` green.
 - Unsloth Qwen3 fine-tune and GGUF export: [Qwen3 — How to Run & Fine-tune | Unsloth](https://unsloth.ai/docs/models/tutorials/qwen3-how-to-run-and-fine-tune),
   [unsloth/Qwen3-0.6B-GGUF](https://huggingface.co/unsloth/Qwen3-0.6B-GGUF),
   [unslothai/unsloth](https://github.com/unslothai/unsloth).
+
+## 10. Scale: twenty models a day
+
+The GPU is not the limit; examples and evaluation are. Each stage is sized here.
+
+| Stage | Limit | How it scales | Proof |
+|---|---|---|---|
+| Datasets | 500 labelled examples per task, minimum | Teacher arbitrage (section 11) labels from traces already paid for; abstains become the next dataset | `forge/export_langfuse.py` prints the count and refuses under 500 |
+| Training | Modal runs in parallel, per-second billing; a 15-minute T4 run is about $0.15. 20 runs a day is about $3 a day, $90 a month, three times the $30 free credits | Under the free tier: 6 to 7 runs a day. Above it: `# founder-approved-spend` on the Dagster schedule, or a second free launcher (Kaggle: 30 GPU hours a week, about 120 runs) behind the same `train.py` (LAW 34) | Modal dashboard spend line quoted in the ticket |
+| Scheduling | One Dagster job `forge_train`, one partition per task | 20 partitions is a normal Dagster day | Dagster UI, the job's description (LAW 28) |
+| Artifacts | GHCR, one OCI artifact per task per version | Unbounded for our sizes | `oras repo tags` |
+| Serving | 0.6B Q4 is about 400 MB mmap'd; 1.7B about 1.1 GB. A 24 GB node holds about 20 small models or 8 medium | Runtime loads on first call, evicts least-recently-used above a byte budget in the ConfigMap; a cold load is one mmap | `/v1/health` lists loaded tasks and resident bytes |
+| Evaluation | Held-out agreement against the teacher, per run | Automatic; a run under `min_agreement` never ships | `eval.json` in the artifact |
+
+Rule: no model ships without its eval; twenty unchecked models a day is twenty leaks a day.
+
+## 11. Teacher arbitrage
+
+A paid model is worth paying exactly once per example, as a teacher. Three moves:
+
+1. **Reuse before regenerate.** Every teacher answer already paid for is in Langfuse. Tenant
+   0 to 3 datasets start there at zero marginal cost.
+2. **Cheapest adequate teacher.** For new labels, a 100-example calibration set is labelled by
+   the strongest model and the cheapest candidate. If the cheap one agrees above
+   `min_agreement`, it labels the rest; the strong one labels only the disagreements.
+   Disagreements go to a third vote, never to a human by default.
+3. **The student replaces the teacher; the teacher only sees abstains.** Once a model ships,
+   the Runtime answers and the paid model is called only on abstains. Those cases are labelled
+   by the teacher in the normal course of serving, land in Langfuse, and become the next
+   training set. Each retrain shrinks the abstain share; the paid bill converges on the hard
+   cases only.
+
+Labelling cost is measured from `LiteLLM_SpendLogs` under the Forge's own router key
+`forge-teacher`, never quoted here; teacher spend is a line of its own.
