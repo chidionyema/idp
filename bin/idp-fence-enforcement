@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""Fence-enforcement gate: a denied packet is actually dropped, and a probe that could not run is
+a FAIL, never a pass (zero-trust-boundary.md step 1 / the deepseek work order item 1).
+
+The drill's heart is one decision over a probe report. On the live cluster the report comes from a
+Flux-reconciled probing pod that, inside a fenced namespace, (1) reaches a destination the fences
+allow so the probe is proven to measure, (2) opens TCP to another fenced namespace and to a public
+address, and (3) reports whether both were refused. THIS gate grades that report and nothing else,
+so the estate half only ever feeds it real outcomes and the decision is proven here, offline, with
+a fixture pair.
+
+Exit 0 = the fence is genuinely enforcing, and only then. Exit 1 = FAIL, with the reason on stdout.
+It fails closed on a probe that could not run: a report that says the packet was refused but the
+probe itself returned "could not run" (binary missing, exit 127 -- the exact first-pass mistake this
+spec exists to catch) measures nothing and must not read as a passing wall.
+
+Report schema (yaml or json), file arg or stdin-piped via a '-' file:
+    allowed_reach:  reachable | unreachable | probe-failed   # step 1, the prover leg
+    deny_cross_ns:  refused    | connected   | probe-failed  # step 2, the fenced pair
+    deny_public:    refused    | connected   | probe-failed  # step 2, egress to a public address
+A missing or unknown value in any field is treated as probe-failed (unparseable data is not
+evidence of a wall). A report with no probed destination that somehow says refused for both denies
+is still probe-failed on the prover leg, and so a FAIL.
+
+Usage: bin/idp-fence-enforcement [FILE...]; with no FILE it grades every *.json / *.yaml under
+tests/fixtures/fence-drill/ named gate-*.{json,yaml} in one run. Prints one line per finding then a
+verdict line. Exit 0 = PASS.
+"""
+import json
+import os
+import sys
+
+IDP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+FIXTURE_GLOB = os.path.join(IDP, "tests", "fixtures", "fence-drill", "gate-*")
+
+
+def _load(path):
+    text = open(path, "r", encoding="utf-8").read().strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # minimal yaml-safe read: this is a 3-key flat report, so a digest of the scalar rows suffices
+    out = {}
+    for line in text.splitlines():
+        if ":" not in line or line.lstrip().startswith("#"):
+            continue
+        k, _, v = line.partition(":")
+        out[k.strip()] = v.strip()
+    return out
+
+
+def _three(report):
+    """Every field normalized to one of reachable/unreachable/refused/connected/probe-failed."""
+    vals = {}
+    for field in ("allowed_reach", "deny_cross_ns", "deny_public"):
+        raw = (report or {}).get(field)
+        if raw is None:
+            vals[field] = "probe-failed"
+            continue
+        s = str(raw).strip().lower()
+        # treat unknown/unset as a probe that did not produce a usable outcome
+        if not s or s in ("", "unknown", "n/a", "-", "null", "none", "error", "127", "timeout"):
+            vals[field] = "probe-failed"
+        else:
+            vals[field] = s
+    return vals
+
+
+def grade(report):
+    """Return (ok: bool, findings: list[str]) over one probe report."""
+    findings = []
+    v = _three(report)
+
+    # The prover leg. A probe that cannot reach the ALLOWED path measures nothing, and a probe that
+    # could not run at all must fail closed -- it is not evidence of a wall.
+    if v["allowed_reach"] != "reachable":
+        if v["allowed_reach"] == "probe-failed":
+            findings.append("probe could not run (or reached no allowed path): not evidence of a wall")
+        elif v["allowed_reach"] == "unreachable":
+            findings.append("prover leg failed: an allowed path was NOT reachable, so a refused deny is meaningless")
+        else:
+            findings.append("prover leg returned an unusable outcome: %s" % v["allowed_reach"])
+        return False, findings
+
+    def _deny_msg(pair, val, what):
+        if val == "connected":
+            return "%s: packet to %s was NOT refused (fence does not drop)" % (pair, what)
+        if val != "refused":
+            return "%s: %s probe did not produce a refuse/connect outcome (probe-failed, not evidence)" % (pair, what)
+        return None
+
+    m = _deny_msg("deny_public", v["deny_public"], "a public address")
+    if m:
+        findings.append(m)
+    m = _deny_msg("deny_cross_ns", v["deny_cross_ns"], "the other fenced namespace")
+    if m:
+        findings.append(m)
+
+    if not findings:
+        return True, findings
+    return False, findings
+
+
+_DEFAULT_FIXTURES = [
+    os.path.join(IDP, "tests", "fixtures", "fence-drill", "gate-good.json"),
+    os.path.join(IDP, "tests", "fixtures", "fence-drill", "gate-broken-fence.json"),
+    os.path.join(IDP, "tests", "fixtures", "fence-drill", "gate-fail-closed.json"),
+]
+
+
+def main(argv):
+    files = argv[1:] or _DEFAULT_FIXTURES
+    bad = 0
+    for path in files:
+        try:
+            report = _load(path)
+        except FileNotFoundError:
+            print("FAIL    fence-enforcement  no report file: %s" % path)
+            bad = 1
+            continue
+        ok, findings = grade(report)
+        if ok:
+            print("ok      fence-enforcement  %s  a packet on a denied path is dropped, and the prover reached an allowed one" % os.path.basename(path))
+        else:
+            bad = 1
+            for f in findings:
+                print("FAIL    fence-enforcement  %s  %s" % (os.path.basename(path), f))
+    if bad:
+        sys.exit(1)
+    print("verdict fence-enforcement PASS")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv)
+    except BrokenPipeError:
+        sys.exit(1)

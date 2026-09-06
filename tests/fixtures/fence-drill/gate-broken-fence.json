@@ -1,0 +1,6 @@
+{
+  "_doc": "The fence does not enforce: a packet to the other fenced namespace was CONNECTED (not refused), the exact defect this drill exists to catch. The public-deny refusal cannot redeem it. Must FAIL bin/idp-fence-enforcement (must-fail fixture).",
+  "allowed_reach": "reachable",
+  "deny_cross_ns": "connected",
+  "deny_public": "refused"
+}
