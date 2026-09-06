@@ -148,6 +148,19 @@ spec:
               PGDATABASE=$OTTO_INGRESS_DB_NAME
               PGPASSWORD=$(cat "$OTTO_INGRESS_DB_PASSWORD_FILE")
               export PGHOST PGPORT PGUSER PGDATABASE PGPASSWORD
+              # The fork's credentials (GITHUB_TOKEN, EXA key, ESTATE_MCP_KEY ...) arrive as one
+              # file per name under HERMES_ENV_DIR; export them the way the image's own
+              # entrypoint does (hermes-v2 deploy/k8s/entrypoint.sh), since this command
+              # replaces that entrypoint. A missing mount exports nothing and the door
+              # answers as before, hands empty.
+              if [ -n "${HERMES_ENV_DIR:-}" ] && [ -d "$HERMES_ENV_DIR" ]; then
+                for f in "$HERMES_ENV_DIR"/*; do
+                  [ -f "$f" ] || continue
+                  n=$(basename "$f")
+                  case "$n" in [A-Z_][A-Z0-9_]*) export "$n=$(cat "$f")" ;; esac
+                done
+              fi
+              mkdir -p "$HERMES_HOME"
               exec python -m otto.ingress
           env:
             - { name: OTTO_INGRESS_PORT, value: "8080" }
@@ -232,6 +245,18 @@ spec:
             - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "gemini" }
             - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "gemini" }
             - { name: PYTHONUNBUFFERED, value: "1" }
+            # docs/specs/otto-door-hands-and-senses.md step 5: the door's hands. HERMES_ENV_DIR is
+            # the secret mount the shell above exports (Kyverno refuses secretKeyRef on a pod);
+            # HERMES_HOME is where the fork keeps skills and its own memory. OTTO_TOOLSETS is the
+            # comma list otto/boot/pipeline.py build_registry bridges behind the tool gateway
+            # (hermes-v2 #88); OTTO_GATEWAY_MAX_TOOLS is the registry ceiling otto/gateway/config.py
+            # reads; OTTO_ROUTER_TOOL_MAX_TURNS bounds the provider tool loop (hermes-v2 #89).
+            - { name: HOME, value: /data }
+            - { name: HERMES_HOME, value: /data }
+            - { name: HERMES_ENV_DIR, value: /run/secrets/hermes-agent-env }
+            - { name: OTTO_TOOLSETS, value: "terminal,web,search,skills,file,vision,tts,memory,todo,cronjob,code_execution" }
+            - { name: OTTO_GATEWAY_MAX_TOOLS, value: "256" }
+            - { name: OTTO_ROUTER_TOOL_MAX_TURNS, value: "12" }
           ports:
             - { containerPort: 8080, name: http }
           startupProbe:
@@ -246,8 +271,8 @@ spec:
             periodSeconds: 30
             failureThreshold: 3
           resources:
-            requests: { cpu: 25m, memory: 128Mi }
-            limits: { cpu: 200m, memory: 256Mi }
+            requests: { cpu: 50m, memory: 192Mi }
+            limits: { cpu: 400m, memory: 384Mi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -256,6 +281,8 @@ spec:
             - { name: db-password, mountPath: /run/secrets/otto-gateway-db, readOnly: true }
             - { name: channels, mountPath: /run/secrets/otto-gateway-channels, readOnly: true }
             - { name: router, mountPath: /run/secrets/otto-gateway-router, readOnly: true }
+            - { name: agent-env, mountPath: /run/secrets/hermes-agent-env, readOnly: true }
+            - { name: data, mountPath: /data }
             - { name: tmp, mountPath: /tmp }
       volumes:
         - name: db-password
@@ -268,3 +295,16 @@ spec:
           configMap: { name: otto-gateway-binding-seed }
         - name: tmp
           emptyDir: {}
+        # Step 5: the fork's env dir, one file per credential name. The MCP key is optional so a
+        # vault entry that is late never holds the door closed.
+        - name: agent-env
+          projected:
+            sources:
+              - secret: { name: hermes-agent-env }
+              - secret: { name: hermes-agent-mcp, optional: true }
+        # HERMES_HOME. The spec asks for a claim sized like the agent's; this Deployment runs two
+        # replicas and the cluster's only class (oci-bv) is ReadWriteOnce, so a shared claim would
+        # leave one replica Pending. Per-pod scratch until the door is a StatefulSet; skills are
+        # in the image, and memory is hindsight + the fact store, not this directory.
+        - name: data
+          emptyDir: { sizeLimit: 2Gi }

@@ -10,6 +10,7 @@ resources:
   - quota.yaml
   - network-policy.yaml
   - external-secret.yaml
+  - agent-env.yaml
   - binding-seed.yaml
   - deployment.yaml
   - httproute.yaml
