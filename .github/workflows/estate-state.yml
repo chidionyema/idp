@@ -207,9 +207,29 @@ jobs:
     permissions:
       contents: write
     steps:
+      # crew lineage (root cause, LAW 6): state/live-diagram is DELIBERATELY intermittent --
+      # bin/catalog-render force-pushes it fresh from origin/main each run and, after a render PR
+      # merges with delete-branch, the origin branch vanishes until the next catalog-render push
+      # recreates it (bin/catalog-render:32,41,48,121). A hard `ref: state/live-diagram` here made
+      # this job fail on every run that landed in the window where the branch was absent -- exactly
+      # the estate-state failures seen 2026-09-06 (publish-reports dying at checkout). main always
+      # carries docs/reports forward (catalog-render's carry), so bootstrap from main when the
+      # branch is absent: the job's own commit+push below then recreates the branch with the new
+      # report, breaking the deadlock instead of wedging on it.
+      - name: choose checkout ref (live branch when present, else main - never hard-fail on an intermittently absent ref, estate-state publish-reports deadlock LAW 45)
+        id: ref
+        run: |
+          set -euo pipefail
+          if git ls-remote --heads origin refs/heads/state/live-diagram | grep -q .; then
+            echo "branch present"
+            echo "value=state/live-diagram" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch absent -- bootstrapping from main (carried reports)"
+            echo "value=main" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: state/live-diagram
+          ref: ${{ steps.ref.outputs.value }}
           fetch-depth: 1
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
