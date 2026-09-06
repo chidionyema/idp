@@ -1,0 +1,20 @@
+# Tenant 0, Voice Gate. Spec: docs/specs/2026-09-06-model-forge-edge-runtime.md section 3.
+task: voice-gate
+base: unsloth/Qwen2.5-1.5B-Instruct   # candle 0.6 serves Qwen2 GGUF; Qwen3 when candle does
+kind: classify
+prompt_template: |
+  Classify as customer ready (0) or internal engine leak (1).
+  Text: {input}
+  Verdict:
+labels:
+  "0": customer_ready
+  "1": internal_leak
+abstain_below: 0.80      # margin between the top two label probabilities
+min_agreement: 0.95
+kv_cache_prefix: true
+schema: null
+lora:
+  r: 16
+  alpha: 32
+  epochs: 3
+  lr: 2e-4
