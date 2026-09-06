@@ -1,0 +1,56 @@
+{
+  "abbrev_mixed": {
+    "text": "He met Dr. Smith at Acme Ltd. That was 9 a.m. sharp. The firm then grew. Meanwhile e.g. the list ran on; we stopped. No one objected.",
+    "n": 4,
+    "s": [
+      "He met Dr. Smith at Acme Ltd. That was 9 a.m. sharp.",
+      "The firm then grew.",
+      "Meanwhile e.g. the list ran on; we stopped.",
+      "No one objected."
+    ]
+  },
+  "bracket": {
+    "text": "The buyer (a bank) accepted. The terms? Unclear from the file. So we proceed with clause 4 'severance'. Final point: done.",
+    "n": 5,
+    "s": [
+      "The buyer (a bank) accepted.",
+      "The terms?",
+      "Unclear from the file.",
+      "So we proceed with clause 4 'severance'.",
+      "Final point: done."
+    ]
+  },
+  "quotes_nested": {
+    "text": "She said \"Go now.\" Then left. He replied \"Wait.\" Later. A final call came. We settled.",
+    "n": 6,
+    "s": [
+      "She said \"Go now.",
+      "Then left.",
+      "He replied \"Wait.",
+      "Later.",
+      "A final call came.",
+      "We settled."
+    ]
+  },
+  "heavy_commas": {
+    "text": "The plan, though large, is sound, and it proceeds, but watch costs, which rise annually. That is the risk. Manage it, carefully, and often.",
+    "n": 3,
+    "s": [
+      "The plan, though large, is sound, and it proceeds, but watch costs, which rise annually.",
+      "That is the risk.",
+      "Manage it, carefully, and often."
+    ]
+  },
+  "abbrev_digit": {
+    "text": "Item no. 3 arrived. They paid 4.99 per unit. It was Dr. Jones who signed. The 2nd contract closed then? Yes, today. Next.",
+    "n": 6,
+    "s": [
+      "Item no. 3 arrived.",
+      "They paid 4.99 per unit.",
+      "It was Dr. Jones who signed.",
+      "The 2nd contract closed then?",
+      "Yes, today.",
+      "Next."
+    ]
+  }
+}
