@@ -151,8 +151,9 @@ spec:
             ---
             # The page a buyer's engineer sees at sandbox.<zone>: served from inside the sandbox,
             # by a container that did not exist a minute before, and dated with the hold the
-            # founder chose. The two ${...} values are filled by the launch row's postBuild
-            # (.github/workflows/demo-sandbox.yml writes them), never typed here.
+            # founder chose. The two marked values below are filled by the launch row's postBuild
+            # (.github/workflows/demo-sandbox.yml writes them), never typed here. A literal
+            # dollar-brace in this block breaks Flux envsubst, so the comment names none.
             apiVersion: v1
             kind: ConfigMap
             metadata:
