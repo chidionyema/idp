@@ -52,6 +52,7 @@ spec:
         - catalogue-roll
         - router-spend
         - registries-conf
+        - ns-fences
         default: diagnose
   steps:
   - id: dispatch

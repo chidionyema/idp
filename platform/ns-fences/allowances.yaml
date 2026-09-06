@@ -249,6 +249,13 @@ flows:
     # one enforces, the storefront answers 30s hangs the way this estate has already seen on the
     # CNI cutover (prospector-store-web/api on Calico 10.244.3.x unreachable from edge on flannel).
     ingress_from: [edge]
+    # store-web renders the catalogue server-side by fetching its own public name,
+    # https://api.mumchimp.com, which resolves to the load balancer's public address, not to a
+    # namespace label. Measured 2026-09-06 21:00Z once the fences enforced: every page took 10.5 s
+    # (traefik origin_ms=10746) because that fetch hit "ConnectTimeoutError api.mumchimp.com:443
+    # timeout 10000ms" in the store-web log and the page rendered without it. One TCP port to the
+    # public address space is the whole hole; private ranges stay cut out by the generator.
+    egress_internet: [443]
   edge:
     egress: [backstage, dagster, guacamole, healthchecks, hermes-agent, identity, llm, mcp,
              monitoring, observability, otto-gateway, otto-golden, hindsight, prospector]
