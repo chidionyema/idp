@@ -1,6 +1,23 @@
 {
- "receipts": [],
- "taken": "2026-09-06T03:00Z",
+ "receipts": [
+  {
+   "merged_at": "2026-09-06T05:56:47Z",
+   "number": 2014,
+   "repo": "chidionyema/idp",
+   "title": "portal: estate overview answers what it talks to from the real relation graph",
+   "url": "https://github.com/chidionyema/idp/pull/2014",
+   "use": "d by** \u2014 the `dependencyOf` edges the catalogue materialises on whatever points at this component, i.e. what is built on it."
+  },
+  {
+   "merged_at": "2026-09-06T04:06:58Z",
+   "number": 1965,
+   "repo": "chidionyema/idp",
+   "title": "portal: /showcase, the page a buyer's engineer opens first (crew#474)",
+   "url": "https://github.com/chidionyema/idp/pull/1965",
+   "use": "open `/showcase` in the portal."
+  }
+ ],
+ "taken": "2026-09-06T06:55Z",
  "waiting": [
   {
    "cp": "CP1",
