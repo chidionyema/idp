@@ -1,114 +1,159 @@
-# Voice Gate — what is built, what is left
+# Voice Gate — what exists, and what is left to finish it
 
-Handoff for the next agent. Written 2026-09-06 from the working tree of branch
-`fix/cyrus-webhook-routes`. Every claim below names the file and line that carries it.
+Written 2026-09-06. Supersedes the first version of this file, which understated the work
+by looking only at this directory. Two claims in that version were wrong and are corrected
+below. Every claim here names the file that carries it.
 
-## The frame (founder, 2026-09-06)
+## The decision that frames this
 
-Two engines, not one, and the regex one is not a mistake:
+Founder, 2026-09-06:
 
-> "gex s for old propsteor which we are still supporting and needs to power live site
-> until new engine is tied in the new research engine. we just need to get ultimately we
-> are going to be using one way once proven"
+> "regex is for old prospector which we are still supporting and needs to power live site
+> until new engine is tied in the new research engine... ultimately we are going to be
+> using one way once proven"
 
-So Tier 1 (deterministic, `regex-automata` DFA) is the **sustaining** engine. It has to
-reach parity with the Python linters in `prospector-main`, because those linters power the
-live site today and the Rust gate replaces them in place. Tier 2 (local semantic model) is
-the **new** engine and the product; the earlier note in
-`specs/voice-gate-execution-2026-09-06.md:87` — "we are building enterprise level product
-not regex" — is about what makes the product, not a ban on Tier 1.
+and then, on the semantic second engine:
 
-Both run until the corpus diff is empty and Tier 2 is proven. Then one way.
+> "why do we need second engine anyway... seems pointless... best just complete the real one"
 
-## Built — 686 lines, 12 tests green
+**So: one engine. Finish the deterministic gate to full parity with the Python linters,
+put it on the live site, and do not start the semantic tier.** The `tier2:` block in
+`voice-policy.yaml` stays declared and unread. Revisit only if the corpus run below shows
+the word list missing enough to justify it — that number will be a by-product of the work,
+not a separate project.
 
-Commits `3e566b54` and `9a07722d`, branch `fix/cyrus-webhook-routes`.
+## What exists — the two halves
 
-| file | lines | what it does |
-|---|---|---|
-| `src/tier1.rs` | 94 | one `regex_automata::meta::Regex` per rule; `grade()` blanks non-prose then `find_iter`, emitting `Finding{rule_id, lane, field, span, detail, tier}` |
-| `src/policy.rs` | 151 | policy load, lane inheritance resolved at load, `exclude_fields` |
-| `src/server.rs` | 128 | axum; `/v1/health`, `/v1/grade` single or `{items:[…]}`, `MAX_BATCH = 500`, unknown lane → 422 |
-| `src/prose.rs` | 51 | span-preserving stripper: fences, inline code, URLs, table rows, quotes, headings blanked to spaces, `\n` preserved |
-| `src/main.rs` | 35 | refuses a non-loopback `VOICE_GATE_BIND` (R20); default `127.0.0.1:8420` |
-| `voice-policy.yaml` | 45 | EE1–EE5 only; `tier2`/`tier3` blocks declared but unread |
-| `docs/RULE-SEMANTICS-INVENTORY.md` | 41 | census of every `re.compile` in the four Python linter modules, classified |
-| `tests/gate.rs` | 111 | 12 fixtures, all passing |
+### Python half — DONE and MERGED on prospector `main`
 
-## Left to do
+Pull request #819, merged. This is not a prototype; it is wired into the live publish path.
 
-### 0. Unblock — do this first, nothing else is visible until it is done
+| file | what it is |
+|---|---|
+| `prospector/voice_gate/deny.py` (145 lines) | the deny gate: `findings_for`, `grade_fields`, `excise`, `walk_prose`; lane `evidence-export`; `EXCLUDE_FIELDS = {gate, gatelabel, verdict}` |
+| `prospector/voice_gate/__init__.py` | package seam |
+| `tests/unit/test_voice_gate_deny.py` | its unit tests |
+| `tools/voice_gate_conformance.py` (265 lines) | **the conformance harness** |
 
-The whole thing is 12 commits ahead of `origin/main` and **has never been pushed**. It
-exists on one laptop. Push the branch and open a pull request before touching anything else.
+Wiring already landed on the same branch: the deny gate runs in `make_sample_report`, in
+`make_kill_log`, and in `publish_pass` — the estate's single publish gate. The backfill of
+the old packs was done through it: commit `4f57ebe2` measured 186 stored kill reasons,
+repaired the research cadence (`passages` → `sources`, plural-preserving) through
+`plainEnglish`, and left all 1007 store-web tests green. Commit `a87ebdeb` put `walk_prose`
+over every leaf so a field list can never hide a string again, with six hand-written
+overrides, and the live sample report came out 100% prose-clean.
 
-### 1. Tier 1 parity — the sustaining path for the live site
+### Rust half — the port, in this directory
 
-1. **The boundary rewrite is specified but not implemented.**
-   `docs/RULE-SEMANTICS-INVENTORY.md` names one rule that covers the entire R9 lexicon:
-   `register_lint._phrase_re` (register_lint.py:193) compiles every banned phrase through
-   `(?<![\w-]){phrase}(?![\w-])`, which `regex-automata` cannot compile. The equivalent is
-   `(^|[^\w-]){phrase}([^\w-]|$)` **then shrink the reported span by any guard character
-   matched**. `src/tier1.rs:80-89` pushes `m.start()`/`m.end()` raw — there is no shrink and
-   no phrase compiler. Write both.
-2. **The lexicon is empty.** `voice-policy.yaml:5` is `storefront: deny_patterns: []` and
-   line 32 is `rules: {}`. Only EE1–EE5 exist. The R9 lexicon and the compound rules at
-   `register_lint.py:214-239` have not been moved.
-3. **Build the corpus match-set diff harness.** The inventory's own cutover rule:
-   *no pattern ships in the Rust gate until its class is settled here and its corpus
-   match-set diff is empty.* Python linters are the oracle; corpus is 312,886 words plus
-   the live JSONs. Per phrase, both engines' match sets must be byte-identical.
-4. **Port the two hand-rolled pieces.** `_SENT_SPLIT_RE` (register_lint.py:276) is sentence
-   splitting — Rust code with property tests against the Python oracle, not a pattern.
-   `_ORPHAN_OPEN_RE` (house_style.py:140) is the one remaining lookbehind outside the
-   rewrite rule.
-5. **Port the two non-regex checks.** `copy_lint.check_grammar` (copy_lint.py:381+) shells
-   out to the `harper` binary — the gate shells out identically. `prose_target` band
-   measures are arithmetic against `prose_target.json`, not patterns.
+686 lines, 3 commits, branch `fix/cyrus-webhook-routes` (pushed). **12 tests pass** — run
+today, not quoted from a commit message:
 
-### 2. Tier 2 — the new engine, the product
+    test result: ok. 12 passed; 0 failed; 0 ignored
 
-Not started. `/v1/health` reports `tier2: "disabled"`. `voice-policy.yaml:33-38` already
-declares the contract: `Llama-3.2-1B-Instruct-Q4_K_M.gguf`, fallback
-`Qwen2.5-1.5B-Instruct-Q4_K_M.gguf`, `confidence_floor: 0.8`, `frontier_alias: cheap`,
-`max_prompt_exemplars: 6`. Nothing reads that block yet.
+`Cargo.toml` + committed `Cargo.lock`; `src/policy.rs` (loader, lane inheritance resolved
+at load); `src/policy.schema.json` (a bad policy is rejected, not ignored); `src/prose.rs`
+(strips fences, inline code, URLs, table rows, quotes, headings **while preserving byte
+positions**); `src/tier1.rs` (one automaton per rule, so a finding names its rule);
+`src/server.rs` (single + batch, 500 cap, 422 on unknown lane); `src/main.rs` (refuses any
+bind but loopback); `tests/gate.rs`.
 
-Product track named in the spec: **tree-sitter** for the parse tree, **GLiNER** for span
-labelling, **Extism** as the plugin host.
+## Corrections to the first version of this file
 
-### 3. Tier 3 — bounded rewrite
+1. **"There is no proof harness" — wrong.** `tools/voice_gate_conformance.py` exists, is
+   merged, and was built to drive *this* Rust service: its default is
+   `--gate http://127.0.0.1:8420`, which is exactly what `src/main.rs` binds. It has three
+   modes, and `rust_grade()` already POSTs to the gate's batch endpoint.
+   - `diff` — corpus match-set diff, Python oracle versus the Rust gate, over every prose
+     leaf of the storefront data **and the pre-scrub git-history versions**. Empty diff or
+     the Rust gate does not ship.
+   - `fuzz` — differential fuzzing, 2000 mutated real strings, seed 42: dash insertion,
+     banned-token injection.
+   - `golden` — golden samples versus the oracle.
+2. **"Nothing else exists / no wiring" — wrong.** The Python half is merged and is running
+   the live publish path today, and the old packs have already been backfilled through it.
 
-Not started. `voice-policy.yaml:39-45` declares `max_iterations: 2` and
-`preserve: [numbers, named_entities, urls, dates]`. Nothing reads it. Quarantine is the
-last resort after Tier 3, and there is no quarantine path either.
+## What is left, exactly
 
-### 4. Platform wiring — none of it exists
+### 1. Run the harness. It has never been run against the Rust gate.
 
-`grep -rl voice-gate .github catalog bin` returns nothing. That means:
+This is one command and it replaces guesswork with a list:
 
-- no Backstage catalog entity and no owner;
-- not in `bin/idp-ci` — the Rust build and `cargo test` run nowhere but a laptop;
-- no container image, no Flux kustomization, no namespace fence (default-deny
-  NetworkPolicy, ResourceQuota, LimitRange, DNS exception — AGENTS.md, crew#191);
-- no emission to the central collector, which under LAW 50 means admission refuses the
-  workload;
-- `src/main.rs:*` refuses a non-loopback bind by design (R20), so how prospector reaches it
-  is an open decision: sidecar in the same pod, or a gateway route with the bind rule
-  revisited.
+    cd ~/dev/code/idp/platform/voice-gate && cargo run &
+    cd ~/dev/code/prospector-main && tools/voice_gate_conformance.py all
 
-### 5. The cutover
+Everything below is what we already know it will report. Run it first anyway — the diff is
+the specification of the remaining work, and it writes receipts to `store/voice_gate`.
 
-Write the switch criterion down before either engine moves: the diff is empty for every
-phrase, Tier 2 clears its confidence floor on a held-out set, and the live site is served
-by one engine. Until then both run.
+### 2. The phrase compiler and the span shrink — the one blocker on the lexicon
+
+`register_lint.py:193` compiles every banned phrase as
+`(?<![\w-]){body}(?![\w-])`, where `body` joins the phrase's words with `\s+` so a phrase
+broken across two lines of a paragraph still matches. `regex-automata` has no lookbehind.
+The equivalent is `(^|[^\w-]){body}([^\w-]|$)` **and then shrinking the reported span by
+whichever guard character matched**.
+
+`src/tier1.rs:80-89` pushes `m.start()` and `m.end()` raw. There is no shrink and no
+phrase-to-pattern compiler. Until both are written, **not one phrase can move**, which is
+why the Rust policy still holds only the five export rules.
+
+Acceptance: `diff` mode empty for every phrase.
+
+### 3. Move the lexicon and the constructions
+
+- `BANNED_SPEC` at `register_lint.py:77` and `ADVISORY_SPEC` at `:157` — roughly a hundred
+  phrases between them; take the exact count from `_parse_spec`, not from a line count.
+- `CONSTRUCTIONS` at `:212` — eight shapes, each with a name and a reason. These are the
+  half a word list cannot reach: `not_just`, `trailing_participle`, `adverb_opener`,
+  `negation_reveal`, `not_only_but_also`, `whether_youre`, `rhetorical_answer`,
+  `the_beauty_of`. Four of the eight use lookbehind and go through the rewrite in item 2.
+- Apostrophes are normalised by `_normalise` before matching, so only the straight form
+  appears in a pattern. The Rust side must normalise identically or the diff will not close.
+
+The Rust `voice-policy.yaml` currently has `storefront: deny_patterns: []` and `rules: {}`.
+Both fill from this step.
+
+### 4. Land `golden.jsonl`
+
+`tools/voice_gate_conformance.py:207` skips golden mode with
+`"golden.jsonl not landed yet (B1 in flight)"`. It belongs at
+`prospector/voice_gate/golden.jsonl`. Until it lands, one of the three proof modes is dark.
+
+### 5. The two checks that are not patterns
+
+- `copy_lint.check_grammar` shells out to the `harper` binary. The Rust gate shells out
+  identically — same binary, same arguments — or the diff will never close.
+- `prose_target` band measures are arithmetic against `prose_target.json`. Ported as
+  arithmetic, not as patterns.
+
+### 6. The two that must be hand-written
+
+- `_SENT_SPLIT_RE` (`register_lint.py:276`) — sentence splitting is logic, not a pattern.
+  Rust code with property tests against the Python oracle.
+- `_ORPHAN_OPEN_RE` (`house_style.py:140`) — the one lookbehind outside the rewrite rule.
+
+Census, measured today: lookbehinds — `register_lint` 8, `house_style` 1, `copy_lint` 0,
+`prose_target` 0. Lookaheads — 7, 2, 0, 0. Every one is covered by item 2 or by this item.
+
+### 7. Then, and only then, the platform wiring
+
+Nothing here exists yet: no catalogue entity and no owner; not in `bin/idp-ci`, so the
+build and tests run nowhere but a laptop; no image, no deployment, no namespace fence, no
+telemetry to the central collector — which under the estate's rules means the workload
+would be refused admission. `src/main.rs` refuses any non-loopback bind by design, so how
+prospector reaches it is an open decision: sidecar in the same pod, or a route with that
+rule revisited.
+
+### 8. The switch-over, written down
+
+`diff` empty, `fuzz` clean over 2000 cases, `golden` passing, and the Python linters and
+the Rust gate agreeing on a full publish run. Then prospector calls the Rust gate, the
+Python path becomes the oracle used only by the harness, and it is one engine.
 
 ## Commands
 
-    cd platform/voice-gate
-    cargo test                 # 12 tests, currently green
-    cargo run                  # serves 127.0.0.1:8420
-    curl -s localhost:8420/v1/health
+    cargo test                                   # 12 tests, green today
+    cargo run                                    # serves 127.0.0.1:8420
+    tools/voice_gate_conformance.py all          # from prospector-main; writes store/voice_gate
 
-Specs, in `~/dev/code/prospector-main` and safely on its `origin/main`:
-`specs/voice-gate-2026-09-06.md` (`95b5db80`) and
-`specs/voice-gate-execution-2026-09-06.md` (`08f8c7af`).
+Specs: `~/dev/code/prospector-main/specs/voice-gate-2026-09-06.md` and
+`specs/voice-gate-execution-2026-09-06.md`, both on that repo's `main`.
