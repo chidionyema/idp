@@ -1,0 +1,70 @@
+# calico-kube-controllers Deployment (operatorless, kubernetes datastore).
+#
+# Byte-source: Calico v3.32.2 `manifests/calico.yaml` calico-kube-controllers Deployment. Runs
+# the controllers (node, loadbalancer; the prior operator install removed the migration
+# controller for a kubernetes datastore). Single replica, Recreate strategy.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: calico-kube-controllers
+  namespace: kube-system
+  labels:
+    k8s-app: calico-kube-controllers
+spec:
+  # The controllers can only have a single active instance.
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: calico-kube-controllers
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      name: calico-kube-controllers
+      namespace: kube-system
+      labels:
+        k8s-app: calico-kube-controllers
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        # Mark the pod as a critical add-on for rescheduling.
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+      serviceAccountName: calico-kube-controllers
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      priorityClassName: system-cluster-critical
+      containers:
+        - name: calico-kube-controllers
+          image: quay.io/calico/kube-controllers:v3.32.2
+          imagePullPolicy: IfNotPresent
+          env:
+            # Choose which controllers to run.
+            - name: ENABLED_CONTROLLERS
+              value: node,loadbalancer
+            # Kubernetes API datastore, not etcd.
+            - name: DATASTORE_TYPE
+              value: kubernetes
+          livenessProbe:
+            exec:
+              command:
+                - /usr/bin/check-status
+                - -l
+            periodSeconds: 10
+            initialDelaySeconds: 10
+            failureThreshold: 6
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - /usr/bin/check-status
+                - -r
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
