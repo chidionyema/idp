@@ -254,4 +254,40 @@ lanes:
     - id: LEX-075
       phrase: "drive results"
       message: "(say what happens)"
+    - id: LEX-076
+      phrase: "robust"
+      message: "(say what it survives)"
+    - id: LEX-077
+      phrase: "crucial"
+      message: "(say what breaks without it)"
+    - id: LEX-078
+      phrase: "pivotal"
+      message: "(say what turns on it)"
+    - id: LEX-079
+      phrase: "vital"
+      message: "(say what fails without it)"
+    - id: LEX-080
+      phrase: "streamline"
+      message: "(say which step goes away)"
+    - id: LEX-081
+      phrase: "journey"
+      message: "(name the steps)"
+    - id: LEX-082
+      phrase: "value proposition"
+      message: "what it is worth to them"
+    - id: LEX-083
+      phrase: "scalable"
+      message: "(say how big it can get before it breaks)"
+    - id: LEX-084
+      phrase: "innovative"
+      message: "new"
+    - id: LEX-085
+      phrase: "comprehensive"
+      message: "complete"
+    - id: LEX-086
+      phrase: "significantly"
+      message: "(give the number)"
+    - id: LEX-087
+      phrase: "substantially"
+      message: "(give the number)"
 rules: {}
