@@ -47,9 +47,9 @@ data:
     # Any failure to read is reported as a failure, never as zero spend.
     set -eu
 
-    MAX_USD="$${SPEND_VELOCITY_MAX_DOLLARS:-10.0}"
-    MAX_TOKENS="$${SPEND_VELOCITY_MAX_TOKENS:-2000000}"
-    NOTIFY="$${APPRISE_URL:-http://apprise.notify.svc.cluster.local:8000/notify/founder-telegram}"
+    MAX_USD="${SPEND_VELOCITY_MAX_DOLLARS:-10.0}"
+    MAX_TOKENS="${SPEND_VELOCITY_MAX_TOKENS:-2000000}"
+    NOTIFY="${APPRISE_URL:-http://apprise.notify.svc.cluster.local:8000/notify/founder-telegram}"
 
     notify() {
       # Best effort: a notifier that is down must not hide the log line above it.

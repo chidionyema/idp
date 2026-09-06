@@ -14,3 +14,18 @@ spec:
               if [ -d "$HERMES_ENV_DIR" ]; then
                 echo exported
               fi
+---
+# A document that opts out of substitution keeps the shell's own syntax.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/substitute: disabled
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: check
+              args: ['sh', '-c', 'MAX_USD="${SPEND_VELOCITY_MAX_DOLLARS:-10.0}"']

@@ -7,8 +7,11 @@ Kustomization substitutes variables (postBuild), and Flux's envsubst reads
 ``${NAME:-default}`` as its own default syntax: the live pod's command read
 ``[ -n "" ]``, the loop exporting the fork's credentials never ran, and ``gh``
 in the pod was "not logged into any GitHub hosts" beside a mounted GITHUB_TOKEN.
-The same class sat in platform/llm/spend-breaker-digest.yaml, where every
-``${X:-default}`` threshold had been frozen to its default.
+Incident 2026-09-06, same day: the fix escaped platform/llm/spend-breaker-digest.yaml
+to ``$${X:-default}`` too, but that CronJob is annotated
+``kustomize.toolkit.fluxcd.io/substitute: disabled``, so nothing unescaped it and
+the live job read ``$7{SPEND_VELOCITY_MAX_DOLLARS:-10.0}`` (``$$`` is the pid).
+A document carrying that annotation is graded as plain whatever its path.
 
 Rules, per manifest, decided by the Kustomization whose ``path`` holds it:
   substituting path : ``${NAME<op>...`` with a shell operator (``:-`` ``-``
@@ -32,8 +35,21 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHELL_FORM = re.compile(r"(?<!\$)\$\{[A-Za-z_][A-Za-z0-9_]*[:#%/^,-]")
-ESCAPED = re.compile(r"\$\$\{")
+ESCAPED = re.compile(r"(?<!\\)\$\$\{")  # a backslash before it is the shell's literal $
 COMMENT = re.compile(r"^\s*#")
+DOC_SEP = re.compile(r"^---\s*$")
+NO_SUBST = re.compile(r"^\s*kustomize\.toolkit\.fluxcd\.io/substitute:\s*[\"']?disabled")
+
+
+def document_flags(lines):
+    """Per line, True when the YAML document holding it opts out of substitution."""
+    flags, start = [], 0
+    for n, line in enumerate(lines + ["---"]):
+        if DOC_SEP.match(line):
+            opted_out = any(NO_SUBST.match(x) for x in lines[start:n])
+            flags += [opted_out] * (n - start + 1)
+            start = n + 1
+    return flags[: len(lines)]
 
 
 def kustomization_map():
@@ -58,13 +74,15 @@ def scan(path, substituting):
         lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
     except OSError:
         return hits
+    opted_out = document_flags(lines)
     for n, line in enumerate(lines, 1):
         if COMMENT.match(line):
             continue
-        if substituting and SHELL_FORM.search(line):
+        substituting_here = substituting and not opted_out[n - 1]
+        if substituting_here and SHELL_FORM.search(line):
             hits.append(f"{path}:{n}: shell expansion Flux will rewrite: {line.strip()}")
-        if not substituting and ESCAPED.search(line):
-            hits.append(f"{path}:{n}: $${{ escape under a Kustomization that never substitutes: {line.strip()}")
+        if not substituting_here and ESCAPED.search(line):
+            hits.append(f"{path}:{n}: $${{ escape where nothing substitutes: {line.strip()}")
     return hits
 
 
