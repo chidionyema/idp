@@ -46,6 +46,12 @@ redacted), capped at 2,400 characters. Each row carries the run URL so a label c
 500, `estate-state` 125, `ci` 112, verdict drills 120, `otto-parity` 39. A 60-run hand sample of
 failed `ci` runs split 15 flake / 45 real by the same rule.
 
+**Measured after collection (2026-09-06 14:40Z).** 743 rows from 800 stratified failed runs (57 had no
+job log or an empty step tail); 47 flake / 696 real, a 1:14.8 balance. That trips the pre-registered
+stop rule below, so the collector's `--top-up` pass walks green runs and adds failed runs a later green
+run of the same workflow on the same commit proves were flakes, until the mix is 1:9 or better. The
+held-out agreement is therefore graded on an over-sampled mix; the record must show agreement per class.
+
 ## What the run is graded against
 
 | gate | value | source |

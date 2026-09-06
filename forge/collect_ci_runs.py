@@ -107,6 +107,45 @@ def label(repo: str, run: dict) -> str:
     return "0"
 
 
+def list_flakes(
+    repo: str, since: dt.date, until: dt.date, exclude: set, want: int
+) -> list[dict]:
+    """Failed runs a later green run of the same workflow on the same commit proves were flakes.
+    Walks green runs newest first, one `head_sha` lookup per (commit, workflow), stops at `want`.
+    Used to top a sample up when the natural flake share falls under the plan's 1:9 floor."""
+    found: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    day = until
+    while day >= since and len(found) < want:
+        for page in range(1, 11):
+            body = gh(
+                f"repos/{repo}/actions/runs?status=success&per_page=100&page={page}&created={day}"
+            )
+            batch = json.loads(body or "{}").get("workflow_runs", [])
+            for green in batch:
+                key = (green["head_sha"], green["name"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                body = gh(
+                    f"repos/{repo}/actions/runs?head_sha={green['head_sha']}&status=failure&per_page=100"
+                )
+                for run in json.loads(body or "{}").get("workflow_runs", []):
+                    if (
+                        run["name"] == green["name"]
+                        and run["created_at"] < green["created_at"]
+                        and run["html_url"] not in exclude
+                    ):
+                        exclude.add(run["html_url"])
+                        found.append({**run, "_label": "1"})
+                if len(found) >= want:
+                    break
+            if len(batch) < 100 or len(found) >= want:
+                break
+        day -= dt.timedelta(days=1)
+    return found
+
+
 def clean_tail(log: str) -> str:
     lines = []
     for raw in log.splitlines():
@@ -167,7 +206,7 @@ def row_for(repo: str, run: dict) -> dict | None:
     tail = clean_tail(step_log(repo, job, step))
     if not tail:
         return None
-    verdict = label(repo, run)
+    verdict = run.get("_label") or label(repo, run)
     head = (
         f"workflow: {run['name']}\njob: {job['name']}\nstep: {step['name'] if step else ''}\n"
         f"event: {run['event']}\nlog tail:\n"
@@ -178,6 +217,50 @@ def row_for(repo: str, run: dict) -> dict | None:
         "teacher": TEACHER,
         "source": run["html_url"],
     }
+
+
+def write_rows(rows: list[dict], output: pathlib.Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as fh:
+        for r in rows:
+            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+
+
+def top_up(args) -> int:
+    rows = [
+        json.loads(l) for l in args.output.read_text(encoding="utf-8").splitlines() if l
+    ]
+    flakes = sum(r["output"] == "1" for r in rows)
+    real = len(rows) - flakes
+    want = -(-real // 9) - flakes
+    if want <= 0:
+        print(
+            json.dumps({"rows": len(rows), "flake": flakes, "real": real, "added": 0})
+        )
+        return 0
+    if rate_remaining() < 500:
+        print(
+            "Refusal: under 500 GitHub calls left for the top-up pass", file=sys.stderr
+        )
+        return 2
+    exclude = {r["source"] for r in rows}
+    runs = list_flakes(args.repo, args.since, args.until, exclude, want)
+    with ThreadPoolExecutor(args.workers) as pool:
+        added = [r for r in pool.map(lambda run: row_for(args.repo, run), runs) if r]
+    rows = split(rows + added, minimum=1 if args.smoke else split.__defaults__[2])
+    rows.sort(key=lambda r: r["source"])
+    write_rows(rows, args.output)
+    print(
+        json.dumps(
+            {
+                "rows": len(rows),
+                "flake": flakes + len(added),
+                "real": real,
+                "added": len(added),
+            }
+        )
+    )
+    return 0
 
 
 def main() -> int:
@@ -199,8 +282,15 @@ def main() -> int:
     ap.add_argument(
         "--smoke", action="store_true", help="accept under 500 rows (schema check only)"
     )
+    ap.add_argument(
+        "--top-up",
+        action="store_true",
+        help="keep the rows already in --output and add flakes until real:flake is 9:1 or better",
+    )
     args = ap.parse_args()
 
+    if args.top_up:
+        return top_up(args)
     failed = stratify(
         list_failed(args.repo, args.since, args.until), args.per_workflow, args.limit
     )
@@ -216,10 +306,7 @@ def main() -> int:
         rows = [r for r in pool.map(lambda run: row_for(args.repo, run), failed) if r]
     rows.sort(key=lambda r: r["source"])
     rows = split(rows, minimum=1 if args.smoke else split.__defaults__[2])
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open("w", encoding="utf-8") as fh:
-        for r in rows:
-            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+    write_rows(rows, args.output)
     flakes = sum(r["output"] == "1" for r in rows)
     print(
         json.dumps(

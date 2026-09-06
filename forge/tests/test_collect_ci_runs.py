@@ -80,3 +80,29 @@ def test_stratify_caps_each_workflow_then_the_total():
     failed = [{"name": "noisy", "id": i} for i in range(5)] + [{"name": "ci", "id": 9}]
     kept = c.stratify(failed, per_workflow=2, limit=3)
     assert [r["name"] for r in kept] == ["noisy", "noisy", "ci"]
+
+
+def test_list_flakes_walks_green_runs_and_keeps_only_earlier_same_workflow_failures(
+    monkeypatch,
+):
+    import datetime as dt
+    import json
+
+    green = {"head_sha": "abc", "name": "ci", "created_at": "2026-09-06T10:00:00Z"}
+    failures = [
+        {"html_url": "u1", "name": "ci", "created_at": "2026-09-06T09:00:00Z"},
+        {"html_url": "u2", "name": "other", "created_at": "2026-09-06T09:00:00Z"},
+        {"html_url": "u3", "name": "ci", "created_at": "2026-09-06T11:00:00Z"},
+        {"html_url": "u4", "name": "ci", "created_at": "2026-09-06T08:00:00Z"},
+    ]
+
+    def fake_gh(path):
+        if "status=success" in path:
+            return json.dumps({"workflow_runs": [green] if "page=1" in path else []})
+        return json.dumps({"workflow_runs": failures})
+
+    monkeypatch.setattr(c, "gh", fake_gh)
+    day = dt.date(2026, 9, 6)
+    found = c.list_flakes("o/r", day, day, {"u4"}, want=5)
+    assert [r["html_url"] for r in found] == ["u1"]
+    assert found[0]["_label"] == "1"
