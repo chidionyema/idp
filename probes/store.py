@@ -43,6 +43,12 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'agent_role') THEN CREATE ROLE agent_role NOLOGIN; END IF;
 END $$;
 REVOKE ALL ON {TABLE} FROM PUBLIC;
+-- PG >= 15: USAGE on schema public is no longer implied. Without it the prover's
+-- SET ROLE prover could not resolve unqualified `verdicts` on the estate cluster
+-- (relation does not exist) and every backstage verdict was BLIND after the
+-- estate-db move (verdict-backstage run 34012387932).
+GRANT USAGE ON SCHEMA public TO prover;
+GRANT USAGE ON SCHEMA public TO agent_role;
 GRANT INSERT, SELECT ON {TABLE} TO prover;
 GRANT SELECT ON {TABLE} TO agent_role;
 GRANT prover TO CURRENT_USER;
