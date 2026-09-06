@@ -1211,6 +1211,16 @@ pb_chi_resize() {
 #
 # hostPath, mounted read-only, on /etc/containers -- the file the runtime reads, not a manifest that
 # claims what it says. Nothing here writes.
+# 2026-09-06 (crew#102): the day Calico started enforcing the fences, the fix for a 504 on every
+# public route was a policy file, and a policy file waits for a green CI run, a merge and Flux's
+# next pass. This applies platform/ns-fences from the checkout the workflow ran from (the branch
+# under review), as the one identity kyverno excuses, so a fence repair lands in the minute it is
+# dispatched and main follows by review. It applies the generated tree and nothing typed ad hoc.
+pb_ns_fences() {
+  step ns-fences-applied $K apply -k "$IDP/platform/ns-fences"
+  show ns-fences-live $K get networkpolicy -A -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,TYPES:.spec.policyTypes'
+}
+
 pb_registries_conf() {
   local node i=0
   for node in $($K get nodes -o jsonpath='{.items[*].metadata.name}'); do
@@ -1326,7 +1336,7 @@ pb_tigera_reset() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-parity) pb_otto_parity ;;
@@ -1349,6 +1359,7 @@ case "${1:-}" in
   namespace-unstick) pb_namespace_unstick ;;
   ghcr-pull-restore) pb_ghcr_pull_restore ;;
   registries-conf) pb_registries_conf ;;
+  ns-fences) pb_ns_fences ;;
   tigera-reset) pb_tigera_reset ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
