@@ -10,7 +10,8 @@ labels:
   "0": class_0
   "1": class_1
 abstain_below: 0.80      # margin between the top two label probabilities
-min_agreement: 0.95
+min_agreement: 0.95       # on answered held-out rows; the floor for shipping
+max_abstain: 0.20        # of held-out rows; agreement bought by abstaining is refused
 kv_cache_prefix: true
 schema: null
 lora:

@@ -6,11 +6,18 @@ import random
 MIN_EXAMPLES = 500
 
 
-def split(records: list[dict], seed: int = 0, train_share: float = 0.8) -> list[dict]:
-    """Deterministic 80/20 split. Same records and seed give the same split, byte for byte."""
-    if len(records) < MIN_EXAMPLES:
+def split(
+    records: list[dict],
+    seed: int = 0,
+    train_share: float = 0.8,
+    minimum: int = MIN_EXAMPLES,
+) -> list[dict]:
+    """Deterministic 80/20 split. Same records and seed give the same split, byte for byte.
+
+    `minimum` is the refusal floor; only a schema check (--limit) lowers it."""
+    if len(records) < minimum:
         raise ValueError(
-            f"Refusal: dataset under {MIN_EXAMPLES} examples (found {len(records)})"
+            f"Refusal: dataset under {minimum} examples (found {len(records)})"
         )
     order = list(range(len(records)))
     random.Random(seed).shuffle(order)  # noqa: S311  a split, not a secret
@@ -35,7 +42,9 @@ def label_probs(label_logits: dict[str, float]) -> tuple[str, float, float]:
 
 
 def grade(rows: list[tuple[str, str, float]], abstain_below: float) -> dict:
-    """rows: (expected label, predicted label, margin). Agreement counts answered rows only."""
+    """rows: (expected label, predicted label, margin). Agreement counts answered rows only,
+    so it is gated together with abstain_rate: a model that abstains its way to agreement fails
+    task.yaml max_abstain."""
     total = len(rows)
     abstains = sum(1 for _, _, margin in rows if margin < abstain_below)
     correct = sum(
