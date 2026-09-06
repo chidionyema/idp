@@ -1,6 +1,10 @@
 # Cyrus configuration (crew#834). Mounted as a ConfigMap, watched by Cyrus.
 # Engines: claude, codex, cursor, gemini, opencode. Claude on Max subscription;
 # OpenCode points at the estate router.
+# linearWorkspaceId is the Linear organisation id (not a secret; `{ organization { id } }`
+# with the vault's key answers it). cyrus-core requireLinearWorkspaceId() refuses to start
+# with an active repository that lacks it (README, wall 7). The token that goes with it is
+# joined into the pod's copy of this file by entrypoint.sh, never written here.
 # Transports: GitHub and Linear together (crew#834 CP3). Cyrus ships both, an issue can arrive
 # from either board, and neither is removed -- a capability the component already supports is
 # offered as a set of roads, not narrowed to one.
@@ -30,6 +34,7 @@ data:
           "repositoryPath": "/repo/idp",
           "baseBranch": "main",
           "githubUrl": "https://github.com/chidionyema/idp",
+          "linearWorkspaceId": "ec650f84-2971-4e51-8991-bda953c00d5e",
           "workspaceBaseDir": "/worktrees",
           "isActive": true,
           "allowedTools": [
@@ -70,6 +75,7 @@ data:
           "repositoryPath": "/repo/crew",
           "baseBranch": "main",
           "githubUrl": "https://github.com/chidionyema/crew",
+          "linearWorkspaceId": "ec650f84-2971-4e51-8991-bda953c00d5e",
           "workspaceBaseDir": "/worktrees",
           "isActive": true,
           "allowedTools": [
@@ -85,6 +91,7 @@ data:
           "repositoryPath": "/repo/hermes-v2",
           "baseBranch": "main",
           "githubUrl": "https://github.com/chidionyema/hermes-v2",
+          "linearWorkspaceId": "ec650f84-2971-4e51-8991-bda953c00d5e",
           "workspaceBaseDir": "/worktrees",
           "isActive": true,
           "allowedTools": [

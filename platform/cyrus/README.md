@@ -72,8 +72,9 @@ sender signature (`EdgeWorker.js:566`):
 `CYRUS_HOST_EXTERNAL=true` takes the transports out of proxy mode so cyrus verifies the
 signatures itself. The credentials stay files mounted from the vault and never enter this
 manifest, which is what the edge policy protects. Cyrus offers one other road for a token,
-`config.linearWorkspaces[<id>].linearToken` in `config.json`, and it is refused here:
-`config.json` is a ConfigMap in git, and a token does not go in git.
+`config.linearWorkspaces[<id>].linearToken` in `config.json`, and for Linear it is the only
+road (wall 7): the entrypoint joins the mounted token into the pod's private copy of the
+file, and the ConfigMap in git never carries it.
 
 ### 4. Cyrus never clones
 
@@ -151,3 +152,45 @@ The three `is not readable` lines above it are the init container, which mounts 
 secret and not the webhook secret, and they are the message the entrypoint exists to print: a
 credential that is absent says so, rather than becoming an empty string that reaches a
 signature check.
+
+### 7. Linked to no Linear workspace, and the key the vault holds is not a token cyrus can send
+
+Past the EROFS exit, on image `main-5300`, the pod read its three repositories and died on the
+next line:
+
+```
+[INFO ] [GitLabEventTransport] Registered POST /gitlab-webhook endpoint (proxy mode)
+[ERROR] [CLI] Failed to start edge application: Repository "idp" is not linked to a Linear workspace
+```
+
+`cyrus-core` `requireLinearWorkspaceId()` throws that for any active repository without a
+`linearWorkspaceId`, and `PromptBuilder.generateRoutingContextForAllWorkspaces()` walks every
+active repository at start. The id is the Linear organisation id, which the vault's key
+answers (`{ organization { id urlKey } }` → `ec650f84-2971-4e51-8991-bda953c00d5e`,
+`crewestate`); it is not a secret and sits on each repository in `configmap.yaml`.
+
+The token cannot follow it into git, and there is no environment variable cyrus reads for it:
+`grep -rn 'process.env.LINEAR' cyrus-edge-worker/dist` finds only `LINEAR_DIRECT_WEBHOOKS`,
+`LINEAR_WEBHOOK_SECRET`, `LINEAR_CLIENT_ID` and `LINEAR_CLIENT_SECRET`. The single road is
+`config.linearWorkspaces[<id>].linearToken`, so `entrypoint.sh` joins the mounted file into
+the pod's copy of `config.json` with `jq`, after the copy of wall 6 and before `exec cyrus`.
+
+That gets the pod up and the GitHub door open. It does not make the Linear door work, and the
+reason was measured before this file claimed otherwise. Cyrus builds its client as
+`new LinearClient({ accessToken })` (`EdgeWorker.js:302`), and `@linear/sdk` sends that as
+`Authorization: Bearer <token>` unconditionally (`index.cjs:117060`). Linear refuses a
+personal API key in that shape:
+
+```
+$ curl -H "Authorization: Bearer $LINEAR_API_KEY" https://api.linear.app/graphql ...
+{"errors":[{"message":"It looks like you're trying to use an API key as a Bearer token.
+  Remove the Bearer prefix from the Authorization header." ...
+```
+
+The same key without the prefix answers the organisation query above, so the key is good and
+the transport is the mismatch. `cyrus-linear-api-token` in the human vault therefore has to
+become an OAuth access token (plus its refresh token as `linearRefreshToken`, with
+`LINEAR_CLIENT_ID`/`LINEAR_CLIENT_SECRET` for cyrus's own refresh) before a Linear issue can
+reach this pod. An OAuth token is born the same way the key was, in a browser, once: a Linear
+OAuth application in the workspace and one consent. Until that exists the Linear transport
+is `MEASURED_FAIL` at the first API call, and the GitHub transport is the door in use.
