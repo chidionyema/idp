@@ -25,6 +25,7 @@ backend.add(
 // The scaffolder custom field extension reads these to render the store
 // form with live prices and fit.
 backend.add(import('./featureRegister'));
+backend.add(import('./credentialIngest'));
 
 // techdocs plugin
 backend.add(import('@backstage/plugin-techdocs-backend'));

@@ -1,0 +1,6 @@
+{
+  "_doc": "The probe could not run (the report never reached the deny checks: binary missing / shell exited 127 / no executor). A drill that grades a missing binary as a passing fence is the class of mistake zero-trust-boundary.md step 1 exists to catch, so this must FAIL closed - the value being absent is not evidence of a wall.",
+  "allowed_reach": "probe-failed",
+  "deny_cross_ns": "refused",
+  "deny_public": "refused"
+}

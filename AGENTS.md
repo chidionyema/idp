@@ -26,6 +26,9 @@ Row format, one rule per row. `gate` is a shell function or command defined in `
 | A code location loads the way workspace.yaml loads it: by file path, not as a package (LAW 45) | defs_validate | tests/fixtures/definitions/relative-import.py | tests/fixtures/definitions/loads-by-path.py |
 | A workflow that grades main never cancels main's own run; stale pull-request runs still are (crew#865) | main_verdict_gate | tests/fixtures/main-verdict/bad.yml | tests/fixtures/main-verdict/good.yml |
 | A test grades behavior or parsed structure, never prose: no test function may only assert sentences or string membership in file text (R76, founder 2026-09-03) | prose_pin_scan | tests/fixtures/prose-pin/bad.py | tests/fixtures/prose-pin/good.py |
+| One credential is one tenant's; the operator's road never widens the customer's (decision 0021) | tenant_split_gate | tests/fixtures/tenant-split/bad.yaml | tests/fixtures/tenant-split/good.yaml |
+| A profile of a denied packet is only ever a wall when the probe proved it could reach an allowed path; a probe that could not run is a fail-closed FAIL, never a pass (zero-trust-boundary.md step 1) | fence_enforcement_gate | tests/fixtures/fence-drill/gate-broken-fence.json | tests/fixtures/fence-drill/gate-good.json |
+| The 39 generated policies stay unwired until a deny feed has been read over a full cycle; an empty log feed is a fail-closed FAIL, never a clean bill (platform/calico README) | calico_denyflow_gate | tests/fixtures/calico-denyflow/feed-no-evidence.log | tests/fixtures/calico-denyflow/feed-with-deny.log |
 
 Rules that are already types or tools, and so need no row: compose files must parse
 (`docker compose config`), the gateway config must match its release schema

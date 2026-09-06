@@ -1,0 +1,6 @@
+{
+  "_doc": "A genuine fence: the prover leg reached an allowed path, and BOTH denied paths were refused (zero-trust-boundary.md step 1). Must PASS bin/idp-fence-enforcement (must-pass fixture).",
+  "allowed_reach": "reachable",
+  "deny_cross_ns": "refused",
+  "deny_public": "refused"
+}
