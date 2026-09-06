@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "voice-policy",
+  "type": "object",
+  "required": ["version", "lanes", "rules"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "lanes": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "deny_patterns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "pattern", "message"],
+              "properties": {
+                "id": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9-]*$" },
+                "pattern": { "type": "string", "minLength": 1 },
+                "message": { "type": "string", "minLength": 1 }
+              },
+              "additionalProperties": false
+            }
+          },
+          "inherit": { "type": "array", "items": { "type": "string" } },
+          "exclude_fields": { "type": "array", "items": { "type": "string" } },
+          "rules": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "rules": { "type": "object" },
+    "tier2": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string" },
+        "fallback_model": { "type": "string" },
+        "confidence_floor": { "type": "number", "minimum": 0, "maximum": 1 },
+        "frontier_alias": { "type": "string" },
+        "max_prompt_exemplars": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "tier3": {
+      "type": "object",
+      "properties": {
+        "max_iterations": { "type": "integer", "minimum": 0 },
+        "preserve": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "additionalProperties": false
+}
