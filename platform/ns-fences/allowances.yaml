@@ -229,6 +229,10 @@ flows:
     ingress_from: [otto-gateway, commerce]
   estate-db:
     ingress_from: [otto-gateway, hindsight, temporal, llm, observability, commerce, dagster]
+  temporal:
+    # 2026-09-06: estate-db-copy-temporal-r2 timed out on estate-rw from this namespace once Calico
+    # enforced the fence; estate-db named temporal on its ingress side, this side named nothing.
+    egress: [estate-db]
   commerce:
     # Lago's ledger is database `lago` on the estate cluster, its queue is in this namespace, and
     # it publishes estate.commerce.order_paid to the bus. It reaches nothing else in the estate --
