@@ -116,6 +116,25 @@ def render(task: dict, run: dict, rows: list[dict] | None, context: dict) -> str
         outcome = f"REFUSED: {ev.get('refusal')}. No model left the Forge."
     else:
         outcome = f"Verdict `{verdict}`."
+    plain = task.get("plain_english") or (
+        f"A small model was trained to do one job: {task['task']}. It learned from "
+        f"{ds.get('rows') or 'the'} examples the estate already had answers for, and was then tested "
+        f"on {held or 'held-out'} examples it had never seen."
+    )
+    if verdict == "shipped":
+        plain += (
+            f" It got {agreement:.0%} of the ones it answered right and declined to answer "
+            f"{abstain:.0%} of them, which clears the bar we set beforehand, so it is now in use."
+        )
+    elif verdict == "dry-run":
+        plain += " This was a rehearsal: it was graded but nothing was published."
+    elif verdict == "refused":
+        plain += " The run was stopped before it started, because it could have cost more than its budget."
+    elif agreement is not None:
+        plain += (
+            f" It got {agreement:.0%} right and declined {abstain:.0%}, which does not clear the bar, "
+            "so nothing was published."
+        )
     if held:
         hw = half_width(agreement or 0.0, held)
         resolution = (
@@ -141,6 +160,10 @@ python forge/experiment_record.py --task {context["task_path"]} --run forge-run.
 # Forge experiment {stamp}: {task["task"]}
 
 {outcome}
+
+## In plain English
+
+{plain}
 
 ## 1. Hypothesis
 
@@ -195,8 +218,9 @@ Prompt template:
         )
     }
 
-Labels come from the teacher run (forge/generate_teacher_dataset.py), never from a public
-benchmark; rows the teacher marked unsure are in the `-unsure` Langfuse dataset and not here.
+Labels come from the source each row's `teacher` field names: a teacher model run
+(forge/generate_teacher_dataset.py), a gold set, or a recorded outcome (forge/collect_ci_runs.py).
+Rows a teacher model marked unsure are in the `-unsure` Langfuse dataset and not here.
 
 ## 4. Pre-registered gates
 
