@@ -30,9 +30,11 @@ import {
   LayerState,
   Counts,
   ago,
+  checkedAgo,
   count,
   dominantState,
-  doorState,  entityPath,
+  doorState,
+  entityPath,
   hasNoAddress,
   isScreen,
   isKubernetes,
@@ -444,6 +446,13 @@ const useStyles = makeStyles(theme => ({
     minWidth: 0,
     overflowWrap: 'anywhere',
   },
+  // Directive 4: how recently the door was health-checked, so the row is alive with the
+  // estate's own evidence, not a bare button to somewhere else.
+  rowRecency: {
+    color: theme.palette.text.secondary,
+    fontSize: 12,
+    whiteSpace: 'nowrap',
+  },
   rowLinks: { display: 'flex', gap: theme.spacing(0.5), flexWrap: 'wrap' },
   door: {
     maxWidth: '100%',
@@ -701,6 +710,9 @@ export const DoorRow = ({ entity, now }: { entity: Entity; now?: number }) => {
         why={s.why}
         testId={`health-${entity.metadata.name}`}
       />
+      <span className={classes.rowRecency} data-testid={`age-${entity.metadata.name}`}>
+        {checkedAgo(entity, now)}
+      </span>
       <Link
         to={entityPath(entity)}
         className={classes.rowTitle}

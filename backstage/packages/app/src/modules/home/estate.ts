@@ -39,7 +39,6 @@ export const HEALTH_STATE: Record<Health, State> = {
   up: 'good',
 };
 export const needsYou = (h: Health) => h === 'down' || h === 'stale';
-
 // The slice of a Flux Kustomization / HelmRelease the page reads. Anything else is ignored.
 export type FluxObject = {
   metadata: { name: string; namespace?: string };
@@ -97,6 +96,24 @@ export const ago = (
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
+};
+
+/**
+ * Directive 4: a door should not read as a bare GitHub Source button. This says, in a plain
+ * sentence, how recently the door was health-checked (from its own catalogue annotation), so a
+ * tile carries live evidence of the estate speaking about it. Returns undefined when the door
+ * has never been checked (there is nothing true to say other than that it has not).
+ */
+export const checkedAgo = (
+  entity: Entity,
+  now: number = Date.now(),
+): string | undefined => {
+  const at = Date.parse(
+    entity.metadata?.annotations?.['estate/health-checked-at'] ?? '',
+  );
+  if (Number.isNaN(at)) return undefined;
+  const label = ago(new Date(at).toISOString(), now);
+  return label ? `checked ${label}` : undefined;
 };
 
 const cond = (o: FluxObject, type: string) =>
