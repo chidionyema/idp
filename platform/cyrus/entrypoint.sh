@@ -85,6 +85,30 @@ link_config() {
 	# every start, so git stays the source of truth.
 	cp "$CONFIG_SRC" "$HOME/.cyrus/config.json"
 	chmod 0600 "$HOME/.cyrus/config.json"
+	join_linear_token "$HOME/.cyrus/config.json"
+}
+
+# The only road cyrus offers for a Linear token is config.linearWorkspaces[<id>].linearToken
+# (cyrus-core config-schemas.js; no environment variable is read). The ConfigMap in git
+# carries the workspace id and never the token; the token is joined here, from the mounted
+# vault file, into the pod's private copy. Every workspace id the repositories name gets
+# the one token. A missing file is announced and joins nothing (README, wall 7).
+LINEAR_TOKEN_PATH=${CYRUS_LINEAR_TOKEN_PATH:-$WEBHOOK_DIR/linear-api-token}
+join_linear_token() {
+	local config=$1 tmp
+	if [ ! -r "$LINEAR_TOKEN_PATH" ]; then
+		echo "cyrus-entrypoint: $LINEAR_TOKEN_PATH is not readable, linearWorkspaces stays unset" >&2
+		return 0
+	fi
+	tmp=$(mktemp "$(dirname "$config")/config.XXXXXX")
+	jq --rawfile tok "$LINEAR_TOKEN_PATH" '
+		([.repositories[]? | .linearWorkspaceId // empty] | unique) as $ids
+		| .linearWorkspaces = ((.linearWorkspaces // {})
+			+ ($ids | map({key: ., value: {linearToken: ($tok | rtrimstr("\n"))}}) | from_entries))
+	' "$config" >"$tmp"
+	mv "$tmp" "$config"
+	chmod 0600 "$config"
+	echo "cyrus-entrypoint: linearWorkspaces joined for $(jq -r '.linearWorkspaces | length' "$config") workspace(s)"
 }
 
 case "${1:-}" in
