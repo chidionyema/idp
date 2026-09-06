@@ -45,6 +45,38 @@
    "coupling": null
   },
   {
+   "id": "claude/directives/-Users-chidionyema-dev-code-idp-board",
+   "kind": "ledger",
+   "root": "(outside)",
+   "path": "/Users/chidionyema/.claude/directives/-Users-chidionyema-dev-code-idp-board.jsonl",
+   "coupling": "anthropic",
+   "rows": 3
+  },
+  {
+   "id": "claude/state/prompt-ledger/dev",
+   "kind": "ledger",
+   "root": "(outside)",
+   "path": "/Users/chidionyema/.claude/state/prompt-ledger/dev.jsonl",
+   "coupling": "anthropic",
+   "rows": 2
+  },
+  {
+   "id": "claude/state/hook-outcomes",
+   "kind": "ledger",
+   "root": "(outside)",
+   "path": "/Users/chidionyema/.claude/state/hook-outcomes.jsonl",
+   "coupling": "anthropic",
+   "rows": 1
+  },
+  {
+   "id": "estate/knowledge/board/estate-board",
+   "kind": "ledger",
+   "root": "(outside)",
+   "path": "/Users/chidionyema/.estate/knowledge/board/estate-board.jsonl",
+   "coupling": "none",
+   "rows": 1
+  },
+  {
    "kind": "container",
    "id": "example-web",
    "path": "",
