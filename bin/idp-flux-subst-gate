@@ -70,7 +70,18 @@ def scan(path, substituting):
 
 def files_under(rel):
     for ext in ("*.yaml", "*.yml"):
-        yield from glob.glob(os.path.join(ROOT, rel, "**", ext), recursive=True)
+        for f in glob.glob(os.path.join(ROOT, rel, "**", ext), recursive=True):
+            # normpath: the estate-catalog row's path is ".", and without this its
+            # hits arrive as ROOT/./x -- a different string from ROOT/x, so `seen`
+            # never deduped and the whole repo was rescanned as plain (CI run
+            # 34010815583 flagged every $${ under substituting rows).
+            f = os.path.normpath(f)
+            # Gate fixtures are graded by their own gates with explicit paths
+            # (the AGENTS.md table); a repo-wide verdict must not regrade them,
+            # like the hardcode scan's `grep -v '^tests/fixtures/'`.
+            if os.path.relpath(f, ROOT).startswith("tests/fixtures/"):
+                continue
+            yield f
 
 
 def main(argv):
