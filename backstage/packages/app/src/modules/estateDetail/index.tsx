@@ -12,7 +12,7 @@
 // link -- so the click-through IS the overview, not a link to somewhere else.
 
 import { Entity } from '@backstage/catalog-model';
-import { useEntity } from '@backstage/plugin-catalog-react';
+import { useEntity, useRelatedEntities } from '@backstage/plugin-catalog-react';
 import { EntityContentBlueprint } from '@backstage/plugin-catalog-react/alpha';
 // The estate's own reader helpers, kept pure and React-free in home/estate; the hand-authored
 // founder-surface/component the health poller reaches carries estate/health + checked-at, and
@@ -72,12 +72,92 @@ const displayLabel = (key: string) =>
 /** Turn a Backstage ref (`kind:namespace/name`, `namespace/name` or bare `name`) into an
  * in-catalogue deep link, so the Belongs-to card takes a person from one entity to the next
  * without leaving the portal (directive 4's dead-end-GitHub-link gap, in reverse). */
-const formatRefLink = (ref: string, defaultKind: string) => {
+const formatRefLink = (ref: string, defaultKind: string, label?: string) => {
   const kindRaw = ref.includes(':') ? ref.slice(0, ref.indexOf(':')) : defaultKind;
   const rest = ref.includes(':') ? ref.slice(ref.indexOf(':') + 1) : ref;
   const [ns, name] = rest.includes('/') ? rest.split('/') : ['default', rest];
   const href = `/catalog/${kindRaw.toLowerCase()}/${ns ? ns : 'default'}/${name}`;
-  return <Link href={href}>{name}</Link>;
+  return <Link href={href}>{label ?? name}</Link>;
+};
+
+const NeighboursCard = () => {
+  const { entity } = useEntity();
+  const depends = useRelatedEntities(entity, { type: 'dependsOn' });
+  const usedBy = useRelatedEntities(entity, { type: 'dependencyOf' });
+  // Both families are read together, so one round of fetching decides the card's state.
+  const loading = depends.loading ?? usedBy.loading;
+  const error = depends.error ?? usedBy.error;
+  const pairs: { label: string; list: Entity[] }[] = [
+    { label: 'It depends on', list: depends.entities ?? [] },
+    { label: 'Used by', list: usedBy.entities ?? [] },
+  ];
+  const shown = pairs.filter(p => p.list.length > 0);
+  if (loading) {
+    return (
+      <Card variant="outlined">
+        <CardContent>
+          <Typography variant="overline">What it talks to</Typography>
+          <Typography variant="body2" color="textSecondary">
+            Reading its catalogue relations…
+          </Typography>
+        </CardContent>
+      </Card>
+    );
+  }
+  // When the catalogue could not be read, that is not the same as "nothing is wired" -
+  // claiming the graph is empty because we could not ask it would be exactly the invention
+  // rule 13 forbids, so the card says the real thing: it could not tell.
+  if (error) {
+    return (
+      <Card variant="outlined">
+        <CardContent>
+          <Typography variant="overline">What it talks to</Typography>
+          <Typography variant="body2" color="textSecondary">
+            The catalogue did not answer; who this talks to is not shown.
+          </Typography>
+        </CardContent>
+      </Card>
+    );
+  }
+  // Zero relations is a real read-back: the graph genuinely names no neighbour. Stated
+  // plainly, never wired to something the graph does not vouch for.
+  if (shown.length === 0) {
+    return (
+      <Card variant="outlined">
+        <CardContent>
+          <Typography variant="overline">What it talks to</Typography>
+          <Typography variant="body2" color="textSecondary">
+            Nothing else in the catalogue is wired to it yet.
+          </Typography>
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <Card variant="outlined">
+      <CardContent>
+        <Typography variant="overline">What it talks to</Typography>
+        {shown.map(pair => (
+          <Box key={pair.label} my={1}>
+            <Typography variant="body2">{pair.label}</Typography>
+            {pair.list.map(e => {
+              const s = e.spec as { type?: unknown } | undefined;
+              const t = typeof s?.type === 'string' ? s.type : undefined;
+              const kind = e.kind.toLowerCase();
+              const ref = `${kind}:${e.metadata.namespace ?? 'default'}/${e.metadata.name}`;
+              const shownName = e.metadata.title ?? e.metadata.name;
+              const label = `${shownName}${t ? ` - ${t}` : ''}`;
+              return (
+                <Typography variant="body2" key={ref}>
+                  {formatRefLink(ref, kind, label)}
+                </Typography>
+              );
+            })}
+          </Box>
+        ))}
+      </CardContent>
+    </Card>
+  );
 };
 
 export const EstateOverview = ({ now }: { now?: number }) => {
@@ -173,6 +253,8 @@ export const EstateOverview = ({ now }: { now?: number }) => {
               </CardContent>
             </Card>
           )}
+          {/* What it talks to: real catalogue relations, both directions. */}
+          <NeighboursCard />
           {links.length > 0 && (
             <Card variant="outlined">
               <CardContent>
