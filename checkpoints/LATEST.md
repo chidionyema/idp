@@ -29,3 +29,9 @@ routes that exist, and cert-manager re-validates every listener hostname at each
 route pruned with the sandbox would fail the whole edge certificate between sandboxes (crew#684).
 Next: bin/idp-ci green, PR, then the prospector https-sandbox listener (merge after the idp PR),
 then the /showcase page itself (research: scratchpad showcase-marketing.md).
+
+## 2026-09-06 01:20Z — showcase lane, sandbox plumbing shipped for review
+idp PR #1926 (PASS idp-ci on the committed tree), prospector PR #818 (https-sandbox, own cert,
+merges second), spec PR #1918. Merge order and first-launch steps are in #1926's body and on
+crew#805. Next unit of work: the /showcase page itself per spec #1918, research in this
+scratchpad's showcase-marketing.md (7 sections, claims table with file receipts).
