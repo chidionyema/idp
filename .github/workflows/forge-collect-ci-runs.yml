@@ -5,9 +5,10 @@
 # workers. On 2026-09-06 that pass ran on the founder's laptop and took the load average to 460
 # (founder: nothing heavy runs on the workstation; Oracle and GitHub carry it). This job is the
 # only place the collector runs. It writes forge/datasets/ci-flake-triage.jsonl, commits it to
-# the branch it was dispatched on (a pull request branch, so the dataset lands in that PR), and
+# the `branch` input on top of the dispatching ref, opens or refreshes a pull request to main, and
 # pushes with the flux-writer deploy key so ci.yml grades the commit (a GITHUB_TOKEN push fires
-# nothing, crew#439). The App token carries the API budget GITHUB_TOKEN's 1,000/hour cannot.
+# nothing, crew#439). main's rulesets have no bypass actors, so the dataset always arrives as a
+# pull request. The App token carries the API budget GITHUB_TOKEN's 1,000/hour cannot.
 name: forge-collect-ci-runs
 on:
   workflow_dispatch:
@@ -24,6 +25,10 @@ on:
         description: keep the committed rows and add flakes until real:flake is 9:1 or better
         type: boolean
         default: true
+      branch:
+        description: branch the dataset commit is pushed to; a pull request to main is opened or refreshed
+        required: false
+        default: forge/dataset-ci-flake-triage
 permissions:
   contents: read
   actions: read
@@ -73,9 +78,11 @@ jobs:
           echo "rows=$rows flakes=$flakes real=$((rows-flakes))" | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with: { name: ci-flake-triage, path: forge/datasets/ci-flake-triage.jsonl }
-      - name: commit the dataset to this branch (LAW 24)
+      - name: commit the dataset and open the pull request (LAW 24)
         env:
           WRITER_KEY_B64: ${{ secrets.SEED_FLUX_WRITER_IDENTITY_B64 }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BRANCH: ${{ inputs.branch }}
         run: |
           set -euo pipefail
           git add "$OUTPUT"
@@ -86,4 +93,10 @@ jobs:
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/flux-writer -o IdentitiesOnly=yes"
           git config user.name chidionyema; git config user.email "377396+chidionyema@users.noreply.github.com"  # idp#363: an unknown author leaves every check at action_required
           git commit -qm "forge: ci-flake-triage dataset collected on GitHub Actions, run ${GITHUB_RUN_ID} (crew#885)"
-          git push "git@github.com:${GITHUB_REPOSITORY}.git" "HEAD:${GITHUB_REF_NAME}"
+          git push --force-with-lease "git@github.com:${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
+          if [ -z "$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[].number')" ]; then
+            body="$RUNNER_TEMP/pr-body.md"
+            printf '%s\n' "Dataset written by the forge-collect-ci-runs workflow, run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." \
+              "" "No-Issue: crew#885" "Optimised: one job, two collector passes, one push; no laptop time." > "$body"
+            gh pr create --base main --head "$BRANCH" --title "forge: ci-flake-triage dataset from GitHub Actions (crew#885)" --body-file "$body"
+          fi
