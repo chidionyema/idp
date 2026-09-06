@@ -48,22 +48,42 @@ def key_from_env_or_vault():
     return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else None
 
 
+def pg_primary(timeout=60):
+    """The estate Postgres primary's pod name, from the CNPG cluster's own status.
+    estate-db-migrate moved the backstage database off backstage/postgres-0, the pod this
+    used to exec into; since the move every verdict step that touches SQL has been BLIND
+    ('pods "postgres-0" not found', verdict-backstage run 34012387932)."""
+    r = subprocess.run(
+        [
+            os.path.join(IDP, "bin", "idp-kube"),
+            "get", "cluster", "estate", "-n", "estate-db",
+            "-o", "jsonpath={.status.currentPrimary}",
+        ],
+        capture_output=True, text=True, timeout=timeout,
+    )
+    name = r.stdout.strip()
+    return name if r.returncode == 0 and name else None
+
+
 def psql(sql, timeout=120):
-    """Run SQL through psql inside the Backstage postgres pod (local socket, the image trusts it).
-    (rc, stdout, stderr). Cluster reach is bin/idp-kube, the same door the prover uses."""
+    """Run SQL through psql inside the estate Postgres primary (local socket, the image trusts
+    it). (rc, stdout, stderr). Cluster reach is bin/idp-kube, the same door the prover uses."""
+    pod = pg_primary()
+    if not pod:
+        return 2, "", "estate-db cluster reports no currentPrimary"
     cmd = [
         os.path.join(IDP, "bin", "idp-kube"),
         "exec",
         "-i",
         "-n",
-        "backstage",
-        "postgres-0",
+        "estate-db",
+        pod,
         "-c",
         "postgres",
         "--",
         "psql",
         "-U",
-        "backstage",
+        "postgres",
         "-d",
         "backstage",
         "-v",
