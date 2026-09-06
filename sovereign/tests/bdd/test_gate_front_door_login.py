@@ -359,13 +359,13 @@ def _oauth2_proxy_in_front(state: dict) -> None:
             # POST /linear-webhook and POST /github-webhook, and /webhook alone is a third,
             # deprecated alias. Every GitHub delivery was refused at the gateway with a 404 while
             # this assertion read green. A prefix would also admit anything under /webhook*, so
-            # each door is named.
+            # each door is named. The alias itself is gone: the one Linear registration that
+            # used it, webhook 5c755f6e-c32e-477e-9382-be9eab8921a8, was moved on 2026-09-06
+            # (webhookUpdate -> https://cyrus.${ESTATE_ZONE}/linear-webhook, success true), so
+            # nothing POSTs to /webhook any more and the door is closed behind it.
             open_paths = (
                 {"type": "Exact", "value": "/linear-webhook"},
                 {"type": "Exact", "value": "/github-webhook"},
-                # The alias, kept only until the Linear webhook registration is moved to
-                # /linear-webhook, so the two changes are never in flight at once.
-                {"type": "Exact", "value": "/webhook"},
             )
             paths = [
                 m.get("path", {})

@@ -3,7 +3,8 @@
 # and neither can follow an OAuth redirect. The door is not open though -- Cyrus verifies the
 # HMAC signature on every delivery (Linear's `linear-signature`, GitHub's `X-Hub-Signature-256`)
 # against the secrets in external-secret.yaml, and drops anything that does not match. The route
-# therefore exposes exactly /webhook and nothing else.
+# therefore exposes exactly the two paths EdgeWorker registers, /linear-webhook and
+# /github-webhook, and nothing else.
 # sovereign/tests/bdd/test_gate_front_door_login.py holds the proof behind the annotation.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -30,9 +31,6 @@ spec:
     - matches:
         - path: { type: Exact, value: /linear-webhook }
         - path: { type: Exact, value: /github-webhook }
-        # The deprecated alias, kept until the Linear webhook registration is moved to
-        # /linear-webhook, so the two changes are never in flight at the same moment.
-        - path: { type: Exact, value: /webhook }
       backendRefs:
         - name: cyrus
           port: 3456
