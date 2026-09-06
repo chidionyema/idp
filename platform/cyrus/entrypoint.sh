@@ -71,18 +71,18 @@ clone_repos() {
 
 # ~/.cyrus has to be made by this uid, not by kubelet: a subPath mount at
 # ~/.cyrus/config.json leaves the directory root-owned and cyrus dies creating
-# mcp-configs beside it. The config is a copy, not a link: cyrus rewrites config.json
-# in place after its allowedTools migration (Application.js, "[Migration] Added
-# \"Skill\""), and a link into the read-only ConfigMap dies with EROFS on that write.
-# A ConfigMap change reaches cyrus on the next start, when the copy is taken again.
+# mcp-configs beside it. The ConfigMap stays at its own read-only path and the config is
+# linked in, so a ConfigMap change still reaches cyrus through the link.
 CONFIG_SRC=${CYRUS_CONFIG_JSON:-/etc/cyrus/config.json}
-copy_config() {
+link_config() {
 	mkdir -p "$HOME/.cyrus"
 	[ -r "$CONFIG_SRC" ] || {
 		echo "cyrus-entrypoint: no config at $CONFIG_SRC" >&2
 		return 0
 	}
-	rm -f "$HOME/.cyrus/config.json"
+	# A copy, not a symlink: cyrus migrates its own config on boot and writes it back, and a
+	# symlink into the read-only ConfigMap made that an EROFS exit (README, wall 6). Refreshed
+	# every start, so git stays the source of truth.
 	cp "$CONFIG_SRC" "$HOME/.cyrus/config.json"
 	chmod 0600 "$HOME/.cyrus/config.json"
 }
@@ -93,7 +93,7 @@ clone)
 	echo "cyrus-entrypoint: checkouts ready"
 	;;
 *)
-	copy_config
+	link_config
 	exec cyrus "$@"
 	;;
 esac

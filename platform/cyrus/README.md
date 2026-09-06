@@ -116,15 +116,38 @@ group-writable, and `fsGroup` does not reach it. Cyrus creates `repos`, `worktre
 `mcp-configs` beside its config file on its first action, so it died there every time.
 
 The ConfigMap now mounts read-only at `/etc/cyrus` and the entrypoint makes `~/.cyrus` as
-the running uid. The first cut linked the config in, and the next boot (image main-5270,
-2026-09-06 03:26Z) died one line later:
+the running uid and links the config in. A ConfigMap change still reaches cyrus through
+the link.
+
+### 6. A symlink into the ConfigMap, and cyrus writes its own config back
+
+The fix for wall 5 mounted the ConfigMap read-only at `/etc/cyrus` and had the entrypoint
+symlink it into `~/.cyrus/config.json`. The pod then got past the directory creation, read the
+three repositories, and died on its first action:
 
 ```
+[INFO ] [CLI] [Migration] Added "Skill" to allowedTools for repository: idp
 [INFO ] [CLI] [Migration] Added "Skill" to allowedTools for repository: crew
+[INFO ] [CLI] [Migration] Added "Skill" to allowedTools for repository: hermes-v2
 [ERROR] [CLI] Failed to start edge application: EROFS: read-only file system,
-  open '/var/lib/cyrus/.cyrus/config.json'
+              open '/var/lib/cyrus/.cyrus/config.json'
 ```
 
-Cyrus rewrites its config in place after migrating it, and a link into a read-only
-ConfigMap cannot take that write. The entrypoint now copies the file in on every start,
-so a ConfigMap change reaches cyrus on its next start, and cyrus owns the copy it edits.
+Cyrus migrates its own config on boot and writes the migrated document straight back, so its
+config file cannot live on a read-only mount under any name. The entrypoint copies rather than
+links, and re-copies on every start: git is the source of truth, and whatever cyrus wrote during
+the last boot is discarded instead of accumulating in an emptyDir that outlives nothing anyway.
+
+The clone step, on the same image, worked first time:
+
+```
+cyrus-entrypoint: cloning https://github.com/chidionyema/idp into /repo/idp
+cyrus-entrypoint: cloning https://github.com/chidionyema/crew into /repo/crew
+cyrus-entrypoint: cloning https://github.com/chidionyema/hermes-v2 into /repo/hermes-v2
+cyrus-entrypoint: checkouts ready
+```
+
+The three `is not readable` lines above it are the init container, which mounts the GitHub
+secret and not the webhook secret, and they are the message the entrypoint exists to print: a
+credential that is absent says so, rather than becoming an empty string that reaches a
+signature check.
