@@ -69,8 +69,13 @@ def scan(path, substituting):
 
 
 def files_under(rel):
+    # The repository-root Kustomization (path ./) is the catalogue, not a manifest
+    # tree; every manifest it could reach belongs to a narrower path first.
+    if rel == ".":
+        return
     for ext in ("*.yaml", "*.yml"):
-        yield from glob.glob(os.path.join(ROOT, rel, "**", ext), recursive=True)
+        for f in glob.glob(os.path.join(ROOT, rel, "**", ext), recursive=True):
+            yield os.path.normpath(f)
 
 
 def main(argv):
