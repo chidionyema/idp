@@ -27,11 +27,17 @@ import Link from '@material-ui/core/Link';
 import Typography from '@material-ui/core/Typography';
 
 /** A generated entity carries at least one estate/* annotation (bin/catalog-gen writes
- * `estate/<field>` for every real estate row; a hand-authored founder/platform component has
- * the well-known backstage keys but none of ours, so it is not this tab's subject). */
+ * `estate/<field>` for every real estate row). */
 const isEstateGenerated = (entity: Entity) =>
   Boolean(entity.metadata.annotations) &&
   Object.keys(entity.metadata.annotations ?? {}).some(a => a.startsWith('estate/'));
+
+/** A catalogue Component: in this catalogue a component is the estate's own hand-authored
+ * founder-surface, platform layer, or platform service - an estate citizen the estate can author
+ * an overview for (founder fifth note: a hand surface with only the well-known backstage keys
+ * still needs a click-through that is more than the stock stub), whether or not the live probe
+ * has yet stamped it with estate/health. */
+const isComponent = (entity: Entity) => entity.kind.toLowerCase() === 'component';
 
 /** Fact names worth showing first, in a stable order, mapped to a human label. */
 const FACT_LABEL: Record<string, string> = {
@@ -187,16 +193,20 @@ export const EstateOverview = ({ now }: { now?: number }) => {
   );
 };
 
-// The tab is a component of the catalogue: a probed founder-surface (a Component the estate's
-// health probe stamped estate/health + checked-at onto, via bin/catalog-gen) or any generated
-// estate-ledger row carries at least one estate/* annotation, so it appears. A hand-authored
-// entity with only the well-known backstage keys is not this tab's subject.
+// The Estate tab is every catalogue Component (a founder-surface, platform layer, or service -
+// estate citizens a person clicks on the home and the estate should answer for, even when the
+// live probe has not yet stamped them) PLUS any generated estate row (a Resource/System in the
+// catalogue, e.g. a ledger that carries estate/* facts). Stock data that carries no estate
+// meaning is not this tab's subject.
+const isEstateSubject = (entity: Entity) =>
+  isEstateGenerated(entity) || isComponent(entity);
+
 const estateOverviewContent = EntityContentBlueprint.make({
   name: 'estate-overview',
   params: {
     path: '/estate',
     title: 'Estate',
-    filter: isEstateGenerated,
+    filter: isEstateSubject,
     loader: async () => <EstateOverview />,
   },
 });
