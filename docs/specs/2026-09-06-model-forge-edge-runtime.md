@@ -267,6 +267,8 @@ The teacher is the lead session first (founder, 2026-09-06, in session: "you are
 labels cost nothing on the router; a paid model is the teacher only when the session is not there,
 and then exactly once per example. Four moves:
 
+0. **The teacher runs as a batch job, never inside a chat session.** `forge/generate_teacher_dataset.py` takes a raw JSONL and the task's `task.yaml`, calls the teacher model through the Anthropic SDK with a JSON schema on the output, and writes rows in the schema `train.py` reads; unsure rows go to a rejects file. `--limit 5` checks the schema; `--batch` runs the whole set at half price.
+0b. **Training data is persisted and visible, three ways, every run** (founder, 2026-09-06: "i need all the training data persisted and highly visible"). The teacher script writes each labelled set to the Langfuse dataset named after the task, unsure rows to `<task>-unsure`, and exits 2 when it cannot. The Forge copies `dataset.jsonl` into the artifact next to `model.gguf` and writes its row counts and sha256 into `model-card.yaml` and the `forge-run` trace, so every shipped model names the exact rows it learned from. The file lives in git under `forge/datasets/<task>.jsonl` (LAW 24). Base weights come from the Hugging Face Hub into a Modal volume; nothing is pushed to the Hub.
 1. **Reuse before regenerate.** Every teacher answer already paid for is in Langfuse. Tenant
    0 to 3 datasets start there at zero marginal cost.
 2. **Cheapest adequate teacher.** For new labels, a 100-example calibration set is labelled by

@@ -10,6 +10,7 @@ import subprocess
 import time
 
 import modal
+import yaml
 
 ORAS_VERSION = "1.2.0"
 REMOTE = "/root/forge"
@@ -56,10 +57,18 @@ def run_forge(
     )
     with open(f"{REMOTE}/artifact/eval.json", encoding="utf-8") as f:
         eval_json = f.read()
+    with open(f"{REMOTE}/artifact/model-card.yaml", encoding="utf-8") as f:
+        dataset_meta = yaml.safe_load(f)["dataset"]
     from langfuse import Langfuse
 
     trace = Langfuse().trace(
-        name="forge-run", metadata={"task": task, "dry_run": dry_run, "eval": eval_json}
+        name="forge-run",
+        metadata={
+            "task": task,
+            "dry_run": dry_run,
+            "eval": eval_json,
+            "dataset": dataset_meta,
+        },
     )
     if dry_run:
         return f"dry run, no push; eval {eval_json}; trace {trace.id}"
@@ -79,6 +88,7 @@ def run_forge(
             "model-card.yaml:application/yaml",
             "eval.json:application/json",
             "tokenizer.json:application/json",
+            "dataset.jsonl:application/jsonl",
         ],
         cwd=f"{REMOTE}/artifact",
         check=True,

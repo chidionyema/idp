@@ -5,6 +5,7 @@ GGUF q4_k_m export, model-card.yaml and eval.json. Refuses under min_agreement.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -118,6 +119,10 @@ def main() -> None:
         raise SystemExit(
             f"Refusal: held-out agreement {result['agreement']:.4f} below {task['min_agreement']}"
         )
+    if result["abstain_rate"] > task["max_abstain"]:
+        raise SystemExit(
+            f"Refusal: held-out abstain rate {result['abstain_rate']:.4f} above {task['max_abstain']}"
+        )
 
     shutil.rmtree(args.out, ignore_errors=True)
     os.makedirs(args.out)
@@ -134,11 +139,24 @@ def main() -> None:
             "prompt_template",
             "labels",
             "abstain_below",
+            "min_agreement",
+            "max_abstain",
             "kv_cache_prefix",
             "schema",
         )
     }
     card["eval"] = result
+    # The training data travels with the model: the file itself and its hash in the card.
+    shutil.copy(args.data, os.path.join(args.out, "dataset.jsonl"))
+    with open(args.data, "rb") as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
+    card["dataset"] = {
+        "rows": len(dataset),
+        "train": len(train_ds),
+        "eval": len(eval_ds),
+        "sha256": digest,
+        "langfuse_dataset": task["task"],
+    }
     with open(os.path.join(args.out, "model-card.yaml"), "w", encoding="utf-8") as f:
         yaml.safe_dump(card, f, sort_keys=False)
     with open(os.path.join(args.out, "eval.json"), "w", encoding="utf-8") as f:
