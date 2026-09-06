@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The founder's whole part for one provider, in one command, zero copying between windows (R52; crew#618).
-#   bin/idp-set-root <provider>   tailscale | cloudflare | telegram-hermes | telegram-alerts | google-oauth,
+#   bin/idp-set-root <provider>   tailscale | cloudflare | telegram-hermes | telegram-alerts | google-oauth | modal,
 #                                 or any vendor platform/vendors/consoles.yaml gives a secret: row (the registry is the one list)
 #   bin/idp-set-root all          every provider above in turn, skipping any whose secrets are already set; one apply run at the end
 #
@@ -20,7 +20,9 @@ field() { awk -v v="  $1:" -v k="$2:" '$0==v{on=1;next} on&&/^  [a-z]/{exit} on&
 # (founder 2026-09-02): no vendor name is written in this script, so adding or
 # removing a vendor is a consoles.yaml edit and nothing here.
 vendors() { awk '/^vendors:/{on=1;next} on&&/^[a-z]/{exit} on&&/^  [a-z_]+:$/{v=$1;sub(/:$/,"",v)} on&&v&&$1=="secret:"{print v;v=""}' "$IDP/platform/vendors/consoles.yaml"; }
-ALL="tailscale cloudflare $(vendors | xargs) telegram-hermes telegram-alerts google-oauth"
+ALL="tailscale cloudflare $(vendors | xargs) telegram-hermes telegram-alerts google-oauth modal"
+# the run that mints the rest once the root is set; modal's is the Forge run, not the cluster apply
+DISPATCH=(oke-check.yml -f mode=apply)
 if [ "$P" = all ]; then
   # Founder, 2026-08-29: "a single command for the master key for all". Each provider is one turn;
   # one already set (its secret names exist on the repository) is skipped, so this is safe to re-run.
@@ -33,6 +35,7 @@ if [ "$P" = all ]; then
       telegram-hermes) need=SEED_TELEGRAM_HERMES_BOT_TOKEN ;;
       telegram-alerts) need=SEED_TELEGRAM_ALERTS_BOT_TOKEN ;;
       google-oauth) need="SEED_GOOGLE_OAUTH_CLIENT_ID SEED_GOOGLE_OAUTH_CLIENT_SECRET" ;;
+      modal) need="SEED_MODAL_TOKEN_ID SEED_MODAL_TOKEN_SECRET" ;;
       *) need=$(field "$p" secret) ;;   # the registry names the vendor's one root (R52)
     esac
     [ -n "$need" ] || { echo "FAIL    no secret name for $p in platform/vendors/consoles.yaml"; exit 1; }
@@ -111,6 +114,18 @@ T
     echo "        1. Send /token and pick the bot (${P#telegram-})."
     echo "        2. Copy the token BotFather answers with, when asked below."
     ask "$name" "the token shown" ;;
+  modal)
+    # The Forge's GPU (forge/modal_app.py). Modal's API is gRPC only, so platform/vendors/consoles.yaml
+    # has no row for it: the forge-train workflow proves this pair against the provider itself
+    # (`modal secret list`) and mints the two Modal secrets the launcher reads. Never `modal token new`
+    # on a laptop: that leaves the root in ~/.modal.toml where no pipeline can use it (R52, R75).
+    echo "modal: one token pair, once. The token page is opening."
+    open_page "https://modal.com/settings/tokens"
+    echo "        1. New Token. Name it: estate"
+    echo "        2. Copy the Token ID (ak-...) and the Token Secret (as-...) when asked below."
+    ask SEED_MODAL_TOKEN_ID "the token id, starts ak-"
+    ask SEED_MODAL_TOKEN_SECRET "the token secret, starts as-"
+    DISPATCH=(forge-train.yml -f dry_run=true) ;;
   *)
     vendors | grep -x -- "$P" >/dev/null || { echo "FAIL    unknown provider $P"; sed -n 3,4p "$0"; exit 2; }
     page=$(field "$P" page); name=$(field "$P" secret)
@@ -121,4 +136,4 @@ T
     echo "        2. Copy it when asked below."
     ask "$name" "the key shown" ;;
 esac
-[ -n "${IDP_NO_DISPATCH:-}" ] || { gh workflow run oke-check.yml -R "$REPO" -f mode=apply >/dev/null && echo "ok      apply run dispatched; the pipeline mints the rest. You are done with $P."; }
+[ -n "${IDP_NO_DISPATCH:-}" ] || { gh workflow run "${DISPATCH[@]}" -R "$REPO" >/dev/null && echo "ok      ${DISPATCH[0]} dispatched; the pipeline mints the rest. You are done with $P."; }

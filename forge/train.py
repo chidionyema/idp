@@ -114,18 +114,33 @@ def main() -> None:
         )
         rows.append((row["output"], top, margin))
     result = grade(rows, task["abstain_below"])
-    print(json.dumps(result))
+    refusal = None
     if result["agreement"] < task["min_agreement"]:
-        raise SystemExit(
-            f"Refusal: held-out agreement {result['agreement']:.4f} below {task['min_agreement']}"
-        )
-    if result["abstain_rate"] > task["max_abstain"]:
-        raise SystemExit(
-            f"Refusal: held-out abstain rate {result['abstain_rate']:.4f} above {task['max_abstain']}"
-        )
-
+        refusal = f"held-out agreement {result['agreement']:.4f} below {task['min_agreement']}"
+    elif result["abstain_rate"] > task["max_abstain"]:
+        refusal = f"held-out abstain rate {result['abstain_rate']:.4f} above {task['max_abstain']}"
+    result["verdict"] = "refused" if refusal else "passed"
+    result["refusal"] = refusal
+    with open(args.data, "rb") as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
+    dataset_meta = {
+        "rows": len(dataset),
+        "train": len(train_ds),
+        "eval": len(eval_ds),
+        "sha256": digest,
+        "langfuse_dataset": task["task"],
+    }
+    result["dataset"] = dataset_meta
+    print(json.dumps(result))
+    # eval.json is written on EVERY run, refused or not: a refusal is a result, and the
+    # experiment record (forge/experiments/) keeps it. Only the model waits on the gates.
     shutil.rmtree(args.out, ignore_errors=True)
     os.makedirs(args.out)
+    with open(os.path.join(args.out, "eval.json"), "w", encoding="utf-8") as f:
+        json.dump(result, f)
+    if refusal:
+        raise SystemExit(f"Refusal: {refusal}")
+
     model.save_pretrained_gguf(args.out, tokenizer, quantization_method="q4_k_m")
     gguf = next(n for n in os.listdir(args.out) if n.endswith(".gguf"))
     os.replace(os.path.join(args.out, gguf), os.path.join(args.out, "model.gguf"))
@@ -148,19 +163,9 @@ def main() -> None:
     card["eval"] = result
     # The training data travels with the model: the file itself and its hash in the card.
     shutil.copy(args.data, os.path.join(args.out, "dataset.jsonl"))
-    with open(args.data, "rb") as f:
-        digest = hashlib.sha256(f.read()).hexdigest()
-    card["dataset"] = {
-        "rows": len(dataset),
-        "train": len(train_ds),
-        "eval": len(eval_ds),
-        "sha256": digest,
-        "langfuse_dataset": task["task"],
-    }
+    card["dataset"] = dataset_meta
     with open(os.path.join(args.out, "model-card.yaml"), "w", encoding="utf-8") as f:
         yaml.safe_dump(card, f, sort_keys=False)
-    with open(os.path.join(args.out, "eval.json"), "w", encoding="utf-8") as f:
-        json.dump(result, f)
 
 
 if __name__ == "__main__":
