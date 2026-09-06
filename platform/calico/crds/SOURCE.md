@@ -1,34 +1,40 @@
-# operator.tigera.io CRDs — vendored, version-pinned, minimal OSS set
+# operator.tigera.io CRDs — vendored, version-pinned, complete chart-render set
 
 These CRDs are byte-for-byte copies (one documented prose edit, below) of the operator CRD set the
 projectcalico operator owns, pinned to the operator image the Calico v3.32.2 release pairs with.
 They exist because the `tigera-operator` helm chart ships **no `crds/` directory** (only
 `Chart.yaml`, `values.yaml`, `templates/` — measured in the stored `tigera-operator-v3.32.2.tgz` on
-the live cluster), and its `templates/crs/custom-resources.yaml` renders an `Installation` and an
-`APIServer` custom resource the moment `installation.enabled` / `apiServer.enabled` is true. With
-no CRD registered, helm fails at render with `no matches for kind "APIServer" in
-operator.tigera.io/v1` — the exact 32-hour `HelmRelease` failure recorded live before this fix.
+the live cluster), and its `templates/crs/custom-resources.yaml` renders custom resources the
+moment their `.Values.*.enabled` flag is true. With no CRD registered for a kind helm hands the
+API server, the whole install fails: `no matches for kind "APIServer" in operator.tigera.io/v1`
+was the first 32-hour failure; supplying only Installation/APIServer/... then advanced the error to
+the next missing kind (`Goldmane`, then `Whisker`). A CRD missing for ANY kind the chart delivers
+fails the install, so this directory must register every kind that chart renders, not a guessed subset.
 
-## Scope: only the three kinds an open-source, cloud-agnostic datapath reconciles
+## Scope: the complete chart-render set (five kinds), not the full 25-CRD catalog
 
-The full upstream operator catalog at this tag is **25 `operator.tigera.io` CRDs**, but most are
-Calico Enterprise or cloud/vendor-specific features (egressgateway with its AWS variant, log
-collection, complaint, intrusion-detection, istio, management clusters, and so on). This estate
-runs **Calico OSS as a cloud-agnostic L3/L4 network-policy datapath** and must not advertise or
-reconcile providers it does not run, under the founder's R36 rule (`bin/cloud-agnostic-gate`: "the
-platform must not know or care who owns the servers it runs on") and the repo's YAML scan that
-enforces it on every PR to main. Vendored here are therefore only:
+The operator import tree at this tag holds 25 `operator.tigera.io` CRDs, most backing Calico
+Enterprise / vendor-specific features this estate does not run. But the five vendored here are the
+ones the stored v3.32.2 chart's own templates hand to Kubernetes under its default values, and so
+are the ones Kubernetes must recognize before the chart installs:
 
-- `operator.tigera.io_installations.yaml` — the `Installation` CR the operator watches to stand up
-  calico-node / felix / kube-controllers (the datapath the fence drill grades).
-- `operator.tigera.io_apiservers.yaml` — the `APIServer` CR the operator watches; gates the calico
-  kube-apiserver. This is the kind the live 32-hour helm failure named.
-- `operator.tigera.io_tigerastatuses.yaml` — the `Tigerastatus` CR that reports operator reconcile
-  status (cloud-agnostic, brought in for a truthful `kubectl get tigerastatus`).
+- `operator.tigera.io_installations.yaml` — the `Installation` CR (kind `Installation`). The
+  operator watches it to stand up calico-node / felix / kube-controllers.
+- `operator.tigera.io_apiservers.yaml` — the `APIServer` CR (kind `APIServer`).
+- `operator.tigera.io_goldmanes.yaml` — the `Goldmane` CR (kind `Goldmane`). Rendered by
+  `custom-resources.yaml` under `.Values.goldmane.enabled` (defaults true), so it must register even
+  though this estate runs OSS Calico policy only; the cost is an empty enterprise CRD, not a service.
+- `operator.tigera.io_whiskers.yaml` — the `Whisker` CR (kind `Whisker`). Same: rendered under
+  `.Values.whisker.enabled` (defaults true).
+- `operator.tigera.io_tigerastatuses.yaml` — the `Tigerastatus` CR, a cloud-agnostic reconcile-status
+  read for `kubectl get tigerastatus`.
 
-The `projectcalico.org` CRDs calico-node/felix actually consume (felixconfiguration, ippool,
-networkpolicy, ...) are a separate group the operator installs from its own image at boot; they are
-not operator-group CRDs and are out of scope here.
+The remaining 20 upstream operator CRDs are for features whose CRs this chart does not render
+(egressgateways — which also carries the only bare `aws:` that the founder's R36 gate refuses on
+`platform/`) and provider CRs installed at runtime, and are deliberately not vendored here. The
+`projectcalico.org` CRDs (felixconfiguration, ippool, networkpolicy, ...) that calico-node/felix
+consume are a separate group the operator installs from its own image at boot; they are not
+operator-group CRDs and helm render does not map them.
 
 - operator image pairing: `quay.io/tigera/operator:v1.42.6`
   (read from `projectcalico/calico` v3.32.2 `manifests/tigera-operator.yaml`)
@@ -51,5 +57,6 @@ never a functional `.type`, `.default`, enum, or structural field, and the file 
 valid CRD.
 
 Do not edit these files by hand except to re-apply the one documented prose reword above on
-re-vendor. To upgrade Calico later, replace the kept CRDs with the three files at the new operator
-tag the new Calico release pins, re-apply the reword, and update this note to that tag and tree sha.
+re-vendor. To upgrade Calico later, replace the kept CRDs with the chart-render set (installations,
+apiservers, goldmanes, whiskers, tigerastatuses) at the new operator tag the new Calico release
+pins, re-apply the reword, and update this note to that tag and tree sha.
