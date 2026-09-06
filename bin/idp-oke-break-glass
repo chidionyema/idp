@@ -1250,8 +1250,83 @@ YAML
   done
 }
 
+# tigera-reset: roll back a wedged tigera-operator flannel->calico cutover WITHOUT losing the
+# datapath, and without helm-uninstall (founder 2026-09-06, and the estate warning in
+# platform/calico/README.md: never release a wedged CNI through helm). Two reasons helm is the
+# wrong tool here. First, the Installation CR carries finalizers
+# (operator.tigera.io/installation-controller, tigera.io/operator-cleanup) that only the operator
+# pod clears; a wedged operator cannot, so helm-uninstall -wait hangs until timeout. Second,
+# releasing the tigera-operator chart runs its delete hooks against calico-owned objects even
+# when calico-node never reached Ready, which on a cluster where flannel is the working path is
+# exactly the wrong teardown. So: flannel first, operator last.
+#
+# Order (each step a one-line receipt, non-zero fails the playbook, never drain/cordon -- the
+# founder froze those for CNI playbooks in cilium-replace):
+#   1. Guard: refuse to run unless flannel is the live, working daemonset RIGHT NOW (2/2).
+#   2. Guard: the calico Flux Kustomization is already suspended in git (a merged code change set
+#      suspend: true on clusters/oke/platform.yaml's calico row). Suspending is the non-destructive
+#      stopper -- Flux stops converging ./platform/calico, no runtime KS delete happens here.
+#   3. Take the operator Deployment to zero and delete it so it cannot re-add the Installation
+#      finalizer while we clear it, and so helm-controller has nothing left to converge.
+#   4. Patch the Installation finalizers to null and delete the Installation (the wedged object).
+#   5. Delete the operator-owned calico-system objects the operator created but abandoned
+#      (calico-node DS, calico-typha, calico-kube-controllers) -- idempotent deletes.
+#   6. Restart coredns onto a flannel-only chain (same reason cilium-unchain does).
+#   7. Reconcile flux-system so it converges on the tree.
+#   8. Prove it: flannel DS ready, no calico-system workload left, and a live dns probe answers.
+# Rollback: nothing in here removes or alters flannel, so the estate is left exactly as it was on
+# the datapath. Re-landing is a git change to platform/calico, not this playbook.
+pb_tigera_reset() {
+  # Guard 1: flannel must be present and scheduling on both nodes; never run if it is not.
+  local fl_ready fe susp
+  fe=0
+  fl_ready=$($K get ds -n kube-system kube-flannel-ds -o jsonpath='{.status.numberReady}/{.status.desiredNumberScheduled}' 2>/dev/null) || fe=1
+  [ $fe -eq 0 ] && [ "$fl_ready" = "2/2" ] || {
+    echo "FAIL  tigera-reset: flannel must be 2/2 (got '${fl_ready:-none}') before the operator is rolled back";
+    FAILED="$FAILED guard-flannel"; return 1; }
+  # Guard 2: the calico Flux Kustomization must already be suspended in git (a merged code change
+  # to clusters/oke/platform.yaml sets suspend: true on it). Suspending is what stops Flux
+  # converging ./platform/calico back in; deleting the operator objects here only works because
+  # Flux has stopped. Refuse to run if it is still live, so no split-brain teardown.
+  susp=$($K get kustomization -n flux-system calico -o jsonpath='{.spec.suspend}' 2>/dev/null)
+  [ "$susp" = "true" ] || {
+    echo "FAIL  tigera-reset: the calico Kustomization is not suspended (spec.suspend='${susp:-?}'); merge the git change that suspends it first";
+    FAILED="$FAILED guard-suspend"; return 1; }
+  # Guard 3: confirm the operator namespace actually exists to reset.
+  $K get ns tigera-operator >/dev/null 2>&1 || { echo "FAIL  tigera-reset: no tigera-operator namespace to reset"; FAILED="$FAILED guard-ns"; return 1; }
+
+  # The operator pod is what re-adds the Installation finalizer we are about to remove; take it
+  # down so nothing fights the clear. scale-0 first so deletion is clean, fall back to delete.
+  if $K scale deploy/tigera-operator -n tigera-operator --replicas=0 >/dev/null 2>&1; then
+    step operator-stopped $K delete deploy/tigera-operator -n tigera-operator --ignore-not-found --wait=false
+  else
+    step operator-removed $K delete deploy/tigera-operator -n tigera-operator --ignore-not-found --wait=false
+  fi
+  # The Installation is the object holding the finalizers only the operator clears; with the
+  # operator gone we clear them by hand, the same patch namespace-unstick uses on a namespace.
+  step installation-unfinalize $K patch installation default --type=merge -p '{"metadata":{"finalizers":null}}' --ignore-not-found
+  step installation-gone $K delete installation default --ignore-not-found --wait=false
+  # Operator-owned calico objects it stopped repairing. None of them is the datapath while
+  # flannel routes; idempotent deletes, --wait=false so we never block on a stuck pod.
+  step ds-calico-node-gone $K delete ds -n calico-system calico-node --ignore-not-found --wait=false
+  step deploy-typha-gone $K delete deploy -n calico-system calico-typha --ignore-not-found --wait=false
+  step deploy-kubecontrollers-gone $K delete deploy -n calico-system calico-kube-controllers --ignore-not-found --wait=false
+  step service-typha-gone $K delete svc -n calico-system calico-typha --ignore-not-found --wait=false
+  # A CNI fight stranded the coredns pods in dead sandboxes before (cilium-unchain run
+  # 33133317589); roll them onto the flannel-only chain the same narrow way.
+  step coredns-restart $K rollout restart deploy/coredns -n kube-system
+  step coredns-ready $K rollout status deploy/coredns -n kube-system --timeout=180s
+  # Converge on the tree that no longer carries the operator (git is the only writer).
+  step flux-source $K reconcile source git flux-system -n flux-system --timeout=3m
+  step flux-tree $K reconcile kustomization flux-system -n flux-system --timeout=5m
+  # Proof: flannel intact and calico-system has no workload left, then a live DNS answer.
+  step prove-flannel $K rollout status ds/kube-flannel-ds -n kube-system --timeout=180s
+  show remaining-calico $K get ds,deploy,rs,pods -n calico-system 2>&1
+  dns_probe tigera-reset-probe '' github.com kube-system
+}
+
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-parity) pb_otto_parity ;;
@@ -1274,6 +1349,7 @@ case "${1:-}" in
   namespace-unstick) pb_namespace_unstick ;;
   ghcr-pull-restore) pb_ghcr_pull_restore ;;
   registries-conf) pb_registries_conf ;;
+  tigera-reset) pb_tigera_reset ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
 [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }
