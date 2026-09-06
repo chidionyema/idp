@@ -67,6 +67,7 @@ platform/oci/identity/*.tfstate*
 /.wt-*/
 # generated at docs build by bin/mkdocs_hooks/incident_register.py (crew#679 CP2); never committed, never stale
 docs/reference/incident-register.yaml
+docs/reference/forge/
 
 # Vale downloads the Microsoft style on `vale sync`; only the estate boundary (styles/Estate, styles/config) is ours
 styles/Microsoft/

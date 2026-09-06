@@ -1,0 +1,35 @@
+# Estate task: is a red CI run a flake or a real failure? Data: forge/collect_ci_runs.py (outcome-labelled,
+# no teacher cost). Plan: forge/experiments/0002-ci-flake-triage-plan.md. Thread: crew#885.
+task: ci-flake-triage
+base: unsloth/Qwen2.5-1.5B-Instruct
+kind: classify
+hypothesis: >
+  A LoRA on Qwen2.5-1.5B reads the failed step's log tail of a red GitHub Actions run and says whether
+  the same commit later went green with nothing changed (a flake) at 95% agreement with what actually
+  happened, abstaining on at most 20% of runs; the estate then stops paying a frontier call, or a
+  session's attention, for the red runs the model answers.
+plain_english: >
+  A small model reads the end of a failed GitHub check's log and says whether the check merely
+  stumbled (the same code passed on a rerun) or something really broke. When it is not sure it says
+  nothing and a person takes over.
+prompt_template: |
+  A GitHub Actions run failed. Decide whether it was a flake (1: the same commit later passed with no change) or a real failure (0: a change was needed).
+  {input}
+  Verdict:
+labels:
+  "0": real
+  "1": flake
+abstain_below: 0.80
+min_agreement: 0.95
+max_abstain: 0.20
+kv_cache_prefix: true
+schema: null
+compute:
+  gpu: T4
+  timeout_s: 3600
+  budget_usd: 1.00
+lora:
+  r: 16
+  alpha: 32
+  epochs: 3
+  lr: 2e-4

@@ -6,6 +6,7 @@ plugins:
   - techdocs-core
 hooks:
   - bin/mkdocs_hooks/incident_register.py   # writes reference/incident-register.yaml from the incident tests (crew#679 CP2)
+  - bin/mkdocs_hooks/forge_experiments.py    # copies forge/experiments/*.md to reference/forge/ with an index (crew#885)
 nav:
   - Home: index.md
   - Definition of Done: reference/policy/definition-of-done.md
@@ -22,6 +23,7 @@ nav:
       - explanation/architecture/index.md
       - Live estate: explanation/architecture/live.md
       - AI model stack: explanation/architecture/model-stack.md
+  - Own models, every experiment: reference/forge/index.md
   - Estate showcase: SHOWCASE.md
   - Conscience: CONSCIENCE.md
   - "Founder: shipped, changed for you, stuck": FOUNDER.md
