@@ -9,6 +9,7 @@ docs/runbooks/demo-sandbox.md, clusters/oke/sandbox.yaml, .github/workflows/demo
 """
 
 import pathlib
+import os
 import re
 import subprocess
 import sys
@@ -170,6 +171,29 @@ def test_the_portal_button_is_generated_and_current(tmp_path=None):
         timeout=120,
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_the_launch_rows_substitution_parses_over_the_build():
+    # The demo-sandbox row lives on branch sandbox/launch, so no committed Kustomization
+    # covers it: this is the substitution Flux runs for it, with the row's own variables.
+    env = dict(os.environ, SANDBOX_EXPIRES_AT="2030-01-01T00:00:00Z", SANDBOX_HOLD="1h")
+    build = subprocess.run(
+        ["kustomize", "build", str(SANDBOX)],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+    proc = subprocess.run(
+        ["flux", "envsubst", "--strict"],
+        input=build.stdout,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "2030-01-01T00:00:00Z" in proc.stdout
 
 
 def test_the_sweep_ends_an_expired_hold_and_leaves_a_live_one(tmp_path):
