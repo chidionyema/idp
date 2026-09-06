@@ -301,6 +301,63 @@ pub fn document_measures(text: &str) -> BTreeMap<String, f64> {
 }
 
 // ---------------------------------------------------------------------------
+// orphan-open-quote (house_style R8): a sentence opener that cites nothing earned.
+// ---------------------------------------------------------------------------
+
+/// Mirror house_style._ORPHAN_OPEN_RE.match against ONE already-split sentence.
+/// A hit is a sentence that BEGINS (`\b`) with That|Which|And that|So that but whose next
+/// whitespace-delimited word is not an excluded copula/exophoric (is|was|said|way|much|
+/// aside) standing on a word boundary. Lookahead-free scanner over the same three rules.
+pub fn orphan_openers(sentence: &str) -> bool {
+    const EXCLUDED: [&str; 6] = ["is", "was", "said", "way", "much", "aside"];
+    const OPENERS: [&str; 4] = ["That", "Which", "And that", "So that"];
+    let s = sentence.trim_start();
+    for opener in OPENERS {
+        if let Some(rest) = s.strip_prefix(opener) {
+            // `\b` after the opener: the next char must be non-word, or end of string.
+            if !rest.is_empty() && is_py_word(rest.chars().next().unwrap()) {
+                continue; // opener glued to a letter/digit (e.g. "Thatched", "Thats")
+            }
+            // `(?!\s+(is|was|said|way|much|aside)\b)`: exclude only when whitespace then
+            // one of the six, with that word ending on a word boundary.
+            let after_ws = rest.trim_start_matches(is_py_space);
+            if after_ws.len() < rest.len() {
+                let w = read_py_word(after_ws);
+                let w_end = &after_ws[w.len()..];
+                let w_boundary = match w_end.chars().next() {
+                    None => true,
+                    Some(c) => !is_py_word(c),
+                };
+                if EXCLUDED.contains(&w) && w_boundary {
+                    continue;
+                }
+            }
+            return true;
+        }
+    }
+    false
+}
+
+/// Python `\w` (Unicode letter, digit or underscore) drives `\b`.
+fn is_py_word(c: char) -> bool {
+    c == '_' || c.is_alphanumeric()
+}
+
+fn is_py_space(c: char) -> bool {
+    c.is_whitespace()
+}
+
+/// First `\w+` run of `text` (bounded by non-word or end).
+fn read_py_word(text: &str) -> &str {
+    let end = text
+        .char_indices()
+        .find(|(_, c)| !is_py_word(*c))
+        .map(|(i, _)| i)
+        .unwrap_or(text.len());
+    &text[..end]
+}
+
+// ---------------------------------------------------------------------------
 // grade
 // ---------------------------------------------------------------------------
 
@@ -398,5 +455,33 @@ mod unit {
         let m = document_measures(text);
         // two short, comma-free sentences -> no heavy sentences
         assert_eq!(m.get("heavy_sentence_rate").copied().unwrap(), 0.0);
+    }
+
+    #[test]
+    fn orphan_open_quotes_locked_to_python_oracle() {
+        // (sentence, house_style._ORPHAN_OPEN_RE.match outcome measured by Python)
+        let cases: [(&str, bool); 13] = [
+            ("That is a risk we accept and should you proceed.", false),
+            ("That said, the buyer accepted.", false),
+            ("That arrangement would not survive scrutiny.", true),
+            ("Which is why the second contract matters.", false),
+            ("Which contract matters then?", true),
+            ("And that is nonsense in this context.", false),
+            ("And that decision was reversed.", true),
+            ("So that the supplier remains liable, we keep the clause.", true),
+            ("That was a fine outcome.", false),
+            ("That way we avoid the trap.", false),
+            ("So that is settled and we proceed.", false),
+            ("Nobody noticed the change.", false),
+            ("So that much is true as well.", false),
+        ];
+        for (sent, expect) in cases {
+            assert_eq!(
+                orphan_openers(sent),
+                expect,
+                "orphan_openers mismatch on {:?}",
+                sent
+            );
+        }
     }
 }
