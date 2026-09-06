@@ -129,6 +129,19 @@ def policy_docs(ns: str, flows: dict) -> list[dict]:
             "to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
                     "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}}}],
             "ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}]}]},
+    }, {
+        # The floor is drawn around the namespace ("the namespace next door", above), not around
+        # each pod: a default deny with podSelector {} also cuts a namespace's own pods off from
+        # each other, and the first hour Calico enforced it (2026-09-06, crew#102) the storefront
+        # answered in 10.5 s because prospector-store-web's call to prospector-store-api in the
+        # same namespace timed out (traefik: mumchimp.com 200 origin_ms=10517). This is the one
+        # hole that says pods inside one fence may talk; a fence between namespaces stays exactly
+        # as declared.
+        "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+        "metadata": {"name": "allow-same-namespace", "namespace": ns},
+        "spec": {"podSelector": {}, "policyTypes": ["Ingress", "Egress"],
+                 "ingress": [{"from": [{"podSelector": {}}]}],
+                 "egress": [{"to": [{"podSelector": {}}]}]},
     }]
     egress = list(flows.get("egress") or [])
     if ns != "observability":
@@ -144,6 +157,19 @@ def policy_docs(ns: str, flows: dict) -> list[dict]:
     internet = flows.get("egress_internet") or []
     if internet:
         docs.append(internet_egress_doc(ns, internet))
+    public = flows.get("ingress_public") or []
+    if public:
+        # Only the Gateway's data plane declares this: the load balancer hands it the client's own
+        # address (externalTrafficPolicy Local), so the source is the internet and the hole is
+        # the listener ports and nothing else. Without it the first traefik pod scheduled onto
+        # the enforcing CNI would drop every public request at its own veth.
+        docs.append({
+            "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+            "metadata": {"name": "allow-public-ingress", "namespace": ns},
+            "spec": {"podSelector": {}, "policyTypes": ["Ingress"], "ingress": [{
+                "from": [{"ipBlock": {"cidr": "0.0.0.0/0"}}],
+                "ports": [{"protocol": "TCP", "port": int(p)} for p in sorted(set(public))]}]},
+        })
     ingress = sorted(set(flows.get("ingress_from") or []))
     if ingress:
         docs.append({

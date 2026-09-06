@@ -241,8 +241,9 @@ flows:
     # plane (edge, the traefik controller pods) dials into it to answer apex/www/api, and it is
     # banned from dialing the rest of the estate -- the commerce block above says the same in the
     # other direction. So it takes ingress from edge and no declared egress: the generator still
-    # gives it DNS and the observability collector automatically, and its store pods reach each
-    # other and their own database inside the namespace with no fence rule needed. It was missing
+    # gives it DNS, the observability collector and the same-namespace hole automatically (the
+    # store pods reach each other and their own database through that hole, and through nothing
+    # else: measured 2026-09-06, without it store-web's call to store-api timed out). It was missing
     # from flows/ entirely, which left network/prospector.yaml a default-deny with no ingress
     # allow from anyone -- harmless only while a CNI lets east-west traffic through, and the moment
     # one enforces, the storefront answers 30s hangs the way this estate has already seen on the
@@ -251,3 +252,11 @@ flows:
   edge:
     egress: [backstage, dagster, guacamole, healthchecks, hermes-agent, identity, llm, mcp,
              monitoring, observability, otto-gateway, otto-golden, hindsight, prospector]
+    # The public listeners (traefik containerPorts web 8000 and websecure 8443, behind the OCI
+    # load balancer with externalTrafficPolicy Local, so the source address is the client's).
+    # The traefik pods still held flannel addresses when Calico started enforcing on 2026-09-06,
+    # which is the only reason the estate stayed reachable; the first one rescheduled onto Calico
+    # would have been unreachable from the internet with no rule here.
+    ingress_public: [8000, 8443]
+    # Prometheus scrapes the traefik metrics listener (9100) from monitoring.
+    ingress_from: [monitoring]
