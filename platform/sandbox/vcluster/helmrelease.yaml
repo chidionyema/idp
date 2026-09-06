@@ -95,6 +95,17 @@ spec:
         persistence:
           volumeClaim:
             enabled: false
+      # The vcluster's own coredns syncs pods onto the host, where the estate admits them
+      # like any other: both seccomp fields must be RuntimeDefault or the mirrored pod is
+      # denied at admission (measured on the first real launch, 2026-09-06).
+      coredns:
+        security:
+          podSecurityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          containerSecurityContext:
+            seccompProfile:
+              type: RuntimeDefault
     experimental:
       deploy:
         vcluster:
@@ -129,8 +140,17 @@ spec:
                       image: docker.io/nginxinc/nginx-unprivileged:1.27-alpine
                       ports:
                         - containerPort: 8080
+                      # The host admits the mirrored pod like any other (first launch,
+                      # 2026-09-06): probes and a read-only root are required, so the shop
+                      # carries them. The emptyDirs are nginx's scratch paths under a
+                      # read-only root; nothing else is writable.
+                      livenessProbe:
+                        httpGet: { path: /, port: 8080 }
+                      readinessProbe:
+                        httpGet: { path: /, port: 8080 }
                       securityContext:
                         allowPrivilegeEscalation: false
+                        readOnlyRootFilesystem: true
                         capabilities:
                           drop:
                             - ALL
@@ -144,10 +164,16 @@ spec:
                         - name: page
                           mountPath: /usr/share/nginx/html
                           readOnly: true
+                        - { name: nginx-cache, mountPath: /var/cache/nginx }
+                        - { name: nginx-run, mountPath: /var/run }
+                        - { name: tmp, mountPath: /tmp }
                   volumes:
                     - name: page
                       configMap:
                         name: demo-shop-page
+                    - { name: nginx-cache, emptyDir: {} }
+                    - { name: nginx-run, emptyDir: {} }
+                    - { name: tmp, emptyDir: {} }
             ---
             # The page a buyer's engineer sees at sandbox.<zone>: served from inside the sandbox,
             # by a container that did not exist a minute before, and dated with the hold the
