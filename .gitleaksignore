@@ -1,0 +1,7 @@
+# Synthetic fixture in a test file, committed 2026-09-05T23:28:15Z by the two-hats lane before
+# the fixture was reshaped to read as fake (see the comment above SECRET in
+# backstage/packages/backend/src/credentialIngest.test.ts). The value was never a real key --
+# 'lin_api_' + 16 hex + '_2026' matches no vendor's format -- but the rule that flagged it is
+# the rule that must keep firing on everything else, so the historical commit is named here
+# rather than the rule weakened.
+6ba7309ac1605a07252a517851da9faaf3c3f3f3:backstage/packages/backend/src/credentialIngest.test.ts:generic-api-key:24

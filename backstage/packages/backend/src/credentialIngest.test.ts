@@ -21,7 +21,12 @@ function mockRes() {
   return res;
 }
 
-const SECRET = 'lin_api_7f2c1a9be4d05e63_2026';
+// The fixture value the door must never leak. It is synthetic on purpose and shaped so
+// secret scanners can tell: no vendor prefix, no hex run. A fixture that LOOKS real gets
+// pasted into the allow-list by the next session that copies this file, and one day that
+// allow-list entry hides a real key (gitleaks flagged the previous fixture; the fingerprint
+// of that historical commit lives in .gitleaksignore with this note).
+const SECRET = 'ingest-door-fixture-value-must-never-leak-2026';
 const sha8 = (s: string) => crypto.createHash('sha256').update(s, 'utf8').digest('hex').slice(0, 8);
 
 interface LogSink {
@@ -75,7 +80,7 @@ function makeHandler(over: {
 
 describe('credential-ingest door never leaks the value', () => {
   it('403 when no caller forwarded by the front door', async () => {
-    const { handler, s } = makeHandler({ caller: undefined });
+    const { handler } = makeHandler({ caller: undefined });
     const res = mockRes();
     await handler({ body: { entry: 'cyrus-linear', key: 'api_token', value: SECRET, store: 'estate-vault' } }, res);
     expect(res.__state.status).toBe(403);
