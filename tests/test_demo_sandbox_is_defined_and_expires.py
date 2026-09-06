@@ -191,7 +191,16 @@ def test_the_seed_is_admitted_like_any_host_pod():
 def test_the_launch_rows_substitution_parses_over_the_build():
     # The demo-sandbox row lives on branch sandbox/launch, so no committed Kustomization
     # covers it: this is the substitution Flux runs for it, with the row's own variables.
-    env = dict(os.environ, SANDBOX_EXPIRES_AT="2030-01-01T00:00:00Z", SANDBOX_HOLD="1h")
+    # The quoted App ids stand in for the flux-system/github-app Secret the row's
+    # substituteFrom names (the sweeper's generator, sweeper.yaml).
+    env = dict(
+        os.environ,
+        SANDBOX_EXPIRES_AT="2030-01-01T00:00:00Z",
+        SANDBOX_LAUNCHED_AT="2029-12-31T23:00:00Z",
+        SANDBOX_HOLD="1h",
+        githubAppIDQuoted='"123"',
+        githubAppInstallationIDQuoted='"456"',
+    )
     build = subprocess.run(
         ["kustomize", "build", str(SANDBOX)],
         capture_output=True,
@@ -209,6 +218,37 @@ def test_the_launch_rows_substitution_parses_over_the_build():
     )
     assert proc.returncode == 0, proc.stderr
     assert "2030-01-01T00:00:00Z" in proc.stdout
+
+
+def test_the_sweeper_script_is_the_bin_script_not_a_drifted_copy():
+    # The CronJob runs the ConfigMap's file, so the ConfigMap's source in this folder must
+    # be bin/idp-sandbox-sweep byte for byte (the router-config rule, tests/test_llm_row.py).
+    carried = (SANDBOX / "idp-sandbox-sweep").read_bytes()
+    source = (ROOT / "bin/idp-sandbox-sweep").read_bytes()
+    assert carried == source, (
+        "platform/sandbox/vcluster/idp-sandbox-sweep drifted from bin/idp-sandbox-sweep"
+    )
+
+
+def test_the_sweeper_is_substituted_mounted_and_lane_scoped():
+    docs = {
+        d["kind"]: d for d in render(SANDBOX) if isinstance(d, dict) and "kind" in d
+    }
+    cron = docs["CronJob"]
+    env = {
+        e["name"]: e.get("value", "")
+        for e in cron["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][
+            0
+        ]["env"]
+    }
+    assert env["SANDBOX_EXPIRES_AT"] == "${SANDBOX_EXPIRES_AT}"
+    assert env["SANDBOX_LAUNCHED_AT"] == "${SANDBOX_LAUNCHED_AT}"
+    gen = docs["GithubAccessToken"]["spec"]
+    assert gen["permissions"] == {"metadata": "read", "contents": "write"}
+    assert (
+        gen["appID"] == "${githubAppIDQuoted}"
+        and gen["installID"] == "${githubAppInstallationIDQuoted}"
+    )
 
 
 def test_the_sweep_ends_an_expired_hold_and_leaves_a_live_one(tmp_path):

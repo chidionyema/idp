@@ -6,8 +6,13 @@
 # writes branch sandbox/launch and the cluster reads it (clusters/oke/sandbox.yaml). While a
 # sandbox is held the branch carries the Flux row demo-sandbox and a ConfigMap the portal's
 # Showcase page reads for the hold and the expiry; between sandboxes it carries the ConfigMap
-# alone, saying idle. The schedule below is the clock: every fifteen minutes the same job reads the
-# expiry off the branch and empties it once the hold has run out. Pin:
+# alone, saying idle. The clock stands in-cluster: the launch row substitutes the hold's
+# timestamps into platform/sandbox/vcluster/sweeper.yaml, whose CronJob force-pushes the idle
+# commit the moment the hold runs out. The schedule below is the fallback: every fifteen
+# minutes the same job reads the expiry off the branch and empties it once the hold has run
+# out, for the day the in-cluster sweeper cannot run. (2026-09-06: GitHub's hosted scheduler
+# dropped twelve consecutive slots and a sandbox outlived its hold; the guarantee moved into
+# the estate.) Pin:
 # tests/test_demo_sandbox_is_defined_and_expires.py.
 name: demo-sandbox
 on:
@@ -118,10 +123,15 @@ jobs:
             postBuild:
               substitute:
                 SANDBOX_EXPIRES_AT: "$expires"
+                SANDBOX_LAUNCHED_AT: "$launched"
                 SANDBOX_HOLD: "$hold_was"
               substituteFrom:
                 - kind: ConfigMap
                   name: estate-config
+                # The sweeper's GithubAccessToken generator reads the App's ids from this
+                # Secret (platform/sandbox/vcluster/sweeper.yaml), like every minted lane.
+                - kind: Secret
+                  name: github-app
           ROW
           fi
           cd "$out"

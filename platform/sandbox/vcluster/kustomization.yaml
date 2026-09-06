@@ -2,9 +2,13 @@
 # can hold for one hour or four. DELIBERATELY not listed in clusters/oke/kustomization.yaml:
 # the estate root never applies this folder. The founder's portal button writes one Flux row
 # pointing here onto branch sandbox/launch, and clusters/oke/sandbox.yaml makes the cluster
-# read that branch (docs/runbooks/demo-sandbox.md). The branch is the clock: the same button's
-# fifteen-minute sweep empties it when the hold runs out, and Flux prune sweeps everything
-# here. What the sandbox needs before it exists — its namespace and its front door — stands
+# read that branch (docs/runbooks/demo-sandbox.md). Since 2026-09-06 the clock stands
+# in-cluster: sweeper.yaml in this folder runs bin/idp-sandbox-sweep every five minutes
+# with the hold's own timestamps substituted in, and force-pushes the idle commit the
+# moment the hold runs out, so prune sweeps everything here. The workflow's fifteen-minute
+# GitHub cron remains as the outer fallback, after GitHub's scheduler dropped twelve
+# consecutive slots and the 03:06 sandbox outlived its one-hour hold. What the sandbox
+# needs before it exists — its namespace and its front door — stands
 # instead in the launch lane beside this one (platform/sandbox/launch): the certificate and
 # the address cannot wait on the thing they let in. Pin:
 # tests/test_demo_sandbox_is_defined_and_expires.py.
@@ -14,3 +18,15 @@ resources:
   - network-policy.yaml
   - helmrepository.yaml
   - helmrelease.yaml
+  - sweeper.yaml
+configMapGenerator:
+  # The sweep script is the file, not a copy of it: the pin test holds this to
+  # bin/idp-sandbox-sweep byte for byte, the way tests/test_llm_row.py holds the router
+  # config to llm/config.yaml.
+  - name: sandbox-sweeper-script
+    files:
+      - idp-sandbox-sweep
+generatorOptions:
+  # Name-stable: the CronJob mounts it by name and a script change must roll the job,
+  # not orphan the mount.
+  disableNameSuffixHash: false
