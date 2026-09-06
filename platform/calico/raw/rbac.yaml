@@ -299,6 +299,26 @@ rules:
       - get
       - list
       - watch
+  # Upstream v3.32.2 rules the first cut of this deck dropped (crew#102, 2026-09-06 20:09Z): the
+  # tunnel-ip-allocator runs as calico-node and allocates the VXLAN tunnel address through IPAM,
+  # so without ipamblocks/ipamhandles/blockaffinities the pod dies with "cannot get ipamhandles"
+  # and no node ever gets a tunnel IP.
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources: [bgpconfigurations, bgppeers]
+    verbs: [create, update]
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources: [blockaffinities, ipamblocks, ipamhandles]
+    verbs: [get, list, create, update, delete]
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources: [ipamconfigurations, ipamconfigs]
+    verbs: [get, create]
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources: [blockaffinities]
+    verbs: [watch]
+  - apiGroups: ["apps"]
+    resources: [daemonsets]
+    verbs: [get]
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
