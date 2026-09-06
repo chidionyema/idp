@@ -14,6 +14,10 @@
 import { Entity } from '@backstage/catalog-model';
 import { useEntity } from '@backstage/plugin-catalog-react';
 import { EntityContentBlueprint } from '@backstage/plugin-catalog-react/alpha';
+// The estate's own reader helpers, kept pure and React-free in home/estate; the hand-authored
+// founder-surface/component the health poller reaches carries estate/health + checked-at, and
+// this page says, in the same state words the home uses, whether the thing is running.
+import { HEALTH_LABEL, checkedAgo, healthOf } from '../home/estate';
 import Box from '@material-ui/core/Box';
 import Card from '@material-ui/core/Card';
 import CardContent from '@material-ui/core/CardContent';
@@ -52,6 +56,7 @@ const FACT_LABEL: Record<string, string> = {
 };
 const PREFERRED = Object.keys(FACT_LABEL);
 const HEALTH_CHECKED = 'estate/health-checked-at';
+const HEALTH = 'estate/health';
 
 /** A generated annotation key -> readable column label. Unknown estate/ fields are shown
  * under their raw key with dashes and the estate/ prefix stripped. */
@@ -69,7 +74,7 @@ const formatRefLink = (ref: string, defaultKind: string) => {
   return <Link href={href}>{name}</Link>;
 };
 
-export const EstateOverview = () => {
+export const EstateOverview = ({ now }: { now?: number }) => {
   const { entity } = useEntity();
   if (!entity) return null;
   const md = entity.metadata;
@@ -77,6 +82,18 @@ export const EstateOverview = () => {
   const spec = (entity.spec ?? {}) as Record<string, unknown>;
   const systemRef = typeof spec.system === 'string' ? spec.system : '';
   const ownerRef = typeof spec.owner === 'string' ? spec.owner : '';
+  // Does the estate's health poller speak about this catalogue entry? A hand-authored,
+  // home-routed founder-surface or component the poller reaches carries a live verdict
+  // (estate/health) even though it has none of the generated estate/<fact> block (a Resource
+  // stacked in a system is not itself the live thing being probed, so it keeps only its
+  // generated facts). `now` is trapped for deterministic tests; unset means wall-clock.
+  const kind = entity.kind.toLowerCase();
+  const live = kind === 'component' && typeof ann[HEALTH] === 'string' && ann[HEALTH] !== '';
+  const at = now ?? Date.now();
+  const healthWord = live ? HEALTH_LABEL[healthOf(entity, at)] : null;
+  // Only when the poller recorded a checked time do we say how long ago; a never-checked thing
+  // carries no stale claim (rule 13: no invented age).
+  const recency = live && typeof ann[HEALTH_CHECKED] === 'string' ? checkedAgo(entity, at) : null;
   // The estate facts that matter, in the generator's own preferred order first, then any
   // remaining generated facts, excluding the machine-only health-checked timestamp.
   const factKeys = PREFERRED.filter(k => ann[k] !== undefined && ann[k] !== '')
@@ -105,6 +122,14 @@ export const EstateOverview = () => {
                 <Typography variant="body2" color="textSecondary" gutterBottom>
                   {md.description}
                 </Typography>
+              )}
+              {live && healthWord && (
+                <Box my={1}>
+                  <Typography variant="body2">
+                    <span>{healthWord}</span>
+                    {recency && <span>, {recency}</span>}
+                  </Typography>
+                </Box>
               )}
               {tags.length > 0 && (
                 <Box my={1}>
@@ -162,6 +187,10 @@ export const EstateOverview = () => {
   );
 };
 
+// The tab is a component of the catalogue: a probed founder-surface (a Component the estate's
+// health probe stamped estate/health + checked-at onto, via bin/catalog-gen) or any generated
+// estate-ledger row carries at least one estate/* annotation, so it appears. A hand-authored
+// entity with only the well-known backstage keys is not this tab's subject.
 const estateOverviewContent = EntityContentBlueprint.make({
   name: 'estate-overview',
   params: {
