@@ -256,6 +256,13 @@ flows:
     # timeout 10000ms" in the store-web log and the page rendered without it. One TCP port to the
     # public address space is the whole hole; private ranges stay cut out by the generator.
     egress_internet: [443]
+    # ... and that hole alone was not enough, measured 2026-09-06 21:17Z with it live: the
+    # ConnectTimeoutError kept coming (3 in two minutes) and origin_ms stayed at 10529. The
+    # load balancer's public address is a Service of type LoadBalancer, so kube-proxy rewrites
+    # the destination to the traefik pod before Calico judges the packet, and a pod address is
+    # private, which the internet hole cuts out by design. The flow is store-web -> edge, and
+    # that is what it is declared as.
+    egress: [edge]
   edge:
     egress: [backstage, dagster, guacamole, healthchecks, hermes-agent, identity, llm, mcp,
              monitoring, observability, otto-gateway, otto-golden, hindsight, prospector]

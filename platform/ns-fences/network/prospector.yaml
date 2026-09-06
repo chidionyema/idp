@@ -64,6 +64,9 @@ spec:
   - to:
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: edge
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: observability
 ---
 apiVersion: networking.k8s.io/v1
