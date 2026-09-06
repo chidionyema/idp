@@ -274,6 +274,9 @@ describe('EstateHome', () => {
       'data-state',
       'red',
     );
+    // directive-4 sixth note: a red row names who owns it (none here, and the estate rule says so
+    // plainly rather than a bare pill), so a red is not just a colour and a reason.
+    expect(screen.getByTestId('meta-grafana')).toHaveTextContent(/Owner:/);
     // the actionable band is above the Everything band, not buried beneath it
     expect(bandNow.compareDocumentPosition(screen.getByTestId('band-everything')) &
       Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

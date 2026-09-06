@@ -36,10 +36,12 @@ import {
   doorState,
   entityPath,
   hasNoAddress,
+  heldSinceAgo,
   isScreen,
   isKubernetes,
   hasNoScreen,
   layerState,
+  ownerOf,
   screenUrl,
   matches,
   rank,
@@ -130,6 +132,7 @@ const useStyles = makeStyles(theme => ({
   nowRow: {
     display: 'flex',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: theme.spacing(1.5),
     padding: theme.spacing(1.25, 1.5),
     borderRadius: 10,
@@ -141,6 +144,11 @@ const useStyles = makeStyles(theme => ({
   },
   nowName: { fontWeight: 600 },
   nowWhy: { color: theme.palette.text.secondary },
+  nowMeta: {
+    flex: '1 1 100%',
+    color: theme.palette.text.secondary,
+    fontSize: 12,
+  },
   // The verdict is a sentence, never a bare number beside a word. The title and the lead
   // above it are the shared page shell's (modules/shell), the same on every page.
   verdict: {
@@ -1061,6 +1069,8 @@ const Ready = ({ estate }: { estate: Estate }) => {
           <div className={classes.nowGrid}>
             {nowList.map(e => {
               const s = stateOf(e);
+              const owner = ownerOf(e);
+              const heldFor = heldSinceAgo(e, s, now);
               return (
                 <Link
                   key={e.metadata.name}
@@ -1076,6 +1086,10 @@ const Ready = ({ estate }: { estate: Estate }) => {
                     {e.metadata.title ?? e.metadata.name}
                   </span>
                   <span className={classes.nowWhy}>{s.why}</span>
+                  <span className={classes.nowMeta} data-testid={`meta-${e.metadata.name}`}>
+                    <span>Owner: {owner ?? 'none — a red of its own'}</span>
+                    {heldFor && <span>, {heldFor}</span>}
+                  </span>
                 </Link>
               );
             })}
