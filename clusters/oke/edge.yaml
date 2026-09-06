@@ -71,6 +71,15 @@ spec:
   prune: true
   wait: true
   timeout: 10m
+  # flux-only-writes.yaml names its two excused identities as ${ESTATE_BREAK_GLASS_USER} and
+  # ${ESTATE_FOUNDER_USER}. Without this block Flux applied the literal text (measured on the
+  # live ClusterPolicy 2026-09-06 21:10Z), so neither exception ever matched a real principal and
+  # the founder was refused on his own cluster. Not optional: a missing ConfigMap must fail the
+  # row rather than publish a placeholder.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
   # The only place OKE's load balancer is named (R36): platform/edge stays provider-free.
   patches:
     - target: {kind: HelmRelease, name: traefik, namespace: edge}
