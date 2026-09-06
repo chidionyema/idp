@@ -172,7 +172,7 @@ by the earlier commits below; items 5-6 primitives added oracle locks this sessi
 | 3 lexicons into policy, diff empty | done | `256eee16`,`9e7168b7`,`4abc6a28`,`82a71bfb` (1758 leaves, diff & fuzz empty) |
 | 4 golden.jsonl live | done | `prospector/prospector/voice_gate/golden.jsonl` |
 | 5a prose_target bands | done, ORACLE-EQUAL | `0b929ead` (`house_measure.rs` + `tests/house_measure.rs`, fixtures measured by Python) |
-| 5b harper `check_grammar` shell-out | NOT BUILT - deferred. Grammar lane has no live grader until item 7 wiring; a faithful un-wired wrapper is an instrument nobody reads (LAW 28). Harper is installed (`/usr/local/bin/harper-cli`) so it is buildable on the item-7 decision. |
+| 5b harper `check_grammar` shell-out | done, ORACLE-EQUAL | `src/harper.rs` + `tests/harper_parity.rs`: same binary resolution / fail-open / 60-char skip / code-strip / budget cap / allowlist aggregation as `copy_lint.py`; Rust `grammar_findings` returns `{'AnA':2}` over the live harper-cli, matching Python exactly. Advisory (not yet in any served lane) until item 7, but the parity primitive is proven. |
 | 6 splitting + orphan-open-quote | done, ORACLE-EQUAL | `de026d5b` (`split_sentences` locked word-for-word over 24 python sentences in `tests/sentence_split.rs`; `orphan_openers` locked to 13; both lookbehind-free) |
 | 7 platform wiring | not started (catalogue entity, gate ownership, namespace fence, collector telemetry, bind decision) |
 | 8 cutover | not started |
@@ -190,12 +190,11 @@ Read from the receipts on disk, run today, not quoted from a commit:
     store/voice_gate/conformance-golden.json  {"rows":17,"agreement":1.0,"ok":true}
     cargo test (this directory)               35 passed; 0 failed (run, not asserted)
 
-What the harness grades — a scoping fact that governs item 5b: `voice_gate_conformance.py`
+What the harness grades — and why item 5b is proven rather than wired: `voice_gate_conformance.py`
 compares only the deny lane (`findings_for` / register_lint lexicons over `evidence-export`
-leaves). It has NO grammar/copy_lint mode, and no grammar output enters any diff. So item 5b
-(a Rust harper shell-out) has no oracle or receipt that could prove parity until the item-7
-wiring decides whether grammar joins the graded lane at all — the Python half itself treats
-harper as a self-described debug tool, fail-open and advisory (`copy_lint.py:385`,
-`grammar_check_unavailable`). Building an un-read harper mirror now would be an instrument
-nobody reads (LAW 28) with no empirical signal to converge (empirical-proof rule). Its port
-belongs to the item 7/8 decision, with harper already installed at `/usr/local/bin/harper-cli`.
+leaves) and has NO grammar/copy_lint mode, so no grammar output enters any harness diff.
+The Rust harper wrapper (`harper.rs`) is therefore proven by its own parity lock
+(`tests/harper_parity.rs`): same needles, same installed harper-cli, Rust returns `{'AnA':2}`
+where the Python `copy_lint.grammar_findings` returns `{'AnA':2}`. Whether grammar joins the
+graded lane at all is an item-7 decision; the Python half treats harper as a self-described
+debug tool, fail-open and advisory (`copy_lint.py:385`, `grammar_check_unavailable`).
