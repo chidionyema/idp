@@ -19,10 +19,9 @@ import datetime as dt
 import json
 import pathlib
 import re
-import io
 import subprocess
 import sys
-import zipfile
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -53,43 +52,59 @@ def gh(path: str) -> str:
 
 def gh_bytes(path: str) -> bytes:
     out = subprocess.run(  # noqa: S603,S607
-        ["gh", "api", path], capture_output=True, check=False
+        ["gh", "api", "--allow-escape-sequences", path],
+        capture_output=True,
+        check=False,
     )
     return out.stdout if out.returncode == 0 else b""
 
 
-def list_runs(repo: str, since: dt.date, until: dt.date, status: str) -> list[dict]:
-    """Every run with `status` between the dates. The API caps a listing at 1000, so we ask one
-    week at a time; a week of this estate stays under the cap for one status."""
+def rate_remaining() -> int:
+    core = json.loads(gh("rate_limit") or "{}").get("resources", {}).get("core", {})
+    return int(core.get("remaining", 0))
+
+
+def list_failed(repo: str, since: dt.date, until: dt.date) -> list[dict]:
+    """Every failed run between the dates, newest first. The API caps one listing at 1000 rows, so
+    we ask one day at a time (this estate fails about 700 runs a day, measured 2026-09-06)."""
     runs: list[dict] = []
-    start = since
-    while start <= until:
-        end = min(start + dt.timedelta(days=6), until)
+    day = until
+    while day >= since:
         for page in range(1, 11):
             body = gh(
-                f"repos/{repo}/actions/runs?status={status}&per_page=100&page={page}"
-                f"&created={start}..{end}"
+                f"repos/{repo}/actions/runs?status=failure&per_page=100&page={page}&created={day}"
             )
             batch = json.loads(body or "{}").get("workflow_runs", [])
             runs.extend(batch)
             if len(batch) < 100:
                 break
-        start = end + dt.timedelta(days=1)
+        day -= dt.timedelta(days=1)
     return runs
 
 
-def label(failed: list[dict], green: list[dict]) -> dict[int, str]:
-    """`1` (flake) when a later green run of the same workflow sits on the same commit, else `0`."""
-    green_at: dict[tuple[str, str], list[str]] = {}
-    for run in green:
-        green_at.setdefault((run["name"], run["head_sha"]), []).append(
-            run["created_at"]
-        )
-    out = {}
+def stratify(failed: list[dict], per_workflow: int, limit: int) -> list[dict]:
+    """Newest `per_workflow` runs of each workflow, then the newest `limit` overall, so one noisy
+    scheduled workflow cannot be the whole dataset."""
+    seen: dict[str, int] = {}
+    kept = []
     for run in failed:
-        later = green_at.get((run["name"], run["head_sha"]), [])
-        out[run["id"]] = "1" if any(t > run["created_at"] for t in later) else "0"
-    return out
+        n = seen.get(run["name"], 0)
+        if n < per_workflow:
+            seen[run["name"]] = n + 1
+            kept.append(run)
+    return kept[:limit] if limit else kept
+
+
+def label(repo: str, run: dict) -> str:
+    """`1` (flake) when a later green run of the same workflow sits on the same commit, else `0`.
+    One call per run against `head_sha`, instead of listing every green run the estate ever had."""
+    body = gh(
+        f"repos/{repo}/actions/runs?head_sha={run['head_sha']}&status=success&per_page=100"
+    )
+    for green in json.loads(body or "{}").get("workflow_runs", []):
+        if green["name"] == run["name"] and green["created_at"] > run["created_at"]:
+            return "1"
+    return "0"
 
 
 def clean_tail(log: str) -> str:
@@ -117,33 +132,42 @@ def failed_step(repo: str, run_id: int) -> tuple[dict | None, dict | None]:
     return None, None
 
 
-def step_log(repo: str, run_id: int, job: dict, step: dict | None) -> str:
-    """That step's own log from the run's log archive (`<job>/<n>_<step>.txt`), so the tail is
-    the failure and not the checkout cleanup that follows it in the combined job log."""
-    blob = gh_bytes(f"repos/{repo}/actions/runs/{run_id}/logs")
-    if not blob:
-        return ""
-    try:
-        archive = zipfile.ZipFile(io.BytesIO(blob))
-    except zipfile.BadZipFile:
-        return ""
-    want = f"{step['number']}_" if step else None
-    for name in archive.namelist():
-        head, _, leaf = name.rpartition("/")
-        if not head or not head.startswith(job["name"][: len(head)]):
-            continue
-        if want is None or leaf.startswith(want):
-            return archive.read(name).decode("utf-8", "replace")
-    return ""
+def step_log(repo: str, job: dict, step: dict | None) -> str:
+    """The failed step's own lines from the job log: every line the API returns carries a UTC
+    timestamp, and the jobs API gives the step's started_at and completed_at, so the slice between
+    them is that step and not the checkout cleanup that follows it. (The run's log archive stopped
+    carrying per-step files, measured 2026-09-06.)"""
+    text = gh_bytes(f"repos/{repo}/actions/jobs/{job['id']}/logs").decode(
+        "utf-8", "replace"
+    )
+    if not step or not step.get("started_at") or not step.get("completed_at"):
+        return text
+    lo, hi = step["started_at"][:19], step["completed_at"][:19]
+    kept = [line for line in text.splitlines() if lo <= line[:19] <= hi]
+    # the API's step clock is whole seconds and the post-job cleanup runs inside the same second,
+    # so cut at the step's own failure line, else at the first cleanup line
+    errors = [i for i, line in enumerate(kept) if "##[error]" in line]
+    if errors:
+        kept = kept[: errors[-1] + 1]
+    else:
+        cleanup = [
+            i
+            for i, line in enumerate(kept)
+            if "Post job cleanup" in line or "##[group]Post " in line
+        ]
+        if cleanup:
+            kept = kept[: cleanup[0]]
+    return "\n".join(kept) if kept else text
 
 
-def row_for(repo: str, run: dict, verdict: str) -> dict | None:
+def row_for(repo: str, run: dict) -> dict | None:
     job, step = failed_step(repo, run["id"])
     if job is None:
         return None
-    tail = clean_tail(step_log(repo, run["id"], job, step))
+    tail = clean_tail(step_log(repo, job, step))
     if not tail:
         return None
+    verdict = label(repo, run)
     head = (
         f"workflow: {run['name']}\njob: {job['name']}\nstep: {step['name'] if step else ''}\n"
         f"event: {run['event']}\nlog tail:\n"
@@ -162,27 +186,36 @@ def main() -> int:
     ap.add_argument("--since", type=dt.date.fromisoformat, required=True)
     ap.add_argument("--until", type=dt.date.fromisoformat, default=dt.date.today())
     ap.add_argument("--output", type=pathlib.Path, required=True)
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=4)
     ap.add_argument(
-        "--limit", type=int, default=0, help="cap failed runs read (0 = all)"
+        "--limit",
+        type=int,
+        default=800,
+        help="failed runs read, newest first (0 = all)",
+    )
+    ap.add_argument(
+        "--per-workflow", type=int, default=150, help="cap per workflow name"
+    )
+    ap.add_argument(
+        "--smoke", action="store_true", help="accept under 500 rows (schema check only)"
     )
     args = ap.parse_args()
 
-    failed = list_runs(args.repo, args.since, args.until, "failure")
-    green = list_runs(args.repo, args.since, args.until, "success")
-    verdicts = label(failed, green)
-    if args.limit:
-        failed = failed[: args.limit]
+    failed = stratify(
+        list_failed(args.repo, args.since, args.until), args.per_workflow, args.limit
+    )
+    need = 3 * len(failed) + 50  # jobs, archive, head_sha lookup per run
+    have = rate_remaining()
+    if have < need:
+        print(
+            f"Refusal: GitHub rate limit {have} remaining, {need} calls needed",
+            file=sys.stderr,
+        )
+        return 2
     with ThreadPoolExecutor(args.workers) as pool:
-        rows = [
-            r
-            for r in pool.map(
-                lambda run: row_for(args.repo, run, verdicts[run["id"]]), failed
-            )
-            if r
-        ]
+        rows = [r for r in pool.map(lambda run: row_for(args.repo, run), failed) if r]
     rows.sort(key=lambda r: r["source"])
-    rows = split(rows, minimum=1 if args.limit else split.__defaults__[2])
+    rows = split(rows, minimum=1 if args.smoke else split.__defaults__[2])
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as fh:
         for r in rows:
@@ -192,7 +225,7 @@ def main() -> int:
         json.dumps(
             {
                 "failed_runs": len(failed),
-                "green_runs": len(green),
+                "per_workflow": dict(Counter(r["name"] for r in failed)),
                 "rows": len(rows),
                 "flake": flakes,
                 "real": len(rows) - flakes,

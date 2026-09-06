@@ -7,7 +7,9 @@ filed on a pull request by `.github/workflows/forge-train.yml`; nobody writes on
 pre-registration (below).
 
 Each record has a YAML front matter (verdict, agreement, abstain rate, dataset hash, trace,
-artifact, commit) so the folder can be graded by a script, then seven sections:
+artifact, commit) so the folder can be graded by a script, then an **In plain English** paragraph
+(what the model does and what happened, for a reader who is not an engineer; a task sets its own
+sentence with `plain_english:`), then seven sections for engineers:
 
 1. **Hypothesis**: what the student is expected to reach, stated before the run. Set `hypothesis:`
    in the task YAML to override the default sentence.
@@ -30,7 +32,16 @@ delete them from the JSONL, run again, publish the new artifact; the old one is 
 That is exact unlearning, at the cost of one run, and the two records prove the rows are gone.
 
 **Pre-registration.** Before the first run of a task, a `NNNN-<task>-plan.md` states hypothesis,
-data plan and gates. The run's record then sits next to it; the plan is never edited after the run.
+data plan and gates, in both registers: an "In plain English" section and a "For engineers" section.
+The run's record then sits next to it; the plan is never edited after the run.
+
+**Where they are read.** Every file here is copied into the portal at each docs build
+(`bin/mkdocs_hooks/forge_experiments.py`, TechDocs page "Own models, every experiment", with an
+index that puts the plain English sentence first). Founder, 2026-09-06: all of it in Backstage.
+
+**Where labels come from.** A teacher model (`forge/generate_teacher_dataset.py`), a gold set, or a
+recorded outcome the estate already had, such as whether a red CI run later went green on the same
+commit (`forge/collect_ci_runs.py`). An outcome label costs nothing and cannot be argued with.
 
 **Reading a result.** 100 held-out rows resolve agreement to roughly ±4 points at 95%. A reading
 inside that band of the gate is not settled either way: label more rows (the second round is
