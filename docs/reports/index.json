@@ -2,22 +2,22 @@
   "reports": [
     {
       "file": "docs/reports/first-time-success.md",
-      "generated_at": "2026-09-04T07:19:30Z",
+      "generated_at": "2026-09-06T07:13:43Z",
       "id": "first-time-success",
       "schedule_minutes": 1440,
-      "source": "GitHub pull requests and workflow runs since 2026-08-21, read through gh api",
-      "summary": "pull requests green on the first push 38/142 (27%); runs on main first-attempt 1735/1974 (88%)",
+      "source": "GitHub pull requests and workflow runs since 2026-08-23, read through gh api",
+      "summary": "pull requests green on the first push 56/150 (37%); runs on main first-attempt 1720/1975 (87%)",
       "title": "Delivery: right first time"
     },
     {
       "file": "docs/reports/flux-state.md",
-      "generated_at": "2026-09-05T02:00:10Z",
+      "generated_at": "2026-09-06T07:00:12Z",
       "id": "flux-state",
       "schedule_minutes": 15,
       "source": "the cluster receipt platform/state/cluster-state.yaml writes to the receipts bucket every 15 minutes",
-      "summary": "97 objects: 87 ready, 7 not ready, 0 unknown, 3 suspended",
+      "summary": "104 objects: 53 ready, 50 not ready, 0 unknown, 1 suspended",
       "title": "Flux: what is applied"
     }
   ],
-  "updated_at": "2026-09-05T02:05:11Z"
+  "updated_at": "2026-09-06T07:17:02Z"
 }
