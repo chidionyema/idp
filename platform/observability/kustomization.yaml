@@ -7,6 +7,7 @@ resources:
   - signoz.yaml
   - telemetry-coverage.yaml
   - signoz-retention.yaml
+  - signoz-sso.yaml
   - langfuse.yaml
   - httproute.yaml
   - edge-manners.yaml

@@ -1,0 +1,291 @@
+# One sign-in for SigNoz (founder 2026-09-07: "why is https://signoz.mumchimp.com/login askingfor
+# login info").
+#
+# The outer door already works: signoz.${ESTATE_ZONE} carries the login-forward-auth Middleware in
+# httproute.yaml, so a visitor is bounced to Oracle IDCS and comes back with an oauth2-proxy
+# session. What he met underneath was SigNoz's own email/password form — a second identity layer,
+# which the estate's SSO policy does not allow.
+#
+# Why a shim and not the product's own SSO: SigNoz's SAML/OIDC is an enterprise feature and this is
+# the free edition, so there is no setting to turn on. Langfuse next door solved the identical hop
+# natively (AUTH_CUSTOM_* in langfuse.yaml, crew#503); SigNoz cannot.
+#
+# Why a shim and not a proxy header: measured, not assumed. The frontend bundle keeps its session in
+# localStorage under AUTH_TOKEN / REFRESH_AUTH_TOKEN / IS_LOGGED_IN (helpers P_/N_/Cv over
+# localStorage in assets/index-*.js; the M_() key prefix is a no-op because index.html sets
+# <base href="/" />), and it fills the Authorization header from there. A Set-Cookie from
+# oauth2-proxy cannot establish that session. Nor is intercepting the /login path enough: an
+# unauthenticated visit to any route redirects client-side (<Redirect to={F.LOGIN}>), so no request
+# for /login ever reaches the edge.
+#
+# So the token has to be in the browser before the app boots, on every path. This front proxies the
+# browser route to signoz:8080 and inserts one inline classic script into index.html; because the
+# app bundle is <script type="module">, which is deferred, the inline script runs first. It writes
+# the three keys and the form never renders.
+#
+# The credential: the same Secret signoz-root that SigNoz itself bootstraps its root account from
+# (signoz.yaml, ExternalSecret from the vault). It is read only by the minter container, which binds
+# 127.0.0.1 and is therefore reachable from the nginx container in this pod and from nothing else on
+# the network. The password never leaves the pod and never reaches the browser.
+#
+# The widening this accepts, stated plainly: anything that can reach signoz-sso:8080 with a
+# non-empty X-Auth-Request-Email gets a root SigNoz session without knowing the password. The real
+# gate is the edge — the Middleware above sets that header from oauth2-proxy, and the namespace's
+# both-ways default-deny (platform/ns-fences/network/observability.yaml) admits only edge and
+# monitoring. The header check here is a second lock, not the first one.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signoz-sso
+  namespace: observability
+data:
+  nginx.conf: |
+    worker_processes 1;
+    error_log /dev/stderr warn;
+    pid /tmp/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+      access_log off;
+      server_tokens off;
+      client_body_temp_path /tmp/client_body;
+      proxy_temp_path /tmp/proxy;
+      fastcgi_temp_path /tmp/fastcgi;
+      uwsgi_temp_path /tmp/uwsgi;
+      scgi_temp_path /tmp/scgi;
+
+      # sub_filter cannot rewrite a gzipped body, but asking every response to come back
+      # uncompressed would waste bandwidth on the API traffic this front also carries. Only a
+      # document navigation sends Accept: text/html, and only a document needs rewriting.
+      map $http_accept $upstream_accept_encoding {
+        default       $http_accept_encoding;
+        "~*text/html" "";
+      }
+
+      server {
+        listen 8080;
+
+        location = /healthz {
+          add_header Content-Type text/plain;
+          return 200 "ok\n";
+        }
+
+        # The minted session. Loopback only on the far side; the edge's forward-auth is what
+        # decides who may ask.
+        location = /__sso/token {
+          if ($http_x_auth_request_email = "") { return 403; }
+          proxy_pass http://127.0.0.1:8081/token;
+        }
+
+        location / {
+          proxy_pass http://signoz.observability.svc.cluster.local:8080;
+          proxy_http_version 1.1;
+          proxy_set_header Host $host;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto https;
+          proxy_set_header Connection "";
+          proxy_set_header Accept-Encoding $upstream_accept_encoding;
+          proxy_buffering off;
+          proxy_read_timeout 1h;
+          sub_filter_once on;
+          sub_filter "</head>" "<script>(function(){try{if(localStorage.getItem('AUTH_TOKEN'))return;var x=new XMLHttpRequest();x.open('GET','/__sso/token',false);x.send();if(x.status!==200)return;var d=JSON.parse(x.responseText);localStorage.setItem('AUTH_TOKEN',d.accessToken);localStorage.setItem('REFRESH_AUTH_TOKEN',d.refreshToken);localStorage.setItem('IS_LOGGED_IN','true');}catch(e){}})();</script></head>";
+        }
+      }
+    }
+  mint.py: |
+    """Hand the browser a SigNoz session it did not have to type a password for.
+
+    Two calls, the same two bin/idp-signoz-key makes to mint service-account keys:
+    GET /api/v2/sessions/context?email=&ref= names the org, POST /api/v2/sessions/email_password
+    returns the pair of tokens. Measured 2026-09-07: expiresIn is 1799 seconds, so the cache is
+    held five minutes short of that and a re-mint costs two in-cluster calls every 25 minutes.
+    """
+
+    import json
+    import os
+    import time
+    import urllib.parse
+    import urllib.request
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    BASE = os.environ["SIGNOZ_URL"].rstrip("/")
+    EMAIL = os.environ["SIGNOZ_ROOT_EMAIL"]
+    PASSWORD = os.environ["SIGNOZ_ROOT_PASSWORD"]
+
+    _cached = {"tokens": None, "until": 0.0}
+
+
+    def _mint():
+        now = time.time()
+        if _cached["tokens"] and now < _cached["until"]:
+            return _cached["tokens"]
+        ctx_url = "{}/api/v2/sessions/context?ref=&email={}".format(
+            BASE, urllib.parse.quote(EMAIL)
+        )
+        with urllib.request.urlopen(ctx_url, timeout=10) as fh:
+            org_id = json.load(fh)["data"]["orgs"][0]["id"]
+        body = json.dumps(
+            {"email": EMAIL, "password": PASSWORD, "orgId": org_id}
+        ).encode()
+        req = urllib.request.Request(
+            BASE + "/api/v2/sessions/email_password",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as fh:
+            data = json.load(fh)["data"]
+        tokens = {
+            "accessToken": data["accessToken"],
+            "refreshToken": data["refreshToken"],
+        }
+        _cached["tokens"] = tokens
+        _cached["until"] = now + max(60, int(data.get("expiresIn", 1799)) - 300)
+        return tokens
+
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self):
+            if self.path == "/healthz":
+                return self._send(200, b"ok\n", "text/plain")
+            if self.path != "/token":
+                return self._send(404, b"not found\n", "text/plain")
+            try:
+                payload = json.dumps(_mint()).encode()
+            except Exception as exc:  # a mint that fails must not look like a session
+                self._cache_bust = True
+                return self._send(
+                    502, json.dumps({"error": str(exc)}).encode(), "application/json"
+                )
+            self._send(200, payload, "application/json")
+
+        def _send(self, code, body, ctype):
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, fmt, *args):
+            # The path is the only thing worth a line and it is always /token; a per-request
+            # log here would be noise in the collector and nothing else (LAW 28).
+            pass
+
+
+    if __name__ == "__main__":
+        ThreadingHTTPServer(("127.0.0.1", 8081), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signoz-sso
+  namespace: observability
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: signoz-sso
+  template:
+    metadata:
+      labels:
+        app: signoz-sso
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: signoz-sso
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: front
+          image: docker.io/nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 20m, memory: 32Mi }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+        - name: minter
+          image: docker.io/library/python:3.11-slim
+          command: ["python3", "/app/mint.py"]
+          env:
+            - name: SIGNOZ_URL
+              value: http://signoz.observability.svc.cluster.local:8080
+            - name: SIGNOZ_ROOT_EMAIL
+              valueFrom:
+                secretKeyRef: { name: signoz-root, key: email }
+            - name: SIGNOZ_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: signoz-root, key: password }
+          volumeMounts:
+            - name: app
+              mountPath: /app/mint.py
+              subPath: mint.py
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { cpu: 20m, memory: 64Mi }
+          securityContext:
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      volumes:
+        - name: config
+          configMap:
+            name: signoz-sso
+            items: [{ key: nginx.conf, path: nginx.conf }]
+        - name: app
+          configMap:
+            name: signoz-sso
+            items: [{ key: mint.py, path: mint.py }]
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: signoz-sso
+  namespace: observability
+spec:
+  selector:
+    app: signoz-sso
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signoz-sso
+  namespace: observability
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: signoz-sso
