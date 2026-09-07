@@ -30,6 +30,7 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / "platform/human-vault-bridge/externalsecrets.yaml"
+SEED = ROOT / "platform" / "human-vault-bridge" / "pushsecrets.yaml"
 REGISTRY = ROOT / "platform/vendors/consoles.yaml"
 
 
@@ -91,3 +92,44 @@ def test_the_bridge_covers_the_vendor_the_founder_actually_uses():
     assert len(landed) > 10, (
         f"only {len(landed)} bridge secrets; the registry holds far more"
     )
+
+
+def test_the_seed_never_overwrites_a_key_the_founder_has_set():
+    """A PushSecret defaults to Replace, which would rewrite his rotated key from the estate's
+    stale copy on the next refresh -- silently undoing every rotation. IfNotExists fills an
+    empty slot and touches nothing else."""
+    docs = [d for d in yaml.safe_load_all(SEED.read_text()) if d]
+    assert docs
+    for d in docs:
+        assert d["spec"]["updatePolicy"] == "IfNotExists", d["metadata"]["name"]
+        assert d["spec"]["deletionPolicy"] == "None", d["metadata"]["name"]
+
+
+def test_one_key_the_estate_lacks_cannot_stop_the_others_being_seeded():
+    """Measured 2026-09-07: one absent key fails the whole object it sits in and seeds none of
+    its siblings. MOONSHOT_API_KEY is in the registry and in no Secret, so grouping would have
+    cost GEMINI and OPENROUTER their seed."""
+    docs = [d for d in yaml.safe_load_all(SEED.read_text()) if d]
+    for d in docs:
+        assert len(d["spec"]["data"]) == 1, d["metadata"]["name"]
+
+
+def test_the_seed_reads_the_secret_the_registry_says_holds_the_key():
+    reg = yaml.safe_load(REGISTRY.read_text())["vendors"]
+    want = {
+        (t["ns"], t["bw"]): (t["entry"], t["field"])
+        for v in reg.values()
+        if v.get("store_default") == "human-vault"
+        for t in (v.get("targets") or [])
+        if t.get("bw") and t.get("ns") and not t.get("derived")
+    }
+    got = {}
+    for d in yaml.safe_load_all(SEED.read_text()):
+        if not d:
+            continue
+        m = d["spec"]["data"][0]["match"]
+        got[(d["metadata"]["namespace"], m["remoteRef"]["remoteKey"])] = (
+            d["spec"]["selector"]["secret"]["name"],
+            m["secretKey"],
+        )
+    assert got == want
