@@ -32,7 +32,7 @@ grants:
     verbs: [patch]
     apiGroups: [apps]
     resources: [deployments, statefulsets]
-    namespaces: [backstage, catalogue, commerce, hermes-agent, llm, notify, observability, otto-gateway, prospector, research-engine]
+    namespaces: [backstage, commerce, hermes-agent, llm, notify, observability, otto-gateway, prospector, research]
     max_ttl: 10m
     rate_per_hour: 3
     parameters:
@@ -49,7 +49,7 @@ grants:
     verbs: [delete]
     apiGroups: [""]
     resources: [pods]
-    namespaces: [backstage, catalogue, commerce, hermes-agent, llm, notify, observability, otto-gateway, prospector, research-engine]
+    namespaces: [backstage, commerce, hermes-agent, llm, notify, observability, otto-gateway, prospector, research]
     max_ttl: 5m
     rate_per_hour: 4
     parameters:
@@ -65,7 +65,7 @@ grants:
     verbs: [patch]
     apiGroups: [apps]
     resources: [deployments]
-    namespaces: [backstage, catalogue, commerce, hermes-agent, llm, notify, observability, otto-gateway, prospector, research-engine]
+    namespaces: [backstage, commerce, hermes-agent, llm, notify, observability, otto-gateway, prospector, research]
     max_ttl: 10m
     rate_per_hour: 2
     parameters:
