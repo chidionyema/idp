@@ -279,6 +279,16 @@ LAYERS = {
         "Metrics",
         "Pod and node usage, the numbers autoscaling reads.",
     ),
+    "nodesoftware-operator": (
+        "scheduling",
+        "Node software installs",
+        "The one controller that installs software onto the nodes themselves -- a sandbox runtime, a GPU driver -- one node at a time, cordoning it first and rolling back if the probe on that node fails.",
+    ),
+    "gvisor-runtime": (
+        "scheduling",
+        "The gVisor sandbox runtime",
+        "The RuntimeInstall that puts gVisor on the sandbox nodes, so a pod in the sandbox cell runs against a kernel of its own instead of the host's.",
+    ),
     "scheduling": (
         "scheduling",
         "Scheduling",

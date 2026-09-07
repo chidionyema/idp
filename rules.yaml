@@ -771,3 +771,22 @@ rules:
       - {expect: pass, args: [platform/calico/raw], live: true, note: "the real deck, whose README calls it byte-faithful to the vendor reference"}
     ok: "no replacement deck reuses a vendor operator's cluster-scoped names"
     fail: "a deck reuses a vendor operator's cluster-scoped name, or the gate is not discriminating"
+
+  - id: nodesoftware-operator
+    label: nodesoftware
+    statement: >-
+      A RuntimeInstall CR names a runtime in the closed set the NodeSoftwareOperator knows,
+      requires a canary on ProgressiveCanary rollouts, and rejects pause durations that would make
+      the canary pause a no-op
+    law: NodeSoftwareOperator option c, goal b9217bea
+    origin: crew#892 CP4
+    planes: [ci]
+    run: [bin/nodesoftware-operator-gate]
+    cluster: {policy: null, why: "the CRD's own schema catches a malformed CR at admission; this grades the CRs committed to the repo before they ever reach it"}
+    fixtures: {must_fail: tests/fixtures/nodesoftware-operator/bad.yaml, must_pass: tests/fixtures/nodesoftware-operator/good.yaml}
+    cases:
+      - {expect: refuse, args: [tests/fixtures/nodesoftware-operator/bad.yaml]}
+      - {expect: pass, args: [tests/fixtures/nodesoftware-operator/good.yaml]}
+      - {expect: pass, args: [platform/gvisor-runtime/runtimeinstall.yaml], live: true, note: "the first real RuntimeInstall, as committed"}
+    ok: "a RuntimeInstall CR names a closed-set runtime, requires a canary, and a 30s+ pause; the bad fixture is refused"
+    fail: "bin/nodesoftware-operator-gate cannot tell a well-formed CR from a closed-set / no-canary / too-short-pause violation"

@@ -1499,6 +1499,68 @@ spec:
   wait: true
   timeout: 5m
 ---
+# NodeSoftwareOperator (crew#892 CP4 next phase, goal b9217bea option c):
+# the controller that owns every node-level software install on the estate
+# (runsc, kata, nvidia, ...), gated by the RuntimeInstall CRD
+# (platform/nodesoftware-operator/crds/runtimeinstall.yaml) and the offline
+# gate (bin/nodesoftware-operator-gate). The CRD lands in the same row as the
+# controller so the API exists before any reconcile attempt. The lockdown
+# (flux-only-writes.yaml) blocks every ocid1.user.* principal; this row runs as
+# system:serviceaccount, so it passes through unchanged.
+#
+# Depends on:
+#   - scheduling  the PriorityClass (idp-infrastructure) the controller mounts
+#   - secret-store the ghcr-pull image pull secret (every image-automation flow)
+#   - image-automation the ClusterSecretStore that backs ghcr-pull
+#   - edge the Kyverno policies that gate every Pod (PSS restricted), so the
+#     controller's own PodSecurityContext above is enforced at admission
+#   - rbac-identity the platform RBAC row that namespaces ClusterRoleBindings
+#     (the operator's RBAC is cluster-scoped, so it lands as its own row,
+#     never nested in another)
+#
+# suspend: false means Flux converges the controller as soon as the merged
+# image exists in ghcr. Until the controller source lands (next commit on
+# this branch), the row will fail healthChecks because the image does not
+# exist; this is the safety net. The empirical-proof commit (operator
+# reconciles a RuntimeInstall on a canary node and writes status.rolloutHistory)
+# is the one that flips the row green in the cluster.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: nodesoftware-operator
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/nodesoftware-operator
+  prune: true
+  dependsOn:
+    - name: scheduling
+    - name: secret-store
+    - name: image-automation
+    - name: edge
+    - name: rbac-identity
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+      # IMAGE_TAG (idp#140 / image-automation): the ghcr-pull Secret carries the
+      # pinned digest of the controller image, written by the image-automation
+      # flow. Not optional: a missing tag must fail the row rather than deploy
+      # `:latest`, which the lockdown's image policy already refuses.
+      - kind: Secret
+        name: ghcr-pull
+        optional: false
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: nodesoftware-operator
+      namespace: nodesoftware-operator
+---
 # Cyrus agent orchestration (crew#834): the execution layer that works an issue with any engine --
 # claude, codex, cursor, gemini or opencode -- and answers to both boards, GitHub and Linear.
 # It holds no cluster verbs: its output is an ordinary pull request and Flux reconciles the merge.
@@ -1525,6 +1587,29 @@ spec:
     - name: secret-store
   wait: true
   timeout: 10m
+---
+# The first RuntimeInstall CR (crew#892 CP4 next phase, goal b9217bea option c).
+# Dark until the operator lands: the CR carries estate.estate.io/suspend: "true"
+# so the operator's reconcile loop leaves it alone. The CRD row (nodesoftware-operator)
+# must land first, because the CRD has to exist before this CR can be admitted.
+# One CR, one namespace, one row -- a future gvisor-runtime-2 (kata, nvidia) would
+# land as platform/gvisor-runtime/kata/install.yaml in the same dir, not as a new Flux row.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gvisor-runtime
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/gvisor-runtime
+  prune: true
+  dependsOn:
+    - name: nodesoftware-operator
+  wait: true
+  timeout: 5m
 ---
 # crew#846: the fourth question estate-security-scan asks (platform/trivy) -- container image and
 # cluster vulnerability scanning, which the estate ran nowhere before this row.

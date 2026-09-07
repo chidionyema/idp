@@ -1,0 +1,80 @@
+# platform/gvisor-runtime/ -- the first RuntimeInstall CR (crew#892 CP4 next
+# phase, goal b9217bea option c). It targets one canary node that carries the
+# label sandbox.estate.io/gvisor=true (a label the platform's own node-bootstrap
+# stamps on at most one node per fleet), and asks the operator to install runsc
+# version 1.0.0 on it, one canary node at a time, with a 15-minute pause between
+# canary verification and the rest of the rollout.
+#
+# Suspended: this CR is shipped dark until the operator source lands and the
+# controller image is in ghcr. `metadata.annotations.estate.estate.io/suspend: "true"`
+# is the operator's switch: while it is true, the controller's reconcile loop
+# leaves the CR alone. The empirical-proof commit flips this annotation.
+#
+# The verification spec probes `uname -r` on the probe pod; the success
+# condition is the regex that catches a gvisor kernel suffix. The PR body for
+# the empirical-proof commit will quote the actual `uname -r` line from this
+# probe pod on the canary node.
+#
+# Why this CR is here and not in platform/nodesoftware-operator/: the CR is a
+# request, not a definition. CRs land in the namespace of the thing they
+# describe (the runtime they install); the controller and the CRD live in the
+# platform's own directory. This split keeps the catalog clean (every Flux row
+# describes one platform component) and lets a future product land its own
+# RuntimeInstall under its own directory without touching platform/.
+apiVersion: nodesoftware.estate.io/v1alpha1
+kind: RuntimeInstall
+metadata:
+  name: runsc-canary
+  namespace: nodesoftware-operator
+  annotations:
+    # The CR is dark until the operator's image exists. Same shape as every
+    # suspended Flux row (clusters/oke/platform.yaml: otto-gateway,
+    # temporal). The empirical-proof commit flips this to "false".
+    estate.estate.io/suspend: "true"
+    estate.estate.io/policy-summary: >-
+      Asks the NodeSoftwareOperator to install runsc on one canary node
+      (label sandbox.estate.io/gvisor=true). Canary of 1, pause 15m. The
+      operator's reconcile loop is the only thing that touches the host;
+      the lockdown blocks every other writer.
+spec:
+  runtime: runsc
+  version: "1.0.0"
+  selector:
+    nodeSelector:
+      matchLabels:
+        sandbox.estate.io/gvisor: "true"
+      matchExpressions:
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+    tolerations:
+      - key: nodesoftware.estate.io/canary
+        operator: Exists
+        effect: NoSchedule
+  rolloutStrategy: ProgressiveCanary
+  canaryReplicas: 1
+  pauseDuration: 15m
+  failurePolicy: FailClosed
+  verification:
+    probePod:
+      spec:
+        restartPolicy: Never
+        runtimeClassName: runsc
+        nodeSelector:
+          kubernetes.io/hostname: <filled-by-controller>
+        containers:
+          - name: probe
+            image: gcr.io/distroless/static:latest
+            command: ["/bin/sh", "-c", "uname -r"]
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 65532
+              seccompProfile: {type: RuntimeDefault}
+            resources:
+              requests: {cpu: 10m, memory: 16Mi}
+              limits:   {memory: 32Mi}
+    successCondition: "[0-9.]+-gvisor-[0-9]+"
+    timeoutSeconds: 300
