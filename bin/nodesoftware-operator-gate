@@ -1,0 +1,40 @@
+#!/bin/bash
+# bin/nodesoftware-operator-gate
+#
+# Thin bash dispatcher around bin/lib/nodesoftware_operator_gate.py. The
+# validator logic lives in the python module; this script's job is to make the
+# gate callable from bin/idp-ci the same way as every other small gate, with
+# pipefail + a trap and a clean exit code.
+#
+# Contract source of truth: platform/nodesoftware-operator/CRD-SPEC.md. The
+# python validator mirrors it; if the two drift, the fixture pair's two-way
+# grading fails CI.
+#
+# Usage:
+#   bin/nodesoftware-operator-gate <file> [<file> ...]
+#       exit 0 if every doc in every file passes; exit 1 if any is refused.
+set -euo pipefail
+shopt -s inherit_errexit 2>/dev/null || true
+
+IDP=$(cd "$(dirname "$0")"/.. && pwd)
+PY="$IDP/bin/lib/nodesoftware_operator_gate.py"
+
+if [ ! -f "$PY" ]; then
+	echo "FAIL  nodesoftware-operator-gate  validator module missing: $PY" >&2
+	exit 1
+fi
+
+if [ $# -eq 0 ]; then
+	echo "usage: bin/nodesoftware-operator-gate <file> [<file> ...]" >&2
+	exit 2
+fi
+
+# The python module's exit code is the gate's verdict: 0 = pass, 1 = refused,
+# 2 = usage. Trap ERR so a non-zero exit from exec'd python surfaces as a FAIL
+# line rather than a silent non-zero return from the dispatcher.
+trap 'echo "FAIL  nodesoftware-operator-gate  python validator exited non-zero" >&2' ERR
+
+# python3 propagates the gate's pass/refuse verdict via its exit code; stdout
+# already carries the human-readable line. set -e + pipefail + the ERR trap
+# cover the failure paths; the python module owns its own diagnostics.
+exec python3 "$PY" "$@"

@@ -615,6 +615,19 @@ else
   say "FAIL  gvrfence bin/gvisor-cell-fence-gate cannot tell a cell fence that leaks to the internet from the default-deny fence (ZT step 6)"; fail=1
 fi
 
+# 6g. NodeSoftwareOperator (goal b9217bea-…, option c): a RuntimeInstall CR names a runtime in
+#     the closed set the operator knows, requires a canary on ProgressiveCanary rollouts, and
+#     rejects pause durations that would make the canary pause a no-op. The gate runs the
+#     fixture pair both ways so a regression on any of the three rules fails here, in the pull
+#     request, before the CR is ever admitted. The contract lives in
+#     platform/nodesoftware-operator/CRD-SPEC.md; the gate is the offline mirror.
+if "$IDP/bin/nodesoftware-operator-gate" "$IDP/tests/fixtures/nodesoftware-operator/good.yaml" \
+   && ! "$IDP/bin/nodesoftware-operator-gate" "$IDP/tests/fixtures/nodesoftware-operator/bad.yaml"; then
+  say "ok    nodesoftware a RuntimeInstall CR names a closed-set runtime, requires a canary, and a 30s+ pause; the bad fixture is refused"
+else
+  say "FAIL  nodesoftware bin/nodesoftware-operator-gate cannot tell a well-formed CR from a closed-set / no-canary / too-short-pause violation"; fail=1
+fi
+
 # 6b. The namespace fence, against the estate rather than against its own fixtures (crew#839).
 #     Until now ns_fence_gate ran only inside the loop above, on tests/fixtures/ns-fence/*.yaml,
 #     so it could prove itself both ways forever while thirty-eight real namespaces had no quota,
