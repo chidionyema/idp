@@ -1457,6 +1457,30 @@ spec:
         name: bridge-identity
         optional: false
 ---
+# The JIT token broker (WJ.1-WJ.15). This is the only workload in the estate that can mint write
+# access on a cluster where -- from the row above this one -- agents hold none. It is reconciled
+# after rbac deliberately: agent-reader is the floor that makes this broker the only ceiling, and
+# a broker standing up before that floor exists would be a second way to write, not the only one.
+#
+# `wait: true` on purpose. A broker that is half-applied is a broker whose fence may be up while
+# its killswitch volume is not, and the next row should not build on that.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: jit
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: rbac
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/jit
+  prune: true
+  wait: true
+  timeout: 5m
+---
 # Cyrus agent orchestration (crew#834): the execution layer that works an issue with any engine --
 # claude, codex, cursor, gemini or opencode -- and answers to both boards, GitHub and Linear.
 # It holds no cluster verbs: its output is an ordinary pull request and Flux reconciles the merge.
