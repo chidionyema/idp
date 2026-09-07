@@ -24,12 +24,21 @@ the foundation of the sync layer.
 This is not hypothetical. `git log --grep="cline checkpoint"` returns **55 commits** in this
 repository from an agent none of those three files can see.
 
-A second defect sat on top of it. `rule-guard.py` refuses a tool call when
-`<repo>/checkpoints/LATEST.md` is stale — **117 refusals**, the single most frequent block in the
-estate, measured over 13,048 model messages on 2026-09-07. `session-recorder` meanwhile derives a
-fresh recovery file every turn, into a *different* file in a *different* directory. So a hook wrote
-a mechanical checkpoint every turn while a guard blocked work demanding a session hand-write a
-second one.
+A second defect sat on top of it. `rule-guard.py` refused any command that opens a new thread of
+work — `git worktree add`, `checkout -b`, `gh issue edit --add-assignee` — whenever a
+`checkpoints/LATEST.md` was over 30 minutes old. **117 refusals, the single most frequent block in
+the estate**, over 13,048 model messages on 2026-09-07.
+
+It never measured what it claimed. `checkpoint_age_s` does `os.path.dirname(transcript_path)`, so
+it stats `<claude projects>/<slug>/checkpoints/LATEST.md` — the **transcript directory, not the repo
+checkout**. Measured across all 34 project directories holding sessions: **23 of them, holding
+11,639 sessions, have no `LATEST.md` at all**, so the rule was BLIND and could never fire. Of the 11
+that have one (564 sessions), **10 were already past the threshold**, median age **316 hours**. The
+single fresh exception was `idp` — the one repo whose sessions had been trained to hand-write the
+file because the rule nagged them.
+
+Silent for 95% of sessions, permanently tripped everywhere it could see, except where it had
+trained someone to feed it. It measured who feeds the gate, not who checkpoints.
 
 ## The class of mistake
 
@@ -55,8 +64,10 @@ The issue is already mandatory (`ticket-gate` binds one to every session), alrea
 
 ## Consequences
 
-- `checkpoints/LATEST.md` and the `rule-guard` staleness gate that reads it are retired. Deleted,
-  not re-pointed: a file rewritten every turn can never be stale, so re-pointing makes it dead code
-  that still costs a round trip to satisfy.
+- The `rule-guard` staleness gate is deleted, not re-pointed (claude-guards PR #252). `reply.rego`'s
+  LAW 16 stale-checkpoint rule goes with it: it reads the same input, and deleting only the LAW 25
+  rule would have silently *armed* it, since nothing writes `LATEST.md` any more. Over 43,913
+  assistant text blocks its regex alone matches 30 times with roughly half false positives, and a
+  guard that refuses correct work is an outage (LAW 38).
 - A non-Claude agent gets continuity and becomes visible to its peers for the first time.
 - The record survives the death of the session, the machine and the vendor.
