@@ -20,20 +20,55 @@ today: an application that wants its own bucket gets one by a human editing `.tf
 
 ## The line
 
-**OpenTofu owns what must exist before the cluster does.** The VCN, the NSG and its rules, OKE
-itself, the KMS vault and key, the state bucket, the identity policies and dynamic groups that let
-anything authenticate at all, and the one compute instance. These are ordered, they are few, they
-are edited about once a quarter, and a reconciliation loop buys nothing against them. Terraform's
-plan-diff-in-a-pull-request is the right gate for the ground floor.
+The founder, reading the first draft of this record: "bu if we are bootsarpping why is anyone
+looking a diff in confused". He is right, and the first draft was wrong.
 
-**Crossplane owns what a running namespace asks for.** A bucket for an application, a managed
-PostgreSQL for a tenant, the scoped identity policy that goes with it. These are many, they are
-requested rather than designed, they are created and destroyed on an application's schedule, and
-their lifetime is the namespace's lifetime — which is a Kubernetes fact, not a Terraform one.
+That draft justified OpenTofu's half with "you want a human looking at a plan diff in a pull
+request." That argument is worthless here, for two reasons. It does not distinguish the two tools —
+a Crossplane Claim lands in Git and reaches the cluster through Flux, so it gets exactly the same
+pull-request gate the HCL does. And it does not survive the bootstrap goal at all: the point of
+compiling intents is that nobody reads Oracle resource addresses. Reaching for the industry's
+standard defence of Terraform imported a governance argument this estate does not run on.
 
-The test for which side a resource sits on is one question: **does the cluster have to already be
-running for this to be asked for?** If yes, it is Crossplane's. If the cluster cannot exist without
-it, it is OpenTofu's.
+Strike it. There is exactly one real reason the foundation is OpenTofu's, and it is physics, not
+policy: **Crossplane runs inside the cluster, so it cannot build the things that must exist before
+the cluster does.** It cannot create the network it is reachable on, the cluster it is scheduled in,
+the vault its Workload Identity reads, or the identity policy that makes that Workload Identity mean
+anything. Something outside the cluster has to make those. That is OpenTofu's entire job here.
+
+Applied honestly, that criterion cuts far deeper than the first draft admitted.
+
+**The irreducible bootstrap set is six resources**, and they are all in three files:
+
+| file | resource | why it cannot be Crossplane's |
+|---|---|---|
+| `main.tf` | the `oke` module | it is the cluster Crossplane would run in |
+| `iam.tf` | `oci_identity_policy.operators_compartment` | the compartment grant everything else hangs off |
+| `vault.tf` | `oci_kms_vault.estate` | holds the seed, read before any pod starts |
+| `vault.tf` | `oci_kms_key.estate` | same |
+| `vault.tf` | `oci_identity_dynamic_group.workers` | the identity a pod presents |
+| `vault.tf` | `oci_identity_policy.workers_read_secrets` | what makes that identity able to read anything |
+
+Plus the state bucket OpenTofu keeps its own state in, which is outside this count because it
+predates the code.
+
+**The other thirty-eight are application resources wearing foundation clothes.** The 13
+`random_password` and 11 `oci_vault_secret` resources live in `langfuse.tf`, `flux-webhook.tf`,
+`healthchecks.tf`, `otlp-ingest.tf`, `bridge.tf`, `commerce.tf`, `signoz.tf` and `superset.tf` —
+eight files, each named after a workload that runs in the cluster. Not one of them can be needed
+before the cluster exists, because the thing that consumes it is a pod. They are in OpenTofu for a
+historical reason, not a structural one.
+
+They also carry a cost worth naming: `random_password` puts the generated plaintext in the
+OpenTofu state file, which lives in an Object Storage bucket. Twenty-four secrets for eight
+workloads are sitting in a state file today because Terraform is where they were born. Moving them
+off is a security improvement, not housekeeping.
+
+**So the test stands and the answer changes.** The question is still "does the cluster have to
+already be running for this to be asked for?" Applied to all 44 resources, the honest split is six
+on the OpenTofu side and thirty-eight candidates on the other — not the roughly-half the first draft
+implied. Six is the number that makes the coexistence argument, because six is small enough that
+nobody has to look at it again.
 
 ## The seam already exists, and it is one branch wide
 
@@ -112,11 +147,14 @@ reported on 2026-09-07 (LEAD, unverified here).
 
 1. The `rules.yaml` split-brain row and its two fixtures, before any operator is installed. The
    guard predates the thing it guards.
-2. Crossplane core plus `provider-family-oci` with only the object-storage sub-provider, under
-   Flux, with Workload Identity and no stored credential.
+2. Crossplane core plus `provider-family-oci` with only the sub-providers the first move needs,
+   under Flux, with Workload Identity and no stored credential.
 3. The Claim emitter branch in `compile_storage()`, behind `ESTATE_STORAGE_PROVIDER`.
-4. One real application bucket moved from HCL to a Claim, with the OpenTofu resource removed in the
-   same pull request — never both, per the guard above.
+4. One workload's secrets moved off OpenTofu, with the `random_password` and `oci_vault_secret`
+   resources deleted in the same pull request — never both sides, per the guard above. The
+   candidate is whichever of the eight files has the fewest consumers, decided by measurement then,
+   not asserted here.
 
-Nothing else in `platform/oci` moves until that loop has run a full cycle and the drift it corrected
-has been read out of the cluster, not out of a plan file.
+Nothing else moves until that first one has run a full cycle and the drift it corrected has been
+read out of the cluster, not out of a plan file. Thirty-eight resources is a migration, and a
+migration is proved one workload at a time.
