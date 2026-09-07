@@ -20,7 +20,7 @@ model_list:
   # with an explicit api_base rather than a provider prefix.
   - model_name: minimax
     litellm_params:
-      model: openai/MiniMax-M2
+      model: openai/MiniMax-M3
       api_base: https://api.minimax.io/v1
       api_key: os.environ/MINIMAX_API_KEY
       timeout: 300
@@ -31,29 +31,47 @@ model_list:
       # general_settings.max_budget could never trip and the vendor's own plan ran
       # out with nothing in the estate showing a cost. MiniMax is OpenAI-compatible
       # rather than a first-class provider, so LiteLLM has no price for it unless
-      # the row carries one. Rates from https://platform.minimax.io/docs/pricing
-      # (MiniMax-M2: $0.30 per million in, $1.20 per million out, read 2026-09-04).
+      # the row carries one. MiniMax-M3 is priced $0.30 per million in and $1.20 per
+      # million out up to 512K input tokens, and $0.60 / $2.40 above that (vendor
+      # pricing page, read 2026-09-07) -- so this lane is the same money per token as
+      # the MiniMax-M2 it replaces, for every turn the cap below admits.
       input_cost_per_token: 0.0000003
       output_cost_per_token: 0.0000012
     model_info:
       # crew#506 CP1: the router refuses an oversized turn before it leaves the estate.
-      # MiniMax-M2 context window is 204,800 tokens; a turn above it 400s here instead of
-      # walking the fallback chain into unfunded lanes (the 2026-08-27 Telegram outage).
-      max_input_tokens: 204800
+      # MiniMax-M3 carries 1,048,576 tokens of context, but LiteLLM holds one rate per lane
+      # and MiniMax doubles its rate above 512K input. So the cap is set where the price
+      # above stops being true, not where the model stops reading: a turn over 512K would
+      # bill at twice what this row records, and a lane that under-reports its own spend is
+      # how 176 million tokens went by as $0.0000 in the first place. A turn above the cap
+      # 400s here instead of walking the fallback chain into unfunded lanes (the 2026-08-27
+      # Telegram outage).
+      max_input_tokens: 512000
 
   # The failover tier: same account and adapter, different model. It is a failover, never
   # a routing choice — see prospector config.yaml on `minimax_m27`.
   - model_name: minimax_m27
     litellm_params:
-      model: openai/MiniMax-Text-01
+      # The name was aspirational until 2026-09-07: the lane called minimax_m27 served
+      # MiniMax-Text-01, because M2.7 did not exist when the lane was cut. It does now, so
+      # the lane serves what it is named after and a reader of the router config is no
+      # longer told one model and given another.
+      model: openai/MiniMax-M2.7
       api_base: https://api.minimax.io/v1
       api_key: os.environ/MINIMAX_API_KEY
       timeout: 300
       # Priced for the same reason as the row above; without it the failover tier is
       # the free-looking way around a cap the primary now respects.
-      # MiniMax-Text-01: $0.20 per million in, $1.10 per million out.
-      input_cost_per_token: 0.0000002
-      output_cost_per_token: 0.0000011
+      # MiniMax-M2.7: $0.30 per million in, $1.20 per million out (vendor pricing page,
+      # read 2026-09-07) -- dearer per token than the MiniMax-Text-01 it replaces, and
+      # that is the point: a failover that is cheaper than the primary is an invitation
+      # to route to it.
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000012
+    model_info:
+      # M2.7 reads 204,800 tokens, a fifth of the primary's window. Capped here so an
+      # oversized turn is refused by the estate rather than by the vendor mid-failover.
+      max_input_tokens: 204800
 
   - model_name: gemini
     litellm_params:
