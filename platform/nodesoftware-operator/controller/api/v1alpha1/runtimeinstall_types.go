@@ -76,8 +76,10 @@ type RuntimeInstallVerification struct {
 	// runtimeClassName (set to spec.runtime) on every reconcile.
 	ProbePod corev1.PodTemplateSpec `json:"probePod"`
 
-	// SuccessCondition is the shell expression the controller evaluates against the probe pod's
-	// stdout. Empty = no verdict (refused by the gate, but checked again here as a safety net).
+	// SuccessCondition is a Go regexp the controller matches against the probe pod's stdout.
+	// Empty = no verdict (refused by the gate, but checked again here as a safety net).
+	// A CR with `uname -r | grep -qE 'foo'` style shell is refused at admission; the controller
+	// does not spawn a shell to evaluate success.
 	SuccessCondition string `json:"successCondition"`
 
 	// TimeoutSeconds bounds how long the controller waits for the probe pod to complete.
@@ -108,6 +110,10 @@ type RuntimeInstallStatus struct {
 	// verify + uncordon complete) in this rollout. Read by the offline gate's empirical-proof
 	// contract: the milestone-D PR body must cite this count for the canary node.
 	ObservedNodes int32 `json:"observedNodes,omitempty"`
+
+	// FailedNodes is the count of nodes that failed verification. Distinct from ObservedNodes;
+	// used by ShouldFailClosed to decide whether to halt the rollout.
+	FailedNodes int32 `json:"failedNodes,omitempty"`
 
 	// CanaryResults records the per-canary-node outcome (used for the empirical proof).
 	CanaryResults []CanaryResult `json:"canaryResults,omitempty"`
