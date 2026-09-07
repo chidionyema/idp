@@ -1,4 +1,10 @@
-"""2026-09-07: two vendor Resources never reached the catalogue because of one character.
+"""Every tag bin/catalog-gen writes is one Backstage will accept, or the entity is lost.
+
+A tag Backstage refuses does not cost you the tag. It costs you the whole entity: ingestion
+throws the document out, and the thing disappears from the catalogue with no trace on the page.
+So the grammar is an invariant of the generator, not a detail of any one key.
+
+The instance that proved it, 2026-09-07:
 
 Backstage validates a tag against a narrower grammar than a name: sequences of [a-z0-9+#]
 joined by single dashes. bin/catalog-gen emitted tags through slug(), whose character class
