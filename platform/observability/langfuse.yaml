@@ -261,6 +261,57 @@ spec:
                           - { name: tmp, mountPath: /tmp }
                     volumes:
                       - { name: tmp, emptyDir: {} }
+          # The 1000m request on web and worker was never about steady state: langfuse-web uses 9m
+          # and langfuse-worker 108m, measured 2026-09-08. It was bought to make boot fit inside a
+          # 50-second liveness window (initialDelay 20 s + 3 x 10 s), which is what actually killed
+          # the pods at 50m and 250m in crew#626 CP15 -- exit 143 is the kubelet, not the app. A
+          # startupProbe is the fence Kubernetes has for exactly that: liveness does not run until
+          # it passes, so boot gets 300 seconds and the steady state does not have to pay a core
+          # for it. The chart exposes livenessProbe and readinessProbe knobs but no startupProbe,
+          # so it is patched here. Requests drop with it; limits stay at 1000m so a slow boot can
+          # still burst. Between the two deployments this returns 1600m to the scheduler, which is
+          # 14% of the cluster's allocatable CPU and the single biggest schedulability win on it.
+          # Both pods are in platform/state/pinned-workloads.yaml as fitting on no other node
+          # (#2413) -- that is a consequence of the 1000m reservation, and it goes with it.
+          - target: { kind: Deployment, name: langfuse-web }
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: { name: langfuse-web }
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: langfuse-web
+                        # The liveness path, not the readiness one: when startup passes, liveness
+                        # is guaranteed to pass too. Gating startup on /ready would leave the pod
+                        # never started when a dependency is down, instead of started and un-ready.
+                        startupProbe:
+                          httpGet: { path: /api/public/health, port: http, scheme: HTTP }
+                          periodSeconds: 10
+                          timeoutSeconds: 5
+                          failureThreshold: 30
+                        resources:
+                          requests: { cpu: 250m, memory: 2Gi }
+                          limits: { cpu: 1000m, memory: 2Gi }
+          - target: { kind: Deployment, name: langfuse-worker }
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: { name: langfuse-worker }
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: langfuse-worker
+                        startupProbe:
+                          httpGet: { path: /api/health, port: http, scheme: HTTP }
+                          periodSeconds: 10
+                          timeoutSeconds: 5
+                          failureThreshold: 30
+                        resources:
+                          requests: { cpu: 250m, memory: 1Gi }
+                          limits: { cpu: 1000m, memory: 1Gi }
           - target: { kind: Deployment, name: langfuse-redis }
             patch: |
               apiVersion: apps/v1

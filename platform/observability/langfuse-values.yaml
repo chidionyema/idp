@@ -67,19 +67,29 @@ langfuse:
       # (crew#539 CP9: radio-room set is request == limit), admitted above the fence line by the
       # capacity-approved label the way clickhouse is (values.yaml). The chart's pod label key is
       # `pod.labels`, not `podLabels`.
+      # SUPERSEDED for cpu, 2026-09-08. The reasoning above is sound about the symptom and wrong
+      # about the cause: exit 143 at 50m is the kubelet killing the pod on a 50-second liveness
+      # window, not the app needing a core. Measured steady state is 9m against this 1000m. The
+      # startupProbe patch in langfuse.yaml gives boot 300 seconds and sets cpu request 250m /
+      # limit 1000m, so boot can still burst and the steady state stops reserving a core. Memory
+      # is untouched and is genuinely needed: NODE_OPTIONS pins the V8 heap at 1536 MB.
       requests: { cpu: 1000m, memory: 2Gi }
       limits: { cpu: 1000m, memory: 2Gi }
     pod:
-      labels: { idp.platform/capacity-approved: "true" }   # 1000m Guaranteed, measured (crew#626 CP15, run 33262424618)
+      labels: { idp.platform/capacity-approved: "true" }   # kept: the limit is still 1000m
   worker:
     replicas: 1
     resources:
       # crew#626 CP15: same boot failure as web at 50m (163 restarts in 9 h, run 33259031857) and
       # CrashLoop at 250m (run 33262424618, pod sqrq9); one core, Guaranteed, like web.
+      # SUPERSEDED for cpu, 2026-09-08, same as web: startupProbe in langfuse.yaml, request 250m,
+      # limit 1000m. Measured steady state is 108m. The 134 restarts on 2026-09-06 were ClickHouse
+      # refusing inserts at its own 3.60 GiB ceiling until this worker's Node heap died -- a
+      # downstream failure, not a CPU one; it has run unbroken for 27 h since.
       requests: { cpu: 1000m, memory: 1Gi }
       limits: { cpu: 1000m, memory: 1Gi }
     pod:
-      labels: { idp.platform/capacity-approved: "true" }   # 1000m Guaranteed, measured (crew#626 CP15, run 33262424618)
+      labels: { idp.platform/capacity-approved: "true" }   # kept: the limit is still 1000m
 postgresql:
   # crew: one Postgres for the estate. This chart bundled its own server (docker.io/postgres:18,
   # the only PostgreSQL 18 in the estate, which is why the estate cluster is 18 too) and it no
