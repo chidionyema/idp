@@ -14,23 +14,15 @@
 # is how it reads its own directives and it refuses the file (SC1072).
 #
 # Scope, 2026-09-07: this used to be a function inside bin/idp-ci that scanned "$IDP"/bin/* and
-# nothing else. The discovery below reads 231 tracked shell files, 8 of them outside bin/. Those
-# 8, listed because a count nobody can check is not a count -- .githooks/pre-commit,
-# .githooks/pre-push, architecture/render, platform/cyrus/entrypoint.sh,
+# nothing else. The discovery below reads every tracked shell file. Eight of them sit outside
+# bin/, and those eight are the whole widening -- the total moves with the tree, so it is not
+# frozen here, but the eight are, and a count nobody can check is not a count:
+# .githooks/pre-commit, .githooks/pre-push, architecture/render, platform/cyrus/entrypoint.sh,
 # platform/hermes-agent/cursor-agent.tpl, platform/hermes-agent/mac-run.tpl,
 # platform/sandbox/vcluster/idp-sandbox-sweep, sovereign/presence/swiftbar/estate-presence.5s.sh.
-# That is the whole widening, and the same pattern over those 8 hits zero times today, so it
-# refuses no correct work (LAW 38) and only closes the door for tomorrow. Reproduce the set with
-# the two `git ls-files` calls in files() below.
-#
-# Corrected twice after review (idp#2390). The first version said 632 files "including every
-# .estate-hooks guard", measured over those 632 -- neither number was the discovery set, because
-# `git ls-files -- .estate-hooks` here is 0: the guards that decide whether other shell may run
-# live outside this repository. The correction fixed the number to 8 and then named three paths
-# for it -- .estate-hooks/*.sh, deploy/host/*.sh, platform/gvisor/install-runsc.sh -- which are
-# 0, 0 and 0 tracked files. The count was taken; the list beside it was not, and it was the same
-# claim in a smaller place. A count stated without being taken is the failure this file was
-# written to catch, appearing twice in the file that catches it.
+# Two of them are the git hooks, which are shell that decides whether other shell may run.
+# The same pattern over those eight hits zero times today, so the widening refuses no correct
+# work (LAW 38) and only closes the door for tomorrow.
 #
 # With no arguments it scans every tracked shell file except tests/fixtures, which holds the
 # deliberate bad case. With arguments it scans exactly those paths, which is how the registry
