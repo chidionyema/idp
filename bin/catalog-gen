@@ -388,6 +388,56 @@ def describe(r):
     return own or doc or (f"{hint}." if hint else "")
 
 
+def fold_families(rows: list) -> list:
+    """One entity per family of shards, never one entity per shard.
+
+    Founder, 2026-09-07, looking at the default namespace in the portal: "these cluade
+    things here are judt noise and obscuring whats inprtantt".
+
+    He was right, and it is measurable. Two ledgers in ~/.claude are written one file per
+    agent session, and the inventory collects each file as its own asset:
+    ~/.claude/directives (187 files) and ~/.claude/state/prompt-ledger (25). On the
+    2026-09-07 inventory that is 212 of 447 rows, and it rendered 292 of the catalogue's
+    617 entities -- 47 per cent of the portal -- almost all of them a Resource holding a
+    single row, most naming a worktree that has not existed for weeks.
+
+    Two things were wrong with that. The first is the founder's: a catalogue where half the
+    entities are one agent's scratch files does not answer "what does this estate run".
+    The second is LAW 46: the shard file names are mangled absolute paths, so 200 entity
+    names spelled the founder's home directory and his checkout layout onto a public
+    catalogue page.
+
+    Nothing here is dropped or hidden. The inventory already records which shards are the
+    same asset -- `member_of` -- and it was collected and then never read by anything
+    (measured: no other file in bin/ mentions it). So a family folds to one row that keeps
+    the shard count and the summed row count, and every row without `member_of` -- which is
+    everything that is genuinely one asset -- passes through untouched.
+    """
+    fams, out = {}, []
+    for r in rows:
+        fam = r.get("member_of")
+        if fam:
+            fams.setdefault(fam, []).append(r)
+        else:
+            out.append(r)
+    for fam, shards in sorted(fams.items()):
+        head = shards[0]
+        total = sum(int(s.get("rows") or 0) for s in shards)
+        # The id is the shards' common parent, so the folded entity keeps the name shape the
+        # portal already had (claude-directives) instead of inventing a new one.
+        fam_id = os.path.dirname(head.get("id") or "") or fam
+        out.append({**head,
+                    "id": fam_id,
+                    "path": os.path.dirname(head.get("path") or "") or head.get("path"),
+                    "rows": total,
+                    "shards": len(shards),
+                    "note": (f"{len(shards)} append-only {fam} files, one per agent session, "
+                             f"{total} rows in total. The estate collects them as one asset: "
+                             "a single session's file is not a thing anybody operates."),
+                    })
+    return out
+
+
 def estate_zone() -> str:
     """The one value in clusters/*/estate-config.yaml (crew#269, crew#796); a company home link
     written as https://${ESTATE_ZONE} is substituted here, never spelled out in this file."""
@@ -687,7 +737,7 @@ def main() -> int:
         print(f"catalog-gen: no inventory at {INV} -- run the inventory first", file=sys.stderr)
         return 2
     inv = json.load(open(INV))
-    rows = [r for r in (inv.get("rows") or []) if not vendor_software(r)]
+    rows = fold_families([r for r in (inv.get("rows") or []) if not vendor_software(r)])
     if not rows:
         # A catalogue that renders empty looks identical to a portal with nothing
         # wrong. Refuse instead, so the failure is loud where it happens.
