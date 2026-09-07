@@ -29,20 +29,31 @@ clickhouse:
   # instrument had already said so and nobody had read it: `FAIL science-facts at
   # 2026-09-07T19:07:01Z window_h=24 sources=0 rows=0`. Nothing has been written down for a day.
   #
-  # Memory is the fenced-free lever by design (platform/edge/capacity-policy.yaml: "memory floors
-  # are set by incidents ... a memory request below real use is an OOM, not a saving"), and 5.5Gi
-  # is the largest request that still schedules: node 10.0.148.221 has 20935Mi allocatable against
-  # 19159Mi requested, and the 4096Mi this pod releases on recreate leaves 5872Mi. Real free memory
-  # on that node is 4.4Gi (16061Mi used of 20935Mi), so the limit is coverable, not paper. The CPU
-  # request stays at the approved 1000m -- the node is at 99% of allocatable CPU requests and there
-  # is no room to raise it -- and the limit doubles, which is the shape crew#584 asks for
-  # ("a micro request with a burst limit") and costs nothing: that node runs at 46% CPU.
-  #
-  # This buys headroom; it does not fix the trend. The structural lever is retention
-  # (signoz-retention.yaml), and shortening it deletes data, which is not a call to make alone.
   resources:
-    requests: { cpu: 1000m, memory: 5632Mi }
-    limits: { cpu: 2000m, memory: 5632Mi }
+    # 2026-09-07: 5632Mi was Unschedulable and took ClickHouse down. The arithmetic in the block
+    # above read `kubectl get nodes -o jsonpath allocatable.memory` as Mi when the unit is Ki:
+    # 20935936Ki is 20445Mi, not 20935Mi. So the request was raised past what either node could
+    # hold, the pod was evicted to Pending, and its place on the node was taken by other pods
+    # while it waited. Measured 21:5xZ, with the pod Pending and counted nowhere:
+    #
+    #   10.0.148.221  allocatable 5808m / 20445Mi   requested 4956m / 15831Mi   free 852m / 4614Mi
+    #   10.0.159.197  allocatable 5808m / 20445Mi   requested 5341m / 13929Mi   free 467m / 6516Mi
+    #
+    # Which is why restoring the memory alone was not enough: 1000m no longer fits either node,
+    # and the scheduler says so -- "0/2 nodes are available: 1 Insufficient memory, 2 Insufficient
+    # cpu". The CPU request comes down to 200m, which is the idle floor of a database that spends
+    # its day waiting, and it fits .221 with 652m to spare. The limit stays at 2000m: limits do
+    # not schedule, so the burst that loads the parts inside the startup probe window is unchanged
+    # from what crew#539 measured. A micro request with a burst limit is the shape crew#584 asks
+    # for, and is what the comment above claimed while the file still said 1000m.
+    #
+    # This restores the pod. It does NOT fix code 241 -- ClickHouse comes back at the same 4Gi
+    # ceiling it was already refusing every write at, which is where it was before #2378. The
+    # headroom to fix that does not exist on two nodes at 78% and 68% of allocatable memory and
+    # 85% / 92% of CPU, so the levers are retention (signoz-retention.yaml, which deletes data)
+    # or a third node. Both are the founder's call, not this file's.
+    requests: { cpu: 200m, memory: 4Gi }
+    limits: { cpu: 2000m, memory: 4Gi }
   # crew#483 (2026-08-28, diagnose run 33172481714): once the node agents reached the collector
   # (c03fb77), signoz-otel-collector logged `code: 241 ... (total) memory limit exceeded: would use
   # 3.61 GiB ... current RSS: 1.87 GiB, maximum: 3.60 GiB` on every batch of spans, logs and
