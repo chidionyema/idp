@@ -125,7 +125,18 @@ class Handler(BaseHTTPRequestHandler):
                 # Nothing reads this answer: the mirror discards it and Telegram sees otto's.
                 # That is the point -- a broker that is down or slow can never make Telegram
                 # retry, or fail, a delivery otto already accepted.
-                return self._reply(200, {"handled": self.phone.handle(self._body())})
+                handled = self.phone.handle(self._body())
+                # The one line the broker prints per delivery, and the reason it prints it:
+                # `log_message` is silenced above, so before this the broker answered a real
+                # Telegram tap and left nothing in `kubectl logs` at all -- the ledger held the
+                # record, but the ledger is a file on a PVC an operator cannot read from a
+                # laptop, so there was no way to show a live round-trip completing (the
+                # empirical-proof rule, founder 2026-09-05). Only *accepted* deliveries print:
+                # reaching this line costs the shared secret token, so the volume is Telegram's
+                # traffic and not a stranger's. `handled` is the broker's own verdict word and
+                # carries no chat text, no token and no callback data (LAW 21).
+                print(f"jit telegram: mirrored delivery handled: {handled}", flush=True)
+                return self._reply(200, {"handled": handled})
             if self.path == "/grants":
                 with open(self.broker.catalogue_path) as fh:
                     return self._reply(200, yaml.safe_load(fh) or {})
