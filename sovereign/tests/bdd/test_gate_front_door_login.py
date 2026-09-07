@@ -194,8 +194,17 @@ def _oauth2_proxy_in_front(state: dict) -> None:
                 for r in d["spec"]["rules"]
                 for m in r.get("matches", [])
             ]
+            # Under /webhook/, not literally the prefix: a rule may name one channel exactly
+            # so long as it names nothing outside the door. platform/otto-gateway
+            # /telegram-mirror.yaml is why -- an Exact /webhook/telegram rule hands the JIT
+            # broker a mirrored copy of the one POST otto answers, because a Telegram bot has
+            # one webhook URL and this estate has one bot. That rule reaches nothing the
+            # prefix did not already reach, and the check that matters is unchanged: no path
+            # on this route lies outside /webhook/.
             assert paths and all(
-                x == {"type": "PathPrefix", "value": "/webhook/"} for x in paths
+                x.get("type") in ("PathPrefix", "Exact")
+                and x.get("value", "").startswith("/webhook/")
+                for x in paths
             ), f"{p}: channel-binding-registry route exposes {paths}"
 
             secrets = (layer / "external-secret.yaml").read_text()
