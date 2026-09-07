@@ -86,6 +86,9 @@ spec:
           kubernetes.io/metadata.name: hindsight
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: llm
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: observability
     - namespaceSelector:
         matchLabels:

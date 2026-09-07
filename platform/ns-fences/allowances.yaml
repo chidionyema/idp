@@ -158,22 +158,29 @@ flows:
   keda:
     egress: [observability]
   llm:
-    egress: [observability]
+    # estate-db: the router mints budgeted virtual keys and writes every call to a spend ledger
+    # in postgres `litellm` (platform/llm/litellm.yaml composes DATABASE_URL against
+    # estate-rw.estate-db). estate-db already named llm in its ingress_from, but this side never
+    # named estate-db, and a one-sided declaration is a closed door: on 2026-09-07 the router
+    # could not roll at all -- every new pod died on `httpx.ConnectError: All connection attempts
+    # failed` inside Prisma's startup health check, while two pods that predated the fence kept
+    # serving on a ConfigMap Flux had already pruned.
+    egress: [observability, estate-db]
     # The router's whole job is calling a model vendor's API; declared here so the fence
     # still says yes on the day this cluster runs a CNI that enforces it.
     egress_internet: [443]
-    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway]
+    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta]
   mcp:
     # robusta: the estate MCP server hosts the ask_holmes tool (mcp/plugins/estate_holmes.py),
     # which is how an agent -- an assistant session, Otto on Telegram -- asks the investigator
     # a question. Both directions declared, as above.
-    egress: [observability, hindsight, robusta]
+    egress: [observability, hindsight, robusta, llm]
     ingress_from: [edge, hermes-agent]
   monitoring:
     egress: [guacamole, robusta]
     # dagster: the scheduler reads Alertmanager's firing alerts to decide there is
     # anything worth investigating at all.
-    ingress_from: [observability, edge, dagster]
+    ingress_from: [observability, edge, dagster, robusta]
   observability:
     egress: [monitoring, identity, estate-db]
     ingress_from: [edge, monitoring]
