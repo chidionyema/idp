@@ -62,9 +62,26 @@ def test_render_produces_expected_kube_system_objects():
     # ServiceAccounts / ClusterRoles / Bindings for node, cni-plugin, controllers.
     for sa in ("calico-node", "calico-cni-plugin", "calico-kube-controllers"):
         assert _find("ServiceAccount", sa, docs), f"missing ServiceAccount {sa}"
-    assert _find("ClusterRole", "calico-node", docs) and _find(
-        "ClusterRoleBinding", "calico-node", docs
-    )
+    # The cluster-scoped RBAC carries the estate prefix, and this is load-bearing rather than
+    # cosmetic: a ClusterRole has no namespace, so moving the ServiceAccounts into kube-system did
+    # not separate this deck's roles from the removed tigera-operator's. The operator left
+    # ClusterRole/calico-node and ClusterRole/calico-cni-plugin stuck in Terminating on a
+    # tigera.io/cni-protector finalizer no surviving controller can clear, and while this deck
+    # claimed those same names the Kustomization waited on tombstones -- so it never completed,
+    # and therefore never pruned the superseded operator HelmRelease it was meant to remove.
+    for name in ("calico-node", "calico-cni-plugin", "calico-kube-controllers"):
+        assert not _find("ClusterRole", name, docs), (
+            f"ClusterRole/{name} is a name the tigera-operator also owns"
+        )
+        role = _find("ClusterRole", f"estate-{name}", docs)
+        binding = _find("ClusterRoleBinding", f"estate-{name}", docs)
+        assert role and binding, f"missing estate-{name} ClusterRole/Binding"
+        # The binding points at the prefixed role, and still at the unprefixed ServiceAccount:
+        # ServiceAccounts are namespaced in kube-system and never collided in the first place.
+        assert binding["roleRef"]["name"] == f"estate-{name}"
+        assert [
+            (s["kind"], s["name"], s.get("namespace")) for s in binding["subjects"]
+        ] == [("ServiceAccount", name, "kube-system")]
 
 
 @render_available
