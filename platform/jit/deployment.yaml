@@ -140,6 +140,35 @@ metadata:
   # the object. layer-jit is generated into backstage/platform/catalog-info.yaml from this
   # Kustomization's row in bin/catalog-platform.
   labels: {backstage.io/kubernetes-id: layer-jit}
+  # The broker is reachable from the tailnet, and this is the only door it has that is not
+  # inside the cluster.
+  #
+  # Why it needed one. WJ.2 says an agent that hits the wall "does not fail and it does not
+  # report back" -- it asks. Until this annotation the asking door faced the pod network only:
+  # fence.yaml admitted namespaces `agents` and `edge`, and the public HTTPRoute carries the
+  # Telegram webhook alone (`POST https://otto.${ESTATE_ZONE}/ask` answers 404, measured
+  # 2026-09-07). So an agent running anywhere but inside the cluster could not ask at all, and
+  # on 2026-09-07 one could not: the boundary work needed 97 pods restarted, `restart-workload`
+  # in grants.yaml is exactly that grant, and there was no reachable way to request it.
+  #
+  # Why the tailnet and not the public edge. Exposing /ask on the public host would need a
+  # credential in front of it, and a credential minted to answer this is a second identity
+  # layer for one door -- refused by the estate's SSO policy and by LAW 54 (no fresh key while
+  # one exists). The tailnet is the identity layer that already exists here, it is federated,
+  # and policy.hujson is deny-by-default, so the ACL is the authentication and it is in git
+  # under review. Nothing about a grant changes: the ask still buzzes the founder's phone, the
+  # tap is still HMAC-checked, the TTL still expires on its own. This widens who may *ask*, to
+  # the founder's own devices, and widens nothing about what may be *minted*.
+  #
+  # tag:estate-jit rather than the operator's default tag:k8s: the default is shared with every
+  # egress proxy, so an ACL naming it would open port 8080 on all of them. Its owner is tag:k8s
+  # for the reason tag:estate-bridge's is -- the root OAuth client carries tag:k8s and a client
+  # may only request tags its own tags own (tailscale kb/1215); [] there 400s the authkey mint
+  # and the proxy crashloops (P0 idp#586).
+  annotations:
+    tailscale.com/expose: "true"
+    tailscale.com/hostname: jit-broker
+    tailscale.com/tags: tag:estate-jit
 spec:
   selector: {app.kubernetes.io/name: jit-broker}
   ports:

@@ -29,12 +29,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
 
-BROKER = os.environ.get("JIT_BROKER_URL", "http://jit-broker.jit.svc.cluster.local:8080")
+IN_CLUSTER = "http://jit-broker.jit.svc.cluster.local:8080"
+# The hostname platform/jit/deployment.yaml gives the broker's tailnet device
+# (`tailscale.com/hostname`). The two must agree or the lookup below finds nothing.
+TAILNET_HOSTNAME = "jit-broker"
 # Every parameter any grant in platform/jit/grants.yaml declares, so the agent can write
 # --namespace rather than --param namespace=. WJ.15 added the three layers below Kubernetes,
 # and their parameters are here for the same reason.
@@ -45,23 +50,76 @@ KNOWN_PARAMS = (
 CODES = {"granted": 0, "denied": 3, "refused": 4, "failed": 5, "timeout": 6}
 
 
-def _post(path: str, body: dict) -> tuple[int, dict]:
-    req = urllib.request.Request(BROKER + path, data=json.dumps(body).encode(),  # noqa: S310 -- BROKER is an in-cluster http URL from the environment
-                                 headers={"Content-Type": "application/json"})
+def _tailnet_door() -> str | None:
+    """The broker's address on the tailnet, asked of the local daemon rather than written down.
+
+    A literal here would name this estate's tailnet domain, which is a machine fact and exactly
+    what LAW 46 keeps out of files; `tailscale status --json` already knows it. No tailscale
+    client, no daemon, or no such peer all mean the same thing -- there is no tailnet door from
+    here -- and all answer None rather than raising, because a laptop that is simply not on the
+    tailnet is the ordinary case and not an error.
+    """
+    exe = shutil.which("tailscale")
+    if exe is None:
+        return None
     try:
-        with urllib.request.urlopen(req, timeout=30) as fh:  # noqa: S310 -- same request object, already constrained
-            return fh.status, json.load(fh)
-    except urllib.error.HTTPError as exc:
-        return exc.code, json.loads(exc.read() or b"{}")
-    except OSError as exc:
-        # The broker being unreachable is the ordinary case on a laptop and during a rollout,
-        # and it is not the agent's mistake. A stack trace here reads as a bug in the caller
-        # and teaches nothing; the exit code says "refused before he was asked", which is the
-        # truth -- the founder was never woken.
-        return 0, {
-            "unreachable": True,
-            "reason": f"the broker is not answering on {BROKER}: {exc}",
-        }
+        out = subprocess.run([exe, "status", "--json"], capture_output=True, text=True,
+                             timeout=10, check=True).stdout
+        peers = (json.loads(out).get("Peer") or {}).values()
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError, AttributeError):
+        return None
+    for peer in peers:
+        name = (peer.get("DNSName") or "").rstrip(".")
+        if name and name.split(".", 1)[0] == TAILNET_HOSTNAME:
+            return f"http://{name}:8080"
+    return None
+
+
+def _doors() -> list[str]:
+    """Every address the broker might answer on, nearest first.
+
+    Two of them, and the second is why this function exists. Inside the cluster the Service
+    name resolves and nothing more is needed. Outside it -- which is where the agents actually
+    run -- that name resolves to nothing, and until 2026-09-07 there was no second address at
+    all: platform/jit/fence.yaml admitted namespaces `agents` and `edge`, and the public route
+    carries the Telegram webhook alone (`POST https://otto.${ESTATE_ZONE}/ask` answered 404,
+    measured that day). So an agent on the founder's Mac could not ask for a grant, and one
+    did not: the CNI cutover needed 97 pods restarted, `restart-workload` in grants.yaml is
+    exactly that grant, and there was no reachable way to request it. That is the wall WJ.2
+    says an agent asks its way through, with no door to ask at.
+
+    JIT_BROKER_URL, when set, is the only address tried: a caller that named one meant it, and
+    silently falling through to another broker would be the worst kind of helpful.
+    """
+    named = os.environ.get("JIT_BROKER_URL")
+    if named:
+        return [named]
+    return [IN_CLUSTER] + [d for d in (_tailnet_door(),) if d]
+
+
+def _post(path: str, body: dict) -> tuple[int, dict]:
+    tried = []
+    for door in _doors():
+        req = urllib.request.Request(door + path, data=json.dumps(body).encode(),  # noqa: S310 -- an http URL from the environment or the local tailscale daemon
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as fh:  # noqa: S310 -- same request object, already constrained
+                return fh.status, json.load(fh)
+        except urllib.error.HTTPError as exc:
+            # The broker answered. A 4xx is its verdict and belongs to the caller; trying the
+            # next door would ask a different broker the same question and report whichever
+            # one happened to be kinder.
+            return exc.code, json.loads(exc.read() or b"{}")
+        except OSError as exc:
+            tried.append(f"{door} ({exc})")
+    # The broker being unreachable is the ordinary case on a laptop and during a rollout, and
+    # it is not the agent's mistake. A stack trace here reads as a bug in the caller and
+    # teaches nothing; the exit code says "refused before he was asked", which is the truth --
+    # the founder was never woken.
+    return 0, {
+        "unreachable": True,
+        "reason": "the broker is not answering on " + ", ".join(tried),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:

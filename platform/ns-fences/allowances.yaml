@@ -203,6 +203,9 @@ flows:
     # The operator's egress proxies are the only way anything in the cluster reaches the
     # founder's Mac. Both doors on to it are declared on the other side too.
     ingress_from: [backstage, guacamole]
+    # The JIT broker's ingress proxy: the operator runs it here, and it dials jit-broker:8080
+    # in namespace jit. platform/jit/fence.yaml declares the same door from the far side.
+    egress: [jit]
     egress_internet: [443]
   otto-golden:
     egress: [observability, hindsight]
