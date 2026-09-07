@@ -122,6 +122,11 @@ render_dir() {
   kubectl kustomize "$dir" > "$S/kz-$slug.yaml"
   python3 - "$S" "$S/kz-$slug.yaml" <<'PY'
 import sys, os, yaml, subprocess, pathlib, json
+import importlib.machinery, importlib.util
+_hr = pathlib.Path(os.environ["IDP"]) / "bin" / "lib" / "helm_retry.py"
+_s = importlib.util.spec_from_loader("helm_retry",
+                                     importlib.machinery.SourceFileLoader("helm_retry", str(_hr)))
+helm_retry = importlib.util.module_from_spec(_s); _s.loader.exec_module(helm_retry)
 S = pathlib.Path(sys.argv[1]); docs = [d for d in yaml.safe_load_all(open(sys.argv[2])) if d]
 repos = {d["metadata"]["name"]: d["spec"]["url"] for d in docs if d["kind"] == "HelmRepository"}
 cms = {d["metadata"]["name"]: d.get("data", {}) for d in docs if d["kind"] == "ConfigMap"}
@@ -154,9 +159,15 @@ for hr in (d for d in docs if d["kind"] == "HelmRelease"):
     hcache = S / f"helm-{name}"; hcache.mkdir(exist_ok=True)
     henv = {**os.environ, "HELM_REPOSITORY_CACHE": str(hcache), "HELM_CACHE_HOME": str(hcache),
             "HELM_REPOSITORY_CONFIG": str(hcache / "repositories.yaml")}
-    r = subprocess.run(["helm", "template", release, *chart_ref, "--version", str(spec["version"]),
-                        "-n", ns, "-f", str(vals)], text=True, capture_output=True, env=henv)
+    cmd = ["helm", "template", release, *chart_ref, "--version", str(spec["version"]),
+           "-n", ns, "-f", str(vals)]
+    # A chart host that hangs up is retried rather than reported as a policy failure; why, and
+    # the run it cost us, are in bin/lib/helm_retry.py.
+    r, tried = helm_retry.template(cmd, henv)
     if r.returncode != 0:
+        if len(tried) > 1:
+            sys.stderr.write(f"helm template {release}: {len(tried)} attempts, all failed:\n"
+                             + "".join(f"  attempt {i + 1}: {m}\n" for i, m in enumerate(tried)))
         sys.stderr.write(f"helm template {release} ({spec['chart']} {spec['version']} from {url}) "
                          f"exited {r.returncode}:\n{r.stderr}")
         raise SystemExit(1)
