@@ -29,22 +29,27 @@ jobs:
   # crew#584 CP-C: the 60 s gate every heavy job below waits for (fast-gate.yml).
   fast-gate:
     uses: ./.github/workflows/fast-gate.yml
-  # 2026-09-04: this job is 9 of the 9.5 minutes a pull request waits. Measured on run
-  # 33869529041: fast-gate 24 s, security-scan 47 s, portal-app 8 s, messaging-demo 25 s,
-  # bdd-suites 2m06 and 3m42, offline-gate 9m03. It walks the whole AGENTS.md rule table over
-  # the entire repository whatever the diff touches, so a three-line change waits the same nine
-  # minutes as a platform rewrite, and it was dropped from main's required checks earlier the
-  # same day for exactly that reason -- it was already advisory on pull requests and still held
-  # every run open.
+  # 2026-09-04: this job was 9 of the 9.5 minutes a pull request waits, so it was moved off pull
+  # requests and onto the merge queue and the push to main -- a placement change, with `if:` as
+  # the switch. That trade is over, and both halves of it were wrong.
   #
-  # It now runs where it can still stop something landing and costs no one a wait: the merge
-  # queue (which builds the pull request on top of main and reruns the required checks before
-  # anything lands) and the push to main itself. A pull request's feedback is the four minutes
-  # the suites take; the rule table is graded on the merged state, which is the state that
-  # matters. Nothing is deleted -- this is a placement change, and `if:` is the switch.
+  # The cost was one defect, not the amount of work. The kyverno rung called `kyverno apply` once
+  # per resource file and paid the CLI's whole fixed startup and policy-compile cost eighty times:
+  # 451 of this job's 586 seconds, in one silent stretch (run 34152221275). It is batched now, one
+  # process per slot. On a pull request the rung also judges only the platform directories the
+  # diff touches (IDP_CI_BASE below), so a three-line change no longer waits for a platform sweep.
+  #
+  # The placement was worse than a slow gate. `merge_group` has fired 0 times in the last 100 runs
+  # of this workflow -- the merge queue is not enabled on this repository, so the branch the `if:`
+  # sent this job to does not exist. It ran only on the push to main, which is after the merge:
+  # every rule in the AGENTS.md table was being graded on code that had already landed, and a red
+  # verdict there is an incident, not a gate. Founder, 2026-09-07: "move the offline-gate to run
+  # strictly PRE-MERGE. No un-graded code enters main ever again."
+  #
+  # So it runs on the pull request, where it can still refuse, and on the push to main, where the
+  # empty IDP_CI_BASE grades every directory rather than only the diff. Both, not either.
   offline-gate:
     needs: fast-gate
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

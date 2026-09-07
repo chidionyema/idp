@@ -223,20 +223,135 @@ done
 [ "$rc" = 0 ] || exit "$rc"
 
 _exc() { for x in "$S"/exceptions/*.yaml; do [ -f "$x" ] && printf -- '--exception\n%s\n' "$x"; done; }
-judge() {  # judge <label-kind> <label> <resource-file>: one verdict block; exit 1 on a failed policy
-  local kind="$1" label="$2" res="$3" out summary
-  mapfile -t exc < <(_exc)
-  out=$(kyverno apply "$S/policies.yaml" --resource "$res" "${exc[@]}" 2>&1 || true)
-  summary=$(printf '%s\n' "$out" | grep -E '^pass:' | tail -1)
-  # Read the verdict from a here-string, never `printf | grep -q`: under pipefail grep -q quits at
-  # the first match, printf dies of SIGPIPE on a big render, the pipeline reports failure and the
-  # judge said "ok" over 52 failed policies (run 33248103977, 2026-08-29: the must-fail fixture
-  # passed on main). The CLI also glues "Mutation has been applied successfully." onto the first
-  # failed line, so the pattern is anchored on the arrow, not the line start.
+mapfile -t exc < <(_exc)
+
+# 2026-09-07: every resource file used to get its own `kyverno apply`, and the CLI pays its whole
+# fixed cost -- process start, then parsing and compiling every ClusterPolicy and every
+# PolicyException -- before it looks at the first object. Judging one pod against the policy set
+# 50 times measured 32.12s; judging the same 50 in one process, 0.96s (2026-09-07, kyverno 1.19.0).
+# The estate has ~50 plain directories and ~32 rendered releases, so that fixed cost was being paid
+# more than eighty times: 451 of offline-gate's 586 seconds, in one silent stretch, on run
+# 34152221275. Resources are judged in one process per slot now. Attribution is not lost: a batch
+# that reports a failure is re-judged one resource at a time, so a red run prints exactly the
+# per-label block it always printed, and only a red run pays for it.
+judge_batch() {  # judge_batch <verdict-file> <label> <resource-file>...: one kyverno for many resources
+  local vf="$1" label="$2"; shift 2
+  local args=() f verdict file counts got=""
+  for f in "$@"; do args+=(--resource "$f"); done
+  # --policy-report carries every result together with the resource it judged, so one process can
+  # still answer per file. Without it a batch could only print its own total and the per-file
+  # verdict line -- the thing every caller and both bdd suites read -- would be gone.
+  # -o keeps the mutated resources out of stdout; the banner lines announcing them are printed to
+  # stdout regardless, so _attribute reads the report from the first "{" rather than from byte 0.
+  got=$(kyverno apply "$S/policies.yaml" "${exc[@]}" "${args[@]}" \
+          -o "${vf%.txt}-mutated" --policy-report --output-format json 2>/dev/null \
+        | python3 "$S/attribute.py" "$@") || got=""
+  if [ -z "$got" ]; then
+    # The report did not account for every result against a file we asked about. Never guess a
+    # verdict: judge one at a time, which is what this did before the batch existed.
+    echo "note  $label: per-resource attribution incomplete, judging one at a time" >> "$vf"
+    for f in "$@"; do judge_one "$f" >> "$vf" || echo 1 > "${vf%.txt}.rc"; done
+    return 0
+  fi
+  while IFS=$'\t' read -r verdict file counts; do
+    [ -n "$verdict" ] || continue
+    if [ "$verdict" = red ]; then
+      # Only the file that broke pays for a second process, and it prints the block it always did.
+      judge_one "$file" >> "$vf" || echo 1 > "${vf%.txt}.rc"
+    else
+      echo "ok    ${_KIND[$file]} ${_LABEL[$file]}: $counts" >> "$vf"
+    fi
+  done <<< "$got"
+}
+
+# _attribute <resource-file>...: reads a kyverno policy report on stdin and prints one line per
+# file, in the order given: "ok<TAB><file><TAB><counts>" or "red<TAB><file>". It prints nothing at
+# all -- and the caller then judges one at a time -- unless every result in the report lands on
+# exactly one of the files asked about and the per-file counts add back up to the report's own
+# summary. A verdict this gate prints is one something measured, never one it inferred.
+# The attribution program is a file, not a heredoc. `python3 - "$@" <<'ATTRIB'` reads the program
+# from stdin, so stdin is spent by the time the program calls sys.stdin.read() and every batch got
+# an empty report -- attribution fell back every time and the whole speedup measured zero, while
+# kyverno was writing 38KB of perfectly good report into the pipe (2026-09-07).
+cat > "$S/attribute.py" <<'ATTRIB'
+import json, sys, collections, yaml
+
+files = sys.argv[1:]
+
+def bail(why):
+    sys.stderr.write("      kyverno attribution fell back: %s\n" % why)
+    sys.exit(1)
+
+# kyverno prints "Mutation:" / "Mutation has been applied successfully." to stdout for every
+# resource it mutates, whatever -o and --output-format say, and it appends the report to the last
+# of them without a newline. So the report starts at the first "{" in the stream, not at byte 0;
+# no banner contains that character. Reading from byte 0 is what made attribution fall back on
+# every batch on real estate data and the speedup measure zero (2026-09-07, kyverno 1.19.0).
+raw = sys.stdin.read()
+i = raw.find("{")
+if i < 0:
+    bail("the report carried no json object; %d bytes of stdout beginning %r"
+         % (len(raw), raw[:120]))
+try:
+    rep, _ = json.JSONDecoder().raw_decode(raw[i:])
+except Exception:
+    bail("the report did not parse as json")
+
+owner, ambiguous = {}, set()
+for f in files:
+    try:
+        docs = list(yaml.safe_load_all(open(f).read()))
+    except Exception:
+        bail("resource file did not parse as yaml: %s" % f)
+    for d in docs:
+        if not isinstance(d, dict):
+            continue
+        k, n = d.get("kind"), (d.get("metadata") or {}).get("name")
+        if not k or not n:
+            continue
+        key = (k, n)
+        if key in owner and owner[key] != f:
+            ambiguous.add(key)   # two files in this batch carry the same object; cannot attribute
+        owner[key] = f
+
+counts = collections.defaultdict(collections.Counter)
+seen = 0
+for r in rep.get("results", []):
+    res = r.get("resources") or []
+    if not res:
+        bail("a %s result names no resource" % r.get("result"))
+    for x in res:
+        key = (x.get("kind"), x.get("name"))
+        if key in ambiguous:
+            bail("two files in this batch carry %s" % (key,))
+        if key not in owner:
+            bail("no file in this batch declares %s" % (key,))
+        counts[owner[key]][r.get("result")] += 1
+        seen += 1
+
+summary = rep.get("summary") or {}
+if seen != sum(int(v) for v in summary.values()):
+    bail("attributed %d of %d results" % (seen, sum(int(v) for v in summary.values())))
+
+for f in files:
+    c = counts.get(f, collections.Counter())
+    if c["fail"] or c["error"]:
+        print("red\t%s" % f)
+    else:
+        print("ok\t%s\tpass: %d, fail: 0, warn: %d, error: 0, skip: %d "
+              % (f, c["pass"], c["warn"], c["skip"]))
+ATTRIB
+
+judge_one() {  # judge_one <resource-file>: the pre-batch verdict block, for a batch that went red
+  local res="$1" out summary label kind
+  label="${_LABEL[$res]}"; kind="${_KIND[$res]}"
+  out=$(kyverno apply "$S/policies.yaml" "${exc[@]}" --resource "$res" 2>&1 || true)
+  summary=$(grep -E '^pass:' <<<"$out" | tail -1)
   if grep -qE 'policy .* -> resource .* failed' <<<"$out"; then
     echo "FAIL  $kind $label: $summary"
     grep -E 'policy .* -> resource .* failed' <<<"$out" | sed 's/^/      /'; return 1
-  else echo "ok    $kind $label: $summary"; fi
+  fi
+  echo "ok    $kind $label: $summary"
 }
 
 prepare_release() {  # kustomize the post-rendered chart and shape it the way admission sees it
@@ -271,17 +386,46 @@ open(p, "w").write(yaml.safe_dump_all(docs))
 PY
 }
 
-n=0; order=()
+declare -A _LABEL _KIND
+res=()
+
 for plain in "$S"/plain-*.yaml; do
   [ -s "$plain" ] || continue
-  label=$(basename "$plain" .yaml | sed 's/^plain-//; s/_/\//g')
-  n=$((n+1)); order+=("$S/verdict-$n.txt")
-  _slot; { judge "plain   " "$label" "$plain" > "$S/verdict-$n.txt" || echo 1 > "$S/verdict-$n.rc"; } &
+  _LABEL["$plain"]=$(basename "$plain" .yaml | sed 's/^plain-//; s/_/\//g')
+  _KIND["$plain"]="plain   "
+  res+=("$plain")
 done
+
+# The chart post-render is kustomize and python, not kyverno, so it keeps its own fan-out; the
+# judging that follows is what got batched.
 while read -r name ns npatch; do
-  n=$((n+1)); order+=("$S/verdict-$n.txt")
-  _slot; { prepare_release "$name" && judge "render  " "$name ($ns, $npatch patches)" "$S/$name.final.yaml"; } > "$S/verdict-$n.txt" 2>&1 || echo 1 > "$S/verdict-$n.rc" &
+  _slot; prepare_release "$name" > "$S/prep-$name.log" 2>&1 || echo "$name" >> "$S/prep-fail.txt" &
 done < "$S/releases.txt"
+wait
+if [ -s "$S/prep-fail.txt" ]; then
+  while read -r name; do
+    echo "FAIL  render   $name: the post-render did not complete"; cat "$S/prep-$name.log"
+  done < "$S/prep-fail.txt" >&2
+  exit 1
+fi
+while read -r name ns npatch; do
+  f="$S/$name.final.yaml"; [ -s "$f" ] || continue
+  _LABEL["$f"]="$name ($ns, $npatch patches)"; _KIND["$f"]="render  "
+  res+=("$f")
+done < "$S/releases.txt"
+
+# One kyverno process per slot rather than one per resource. Files are dealt round-robin so a slot
+# holding several large renders is not the one everything waits on.
+n=0; order=()
+if [ "${#res[@]}" -gt 0 ]; then
+  batches=$(( ${#res[@]} < jobs ? ${#res[@]} : jobs ))
+  for b in $(seq 0 $((batches - 1))); do
+    chunk=(); for i in $(seq "$b" "$batches" $(( ${#res[@]} - 1 ))); do chunk+=("${res[$i]}"); done
+    [ "${#chunk[@]}" -gt 0 ] || continue
+    n=$((n + 1)); order+=("$S/verdict-$n.txt")
+    _slot; judge_batch "$S/verdict-$n.txt" "kyverno batch $((b + 1))/$batches, ${#chunk[@]} resource(s)" "${chunk[@]}" &
+  done
+fi
 wait
 for v in "${order[@]}"; do cat "$v"; [ -f "${v%.txt}.rc" ] && rc=1; done
 exit $rc

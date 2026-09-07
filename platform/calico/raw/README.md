@@ -28,7 +28,8 @@ header), applied verbatim here:
 | pool unset | `CALICO_IPV4POOL_CIDR: 10.244.0.0/16` | Must match the CIDR flannel uses today, or every running pod's address strands. |
 | IPv6 on | `FELIX_IPV6SUPPORT: false`, `CALICO_IPV6POOL_VXLAN: Never` | Cluster is IPv4-only (operator deck default). |
 | typha present (operator) | `typha_service_name: "none"` | 2-node estate; operatorless runs no typha. |
-| namespace `calico-system` / `tigera-operator` | `kube-system` | Non-operator installs live in kube-system. RBAC names are unprefixed and cannot collide with the operator's `calico-system` accounts. |
+| namespace `calico-system` / `tigera-operator` | `kube-system` | Non-operator installs live in kube-system. |
+| ClusterRoles `calico-node`, `calico-cni-plugin`, `calico-kube-controllers`, `calico-tier-getter` | the same names under an `estate-` prefix | A ClusterRole has no namespace, so moving the ServiceAccounts to `kube-system` did not separate the cluster-scoped RBAC from the operator's. This row used to claim the unprefixed names "cannot collide"; they did. See below. |
 
 Kept byte-faithful to the reviewed vendor reference: the `upgrade-ipam`, `install-cni`, and
 `ebpf-bootstrap` init containers (only `install-cni` is load-bearing in iptables mode; the other
@@ -43,3 +44,35 @@ cluster-control change: un-suspend + re-point that row here, tear the operator d
 let raw calico-node come up under flannel, prove cross-node traffic, then disable the OCI flannel
 add-on and purge flannel artifacts. That ordering is why this PR deliberately touches neither
 the operator deck nor the Flux row.
+
+## Why the cluster-scoped RBAC carries an `estate-` prefix
+
+The operator route left two ServiceAccounts in `calico-system` holding the finalizer
+`tigera.io/cni-protector`. The operator adds that finalizer so the CNI binaries are not pulled
+out from under running pods mid-upgrade, and the operator is the only thing that removes it. The
+operator was deleted from git on 2026-09-06, so no controller will ever remove it. Measured:
+
+    $ kubectl get ns calico-system -o jsonpath='{range .status.conditions[*]}{.type}: {.message}{"\n"}{end}'
+    NamespaceContentRemaining:    Some resources are remaining: serviceaccounts. has 2 resource instances
+    NamespaceFinalizersRemaining: Some content in the namespace has finalizers remaining: tigera.io/cni-protector in 2 resource instances
+
+`calico-system` has been `Terminating` since then, and the cluster-scoped ClusterRoles the
+operator owned went with it:
+
+    $ kubectl -n flux-system get events --field-selector type=Warning
+    kustomization/calico  timeout waiting for: [ClusterRole/calico-cni-plugin status: 'Terminating',
+                                                ClusterRole/calico-node status: 'Terminating']
+
+That is a deadlock and not a slow delete. This deck declared ClusterRoles with those exact names,
+so Flux applied them, then waited on objects that can never become Ready and can never finish
+deleting — every 10 minutes, for 37 hours. Because the Kustomization never completed, it also
+never pruned, which is why the superseded `tigera-operator` HelmRelease was still sitting in the
+cluster three days after git dropped it: the thing blocking the reconcile was the thing the
+reconcile would have cleaned up.
+
+Renaming is the fix a repository can actually apply. Clearing a finalizer means patching a live
+object, and git is the only writer of this cluster (decision 0023) — there is no manifest that
+expresses "remove someone else's finalizer", and server-side apply cannot drop a `metadata.
+finalizers` entry it does not own. Under a name the operator never used, the deck stops waiting
+on a tombstone and converges. The tombstones stay until `calico-system` is cleared by hand; they
+hold nothing but their names, and nothing references them.
