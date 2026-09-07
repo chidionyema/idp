@@ -144,3 +144,29 @@ misconfigurations:
       spire-agent and the busybox init step write to disk, so this needs an emptyDir and a watched
       run, not a one-line edit in a CI pull request.
     expired_at: 2026-11-30
+
+  # KSV-0050, CRITICAL, on the JIT broker's own ClusterRole. It is not a defect and it is not
+  # going away: `create`, `get` and `delete` on roles and rolebindings is how a broker mints a
+  # time-boxed grant at all. What makes it safe is what the role does NOT carry. Kubernetes
+  # refuses to let an identity create a Role holding permissions it does not already hold, unless
+  # that identity has `escalate` (for the Role) or `bind` (for the RoleBinding). The broker has
+  # neither, and no ClusterRoleBinding names it -- so it reaches the namespaces its RoleBindings
+  # name and stops, and every grant it mints is capped at its own floor.
+  #
+  # Nothing enforced that until today. `bin/idp-jit-grants` grades platform/jit/grants.yaml, the
+  # catalogue of what may be minted; it never read the ClusterRole doing the minting. The file's
+  # own header claimed otherwise -- "Nothing here touches Secrets, RBAC or the core namespaces ...
+  # this file cannot grow those verbs without that gate going red first" -- and that was simply
+  # untrue: it could have grown `escalate` tomorrow with every gate staying green. So this waiver
+  # is paired with `bin/idp-jit-broker-role`, which refuses exactly the four properties above and
+  # is run in bin/idp-ci against both fixtures and the live file. The waiver expires when the gate
+  # stops proving its own reason.
+  - id: KSV-0050
+    paths:
+      - "platform/jit/rbac.yaml"
+    statement: >-
+      The broker must write Roles and RoleBindings to mint a grant. Capped by Kubernetes'
+      escalation-prevention rule because the role carries no escalate and no bind, and confined to
+      four namespaces because no ClusterRoleBinding names it. bin/idp-jit-broker-role holds all
+      four properties in CI (AGENTS.md, jit_broker_role_gate). Re-read at the next JIT review.
+    expired_at: 2026-12-31

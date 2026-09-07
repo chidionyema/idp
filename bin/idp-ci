@@ -506,6 +506,13 @@ gvisor_cell_fence_gate() { python3 "$IDP/bin/gvisor-cell-fence-gate" "$1" >/dev/
 # TTL past the ceiling, or no rate limit. Takes one fixture path so the rung proves it both ways in
 # one run: the broker mints only from this file, so a hole here is admin at 3am.
 jit_grants_gate() { python3 "$IDP/bin/idp-jit-grants" "$1" >/dev/null 2>&1; }
+# The broker's own floor, which idp-jit-grants never read: that one grades platform/jit/grants.yaml,
+# the catalogue of what may be minted. Nothing graded the ClusterRole doing the minting, and the
+# file's header said otherwise -- "Nothing here touches Secrets, RBAC ... this file cannot grow
+# those verbs without that gate going red first". It does touch RBAC, necessarily, and trivy found
+# it (KSV-0050 CRITICAL, 2026-09-07). The waiver rests on the absence of escalate and bind; this
+# gate holds that absence.
+jit_broker_role_gate() { python3 "$IDP/bin/idp-jit-broker-role" "$1" >/dev/null 2>&1; }
 
 # WJ.8: grades ONE pull request against the glass-break set -- the broker, its catalogue, the RBAC
 # floor, bin/idp-kube and the gates. An agent that can edit those does not need to ask the broker
@@ -561,6 +568,19 @@ if ! jit_grants_gate "$IDP/tests/fixtures/jit-grants/bad.yaml" \
   say "ok    jitgrant idp-jit-grants refuses the escalating catalogue; the live one cannot become standing access"
 else
   say "FAIL  jitgrant idp-jit-grants cannot tell a time-boxed grant from a route to admin (WJ.5)"; fail=1
+fi
+
+# 6b-bis. WJ.5 applied to the broker's own ClusterRole. Without `escalate` and `bind`, Kubernetes'
+#     escalation-prevention rule caps every Role the broker writes at the permissions the broker
+#     already holds -- that is the whole difference between "may mint what it holds" and "may mint
+#     anything", and it is why KSV-0050 is an accepted risk on that file rather than a defect.
+#     Graded on the live floor as well as both fixtures, so the waiver cannot outlive its reason.
+if ! jit_broker_role_gate "$IDP/tests/fixtures/jit-broker-role/bad.yaml" \
+   && jit_broker_role_gate "$IDP/tests/fixtures/jit-broker-role/good.yaml" \
+   && jit_broker_role_gate "$IDP/platform/jit/rbac.yaml"; then
+  say "ok    jitfloor the broker mints only what it already holds: no escalate, no bind, no cluster-wide binding"
+else
+  say "FAIL  jitfloor the broker's own ClusterRole could mint more than it holds (WJ.5, KSV-0050)"; fail=1
 fi
 
 # 6c. zero-trust-boundary.md step 1 (work order item 1): a denied packet is dropped, and a probe
