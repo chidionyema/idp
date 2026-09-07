@@ -214,6 +214,74 @@ def validate(doc: dict) -> list[tuple[str, str]]:
     return errors
 
 
+def validate_crd(doc: dict) -> list[tuple[str, str]]:
+    """Validate the RuntimeInstall CRD's OpenAPI v3 schema shape.
+
+    Two checks: every type: object has properties or additionalProperties, and
+    the closed runtime set in the spec is mirrored in spec.versions[*].schema's
+    enum on spec.runtime. Drift between the CRD enum and the python CLOSED set
+    is a regression the offline gate must catch, because a CR admitted by the
+    CRD's enum but refused by the python validator (or vice versa) is the
+    exact 'lockdown refused its own install request' class of incident.
+    """
+    name = doc.get("metadata", {}).get("name", "<unnamed>")
+    errors: list[tuple[str, str]] = []
+
+    if doc.get("apiVersion") != "apiextensions.k8s.io/v1":
+        return errors  # not a v1 CRD; not our concern
+    spec = doc.get("spec") or {}
+    versions = spec.get("versions") or []
+    if not versions:
+        errors.append((name, "spec.versions: required"))
+        return errors
+
+    crd_runtime_enum: set[str] = set()
+    for v in versions:
+        schema = v.get("schema", {}).get("openAPIV3Schema", {})
+        runtime_prop = (
+            schema.get("properties", {})
+            .get("spec", {})
+            .get("properties", {})
+            .get("runtime", {})
+        )
+        enum = runtime_prop.get("enum")
+        if isinstance(enum, list):
+            crd_runtime_enum.update(str(e) for e in enum)
+
+        def _walk(s: dict, path: str) -> None:
+            if not isinstance(s, dict):
+                return
+            if "x-kubernetes-preserve-unknown-fields" in s:
+                return  # escape hatch; treated as opaque
+            if s.get("type") == "object":
+                if "properties" not in s and "additionalProperties" not in s:
+                    errors.append(
+                        (
+                            name,
+                            f"{path}: object without properties or additionalProperties",
+                        )
+                    )
+            for k, val in (s.get("properties") or {}).items():
+                _walk(val, f"{path}.{k}")
+            items = s.get("items")
+            if isinstance(items, dict):
+                _walk(items, f"{path}[]")
+
+        _walk(schema, "$.spec.versions[].schema.openAPIV3Schema")
+
+    if crd_runtime_enum and crd_runtime_enum != CLOSED_RUNTIMES:
+        errors.append(
+            (
+                name,
+                f"spec.runtime enum {sorted(crd_runtime_enum)} does not match the python "
+                f"CLOSED_RUNTIMES {sorted(CLOSED_RUNTIMES)}; the gate refuses one but not the "
+                f"other, which is the lockdown-refuses-its-own-install-request class of incident",
+            )
+        )
+
+    return errors
+
+
 def grade_file(path: str) -> int:
     """Grade one file. Print refusals to stdout, return 0 (pass) or 1 (refused)."""
     try:
@@ -225,20 +293,34 @@ def grade_file(path: str) -> int:
 
     total_runtime_installs = 0
     refusals: list[tuple[str, str]] = []
+    crd_errors: list[tuple[str, str]] = []
     for doc in docs:
         if not doc:
             continue
-        if doc.get("kind") != "RuntimeInstall":
-            continue
-        total_runtime_installs += 1
-        refusals.extend(validate(doc))
+        kind = doc.get("kind")
+        if kind == "RuntimeInstall":
+            total_runtime_installs += 1
+            refusals.extend(validate(doc))
+        elif kind == "CustomResourceDefinition" and doc.get("metadata", {}).get(
+            "name", ""
+        ).startswith("runtimeinstalls."):
+            crd_errors.extend(validate_crd(doc))
 
     for name, msg in refusals:
         print(f"REFUSED  {name}: {msg}")
+    for name, msg in crd_errors:
+        print(f"REFUSED  {name}: {msg}")
 
-    if refusals:
+    if refusals or crd_errors:
         return 1
-    print(f"ok    {total_runtime_installs} RuntimeInstall doc(s) pass")
+    parts = []
+    if total_runtime_installs:
+        parts.append(f"{total_runtime_installs} RuntimeInstall doc(s) pass")
+    if not crd_errors and any(
+        d and d.get("kind") == "CustomResourceDefinition" for d in docs
+    ):
+        parts.append("RuntimeInstall CRD schema valid")
+    print(f"ok    {', '.join(parts) if parts else 'nothing graded'}")
     return 0
 
 

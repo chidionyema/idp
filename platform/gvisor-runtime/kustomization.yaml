@@ -1,0 +1,8 @@
+# kustomization for the gvisor-runtime row. Single CR (the suspended
+# RuntimeInstall); no namespace, no deployment. The CR lives in
+# nodesoftware-operator because that's the only namespace the CRD admits
+# requests into.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - runtimeinstall.yaml

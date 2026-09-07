@@ -1,0 +1,17 @@
+# Kustomization for the NodeSoftwareOperator row. Two resources: the CRD
+# (must land first, before the controller can reconcile) and the deployment +
+# RBAC (the operator itself). The CRD lands in the same kustomization.yaml
+# because the CRD has no dependencies on anything else in this dir; the
+# controller deployment depends on the CRD existing, which Flux handles
+# automatically (it dry-runs CRs after CRDs land in the same pass, since the
+# row is applied as one unit).
+#
+# Order of resources matters here ONLY for readability; the API server applies
+# them in dependency order regardless.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: nodesoftware-operator
+resources:
+  - crds/runtimeinstall.yaml
+  - rbac.yaml
+  - deployment.yaml
