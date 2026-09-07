@@ -171,6 +171,11 @@ def _run_renderer(tmp_path, url):
         **os.environ,
         "PATH": f"{shim}:{os.environ['PATH']}",
         "HELM_ARGS": str(tmp_path / "args"),
+        # bin/idp-kyverno-render exports IDP before it runs this block, and the block reads it
+        # to load bin/lib/helm_retry.py by path. This harness stands in for the script, so it
+        # owes the block the same environment; without it the extracted block died on a
+        # KeyError and the test blamed the renderer.
+        "IDP": str(ROOT),
     }
     subprocess.run(
         [sys.executable, "-", str(s), str(tmp_path / "kz.yaml")],
