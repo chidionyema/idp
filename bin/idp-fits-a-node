@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""Grade whether the workloads that run could be placed on the nodes that exist.
+
+The estate already grades aggregate capacity: bin/idp-cluster-state's `capacity` row reports
+cpu and memory used% and requested% across the cluster. On 2026-09-07 that row read fine --
+10170Mi of aggregate free memory -- while SigNoz's ClickHouse sat Unschedulable, because no
+single node could take its 5632Mi. Aggregate free memory is not a place to put a pod, and
+nothing in the estate was asking the placement question. This asks it, two ways:
+
+  1. A pod the scheduler has already refused is a FAIL, with the scheduler's own message.
+  2. A running pod that fits on no OTHER node is pinned: it holds its place only because it
+     already has it. Evict it -- a node drain, a rollout, a raised request -- and it does not
+     come back. That is exactly the state ClickHouse was in for eleven days before anyone
+     raised its request, and no instrument said so.
+
+Pinned workloads are a ledger, not an error: some are legitimate and all of them are the
+founder's call to fund. The count may fall and never rise, and an entry that is no longer
+pinned is stale and fails too, so the list cannot rot into decoration.
+
+Usage:  bin/idp-fits-a-node [SNAPSHOT_DIR]
+  SNAPSHOT_DIR holds nodes.json and pods.json (`kubectl get nodes/pods -A -o json`).
+  With no argument the cluster is read live through bin/idp-kube.
+"""
+import json
+import pathlib
+import subprocess
+import sys
+
+import yaml
+
+LEDGER = pathlib.Path("platform/state/pinned-workloads.yaml")
+UNITS = {"Ki": 1 / 1024, "Mi": 1, "Gi": 1024, "Ti": 1048576,
+         "K": 1000 / 1048576, "M": 1e6 / 1048576, "G": 1e9 / 1048576}
+
+
+def cpu(v):
+    if not v:
+        return 0
+    v = str(v)
+    return int(v[:-1]) if v.endswith("m") else int(float(v) * 1000)
+
+
+def mem(v):
+    if not v:
+        return 0
+    v = str(v)
+    for suffix, factor in UNITS.items():
+        if v.endswith(suffix):
+            return int(float(v[: -len(suffix)]) * factor)
+    return int(float(v) / 1048576)
+
+
+def read(src, kind, args):
+    if src:
+        path = src / f"{kind}.json"
+        if not path.exists():
+            raise FileNotFoundError(path)
+        return json.loads(path.read_text())
+    out = subprocess.run(["bin/idp-kube", "get", kind, *args, "-o", "json"],
+                         capture_output=True, text=True, timeout=120)
+    if out.returncode != 0:
+        raise RuntimeError(out.stderr.strip().splitlines()[-1] if out.stderr.strip() else "kubectl failed")
+    return json.loads(out.stdout)
+
+
+def workload(pod):
+    """namespace/kind/name, with a ReplicaSet folded back to its Deployment."""
+    meta = pod["metadata"]
+    owners = meta.get("ownerReferences") or []
+    if not owners:
+        return f"{meta['namespace']}/Pod/{meta['name']}", "Pod"
+    kind, name = owners[0]["kind"], owners[0]["name"]
+    if kind == "ReplicaSet":
+        kind, name = "Deployment", name.rsplit("-", 1)[0]
+    return f"{meta['namespace']}/{kind}/{name}", owners[0]["kind"]
+
+
+def requests(pod):
+    c = m = 0
+    for container in pod["spec"].get("containers", []):
+        r = container.get("resources", {}).get("requests", {})
+        c += cpu(r.get("cpu"))
+        m += mem(r.get("memory"))
+    return c, m
+
+
+def main():
+    src = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else None
+    try:
+        nodes = read(src, "nodes", [])["items"]
+        pods = read(src, "pods", ["-A"])["items"]
+    except Exception as exc:  # noqa: BLE001 -- any failure to read is BLIND, never a pass
+        print(f"BLIND fits-a-node the cluster could not be read ({exc}); nothing was graded")
+        return 0
+
+    ready = {n["metadata"]["name"]: (cpu(n["status"]["allocatable"]["cpu"]),
+                                    mem(n["status"]["allocatable"]["memory"]))
+             for n in nodes
+             if not n["spec"].get("unschedulable")
+             and any(c["type"] == "Ready" and c["status"] == "True" for c in n["status"]["conditions"])}
+    if not ready:
+        print("BLIND fits-a-node no schedulable node was reported; nothing was graded")
+        return 0
+
+    live = [p for p in pods if p["status"].get("phase") not in ("Succeeded", "Failed")]
+    used = {n: [0, 0] for n in ready}
+    for pod in live:
+        node = pod["spec"].get("nodeName")
+        if node in used:
+            c, m = requests(pod)
+            used[node][0] += c
+            used[node][1] += m
+    free = {n: (ready[n][0] - used[n][0], ready[n][1] - used[n][1]) for n in ready}
+
+    refused, pinned = [], {}
+    for pod in live:
+        name = f"{pod['metadata']['namespace']}/{pod['metadata']['name']}"
+        cond = {c["type"]: c for c in pod["status"].get("conditions", [])}
+        sched = cond.get("PodScheduled", {})
+        if sched.get("status") == "False" and sched.get("reason") == "Unschedulable":
+            refused.append((name, sched.get("message", "").split(". ")[0]))
+            continue
+        node = pod["spec"].get("nodeName")
+        if node not in ready:
+            continue
+        key, owner_kind = workload(pod)
+        if owner_kind == "DaemonSet":
+            continue  # a DaemonSet is one pod per node by definition, never movable
+        c, m = requests(pod)
+        if any(free[o][0] >= c and free[o][1] >= m for o in ready if o != node):
+            continue
+        best = max((free[o] for o in ready if o != node), default=(0, 0))
+        pinned[key] = (c, m, best)
+
+    # a snapshot carries its own ledger, so a fixture grades itself and not the live estate
+    book = (src / LEDGER.name) if src else LEDGER
+    ledger = yaml.safe_load(book.read_text()) if book.exists() else {"budget": 0, "pinned": []}
+    listed = {e["workload"] for e in (ledger.get("pinned") or [])}
+    budget = int(ledger.get("budget", 0))
+
+    bad = []
+    for name, why in refused:
+        bad.append(f"the scheduler refused {name}: {why}")
+    for key in sorted(set(pinned) - listed):
+        c, m, best = pinned[key]
+        bad.append(f"{key} asks {c}m/{m}Mi and fits no other node (best has {best[0]}m/{best[1]}Mi free); "
+                   f"an eviction would not come back. Fund it or name it in {book}")
+    for key in sorted(listed - set(pinned)):
+        bad.append(f"{book} still names {key} as pinned; it is not. Delete the entry and lower budget")
+    if len(pinned) > budget:
+        bad.append(f"{len(pinned)} workloads fit exactly one node; the recorded budget is {budget} and may only fall")
+
+    if bad:
+        print(f"FAIL fits-a-node {len(bad)} placement problem(s)")
+        for line in bad:
+            print(f"      {line}")
+        return 1
+    print(f"ok fits-a-node {len(live)} pods over {len(ready)} node(s); every one could be placed again, "
+          f"{len(pinned)} pinned to a single node within the budget of {budget}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
