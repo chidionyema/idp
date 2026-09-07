@@ -12,13 +12,18 @@ on:
 # A newer run on the same ref supersedes the older one: on 2026-08-27 20:23Z idp had 9 running and
 # 20 queued runs, 12 of them stale duplicates, and a one-line oke-check waited 19 min (crew#516).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  # ...except on main. Measured 2026-09-05: of the last twelve ci runs on main, NINE were
-  # cancelled, one succeeded. Every merge and every image-update commit cancelled the run grading
-  # the commit before it, so the branch the whole estate is graded on almost never produced a
-  # verdict, and offline-gate -- which is skipped on pull requests on purpose and runs only here
-  # -- graded nothing. A stale run on a pull request is waste; a cancelled run on main is the
-  # estate's only grade, lost.
+  # ...except on main, where every commit gets its own group. Measured 2026-09-05: of the last
+  # twelve ci runs on main, NINE were cancelled, one succeeded, and cancel-in-progress was set
+  # false for main to stop it. It did not: measured 2026-09-07, 41 of the last 100 ci runs on main
+  # were still cancelled, and all eight sampled had `jobs: []` -- not one job ever started. GitHub
+  # holds at most ONE pending run per concurrency group, so cancel-in-progress:false protects the
+  # RUNNING run and evicts the QUEUED one. main takes ~10 pushes an hour (the image-update loop)
+  # against a ~10 min run, so the queue is never empty and every second commit was dropped before
+  # a runner was allocated. A stale run on a pull request is waste; a cancelled run on main is the
+  # estate's only grade, lost -- and offline-gate, skipped on pull requests on purpose, runs only
+  # here. Keying main by sha is what build-multiarch.yml already does for the same reason
+  # (58 of its last 60 runs on main succeeded, none cancelled).
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   # crew#584 CP-C: the 60 s gate every heavy job below waits for (fast-gate.yml).

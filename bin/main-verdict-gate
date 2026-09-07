@@ -16,6 +16,19 @@ is still cancelled. So, for a workflow that pushes on main and groups its concur
   cancel-in-progress: false       FAIL  crew#516's stale duplicates come back on every branch
   an expression excluding main    ok    e.g. ${{ github.ref != 'refs/heads/main' }}
 
+AND main's concurrency group must vary per commit. Measured 2026-09-07, after the expression
+above was in place: 41 of the last 100 ci runs on main were still cancelled, and all eight
+sampled had `jobs: []` -- not one job ever started. GitHub holds at most ONE pending run per
+concurrency group, so cancel-in-progress:false protects the RUNNING run and evicts the QUEUED
+one. main takes ~10 pushes an hour (the image-update loop) against a ~10 min run, so the queue
+is never empty and every second commit was dropped before a runner was allocated. Exempting
+main from cancellation and then keying every main commit into one group grades one commit in
+two. So:
+
+  group: ...${{ github.ref }}                        FAIL  one group for all of main; the queue evicts
+  group: ...github.ref == 'refs/heads/main'
+         && github.sha || github.ref                 ok    one group per commit (build-multiarch.yml)
+
 Prints one line per finding, exit 1 on any, exit 0 clean. Report mode only: it never edits.
 LAW 46: the checkout is computed from this script, never named.
 """
@@ -80,6 +93,14 @@ def findings(path):
         return [f"{path}: cancel-in-progress is true on a push to main: {cancel}"]
     if not on_pr:
         return [f"{path}: cancel-in-progress is false on a pull request (crew#516): {cancel}"]
+    # main is exempt from cancellation -- which only protects the RUNNING run. GitHub keeps one
+    # pending run per group, so a group shared by every main commit still drops the queued grade
+    # (measured 2026-09-07: 41 of 100, `jobs: []` on all eight sampled). main's group must vary
+    # per commit; github.sha and github.run_id are the two values that do.
+    group = str(c.get("group", ""))
+    if not any(k in group for k in ("github.sha", "github.run_id")):
+        return [f"{path}: main is exempt from cancellation but every main commit shares one "
+                f"concurrency group, so the queued grade is evicted instead: {group}"]
     return []
 
 
