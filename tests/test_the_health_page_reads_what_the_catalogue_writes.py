@@ -128,15 +128,46 @@ def test_a_drill_that_passed_carries_a_status_and_a_staleness_the_page_reads(dri
         )
 
 
+# The one line of openReds.ts that decides whether a drill is stale: the annotation, whatever
+# string transforms the page puts it through, and the literal it ends up compared against.
+STALE_COMPARISON = re.compile(
+    r"String\(\s*ann\[A\.stale\]\s*\)((?:\.\w+\(\))*)\s*===\s*'([^']*)'"
+)
+# Every transform this test knows how to replay in Python. A page that reaches for one that is
+# not here stops the test rather than passing it: an unreplayable comparison is not a graded one.
+JS_STRING_OPS = {"toLowerCase": str.lower, "toUpperCase": str.upper, "trim": str.strip}
+
+
 def test_the_page_survives_the_shape_the_generator_actually_writes_staleness_in(drill):
-    """`estate/stale` comes out as Python's `True`, not JSON's `true`; `=== 'true'` is a bug."""
-    written = drill["metadata"]["annotations"]["estate/stale"]
-    src = OPEN_REDS.read_text()
-    if str(written) != "true":
-        assert "toLowerCase()" in src, (
-            f"the catalogue writes staleness as {written!r}, so the page has to case-fold it "
-            "before comparing; openReds.ts never calls toLowerCase()"
+    """`estate/stale` comes out as Python's `True`, not JSON's `true`; `=== 'true'` is a bug.
+
+    Reading the source for the word `toLowerCase` would only prove the word is in the file
+    (R76). So the comparison is lifted out of openReds.ts -- its transforms and its literal --
+    and replayed here against the value a real `bin/catalog-gen` run wrote, in both directions:
+    a stale drill has to come out matching, and a fresh one has to come out not matching.
+    """
+    written = str(drill["metadata"]["annotations"]["estate/stale"])
+    found = STALE_COMPARISON.search(OPEN_REDS.read_text())
+    assert found, (
+        "openReds.ts no longer compares String(ann[A.stale]) against a literal, so nothing on "
+        "the Health page grades staleness at all"
+    )
+    transforms, literal = found.group(1), found.group(2)
+
+    graded = written
+    for call in re.findall(r"\.(\w+)\(\)", transforms):
+        assert call in JS_STRING_OPS, (
+            f"openReds.ts puts estate/stale through {call}(), which this test cannot replay, "
+            "so it cannot say what the page decides"
         )
+        graded = JS_STRING_OPS[call](graded)
+
+    means_stale = written.lower() == literal.lower()
+    assert (graded == literal) is means_stale, (
+        f"the catalogue writes staleness as {written!r}; the page turns that into {graded!r} "
+        f"and compares it against {literal!r}, so a drill that is "
+        f"{'stale reads as fresh' if means_stale else 'fresh reads as stale'}"
+    )
 
 
 def test_every_root_the_map_draws_from_is_a_domain_a_real_run_writes(catalogue):

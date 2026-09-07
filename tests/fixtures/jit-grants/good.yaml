@@ -21,7 +21,7 @@
 # Changing this file is glass-break, permanently (WJ.8): CODEOWNERS names the founder on
 # /platform/, and no merge bot may land a change here.
 
-apiVersion: idp.mumchimp.com/v1
+apiVersion: idp.internal/v1
 kind: GrantCatalogue
 grants:
   # The founder's own worked example: the 3am OOMKill.
