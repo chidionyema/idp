@@ -97,6 +97,17 @@ def slug(s: str) -> str:
     s = re.sub(r"-{2,}", "-", s) or "unnamed"
     return s[:63].strip("-._")
 
+# Backstage tags are a narrower grammar than names: sequences of [a-z0-9+#] joined by single
+# dashes, so an underscore or a dot is refused outright. slug() keeps both, because a name may
+# hold them. On 2026-09-07 the two vendor Resources whose coupling keys carry an underscore --
+# apprise_telegram and google_oauth (platform/vendors/consoles.yaml) -- were rejected at
+# ingestion with `"tags.1" is not valid; expected a string that is sequences of [a-z0-9+#]
+# separated by [-]`, so neither ever appeared in the catalogue. Tags go through here instead,
+# at the one place every tag in the file is written, so no future key can repeat it.
+def tag_slug(s: str) -> str:
+    s = re.sub(r"[^a-z0-9+#]+", "-", str(s).lower()).strip("-")
+    return re.sub(r"-{2,}", "-", s)[:63].strip("-") or "unnamed"
+
 def github_slug(remote):
     """owner/repo out of a git remote, or None when it is not github.com.
 
@@ -278,7 +289,7 @@ def entity(kind, name, title, etype, annotations, tags, links=(), depends_on=(),
             out.append(f"    {k if '/' in k else 'estate/' + k}: {y(unhomed(v))}")
     if tags:
         out.append("  tags:")
-        out += [f"    - {y(slug(t).lower())}" for t in tags if t]
+        out += [f"    - {y(tag_slug(t))}" for t in tags if t]
     if links:
         out.append("  links:")
         for t, u in links:
