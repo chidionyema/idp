@@ -339,9 +339,14 @@
  * 36px, not the 28 this started at: the founder opens this page on a phone, and a
  * 28px target is a small thing to hit with a thumb (founder 2026-09-07, on the
  * preview of this change).
+ *
+ * .estate-page-actions, not .estate-home-actions: the shell puts that class on every page's
+ * action bar, so naming it here is what makes Health and Tools match the front page instead
+ * of only the front page having the shape (founder 2026-09-07: "why the look not matching
+ * home page").
  */
 .estate-tile-actions .MuiButton-containedPrimary,
-.estate-home-actions .estate-action {
+.estate-page-actions .estate-action {
   border-radius: 999px;
   min-height: 36px;
   padding: 6px 14px;
@@ -354,14 +359,14 @@
 /* Quiet: every repeated action. Six tiles meant six solid blue blocks competing
  * with the six names they belong to; outlined, the name leads again. */
 .estate-tile-actions .MuiButton-containedPrimary,
-.estate-home-actions .estate-action-quiet {
+.estate-page-actions .estate-action-quiet {
   background-color: transparent;
   color: var(--bui-fg-primary);
   border: 1px solid var(--bui-border-2);
 }
 
 .estate-tile-actions .MuiButton-containedPrimary:hover,
-.estate-home-actions .estate-action-quiet:hover {
+.estate-page-actions .estate-action-quiet:hover {
   background-color: var(--bui-bg-neutral-1-hover);
   border-color: var(--bui-fg-primary);
   box-shadow: none;
@@ -369,6 +374,6 @@
 
 /* Loud: Create, and only Create. Quietening every button leaves a page with no
  * first move on it; this keeps one, in the same shape as the rest. */
-.estate-home-actions .estate-action-strong {
+.estate-page-actions .estate-action-strong {
   border: 1px solid transparent;
 }
