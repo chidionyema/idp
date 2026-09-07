@@ -70,6 +70,16 @@ spec:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: edge}
       ports: [{protocol: TCP, port: 8080}]
+    # The tailnet, asking from outside the cluster. deployment.yaml's Service carries
+    # tailscale.com/expose, so the operator runs an ingress proxy in namespace `tailscale` and
+    # that proxy is what dials this port -- the tailnet peer never appears as a pod. Who may
+    # reach the proxy is decided a layer above, by platform/tailscale/policy.hujson, which is
+    # deny-by-default and names the founder's devices and nothing else. The declaration on the
+    # other side is `egress: [jit]` in platform/ns-fences/allowances.yaml.
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: tailscale}
+      ports: [{protocol: TCP, port: 8080}]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
