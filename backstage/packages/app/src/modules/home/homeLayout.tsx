@@ -56,8 +56,8 @@ export function EstateHomeLayout({ widgets }: HomePageLayoutProps) {
     <EstatePage
       title="Today"
       lead={`${brand}. What needs you, and every door into the estate.`}
-      actions={
-        <Flex gap="2">
+      actions={(
+        <Flex gap="2" className="estate-home-actions">
           <ButtonLink
             href="/search"
             variant="secondary"
@@ -75,7 +75,7 @@ export function EstateHomeLayout({ widgets }: HomePageLayoutProps) {
             Create
           </ButtonLink>
         </Flex>
-      }
+      )}
     >
       {search && <div className="estate-home-search">{search}</div>}
       <DoorGrid />
