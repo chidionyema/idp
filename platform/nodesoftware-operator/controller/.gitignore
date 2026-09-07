@@ -1,0 +1,4 @@
+/nodesoftware-operator
+*.test
+*.out
+coverage.txt
