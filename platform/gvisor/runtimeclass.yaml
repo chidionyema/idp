@@ -1,0 +1,28 @@
+# crew#892 CP4 — gVisor RuntimeClass for untrusted cell compute (zero-trust-boundary
+# step 5, deepseek-work-order item 12).
+#
+# gVisor's runsc is installed on the node pool by cloud-init (IaC / the IaC owner's
+# step — the OCI-side remainder, gVisor-on-arm64 being unproven here). This RuntimeClass
+# is what lets a Pod IN THE CELL opt into that sandbox kernel. A pod without it is
+# refused at admission by cell-gvisor-admission.yaml; this class alone lands nothing
+# on a node that does not carry runsc (the scheduler just has no node that satisfies it).
+#
+# name and handler are deliberate: the estate's written decree (zero-trust-boundary.md
+# step 5) names the RuntimeClass `gvisor` and gVisor's handler `runsc`. Nothing in the
+# class names a machine, a checkout or an account (LAW 46) — only the runtime name a
+# node advertises once cloud-init has installed it.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: gvisor
+  labels:
+    app.kubernetes.io/part-of: idp
+    estate.io/authority: estate-controllers
+handler: runsc
+overhead:
+  podFixed:
+    memory: "64Mi"
+    cpu: "100m"
+scheduling:
+  nodeSelector:
+    estate.io/capacity: any
