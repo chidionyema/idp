@@ -24,6 +24,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	restclient "k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -70,9 +71,21 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return r.fail(ctx, &cr, err.Error())
 	}
 
-	// List target nodes.
+	// List target nodes. NodeSelector is a metav1.LabelSelector, so it has matchExpressions as
+	// well as matchLabels; reading only .MatchLabels dropped the expressions silently, and an
+	// empty client.MatchingLabels is not "no nodes" -- it is a List with no selector, i.e. EVERY
+	// node in the cluster. A CR that picked its canary with matchExpressions would therefore
+	// have installed a node-level runtime across the whole fleet. LabelSelectorAsSelector reads
+	// both halves, and an empty result is refused rather than treated as a wildcard.
+	sel, err := metav1.LabelSelectorAsSelector(&cr.Spec.Selector.NodeSelector)
+	if err != nil {
+		return r.fail(ctx, &cr, fmt.Sprintf("spec.selector.nodeSelector is not a valid label selector: %v", err))
+	}
+	if sel.Empty() {
+		return r.fail(ctx, &cr, "spec.selector.nodeSelector is empty; refusing to target every node in the cluster")
+	}
 	var nodes corev1.NodeList
-	if err := r.List(ctx, &nodes, client.MatchingLabels(cr.Spec.Selector.NodeSelector.MatchLabels)); err != nil {
+	if err := r.List(ctx, &nodes, client.MatchingLabelsSelector{Selector: sel}); err != nil {
 		return r.requeue(), fmt.Errorf("list nodes: %w", err)
 	}
 	targets := sortedTargetNodes(nodes.Items)
@@ -107,7 +120,7 @@ func (r *Reconciler) apply(ctx context.Context, cr *nodesoftwarev1alpha1.Runtime
 	case ActionSkip, ActionWait:
 		return r.requeue(), nil
 	case ActionComplete:
-		return r.complete(ctx, cr, "all target nodes verified")
+		return r.completeTerminal(ctx, cr)
 	case ActionFail:
 		return r.fail(ctx, cr, "rollout failed")
 	case ActionCordon:
@@ -140,6 +153,21 @@ func (r *Reconciler) complete(ctx context.Context, cr *nodesoftwarev1alpha1.Runt
 	return ctrl.Result{}, nil
 }
 
+// completeTerminal is the ActionComplete handler. Decide routes BOTH Verified and RolledBack to
+// ActionComplete (state.go, "case PhaseVerified, PhaseRolledBack"), and they are not the same
+// outcome -- a RolledBack CR had the runtime uninstalled because verification failed. Sending
+// both through complete() stamped Verified over RolledBack, and .status.phase is the PHASE
+// column `kubectl get runtimeinstall` prints: the CR would have reported the opposite of what
+// happened to the node. Today nothing writes RolledBack (a successful rollback writes Failed,
+// reconcile_install.go), so this is a latent lie rather than a live one; it is fixed here
+// because the phase constant, TerminalPhases() and Decide all already treat it as reachable.
+func (r *Reconciler) completeTerminal(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall) (ctrl.Result, error) {
+	if cr.Status.Phase == string(PhaseRolledBack) {
+		return ctrl.Result{}, nil // already terminal, and not a Verified rollout
+	}
+	return r.complete(ctx, cr, "all target nodes verified")
+}
+
 // fail writes the terminal Failed phase.
 func (r *Reconciler) fail(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall, reason string) (ctrl.Result, error) {
 	cr.Status.Phase = string(PhaseFailed)
@@ -163,7 +191,9 @@ func (r *Reconciler) requeue() ctrl.Result {
 // comes from the caller (matched node list size).
 func buildSnapshot(cr *nodesoftwarev1alpha1.RuntimeInstall, totalNodes int, history []nodesoftwarev1alpha1.RolloutHistoryEntry, suspended bool) Snapshot {
 	snap := Snapshot{
-		Phase:          Phase(cr.Status.Phase),
+		// "" is what a freshly admitted CR carries; Decide normalises it to Pending, and the
+		// snapshot says the same so the "decided" log line does not print an empty phase.
+		Phase:          phaseOrPending(cr.Status.Phase),
 		Strategy:       Strategy(cr.Spec.RolloutStrategy),
 		FailurePolicy:  FailurePolicy(cr.Spec.FailurePolicy),
 		CanaryReplicas: 1,
@@ -209,4 +239,12 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&nodesoftwarev1alpha1.RuntimeInstall{}).
 		Complete(r)
+}
+
+// phaseOrPending names the initial state. A CR with no status yet has Phase ""; that is Pending.
+func phaseOrPending(p string) Phase {
+	if p == "" {
+		return PhasePending
+	}
+	return Phase(p)
 }
