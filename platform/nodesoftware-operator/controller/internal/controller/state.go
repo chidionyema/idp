@@ -110,6 +110,17 @@ func Decide(s Snapshot) Action {
 		return Action{Verb: ActionSkip, Reason: "suspended (estate.estate.io/suspend=true)"}
 	}
 
+	// A CR the API server has just admitted carries no status at all: the CRD's status is
+	// `x-kubernetes-preserve-unknown-fields: true` with no phase property, so nothing defaults
+	// it and Phase arrives as "". Before this line "" matched no case, fell through to the
+	// "unknown phase" Wait at the bottom, and the reconciler requeued it every 15s forever --
+	// and since ActionCordon is returned only from case PhasePending, handleCordon's own
+	// `if cr.Status.Phase == ""` branch (reconcile_actions.go) was unreachable too. No CR
+	// could ever begin a rollout. "" is the initial state; Pending is its name.
+	if s.Phase == "" {
+		s.Phase = PhasePending
+	}
+
 	switch s.Phase {
 	case PhasePending:
 		if s.TotalNodes == 0 {
@@ -159,14 +170,20 @@ func Decide(s Snapshot) Action {
 		return Action{Verb: ActionFail, Reason: "terminal: rollout failed"}
 	}
 
-	// Unreachable in practice; the gate admits only known phases and the switch is exhaustive.
+	// Reached only by a phase string no version of this controller writes -- a hand-edited
+	// status, or a CR left behind by a newer controller that was rolled back. Waiting is the
+	// safe answer: the controller neither advances nor terminalises a state it does not
+	// understand. It is NOT the path a fresh CR takes; that is normalised to Pending above.
 	return Action{Verb: ActionWait, Reason: "unknown phase"}
 }
 
-// CanAdvance answers: is the current snapshot allowed to leave its current phase? Used by the
-// Reconciler to decide whether to write status.phase (which is the operator's only write to
-// status that humans don't make). Returning false means the controller holds the phase and
-// requeues; true means it transitions and writes status.
+// CanAdvance answers: is the current snapshot allowed to leave its current phase? Returning
+// false means the phase is terminal.
+//
+// Not called by the Reconciler. The doc comment used to say it was, and it never has been --
+// the Reconciler writes status.phase from the individual verb handlers without asking. Left
+// exported and tested because the C3 handlers should be routed through it; saying so honestly
+// is better than a comment that describes a wiring that does not exist.
 //
 // Rules:
 //   - Verified, RolledBack, Failed are terminal. Never advance.
@@ -188,6 +205,10 @@ func TerminalPhases() []Phase {
 // ShouldFailClosed returns true when the snapshot's failedNodes count warrants a Rollback/Failed
 // transition. FailClosed means any failure halts the rollout; Ignore means the failure is
 // recorded and the rollout continues past the failed node.
+//
+// Not called by the Reconciler either: reconcile_install.go reads cr.Spec.FailurePolicy
+// directly (line 237). The two are the same rule written twice, which is one place for them to
+// drift apart.
 func ShouldFailClosed(s Snapshot) bool {
 	return s.FailurePolicy == FailurePolicyFailClosed && s.FailedNodes > 0
 }
