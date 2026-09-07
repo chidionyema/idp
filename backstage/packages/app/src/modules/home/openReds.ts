@@ -72,16 +72,30 @@ export const redsFromAlerts = (alerts: AlertmanagerAlert[]): Red[] =>
       };
     });
 
+// The generator writes drill facts under the estate's own prefix -- estate/last-status,
+// estate/stale, estate/age-h, estate/max-age-days (bin/catalog-gen, and the entities in
+// catalog/catalog-info.yaml carry them). This file read them unprefixed, so every lookup came
+// back undefined and every drill in the catalogue read "Never run" whatever its register said:
+// on 2026-09-07 the founder's Health page called all seventeen red while the catalogue held
+// `estate/last-status: PASS` for no-anthropic and `FAIL` for rebuild. Names, not aliases: one
+// constant per annotation so a rename breaks the build rather than the page.
+const A = {
+  lastStatus: 'estate/last-status',
+  stale: 'estate/stale',
+  ageH: 'estate/age-h',
+  maxAgeDays: 'estate/max-age-days',
+} as const;
+
 const drillWhy = (e: Entity): string | undefined => {
   const ann = e.metadata.annotations ?? {};
   const tags = e.metadata.tags ?? [];
-  const last = String(ann['last-status'] ?? '').toLowerCase();
+  const last = String(ann[A.lastStatus] ?? '').toLowerCase();
   if (tags.includes('never-run') || !last || last === 'never run')
     return 'Never run';
   if (FAILED.has(last)) return `Last run ${last}`;
-  if (tags.includes('stale') || String(ann.stale) === 'true')
-    return `Last green ${ann['age-h'] ?? '?'}h ago, must run every ${
-      ann['max-age-days'] ?? '?'
+  if (tags.includes('stale') || String(ann[A.stale]).toLowerCase() === 'true')
+    return `Last green ${ann[A.ageH] ?? '?'}h ago, must run every ${
+      ann[A.maxAgeDays] ?? '?'
     } days`;
   return undefined;
 };
@@ -120,7 +134,7 @@ export const redsFromEntities = (
     if (e.kind === 'Resource' && type === DRILL_TYPE) {
       const why = drillWhy(e);
       if (!why) continue;
-      const ageH = Number(ann['age-h']);
+      const ageH = Number(ann[A.ageH]);
       reds.push({
         key: `drill/${e.metadata.name}`,
         kind: 'drill',

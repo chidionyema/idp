@@ -75,19 +75,19 @@ describe('open reds', () => {
     const reds = redsFromEntities(
       [
         drill('never', {}, ['never-run']),
-        drill('failed', { 'last-status': 'failure', 'age-h': '5' }),
+        drill('failed', { 'estate/last-status': 'FAIL', 'estate/age-h': '5' }),
         drill(
           'stale',
-          { 'last-status': 'success', 'age-h': '80', 'max-age-days': '1' },
+          { 'estate/last-status': 'PASS', 'estate/age-h': '80', 'estate/max-age-days': '1' },
           ['stale'],
         ),
-        drill('green', { 'last-status': 'success', 'age-h': '3' }),
+        drill('green', { 'estate/last-status': 'PASS', 'estate/age-h': '3' }),
       ],
       NOW,
     );
     expect(reds.map(r => `${r.name}:${r.why}`)).toEqual([
       'never:Never run',
-      'failed:Last run failure',
+      'failed:Last run fail',
       'stale:Last green 80h ago, must run every 1 days',
     ]);
     expect(reds[1].since).toBe('2026-08-29T22:00:00.000Z');
@@ -165,13 +165,13 @@ describe('open reds', () => {
     const drillRow = (name: string, last: string) =>
       ({
         kind: 'Resource',
-        metadata: { name, annotations: { 'last-status': last } },
+        metadata: { name, annotations: { 'estate/last-status': last } },
         spec: { type: 'drill', owner: 'group:default/watch' },
       } as any);
     const d = drillSummary([
-      drillRow('a', 'passed'),
-      drillRow('b', 'failed'),
-      drillRow('c', 'passed'),
+      drillRow('a', 'PASS'),
+      drillRow('b', 'FAIL'),
+      drillRow('c', 'PASS'),
     ]);
     expect(d).toEqual({ total: 3, green: 2, red: 1 });
     expect(drillsSentence(d)).toBe('2 of 3 drills green; 1 red, listed below.');
