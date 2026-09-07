@@ -154,7 +154,11 @@ spec:
             kind: Middleware
             name: edge-headers
       backendRefs:
-        - name: signoz
+        # Not signoz directly: signoz-sso is the same page with one script inserted, so the
+        # browser already holds a session and SigNoz's own login form never renders
+        # (platform/observability/signoz-sso.yaml). Every other route on this host, and the
+        # OTLP ingest below, still go straight to signoz.
+        - name: signoz-sso
           port: 8080
 ---
 # The collector's ingest path for programs off the cluster (crew#516 CP5 slice 3): the Mac's
