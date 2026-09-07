@@ -662,6 +662,19 @@ def _asked(broker):
     )
 
 
+def test_an_accepted_delivery_leaves_a_line_a_human_can_read(tmp_path, capfd):
+    """The broker silences its HTTP access log, so without this line a real tap completes
+    and `kubectl logs` stays empty -- nothing to quote when asked to prove it works."""
+    broker = make(tmp_path)
+    req = _asked(broker)
+    httpd = _door(broker, Phone("t", "42", broker))
+    try:
+        assert _deliver(httpd, _tap(broker, req, 42)) == 200
+    finally:
+        httpd.shutdown()
+    assert "jit telegram: mirrored delivery handled" in capfd.readouterr().out
+
+
 def test_his_tap_delivered_to_the_mirrored_path_grants_the_request(tmp_path):
     broker = make(tmp_path)
     req = _asked(broker)
