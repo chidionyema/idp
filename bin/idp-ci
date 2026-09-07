@@ -512,6 +512,15 @@ jit_grants_gate() { python3 "$IDP/bin/idp-jit-grants" "$1" >/dev/null 2>&1; }
 # for anything, so they never land on a green check alone: no auto-merge, no self-approval, and
 # the founder's own review or nothing.
 glass_break_gate() { python3 "$IDP/bin/idp-glass-break" "$1" >/dev/null 2>&1; }
+# A deck that replaces a vendor operator may not reuse the operator's cluster-scoped names
+# (platform/calico/raw/README.md). A ClusterRole has no namespace, so moving the ServiceAccounts to
+# kube-system separated nothing: the raw calico deck declared ClusterRole/calico-node and
+# ClusterRole/calico-cni-plugin, the names the removed tigera-operator left stuck in Terminating on
+# a finalizer no controller survives to clear, and the Kustomization waited on those tombstones
+# every 10 minutes for 37 hours -- so it never completed, so it never pruned the superseded
+# operator HelmRelease that was the thing it would have removed. Takes one fixture path so the rung
+# proves it both ways in one run.
+vendor_name_gate() { python3 "$IDP/bin/vendor-name-collision-gate" "$1" >/dev/null 2>&1; }
 defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
 # 6a. main's verdict, against the live workflows rather than the fixtures (crew#865). On 2026-09-05
 #     nine of twelve ci runs on main were cancelled by the commit after them, so the one branch the
@@ -519,6 +528,16 @@ defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -
 #     this runs it on .github/workflows/, where a real regression fails it.
 if out=$(python3 "$IDP/bin/main-verdict-gate" 2>&1); then say "ok    verdict  $(tail -1 <<<"$out")"
 else say "FAIL  verdict  bin/main-verdict-gate refuses .github/workflows/"; sed 's/^/               /' <<<"$out"; fail=1; fi
+
+# 6c. The vendor-name rule holds over the real deck, not just the fixtures. The deck's README
+#     calls it "byte-faithful to the reviewed vendor reference", so the next upstream re-sync
+#     reintroduces the bare names -- and the deadlock -- in a diff that looks like fidelity.
+if out=$(python3 "$IDP/bin/vendor-name-collision-gate" "$IDP/platform/calico/raw" 2>&1); then
+  say "ok    vendor   $out"
+else
+  say "FAIL  vendor   a replacement deck reuses a vendor operator's cluster-scoped name"
+  printf '%s\n' "$out" | sed 's/^/      /'; fail=1
+fi
 
 # 6b. R76 (founder 2026-09-03): the no-prose rule holds over the whole test tree, not just
 #     the fixtures. A test function that only asserts wording is refused here by name.
@@ -596,6 +615,13 @@ fi
 #     hostPath) must be refused, while a conforming cell Pod must be admitted. This grades the
 #     parsed object, mirroring the Kyverno admission policy that refuses the same shape at
 #     admission, so the repo half and the cluster half cannot drift apart.
+if vendor_name_gate "$IDP/tests/fixtures/vendor-names/good.yaml" \
+   && ! vendor_name_gate "$IDP/tests/fixtures/vendor-names/bad.yaml"; then
+  say "ok    vendor   a replacement deck may not reuse a vendor operator's cluster-scoped names"
+else
+  say "FAIL  vendor   bin/vendor-name-collision-gate does not grade its fixtures both ways"; fail=1
+fi
+
 if gvisor_cell_gate "$IDP/tests/fixtures/gvisor-cell/good.yaml" \
    && ! gvisor_cell_gate "$IDP/tests/fixtures/gvisor-cell/bad.yaml"; then
   say "ok    gvisor   a cell Pod without the runtime class (or privileged, host-networked, hostPath) is refused; the conforming cell Pod passes"

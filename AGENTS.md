@@ -34,6 +34,7 @@ Row format, one rule per row. `gate` is a shell function or command defined in `
 | The 39 generated policies stay unwired until a deny feed has been read over a full cycle; an empty log feed is a fail-closed FAIL, never a clean bill (platform/calico README) | calico_denyflow_gate | tests/fixtures/calico-denyflow/feed-no-evidence.log | tests/fixtures/calico-denyflow/feed-with-deny.log |
 | A pod in the gVisor sandbox cell must name `runtimeClassName: gvisor` and must not be privileged, host-networked or mount a hostPath; the break is caught in the pull request (zero-trust-boundary.md step 5, crew#892 CP4) | gvisor_cell_gate | tests/fixtures/gvisor-cell/bad.yaml | tests/fixtures/gvisor-cell/good.yaml |
 | A gVisor-cell namespace fence is default-deny with the gateway the one allowed route; a fence granting the cell internet egress is a break caught in the pull request (zero-trust-boundary.md step 6, crew#892 CP4) | gvisor_cell_fence_gate | tests/fixtures/gvisor-cell-fence/bad.yaml | tests/fixtures/gvisor-cell-fence/good.yaml |
+| A deck that replaces a vendor operator never reuses the operator's cluster-scoped names; a ClusterRole has no namespace, so moving the ServiceAccounts does not separate them (platform/calico/raw/README.md) | vendor_name_gate | tests/fixtures/vendor-names/bad.yaml | tests/fixtures/vendor-names/good.yaml |
 
 Rules that are already types or tools, and so need no row: compose files must parse
 (`docker compose config`), the gateway config must match its release schema
