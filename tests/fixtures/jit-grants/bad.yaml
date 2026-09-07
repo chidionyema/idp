@@ -1,5 +1,5 @@
 # What the gate must refuse. Every grant here is a real escalation an agent could reach for.
-apiVersion: idp.mumchimp.com/v1
+apiVersion: idp.internal/v1
 kind: GrantCatalogue
 grants:
   # A token for patch on a Deployment: the holder rewrites serviceAccountName and escalates out.

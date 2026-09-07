@@ -3,8 +3,8 @@
     {
       "name": "traces",
       "tier": "enterprise",
-      "cpu": 4.1,
-      "memory_gb": 11.66,
+      "cpu": 4.14,
+      "memory_gb": 11.76,
       "storage_gb": 0.0,
       "title": "Langfuse (traces, prompts, evals, SSO) + SigNoz on ClickHouse (logs, metrics, spans) + the estate OTel collector",
       "note": ""
@@ -12,8 +12,8 @@
     {
       "name": "logs-metrics-store",
       "tier": "enterprise",
-      "cpu": 4.1,
-      "memory_gb": 11.66,
+      "cpu": 4.14,
+      "memory_gb": 11.76,
       "storage_gb": 0.0,
       "title": "SigNoz + ClickHouse, retention 3-7 days (retention is a tier knob, not a hand edit)",
       "note": ""
@@ -200,8 +200,8 @@
     }
   ],
   "total": {
-    "cpu": 7.44,
-    "memory_gb": 23.55,
+    "cpu": 7.48,
+    "memory_gb": 23.65,
     "storage_gb": 16.0
   },
   "depend_failures": [],
