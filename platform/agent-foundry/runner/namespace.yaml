@@ -1,0 +1,17 @@
+# agent-foundry is the factory row on STANDARDS.md: a Make-to-Order swarm builder
+# (per ORDER.md \u00a75 headless milestone) plus the Make-to-Stock LoRA trainer spine
+# (ORDER.md \u00a76). All long-lived workloads in this row live in this namespace. Tokens
+# arrive via ESO from the estate vault (mounted file, never an env value); the
+# GitHub Actions runner that backs the Backstage \u00a7-publish Space tile runs here too.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    # Never garbage-collected by Flux: a namespace moved between Kustomization rows
+    # or dropped from git stays, with everything in it.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: agent-foundry
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    availability.idp/tier: platform
+    idp.estate/edge-attach: "true"

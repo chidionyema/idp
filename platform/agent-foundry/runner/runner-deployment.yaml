@@ -1,0 +1,109 @@
+# Self-hosted GitHub Actions runner for the agent-foundry \u00a7-publish Space tile.
+#
+# Wires the policy-clean secret seam (ORDER.md \u00a76) end-to-end:
+#   ESO reads AGENT_FOUNDRY_HF_WRITE_TOKEN from human-vault (Bitwarden) ->
+#   mounts as a FILE at /etc/agent-foundry/hf_token (mode 0400) ->
+#   env HF_TOKEN_FILE points at it ->
+#   scripts/deploy_hf_space.py reads the file, validates mode, calls HF.
+#
+# The runner's _work volume is emptyDir: nothing survives pod restart, including
+# the token (it's remounted from ESO each time). Token never enters the runner's
+# filesystem anywhere except the in-memory mode-0400 file mount.
+#
+# Registration uses a long-lived PAT today (Bridge until ARC lands); see README.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-foundry-runner
+  namespace: agent-foundry
+  labels:
+    app.kubernetes.io/name: agent-foundry-runner
+    app.kubernetes.io/component: ci-runner
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-foundry-runner
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agent-foundry-runner
+        app.kubernetes.io/component: ci-runner
+        # ARC-compatible label; the workflow runs-on matches this.
+        runner.idp/scope: agent-foundry
+    spec:
+      restartPolicy: Always
+      # EmptyDir for _work: nothing persists across pod restart.
+      containers:
+        - name: runner
+          image: ghcr.io/actions/actions-runner:2.319.1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GH_OWNER
+              value: chidionyema
+            - name: GH_REPOSITORY
+              value: agent-foundry
+            - name: RUNNER_SCOPE
+              value: repo
+            - name: RUNNER_LABELS
+              value: "self-hosted,agent-foundry"
+            # Policy-clean seam (ORDER.md \u00a76): the token is a FILE, never an env value.
+            - name: HF_TOKEN_FILE
+              value: /etc/agent-foundry/hf_token
+            # Optional: tenant-scoped audit sink in addition to the deploy script's
+            # --audit-dir sink. Set AF_DATABASE_URL via ESO when the agent-foundry
+            # DB row lands; leaving it unset is fine (the script will refuse dark
+            # only if no other audit sink is configured at workflow runtime).
+          envFrom:
+            - secretRef:
+                name: agent-foundry-runner-pat
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              # Register the runner with GH using the PAT (Bridge to ARC).
+              ./config.sh \
+                --url "https://github.com/$${GH_OWNER}/$${GH_REPOSITORY}" \
+                --token "$${GITHUB_TOKEN}" \
+                --labels "$${RUNNER_LABELS}" \
+                --unattended \
+                --replace
+              # Hand off to the runner loop. --once=false + removeOnExit keeps the
+              # pod alive across multiple job runs (the pod lifetime, not the job).
+              exec ./run.sh
+          volumeMounts:
+            - name: hf-token
+              mountPath: /etc/agent-foundry
+              readOnly: true
+            - name: docker
+              mountPath: /var/run/docker.sock
+              readOnly: true
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: "1",   memory: 1Gi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+      volumes:
+        - name: hf-token
+          projected:
+            sources:
+              - secret:
+                  name: agent-foundry-runner
+                  items:
+                    - key: hf_write_token
+                      path: hf_token
+                      mode: 0400
+        # Optional: dind socket for jobs that need Docker. Drop if all jobs are
+        # pure-Python (the \u00a7-publish tile is).
+        - name: docker
+          hostPath: { path: /var/run/docker.sock, type: Socket }
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
