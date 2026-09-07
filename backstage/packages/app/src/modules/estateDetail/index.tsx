@@ -18,6 +18,9 @@ import { EntityContentBlueprint } from '@backstage/plugin-catalog-react/alpha';
 // founder-surface/component the health poller reaches carries estate/health + checked-at, and
 // this page says, in the same state words the home uses, whether the thing is running.
 import { HEALTH_LABEL, checkedAgo, healthOf } from '../home/estate';
+// The live cluster card: reuse it for any Estate subject that genuinely sits on the cluster as
+// a Flux kustomization (every platform layer), so a click sees it Alive rather than a GitHub link.
+import { LayerOnCluster, isOnCluster } from './live';
 import Box from '@material-ui/core/Box';
 import Card from '@material-ui/core/Card';
 import CardContent from '@material-ui/core/CardContent';
@@ -190,9 +193,16 @@ export const EstateOverview = ({ now }: { now?: number }) => {
     );
   const tags = md.tags ?? [];
   const links = (md.links ?? []) as { url: string; title: string }[];
+  // A flux-carrying layer's first answer to "what is it" is whether the cluster is running it.
+  const onCluster = isOnCluster(entity);
   return (
     <Box data-testid="estate-overview">
       <Grid container spacing={2}>
+        {onCluster && (
+          <Grid item xs={12}>
+            <LayerOnCluster entity={entity} />
+          </Grid>
+        )}
         <Grid item xs={12} md={7}>
           <Card variant="outlined">
             <CardContent>

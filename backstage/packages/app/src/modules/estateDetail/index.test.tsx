@@ -313,3 +313,81 @@ describe('EstateOverview (the owned estate entity detail tab)', () => {
     expect(screen.queryByText(/Founder console/)).not.toBeInTheDocument();
   });
 });
+
+// The live wiring: a flux-carrying layer (any shipped platform layer) renders the On-the-cluster
+// card from its live cluster read on the overview, so clicking a component's Estate tab shows it
+// is running rather than a bare link. Grades the through-path EstateOverview -> LayerOnCluster.
+import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
+
+const fluxLayer = (name = 'alerts', flux = 'alerts'): Entity => ({
+  apiVersion: 'backstage.io/v1alpha1',
+  kind: 'Component',
+  metadata: {
+    name: `layer-${name}`,
+    namespace: 'default',
+    title: `${name} layer`,
+    annotations: { 'estate/flux-kustomization': flux },
+  },
+  spec: { type: 'platform-layer', owner: 'group:default/platform' },
+});
+
+const fluxCluster = (flux: string, ready = true) => ({
+  getClusters: async () => [{ name: 'estate' }],
+  proxy: async ({ path }: { path: string }) => {
+    const byPath: Record<string, unknown> = {
+      '/apis/kustomize.toolkit.fluxcd.io/v1/kustomizations': {
+        items: [
+          {
+            metadata: { name: flux },
+            status: {
+              conditions: [
+                ready
+                  ? { type: 'Ready', status: 'True', reason: 'ReconciliationSucceeded' }
+                  : { type: 'Ready', status: 'False', reason: 'ApplyFailed' },
+              ],
+            },
+          },
+        ],
+      },
+      '/apis/apps/v1/deployments': {
+        items: ready
+          ? [
+              {
+                metadata: {
+                  name: `${flux}-x`,
+                  labels: { 'kustomize.toolkit.fluxcd.io/name': flux },
+                },
+                spec: { replicas: 2 },
+                status: { readyReplicas: 2, replicas: 2 },
+              },
+            ]
+          : [],
+      },
+    };
+    const body = byPath[path];
+    if (!body) return { ok: false, status: 404, json: async () => ({}) } as Response;
+    return { ok: true, status: 200, json: async () => body } as unknown as Response;
+  },
+});
+
+describe('The Estate overview for a flux layer carries its live cluster card', () => {
+  it('shows a ready layer running: its pod count, read from the live cluster through the overview', async () => {
+    const api = catalogStub();
+    await renderInTestApp(
+      <TestApiProvider
+        apis={
+          [
+            [catalogApiRef, api as any],
+            [kubernetesApiRef, fluxCluster('alerts', true) as any],
+          ] as any
+        }
+      >
+        <EntityProvider entity={fluxLayer('alerts', 'alerts')}>
+          <EstateOverview now={Date.now()} />
+        </EntityProvider>
+      </TestApiProvider>,
+    );
+    expect(await screen.findByText(/On the cluster/i)).toBeInTheDocument();
+    expect(await screen.findByText(/2 of 2 pods ready/i)).toBeInTheDocument();
+  });
+});
