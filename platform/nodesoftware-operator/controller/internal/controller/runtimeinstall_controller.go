@@ -230,15 +230,40 @@ func isSuspended(cr *nodesoftwarev1alpha1.RuntimeInstall) bool {
 
 // SetupWithManager wires the Reconciler into a controller-runtime manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.applyDefaults()
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&nodesoftwarev1alpha1.RuntimeInstall{}).
+		Complete(r)
+}
+
+// applyDefaults fills the Reconciler fields that have a sensible default but are
+// sometimes left zero by the caller (typically main.go, which gets "" from a
+// missing --handler-namespace flag). Splitting it from SetupWithManager so a
+// test can drive the fill without booting a controller-runtime manager and
+// envtest.
+//
+// Defaults, with the rationale behind each:
+//
+//   - ReconcilePeriod: 15s. Matches the --reconcile-period=15s the deployment
+//     passes (controller cmd). min(spec.pauseDuration) is 30s, so a 15s loop
+//     samples between pauses.
+//
+//   - HandlerNamespace: "nodesoftware-operator". Matches:
+//     1. platform/nodesoftware-operator/rbac.yaml (Namespace: nodesoftware-operator)
+//     2. the deployment's --handler-namespace arg (PR #2401)
+//     3. the namespace in platform/nodesoftware-operator/namespace.yaml
+//     4. the namespace the existing incident_* tests hardcode
+//
+//     The kubebuilder scaffold default was 'nodesoftware-operator-system', a
+//     name that does not exist in this repo; without an override the
+//     controller would schedule handler pods in a namespace it does not own.
+func (r *Reconciler) applyDefaults() {
 	if r.ReconcilePeriod == 0 {
 		r.ReconcilePeriod = 15 * time.Second
 	}
 	if r.HandlerNamespace == "" {
-		r.HandlerNamespace = "nodesoftware-operator-system"
+		r.HandlerNamespace = "nodesoftware-operator"
 	}
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&nodesoftwarev1alpha1.RuntimeInstall{}).
-		Complete(r)
 }
 
 // phaseOrPending names the initial state. A CR with no status yet has Phase ""; that is Pending.
