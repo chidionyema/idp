@@ -494,6 +494,12 @@ calico_denyflow_gate() { python3 "$IDP/bin/idp-calico-deny-log" "$1" >/dev/null 
 # fixture path so the rung proves it both ways in one run, mirroring the Kyverno ClusterPolicy it
 # guards (platform/edge/gvisor-admission.yaml) so the PR half cannot drift from the admission half.
 gvisor_cell_gate() { python3 "$IDP/bin/gvisor-cell-gate" "$1" >/dev/null 2>&1; }
+# crew#892 CP4 (zero-trust-boundary.md step 6): grades ONE allowances.yaml with
+# bin/gvisor-cell-fence-gate, which refuses a gVisor-cell namespace whose fence grants egress to
+# the internet. Takes one fixture path so the rung proves it both ways in one run, mirroring the
+# step-5 admission policy + gvisor-cell-gate (a compromised untrusted-code pod must not reach the
+# public address space or another tenant's private range).
+gvisor_cell_fence_gate() { python3 "$IDP/bin/gvisor-cell-fence-gate" "$1" >/dev/null 2>&1; }
 defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
 # 6a. main's verdict, against the live workflows rather than the fixtures (crew#865). On 2026-09-05
 #     nine of twelve ci runs on main were cancelled by the commit after them, so the one branch the
@@ -562,6 +568,18 @@ if gvisor_cell_gate "$IDP/tests/fixtures/gvisor-cell/good.yaml" \
   say "ok    gvisor   a cell Pod without the runtime class (or privileged, host-networked, hostPath) is refused; the conforming cell Pod passes"
 else
   say "FAIL  gvisor   bin/gvisor-cell-gate cannot tell a gVisor cell boundary break from a conforming Pod (ZT step 5)"; fail=1
+fi
+
+# 6f. crew#892 CP4 (zero-trust-boundary.md step 6): the cell fence is default-deny with the
+#     gateway the one declared app route; a fence that lets the untrusted-code cell reach the
+#     internet is the isolation break, caught here in the pull request. Proved two ways in one run
+#     with the fixture pair: an allowances file that grants the cell egress_internet is refused,
+#     the default-deny cell fence is admitted. Grades the declarations the generator fans out.
+if gvisor_cell_fence_gate "$IDP/tests/fixtures/gvisor-cell-fence/good.yaml" \
+   && ! gvisor_cell_fence_gate "$IDP/tests/fixtures/gvisor-cell-fence/bad.yaml"; then
+  say "ok    gvrfence a gVisor-cell fence granting internet egress is refused; the default-deny cell fence passes"
+else
+  say "FAIL  gvrfence bin/gvisor-cell-fence-gate cannot tell a cell fence that leaks to the internet from the default-deny fence (ZT step 6)"; fail=1
 fi
 
 # 6b. The namespace fence, against the estate rather than against its own fixtures (crew#839).
