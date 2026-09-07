@@ -1,10 +1,20 @@
-# Kustomization for the NodeSoftwareOperator row. Two resources: the CRD
-# (must land first, before the controller can reconcile) and the deployment +
-# RBAC (the operator itself). The CRD lands in the same kustomization.yaml
-# because the CRD has no dependencies on anything else in this dir; the
-# controller deployment depends on the CRD existing, which Flux handles
-# automatically (it dry-runs CRs after CRDs land in the same pass, since the
-# row is applied as one unit).
+# Kustomization for the NodeSoftwareOperator row: the CRD (which must land first, before
+# any controller can reconcile) and the RBAC the controller will run as.
+#
+# deployment.yaml is deliberately NOT in this list. #2338 shipped milestones A and B --
+# "CRD + reconcile-loop spec + offline gate, no controller code" -- and the controller image
+# it names does not exist: `ghcr.io/chidionyema/nodesoftware-operator` is a 404 in ghcr, no
+# workflow in .github/workflows builds it, and no ImageRepository or ImagePolicy watches it.
+# Listing it here asked Flux to deploy code that has never been built, which is the same
+# decision the RuntimeInstall CR already got right by shipping dark
+# (platform/gvisor-runtime/runtimeinstall.yaml: "shipped dark until the operator source lands
+# and the controller image is in ghcr").
+#
+# To add it back, all three of these must be true, and deployment.yaml's own header lists them:
+# the image is pushed by a workflow, an ImageRepository/ImagePolicy pair exists in
+# platform/image-automation, and the tag is a `$imagepolicy`-marked `newTag:` here rather than
+# the bare word IMAGE_TAG. Then restore the healthCheck and `wait: true` on the Flux row in
+# clusters/oke/platform.yaml, which were removed with it.
 #
 # Order of resources matters here ONLY for readability; the API server applies
 # them in dependency order regardless.
@@ -14,4 +24,3 @@ namespace: nodesoftware-operator
 resources:
   - crds/runtimeinstall.yaml
   - rbac.yaml
-  - deployment.yaml

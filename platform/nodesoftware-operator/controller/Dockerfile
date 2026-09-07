@@ -8,8 +8,13 @@
 # Build:    docker build -t ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG .
 # Run:      docker run --rm ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG
 #
-# The IMAGE_TAG placeholder is substituted at Flux postBuild from the ghcr-pull secret (idp#140
-# image-automation). `optional: false` in the Flux row means a missing IMAGE_TAG fails the row,
+# IMAGE_TAG above is a placeholder for a human running these commands, not a substitution: this
+# image is not built by any workflow and is a 404 in ghcr, and the Flux row that claimed to
+# substitute it from the ghcr-pull secret never could (that Secret's one key is
+# `.dockerconfigjson`, not a legal envsubst variable name) and was removed on 2026-09-08. When
+# the image is built it is pinned the estate's way, a `$imagepolicy`-marked newTag in
+# kustomization.yaml. Historic note, kept because the old text is still quoted downstream:
+# `optional: false` in the Flux row was said to mean a missing IMAGE_TAG fails the row,
 # not a silent `:latest` rollout.
 
 FROM golang:1.26.3 AS build
