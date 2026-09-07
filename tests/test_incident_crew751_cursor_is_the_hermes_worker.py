@@ -88,7 +88,13 @@ def test_cursor_is_a_named_vendor_root_mapped_into_apply():
     vendors = yaml.safe_load(REG.read_text())["vendors"]
     row = vendors["cursor"]
     assert row["secret"] == "SEED_CURSOR_API_KEY"
-    assert row["targets"] == [{"entry": "hermes-agent-env", "field": "CURSOR_API_KEY"}]
+    # Pinned by what the target MEANS, not by the exact dict: a target grew `ns:` and `bw:` on
+    # 2026-09-07 when the Bitwarden bridge began generating from these rows, and an equality
+    # assertion turned a registry gaining information into a red suite.
+    assert len(row["targets"]) == 1
+    target = row["targets"][0]
+    assert target["entry"] == "hermes-agent-env"
+    assert target["field"] == "CURSOR_API_KEY"
     assert "SEED_CURSOR_API_KEY: ${{ secrets.SEED_CURSOR_API_KEY }}" in WF.read_text()
     assert "bin/idp-bootstrap-vendors" in WF.read_text()
 
