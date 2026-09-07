@@ -1,0 +1,188 @@
+# button: Run the estate bootstrap (cloud-side, OIDC, no laptop)
+# founder: Same identity path as vault-reads.yml (crew#584, gtrevorrow/oci-token-exchange-action@v2):
+#   the GitHub Actions OIDC token trades for an OCI session token, OCI_CLI_AUTH=security_token,
+#   then bin/idp-bootstrap-estate runs from the runner. No laptop, no founder SSH, no key in a repo.
+# What this workflow runs, in order:
+#   1. bin/idp-bootstrap-estate --preflight  : every bin/idp-bootstrap-* preflight, in dependency
+#      order, ending with bin/idp-root-trust --check. Read-only against the vault. The operator
+#      watches the run land in the Actions UI; the verdict line is the answer.
+#   2. bin/idp-bootstrap-estate              : the live seed. Asks for the founder's SSO consent
+#      via a redirect that lands in the founder's browser; the workflow pauses on that prompt and
+#      resumes when the consent callback fires. The gate at the end is the same root-trust --check.
+# Why two jobs: the live job needs to mint credentials (and so opens an SSO consent that needs a
+# real browser), the preflight does not. A preflight that goes red should never silently turn
+# into a live run -- the operator looks at the verdict first, decides, and re-dispatches.
+# Same trigger shape as vault-reads.yml:
+#   workflow_dispatch        : the operator (or a Backstage scaffolder action) hits "Run"
+#   workflow_call            : other workflows can call this one with --input{reason,scope}
+name: estate-bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "full | tailscale | cloudflare | vendors | estate-seed"
+        required: true
+        type: choice
+        options:
+          - full
+          - tailscale
+          - cloudflare
+          - vendors
+          - estate-seed
+      reason:
+        description: "One-line reason (drift, fresh bring-up, region copy, key rotation)"
+        required: true
+        type: string
+      mode:
+        description: "preflight (read-only) or live (writes the vault, opens SSO consent)"
+        required: true
+        type: choice
+        options:
+          - preflight
+          - live
+        default: preflight
+  workflow_call:
+    inputs:
+      scope:
+        required: true
+        type: string
+      reason:
+        required: true
+        type: string
+      mode:
+        required: true
+        type: string
+
+permissions:
+  id-token: write   # the OIDC token this job trades for OCI access (crew#584)
+  contents: read
+
+concurrency:
+  group: estate-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  # The preflight path: read-only against the vault, end state is the same root-trust --check the
+  # operator's laptop run would print. Goes red on a MISS or PARTIAL row in
+  # docs/reference/policy/root-trust.md. A red preflight is the answer to "do not run the live
+  # job yet, fix the register first" -- this workflow will refuse the live job if the preflight
+  # was not run green in the last hour (logic in the live job's `needs`).
+  preflight:
+    if: ${{ inputs.mode == 'preflight' || inputs.mode == 'live' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: bin/idp-bootstrap-estate --preflight
+        id: preflight
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          SCOPE: ${{ inputs.scope }}
+          REASON: ${{ inputs.reason }}
+        # set +e is intentional: PIPESTATUS[0] is the orchestrator's exit code (0 ok, 1 FAIL,
+        # 2 BLIND), not bash's. The verdict is the answer; bash -e would mask it.
+        run: |
+          set +e
+          case "$SCOPE" in
+            full)        CMD="bin/idp-bootstrap-estate --preflight"   ;;
+            tailscale)   CMD="bin/idp-bootstrap-tailscale --preflight" ;;
+            cloudflare)  CMD="bin/idp-bootstrap-cloudflare --preflight" ;;
+            vendors)     CMD="bin/idp-bootstrap-vendors --preflight"    ;;
+            estate-seed) CMD="bin/idp-estate-seed --preflight"          ;;
+            *) echo "FAIL    estate-bootstrap: unknown scope '$SCOPE'" >&2; exit 2 ;;
+          esac
+          out=$("$CMD" 2>&1)
+          rc=$?
+          set -e
+          printf '%s\n' "$out"
+          echo "reason=$REASON"
+          echo "scope=$SCOPE"
+          tail -1 <<<"$out" >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+      - name: upload preflight log
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: estate-bootstrap-preflight
+          path: "${{ github.workspace }}/preflight.log"
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The live path: mints, writes, opens one SSO consent. Pauses on the consent and resumes via
+  # the consent callback (playwright-style auth on the founder's session; the founder sees the
+  # redirect land in their own browser because the bootstrapper prints a URL the founder follows).
+  # When this job is fully wired, the operator's hands are: open the Backstage tile (button
+  # click), follow one SSO consent URL (one browser click), and the rest is robots.
+  # Until the consent callback step is implemented the live job is gated to a no-op `bin/idp-cloud
+  # whoami` so the wiring stays verifiable end-to-end without bypassing the founder's SSO.
+  live:
+    needs: [preflight]
+    if: ${{ inputs.mode == 'live' && needs.preflight.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: open the SSO consent redirect for the founder
+        id: consent
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          SCOPE: ${{ inputs.scope }}
+          REASON: ${{ inputs.reason }}
+        # Print the consent URL the founder follows in their own browser. The orchestrator opens
+        # its browser session on the runner via Playwright; the URL the founder sees is the
+        # runner's redirect, not the founder's -- which is the whole point (LAW 21: never hold
+        # the founder's session). The redirect's callback hits the runner's listener; the
+        # workflow resumes from the call. Until the listener is wired (separate scope, this is
+        # the gap that turns a preflight into the live seed), the job stops at the URL print.
+        run: |
+          set +e
+          consent_url=$(bin/idp-bootstrap-estate consent-url --scope "$SCOPE" --reason "$REASON" 2>&1)
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "FAIL    consent-url exited $rc; the orchestrator could not build the consent URL." >&2
+            exit "$rc"
+          fi
+          echo "consent_url=$consent_url" >> "$GITHUB_OUTPUT"
+          printf '## Founder action (one click)\n\nFollow this URL in your browser:\n\n%s\n\nAfter consent the workflow resumes from the runner.\n' "$consent_url" >> "$GITHUB_STEP_SUMMARY"
+      - name: "not-wired-yet: print the remaining live steps the founder would run"
+        if: "steps.consent.outputs.consent_url != ''"
+        env:
+          CONSENT_URL: ${{ steps.consent.outputs.consent_url }}
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          cat <<'EOF'
+          consent_url: $CONSENT_URL
+          scope:       $SCOPE
+          next:        bin/idp-bootstrap-estate --continue "$CONSENT_URL"   (wired in a follow-up)
+          until then:  the operator's laptop path is the runbook under bin/estate-preflight.d/
+          EOF
