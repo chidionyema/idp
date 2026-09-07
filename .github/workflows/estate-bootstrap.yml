@@ -1,41 +1,47 @@
 # button: Run the estate bootstrap (cloud-side, OIDC, no laptop)
 # founder: Same identity path as vault-reads.yml (crew#584, gtrevorrow/oci-token-exchange-action@v2):
 #   the GitHub Actions OIDC token trades for an OCI session token, OCI_CLI_AUTH=security_token,
-#   then bin/idp-bootstrap-estate runs from the runner. No laptop, no founder SSH, no key in a repo.
+#   then the bootstrapper runs from the runner. No laptop, no founder SSH, no key in a repo.
 # What this workflow runs, in order:
 #   1. bin/idp-bootstrap-estate --preflight  : every bin/idp-bootstrap-* preflight, in dependency
 #      order, ending with bin/idp-root-trust --check. Read-only against the vault. The operator
 #      watches the run land in the Actions UI; the verdict line is the answer.
-#   2. bin/idp-bootstrap-estate              : the live seed. Asks for the founder's SSO consent
-#      via a redirect that lands in the founder's browser; the workflow pauses on that prompt and
-#      resumes when the consent callback fires. The gate at the end is the same root-trust --check.
-# Why two jobs: the live job needs to mint credentials (and so opens an SSO consent that needs a
-# real browser), the preflight does not. A preflight that goes red should never silently turn
-# into a live run -- the operator looks at the verdict first, decides, and re-dispatches.
-# Same trigger shape as vault-reads.yml:
+#   2. bin/idp-estate-seed                  : the live OCI half. Mints every estate-born credential
+#      in-process (LAW 21, no paste, no console) and writes through bin/idp-vault-put --merge so
+#      vendor keys that already live in the same entry are kept untouched. Same trust as the
+#      preflight: the runner's OIDC identity, which already has vault-read; the IAM grant for
+#      vault-write is the one-time founder action this workflow documents in docs/operations/.
+#      Scope choice `estate-seed` skips every vendor step -- the OCI half is what cloud-execution
+#      can complete. Vendor halves (tailscale, cloudflare, vendors, github-app) need their own
+#      trust boundary each (browser SSO into a vendor console), so they stay on the laptop runbook
+#      under bin/estate-preflight.d/. This is the honest split, not the stitched-together one.
+# Why two jobs and not one: a preflight that goes red should never silently turn into a live run --
+# the operator looks at the verdict first, decides, and re-dispatches with mode=live. The preflight
+# is free; the live run mints real credentials, so its gate is the preflight exit code, not a wall.
+# Trigger shape mirrors vault-reads.yml:
 #   workflow_dispatch        : the operator (or a Backstage scaffolder action) hits "Run"
-#   workflow_call            : other workflows can call this one with --input{reason,scope}
+#   workflow_call            : other workflows can call this one with the same inputs
 name: estate-bootstrap
 
 on:
   workflow_dispatch:
     inputs:
       scope:
-        description: "full | tailscale | cloudflare | vendors | estate-seed"
+        description: "estate-seed (OCI half, cloud-side) or a vendor scope (laptop runbook path)"
         required: true
         type: choice
         options:
-          - full
+          - estate-seed
           - tailscale
           - cloudflare
           - vendors
-          - estate-seed
+        default: estate-seed
       reason:
         description: "One-line reason (drift, fresh bring-up, region copy, key rotation)"
         required: true
         type: string
       mode:
-        description: "preflight (read-only) or live (writes the vault, opens SSO consent)"
+        description: "preflight (read-only) or live (writes the vault)"
         required: true
         type: choice
         options:
@@ -65,9 +71,7 @@ concurrency:
 jobs:
   # The preflight path: read-only against the vault, end state is the same root-trust --check the
   # operator's laptop run would print. Goes red on a MISS or PARTIAL row in
-  # docs/reference/policy/root-trust.md. A red preflight is the answer to "do not run the live
-  # job yet, fix the register first" -- this workflow will refuse the live job if the preflight
-  # was not run green in the last hour (logic in the live job's `needs`).
+  # docs/reference/policy/root-trust.md. A red preflight is also the gate before a live run.
   preflight:
     if: ${{ inputs.mode == 'preflight' || inputs.mode == 'live' }}
     runs-on: ubuntu-latest
@@ -94,16 +98,15 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           SCOPE: ${{ inputs.scope }}
           REASON: ${{ inputs.reason }}
-        # set +e is intentional: PIPESTATUS[0] is the orchestrator's exit code (0 ok, 1 FAIL,
-        # 2 BLIND), not bash's. The verdict is the answer; bash -e would mask it.
+        # set +e is intentional: the orchestrator's exit code (0 ok, 1 FAIL, 2 BLIND) is the
+        # verdict, not bash's. bash -e would mask it.
         run: |
           set +e
           case "$SCOPE" in
-            full)        CMD="bin/idp-bootstrap-estate --preflight"   ;;
+            estate-seed) CMD="bin/idp-estate-seed --preflight" ;;
             tailscale)   CMD="bin/idp-bootstrap-tailscale --preflight" ;;
             cloudflare)  CMD="bin/idp-bootstrap-cloudflare --preflight" ;;
-            vendors)     CMD="bin/idp-bootstrap-vendors --preflight"    ;;
-            estate-seed) CMD="bin/idp-estate-seed --preflight"          ;;
+            vendors)     CMD="bin/idp-bootstrap-vendors --preflight" ;;
             *) echo "FAIL    estate-bootstrap: unknown scope '$SCOPE'" >&2; exit 2 ;;
           esac
           out=$("$CMD" 2>&1)
@@ -119,20 +122,20 @@ jobs:
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: estate-bootstrap-preflight
-          path: "${{ github.workspace }}/preflight.log"
+          path: ${{ github.workspace }}/preflight.log
           if-no-files-found: warn
           retention-days: 14
 
-  # The live path: mints, writes, opens one SSO consent. Pauses on the consent and resumes via
-  # the consent callback (playwright-style auth on the founder's session; the founder sees the
-  # redirect land in their own browser because the bootstrapper prints a URL the founder follows).
-  # When this job is fully wired, the operator's hands are: open the Backstage tile (button
-  # click), follow one SSO consent URL (one browser click), and the rest is robots.
-  # Until the consent callback step is implemented the live job is gated to a no-op `bin/idp-cloud
-  # whoami` so the wiring stays verifiable end-to-end without bypassing the founder's SSO.
+  # The live path: OCI half only. The runner's OIDC identity already has vault-read (vault-reads.yml);
+  # the founder extends that IAM grant to vault-write in the one-time setup documented at
+  # docs/operations/estate-bootstrap-cloud.md. Vendor halves (tailscale, cloudflare, vendors,
+  # github-app) require the operator's SSO into each vendor console and so stay on the laptop
+  # runbook under bin/estate-preflight.d/. Cloud-execution cannot reach across that trust boundary
+  # without a long-lived service principal the founder has not approved -- that decision is its
+  # own scope and is documented in the same place.
   live:
     needs: [preflight]
-    if: ${{ inputs.mode == 'live' && needs.preflight.result == 'success' }}
+    if: ${{ inputs.mode == 'live' && inputs.scope == 'estate-seed' && needs.preflight.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -149,40 +152,46 @@ jobs:
           domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
-      - name: open the SSO consent redirect for the founder
-        id: consent
+      - name: bin/idp-estate-seed
+        id: live
         env:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           OCI_REGION: ${{ vars.OCI_REGION }}
-          SCOPE: ${{ inputs.scope }}
           REASON: ${{ inputs.reason }}
-        # Print the consent URL the founder follows in their own browser. The orchestrator opens
-        # its browser session on the runner via Playwright; the URL the founder sees is the
-        # runner's redirect, not the founder's -- which is the whole point (LAW 21: never hold
-        # the founder's session). The redirect's callback hits the runner's listener; the
-        # workflow resumes from the call. Until the listener is wired (separate scope, this is
-        # the gap that turns a preflight into the live seed), the job stops at the URL print.
+        # set +e is intentional: the bootstrapper's exit code is the verdict (0 ok, 1 FAIL, 2 BLIND).
         run: |
           set +e
-          consent_url=$(bin/idp-bootstrap-estate consent-url --scope "$SCOPE" --reason "$REASON" 2>&1)
+          out=$(bin/idp-estate-seed 2>&1)
           rc=$?
           set -e
-          if [ "$rc" -ne 0 ]; then
-            echo "FAIL    consent-url exited $rc; the orchestrator could not build the consent URL." >&2
-            exit "$rc"
-          fi
-          echo "consent_url=$consent_url" >> "$GITHUB_OUTPUT"
-          printf '## Founder action (one click)\n\nFollow this URL in your browser:\n\n%s\n\nAfter consent the workflow resumes from the runner.\n' "$consent_url" >> "$GITHUB_STEP_SUMMARY"
-      - name: "not-wired-yet: print the remaining live steps the founder would run"
-        if: "steps.consent.outputs.consent_url != ''"
+          printf '%s\n' "$out"
+          tail -1 <<<"$out" >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+  # Vendor scopes refuse the live run on purpose: cloud-execution cannot complete a vendor
+  # bootstrap without a long-lived service principal for that vendor. The preflight still runs
+  # above (so the operator sees the verdict), the live job returns a non-zero that points the
+  # operator at the laptop runbook under bin/estate-preflight.d/. No silent skip.
+  live-vendor-refused:
+    needs: [preflight]
+    if: ${{ inputs.mode == 'live' && inputs.scope != 'estate-seed' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: refuse and point the operator at the laptop runbook
         env:
-          CONSENT_URL: ${{ steps.consent.outputs.consent_url }}
           SCOPE: ${{ inputs.scope }}
         run: |
-          cat <<'EOF'
-          consent_url: $CONSENT_URL
-          scope:       $SCOPE
-          next:        bin/idp-bootstrap-estate --continue "$CONSENT_URL"   (wired in a follow-up)
-          until then:  the operator's laptop path is the runbook under bin/estate-preflight.d/
+          cat <<'EOF' >&2
+          FAIL    estate-bootstrap: live cloud-side for scope '$SCOPE' is not wired.
+          why:    cloud-execution has no trusted identity in the vendor's console
+                  (Tailscale, Cloudflare, GitHub App, vendor SaaS). A long-lived service
+                  principal in each vendor is a founder decision that is not in this scope.
+          fix:    run the laptop runbook under bin/estate-preflight.d/ for this scope, OR
+                  pre-load the vendor key into the vault and re-dispatch scope=estate-seed,
+                  OR grant the federated principal a service identity in the vendor console
+                  and re-run (founder decision).
+          doc:    docs/operations/estate-bootstrap-cloud.md (Vendor halves section)
           EOF
+          exit 1
