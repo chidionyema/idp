@@ -251,9 +251,36 @@ jobs:
           git add docs/reports
           if git diff --cached --quiet; then echo "ok      reports  state branch already holds this report"; exit 0; fi
           git commit -q -m "docs(reports): Flux report from the cluster receipt, run $GITHUB_RUN_ID (crew#684)"
+          # Two writers race on this branch, and the other one is bin/catalog-render, which
+          # force-pushes state/live-diagram fresh from origin/main. So the branch we started
+          # from and the branch that is there now routinely share no history at all, and a
+          # rebase then reports every file in the tree as an add/add conflict and kills the
+          # job -- which is what happened on every estate-state run from 16:48 on 2026-09-07.
+          # This job owns docs/reports/ and nothing else, so on a rejected push it carries
+          # that one directory onto whatever is on the branch now rather than trying to
+          # reconcile two histories that were never meant to meet (LAW 45).
+          pushed=""
           for attempt in 1 2 3; do
-            git push origin HEAD:refs/heads/state/live-diagram && break
-            echo "retry $attempt: another writer pushed first; rebasing"
-            git pull --rebase origin state/live-diagram
+            if git push origin HEAD:refs/heads/state/live-diagram; then pushed=yes; break; fi
+            echo "retry $attempt: another writer moved the branch; carrying the report onto it"
+            rm -rf "$RUNNER_TEMP/carry-reports"
+            cp -R docs/reports "$RUNNER_TEMP/carry-reports"
+            git fetch -q origin state/live-diagram
+            git reset -q --hard FETCH_HEAD
+            rm -rf docs/reports
+            mv "$RUNNER_TEMP/carry-reports" docs/reports
+            git add docs/reports
+            if git diff --cached --quiet; then
+              echo "ok      reports  the branch already holds this report"
+              pushed=yes
+              break
+            fi
+            git commit -q -m "docs(reports): Flux report from the cluster receipt, run $GITHUB_RUN_ID (crew#684)"
           done
+          # A job that ran out of attempts and then said ok is worse than one that fails: the
+          # Reports page would go stale with a green tick over it.
+          if [ -z "$pushed" ]; then
+            echo "FAIL    reports  three writers beat this run to state/live-diagram; the report was not published"
+            exit 1
+          fi
           echo "ok      reports  docs/reports/flux-state.md on state/live-diagram; the Reports page reads it within a minute"
