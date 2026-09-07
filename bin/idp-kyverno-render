@@ -236,21 +236,111 @@ mapfile -t exc < <(_exc)
 # per-label block it always printed, and only a red run pays for it.
 judge_batch() {  # judge_batch <verdict-file> <label> <resource-file>...: one kyverno for many resources
   local vf="$1" label="$2"; shift 2
-  local out args=() f
+  local args=() f verdict file counts got=""
   for f in "$@"; do args+=(--resource "$f"); done
-  out=$(kyverno apply "$S/policies.yaml" "${exc[@]}" "${args[@]}" 2>&1 || true)
-  # Read the verdict from a here-string, never `printf | grep -q`: under pipefail grep -q quits at
-  # the first match, printf dies of SIGPIPE on a big render, the pipeline reports failure and the
-  # judge said "ok" over 52 failed policies (run 33248103977, 2026-08-29: the must-fail fixture
-  # passed on main). The CLI also glues "Mutation has been applied successfully." onto the first
-  # failed line, so the pattern is anchored on the arrow, not the line start.
-  if grep -qE 'policy .* -> resource .* failed' <<<"$out"; then
-    # Slow path, and only here: one process per resource, so the block names the label that broke.
+  # --policy-report carries every result together with the resource it judged, so one process can
+  # still answer per file. Without it a batch could only print its own total and the per-file
+  # verdict line -- the thing every caller and both bdd suites read -- would be gone.
+  # -o keeps the mutated resources out of stdout; the banner lines announcing them are printed to
+  # stdout regardless, so _attribute reads the report from the first "{" rather than from byte 0.
+  got=$(kyverno apply "$S/policies.yaml" "${exc[@]}" "${args[@]}" \
+          -o "${vf%.txt}-mutated" --policy-report --output-format json 2>/dev/null \
+        | python3 "$S/attribute.py" "$@") || got=""
+  if [ -z "$got" ]; then
+    # The report did not account for every result against a file we asked about. Never guess a
+    # verdict: judge one at a time, which is what this did before the batch existed.
+    echo "note  $label: per-resource attribution incomplete, judging one at a time" >> "$vf"
     for f in "$@"; do judge_one "$f" >> "$vf" || echo 1 > "${vf%.txt}.rc"; done
     return 0
   fi
-  echo "ok    $label: $(grep -E '^pass:' <<<"$out" | tail -1)" > "$vf"
+  while IFS=$'\t' read -r verdict file counts; do
+    [ -n "$verdict" ] || continue
+    if [ "$verdict" = red ]; then
+      # Only the file that broke pays for a second process, and it prints the block it always did.
+      judge_one "$file" >> "$vf" || echo 1 > "${vf%.txt}.rc"
+    else
+      echo "ok    ${_KIND[$file]} ${_LABEL[$file]}: $counts" >> "$vf"
+    fi
+  done <<< "$got"
 }
+
+# _attribute <resource-file>...: reads a kyverno policy report on stdin and prints one line per
+# file, in the order given: "ok<TAB><file><TAB><counts>" or "red<TAB><file>". It prints nothing at
+# all -- and the caller then judges one at a time -- unless every result in the report lands on
+# exactly one of the files asked about and the per-file counts add back up to the report's own
+# summary. A verdict this gate prints is one something measured, never one it inferred.
+# The attribution program is a file, not a heredoc. `python3 - "$@" <<'ATTRIB'` reads the program
+# from stdin, so stdin is spent by the time the program calls sys.stdin.read() and every batch got
+# an empty report -- attribution fell back every time and the whole speedup measured zero, while
+# kyverno was writing 38KB of perfectly good report into the pipe (2026-09-07).
+cat > "$S/attribute.py" <<'ATTRIB'
+import json, sys, collections, yaml
+
+files = sys.argv[1:]
+
+def bail(why):
+    sys.stderr.write("      kyverno attribution fell back: %s\n" % why)
+    sys.exit(1)
+
+# kyverno prints "Mutation:" / "Mutation has been applied successfully." to stdout for every
+# resource it mutates, whatever -o and --output-format say, and it appends the report to the last
+# of them without a newline. So the report starts at the first "{" in the stream, not at byte 0;
+# no banner contains that character. Reading from byte 0 is what made attribution fall back on
+# every batch on real estate data and the speedup measure zero (2026-09-07, kyverno 1.19.0).
+raw = sys.stdin.read()
+i = raw.find("{")
+if i < 0:
+    bail("the report carried no json object; %d bytes of stdout beginning %r"
+         % (len(raw), raw[:120]))
+try:
+    rep, _ = json.JSONDecoder().raw_decode(raw[i:])
+except Exception:
+    bail("the report did not parse as json")
+
+owner, ambiguous = {}, set()
+for f in files:
+    try:
+        docs = list(yaml.safe_load_all(open(f).read()))
+    except Exception:
+        bail("resource file did not parse as yaml: %s" % f)
+    for d in docs:
+        if not isinstance(d, dict):
+            continue
+        k, n = d.get("kind"), (d.get("metadata") or {}).get("name")
+        if not k or not n:
+            continue
+        key = (k, n)
+        if key in owner and owner[key] != f:
+            ambiguous.add(key)   # two files in this batch carry the same object; cannot attribute
+        owner[key] = f
+
+counts = collections.defaultdict(collections.Counter)
+seen = 0
+for r in rep.get("results", []):
+    res = r.get("resources") or []
+    if not res:
+        bail("a %s result names no resource" % r.get("result"))
+    for x in res:
+        key = (x.get("kind"), x.get("name"))
+        if key in ambiguous:
+            bail("two files in this batch carry %s" % (key,))
+        if key not in owner:
+            bail("no file in this batch declares %s" % (key,))
+        counts[owner[key]][r.get("result")] += 1
+        seen += 1
+
+summary = rep.get("summary") or {}
+if seen != sum(int(v) for v in summary.values()):
+    bail("attributed %d of %d results" % (seen, sum(int(v) for v in summary.values())))
+
+for f in files:
+    c = counts.get(f, collections.Counter())
+    if c["fail"] or c["error"]:
+        print("red\t%s" % f)
+    else:
+        print("ok\t%s\tpass: %d, fail: 0, warn: %d, error: 0, skip: %d "
+              % (f, c["pass"], c["warn"], c["skip"]))
+ATTRIB
 
 judge_one() {  # judge_one <resource-file>: the pre-batch verdict block, for a batch that went red
   local res="$1" out summary label kind
