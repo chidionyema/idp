@@ -251,6 +251,7 @@ nav:
       - Merge queue (hands-free landing): runbooks/merge-queue.md
       - Estate clock: runbooks/dagster.md
       - Estate inventory: runbooks/estate-inventory.md
+      - Rotating a vendor key: runbooks/rotating-a-vendor-key.md
       - Infrastructure crew: runbooks/agent-workforce.md
       - Infrastructure crew identity: runbooks/agent-workforce-identity.md
       - Otto's Telegram webhook: runbooks/otto-telegram-webhook.md
