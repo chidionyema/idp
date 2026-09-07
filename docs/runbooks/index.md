@@ -5,3 +5,4 @@
 - [Otto staging, the bot token](otto-golden.md) — the one founder step (BotFather, then the vault) that the new staging pod waits on.
 - [Superset dashboards](superset-dashboards.md) — the boardroom dashboards behind the one login: what watches them, where the release and its database live, the one leftover Metabase volume to delete.
 - [A Flux dry-run fails on an admission webhook](admission-webhook-eof.md) — dozens of objects go not-Ready behind one hung endpoint; the one playbook that cures it, and the far larger one not to reach for.
+- [Rotating a vendor key](rotating-a-vendor-key.md) — change it in Bitwarden and the cluster follows in about two minutes; the one step the platform cannot do for you is when to delete the old key at the vendor.
