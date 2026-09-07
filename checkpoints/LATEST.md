@@ -11,6 +11,18 @@
   112 events/hour survived. Now `\A(...)+\z`. Test shells to `go run` and compiles the patterns
   with Go's own regexp. Merged 20:45:50Z.
 
+### Since the last write (20:57Z)
+- **#2391 MERGED 20:57:14Z**, about two minutes after opening, before the ordering could be run.
+  I hold read-only on the cluster by design (`agent-reader` cannot patch a Kustomization), so
+  ns-fences could not be forced to reconcile first. All four fences still read
+  `owner=otto-golden` / `owner=otto-gateway`. Background task `bf7u4owcg` polls all four every
+  20s and records the exact open/close times of any prune gap. If a fence is gone and does not
+  come back within one interval, that needs a write on the cluster and is a founder call.
+- **#2390 reviewed** (idp#2390 comment 5575565237): the widening claim says 632 files outside
+  bin/ and the tree says 9, with `.estate-hooks` untracked here entirely; and run outside a git
+  checkout the gate prints `ok ... 0 shell file(s)` and exits 0, having graded nothing. Fixing
+  the second myself as a PR into `rules/pipeverdict-row` rather than handing it back.
+
 ### Open, mine
 - **#2391** `flux/one-owner-per-fence`: `default-deny-all` and `allow-dns-egress` for otto-gateway
   and otto-golden were declared in BOTH `platform/<ns>/network-policy.yaml` and
