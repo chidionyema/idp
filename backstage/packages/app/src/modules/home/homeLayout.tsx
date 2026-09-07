@@ -62,6 +62,7 @@ export function EstateHomeLayout({ widgets }: HomePageLayoutProps) {
             href="/search"
             variant="secondary"
             size="medium"
+            className="estate-action estate-action-quiet"
             iconStart={<RiSearchLine />}
           >
             Find
@@ -70,6 +71,7 @@ export function EstateHomeLayout({ widgets }: HomePageLayoutProps) {
             href="/create"
             variant="primary"
             size="medium"
+            className="estate-action estate-action-strong"
             iconStart={<RiAddCircleLine />}
           >
             Create
