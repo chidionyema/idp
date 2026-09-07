@@ -43,25 +43,6 @@ need python3
 
 MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 
-# 1b. No file hardcodes where this repo lives. 17 of 19 scripts carried
-#     $HOME/dev/code/idp on 2026-08-24 and the first one CI ran failed on the
-#     runner. Founder: "no hardcoding -- law" (LAW 46). Proved both ways: the
-#     .bad fixture must be refused and the .good fixture must pass.
-HARDCODE='dev/code/[a-z]|/Users/chidi''onyema|/home/[a-z]+/'   # split so this line does not match itself
-hardcode_scan() { grep -nE "$HARDCODE" "$1" | grep -vE '^[0-9]+:\s*#' ; }
-hits=0
-while IFS= read -r f; do
-  if out=$(hardcode_scan "$f"); then say "FAIL  hardcode $f"; printf '%s\n' "$out" | sed 's/^/      /'; hits=$((hits+1)); fi
-done < <(cd "$IDP" && git ls-files bin llm observability mcp launchd '*.py' '*.yml' '*.yaml' '*.json' 2>/dev/null | grep -v '^tests/fixtures/')
-[ "$hits" -eq 0 ] && say "ok    hardcode 0 files hardcode a checkout path" || fail=1
-
-# 1b2. A shell parameter expansion in a manifest whose Kustomization substitutes
-#     variables. Incident 2026-09-06, otto-gateway: Flux rewrote
-#     `${HERMES_ENV_DIR:-}` to "" and the fork's credentials were never exported.
-#     Which paths substitute is read from clusters/, not guessed: bin/idp-flux-subst-gate.
-if out=$(python3 "$IDP/bin/idp-flux-subst-gate"); then say "ok    flux-subst no manifest hands Flux a shell expansion"
-else say "FAIL  flux-subst"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
 # 1c. A conditional whose verdict is a pipeline into grep, in a script that sets
 #     `pipefail`. Incident 2026-08-25: the portprobe test read
 #     `port-gate | grep -q '<message>'`, port-gate exited 1 on purpose, pipefail
@@ -94,6 +75,12 @@ for f in "$IDP"/bin/*; do
 done
 [ "$pv" -eq 0 ] && say "ok    pipeverdict 0 scripts let a pipeline's exit status stand in for a grep match" || fail=1
 
+# Every rule in rules.yaml that is cheap enough for the fast gate (fast: true), run by the one
+# engine. The registry holds the statement, the argv, the fixture pair and the verdict line; this
+# file no longer repeats any of them (founder 2026-09-07, the Unification Move: "Ruthless
+# Deletion ... do not leave them as dead code").
+python3 "$IDP/bin/idp-rules" run --plane ci --fast || fail=1
+
 # 1d. ruff, the same rule set (pyproject [tool.ruff.lint]) the bdd job runs after the suites.
 #     In the fast gate it runs first, so an undefined name is red in under a minute.
 if [ "$FAST" = 1 ]; then
@@ -102,9 +89,17 @@ if [ "$FAST" = 1 ]; then
   timing_summary
   # 1e. crew#679 CP5: the incident register is generated from tests/test_incident_*.py; a new
   # incident test without its committed row is refused here, so the chaos drills never drift.
-  [ "$fail" -eq 0 ] && say "ok    fast-gate: shell, hardcode, pipeverdict, ruff" || say "FAIL  fast-gate"
+  [ "$fail" -eq 0 ] && say "ok    fast-gate: pipeverdict, ruff, and the rules.yaml rules marked fast" || say "FAIL  fast-gate"
   exit "$fail"
 fi
+
+# The rest of rules.yaml, one engine, one list. Adding a rule is a row in rules.yaml and its two
+# fixtures -- never a new rung here, never a new gate script. `bin/idp-rules list` prints the
+# registry; `render-agents-md --check` fails when AGENTS.md's table has drifted from it; `cluster`
+# fails when a rule that names a Kyverno policy has no policy on disk.
+python3 "$IDP/bin/idp-rules" run --plane ci --rest || fail=1
+python3 "$IDP/bin/idp-rules" cluster || fail=1
+python3 "$IDP/bin/idp-rules" render-agents-md --check || fail=1
 
 # 2. Compose files are valid. Values are placeholders; compose only checks shape.
 for c in llm/litellm.yml observability/langfuse.yml mcp/agentgateway.yml; do
@@ -115,15 +110,12 @@ for c in llm/litellm.yml observability/langfuse.yml mcp/agentgateway.yml; do
 done
 
 # 2b. The agentgateway config validates against the schema of the pinned release. Same
+
 #     class as the ClickHouse XML: a config nobody checks before its reader starts.
 AG_TAG=$(grep -o 'agentgateway/agentgateway:v[0-9.]*' "$IDP/mcp/agentgateway.yml" | cut -d: -f2)
 if check-jsonschema --schemafile "https://raw.githubusercontent.com/agentgateway/agentgateway/$AG_TAG/schema/config.json" \
      "$IDP/mcp/agentgateway.yaml" >/dev/null 2>&1; then say "ok    schema   mcp/agentgateway.yaml against agentgateway $AG_TAG"
 else say "FAIL  schema   mcp/agentgateway.yaml does not match agentgateway $AG_TAG's config schema"; fail=1; fi
-
-# 3. The licence and placement policies say yes to good fixtures and no to bad ones.
-if out=$("$IDP/bin/policy-test" 2>&1); then say "ok    policy   fixtures pass and fail as expected"
-else say "FAIL  policy   bin/policy-test"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
 # 4. incident_2026_08_24_dropped_assets: N inventory rows must yield N catalog
 #    entities and N database rows. catalog-gen silently dropped slug-colliding
@@ -289,31 +281,6 @@ if [ "$(st in-worktree)" = 1 ] && [ "$(st through-symlink)" = 1 ] && [ "$(st rea
   say "ok    incident 2026-08-25 containment through a link: a worktree and a symlink resolve to their repo, a genuine orphan keeps outside-any-repo"
 else say "FAIL  incident 2026-08-25 containment through a link: in-worktree=$(st in-worktree) through-symlink=$(st through-symlink) really-orphaned=$(st really-orphaned), want 1 1 0 (0 tagged, 1 not tagged, 2 entity missing)"; fail=1; fi
 
-# 4c. Port lock (crew#186 CP4, R22 mechanism 4): a compose publication not
-#     declared in catalog/ports.yaml, or off loopback without non_loopback (R20),
-#     fails. Proved both ways: the rogue fixture is refused, the repo passes.
-# R36 (crew#250): no provider-specific annotation or service outside the compute provisioner.
-# Proved both ways on fixtures, then run on the repo.
-if ! CLOUD_AGNOSTIC_ROOT="$IDP/tests/fixtures/cloud-agnostic/bad" python3 "$IDP/bin/cloud-agnostic-gate" >/dev/null 2>&1 \
-   && CLOUD_AGNOSTIC_ROOT="$IDP/tests/fixtures/cloud-agnostic/good" python3 "$IDP/bin/cloud-agnostic-gate" >/dev/null 2>&1 \
-   && out=$(python3 "$IDP/bin/cloud-agnostic-gate" 2>&1); then
-  say "ok    agnostic cloud-agnostic-gate refuses a provider annotation, permits a plain Service, and the repo is clean"
-else say "FAIL  agnostic cloud-agnostic-gate is not discriminating or the platform names a cloud outside platform/oci"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
-# crew#269 (founder: "as always configurable"): the DNS zone is one value in clusters/*/estate-config.yaml;
-# a platform file naming it as a literal fails. Proved both ways on fixtures, then run on the repo.
-# crew#796 (founder 2026-09-01, P0: "can't ever happen again ... PR rejection"): the same gate grades a
-# pull-request diff (bin/pr-report) and any other checkout (name-drift.yml); the diff mode is proved
-# both ways here too, so a rule that never refuses anything cannot land.
-if ! ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" >/dev/null 2>&1 \
-   && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/good" python3 "$IDP/bin/estate-zone-gate" >/dev/null 2>&1 \
-   && ! ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" --diff "$IDP/tests/fixtures/estate-zone/added-literal.diff" >/dev/null 2>&1 \
-   && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" --diff "$IDP/tests/fixtures/estate-zone/added-substituted.diff" >/dev/null 2>&1 \
-   && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" --diff "$IDP/tests/fixtures/estate-zone/added-self-marker.diff" >/dev/null 2>&1 \
-   && out=$(python3 "$IDP/bin/estate-zone-gate" 2>&1); then
-  say "ok    zone     estate-zone-gate refuses a literal zone (tree and diff), permits \${ESTATE_ZONE}, and the repo is clean"
-else say "FAIL  zone     estate-zone-gate is not discriminating or the platform names the zone outside clusters/*/estate-config.yaml"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
 # crew#804 Diamond Standard (founder 2026-09-01): agents emit capability intents, the compiler is
 # deterministic. Proved both ways in one run: the bad fixtures (unknown vocabulary, an intent that
 # speaks the zone) are refused, the good ones compile, and two runs are byte-identical.
@@ -326,15 +293,6 @@ if ! python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/bad
 else say "FAIL  intent   intent-compile is not discriminating or not deterministic"; fail=1; fi
 rm -rf "$ic_a" "$ic_b"
 
-if ! COMPOSE_GLOB='tests/fixtures/ports-bad/*.yml' python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
-   && out=$(python3 "$IDP/bin/port-gate" 2>&1); then
-  say "ok    portlock $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
-else say "FAIL  portlock port-gate is not discriminating or the repo has an undeclared bind"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-# --live must refuse a listener bound to a different address than its row declares, and pass the matching one.
-if ! REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.bad.json COMPOSE_GLOB=none BIN_DIR=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1 \
-   && REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.good.json COMPOSE_GLOB=none BIN_DIR=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1; then
-  say "ok    portbind port-gate --live refuses a bind that differs from the declared address and passes a matching one"
-else say "FAIL  portbind port-gate --live does not discriminate on bind address"; fail=1; fi
 # Incident 2026-08-25: the hourly ai.estate.idp job exited non-zero for a day
 #     because bin/idp-verify curled 127.0.0.1:8001 after the one-renderer ruling
 #     (#22) deleted the thing that served it. The class is a surface removed in
@@ -366,42 +324,6 @@ if ! python3 "$IDP/bin/multiarch-gate" tests/fixtures/multiarch/bad >/dev/null 2
    && { cp -R "$IDP" "$tmp/ma" && touch "$tmp/ma/mcp/Dockerfile.stray" && ! python3 "$IDP/bin/multiarch-gate" "$tmp/ma" >/dev/null 2>&1; }; then
   say "ok    multiarch multiarch-gate refuses a single-arch build-push-action, a raw docker build and a Dockerfile-shaped file nothing builds; passes the dual-arch fixture; this repo is clean"
 else say "FAIL  multiarch multiarch-gate does not discriminate, or this repo has a single-arch build (R24)"; python3 "$IDP/bin/multiarch-gate" "$IDP" | sed 's/^/      /'; fail=1; fi
-# Security policy (crew#198): a control without a proof command is a wish (LAW 44).
-#     Proved both ways: the bad fixture names a command that does not exist.
-if ! python3 "$IDP/bin/security-policy-gate" tests/fixtures/security-policy/bad.md >/dev/null 2>&1 \
-   && python3 "$IDP/bin/security-policy-gate" tests/fixtures/security-policy/good.md >/dev/null 2>&1 \
-   && python3 "$IDP/bin/security-policy-gate" >/dev/null 2>&1; then
-  say "ok    security-policy every control on docs/reference/security-policy.md names a proof command that exists; gate proved both ways"
-else say "FAIL  security-policy gate does not discriminate, or a control has no proof"; python3 "$IDP/bin/security-policy-gate" | sed 's/^/      /'; fail=1; fi
-# Root trust (crew#66 ruling 5453747447, crew#580): every vault entry an ExternalSecret reads is
-#     born by a bootstrapper on disk or ticketed. Proved both ways by
-#     tests/test_incident_crew66_root_trust_register.py; here the live register is graded.
-if python3 "$IDP/bin/idp-root-trust" >/dev/null 2>&1; then
-  say "ok    root-trust $(python3 "$IDP/bin/idp-root-trust" | tail -1 | sed -E 's/^PASS +root-trust: //')"
-else say "FAIL  root-trust an ExternalSecret reads a credential nobody registered, or a register row has no bootstrapper/ticket"; python3 "$IDP/bin/idp-root-trust" | sed 's/^/      /'; fail=1; fi
-# AI Act (crew#202): Arts. 9, 10, 11 kept voluntarily. Proved both ways: the bad
-#     fixture has an overdue risk review and a technical file missing section 9.
-if ! TODAY=2026-08-25 python3 "$IDP/bin/ai-act-gate" tests/fixtures/ai-act/bad >/dev/null 2>&1 \
-   && TODAY=2026-08-25 python3 "$IDP/bin/ai-act-gate" tests/fixtures/ai-act/good >/dev/null 2>&1 \
-   && python3 "$IDP/bin/ai-act-gate" "$IDP" >/dev/null 2>&1; then
-  say "ok    ai-act   every registered AI system has its Annex IV file, risk entries and declared data; gate proved both ways"
-else say "FAIL  ai-act   gate does not discriminate, or a registered system has a gap"; python3 "$IDP/bin/ai-act-gate" "$IDP" | sed 's/^/      /'; fail=1; fi
-# LAW 32 at the PR (founder, 2026-08-25): a new bin file needs docs/tutorials/demo + docs/how-to/onboarding;
-# every such page has 200 chars of prose and is in the nav. Proved both ways in one run.
-if python3 "$IDP/bin/law32-gate" --added bin/supply-chain >/dev/null 2>&1 \
-   && ! python3 "$IDP/bin/law32-gate" --added bin/feature-with-no-pages >/dev/null 2>&1 \
-   && python3 "$IDP/bin/law32-gate" >/dev/null 2>&1; then
-  say "ok    law32    every new bin file has its demo and onboarding; every page is above the prose floor and in the nav; gate proved both ways"
-else say "FAIL  law32    a feature shipped without demo/onboarding, or a page is thin or unlisted"; python3 "$IDP/bin/law32-gate" | sed 's/^/      /'; fail=1; fi
-
-# launchd templates (idp#49 incident): every launchd/*.plist.tmpl renders to a plist that parses.
-if python3 "$IDP/bin/plist-gate" >/dev/null 2>&1 \
-   && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/bad.plist.tmpl >/dev/null 2>&1 \
-   && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/bare-argv.plist.tmpl >/dev/null 2>&1 \
-   && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/orphaned-children.plist.tmpl >/dev/null 2>&1 \
-   && python3 "$IDP/bin/plist-gate" tests/fixtures/plist/abandoned-children.plist.tmpl >/dev/null 2>&1; then
-  say "ok    plist    every launchd template renders to a plist that parses and names its job; gate proved both ways"
-else say "FAIL  plist    a launchd template does not render to a valid plist, or the gate does not discriminate"; python3 "$IDP/bin/plist-gate" | sed 's/^/      /'; fail=1; fi
 
 # --live must take its own reading, not grade a saved file. Poison the default
 # inventory with a violation that is not true of this machine: a gate that still
@@ -443,9 +365,6 @@ else say "FAIL  kustomize base does not render clean or the NodePort fixture pas
 #     applies healthy, applies again without changing state, and rolls back to
 #     the pre-state, on a pristine temp home. Skipped only if dagster is absent,
 #     and then it says BLIND rather than ok.
-if "$IDP/bin/migration-gate" "$IDP/tests/fixtures/migration-not-idempotent" >/dev/null 2>&1; then
-  say "FAIL  migration gate accepted a migration whose second apply adds a resource"; fail=1
-else say "ok    migration gate refuses the non-idempotent fixture"; fi
 if "$MPY" -c "import dagster" 2>/dev/null; then
   if out=$(PATH="$(dirname "$MPY"):$PATH" "$IDP/bin/migration-gate" "$IDP/bin/scheduler-migrate" 2>&1); then say "$out"
   else say "$out"; fail=1; fi
@@ -461,296 +380,6 @@ PY
 if check-jsonschema --schemafile https://json.schemastore.org/catalog-info.json "$tmp"/docs/*.json >/dev/null 2>&1; then
   say "ok    schema   $(ls "$tmp"/docs | wc -l | tr -d ' ') entity documents valid"
 else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1; fi
-
-# The gate helpers the rungs below call. The rung that ran each of them against a .bad and
-# a .good fixture on every run is gone (founder 2026-09-04: "run each of the nine gates in the
-# AGENTS.md table against its two fixtures ... this is stupid") -- it graded this file's own
-# fixtures, never the estate, and no defect in the running platform could ever fail it.
-policy_gate() { conftest test --parser json -p "$IDP/policy" "$1" >/dev/null 2>&1; }
-bind_audit() { "$IDP/bin/bind-audit" --table "$1" >/dev/null 2>&1; }
-ns_fence_gate() { python3 "$IDP/bin/ns-fence-gate" "$1" >/dev/null 2>&1; }
-job_described() { ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe "$1" ) >/dev/null 2>&1; }
-main_verdict_gate() { python3 "$IDP/bin/main-verdict-gate" "$1" >/dev/null 2>&1; }
-# A code location is loaded by PATH by workspace.yaml, never as a package. Loading
-# it any other way here would grade a proxy: on 2026-08-25 definitions.py imported a
-# sibling with `from .describe import`, passed every offline check, and put the live
-# code location in PythonError the moment it reloaded. So: load it the way it runs.
-prose_pin_scan() { python3 "$IDP/bin/test-prose-gate" "$1" >/dev/null 2>&1; }
-flux_subst_scan() { python3 "$IDP/bin/idp-flux-subst-gate" "$1" >/dev/null 2>&1; }
-# decision 0021 two-hats: grades a platform/otto-gateway seed.sql for the three rules in
-# bin/idp-tenant-split. Takes one file (the fixture path, per the table convention), exits 0
-# when that file is clean of cross-plane leaks, 1 otherwise.
-tenant_split_gate() { python3 "$IDP/bin/idp-tenant-split" "$1" >/dev/null 2>&1; }
-# zero-trust-boundary.md step 1 (work order item 1): grades one probe report with
-# bin/idp-fence-enforcement. Very deliberately NOT a no-argument gate: it takes ONE fixture path so
-# the rung below can prove it both ways in a single run, exactly like tenant_split_gate above.
-fence_enforcement_gate() { python3 "$IDP/bin/idp-fence-enforcement" "$1" >/dev/null 2>&1; }
-# platform/calico README cutover (work order item 0): parses ONE calico-packet deny feed with
-# bin/idp-calico-deny-log. Takes one fixture path so the rung can prove it both ways in one run.
-calico_denyflow_gate() { python3 "$IDP/bin/idp-calico-deny-log" "$1" >/dev/null 2>&1; }
-# crew#892 CP4 (zero-trust-boundary.md step 5/6, deepseek-work-order item 12): grades ONE yaml
-# file/dir with bin/gvisor-cell-gate, which refuses a Pod in a cell namespace that does not name
-# the `gvisor` runtime, is privileged, uses host networking or mounts a hostPath. Takes one
-# fixture path so the rung proves it both ways in one run, mirroring the Kyverno ClusterPolicy it
-# guards (platform/edge/gvisor-admission.yaml) so the PR half cannot drift from the admission half.
-gvisor_cell_gate() { python3 "$IDP/bin/gvisor-cell-gate" "$1" >/dev/null 2>&1; }
-# crew#892 CP4 (zero-trust-boundary.md step 6): grades ONE allowances.yaml with
-# bin/gvisor-cell-fence-gate, which refuses a gVisor-cell namespace whose fence grants egress to
-# the internet. Takes one fixture path so the rung proves it both ways in one run, mirroring the
-# step-5 admission policy + gvisor-cell-gate (a compromised untrusted-code pod must not reach the
-# public address space or another tenant's private range).
-gvisor_cell_fence_gate() { python3 "$IDP/bin/gvisor-cell-fence-gate" "$1" >/dev/null 2>&1; }
-# WJ.5 (docs/policy/agent-infra-safety-spec.md): grades ONE JIT grant catalogue with
-# bin/idp-jit-grants, which refuses a grant that can be turned into standing access -- a token for
-# a verb that rewrites a pod spec, a reach into secrets or RBAC, a core namespace, a wildcard, a
-# TTL past the ceiling, or no rate limit. Takes one fixture path so the rung proves it both ways in
-# one run: the broker mints only from this file, so a hole here is admin at 3am.
-jit_grants_gate() { python3 "$IDP/bin/idp-jit-grants" "$1" >/dev/null 2>&1; }
-# The broker's own floor, which idp-jit-grants never read: that one grades platform/jit/grants.yaml,
-# the catalogue of what may be minted. Nothing graded the ClusterRole doing the minting, and the
-# file's header said otherwise -- "Nothing here touches Secrets, RBAC ... this file cannot grow
-# those verbs without that gate going red first". It does touch RBAC, necessarily, and trivy found
-# it (KSV-0050 CRITICAL, 2026-09-07). The waiver rests on the absence of escalate and bind; this
-# gate holds that absence.
-jit_broker_role_gate() { python3 "$IDP/bin/idp-jit-broker-role" "$1" >/dev/null 2>&1; }
-
-# WJ.8: grades ONE pull request against the glass-break set -- the broker, its catalogue, the RBAC
-# floor, bin/idp-kube and the gates. An agent that can edit those does not need to ask the broker
-# for anything, so they never land on a green check alone: no auto-merge, no self-approval, and
-# the founder's own review or nothing.
-glass_break_gate() { python3 "$IDP/bin/idp-glass-break" "$1" >/dev/null 2>&1; }
-# A deck that replaces a vendor operator may not reuse the operator's cluster-scoped names
-# (platform/calico/raw/README.md). A ClusterRole has no namespace, so moving the ServiceAccounts to
-# kube-system separated nothing: the raw calico deck declared ClusterRole/calico-node and
-# ClusterRole/calico-cni-plugin, the names the removed tigera-operator left stuck in Terminating on
-# a finalizer no controller survives to clear, and the Kustomization waited on those tombstones
-# every 10 minutes for 37 hours -- so it never completed, so it never pruned the superseded
-# operator HelmRelease that was the thing it would have removed. Takes one fixture path so the rung
-# proves it both ways in one run.
-vendor_name_gate() { python3 "$IDP/bin/vendor-name-collision-gate" "$1" >/dev/null 2>&1; }
-defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
-# 6a. main's verdict, against the live workflows rather than the fixtures (crew#865). On 2026-09-05
-#     nine of twelve ci runs on main were cancelled by the commit after them, so the one branch the
-#     estate is graded on almost never produced a grade. The row above proves the gate both ways;
-#     this runs it on .github/workflows/, where a real regression fails it.
-if out=$(python3 "$IDP/bin/main-verdict-gate" 2>&1); then say "ok    verdict  $(tail -1 <<<"$out")"
-else say "FAIL  verdict  bin/main-verdict-gate refuses .github/workflows/"; sed 's/^/               /' <<<"$out"; fail=1; fi
-
-# 6c. The vendor-name rule holds over the real deck, not just the fixtures. The deck's README
-#     calls it "byte-faithful to the reviewed vendor reference", so the next upstream re-sync
-#     reintroduces the bare names -- and the deadlock -- in a diff that looks like fidelity.
-if out=$(python3 "$IDP/bin/vendor-name-collision-gate" "$IDP/platform/calico/raw" 2>&1); then
-  say "ok    vendor   $out"
-else
-  say "FAIL  vendor   a replacement deck reuses a vendor operator's cluster-scoped name"
-  printf '%s\n' "$out" | sed 's/^/      /'; fail=1
-fi
-
-# 6b. R76 (founder 2026-09-03): the no-prose rule holds over the whole test tree, not just
-#     the fixtures. A test function that only asserts wording is refused here by name.
-if out=$(python3 "$IDP/bin/test-prose-gate" "$IDP"/tests/test_*.py); then
-  say "ok    prose    no test function only asserts prose (R76)"
-else
-  say "FAIL  prose    a test function only asserts prose/string membership in file text (R76)"
-  printf '%s\n' "$out" | sed 's/^/      /'; fail=1
-fi
-
-# 6. decision 0021 two-hats (bin/idp-tenant-split): proved both ways in one run, per the rule
-#    the estate deleted on 2026-09-04 -- a gate with no fixture that refuses it grades nothing.
-#    The bad fixture lays one secret under two tenants (acceptance: refused), the good one is
-#    the clean customer-zero/alerts-bot split (acceptance: passed). The live repo seed still
-#    carries the pre-change-1 mislabel and so is NOT yet clean; change 1 (binding-seed.yaml ->
-#    customer-zero) is a separate item and flips the repo green on its own PR.
-if ! tenant_split_gate "$IDP/tests/fixtures/tenant-split/bad.yaml" \
-   && tenant_split_gate "$IDP/tests/fixtures/tenant-split/good.yaml"; then
-  say "ok    twohats  idp-tenant-split refuses one secret under two tenants; the clean split passes"
-else
-  say "FAIL  twohats  idp-tenant-split cannot tell one-secret-one-tenant from a leak (decision 0021)"; fail=1
-fi
-
-# 6d. WJ.5: the JIT broker mints only from platform/jit/grants.yaml, so that file is the estate's
-#     crown jewel and is graded both ways in one run. The bad fixture is three real escalations --
-#     a token for `patch deployment` (whose holder rewrites serviceAccountName and keeps the access
-#     after the token dies), a reach into secrets, and a wildcard verb on kube-system for eight
-#     hours -- and every one must be refused. Then the live catalogue itself, where a real hole
-#     fails this.
-if ! glass_break_gate "$IDP/tests/fixtures/glass-break/bad.json" \
-   && glass_break_gate "$IDP/tests/fixtures/glass-break/good.json"; then
-  say "ok    glass the broker and its floor cannot land on a green check alone (WJ.8)"
-else
-  say "FAIL  glass a change to the broker could be auto-merged or self-approved (WJ.8)"; fail=1
-fi
-
-if ! jit_grants_gate "$IDP/tests/fixtures/jit-grants/bad.yaml" \
-   && jit_grants_gate "$IDP/tests/fixtures/jit-grants/good.yaml" \
-   && jit_grants_gate "$IDP/platform/jit/grants.yaml"; then
-  say "ok    jitgrant idp-jit-grants refuses the escalating catalogue; the live one cannot become standing access"
-else
-  say "FAIL  jitgrant idp-jit-grants cannot tell a time-boxed grant from a route to admin (WJ.5)"; fail=1
-fi
-
-# 6b-bis. WJ.5 applied to the broker's own ClusterRole. Without `escalate` and `bind`, Kubernetes'
-#     escalation-prevention rule caps every Role the broker writes at the permissions the broker
-#     already holds -- that is the whole difference between "may mint what it holds" and "may mint
-#     anything", and it is why KSV-0050 is an accepted risk on that file rather than a defect.
-#     Graded on the live floor as well as both fixtures, so the waiver cannot outlive its reason.
-if ! jit_broker_role_gate "$IDP/tests/fixtures/jit-broker-role/bad.yaml" \
-   && jit_broker_role_gate "$IDP/tests/fixtures/jit-broker-role/good.yaml" \
-   && jit_broker_role_gate "$IDP/platform/jit/rbac.yaml"; then
-  say "ok    jitfloor the broker mints only what it already holds: no escalate, no bind, no cluster-wide binding"
-else
-  say "FAIL  jitfloor the broker's own ClusterRole could mint more than it holds (WJ.5, KSV-0050)"; fail=1
-fi
-
-# 6c. zero-trust-boundary.md step 1 (work order item 1): a denied packet is dropped, and a probe
-#     that could not run is a fail-closed FAIL, never a pass. Proved three ways in one run: the
-#     good fixture (prover reached an allowed path, both denies refused) must pass, while a fence
-#     that lets the cross-namespace packet through and a report whose probe never ran must both be
-#     refused. The value of the third fixture is the exact first-pass error this spec names: a
-#     missing probe binary (shell 127) that read as a passing wall.
-if fence_enforcement_gate "$IDP/tests/fixtures/fence-drill/gate-good.json" \
-   && ! fence_enforcement_gate "$IDP/tests/fixtures/fence-drill/gate-broken-fence.json" \
-   && ! fence_enforcement_gate "$IDP/tests/fixtures/fence-drill/gate-fail-closed.json"; then
-  say "ok    fencdrill fence-enforcement drops a denied packet, fails closed when the probe could not run"
-else
-  say "FAIL  fencdrill fence-enforcement cannot tell a dropped packet from a leak or a dead probe (ZT step 1)"; fail=1
-fi
-
-# 6d. platform/calico cutover gate (work order item 0): the 39 generated policies stay unwired
-#     until a deny feed has been read over a full cycle and allowances.yaml corrected. Proved two
-#     ways in one run: a feed that carries real calico-packet deny lines must parse into flows
-#     (PASS), while a feed with no parsed deny line must FAIL closed -- an empty or foreign log is
-#     not evidence of a clean bill.
-if calico_denyflow_gate "$IDP/tests/fixtures/calico-denyflow/feed-with-deny.log" \
-   && ! calico_denyflow_gate "$IDP/tests/fixtures/calico-denyflow/feed-no-evidence.log"; then
-  say "ok    denyflow calico deny-feed parses into flows; an empty feed fails closed (README cutover)"
-else
-  say "FAIL  denyflow calico deny-feed cannot tell a denied flow from no evidence (platform/calico README)"; fail=1
-fi
-
-# 6e. crew#892 CP4 (zero-trust-boundary.md step 5 one-run / work order item 12): the isolation
-#     break is caught in the pull request, not discovered on the cluster. Proved two ways in one
-#     run with the fixture pair: a Pod that asks to run in the otto-gvisor-sandbox cell without
-#     naming `runtimeClassName: gvisor` (or that is privileged, host-networked, or mounts a
-#     hostPath) must be refused, while a conforming cell Pod must be admitted. This grades the
-#     parsed object, mirroring the Kyverno admission policy that refuses the same shape at
-#     admission, so the repo half and the cluster half cannot drift apart.
-if vendor_name_gate "$IDP/tests/fixtures/vendor-names/good.yaml" \
-   && ! vendor_name_gate "$IDP/tests/fixtures/vendor-names/bad.yaml"; then
-  say "ok    vendor   a replacement deck may not reuse a vendor operator's cluster-scoped names"
-else
-  say "FAIL  vendor   bin/vendor-name-collision-gate does not grade its fixtures both ways"; fail=1
-fi
-
-if gvisor_cell_gate "$IDP/tests/fixtures/gvisor-cell/good.yaml" \
-   && ! gvisor_cell_gate "$IDP/tests/fixtures/gvisor-cell/bad.yaml"; then
-  say "ok    gvisor   a cell Pod without the runtime class (or privileged, host-networked, hostPath) is refused; the conforming cell Pod passes"
-else
-  say "FAIL  gvisor   bin/gvisor-cell-gate cannot tell a gVisor cell boundary break from a conforming Pod (ZT step 5)"; fail=1
-fi
-
-# 6f. crew#892 CP4 (zero-trust-boundary.md step 6): the cell fence is default-deny with the
-#     gateway the one declared app route; a fence that lets the untrusted-code cell reach the
-#     internet is the isolation break, caught here in the pull request. Proved two ways in one run
-#     with the fixture pair: an allowances file that grants the cell egress_internet is refused,
-#     the default-deny cell fence is admitted. Grades the declarations the generator fans out.
-if gvisor_cell_fence_gate "$IDP/tests/fixtures/gvisor-cell-fence/good.yaml" \
-   && ! gvisor_cell_fence_gate "$IDP/tests/fixtures/gvisor-cell-fence/bad.yaml"; then
-  say "ok    gvrfence a gVisor-cell fence granting internet egress is refused; the default-deny cell fence passes"
-else
-  say "FAIL  gvrfence bin/gvisor-cell-fence-gate cannot tell a cell fence that leaks to the internet from the default-deny fence (ZT step 6)"; fail=1
-fi
-
-# 6g. NodeSoftwareOperator (goal b9217bea-…, option c): a RuntimeInstall CR names a runtime in
-#     the closed set the operator knows, requires a canary on ProgressiveCanary rollouts, and
-#     rejects pause durations that would make the canary pause a no-op. The gate runs the
-#     fixture pair both ways so a regression on any of the three rules fails here, in the pull
-#     request, before the CR is ever admitted. The contract lives in
-#     platform/nodesoftware-operator/CRD-SPEC.md; the gate is the offline mirror.
-if "$IDP/bin/nodesoftware-operator-gate" "$IDP/tests/fixtures/nodesoftware-operator/good.yaml" \
-   && ! "$IDP/bin/nodesoftware-operator-gate" "$IDP/tests/fixtures/nodesoftware-operator/bad.yaml"; then
-  say "ok    nodesoftware a RuntimeInstall CR names a closed-set runtime, requires a canary, and a 30s+ pause; the bad fixture is refused"
-else
-  say "FAIL  nodesoftware bin/nodesoftware-operator-gate cannot tell a well-formed CR from a closed-set / no-canary / too-short-pause violation"; fail=1
-fi
-
-# 6b. The namespace fence, against the estate rather than against its own fixtures (crew#839).
-#     Until now ns_fence_gate ran only inside the loop above, on tests/fixtures/ns-fence/*.yaml,
-#     so it could prove itself both ways forever while thirty-eight real namespaces had no quota,
-#     no request defaults and no policy. This runs it on platform/, where a real defect fails it.
-if python3 "$IDP/bin/ns-fence-gate" "$IDP/platform" >/tmp/ns-fence.$$ 2>&1; then
-  say "ok    fence    $(tail -1 /tmp/ns-fence.$$ | cut -c1-140)"
-else
-  say "FAIL  fence    bin/ns-fence-gate refuses platform/"; sed 's/^/               /' /tmp/ns-fence.$$; fail=1
-fi
-rm -f /tmp/ns-fence.$$
-
-# 7. The bind audit proves itself both ways with no machine under it. R20: the
-#    gateway is the only process that may bind a non-loopback address. The AGENTS.md
-#    row above already runs bind_audit on the two recorded tables; this runs the
-#    script's own selftest, which is the part that would silently rot if the
-#    allow-list parser broke.
-# 7. A scheduled job with no description is a job nobody can act on: the Dagster UI
-#    shows 40 names like com_founder_estateaudit and nothing else. The description is
-#    derived from the target script's docstring, so the selftest checks the derivation
-#    -- that it looks behind a wrapper, and that it refuses to invent prose from a
-#    command line. Coverage over the real 40 needs the scripts, so it lives in idp-verify.
-# 7b. The real code location loads the way workspace.yaml loads it: by file path.
-if ! "$MPY" -c "import dagster" 2>/dev/null; then
-  say "BLIND codeloc dagster not importable; the code location was not loaded"; fail=1
-elif defs_validate "$IDP/scheduler/estate_scheduler/definitions.py"; then
-  say "ok    codeloc  scheduler/estate_scheduler/definitions.py loads by file path, as workspace.yaml loads it"
-else say "FAIL  codeloc  the code location does not load by file path -- the dashboard will show PythonError"; fail=1; fi
-
-if out=$( ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe --selftest ) 2>&1); then
-  say "ok    describe job descriptions derive from the script, and are refused when absent"
-else say "FAIL  describe estate_scheduler.describe --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
-# vm-shared-path must refuse a source outside the VM-shared tree and permit one inside it.
-if out=$(VM_SHARED_ROOTS="$HOME" "$IDP/bin/vm-shared-path" "$HOME" 2>&1) \
-   && ! VM_SHARED_ROOTS="$HOME" "$IDP/bin/vm-shared-path" /private/tmp >/dev/null 2>&1; then
-  say "ok    vmmount  vm-shared-path permits a path under the shared root and refuses one outside it"
-else say "FAIL  vmmount  bin/vm-shared-path selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
-# Zero static secrets (security-policy.md row, kini-master-spec 4.1/4.4, crew#227). Proved both
-# ways on fixtures; the live host count is reported by bin/idp-verify, not gated here, because
-# it is an open incident until crew#227 lands and a gate that refuses correct work is an outage.
-if STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/good ESTATE_CODE=tests/fixtures/static-secret/good ESTATE_SECRETS=tests/fixtures/static-secret/good/vault bin/static-secret-gate >/dev/null \
-   && ! STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/bad ESTATE_CODE=tests/fixtures/static-secret/bad/code ESTATE_SECRETS=tests/fixtures/static-secret/good/vault bin/static-secret-gate >/dev/null; then
-  say "ok    secrets  static-secret-gate passes the empty fixture and refuses the one with a key and a .env"
-else say "FAIL  secrets  bin/static-secret-gate fixtures"; fail=1; fi
-# crew#586 CP1: the founder's ethos as seven measured tenet rows; a row without a command is refused (LAW 44).
-if out=$(python3 "$IDP/bin/idp-conscience" --selftest 2>&1); then
-  say "ok    ethos    idp-conscience scores the good fixture 2/2, the bad 1/2, and refuses a tenet with no command"
-else say "FAIL  ethos    bin/idp-conscience --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-# crew#586 CP2: the conscience rules judge a PR both ways (policy/conscience.rego).
-if ! policy_gate_out=$(conftest test --parser json -p "$IDP/policy" "$IDP/policy/fixtures/conscience-bad.json" 2>&1) \
-   && [ "$(printf '%s\n' "$policy_gate_out" | grep -oE 'rule=(no_provider_in_diff|no_floating_tag|new_script_has_a_test|incident_has_a_guard|new_dependency_has_a_ledger_entry)' | sort -u | wc -l | xargs)" = "5" ] \
-   && conftest test --parser json -p "$IDP/policy" "$IDP/policy/fixtures/conscience-clean.json" >/dev/null 2>&1; then
-  say "ok    ethos    conscience.rego fires all 5 rules on conscience-bad.json and none on conscience-clean.json"
-else say "FAIL  ethos    policy/conscience.rego fixtures"; fail=1; fi
-if bin/owner-account-gate tests/fixtures/owner-accounts/good.yaml >/dev/null \
-   && ! bin/owner-account-gate tests/fixtures/owner-accounts/bad.yaml >/dev/null; then
-  say "ok    owners   owner-account-gate passes a provider with a second owner and refuses one without"
-else say "FAIL  owners   bin/owner-account-gate fixtures"; fail=1; fi
-if out=$("$IDP/bin/bind-audit" --selftest 2>&1); then say "ok    binds    bind-audit refuses an unknown listener and permits an allow-listed one"
-else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
-# 7b. The fences the estate's own namespaces ship with (crew#191). The AGENTS.md row
-#    above proves ns-fence-gate can tell a fenced namespace from a flat one; this
-#    runs it over the manifests that are actually committed, because a gate that
-#    works on fixtures and is never pointed at the real thing protects fixtures.
-#    Measured on `estate` before these existed: a pod in one namespace reached a pod
-#    in another by IP, no credential, HTTP 200 in 4ms. This was report-only from
-#    2026-08-27 (76 defects across 19 namespaces) because a gate that refuses every
-#    namespace on main is itself the outage (LAW 38). crew#839 generated the missing
-#    fences in one pass, the count reached 0, and this row is a FAIL from here on.
-if out=$(cd "$IDP" && python3 bin/ns-fence-gate platform 2>&1); then
-  say "ok    fences   $(printf '%s' "$out" | sed 's/^ok *ns-fence-gate: //')"
-else
-  say "FAIL  fences   a namespace ships with no fence; add it to platform/ns-fences/allowances.yaml and run bin/idp-ns-fence-gen"
-  printf '%s\n' "$out" | sed 's/^/      /'; fail=1
-fi
 
 # 8. The estate diagram renders from the inventory it claims to draw. The three MCP
 #    rungs that stood here (crew#216 CP1-CP3) ran test files #1451 deleted, so they
@@ -984,19 +613,6 @@ if python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$
   say "ok    grade    estate-showcase grades the fixture catalogue ($(grep -c '| GAP |' "$sc/SHOWCASE.md") GAP rows) and --check refuses a stale page"
 else say "FAIL  grade    estate-showcase did not render, or --check did not discriminate"; fail=1; fi
 
-# 8. Every surface the founder can open survives losing one node (crew#539, docs/reference/policy/
-#    availability-standard.md). 2026-08-28 06:20-06:39Z a cordon took catalogue to 503 for
-#    fifteen minutes because the manifest said replicas 1 and platform/ held no PDB; nothing
-#    could fail that review because nothing required otherwise. Both ways, on rendered
-#    manifests: the manifest catalogue actually carried into that drain is refused, the shape
-#    it carries now passes, and the live platform/ is clean -- BLIND (2) counts as a failure,
-#    so a surface the gate cannot resolve never passes quietly.
-if ! python3 "$IDP/bin/idp-availability-gate" tests/fixtures/availability/bad >/dev/null 2>&1 \
-   && python3 "$IDP/bin/idp-availability-gate" tests/fixtures/availability/good >/dev/null 2>&1 \
-   && out=$(python3 "$IDP/bin/idp-availability-gate" 2>&1); then
-  say "ok    ha       $(printf '%s' "$out" | tail -1 | sed 's/^ok *availability *//')"
-  printf '%s\n' "$out" | grep '^WAIVED' | sed 's/^/      /' || true
-else say "FAIL  ha       a routed surface does not survive losing one node, or the gate is not discriminating"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
 timing_summary
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"

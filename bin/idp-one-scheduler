@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Dagster is the estate's one scheduler. This names every recurring job that is not one yet.
+
+Founder, 2026-09-07: "we should only be using dagster for scheduling" -- and, on the same reading,
+"temporal is a durable workflow engine not a scheduler", so Temporal is not counted here and is not
+a duplicate of anything. The estate carried five ways to say "run this every hour" (launchd plists,
+GitHub Actions cron, Kubernetes CronJobs, KEDA cron scalers, Dagster) because a parallel session in
+a different tree reached for whichever one was nearest.
+
+This is a ratchet, not a wall (LAW 38: a guard that refuses correct work is an outage). Everything
+already declared outside Dagster is written down in platform/scheduling/one-scheduler.yaml with the
+reason it is still there. A NEW recurring job outside Dagster fails. A ledger row whose job is gone
+fails too, so the list can only shrink and cannot rot.
+
+  idp-one-scheduler [ROOT]
+"""
+from __future__ import annotations
+
+import os
+import re
+import sys
+
+import yaml
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+LEDGER = "platform/scheduling/one-scheduler.yaml"
+
+
+def found(root: str) -> dict[str, str]:
+    """Every recurring-job declaration outside Dagster, as id -> what it is."""
+    jobs: dict[str, str] = {}
+    launchd = os.path.join(root, "launchd")
+    if os.path.isdir(launchd):
+        for name in sorted(os.listdir(launchd)):
+            if name.endswith(".plist.tmpl"):
+                jobs[f"launchd/{name}"] = "launchd job on the laptop"
+    workflows = os.path.join(root, ".github", "workflows")
+    if os.path.isdir(workflows):
+        for name in sorted(os.listdir(workflows)):
+            if not name.endswith((".yml", ".yaml")):
+                continue
+            text = open(os.path.join(workflows, name), errors="replace").read()
+            # `on: schedule:` with a cron entry -- a workflow that fires on a clock, not on a push.
+            if re.search(r"^\s*schedule:\s*$", text, re.M) and re.search(r"-\s*cron:", text):
+                jobs[f".github/workflows/{name}"] = "GitHub Actions cron"
+    for base in ("platform", "clusters"):
+        for dirpath, _, names in os.walk(os.path.join(root, base)):
+            for name in names:
+                if not name.endswith((".yml", ".yaml")):
+                    continue
+                path = os.path.join(dirpath, name)
+                text = open(path, errors="replace").read()
+                if re.search(r"^kind:\s*CronJob\s*$", text, re.M):
+                    jobs[os.path.relpath(path, root)] = "Kubernetes CronJob"
+    return jobs
+
+
+def main() -> int:
+    root = sys.argv[1] if len(sys.argv) > 1 else ROOT
+    if not os.path.isabs(root):
+        root = os.path.join(os.getcwd(), root)
+    path = os.path.join(root, LEDGER)
+    if not os.path.exists(path):
+        print(f"FAIL  sched    no {LEDGER}: the estate cannot say which jobs are still outside Dagster")
+        return 1
+    ledger = yaml.safe_load(open(path)) or {}
+    recorded = {row["job"]: row for row in ledger.get("still_outside_dagster", [])}
+    live = found(root)
+
+    new = sorted(set(live) - set(recorded))
+    gone = sorted(set(recorded) - set(live))
+    if new or gone:
+        print("FAIL  sched    the estate's scheduling is not what the ledger says")
+        for job in new:
+            print(f"      NEW OUTSIDE DAGSTER  {job} ({live[job]}) -- declare it as a Dagster "
+                  f"schedule in scheduler/, or add it to {LEDGER} with the reason")
+        for job in gone:
+            print(f"      LEDGER ROW IS STALE  {job} no longer exists; delete its row from {LEDGER}")
+        return 1
+    print(f"ok    sched    Dagster is the one scheduler; {len(live)} declaration(s) still outside it, "
+          f"every one recorded in {LEDGER}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

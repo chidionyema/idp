@@ -1,0 +1,5 @@
+# The one job still outside Dagster, recorded with the reason it is.
+still_outside_dagster:
+  - job: launchd/hourly.plist.tmpl
+    kind: launchd job on the laptop
+    fold: 'pending: to be declared as a Dagster schedule'

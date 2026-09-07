@@ -116,7 +116,7 @@ The policy has paired controls, because a gate that has only been tested on the
 bad case is a gate nobody has proved is safe to install (LAW 38):
 
 ```
-bin/policy-test
+bin/idp-rules run --only placement-policy
 ```
 
 `policy/fixtures/placement-ok.json` is correct placement and must pass.
@@ -172,7 +172,7 @@ not the right place to raise a Healthchecks outage.
 **A job is flagged that is meant to be a desk job.** That is the guard refusing
 correct work, which is an outage and not a false positive (LAW 38). Fix the
 rule, add the case to `policy/fixtures/placement-ok.json`, and re-run
-`bin/policy-test`.
+`bin/idp-rules run --only placement-policy`.
 
 ## What this does not fix
 

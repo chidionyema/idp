@@ -865,6 +865,29 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-gvisor-runtime
+  title: 'The gVisor sandbox runtime'
+  description: 'The RuntimeInstall that puts gVisor on the sandbox nodes, so a pod in the sandbox cell runs against a kernel of its own instead of the host''s.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=gvisor-runtime'
+    estate/flux-kustomization: 'gvisor-runtime'
+    estate/path: './platform/gvisor-runtime'
+    estate/cluster: 'oke'
+  tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: scheduling
+  dependsOn:
+    - component:default/layer-nodesoftware-operator
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-healing
   title: 'Self-healing'
   description: 'Spots a sick workload, explains it and moves it.'
@@ -1336,6 +1359,33 @@ spec:
   system: observability
   dependsOn:
     - component:default/layer-monitoring
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-nodesoftware-operator
+  title: 'Node software installs'
+  description: 'The one controller that installs software onto the nodes themselves -- a sandbox runtime, a GPU driver -- one node at a time, cordoning it first and rolling back if the probe on that node fails.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=nodesoftware-operator'
+    estate/flux-kustomization: 'nodesoftware-operator'
+    estate/path: './platform/nodesoftware-operator'
+    estate/cluster: 'oke'
+  tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: scheduling
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-image-automation
+    - component:default/layer-edge
+    - component:default/layer-rbac-identity
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

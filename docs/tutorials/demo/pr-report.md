@@ -34,12 +34,6 @@ is not in the loop.
 Proof both ways, without a live PR:
 
 ```
-$ bin/policy-test
-opmodel-ok.json      0        0        allows an identity with its grant, an approval word, a cost line and the canary label (crew#286)
-opmodel-half-provisioned.json 1        1        refuses an identity created with no grant or policy in the same PR (ZCP, crew#287)
-opmodel-gui.json     1        1        refuses an instruction line that sends a person to a console
-opmodel-no-approval.json 0        0        allows a founder-facing change with no Approval-word line (retired rule, 2026-08-27)
-opmodel-over-budget.json 1        1        refuses a platform/oci change whose declared monthly cost beats the budget
-opmodel-no-canary.json 1        1        refuses a platform/oci change with no canary label
-PASS      every policy allows its good case and refuses its bad ones
+$ bin/idp-rules run --only operating-model-policy
+ok    opmodel  the operating-model policy allows a complete pull request and refuses each incomplete shape
 ```

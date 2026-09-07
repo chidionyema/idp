@@ -108,3 +108,29 @@ console step. Guard: `tests/test_incident_crew66_seed_registers_the_federated_id
 (the drift test `..._carries_no_tags_is_re_registered_with_them`). The tests also blank the
 runner's `ACTIONS_ID_TOKEN_REQUEST_*` variables themselves: the verify-claims job runs them with
 those set, and road b was being entered from a test that meant to stay off the runner.
+
+
+## Amendment 2026-09-07: the other reason arrived, and it is the security boundary
+
+Decision 0010 parked the basic-to-enhanced upgrade with "reopen when the enhanced tier is wanted
+for another reason (node cycling, SLA, workload identity for OCI itself)". None of those is what
+reopened it.
+
+Step 2 of `platform/calico/README.md` -- disabling Oracle's flannel add-on, the step that makes
+every NetworkPolicy in this estate mean something -- is add-on management, and Oracle refuses
+add-on management on a basic cluster. Measured, not read: the call was made on 2026-09-07 and
+came back `400 InvalidParameter: Addon management is only supported on enhanced type clusters`,
+with `oci ce cluster get` reporting `"type": "BASIC_CLUSTER"`.
+
+What that changes about the original decision: the price is the same GBP 57.51 a month and the
+one-way upgrade is the same one-way upgrade, but what sits on the other side of it is no longer
+a convenience. It is the difference between an estate whose 154 NetworkPolicy objects deny
+nothing and one where they deny. That was measured too: from `dagster-daemon-9cd8bd67f-45h8x`,
+a pod in a namespace carrying a both-ways default-deny fence, `1.1.1.1:443 CONNECTED`,
+`8.8.8.8:53 CONNECTED`, and `10.244.1.240:3100` in another namespace `CONNECTED`.
+
+The alternative road remains a cluster rebuilt on VCN-native pod networking
+(`bin/idp-oke-rebuild --teardown-rebuild`), which is free of the enhanced-tier fee and costs the
+whole estate's downtime for the length of the run instead of one datapath swap.
+
+Still the founder's call under R14, and still not taken.

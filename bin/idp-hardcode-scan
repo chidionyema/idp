@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""LAW 46: no file names where the checkout, the home directory or the machine lives.
+
+17 of 19 scripts carried a literal checkout path on 2026-08-24 and the first one CI ran failed on
+the runner. Lifted out of bin/idp-ci on 2026-09-07 so the rule has one implementation the registry
+can point at, and so it can be proved on a fixture pair as well as on the repo.
+
+  idp-hardcode-scan            scan the tracked files this rule covers
+  idp-hardcode-scan FILE...    scan exactly these files (how the fixtures are graded)
+"""
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+# Split so this file does not match itself.
+PATTERN = re.compile(r"dev/code/[a-z]|/Users/chidi" + "onyema|/home/[a-z]+/")
+TRACKED = ("bin", "llm", "observability", "mcp", "launchd", "*.py", "*.yml", "*.yaml", "*.json")
+
+
+def files() -> list[str]:
+    out = subprocess.run(["git", "ls-files", *TRACKED], cwd=ROOT,
+                         capture_output=True, text=True).stdout.split()
+    return [f for f in out if not f.startswith("tests/fixtures/")]
+
+
+def scan(paths: list[str], root: str) -> list[str]:
+    hits = []
+    for path in paths:
+        full = path if os.path.isabs(path) else os.path.join(root, path)
+        try:
+            with open(full, errors="replace") as fh:
+                lines = fh.readlines()
+        except (OSError, IsADirectoryError):
+            continue
+        for n, line in enumerate(lines, 1):
+            if line.lstrip().startswith("#"):
+                continue          # a comment naming a path is prose, not a dependency on it
+            if PATTERN.search(line):
+                hits.append(f"{path}:{n}: {line.strip()}")
+    return hits
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    paths, root = (argv, os.getcwd()) if argv else (files(), ROOT)
+    hits = scan(paths, root)
+    if hits:
+        print(f"FAIL  hardcode {len(hits)} line(s) name a checkout path")
+        for hit in hits:
+            print(f"      {hit}")
+        return 1
+    print(f"ok    hardcode {len(paths)} file(s) scanned; 0 hardcode a checkout path")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

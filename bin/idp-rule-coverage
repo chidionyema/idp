@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""A fixture no rule names is a rule nobody runs.
+
+2026-09-07, three times in one afternoon: `glass_break_gate` (WJ.8, no auto-merge or
+self-approval on the broker), `jit_broker_role_gate` (the broker's own ClusterRole) and
+`vendor_name_gate` (a deck reusing a removed operator's cluster-scoped names) each landed on
+main as a hand-written rung in bin/idp-ci while this registry was being cut. Replacing that
+file deleted the region the rungs lived in, so the merge was clean and the three gates simply
+ceased to exist. Nothing went red, because a gate that does not run produces no output.
+
+Their fixture pairs stayed on disk the whole time. That is the signal this reads: walk the
+fixture trees, collect every path some registry case or some pytest actually names, and refuse
+a fixture directory that neither does. It is the reverse of the usual question -- not "does
+every rule have a fixture" (a rule with no fixture never got written) but "does every fixture
+have a rule", which is what a deletion breaks.
+
+A fixture may be graded from either side, so both count: a case in rules.yaml, or a pytest
+under tests/ that names it. A fixture graded by neither is named here and the run goes red.
+
+LAW 46: the checkout is computed from this file, never named.
+"""
+
+import os
+import pathlib
+import re
+import sys
+
+import yaml
+
+ROOT = pathlib.Path(
+    os.environ.get("RULE_COVERAGE_ROOT")
+    or pathlib.Path(__file__).resolve().parents[1]
+)
+FIXTURE_TREES = ("tests/fixtures", "policy/fixtures")
+LEDGER = "platform/rule-coverage/ungraded.yaml"
+
+
+def claimants(root: pathlib.Path) -> dict[str, set[str]]:
+    """Every tracked file outside the fixture trees, and the fixture paths it names.
+
+    Deliberately textual and repo-wide rather than schema-aware. A fixture is reached from a
+    registry case, from a pytest, from a gate's own --selftest, from a rego test and from a
+    workflow, and the next grader will invent a sixth way. What makes a fixture graded is that
+    something names it; where it is named is not the question this asks. Returning the
+    claimants rather than a bare set means the verdict can say who grades what.
+    """
+    pat = re.compile(r"(?:tests|policy)/fixtures/[\w./-]+")
+    out: dict[str, set[str]] = {}
+    for f in root.rglob("*"):
+        if not f.is_file() or ".git/" in str(f):
+            continue
+        rel = f.relative_to(root).as_posix()
+        if rel.startswith(FIXTURE_TREES) or rel == LEDGER:
+            # The ledger names every fixture nothing grades; counting it as a grader would make
+            # recording an orphan the act that clears it.
+            continue
+        try:
+            text = f.read_text(errors="ignore")
+        except OSError:
+            continue
+        for m in pat.findall(text):
+            out.setdefault(m, set()).add(rel)
+    return out
+
+
+def entries(root: pathlib.Path) -> list[str]:
+    """Top-level entries of each fixture tree: one directory or one file per rule's pair."""
+    out = []
+    for tree in FIXTURE_TREES:
+        d = root / tree
+        if not d.is_dir():
+            continue
+        out += sorted(f"{tree}/{p.name}" for p in d.iterdir() if not p.name.startswith("."))
+    return out
+
+
+def ledger(root: pathlib.Path) -> dict[str, str]:
+    """The recorded fixtures nothing grades yet, and what would have to run to grade each.
+
+    A ratchet, not an exemption: an entry here is a rule known to be unwired, and the rule fails
+    when the list grows or goes stale. Same shape as platform/scheduling/one-scheduler.yaml,
+    which holds the schedules not yet folded into Dagster.
+    """
+    f = root / LEDGER
+    if not f.exists():
+        return {}
+    doc = yaml.safe_load(f.read_text()) or {}
+    return {e["path"]: e.get("grader", "") for e in (doc.get("ungraded") or [])}
+
+
+def main() -> int:
+    claimed = claimants(ROOT)
+    all_entries = entries(ROOT)
+    orphans = []
+    for e in all_entries:
+        # A claim on the directory or on anything inside it counts: a rule that names
+        # tests/fixtures/ns-fence/bad.yaml grades tests/fixtures/ns-fence.
+        if any(c == e or c.startswith(e + "/") for c in claimed):
+            continue
+        orphans.append(e)
+
+    recorded = ledger(ROOT)
+    unrecorded = [o for o in orphans if o not in recorded]
+    # The list only goes down. An entry that is graded now, or whose fixture is gone, is stale:
+    # left in place it would let the next deletion hide behind a name already on the list.
+    stale = [p for p in recorded if p not in orphans]
+    total = len(all_entries)
+
+    if unrecorded:
+        print(
+            f"FAIL   coverage {len(unrecorded)} fixture(s) are graded by no rule and no test and are "
+            f"not on {LEDGER}; a gate was deleted, or was never wired:",
+            file=sys.stderr,
+        )
+        for o in unrecorded:
+            print(f"                {o}", file=sys.stderr)
+        return 1
+    if stale:
+        print(
+            f"FAIL   coverage {len(stale)} entr(y/ies) on {LEDGER} name a fixture that is graded "
+            "now or no longer exists; the ledger only shrinks:",
+            file=sys.stderr,
+        )
+        for p in stale:
+            print(f"                {p}", file=sys.stderr)
+        return 1
+
+    if orphans:
+        print(
+            f"coverage {total} fixture(s); {len(orphans)} graded by nothing, every one recorded in {LEDGER}"
+        )
+    else:
+        print(f"coverage {total} fixture(s), every one named by a registry case or a test")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

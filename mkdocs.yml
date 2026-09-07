@@ -138,6 +138,7 @@ nav:
       - owner-account: tutorials/demo/owner-account.md
       - static-secret: tutorials/demo/static-secret.md
       - Bind audit: tutorials/demo/bind-audit.md
+      - Node software installs: tutorials/demo/nodesoftware-operator.md
       - Build image: tutorials/demo/build-image.md
       - Catalog: tutorials/demo/catalog.md
       - Portal catalogue: tutorials/demo/portal.md
@@ -152,7 +153,7 @@ nav:
       - KINI: tutorials/demo/kini.md
       - Migration gate: tutorials/demo/migration.md
       - Multiarch gate: tutorials/demo/multiarch.md
-      - Policy test: tutorials/demo/policy-test.md
+      - Rules registry: tutorials/demo/idp-rules.md
       - Port gate: tutorials/demo/port.md
       - Repo rulesets: tutorials/demo/repo-rulesets.md
       - Telemetry coverage: tutorials/demo/telemetry-coverage.md
@@ -221,6 +222,7 @@ nav:
       - owner-account: how-to/onboarding/owner-account.md
       - static-secret: how-to/onboarding/static-secret.md
       - Bind audit: how-to/onboarding/bind-audit.md
+      - Node software installs: how-to/onboarding/nodesoftware-operator.md
       - Build image: how-to/onboarding/build-image.md
       - Catalog: how-to/onboarding/catalog.md
       - Portal catalogue: how-to/onboarding/portal.md
@@ -235,7 +237,7 @@ nav:
       - Hermes (Cursor WORK worker): how-to/onboarding/hermes.md
       - Migration gate: how-to/onboarding/migration.md
       - Multiarch gate: how-to/onboarding/multiarch.md
-      - Policy test: how-to/onboarding/policy-test.md
+      - Rules registry: how-to/onboarding/idp-rules.md
       - Port gate: how-to/onboarding/port.md
       - Repo rulesets: how-to/onboarding/repo-rulesets.md
       - Telemetry coverage: how-to/onboarding/telemetry-coverage.md

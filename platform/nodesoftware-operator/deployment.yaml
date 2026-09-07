@@ -115,6 +115,11 @@ metadata:
   labels:
     app.kubernetes.io/name: nodesoftware-operator
     app.kubernetes.io/part-of: idp
+    # crew#307: a port that serves names the catalogue entity it belongs to, or
+    # platform/edge/require-catalogue-entity.yaml refuses the object at admission.
+    # layer-nodesoftware-operator is generated into backstage/platform/catalog-info.yaml
+    # from this Kustomization's row by bin/catalog-platform.
+    backstage.io/kubernetes-id: layer-nodesoftware-operator
 spec:
   clusterIP: None                         # headless; replica-per-pod DNS
   selector:
