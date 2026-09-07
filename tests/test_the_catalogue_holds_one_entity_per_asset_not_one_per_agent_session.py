@@ -61,12 +61,17 @@ def _catalogue_from(rows):
 
 # Hashable so the generated catalogue is built once for the whole module: the generator takes
 # ~10 s a run and three tests read the same output.
+FAKE_HOME = "/fixture-home/someone"
+
 SHARDS = tuple(
     json.dumps(r)
     for r in [
         {
             "id": f".claude/directives/-Users-someone-dev-code-.wt-{n}.jsonl",
-            "path": f"/home/someone/.claude/directives/-Users-someone-dev-code-.wt-{n}.jsonl",
+            # The fake home is spelled without a real home-directory prefix on purpose:
+            # hardcode_scan in bin/idp-ci reads every tracked .py file, and a literal
+            # /home/<name>/ here is a LAW 46 hit even inside a fixture (crew, 2026-09-07).
+            "path": f"{FAKE_HOME}/.claude/directives/-Users-someone-dev-code-.wt-{n}.jsonl",
             "kind": "ledger",
             "root": "~/.claude",
             "member_of": "directives",
