@@ -315,6 +315,19 @@ features:
         switches: []
     default: "off"
 
+  - name: human-key-door
+    title: Founder-held keys sync themselves from Bitwarden
+    why: "a vendor key the founder rotates on his phone is live in the estate a minute later, with no seeding workflow, no pull request and nobody told to sync anything (founder 2026-09-07: \"should auto sync once i configure on portal\")"
+    tiers:
+      - name: "on"
+        what: "the human-vault-bridge ExternalSecrets: every vendor in platform/vendors/consoles.yaml whose store_default is human-vault is read from Bitwarden Secrets Manager by name, once a minute, into the namespace that consumes it; the workload prefers it over the value the estate seeded into its own vault, so a key put in Bitwarden wins"
+        switches: [human-vault-bridge]
+        depends: [external-secrets, secret-store]
+      - name: "off"
+        what: "keys reach workloads only from the estate's own vault, seeded by the vault-seed workflow from repository secrets; a key the founder changes in Bitwarden reaches nothing"
+        switches: []
+    default: "on"
+
 products:
   # Products run ON the platform; they are rows so the plan sums them, never platform layers.
   - name: prospector

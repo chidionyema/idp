@@ -30,3 +30,33 @@ spec:
     - apiVersion: external-secrets.io/v1
       kind: ClusterSecretStore
       name: human-vault
+---
+# The bridge (founder 2026-09-07: "should auto sync once i configure on portal"). Its own row for
+# the same reason the store above has one: while a key is still missing from Secrets Manager its
+# ExternalSecret is red, and a red row here must not hold the store, the router or anything else.
+#
+# `wait: false` and no healthChecks, on purpose. The bridge is healthy when the founder has dropped
+# in every key, and that is a state he moves through, not a precondition for the platform running.
+# A row that waits would go red the moment a vendor is registered before its key is added, which is
+# the normal order of events.
+#
+# This is the switch the portal's "Enable platform feature" template flips (platform/features:
+# feature `human-key-door`). Suspended means the estate reads keys only from the vault it seeds
+# itself; resumed means a key the founder puts in Bitwarden overrides it, within a minute, with
+# nobody told to sync anything.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: human-vault-bridge
+  namespace: flux-system
+spec:
+  interval: 5m
+  dependsOn:
+    - name: human-vault
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/human-vault-bridge
+  prune: true
+  wait: false
+  timeout: 5m

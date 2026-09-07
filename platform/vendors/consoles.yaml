@@ -38,9 +38,9 @@ vendors:
     rotation: assisted  # OpenRouter's /api/v1/keys needs a provisioning key that is console-born
     store_default: human-vault
     targets:
-      - { entry: litellm-upstream, field: OPENROUTER_API_KEY }
-      - { entry: prospector-engine-env, field: OPENROUTER_API_KEY }
-      - { entry: hermes-agent-env, field: OPENROUTER_API_KEY }
+      - { entry: litellm-upstream, ns: llm, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
+      - { entry: prospector-engine-env, ns: prospector, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
+      - { entry: hermes-agent-env, ns: hermes-agent, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
   deepseek:
     kind: secret
     secret: SEED_DEEPSEEK_API_KEY
@@ -52,7 +52,7 @@ vendors:
     targets:
       # No litellm-upstream field: the router's DeepSeek key is console-owned (see below), so the
       # vault entry the router mounts carries no DeepSeek key at all. prospector holds its own.
-      - { entry: prospector-engine-env, field: DEEPSEEK_API_KEY }
+      - { entry: prospector-engine-env, ns: prospector, field: DEEPSEEK_API_KEY, bw: DEEPSEEK_API_KEY }
     router:
       # Console-owned, founder 2026-09-04: "i can change the keys nyself, i eed to be ble to delete
       # the esting keys set in config", then "delete the current deepseeky key, ill add a new one".
@@ -86,8 +86,8 @@ vendors:
     rotation: assisted  # MiniMax publishes no create-key API (R52)
     store_default: human-vault
     targets:
-      - { entry: litellm-upstream, field: MINIMAX_API_KEY }
-      - { entry: prospector-engine-env, field: MINIMAX_API_KEY }
+      - { entry: litellm-upstream, ns: llm, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
+      - { entry: prospector-engine-env, ns: prospector, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
     router:
       lanes: |
         # --- the moat's cheap primary --------------------------------------------------------
@@ -181,7 +181,7 @@ vendors:
     rotation: assisted  # Kimi publishes no create-key API
     store_default: human-vault
     targets:
-      - { entry: litellm-upstream, field: MOONSHOT_API_KEY }
+      - { entry: litellm-upstream, ns: llm, field: MOONSHOT_API_KEY, bw: MOONSHOT_API_KEY }
       - { entry: litellm-upstream, field: MOONSHOT_API_BASE, derived: base }
     # NO router block, on purpose (R75, founder 2026-09-03). The kimi lane is console-owned:
     # the key is brought through the router's own console (LLM Credentials -> Add Credential,
@@ -203,7 +203,7 @@ vendors:
     rotation: assisted  # Google key creation needs gcloud SSO
     store_default: human-vault
     targets:
-      - { entry: litellm-upstream, field: GEMINI_API_KEY }
+      - { entry: litellm-upstream, ns: llm, field: GEMINI_API_KEY, bw: GEMINI_API_KEY }
     router:
       lanes: |
         - model_name: gemini
@@ -299,8 +299,8 @@ vendors:
     rotation: assisted  # Exa publishes no create-key API
     store_default: human-vault
     targets:
-      - { entry: prospector-engine-env, field: EXA_API_KEY }
-      - { entry: hermes-agent-env, field: EXA_API_KEY }
+      - { entry: prospector-engine-env, ns: prospector, field: EXA_API_KEY, bw: EXA_API_KEY }
+      - { entry: hermes-agent-env, ns: hermes-agent, field: EXA_API_KEY, bw: EXA_API_KEY }
   cursor:
     # crew#751: Cursor is an agent harness, not a LiteLLM completions lane. The key authenticates
     # `agent -p` on the Mac via cursor-agent. Architect stays on the model router. Cursor publishes
@@ -313,7 +313,7 @@ vendors:
     rotation: assisted  # Cursor publishes no create-key API
     store_default: human-vault
     targets:
-      - { entry: hermes-agent-env, field: CURSOR_API_KEY }
+      - { entry: hermes-agent-env, ns: hermes-agent, field: CURSOR_API_KEY, bw: CURSOR_API_KEY }
   telegram:
     # BotFather has no HTTP API; each bot token is a root of its own, made once with /newbot.
     kind: secret
@@ -323,8 +323,8 @@ vendors:
     rotation: assisted  # BotFather has no HTTP API
     store_default: human-vault
     targets:
-      - { entry: hermes-agent-env, field: TELEGRAM_BOT_TOKEN, secret: SEED_TELEGRAM_HERMES_BOT_TOKEN }
-      - { entry: flux-telegram, field: token, secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN }
+      - { entry: hermes-agent-env, ns: hermes-agent, field: TELEGRAM_BOT_TOKEN, secret: SEED_TELEGRAM_HERMES_BOT_TOKEN, bw: TELEGRAM_HERMES_BOT_TOKEN }
+      - { entry: flux-telegram, ns: flux-system, field: token, secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN, bw: TELEGRAM_ALERTS_BOT_TOKEN }
   apprise_telegram:
     # The founder's alert channel (root-trust row notify-apprise-founder-telegram). Apprise wants
     # one URL, tgram://<bottoken>/<chatid>/, but a URL is not gradeable whole: the two halves only
@@ -342,8 +342,8 @@ vendors:
     rotation: assisted  # BotFather has no HTTP API
     store_default: human-vault
     targets:
-      - { entry: notify-apprise-founder-telegram, field: token, secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN, shape: "[0-9]{8,10}:[A-Za-z0-9_-]{35}" }
-      - { entry: notify-apprise-founder-telegram, field: chat, secret: SEED_TELEGRAM_ALERTS_CHAT_ID, shape: "-?[0-9]{6,14}" }
+      - { entry: notify-apprise-founder-telegram, ns: notify, field: token, secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN, shape: "[0-9]{8,10}:[A-Za-z0-9_-]{35}", bw: TELEGRAM_ALERTS_BOT_TOKEN }
+      - { entry: notify-apprise-founder-telegram, ns: notify, field: chat, secret: SEED_TELEGRAM_ALERTS_CHAT_ID, shape: "-?[0-9]{6,14}", bw: TELEGRAM_ALERTS_CHAT_ID }
   stripe:
     kind: secret
     secret: SEED_STRIPE_SECRET_KEY
@@ -353,7 +353,7 @@ vendors:
     rotation: assisted  # Stripe key creation needs dashboard
     store_default: human-vault
     targets:
-      - { entry: prospector-store-api-env, field: Stripe__SecretKey }
+      - { entry: prospector-store-api-env, ns: prospector, field: Stripe__SecretKey, bw: STRIPE_SECRET_KEY }
   google_oauth:
     # The shop's "Continue with Google" button. It has been absent from mumchimp.com since the move
     # to Kubernetes: Store.Api registers Google only when both halves are non-empty
@@ -402,7 +402,7 @@ vendors:
     # whole prospector-store-api-env object with dataFrom.extract, so a new field in the vault object
     # reaches the pod with no manifest edit at all.
     targets:
-      - { entry: prospector-store-api-env, field: Authentication__Google__ClientId, secret: SEED_GOOGLE_OAUTH_CLIENT_ID, shape: "[0-9]+-[a-z0-9]+\\.apps\\.googleusercontent\\.com" }
-      - { entry: prospector-store-api-env, field: Authentication__Google__ClientSecret, secret: SEED_GOOGLE_OAUTH_CLIENT_SECRET, shape: "GOCSPX-[A-Za-z0-9_-]{20,}" }
+      - { entry: prospector-store-api-env, ns: prospector, field: Authentication__Google__ClientId, secret: SEED_GOOGLE_OAUTH_CLIENT_ID, shape: "[0-9]+-[a-z0-9]+\\.apps\\.googleusercontent\\.com", bw: GOOGLE_OAUTH_CLIENT_ID }
+      - { entry: prospector-store-api-env, ns: prospector, field: Authentication__Google__ClientSecret, secret: SEED_GOOGLE_OAUTH_CLIENT_SECRET, shape: "GOCSPX-[A-Za-z0-9_-]{20,}", bw: GOOGLE_OAUTH_CLIENT_SECRET }
 # Not here yet (crew#579 stays open for it): Mailjet, a key AND a secret pair, two
 # prospector-store-api-env fields. `pair: true` above is the road it will take.
