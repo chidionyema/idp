@@ -1,0 +1,42 @@
+# must-pass fixture for check 5 of bin/estate-security-scan. The same Deployment, shaped the way
+# this estate's Kyverno ClusterPolicies require at admission: no host namespaces, no privilege, a
+# read-only root, a dropped capability set and a pinned image tag.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: must-be-allowed
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: must-be-allowed }
+  template:
+    metadata:
+      labels: { app: must-be-allowed }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: nginx:1.29.1
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
