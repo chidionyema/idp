@@ -10,10 +10,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Entity } from '@backstage/catalog-model';
-import { Link, LinkButton } from '@backstage/core-components';
+import { Link } from '@backstage/core-components';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import { TextField, makeStyles, useTheme } from '@material-ui/core';
-import { Button, Text } from '@backstage/ui';
+import { Button, ButtonLink, Text } from '@backstage/ui';
 import { EstatePage } from '../shell';
 import {
   STATE_ORDER,
@@ -462,29 +462,11 @@ const useStyles = makeStyles(theme => ({
     whiteSpace: 'nowrap',
   },
   rowLinks: { display: 'flex', gap: theme.spacing(0.5), flexWrap: 'wrap' },
-  door: {
-    maxWidth: '100%',
-    '& .MuiButton-label': { whiteSpace: 'normal', overflowWrap: 'anywhere' },
-    // Founder, 2026-09-07: a loud saturated-blue filled block on every working tile reads as
-    // a 2020 dashboard, not the estate's quiet instrument. The open action is a tonal control
-    // (accent ink on a soft accent wash) - the same family as the state pills beside it - so
-    // the grid reads as cards, not a wall of buttons. The test id and target are unchanged.
-    '&.MuiButton-containedPrimary, &.MuiButton-root': {
-      backgroundColor: 'transparent',
-      color: theme.palette.primary.main,
-      border: `1px solid ${theme.palette.divider}`,
-      borderRadius: 999,
-      minHeight: 28,
-      padding: '4px 12px',
-      fontSize: 13,
-      fontWeight: 600,
-      '&:hover': {
-        backgroundColor: theme.palette.action.hover,
-        borderColor: theme.palette.primary.main,
-        boxShadow: 'none',
-      },
-    },
-  },
+  // Shape, size and colour all live in one place now: `.estate-action` in styles.css, which
+  // the page top and every tile share. This rule held a third copy of that pill written in
+  // Material-UI's class names and at 28px, so a door on this page and a door on /tools were
+  // never quite the same button. Nothing but the wrapping is left here.
+  door: { maxWidth: '100%', overflowWrap: 'anywhere' },
   actions: { display: 'flex', flexWrap: 'wrap', gap: theme.spacing(1) },
   note: { fontSize: 13, color: theme.palette.text.secondary, margin: 0 },
   mono: { fontFamily: monoFamily, fontSize: 12, overflowWrap: 'anywhere' },
@@ -678,7 +660,7 @@ export const ScreenCard = ({
       <p className={classes.screenWhy} title={entity.metadata.description}>
         {entity.metadata.description}
       </p>
-      <div className={classes.screenFoot}>
+      <div className={`${classes.screenFoot} estate-tile-actions`}>
         {off ? (
           <span
             className={classes.pill}
@@ -705,16 +687,15 @@ export const ScreenCard = ({
               why={s.why}
               testId={`health-${entity.metadata.name}`}
             />
-            <LinkButton
-              to={url!}
-              color="primary"
-              variant="contained"
+            <ButtonLink
+              href={url!}
+              variant="secondary"
               size="small"
-              className={classes.door}
+              className={`${classes.door} estate-action`}
               data-testid={`open-${entity.metadata.name}`}
             >
               {OPEN_WORD}
-            </LinkButton>
+            </ButtonLink>
           </>
         )}
       </div>
@@ -747,18 +728,17 @@ export const DoorRow = ({ entity, now }: { entity: Entity; now?: number }) => {
       >
         {entity.metadata.title ?? entity.metadata.name}
       </Link>
-      <div className={classes.rowLinks}>
+      <div className={`${classes.rowLinks} estate-tile-actions`}>
         {links.map((link, i) => (
-          <LinkButton
+          <ButtonLink
             key={link.url}
-            to={link.url}
-            color="primary"
-            variant={i === 0 ? 'contained' : 'outlined'}
+            href={link.url}
+            variant={i === 0 ? 'secondary' : 'tertiary'}
             size="small"
-            className={classes.door}
+            className={`${classes.door} estate-action`}
           >
             {link.title ?? link.url}
-          </LinkButton>
+          </ButtonLink>
         ))}
       </div>
     </div>
@@ -1323,19 +1303,19 @@ const Ready = ({ estate }: { estate: Estate }) => {
             <span className={classes.hCount}>{templates.length}</span>
           </h2>
           <p className={classes.hDesc}>{SECTIONS.actions.blurb}</p>
-          <div className={classes.actions}>
+          <div className={`${classes.actions} estate-tile-actions`}>
             {templates.map((t, i) => (
-              <LinkButton
+              <ButtonLink
                 key={t.metadata.name}
-                to={templatePath(t)}
-                color="primary"
-                variant={i === 0 ? 'contained' : 'outlined'}
+                href={templatePath(t)}
+                variant={i === 0 ? 'secondary' : 'tertiary'}
                 size="small"
-                title={t.metadata.description}
+                className="estate-action"
+                aria-label={t.metadata.description}
                 data-testid={`action-${t.metadata.name}`}
               >
                 {t.metadata.title ?? t.metadata.name}
-              </LinkButton>
+              </ButtonLink>
             ))}
           </div>
         </section>

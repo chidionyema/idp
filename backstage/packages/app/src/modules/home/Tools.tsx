@@ -14,8 +14,8 @@
 // every estate page shares. Before that this file carried 150 lines of its own styling and drew
 // its heading as body text, so it sat at a different size to every other page in the portal.
 import { Entity } from '@backstage/catalog-model';
-import { LinkButton, Link } from '@backstage/core-components';
-import { Text } from '@backstage/ui';
+import { Link } from '@backstage/core-components';
+import { ButtonLink, Text } from '@backstage/ui';
 import { doorState, entityPath } from './estate';
 import { useDoors } from './useDoors';
 import {
@@ -87,15 +87,15 @@ const ToolTile = ({ entity }: { entity: Entity }) => {
       {open ? (
         <>
           <div className="estate-tile-actions">
-            <LinkButton
-              to={open.url}
-              color="primary"
-              variant="contained"
+            <ButtonLink
+              href={open.url}
+              variant="secondary"
               size="small"
+              className="estate-action"
               aria-label={`${OPEN_WORD} ${title}`}
             >
               {OPEN_WORD}
-            </LinkButton>
+            </ButtonLink>
           </div>
           {more.length > 0 && (
             <Text variant="body-small" color="secondary">
