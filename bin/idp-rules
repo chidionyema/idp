@@ -1,0 +1,352 @@
+#!/usr/bin/env python3
+"""The one engine that runs the estate's rules. Every plane reads rules.yaml through it.
+
+Before 2026-09-07 a rule lived in four places at once: its statement in the AGENTS.md table, its
+wiring as a hand-written rung in bin/idp-ci, its fixtures in a third list inside bin/policy-test,
+and its logic in a gate script. The four drifted -- fifteen policy fixtures were graded by nothing,
+and the table declared fixture pairs no rung ran. This engine is the single reader: it runs a rule's
+cases, prints the verdict lines bin/idp-ci used to print by hand, generates the AGENTS.md table, and
+reports which rules have an admission twin on the cluster.
+
+  idp-rules run [--plane ci] [--only ID,ID]   run the rules of a plane; exit 1 on any failure
+  idp-rules list                              one line per rule
+  idp-rules render-agents-md [--check]        regenerate (or grade) the table in AGENTS.md
+  idp-rules cluster                           which rules are enforced at admission, which are not
+  idp-rules session --files A B               the rules a session can grade before it commits
+"""
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import glob as globmod
+import os
+import re
+import subprocess
+import sys
+import time
+
+import yaml
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+REGISTRY = os.path.join(ROOT, "rules.yaml")
+BEGIN = "<!-- BEGIN GENERATED RULES TABLE (bin/idp-rules render-agents-md) -->"
+END = "<!-- END GENERATED RULES TABLE -->"
+
+
+def load() -> list[dict]:
+    with open(REGISTRY) as fh:
+        return yaml.safe_load(fh)["rules"]
+
+
+def say(verdict: str, label: str, msg: str, secs: float = 0.0) -> None:
+    line = f"{verdict:<4}  {label:<8} {msg}"
+    if secs >= 3:
+        line += f"  ({int(secs)}s)"
+    print(line, flush=True)
+
+
+def _expand(value: str) -> str:
+    return os.path.expandvars(os.path.expanduser(str(value)))
+
+
+def _argv(rule: dict, case: dict) -> list[str]:
+    argv = []
+    for part in rule["run"]:
+        part = _expand(part)
+        # A run entry that names a file in this repo is resolved against the repo, never the cwd.
+        if part.startswith("bin/") or part.startswith("./"):
+            part = os.path.join(ROOT, part)
+        argv.append(part)
+    argv += [_expand(a) for a in case.get("args", [])]
+    if case.get("glob"):
+        hits = sorted(globmod.glob(os.path.join(ROOT, case["glob"])))
+        # A glob over bin/ catches python and bash alike; a rule that grades one language says
+        # which interpreter it grades, and the first line of the file is what answers.
+        if case.get("shebang"):
+            hits = [h for h in hits if os.path.isfile(h) and _shebang(h, case["shebang"])]
+        if not hits:
+            raise SystemExit(f"rule {rule['id']}: glob {case['glob']} matched nothing")
+        argv += hits
+    return argv
+
+
+def _shebang(path: str, word: str) -> bool:
+    try:
+        with open(path, errors="replace") as fh:
+            return word in fh.readline()
+    except OSError:
+        return False
+
+
+def run_case(rule: dict, case: dict) -> tuple[bool, str, str]:
+    """Run one case. Returns (met_expectation, combined output, one-line description)."""
+    env = dict(os.environ)
+    for key, value in (case.get("env") or {}).items():
+        env[key] = _expand(value)
+    cwd = os.path.join(ROOT, rule.get("cwd", "."))
+    proc = subprocess.run(_argv(rule, case), cwd=cwd, env=env,
+                          capture_output=True, text=True)
+    out = (proc.stdout or "") + (proc.stderr or "")
+    want = case.get("expect", "pass")
+    met = (proc.returncode == 0) if want == "pass" else (proc.returncode != 0)
+    # A rule may also name which policy rules a refusal must fire, so a fixture cannot be
+    # refused for the wrong reason (the shape that let a typo in a feature path satisfy a guard).
+    for name in case.get("expect_rules", []):
+        if f"rule={name}" not in out:
+            met = False
+            out += f"\n(expected the refusal to fire rule={name}; it did not)\n"
+    what = " ".join(case.get("args", [])) or (
+        " ".join(f"{k}={v}" for k, v in (case.get("env") or {}).items()) or "no argument")
+    return met, out, f"{want}: {what}"
+
+
+def _missing(rule: dict) -> str | None:
+    for binary in rule.get("requires", []):
+        if not _which(binary):
+            return binary
+    for module in rule.get("requires_python", []):
+        # The venv python is what the code location itself runs under, so it is what decides
+        # whether a module is importable here (bin/idp-ci called it $MPY).
+        venv = os.path.join(ROOT, ".venv", "bin", "python")
+        python = venv if os.path.exists(venv) else sys.executable
+        if subprocess.run([python, "-c", f"import {module}"], capture_output=True).returncode != 0:
+            return module
+    return None
+
+
+def _which(binary: str) -> str | None:
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = os.path.join(d, binary)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _why(rule: dict) -> None:
+    """Why this rule exists, printed where a failure is read (idp-1a, 2026-09-07).
+
+    "FAIL twohats" tells you a gate said no. The law and the incident under it tell you that
+    decision 0021 exists because one credential was laid under two tenants -- which is the
+    difference between repairing the change and deleting the rule.
+    """
+    why = " -- ".join(x for x in (rule.get("law"), rule.get("origin")) if x)
+    if why:
+        print(f"      why: {why}")
+
+
+def run_rule(rule: dict) -> int:
+    started = time.time()
+    label = rule.get("label", rule["id"])
+    missing = _missing(rule)
+    if missing:
+        # BLIND is not a pass. A gate that could not run has graded nothing (LAW 28).
+        say("BLIND", label, f"{missing} is not available; this rule was not graded")
+        _why(rule)
+        return 1
+    tail = ""
+    echoes: list[str] = []
+    for case in rule["cases"]:
+        met, out, what = run_case(rule, case)
+        if not met:
+            say("FAIL", label, rule["fail"], time.time() - started)
+            _why(rule)
+            print(f"      case {what}")
+            for line in out.strip().splitlines()[-20:]:
+                print(f"      {line}")
+            return 1
+        if case.get("tail_of"):
+            lines = [ln for ln in out.strip().splitlines() if ln.strip()]
+            tail = lines[-1].strip() if lines else ""
+        if case.get("echo"):
+            echoes += [ln for ln in out.splitlines() if re.search(case["echo"], ln)]
+    msg = rule["ok"]
+    if "{tail}" in msg:
+        # A gate prints its own verdict line; the rule says how much of that prefix to drop so the
+        # registry's line reads like the hand-written rung it replaces. Colour codes go first:
+        # conftest emits them and they would otherwise land in the middle of a sentence.
+        cleaned = re.sub(r"\x1b\[[0-9;]*m", "", tail).strip()
+        cleaned = re.sub(r"^(ok|PASS|FAIL)\s+", "", cleaned)
+        if rule.get("tail_strip"):
+            cleaned = re.sub(rule["tail_strip"], "", cleaned).strip()
+        msg = msg.replace("{tail}", cleaned) if cleaned else rule.get("ok_fallback", rule["ok"])
+    say("ok", label, msg, time.time() - started)
+    for line in echoes:
+        print(f"      {line.strip()}")
+    return 0
+
+
+def cmd_proof(rules: list[dict]) -> int:
+    """Every rule is proved both ways, or it is not a rule.
+
+    crew#839: ns-fence-gate was graded against its own two fixtures for weeks and never against
+    platform/, and thirty-odd namespaces sat open the whole time. A rule with no refusing case
+    cannot be told from a rule that has stopped matching; a rule with no permitting case is a
+    guard nobody has shown is safe to install (LAW 38). Declared exceptions carry live_only with
+    a reason, and are counted out loud rather than passed over in silence.
+    """
+    unproved, elsewhere = [], []
+    for rule in rules:
+        expects = {c.get("expect") for c in rule["cases"]}
+        if "refuse" in expects and "pass" in expects:
+            continue
+        if rule.get("proved_elsewhere"):
+            elsewhere.append(f"{rule['id']}: {rule['proved_elsewhere']}")
+            continue
+        unproved.append(rule["id"])
+    if unproved:
+        say("FAIL", "proof", "a rule is graded one way only; add the missing fixture case or "
+                             f"name where the other way is proved: {', '.join(unproved)}")
+        return 1
+    say("ok", "proof", f"{len(rules) - len(elsewhere)} rule(s) carry a refusing case and a "
+                       f"permitting case; {len(elsewhere)} name where the other way is proved")
+    for line in elsewhere:
+        print(f"      {line}")
+    return 0
+
+
+def cmd_run(args) -> int:
+    only = set(args.only.split(",")) if args.only else None
+    if only:
+        # An id nobody defines used to run nothing and exit 0, so a caller naming a rule that had
+        # been renamed got a green light for a rule that never ran (LAW 38: a gate that grades
+        # nothing is not a gate).
+        unknown = sorted(only - {r["id"] for r in load()})
+        if unknown:
+            say("FAIL", "only", f"no rule in rules.yaml has this id: {', '.join(unknown)}")
+            return 1
+    fail = 0
+    if not only and not args.fast:
+        fail |= cmd_proof([r for r in load() if args.plane in r.get("planes", ["ci"])])
+    for rule in load():
+        if args.plane not in rule.get("planes", ["ci"]):
+            continue
+        if only and rule["id"] not in only:
+            continue
+        # The fast gate (IDP_CI_FAST=1, under 60 s) runs the rules marked fast; the full run
+        # takes the rest. Neither set is skipped -- between them they are every ci rule.
+        if args.fast and not rule.get("fast"):
+            continue
+        if args.rest and rule.get("fast"):
+            continue
+        fail |= run_rule(rule)
+    return fail
+
+
+def cmd_list(args) -> int:
+    for rule in load():
+        planes = ",".join(rule.get("planes", ["ci"]))
+        print(f"{rule['id']:<24} {planes:<12} {len(rule['cases'])} case(s)  {rule['law']}")
+    return 0
+
+
+def _table(rules: list[dict]) -> str:
+    rows = ["| rule | law | gate | must-fail | must-pass |",
+            "|---|---|---|---|---|"]
+    for rule in rules:
+        fixtures = rule.get("fixtures") or {}
+        statement = " ".join(str(rule["statement"]).split())
+        gate = " ".join(rule["run"][:2]) if rule["run"][0] in ("python3", "conftest") else rule["run"][0]
+        rows.append(f"| {statement} | {rule['law']} | `{gate}` | "
+                    f"{fixtures.get('must_fail', '—')} | {fixtures.get('must_pass', '—')} |")
+    return "\n".join(rows)
+
+
+def cmd_render(args) -> int:
+    path = os.path.join(ROOT, "AGENTS.md")
+    with open(path) as fh:
+        text = fh.read()
+    if BEGIN not in text or END not in text:
+        print(f"AGENTS.md carries no generated-table markers; add {BEGIN} and {END}")
+        return 2
+    head, rest = text.split(BEGIN, 1)
+    _, tail = rest.split(END, 1)
+    fresh = f"{head}{BEGIN}\n{_table(load())}\n{END}{tail}"
+    if args.check:
+        if fresh != text:
+            print("FAIL  table    AGENTS.md's rule table is not what rules.yaml says; "
+                  "run bin/idp-rules render-agents-md")
+            return 1
+        print(f"ok    table    AGENTS.md's rule table is generated from rules.yaml "
+              f"({len(load())} rules)")
+        return 0
+    with open(path, "w") as fh:
+        fh.write(fresh)
+    print(f"wrote {len(load())} rules into AGENTS.md")
+    return 0
+
+
+def cmd_cluster(args) -> int:
+    """The admission adapter: which rules a Kyverno policy also enforces, and which it cannot.
+
+    A rule that claims an admission twin must name a policy path that exists, or the repo half and
+    the cluster half have already drifted -- which is the failure crew#539 cost, CI printing
+    'render clean' for a Deployment admission refused.
+    """
+    fail = 0
+    twinned, repo_only = [], []
+    for rule in load():
+        cluster = rule.get("cluster") or {}
+        policy = cluster.get("policy")
+        if "cluster" in rule.get("planes", []) and policy:
+            if not os.path.exists(os.path.join(ROOT, policy)):
+                say("FAIL", "twin", f"{rule['id']} claims admission policy {policy}, which does not exist")
+                fail = 1
+            else:
+                twinned.append(f"{rule['id']} -> {policy}")
+        else:
+            repo_only.append(rule["id"])
+    if not fail:
+        say("ok", "twin", f"{len(twinned)} rule(s) also refused at admission, "
+                          f"{len(repo_only)} graded in the pull request only")
+    for line in twinned:
+        print(f"      {line}")
+    return fail
+
+
+def cmd_session(args) -> int:
+    """The session adapter: the rules a session can grade on the files it just changed.
+
+    A session rule declares session_glob, the paths it is competent to judge. Running a
+    namespace-fence rule over a python file would refuse correct work, and a guard that
+    refuses correct work is an outage (LAW 38) -- so a rule grades only what it claims.
+    """
+    fail = 0
+    graded = 0
+    for rule in load():
+        if "session" not in rule.get("planes", []):
+            continue
+        globs = rule.get("session_glob") or []
+        for path in args.files:
+            rel = os.path.relpath(os.path.realpath(path), ROOT)
+            if not any(fnmatch.fnmatch(rel, g) for g in globs):
+                continue
+            graded += 1
+            met, out, _ = run_case(rule, {"expect": "pass", "args": [rel]})
+            if not met:
+                say("FAIL", rule.get("label", rule["id"]), f"{rel}: {rule['fail']}")
+                for line in out.strip().splitlines()[:8]:
+                    print(f"      {line}")
+                fail = 1
+    if not fail:
+        say("ok", "session", f"{graded} reading(s) over {len(args.files)} changed file(s), no rule refused")
+    return fail
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    run = sub.add_parser("run"); run.add_argument("--plane", default="ci"); run.add_argument("--only")
+    run.add_argument("--fast", action="store_true"); run.add_argument("--rest", action="store_true")
+    run.set_defaults(fn=cmd_run)
+    sub.add_parser("list").set_defaults(fn=cmd_list)
+    render = sub.add_parser("render-agents-md"); render.add_argument("--check", action="store_true")
+    render.set_defaults(fn=cmd_render)
+    sub.add_parser("cluster").set_defaults(fn=cmd_cluster)
+    session = sub.add_parser("session"); session.add_argument("--files", nargs="+", default=[])
+    session.set_defaults(fn=cmd_session)
+    args = parser.parse_args()
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

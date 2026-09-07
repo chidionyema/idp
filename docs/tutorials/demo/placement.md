@@ -63,16 +63,9 @@ scheduled job nobody is monitoring at all.
 ## Proving the rules allow correct work as well as refusing bad
 
 ```
-$ bin/policy-test
-FIXTURE              EXPECT   GOT      PROVES
--------------------- -------- -------- ------
-clean.json           0        0        allows an ordinary permissive tree, including packages with no licence metadata
-sell-blocking.json   1        1        refuses AGPL, SSPL, BUSL, Elastic, non-commercial CC and Commons Clause
-broken-scan.json     1        1        refuses a full parts list with no terms in it, instead of calling it clean
-placement-ok.json    0        0        allows short-interval desk jobs that are monitored and awake-hours only
-placement-misplaced.json 1        1        refuses sleep-window schedules, never-pinged jobs and survival work on a laptop
-
-PASS      every policy allows its good case and refuses its bad ones
+$ bin/idp-rules run --only licence-policy,placement-policy
+ok    licence  the licence policy allows a permissive tree and refuses a sale-blocking one
+ok    placement the placement policy allows a monitored desk job and refuses sleep-window and never-pinged work
 ```
 
 The first two placement fixtures are the pair that matters. `placement-ok.json`

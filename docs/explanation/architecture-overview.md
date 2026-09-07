@@ -40,7 +40,7 @@ flowchart TB
   subgraph GUARD["Guards — read, grade, refuse"]
     SC["bin/supply-chain<br/>syft → SBOM → grype → conftest"]
     PA["bin/placement-audit<br/>launchd plists + Healthchecks API"]
-    PT["bin/policy-test<br/>6 paired controls"]
+    PT["bin/idp-rules<br/>rules.yaml, 37 rules"]
     LIC["policy/licences.rego"]
     PLC["policy/placement.rego"]
   end
@@ -136,8 +136,8 @@ failure and it is the reason the portal is still serving.
 
 - **No bespoke inventory.** `bin/catalog-gen` and `bin/db-gen` are adapters over an inventory
   LAW 39 already produces. Nothing about the estate is stored in this repo.
-- **No bespoke test harness.** `bin/policy-test` runs conftest, because the tool that runs the
-  policy in anger is the tool that should run it in test.
+- **No bespoke test harness.** The `rules.yaml` rows that grade policy run conftest, because the
+  tool that runs the policy in anger is the tool that should run it in test.
 - **No bespoke SBOM format.** syft emits SPDX and CycloneDX, both of which carry their own
   schema and provenance inside the file.
 
@@ -157,7 +157,7 @@ jq '.rows|length' ~/.estate/state/inventory.json                     # 204
 sqlite3 catalog/estate.db 'select count(*) from assets;'             # 204
 sqlite3 catalog/estate.db 'select * from meta;'                      # which run produced this
 bin/idp-verify                                                       # both renderers agree
-bin/policy-test                                                      # 6 fixtures, exit 0
+bin/idp-rules run --plane ci                                         # every rule in rules.yaml
 bin/supply-chain                                                     # SBOM + licence gate
 bin/placement-audit                                                  # inventory + placement gate
 ```

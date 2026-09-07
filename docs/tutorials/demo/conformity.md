@@ -23,7 +23,7 @@ Systems assessed:
 ````
 
 There is no separate failure mode: whichever of `bin/ai-act-gate`,
-`bin/security-policy-gate`, `bin/policy-test` or `bin/multiarch-gate` is red
+`bin/security-policy-gate`, `bin/idp-rules` or `bin/multiarch-gate` is red
 shows up as that gate's own FAIL line inside the fenced block, because this
 script pipes their real stdout through rather than re-implementing a verdict.
 The systems list comes straight from `platform/ai/systems.yaml`, so a new AI

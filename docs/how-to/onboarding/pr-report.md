@@ -37,4 +37,5 @@ body or the diff and run it again; nothing else is needed.
 
 `.github/workflows/ci.yml` job `operating-model-gate`, on every pull request, with
 `pull-requests: write` so it can comment. The fixtures that prove each rule both
-ways live in `policy/fixtures/opmodel-*.json` and run under `bin/policy-test`.
+ways live in `policy/fixtures/opmodel-*.json` and are the cases of the
+`operating-model-policy` row in `rules.yaml`.
