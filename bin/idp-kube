@@ -8,6 +8,18 @@
 # bin/idp-cloud cluster kubeconfig (the same path oke-check.yml and bin/idp-verify-drill use), never
 # from a hand-set context, and it is cached under $XDG_STATE_HOME/idp for IDP_KUBE_MAX_AGE_MIN
 # minutes (default 30) so a session pays the cloud round trip once.
+#
+# WJ.1, 2026-09-07: what this file hands back is no longer the founder's principal. Until now
+# every session that ran bin/idp-kube was cluster administrator, because the OCI exec plugin
+# authenticates as whoever ran `bin/idp-oci-login` -- him. Now the founder-level kubeconfig is
+# used for exactly one call, minting a short-lived token for the read-only `agent-reader`
+# ServiceAccount (platform/rbac/agent-reader.yaml), and every command runs as that. Reading is
+# completely unrestricted; writing is not possible, and is asked for through the broker
+# (platform/jit/) one named action at a time.
+#
+#   bin/idp-kube auth whoami                          # system:serviceaccount:agents:agent-reader
+#   bin/idp-kube --break-glass "cluster is down" ...  # his own identity, loud and recorded
+#
 #   bin/idp-kube get pods -n observability
 #   bin/idp-kube --refresh get nodes          # rebuild the kubeconfig now
 #   bin/idp-kube                              # print the kubeconfig path only
@@ -23,6 +35,19 @@ KC="$STATE/kubeconfig"
 MAX_MIN="${IDP_KUBE_MAX_AGE_MIN:-30}"
 refresh=0
 if [ "${1:-}" = "--refresh" ]; then refresh=1; shift; fi
+# Break-glass is one flag, it takes a reason, and it is loud. It is not hidden and it is not
+# forbidden: an estate whose only escape hatch is "edit the tool" gets its tool edited at 3am by
+# someone who then forgets to edit it back. What it must never be is quiet, so it prints a banner
+# to stderr and appends to a record that survives the session (LAW 21, R49).
+BREAK=0
+if [ "${1:-}" = "--break-glass" ]; then
+  BREAK=1; shift
+  REASON="${1:-}"; shift || true
+  [ -n "$REASON" ] || blind "--break-glass takes a reason in quotes: what is broken that read-only cannot fix"
+  printf '\n  BREAK-GLASS  running as the founder, not agent-reader\n  reason: %s\n\n' "$REASON" >&2
+  mkdir -p "$STATE"
+  printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${JIT_AGENT:-unknown}" "$REASON" >>"$STATE/break-glass.log"
+fi
 command -v kubectl >/dev/null || blind "kubectl is not installed"
 fresh=0
 if [ "$refresh" -eq 0 ] && [ -f "$KC" ] && [ -n "$(find "$KC" -mmin "-$MAX_MIN" 2>/dev/null)" ]; then fresh=1; fi
@@ -50,5 +75,38 @@ if [ "$fresh" -eq 0 ]; then
     sed -e "s|^\( *command: \)oci *$|\1$OCI_BIN|" -e 's|^\( *\)env: \[\] *$|\1env: [{name: SUPPRESS_LABEL_WARNING, value: "True"}]|' "$KC" >"$tmp" && mv "$tmp" "$KC" && chmod 600 "$KC"
   fi
 fi
-if [ $# -eq 0 ]; then printf 'ok      kube  kubeconfig %s\n' "$KC"; exit 0; fi
-KUBECONFIG="$KC" exec kubectl "$@"
+# The downgrade. One call with the founder's kubeconfig mints a token for agent-reader, and that
+# token -- not his principal -- is what every command below runs as. The token carries its own
+# expiry, so a stale cache is a token that stops working rather than a credential lying around.
+RKC="$STATE/kubeconfig-reader"
+downgrade() {
+  local tok
+  tok=$(KUBECONFIG="$KC" kubectl create token agent-reader -n agents --duration=3600s 2>/dev/null) || return 1
+  [ -n "$tok" ] || return 1
+  cp "$KC" "$RKC" && chmod 600 "$RKC" || return 1
+  KUBECONFIG="$RKC" kubectl config unset users >/dev/null 2>&1
+  KUBECONFIG="$RKC" kubectl config set-credentials agent-reader --token="$tok" >/dev/null 2>&1 || return 1
+  KUBECONFIG="$RKC" kubectl config set-context --current --user=agent-reader >/dev/null 2>&1 || return 1
+  return 0
+}
+
+USE="$KC"
+if [ "$BREAK" -eq 0 ]; then
+  if [ "$fresh" -eq 1 ] && [ -f "$RKC" ] && [ -n "$(find "$RKC" -mmin "-$MAX_MIN" 2>/dev/null)" ]; then
+    USE="$RKC"
+  elif downgrade; then
+    USE="$RKC"
+  else
+    # Phase 1 of the rollout, and it is deliberately a warning rather than a refusal. Failing
+    # closed here would mean that on the day this merges, every session in flight loses the
+    # cluster at once -- and the estate is already recovering from sessions colliding. So while
+    # agent-reader does not yet exist in the cluster this behaves exactly as it did yesterday
+    # and says so on every call. The moment the ServiceAccount is applied, every session is
+    # downgraded with no further change to this file. platform/rbac/agent-reader.yaml is the
+    # switch; `bin/idp-kube auth whoami` is how you know which side of it you are on.
+    printf 'warn    kube  agent-reader not in the cluster yet; running as the founder. Apply platform/rbac/agent-reader.yaml (WJ.1)\n' >&2
+  fi
+fi
+
+if [ $# -eq 0 ]; then printf 'ok      kube  kubeconfig %s\n' "$USE"; exit 0; fi
+KUBECONFIG="$USE" exec kubectl "$@"

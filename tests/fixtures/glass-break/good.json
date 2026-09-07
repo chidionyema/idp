@@ -1,0 +1,7 @@
+{
+  "_why": "The same file, landing the way it is supposed to: no auto-merge, and the founder's own approval on it. The gate is not a wall around platform/jit -- it is a wall around landing changes there without him.",
+  "files": ["platform/jit/grants.yaml", "docs/policy/agent-infra-safety-spec.md"],
+  "autoMerge": false,
+  "approvals": ["chidionyema"],
+  "author": "estate-bot"
+}

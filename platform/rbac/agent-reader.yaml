@@ -1,0 +1,121 @@
+# WJ.1: the identity every agent actually uses, and it cannot write anything.
+#
+# Until this file, `bin/idp-kube` handed every session the founder's own OCI principal, which is
+# cluster administrator. Every agent on this laptop could delete any workload in the estate, and
+# the only thing standing between an estate and a bad afternoon was that none of them had tried.
+#
+# Diagnosis stays completely unrestricted, and that is the deliberate half of the design. An agent
+# that cannot read is an agent that guesses, and a guessing agent asks for write access it does not
+# need. So: every pod log, every event, every manifest, every metric, the rollout history, the
+# node conditions -- all of it, in every namespace. What it cannot do is change any of them.
+#
+# Two things are withheld rather than merely not granted:
+#
+#   Secrets. `get secret -o yaml` is a credential in a transcript, and the estate's rule (LAW 21)
+#   is that a secret never appears anywhere it can be read again. `describe` on a Secret is also
+#   refused by this role; key names and byte counts come from the ExternalSecret in git, which is
+#   where they are documented anyway.
+#
+#   RBAC. Reading roles and bindings is how an attacker finds the path from here to admin, and
+#   nothing an agent legitimately does needs it. The one who needs it is the founder, and he has
+#   his own identity.
+#
+# Write is not withheld here and granted somewhere else. There is no somewhere else: it is minted
+# by the broker, one named action at a time, for minutes (platform/jit/). This role is the floor
+# that makes that broker the only ceiling.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agents
+  labels:
+    name: agents
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-reader
+  namespace: agents
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agent-reader
+rules:
+  # Everything, read-only, in every API group -- then the two subtractions above. Kubernetes has
+  # no "deny" rule, so the subtraction is done by not naming secrets or rbac.authorization.k8s.io
+  # anywhere in this list rather than by excluding them from a wildcard. A wildcard with an
+  # exception is not a thing RBAC can express, and pretending otherwise is how these roles go
+  # wrong.
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/status
+      - services
+      - endpoints
+      - configmaps
+      - namespaces
+      - nodes
+      - events
+      - persistentvolumeclaims
+      - persistentvolumes
+      - serviceaccounts
+      - replicationcontrollers
+      - resourcequotas
+      - limitranges
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets, replicasets, controllerrevisions]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies, ingresses, ingressclasses]
+    verbs: [get, list, watch]
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [gateways, httproutes, grpcroutes, referencegrants]
+    verbs: [get, list, watch]
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods, nodes]
+    verbs: [get, list]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [get, list, watch]
+  - apiGroups: [autoscaling, policy, storage.k8s.io, apiextensions.k8s.io, coordination.k8s.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  # Flux, Calico, cert-manager, external-secrets, Temporal and the rest of what this estate runs.
+  # Reading an ExternalSecret is reading which vault entry feeds a Secret, never the value.
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+      - kustomize.toolkit.fluxcd.io
+      - helm.toolkit.fluxcd.io
+      - notification.toolkit.fluxcd.io
+      - image.toolkit.fluxcd.io
+      - external-secrets.io
+      - generators.external-secrets.io
+      - cert-manager.io
+      - acme.cert-manager.io
+      - crd.projectcalico.org
+      - operator.tigera.io
+      - projectcalico.org
+      - monitoring.coreos.com
+      - temporal.io
+      - spiffe.io
+    resources: ["*"]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agent-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agent-reader
+subjects:
+  - kind: ServiceAccount
+    name: agent-reader
+    namespace: agents

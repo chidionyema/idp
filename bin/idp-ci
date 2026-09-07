@@ -506,6 +506,12 @@ gvisor_cell_fence_gate() { python3 "$IDP/bin/gvisor-cell-fence-gate" "$1" >/dev/
 # TTL past the ceiling, or no rate limit. Takes one fixture path so the rung proves it both ways in
 # one run: the broker mints only from this file, so a hole here is admin at 3am.
 jit_grants_gate() { python3 "$IDP/bin/idp-jit-grants" "$1" >/dev/null 2>&1; }
+
+# WJ.8: grades ONE pull request against the glass-break set -- the broker, its catalogue, the RBAC
+# floor, bin/idp-kube and the gates. An agent that can edit those does not need to ask the broker
+# for anything, so they never land on a green check alone: no auto-merge, no self-approval, and
+# the founder's own review or nothing.
+glass_break_gate() { python3 "$IDP/bin/idp-glass-break" "$1" >/dev/null 2>&1; }
 defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
 # 6a. main's verdict, against the live workflows rather than the fixtures (crew#865). On 2026-09-05
 #     nine of twelve ci runs on main were cancelled by the commit after them, so the one branch the
@@ -542,6 +548,13 @@ fi
 #     after the token dies), a reach into secrets, and a wildcard verb on kube-system for eight
 #     hours -- and every one must be refused. Then the live catalogue itself, where a real hole
 #     fails this.
+if ! glass_break_gate "$IDP/tests/fixtures/glass-break/bad.json" \
+   && glass_break_gate "$IDP/tests/fixtures/glass-break/good.json"; then
+  say "ok    glass the broker and its floor cannot land on a green check alone (WJ.8)"
+else
+  say "FAIL  glass a change to the broker could be auto-merged or self-approved (WJ.8)"; fail=1
+fi
+
 if ! jit_grants_gate "$IDP/tests/fixtures/jit-grants/bad.yaml" \
    && jit_grants_gate "$IDP/tests/fixtures/jit-grants/good.yaml" \
    && jit_grants_gate "$IDP/platform/jit/grants.yaml"; then
