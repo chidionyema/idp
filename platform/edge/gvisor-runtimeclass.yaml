@@ -1,0 +1,29 @@
+# crew#892 CP4 — gVisor RuntimeClass for untrusted code execution (zero-trust-boundary.md
+# step 5, deepseek-work-order item 12). Lives in platform/edge next to its admission policy
+# (gvisor-admission.yaml) and the escrow namespace it gates (otto-gvisor-sandbox-namespace.yaml),
+# applied together by the `edge` Flux Kustomization.
+#
+# gVisor's runsc handler is installed on the node pool by cloud-init — the IaC owner's step and
+# the OCI-side remainder, gVisor-on-arm64 being the ticket's own unproven risk. Before a node
+# carries it, this class is inert: kubelet runs a pod requesting this RuntimeClass only on a node
+# whose kubelet has registered `runsc` as a runtime handler, and refuses to place it elsewhere.
+# That is the mechanism that keeps it inert — no nodeSelector is needed to say "not any node",
+# and inventing one would be a fabricated label the estate's IaC has never set (the estate labels
+# nodes only `estate.io/capacity=preemptible` or not at all). Nothing in the class names a
+# machine, a checkout or an account (LAW 46) — only the runtime name a node advertises once
+# cloud-init has installed it.
+#
+# name and handler are deliberate: the written decree names the RuntimeClass `gvisor` and
+# gVisor's handler `runsc`. `overhead.podFixed` is gVisor's own accounting so the scheduler
+# reserves the sandbox kernels' cpu and memory alongside the pod's own request.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: gvisor
+  labels:
+    app.kubernetes.io/part-of: idp
+handler: runsc
+overhead:
+  podFixed:
+    memory: "64Mi"
+    cpu: "100m"
