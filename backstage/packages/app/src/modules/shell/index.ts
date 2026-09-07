@@ -1,6 +1,5 @@
 export {
   Chip,
-  EstateActions,
   EstatePage,
   Fold,
   Fact,

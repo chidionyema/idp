@@ -14,7 +14,6 @@ import {
   Live,
   PLATFORM_LAYER_TYPE,
   byTitle,
-  isEstateInternal,
 } from './estate';
 
 /** One row of "everything we hold": how many entities of one kind and type the catalogue has. */
@@ -135,12 +134,7 @@ export const useEstate = () => {
         setLoaded({
           state: 'ready',
           layers: ofType(PLATFORM_LAYER_TYPE),
-          // The header count and the kind chips count what the estate shows a person, not
-          // everything the catalogue physically holds: ephemeral internal-agent records
-          // (.claude per-session scratch) are excluded so they stop inflating "Everything we
-          // hold" and the systems lists (founder, bin/catalog-gen: they belong in a lesser
-          // section, recoverable but never in a person's first read).
-          inventory: countInventory(everything.items.filter(e => !isEstateInternal(e))),
+          inventory: countInventory(everything.items),
           doors: ofType(FOUNDER_SURFACE_TYPE),
           systems: items.filter(e => e.kind === 'System').sort(byTitle),
           templates: items.filter(e => e.kind === 'Template').sort(byTitle),

@@ -21,43 +21,7 @@
 import { useId } from 'react';
 import type { ReactNode } from 'react';
 import { Content, Link, Page } from '@backstage/core-components';
-import { ButtonLink, Card, CardBody, CardHeader, Flex, Text } from '@backstage/ui';
-import { RiAddCircleLine, RiSearchLine } from '@remixicon/react';
-
-/**
- * The two moves every page offers: find something, make something.
- *
- * Founder, 2026-09-07, on /ops and /tools: "why the look not matching home page". They were
- * built on this same shell, so the type, the rule and the spacing already matched -- what did
- * not was the page top, because only the front page passed any actions and only the front page
- * therefore had buttons above the rule. One page with two buttons and every other page with a
- * bare title reads as two designs. The pair lives here now, and a page that wants a different
- * top passes its own.
- */
-export function EstateActions() {
-  return (
-    <Flex gap="2">
-      <ButtonLink
-        href="/search"
-        variant="secondary"
-        size="medium"
-        className="estate-action estate-action-quiet"
-        iconStart={<RiSearchLine />}
-      >
-        Find
-      </ButtonLink>
-      <ButtonLink
-        href="/create"
-        variant="primary"
-        size="medium"
-        className="estate-action estate-action-strong"
-        iconStart={<RiAddCircleLine />}
-      >
-        Create
-      </ButtonLink>
-    </Flex>
-  );
-}
+import { Card, CardBody, CardHeader, Flex, Text } from '@backstage/ui';
 
 /** The page top: title, the one sentence that says what the page is for, and its actions. */
 export function EstatePage({
@@ -85,9 +49,7 @@ export function EstatePage({
                   {lead}
                 </Text>
               </div>
-              <div className="estate-page-actions">
-                {actions ?? <EstateActions />}
-              </div>
+              {actions && <div className="estate-page-actions">{actions}</div>}
             </header>
             {children}
           </Flex>

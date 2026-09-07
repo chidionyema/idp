@@ -1,0 +1,49 @@
+{
+  "name": "custom-entity-extensions",
+  "version": "0.1.0",
+  "backstage": {
+    "role": "frontend-plugin"
+  },
+  "main": "src/index.tsx",
+  "types": "src/index.tsx",
+  "exports": {
+    ".": "src/index.tsx"
+  },
+  "license": "Apache-2.0",
+  "private": true,
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "start": "backstage-cli plugin:serve",
+    "build": "backstage-cli plugin:build",
+    "lint": "backstage-cli package lint",
+    "test": "backstage-cli package test",
+    "clean": "backstage-cli package clean"
+  },
+  "dependencies": {
+    "@backstage/catalog-model": "^1.7.5",
+    "@backstage/core-components": "^0.18.13",
+    "@backstage/core-plugin-api": "^1.12.9",
+    "@backstage/frontend-plugin-api": "^0.13.4",
+    "@backstage/plugin-catalog-react": "^1.21.0",
+    "@material-ui/core": "^4.12.2",
+    "@material-ui/icons": "^4.11.2",
+    "react": "^18.0.2",
+    "react-dom": "^18.0.2",
+    "react-router-dom": "^6.0.0"
+  },
+  "devDependencies": {
+    "@backstage/cli": "^0.36.5",
+    "@backstage/test-utils": "^1.7.21",
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/user-event": "^14.0.0",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "@types/react-router-dom": "^5.3.3"
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}

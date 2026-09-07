@@ -16,18 +16,6 @@ export const FLUX_LABEL = 'kustomize.toolkit.fluxcd.io/name';
 // A door probed more than three hours ago is not shown green (silent green is the defect class).
 export const STALE_AFTER_MS = 3 * 60 * 60 * 1000;
 
-// The tag bin/catalog-gen stamps on an ephemeral per-session/per-worktree .claude ledger that
-// it has moved onto the secondary `estate-internals` System ("Internal agent records"). These
-// are agent scratch, not estate surfaces or products; the founder's rule (recorded in
-// bin/catalog-gen) is that they sit in a lesser, clearly-separate section -- recoverable,
-// never deleted -- and are not what a reader scrolls past first. Durable op boards and real
-// products never carry this tag, so it picks out exactly the noise.
-export const ESTATE_INTERNAL_TAG = 'estate-internal';
-
-/** True for a catalogue entity the estate keeps apart: an ephemeral internal-agent record. */
-export const isEstateInternal = (e: Entity): boolean =>
-  (e.metadata.tags ?? []).includes(ESTATE_INTERNAL_TAG);
-
 export type Health = 'down' | 'stale' | 'unchecked' | 'up';
 export const HEALTH_LABEL: Record<Health, string> = {
   down: 'Down',
@@ -51,6 +39,7 @@ export const HEALTH_STATE: Record<Health, State> = {
   up: 'good',
 };
 export const needsYou = (h: Health) => h === 'down' || h === 'stale';
+
 // The slice of a Flux Kustomization / HelmRelease the page reads. Anything else is ignored.
 export type FluxObject = {
   metadata: { name: string; namespace?: string };
@@ -108,56 +97,6 @@ export const ago = (
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
-};
-
-/**
- * Directive 4: a door should not read as a bare GitHub Source button. This says, in a plain
- * sentence, how recently the door was health-checked (from its own catalogue annotation), so a
- * tile carries live evidence of the estate speaking about it. Returns undefined when the door
- * has never been checked (there is nothing true to say other than that it has not).
- */
-export const checkedAgo = (
-  entity: Entity,
-  now: number = Date.now(),
-): string | undefined => {
-  const at = Date.parse(
-    entity.metadata?.annotations?.['estate/health-checked-at'] ?? '',
-  );
-  if (Number.isNaN(at)) return undefined;
-  const label = ago(new Date(at).toISOString(), now);
-  return label ? `checked ${label}` : undefined;
-};
-
-/** The bare owner name from a Backstage group ref (`group:default/platform` -> `platform`).
- * When the estate holds no owner for the entity (spec.owner absent) the estate's own rule
- * (openReds.ts) treats that as itself a gap, so a tile must say none plainly. */
-export const ownerOf = (e: Entity): string | undefined => {
-  const ref = (e.spec as { owner?: string } | undefined)?.owner;
-  if (!ref) return undefined;
-  const afterKind = ref.includes(':') ? ref.slice(ref.lastIndexOf(':') + 1) : ref;
-  return afterKind.includes('/')
-    ? afterKind.slice(afterKind.lastIndexOf('/') + 1)
-    : afterKind;
-};
-
-/** How long a red/needs state has held, honestly: the object's own Flux last-transition when a
- * layer records one, else how long ago the live probe last checked the surface when the door
- * records a checked time. Returns undefined when there is no real time to claim (rule 13). */
-export const heldSinceAgo = (
-  e: Entity,
-  st: Pick<LayerState, 'since'>,
-  now: number = Date.now(),
-): string | undefined => {
-  if (st.since) {
-    const label = ago(new Date(st.since).toISOString(), now);
-    return label ? `since ${label}` : undefined;
-  }
-  const at = Date.parse(
-    e.metadata?.annotations?.['estate/health-checked-at'] ?? '',
-  );
-  if (Number.isNaN(at)) return undefined;
-  const l = ago(new Date(at).toISOString(), now);
-  return l ? `last checked ${l}` : undefined;
 };
 
 const cond = (o: FluxObject, type: string) =>
@@ -290,19 +229,6 @@ export const verdict = (c: Counts, total: number): string => {
       c.running === 1 ? 'is still starting' : 'are still starting',
     );
   return `Everything we run is good. ${total} services checked.`;
-};
-
-/**
- * The one state the page should dominate as its headline mark: the worst present state in
- * STATE_ORDER (red > needs > stale > blind > running), else `good` when every checked item is
- * good. Mirrors the worst-first precedence verdict() and verdictSentence() already use, so the
- * mark and the sentence can never disagree about which state leads (directive 1).
- */
-export const dominantState = (c: Counts): State => {
-  for (const s of STATE_ORDER) {
-    if ((c?.[s] ?? 0) > 0) return s;
-  }
-  return 'good';
 };
 
 export const templatePath = (t: Entity): string =>

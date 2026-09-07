@@ -76,22 +76,6 @@ const SearchIcon = remix(RiSearchLine);
 const MenuBookIcon = remix(RiBookOpenLine);
 const AccountCircleIcon = remix(RiUserLine);
 
-// The Map door (founder 2026-09-07, on an empty graph): the catalog graph draws outward from
-// roots it is given and nothing at all when it is given none, and this link carried none -- the
-// page serialised every other bit of its state into the query string (maxDepth, direction,
-// curve) and had no entity to start from. The estate's four domains are the roots: platform,
-// mumchimp, prospector and hermes-v2, which between them own every entity in the catalogue.
-export const MAP_ROOTS = [
-  'domain:default/platform',
-  'domain:default/mumchimp',
-  'domain:default/prospector',
-  'domain:default/hermes-v2',
-] as const;
-
-export const MAP_TO = `/catalog-graph?${MAP_ROOTS.map(
-  r => `rootEntityRefs%5B%5D=${encodeURIComponent(r)}`,
-).join('&')}&maxDepth=2&direction=LR&mergeRelations=true&unidirectional=false`;
-
 export const NAV = [
   { title: 'Home', to: '/', icon: TodayIcon },
   { title: 'Catalogue', to: '/catalog', icon: LayersIcon },
@@ -99,7 +83,7 @@ export const NAV = [
   { title: 'Docs', to: '/docs', icon: MenuBookIcon },
   { title: 'You', to: '/settings', icon: AccountCircleIcon },
   { title: 'Create', to: '/create', icon: AddCircleOutlineIcon },
-  { title: 'Map', to: MAP_TO, icon: AccountTreeIcon },
+  { title: 'Map', to: '/catalog-graph', icon: AccountTreeIcon },
   { title: 'Kubernetes', to: '/catalog?filters%5Bkind%5D=Component', icon: DnsIcon },
   { title: 'Tools', to: '/tools', icon: BuildIcon },
   { title: 'Find', to: '/search', icon: SearchIcon },

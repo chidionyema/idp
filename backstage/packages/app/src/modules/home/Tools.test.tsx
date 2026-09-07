@@ -138,12 +138,8 @@ describe('Tools', () => {
 
   it('gives each tile one Open button to its first link and lists the rest after "Also:"', async () => {
     await render([door('signal', FIRST_GROUP, 'Signal')]);
-    // A link, not a button: the Open on a tile navigates, and since the portal moved to one
-    // button kit it says so in the accessibility tree. It is still the only one of the tile's
-    // links drawn as a control -- that is what `.estate-action` below asserts.
-    const open = await screen.findByRole('link', { name: /^Open Signal/ });
+    const open = await screen.findByRole('button', { name: /^Open Signal/ });
     expect(open).toHaveAttribute('href', 'https://signal.example');
-    expect(open).toHaveClass('estate-action');
     const t = tile('Signal');
     expect(t).toHaveTextContent('What Signal is for.');
     expect(within(t).getByText(/^Also:/)).toHaveTextContent(
@@ -157,18 +153,14 @@ describe('Tools', () => {
       'href',
       'https://signal.example/docs',
     );
-    for (const rest of ['Health', 'Docs']) {
-      expect(
-        within(t).getByRole('link', { name: new RegExp(`^${rest}`) }),
-      ).not.toHaveClass('estate-action');
-    }
+    expect(within(t).queryByRole('button', { name: /Health|Docs/ })).toBeNull();
   });
 
   it('says so on a tile with no link instead of drawing a dead button', async () => {
     await render([door('quiet', FIRST_GROUP, 'Quiet', { links: [] })]);
     const t = await screen.findByRole('article', { name: 'Quiet' });
     expect(within(t).getByText(NO_LINK_SENTENCE)).toBeInTheDocument();
-    expect(within(t).queryByRole('link', { name: /Open/ })).toBeNull();
+    expect(within(t).queryByRole('button', { name: /Open/ })).toBeNull();
     expect(within(t).queryByText(/^Also:/)).toBeNull();
   });
 
