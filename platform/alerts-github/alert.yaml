@@ -28,10 +28,30 @@ spec:
   #     ~17 health check failed / timeout waiting for     <- KEPT: this is what opens one
   # After these three patterns: 98 events/hour = 2,352/day, a 92% cut with nothing the workflow
   # acts on removed. Re-measure with the same command; the numbers below are the receipt.
+  #
+  # The third pattern only ever caught half of what it names, and the half it missed is the larger
+  # one. Flux puts every object it applied in ONE event, newline-separated, so a Kustomization that
+  # reapplies four NetworkPolicies emits a single four-line message. Go's regexp is not multi-line
+  # by default: `^` is the start of the text and `$` is the end of it, so the anchored one-line
+  # pattern never matched a message with a newline in it and every one of those events was
+  # dispatched. Re-measured at the source 2026-09-07 20:20Z, one hour, same command as above:
+  #   112 events/hour still reaching GitHub
+  #    80  NetworkPolicy/otto-{gateway,golden}/... configured   <- multi-line drift, this leak
+  #    58  Health check passed in N                             <- KEPT: this is what closes a P0
+  #    ~15 health check failed / timeout waiting for            <- KEPT: this is what opens one
+  # (80 + 58 exceeds 112 because the drift and the health line arrive on separate events.)
+  #
+  # The replacement anchors the WHOLE message with \A and \z and repeats the line, so an event is
+  # dropped only when every line in it is drift. A message that is four reapplied objects and one
+  # `health check failed` still gets through: that case is graded by name in
+  # tests/test_a_multiline_drift_event_is_dropped_and_a_failure_in_it_is_not.py, which reads these
+  # three patterns out of this file and compiles them with Go's own regexp -- RE2, the package
+  # notification-controller links -- rather than restating them in another engine. Restating them
+  # in Python is what would have hidden this defect, since the defect WAS the engine difference.
   exclusionList:
     - "^Reconciliation finished in "
     - "^Dependencies do not meet ready condition"
-    - "^[A-Za-z]+/[^ ]+ (configured|created|unchanged|deleted)$"
+    - "\\A([A-Za-z]+/[^ ]+ (configured|created|unchanged|deleted)\\n?)+\\z"
   summary: "estate: reconcile ledger"
   eventSources:
     - kind: Kustomization
