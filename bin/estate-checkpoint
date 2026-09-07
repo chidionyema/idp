@@ -1,0 +1,378 @@
+#!/usr/bin/env python3
+"""The recovery record for a unit of work lives on its GitHub issue, not in a vendor's file.
+
+WHY THIS EXISTS. Founder, 2026-09-07: "but not only claude / we have nultiagents now".
+
+WHAT WAS ACTUALLY WRONG. The estate's whole session-continuity layer was keyed to one vendor's
+private on-disk format, measured the same day:
+
+    session-recorder.py   reads ~/.claude/projects/<slug>/<session-id>.jsonl, fires on Claude
+                          Code's Stop hook, keyed on Claude's session_id
+    ticket-gate.py        writes ~/.claude/state/tickets/<session>.json
+    dupe-work-fence.py    refuses a PR that names no issue, using that same session identity
+
+An agent that is not Claude Code has no Stop hook, no JSONL and no session_id, so it gets no
+checkpoint, no ticket binding, and is invisible to dupe-work-fence -- free to duplicate another
+agent's work, which is the exact failure the founder named on 2026-08-19 ("too many agents fixing
+the same issues"). This is not hypothetical: `git log --grep="cline checkpoint"` returns 55
+commits in this repo, from an agent that none of those three files can see. LAW 34 broken at the
+foundation of the sync layer.
+
+THE CLASS. Any continuity mechanism that reads a vendor's transcript format reaches one vendor.
+Every fix for one instance of it (a better recorder, a second hook) fails the same way.
+
+WHAT THIS DOES INSTEAD. Derives the record from the two things every agent leaves behind whatever
+its provider -- git state and the issue it is bound to -- and writes it to the issue itself:
+
+    branch, HEAD, commits ahead of the base, dirty and untracked files, the open PR, the worktree
+
+The issue is already mandatory (ticket-gate), already the sync layer (LAW 26), already readable by
+every agent and by the founder on his phone. One comment per (agent, session), found and updated
+in place by an HTML marker, so it never spams and needs no local state to know what it wrote.
+
+Per-runtime adapters are thin and optional; they only supply the prose an agent alone knows:
+    estate-checkpoint --from-claude-hook     Claude Code, on Stop (reads hook json on stdin)
+    estate-checkpoint --issue N --agent cline --session <id> [--note-file F]     anything else
+
+FAILS OPEN, ALWAYS. A recorder that blocks work is worse than no recorder: no git, no gh, no
+network, no issue, unreadable payload -> exit 0 and say why on stderr. It never refuses a call.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+
+MARKER = "<!-- estate-checkpoint agent=%s session=%s -->"
+MARKER_RE = re.compile(r"<!--\s*estate-checkpoint agent=(\S+) session=(\S+)\s*-->")
+#: Skip the write when the record has not changed AND we wrote within this window. Purely a rate
+#: limiter; losing the stamp file costs one redundant API call, never correctness.
+MIN_INTERVAL_S = int(os.environ.get("ESTATE_CHECKPOINT_MIN_INTERVAL", "90"))
+MAX_LISTED = 12
+
+
+def run(args, cwd=None, timeout=25):
+    """Never raises. Returns (rc, stdout). A recorder that raises is a recorder that blocks."""
+    try:
+        p = subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, (p.stdout or "").strip()
+    except Exception:
+        return 1, ""
+
+
+def git(cwd, *a):
+    return run(["git", *a], cwd=cwd)[1]
+
+
+def repo_root(cwd):
+    rc, out = run(["git", "rev-parse", "--show-toplevel"], cwd=cwd)
+    return out if rc == 0 and out else None
+
+
+def base_ref(cwd):
+    """What this work is measured against, and it must be the REMOTE ref.
+
+    Measured on the first real run, 2026-09-07: diffing against the local `main` listed 12
+    commits as "not on main" that were all on origin/main already -- the local ref was 13
+    behind. A checkpoint that overstates the work is worse than none, so resolve
+    origin/HEAD, fall back to origin/main, and only use a local branch when no remote exists.
+    """
+    out = git(cwd, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+    if out:
+        return out, out.split("/")[-1]
+    for cand in ("origin/main", "origin/master"):
+        if run(["git", "rev-parse", "--verify", "--quiet", cand], cwd=cwd)[0] == 0:
+            return cand, cand.split("/")[-1]
+    for cand in ("main", "master"):
+        if run(["git", "rev-parse", "--verify", "--quiet", cand], cwd=cwd)[0] == 0:
+            return cand, cand
+    return None, "(no base)"
+
+
+def harvest(cwd):
+    """Everything a stranger needs to resume this work, taken from git alone.
+
+    Provider-neutral by construction: no transcript is read here, so the same facts come out
+    whether the agent was Claude Code, Cline, or a person at a keyboard.
+    """
+    root = repo_root(cwd)
+    if not root:
+        return None
+    ref, base = base_ref(root)
+    branch = git(root, "rev-parse", "--abbrev-ref", "HEAD") or "(detached)"
+    head = git(root, "log", "-1", "--format=%h %s")
+    ahead = git(root, "log", "--oneline", "%s..HEAD" % ref, "-n", str(MAX_LISTED)) if ref else ""
+    porcelain = git(root, "status", "--porcelain")
+    dirty = [ln for ln in porcelain.splitlines() if ln.strip()]
+    remote = git(root, "remote", "get-url", "origin")
+    slug = ""
+    m = re.search(r"[:/]([\w.-]+/[\w.-]+?)(?:\.git)?$", remote or "")
+    if m:
+        slug = m.group(1)
+    return {
+        "root": root, "base": base, "branch": branch, "head": head,
+        "ahead": [x for x in ahead.splitlines() if x.strip()],
+        "dirty": dirty, "repo": slug,
+        "worktree": root if root != cwd else cwd,
+    }
+
+
+def open_pr(repo, branch):
+    if not repo or not branch or branch == "(detached)":
+        return None
+    rc, out = run(["gh", "pr", "list", "--repo", repo, "--head", branch, "--state", "open",
+                   "--json", "number,title,url,isDraft", "--limit", "1"])
+    if rc != 0 or not out:
+        return None
+    try:
+        rows = json.loads(out)
+        return rows[0] if rows else None
+    except Exception:
+        return None
+
+
+def render(h, agent, session, note, pr):
+    """The comment body. Deterministic apart from the timestamp, so unchanged work is detectable."""
+    L = [MARKER % (agent, session), "",
+         "### Checkpoint — `%s` on `%s`" % (agent, h["branch"]), ""]
+    if note:
+        L += [note.strip(), ""]
+    L.append("| | |")
+    L.append("|---|---|")
+    L.append("| agent | `%s` |" % agent)
+    L.append("| branch | `%s` (base `%s`) |" % (h["branch"], h["base"]))
+    L.append("| head | `%s` |" % (h["head"] or "(none)"))
+    L.append("| worktree | `%s` |" % h["worktree"])
+    if pr:
+        L.append("| pull request | #%s%s |" % (pr.get("number"), " (draft)" if pr.get("isDraft") else ""))
+    L.append("| uncommitted | %d file(s) |" % len(h["dirty"]))
+    L.append("")
+    if h["ahead"]:
+        L += ["**Commits on this branch, not on `%s`:**" % h["base"], "```"] + h["ahead"] + ["```", ""]
+    if h["dirty"]:
+        shown = h["dirty"][:MAX_LISTED]
+        L += ["**Uncommitted:**", "```"] + shown
+        if len(h["dirty"]) > len(shown):
+            L.append("... and %d more" % (len(h["dirty"]) - len(shown)))
+        L += ["```", ""]
+    L.append("<sub>Written by `bin/estate-checkpoint`. Any agent, any provider — this record is "
+            "derived from git, not from a transcript. Updated in place; not a new comment.</sub>")
+    return "\n".join(L)
+
+
+def _stable(body):
+    """The body minus anything that changes on its own, for the unchanged-work comparison."""
+    return re.sub(r"<sub>.*?</sub>", "", body, flags=re.S).strip()
+
+
+def find_comment(repo, issue, agent, session):
+    rc, out = run(["gh", "api", "--paginate",
+                   "repos/%s/issues/%s/comments" % (repo, issue),
+                   "--jq", ".[] | {id, body}"], timeout=40)
+    if rc != 0 or not out:
+        return None
+    want = MARKER % (agent, session)
+    for line in out.splitlines():
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if want in (row.get("body") or ""):
+            return row
+    return None
+
+
+def stamp_path(repo, issue, agent, session):
+    key = hashlib.sha256(("%s#%s:%s:%s" % (repo, issue, agent, session)).encode()).hexdigest()[:16]
+    return os.path.join(tempfile.gettempdir(), "estate-checkpoint-%s.stamp" % key)
+
+
+def publish(repo, issue, agent, session, body, dry_run=False):
+    sp = stamp_path(repo, issue, agent, session)
+    now = time.time()
+    try:
+        with open(sp) as fh:
+            prev = json.load(fh)
+        if prev.get("hash") == hashlib.sha256(_stable(body).encode()).hexdigest() \
+                and now - prev.get("at", 0) < MIN_INTERVAL_S:
+            return "skipped (unchanged, within %ds)" % MIN_INTERVAL_S
+    except Exception:
+        pass
+    if dry_run:
+        print(body)
+        return "dry-run"
+    existing = find_comment(repo, issue, agent, session)
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
+        fh.write(body)
+        tmp = fh.name
+    try:
+        if existing:
+            rc, _ = run(["gh", "api", "-X", "PATCH",
+                         "repos/%s/issues/comments/%s" % (repo, existing["id"]),
+                         "-F", "body=@%s" % tmp], timeout=40)
+            verb = "updated"
+        else:
+            rc, _ = run(["gh", "api", "-X", "POST",
+                         "repos/%s/issues/%s/comments" % (repo, issue),
+                         "-F", "body=@%s" % tmp], timeout=40)
+            verb = "created"
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    if rc != 0:
+        return "FAILED to write to %s#%s (gh rc=%d)" % (repo, issue, rc)
+    try:
+        with open(sp, "w") as fh:
+            json.dump({"hash": hashlib.sha256(_stable(body).encode()).hexdigest(), "at": now}, fh)
+    except Exception:
+        pass
+    return "%s comment on %s#%s" % (verb, repo, issue)
+
+
+# ---- the Claude Code adapter: the ONLY vendor-specific code in this file --------------------
+def claude_binding(session_id):
+    """Read the issue ticket-gate bound to this Claude session. Absent for any other agent."""
+    p = os.path.join(os.path.expanduser("~"), ".claude", "state", "tickets", "%s.json" % session_id)
+    try:
+        with open(p) as fh:
+            d = json.load(fh)
+        return d.get("repo"), d.get("issue")
+    except Exception:
+        return None, None
+
+
+def from_claude_hook(argv_dry):
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        print("estate-checkpoint: unreadable hook payload, nothing recorded", file=sys.stderr)
+        return 0
+    sid = payload.get("session_id") or ""
+    cwd = payload.get("cwd") or os.getcwd()
+    repo, issue = claude_binding(sid)
+    if not issue:
+        print("estate-checkpoint: no ticket bound to this session, nothing recorded", file=sys.stderr)
+        return 0
+    return emit(repo, issue, "claude-code", sid[:8], cwd, None, argv_dry)
+
+
+def emit(repo, issue, agent, session, cwd, note, dry_run):
+    h = harvest(cwd)
+    if not h:
+        print("estate-checkpoint: %s is not a git checkout, nothing recorded" % cwd, file=sys.stderr)
+        return 0
+    repo = repo or h["repo"]
+    if not repo:
+        print("estate-checkpoint: no repo could be resolved, nothing recorded", file=sys.stderr)
+        return 0
+    body = render(h, agent, session, note, open_pr(repo, h["branch"]))
+    print("estate-checkpoint: " + publish(repo, issue, agent, session, body, dry_run), file=sys.stderr)
+    return 0
+
+
+def selftest():
+    import shutil
+    ok = True
+
+    def check(name, cond):
+        nonlocal ok
+        ok = ok and bool(cond)
+        print(("  PASS  " if cond else "  FAIL  ") + name)
+
+    td = tempfile.mkdtemp(prefix="ecp-selftest-")
+    try:
+        # a real git checkout, so harvest() is proved against git and not a mock
+        run(["git", "init", "-q", "-b", "main", td])
+        run(["git", "-C", td, "config", "user.email", "t@t"])
+        run(["git", "-C", td, "config", "user.name", "t"])
+        open(os.path.join(td, "a.txt"), "w").write("one\n")
+        run(["git", "-C", td, "add", "a.txt"])
+        run(["git", "-C", td, "commit", "-qm", "first"])
+        run(["git", "-C", td, "checkout", "-qb", "feat/x"])
+        open(os.path.join(td, "b.txt"), "w").write("two\n")
+        run(["git", "-C", td, "add", "b.txt"])
+        run(["git", "-C", td, "commit", "-qm", "second commit"])
+        open(os.path.join(td, "dirty.txt"), "w").write("uncommitted\n")
+
+        h = harvest(td)
+        check("harvest reads a real checkout", h is not None)
+        check("branch found", h and h["branch"] == "feat/x")
+        check("commit ahead of base listed", h and any("second commit" in c for c in h["ahead"]))
+        check("base falls back to a local ref when there is no remote", h and h["base"] == "main")
+        check("commits already on the base are NOT listed",
+              h and not any("first" in c for c in h["ahead"]))
+        check("uncommitted file seen", h and any("dirty.txt" in d for d in h["dirty"]))
+        check("no transcript is read (provider-neutral)",
+              "jsonl" not in json.dumps(h) and "projects" not in json.dumps(h))
+
+        body = render(h, "cline", "sess1", "resuming the parser work", None)
+        check("marker present and parseable", MARKER_RE.search(body))
+        check("agent and session in marker", MARKER % ("cline", "sess1") in body)
+        check("note carried", "resuming the parser work" in body)
+        check("dirty file rendered", "dirty.txt" in body)
+
+        b2 = render(h, "cline", "sess1", "resuming the parser work", None)
+        check("render is deterministic for unchanged work", _stable(body) == _stable(b2))
+
+        # harvest of a non-git dir must not raise and must not record
+        nd = tempfile.mkdtemp(prefix="ecp-nogit-")
+        try:
+            check("non-git directory returns None, does not raise", harvest(nd) is None)
+        finally:
+            shutil.rmtree(nd, ignore_errors=True)
+
+        check("emit on a non-git dir exits 0 (fails open)",
+              emit("o/r", 1, "cline", "s", "/", None, True) == 0)
+        check("run() never raises on a missing binary", run(["definitely-not-a-binary-xyz"])[0] != 0)
+
+        old = sys.stdin
+        try:
+            sys.stdin = open(os.devnull)
+            check("--from-claude-hook on garbage stdin exits 0", from_claude_hook(True) == 0)
+        finally:
+            sys.stdin = old
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
+    print("\n" + ("ALL PASS" if ok else "FAILURES ABOVE"))
+    return 0 if ok else 1
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Write a resume record to the work's GitHub issue.")
+    ap.add_argument("--issue")
+    ap.add_argument("--repo", help="owner/repo; defaults to origin of the checkout")
+    ap.add_argument("--agent", default=os.environ.get("ESTATE_AGENT", "agent"))
+    ap.add_argument("--session", default=os.environ.get("ESTATE_SESSION", "-"))
+    ap.add_argument("--cwd", default=os.getcwd())
+    ap.add_argument("--note-file", help="file whose text is carried verbatim into the record")
+    ap.add_argument("--from-claude-hook", action="store_true")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--selftest", action="store_true")
+    a = ap.parse_args()
+    if a.selftest:
+        return selftest()
+    if a.from_claude_hook:
+        return from_claude_hook(a.dry_run)
+    if not a.issue:
+        ap.error("--issue is required (or use --from-claude-hook)")
+    note = None
+    if a.note_file:
+        try:
+            with open(a.note_file) as fh:
+                note = fh.read()
+        except Exception:
+            pass
+    return emit(a.repo, a.issue, a.agent, a.session, a.cwd, note, a.dry_run)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
