@@ -1,43 +1,17 @@
-# The crew#191 fence: a both-ways default deny, plus the narrow holes this door actually
-# needs -- DNS, the shared edge Gateway reaching the door's port, the estate's own trace
-# collector (LAW 50), the event bus the door hands tasks to, and the binding database that
-# lives in this same area.
+# The crew#191 fence for this namespace -- the both-ways `default-deny-all` and the
+# `allow-dns-egress` exception -- is NOT here. It lives in
+# platform/ns-fences/network/otto-gateway.yaml, with every other namespace's, because that is the
+# deck bin/ns-fence-gate grades and one object may have one owner.
 #
-# There is deliberately no hole to the public internet. The door only ever receives; it
-# never calls a channel's API back. That work belongs to the agent lanes reading the bus,
-# which run elsewhere and have their own fences. A door that cannot dial out is a door that
-# cannot be turned into an exfiltration path by a bad event.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-all
-  namespace: otto-gateway
-spec:
-  podSelector: {}
-  policyTypes: [Ingress, Egress]
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns-egress
-  namespace: otto-gateway
-spec:
-  podSelector: {}
-  policyTypes: [Egress]
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
----
+# Until 2026-09-07 it was in both files, and two Flux Kustomizations reapplied it at each
+# other every ten minutes. Each apply rewrote the object's
+# `kustomize.toolkit.fluxcd.io/name` label to its own name, so each one was a real change
+# and each emitted a `NetworkPolicy/otto-gateway/... configured` event. Four objects
+# (default-deny-all and allow-dns-egress, in otto-gateway and otto-golden) were 80 of the
+# 112 Flux events an hour reaching GitHub Actions, and the specs were byte-identical the
+# whole time -- the churn was the ownership label, not the policy.
+#
+# What stays in this file is what is specific to this workload: the holes it needs.
 # The shared Traefik gateway (area `edge`) is what an HTTPRoute forwards through; without
 # this, a channel's POST to /webhook/telegram and the edge's own health probe would arrive
 # at a pod that drops every inbound packet by default.
