@@ -1,0 +1,33 @@
+# must-fail fixture for check 5 of bin/estate-security-scan (`trivy config`). This is the shape
+# the gate has to refuse: a privileged pod on the host network with a writable root filesystem.
+# The scan skips tests/, so this file is never part of the repository verdict; check 5 points
+# trivy at it deliberately, on every run, and reports BLIND if it comes back clean -- a guard that
+# has stopped being able to refuse must say so rather than keep printing ok (LAW 45).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: must-be-refused
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: must-be-refused }
+  template:
+    metadata:
+      labels: { app: must-be-refused }
+    spec:
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - name: app
+          image: nginx:latest
+          securityContext:
+            privileged: true
+            allowPrivilegeEscalation: true
+            runAsUser: 0
+            readOnlyRootFilesystem: false
+          volumeMounts:
+            - { name: sock, mountPath: /var/run/docker.sock }
+      volumes:
+        - name: sock
+          hostPath: { path: /var/run/docker.sock }

@@ -3,8 +3,13 @@
 #
 # The fence matters more here than anywhere else in the estate. This is the one workload that
 # can mint write access on a cluster where nothing else holds any, so the set of things that
-# may speak to it is the set of things that could try. Two may: the gateway, which carries
-# Telegram's webhook, and the agents, which ask. Nothing else, in either direction.
+# may speak to it is the set of things that could try. Exactly one may: the agents, which ask.
+# Two may, and the second is narrow: the agents, which ask, and the edge, which hands this
+# namespace a mirrored copy of the one Telegram POST otto-gateway answers
+# (platform/otto-gateway/telegram-mirror.yaml). The broker cannot collect his tap any other
+# way -- one bot has one webhook URL and otto's door holds it -- and the port being reachable
+# from edge is not a door being open: a request there is refused unless it carries both the
+# secret token Telegram signs with and the HMAC the broker itself minted.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -45,22 +50,25 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: the-two-that-may-speak-to-the-broker
+  name: the-one-that-may-speak-to-the-broker
   namespace: jit
 spec:
   podSelector:
     matchLabels: {app.kubernetes.io/name: jit-broker}
   policyTypes: [Ingress]
   ingress:
-    # The gateway, carrying Telegram's webhook: this is how a tap on his phone arrives.
-    - from:
-        - namespaceSelector:
-            matchLabels: {kubernetes.io/metadata.name: edge}
-      ports: [{protocol: TCP, port: 8080}]
     # The agents, asking. They reach /ask and /state and nothing else can be reached at all.
     - from:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: agents}
+      ports: [{protocol: TCP, port: 8080}]
+    # The edge, delivering his tap. Traefik mirrors the Telegram webhook POST here; broker/
+    # serve.py refuses anything on that path without Telegram's secret token, and broker.py
+    # refuses any callback without the HMAC, so this rule widens what can be *reached*, never
+    # what can be *done*.
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: edge}
       ports: [{protocol: TCP, port: 8080}]
 ---
 apiVersion: networking.k8s.io/v1

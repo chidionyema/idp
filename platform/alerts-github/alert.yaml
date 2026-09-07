@@ -1,5 +1,8 @@
-# Reconcile ledger (crew#325): every Kustomization event, not only errors, so a session can read
-# "applied revision X" and "health check timed out" from the idp Actions log (provider-github.yaml).
+# Reconcile ledger (crew#325): a Kustomization or HelmRelease event becomes a repository_dispatch
+# on idp, and .github/workflows/flux-events.yml turns it into a P0 issue and closes it again
+# (provider-github.yaml). It used to carry EVERY event; see the exclusionList below for why and
+# for what it costs -- "applied revision X" is no longer on this ledger, and `flux get
+# kustomizations` or the estate MCP server is where a session reads it now.
 apiVersion: notification.toolkit.fluxcd.io/v1beta3
 kind: Alert
 metadata:
@@ -8,6 +11,27 @@ metadata:
 spec:
   providerRef: { name: github-dispatch }
   eventSeverity: info
+  # DEBOUNCE (founder 2026-09-07, ~/.claude/docs/founder/2026-09-07T1730Z-re-is-the-elite-plain-english-breakdown-of-c8b0f1fc.md:
+  # "You are DDOSing your own repository ... Only fire events on failures"). eventSeverity stays
+  # `info` because it has to: flux-events.yml closes a P0 on the info event "Health check passed",
+  # and severity=error alone would open alarms that can never close. So the filter is a deny list
+  # on the message, which is the safe direction -- an error shape nobody has seen yet still gets
+  # through, where an inclusionList would silently drop it.
+  #
+  # Measured at the source, notification-controller over one hour, 2026-09-07 17:15Z
+  # (kubectl -n flux-system logs deploy/notification-controller --since=60m | grep '"dispatching event"'):
+  #   1224 events/hour = 29,376/day
+  #    656  Reconciliation finished in N, next run in N   <- heartbeat, no state change
+  #    430  Dependencies do not meet ready condition      <- a repeat of a failure that emits its own error
+  #     74  <Kind>/<ns>/<name> configured                 <- drift churn, the same object reapplied
+  #     47  Health check passed                           <- KEPT: this is what closes a P0
+  #     ~17 health check failed / timeout waiting for     <- KEPT: this is what opens one
+  # After these three patterns: 98 events/hour = 2,352/day, a 92% cut with nothing the workflow
+  # acts on removed. Re-measure with the same command; the numbers below are the receipt.
+  exclusionList:
+    - "^Reconciliation finished in "
+    - "^Dependencies do not meet ready condition"
+    - "^[A-Za-z]+/[^ ]+ (configured|created|unchanged|deleted)$"
   summary: "estate: reconcile ledger"
   eventSources:
     - kind: Kustomization

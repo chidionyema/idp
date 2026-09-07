@@ -17,3 +17,9 @@ configMapGenerator:
     files: [grants.yaml]
 generatorOptions:
   disableNameSuffixHash: true
+images:
+  # Set by Flux image automation, exactly as backstage, cyrus, lago and the rest are. A tag typed
+  # by hand rots: cyrus sat in ImagePullBackOff from the day it was applied because its deployment
+  # asked for a `:main` tag that was never pushed (platform/image-automation/cyrus.yaml).
+  - name: ghcr.io/chidionyema/jit
+    newTag: main-6079-69f7589c5d60e70d4ef5d218631f3086e5851179 # {"$imagepolicy": "flux-system:jit:tag"}

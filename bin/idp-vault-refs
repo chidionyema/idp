@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Does every key the cluster asks the estate vault for still exist in it?
+#
+# bin/idp-vault-reads answers "is external-secrets talking to the vault at all". It cannot answer
+# this one: a single dead key leaves every other read working, so the audit row stays green while
+# one workload never starts. Incident 2026-09-07: `bridge-instance-ocid` sat in PENDING_DELETION
+# for two days after a `bin/idp-cloud secret delete` (bin/idp-cloud:295). A secret in
+# PENDING_DELETION is still a name OCI refuses to reuse, so External Secrets answered 404 and
+# `tofu apply` answered `400-InvalidParameter, name already exists` -- two confusing symptoms of
+# one deleted key. The ExternalSecret that wanted it held down platform/rbac, and platform/jit
+# behind it: nothing could mint a just-in-time token because a secret had been scheduled for
+# deletion in a different repository's language.
+#
+# The keys come from the manifests, not the cluster: every ExternalSecret is in git, a CI runner
+# has no kube path (bin/idp-oke-rebuild, flux row is n/a), and grading the source of truth catches
+# the break before it is applied. Only refs pointing at the `estate-vault` store are graded --
+# `human-vault` is Bitwarden and its keys are not in this vault by design.
+#
+#   ok      vault-refs  41 estate-vault key(s) across 23 manifest(s), all ACTIVE
+#   FAIL    vault-refs  bridge-instance-ocid PENDING_DELETION, wanted by platform/rbac-identity/external-secret.yaml
+#   BLIND   vault-refs  vault secret list failed ...
+#
+# Usage: idp-vault-refs [<dir>...]   env: OCI_COMPARTMENT_OCID (else platform/oci/terraform.tfvars)
+set -euo pipefail
+IDP=$(cd "$(dirname "$0")/.." && pwd)
+C=${OCI_COMPARTMENT_OCID:-$(awk -F'"' '/^compartment_ocid/{print $2}' "$IDP/platform/oci/terraform.tfvars" 2>/dev/null)}
+[ -n "$C" ] || {
+	echo "BLIND   vault-refs  no compartment: set OCI_COMPARTMENT_OCID or render platform/oci/terraform.tfvars"
+	exit 2
+}
+LIVE=$(mktemp)
+trap 'rm -f "$LIVE"' EXIT
+oci vault secret list --compartment-id "$C" --all --output json >"$LIVE" 2>/dev/null || true
+[ -s "$LIVE" ] || {
+	echo "BLIND   vault-refs  vault secret list failed for compartment $C"
+	exit 2
+}
+python3 - "$LIVE" "$IDP" "$@" <<'PY'
+import json, sys, pathlib
+try:
+    import yaml
+except ImportError:
+    print("BLIND   vault-refs  pyyaml is not installed"); raise SystemExit(2)
+
+live = {s["secret-name"]: s["lifecycle-state"] for s in json.load(open(sys.argv[1]))["data"]}
+root = pathlib.Path(sys.argv[2])
+roots = [root / d for d in (sys.argv[3:] or ["platform", "clusters"])]
+
+STORE = "estate-vault"
+wanted = {}   # key -> set of manifest paths
+for r in roots:
+    for f in r.rglob("*.yaml"):
+        try:
+            docs = list(yaml.safe_load_all(f.read_text()))
+        except Exception:
+            continue          # a Flux-substituted template is not this gate's business
+        for d in docs:
+            if not isinstance(d, dict) or d.get("kind") not in ("ExternalSecret", "ClusterExternalSecret", "PushSecret"):
+                continue
+            spec = d.get("spec") or {}
+            spec = (spec.get("externalSecretSpec") or spec)
+            default_store = (spec.get("secretStoreRef") or {}).get("name")
+            entries = [(e, e.get("remoteRef") or {}) for e in (spec.get("data") or [])]
+            entries += [(e, e.get("extract") or {}) for e in (spec.get("dataFrom") or [])]
+            for entry, remote in entries:
+                if not isinstance(entry, dict):
+                    continue
+                # An entry may name its own store, and several do: platform/cyrus/external-secret.yaml
+                # reads one key from human-vault inside an ExternalSecret whose spec says estate-vault.
+                # Reading only the spec-level store grades those against the wrong vault.
+                source = (entry.get("sourceRef") or {})
+                if source.get("generatorRef"):
+                    continue
+                store = ((source.get("storeRef") or {}).get("name")) or default_store
+                k = remote.get("key")
+                if store == STORE and isinstance(k, str) and "$" not in k:
+                    wanted.setdefault(k, set()).add(str(f.relative_to(root)))
+
+bad = [(k, live.get(k, "ABSENT"), sorted(wanted[k])[0]) for k in sorted(wanted) if live.get(k) != "ACTIVE"]
+if bad:
+    for k, state, where in bad:
+        print(f"FAIL    vault-refs  {k} {state}, wanted by {where}")
+    raise SystemExit(1)
+files = {p for ps in wanted.values() for p in ps}
+print(f"ok      vault-refs  {len(wanted)} {STORE} key(s) across {len(files)} manifest(s), all ACTIVE")
+PY

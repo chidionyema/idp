@@ -26,6 +26,11 @@ kind: Namespace
 metadata:
   name: nodesoftware-operator
   annotations:
+    # Flux never garbage-collects this Namespace. Incident 2026-08-29: idp#648 moved
+    # platform/backstage's namespace.yaml between two prune:true rows and the namespace --
+    # and the portal inside it -- went with the prune. Every Namespace any Flux row renders
+    # carries this mark, and platform/edge/protect-namespaces.yaml refuses a DELETE of one.
+    kustomize.toolkit.fluxcd.io/prune: disabled
     estate.estate.io/policy-summary: >-
       Owns the RuntimeInstall CR and the controller Deployment. Default-deny
       fence; the operator's own RBAC is the only egress.

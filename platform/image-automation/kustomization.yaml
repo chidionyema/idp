@@ -10,3 +10,4 @@ resources:
   - lago-api.yaml
   - lago-front.yaml
   - cyrus.yaml
+  - jit.yaml

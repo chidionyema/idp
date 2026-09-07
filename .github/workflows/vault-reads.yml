@@ -1,5 +1,5 @@
 # button: Audit vault reads
-# founder: Lists who read what from the vault and flags anything outside the expected pattern.
+# founder: Lists who read what from the vault, and checks every key the cluster asks for is still in it.
 # crew#584, founder 2026-08-29: the vault audit is monitoring, not a pull-request grade. It used to be
 # the vault-reads row of bin/idp-oke-rebuild --check, where a 90-minute OCI audit query (427 s, run
 # 33237964214) blocked every platform pull request. Now it runs on its own clock, never on
@@ -58,6 +58,39 @@ jobs:
           body=$(printf '%s\nrun: %s/%s/actions/runs/%s\nfix: bin/idp-vault-reads header; ClusterSecretStore estate-vault' "${ROW:-vault-reads produced no row}" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
           n=$(gh issue list --state open --search 'in:title "P1: external-secrets is not reading the vault"' --json number -q '.[0].number')
           if [ -n "$n" ]; then gh issue comment "$n" --body "$body"; else gh label create P1 --color D93F0B --description "platform layer degraded" --force >/dev/null; gh issue create --title "P1: external-secrets is not reading the vault" --label P1 --body "$body"; fi
+      # The audit above answers "is anything reading the vault". It cannot answer "is every key the
+      # manifests ask for still there": one dead key leaves every other read working, so the audit
+      # stays green while one workload never starts. It did, for two days, on 2026-09-07.
+      - name: bin/idp-vault-refs
+        id: refs
+        if: always()
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: |
+          set +e; out=$(bin/idp-vault-refs 2>&1); rc=$?; set -e
+          echo "$out"
+          { echo "rc=$rc"; echo "row<<EOF"; echo "$out"; echo EOF; } >> "$GITHUB_OUTPUT"
+      - name: a dead key opens or updates its own P1
+        if: always() && steps.refs.outputs.rc != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROW: ${{ steps.refs.outputs.row }}
+        run: |
+          fix="the named key is absent or PENDING_DELETION in the estate vault. oci vault secret cancel-secret-deletion --secret-id <ocid> restores one that was scheduled for deletion, then tofu import puts it back in platform/oci state."
+          body=$(printf '%s\nrun: %s/%s/actions/runs/%s\nfix: %s' "${ROW:-vault-refs produced no row}" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}" "$fix")
+          n=$(gh issue list --state open --search 'in:title "P1: a key the cluster reads is gone from the estate vault"' --json number -q '.[0].number')
+          if [ -n "$n" ]; then gh issue comment "$n" --body "$body"; else gh label create P1 --color D93F0B --description "platform layer degraded" --force >/dev/null; gh issue create --title "P1: a key the cluster reads is gone from the estate vault" --label P1 --body "$body"; fi
+          exit 1
+      - name: every key is there, so close that P1 with the run as the receipt
+        if: always() && steps.refs.outputs.rc == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$(gh issue list --state open --search 'in:title "P1: a key the cluster reads is gone from the estate vault"' --json number -q '.[0].number')
+          [ -z "$n" ] && exit 0
+          gh issue close "$n" --reason completed --comment "$(printf 'green: %s\nrun: %s/%s/actions/runs/%s' "${{ steps.refs.outputs.row }}" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")"
       - name: a green audit closes the open P1, with the run as the receipt
         if: success()
         env:

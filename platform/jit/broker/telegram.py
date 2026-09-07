@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
 import urllib.request
 
 from .broker import Broker, Refused, Request
@@ -22,15 +23,29 @@ from .broker import Broker, Refused, Request
 API = "https://api.telegram.org/bot{token}/{method}"
 
 
-def _call(token: str, method: str, payload: dict) -> dict:
+def _call(token: str, method: str, payload: dict, timeout: int = 20) -> dict:
     body = json.dumps(payload).encode()
     req = urllib.request.Request(  # noqa: S310 -- API is an https literal
         API.format(token=token, method=method),
         data=body,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=20) as fh:  # noqa: S310 -- API is an https literal
-        return json.load(fh)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as fh:  # noqa: S310 -- API is an https literal
+            return json.load(fh)
+    except urllib.error.HTTPError as exc:
+        # urlopen raises before anything reads the body, and the body is the only place
+        # Telegram says what it refused. `HTTP Error 409: Conflict` is equally true of a
+        # webhook that is already registered and of a second reader on the same bot, and
+        # those want opposite repairs -- on 2026-09-07 the broker printed that bare line
+        # every five seconds for hours and named neither. The token travels in the URL and
+        # never in the body, so the body is safe to carry into a log line (LAW 21).
+        said = exc.read().decode("utf-8", "replace")[:500]
+        try:
+            said = json.loads(said).get("description") or said
+        except ValueError:
+            pass
+        raise RuntimeError(f"telegram {method}: {exc.code} {said}") from None
 
 
 def ask_text(req: Request, grant: dict) -> str:

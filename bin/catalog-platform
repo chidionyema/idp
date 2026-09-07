@@ -82,6 +82,61 @@ LAYERS = {
         "Buyer sandbox",
         "A one-hour throwaway cluster inside the cluster for a buyer's engineer; launched by hand from the runbook, reaped by the platform when the hour is up.",
     ),
+    "jit": (
+        "identity",
+        "Just-in-time access",
+        "The only way a write reaches the cluster: an agent asks, the founder taps yes on his phone, and a token that expires in minutes is minted for that one verb. Nothing holds standing write access, including this.",
+    ),
+    "rbac-floor": (
+        "identity",
+        "Who agents are",
+        "The identity every agent on this estate actually uses, and it can read the cluster and write nothing; the ceiling above it is the just-in-time broker, and there is no third road.",
+    ),
+    "rbac": (
+        "identity",
+        "Break-glass bridge",
+        "The one road in that does not go through an agent at all: a machine the founder can reach when the cluster will not let anyone else in.",
+    ),
+    "rbac-identity": (
+        "identity",
+        "Bridge identity",
+        "The credential the human-vault bridge signs in with, carried from the vault into flux-system so the binding that trusts it can be substituted before it is applied.",
+    ),
+    "human-vault-bridge": (
+        "identity",
+        "Vendor key bridge",
+        "The human door: a vendor key the founder types once into a console reaches every workload that needs it, generated from platform/vendors/consoles.yaml so adding a vendor is one row and a renderer run.",
+    ),
+    "calico": (
+        "edge",
+        "Packet policy engine",
+        "The engine that actually drops a packet a NetworkPolicy refuses; without it every fence in the estate is a comment.",
+    ),
+    "ns-fences": (
+        "edge",
+        "Namespace fences",
+        "Both-ways default-deny, a quota and request defaults around every namespace, generated from one allowances file so no namespace can be stood up without its walls.",
+    ),
+    "trivy": (
+        "resilience",
+        "Vulnerability scanning",
+        "What is wrong with the images and nodes already running: the operator that reads every workload and files a vulnerability report the security scan reads.",
+    ),
+    "cyrus": (
+        "agents",
+        "Agent orchestration",
+        "The runtime that proves every engine works and publishes what it saw to the central collector.",
+    ),
+    "feature-register": (
+        "products",
+        "Store register",
+        "What the store sells and what each plan costs, computed once from features.yaml so the catalogue and the checkout read the same answer.",
+    ),
+    "sandbox-launch": (
+        "products",
+        "Sandbox launcher",
+        "The moving lane behind the buyer sandbox: a branch only the founder's button writes, so a person launches a demo and agents never deploy one.",
+    ),
     "notify": (
         "observability",
         "Notification fan-out",
