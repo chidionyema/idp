@@ -359,7 +359,11 @@ vendors:
     rotation: assisted  # Stripe key creation needs dashboard
     store_default: human-vault
     targets:
-      - { entry: prospector-store-api-env, ns: prospector, field: Stripe__SecretKey, bw: STRIPE_SECRET_KEY }
+      # Stripe__ApiKey, not Stripe__SecretKey: the live prospector-store-api-env Secret carries
+      # Stripe__ApiKey and Stripe__WebhookSecret, and nothing in the estate has ever read a key
+      # called Stripe__SecretKey. Until 2026-09-07 this row named a field that does not exist,
+      # so the door would have delivered the founder's Stripe key under a name the shop ignores.
+      - { entry: prospector-store-api-env, ns: prospector, field: Stripe__ApiKey, bw: STRIPE_SECRET_KEY }
   google_oauth:
     # The shop's "Continue with Google" button. It has been absent from mumchimp.com since the move
     # to Kubernetes: Store.Api registers Google only when both halves are non-empty
