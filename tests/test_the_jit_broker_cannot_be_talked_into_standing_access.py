@@ -9,10 +9,15 @@ file; every case drives the real object and checks what it did.
 from __future__ import annotations
 
 import base64
+import http.client
+import io
 import json
 import pathlib
 import sys
+import threading
 import time
+import urllib.error
+from http.server import ThreadingHTTPServer
 
 import pytest
 
@@ -602,43 +607,43 @@ def test_the_agent_client_says_the_broker_is_unreachable_instead_of_raising(
 
 # --- the answer gets back to the broker (WJ.6 delivery) ------------------------------
 #
-# There is no webhook. The broker opens the connection to Telegram and collects his tap from
-# getUpdates, so these grade the loop that does the collecting: it must clear any stale webhook
-# first (or every poll is a 409 and his tap silently goes nowhere), it must actually apply the
-# approval it collects, and it must not re-deliver an update that made the handler throw.
+# The broker registers no webhook and polls nothing. One Telegram bot has exactly one webhook
+# URL and exactly one reader, this estate runs exactly one bot, and otto-gateway's door holds
+# that URL -- so the broker is handed a mirrored copy of the same POST instead
+# (platform/otto-gateway/telegram-mirror.yaml). What these grade is the door that copy lands
+# on: it must refuse anything not carrying the secret token Telegram signs with, it must apply
+# the approval it is handed, and a correct signature from a chat that is not his must still be
+# refused. The 2026-09-07 regression they close is a broker that polled instead, took otto's
+# webhook away at every start, and then answered 409 forever.
+
+SECRET_TOKEN = "the-token-telegram-was-registered-with"
 
 
-class PollsExhausted(BaseException):
-    """Not an Exception on purpose. poll_forever swallows every Exception and retries, which
-    is what a broker must do with a network blip -- so a test that wants the loop to end has
-    to raise something it does not catch."""
+def _door(broker, phone, secret_token=SECRET_TOKEN):
+    """The real HTTP door on a loopback port, not a stand-in: the check under test reads a
+    header, and a fake handler would grade the test's own idea of the request."""
+    from broker import serve as srv
+
+    srv.Handler.broker, srv.Handler.phone = broker, phone
+    srv.Handler.webhook_secret = secret_token
+    srv.Handler.telegram_path = "/webhook/telegram"
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), srv.Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd
 
 
-class FakeTelegram:
-    """Stands in for api.telegram.org. Records the methods called and hands back the updates
-    the test wants delivered, then an empty result forever so the loop has somewhere to stop."""
-
-    def __init__(self, updates):
-        self.calls, self.batches, self.offsets = [], [updates], []
-
-    def __call__(self, token, method, payload, timeout=20):
-        self.calls.append(method)
-        if method != "getUpdates":
-            return {"ok": True, "result": True}
-        self.offsets.append(payload.get("offset"))
-        if not self.batches:
-            raise PollsExhausted("no more polls")
-        return {"ok": True, "result": self.batches.pop(0)}
-
-
-def _poll_once(monkeypatch, phone, updates):
-    from broker import telegram as tg
-
-    fake = FakeTelegram(updates)
-    monkeypatch.setattr(tg, "_call", fake)
-    with pytest.raises(PollsExhausted):
-        tg.poll_forever(phone)
-    return fake
+def _deliver(httpd, update, token=SECRET_TOKEN, path="/webhook/telegram"):
+    host, port = httpd.server_address[0], httpd.server_address[1]
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    headers = {"Content-Type": "application/json"}
+    if token is not None:
+        headers["X-Telegram-Bot-Api-Secret-Token"] = token
+    conn.request("POST", path, json.dumps(update), headers)
+    status = conn.getresponse()
+    status.read()
+    code = status.status
+    conn.close()
+    return code
 
 
 def _tap(broker, req, chat_id):
@@ -651,47 +656,103 @@ def _tap(broker, req, chat_id):
     }
 
 
-def test_a_stale_webhook_is_cleared_before_the_first_poll(tmp_path, monkeypatch):
-    broker = make(tmp_path)
-    fake = _poll_once(monkeypatch, Phone("t", "42", broker), [])
-    assert fake.calls[0] == "deleteWebhook", (
-        "a webhook left registered makes every getUpdates a 409, and his tap would go "
-        "nowhere with nothing to say so"
-    )
-
-
-def test_a_tap_collected_from_the_poll_grants_the_request(tmp_path, monkeypatch):
-    broker = make(tmp_path)
-    req = broker.ask(
+def _asked(broker):
+    return broker.ask(
         "restart-workload", {"namespace": NS, "pod": "p"}, "why", "5m", "a"
     )
-    phone = Phone("t", "42", broker)
-    _poll_once(monkeypatch, phone, [_tap(broker, req, 42)])
+
+
+def test_his_tap_delivered_to_the_mirrored_path_grants_the_request(tmp_path):
+    broker = make(tmp_path)
+    req = _asked(broker)
+    httpd = _door(broker, Phone("t", "42", broker))
+    try:
+        assert _deliver(httpd, _tap(broker, req, 42)) == 200
+    finally:
+        httpd.shutdown()
     assert req.state == "granted"
 
 
-def test_a_tap_from_another_chat_collected_from_the_poll_is_refused(
-    tmp_path, monkeypatch
-):
+def test_a_delivery_with_no_secret_token_is_refused(tmp_path):
     broker = make(tmp_path)
-    req = broker.ask(
-        "restart-workload", {"namespace": NS, "pod": "p"}, "why", "5m", "a"
-    )
-    phone = Phone("t", "42", broker)
-    _poll_once(monkeypatch, phone, [_tap(broker, req, 999)])
+    req = _asked(broker)
+    httpd = _door(broker, Phone("t", "42", broker))
+    try:
+        assert _deliver(httpd, _tap(broker, req, 42), token=None) == 401
+    finally:
+        httpd.shutdown()
     assert req.state == "pending", (
-        "a correct signature in the wrong chat is still not him"
+        "the mirrored path is reachable from the public door; a delivery Telegram did not "
+        "sign must not move a request"
     )
 
 
-def test_the_offset_advances_so_one_update_is_never_collected_twice(
-    tmp_path, monkeypatch
-):
+def test_a_delivery_with_the_wrong_secret_token_is_refused(tmp_path):
     broker = make(tmp_path)
-    req = broker.ask(
-        "restart-workload", {"namespace": NS, "pod": "p"}, "why", "5m", "a"
+    req = _asked(broker)
+    httpd = _door(broker, Phone("t", "42", broker))
+    try:
+        assert _deliver(httpd, _tap(broker, req, 42), token="not-it") == 401
+    finally:
+        httpd.shutdown()
+    assert req.state == "pending"
+
+
+def test_a_broker_holding_no_webhook_secret_refuses_every_delivery(tmp_path):
+    broker = make(tmp_path)
+    req = _asked(broker)
+    httpd = _door(broker, Phone("t", "42", broker), secret_token="")
+    try:
+        assert _deliver(httpd, _tap(broker, req, 42), token="") == 401, (
+            "an empty configured secret must never compare equal to an empty header, or a "
+            "broker whose Secret failed to sync would accept anything"
+        )
+    finally:
+        httpd.shutdown()
+    assert req.state == "pending"
+
+
+def test_a_signed_tap_from_a_chat_that_is_not_his_is_still_refused(tmp_path):
+    broker = make(tmp_path)
+    req = _asked(broker)
+    httpd = _door(broker, Phone("t", "42", broker))
+    try:
+        _deliver(httpd, _tap(broker, req, 999))
+    finally:
+        httpd.shutdown()
+    assert req.state == "pending", (
+        "Telegram's secret token proves Telegram sent it, never that he sent it"
     )
-    fake = _poll_once(monkeypatch, Phone("t", "42", broker), [_tap(broker, req, 42)])
-    assert fake.offsets[-1] == 8, (
-        "an update the loop already read must not come back on the next poll"
+
+
+def test_the_broker_has_no_poller_to_take_the_webhook_away(tmp_path):
+    from broker import telegram as tg
+
+    assert not hasattr(tg, "poll_forever"), (
+        "a getUpdates loop calls deleteWebhook on the estate's one bot at every start, which "
+        "takes otto-gateway's inbound Telegram away and then 409s forever (2026-09-07)"
     )
+
+
+def test_a_telegram_refusal_says_what_telegram_said(monkeypatch):
+    """`HTTP Error 409: Conflict` is equally true of a registered webhook and of a second
+    reader, and those want opposite repairs. The description is the only thing that tells
+    them apart, and urlopen throws it away unless someone reads the body."""
+    from broker import telegram as tg
+
+    def refuse(req, timeout=20):
+        raise urllib.error.HTTPError(
+            url="https://api.telegram.org/botX/getUpdates",
+            code=409,
+            msg="Conflict",
+            hdrs=None,
+            fp=io.BytesIO(
+                b'{"ok":false,"error_code":409,"description":'
+                b'"can\'t use getUpdates while webhook is active"}'
+            ),
+        )
+
+    monkeypatch.setattr(tg.urllib.request, "urlopen", refuse)
+    with pytest.raises(RuntimeError) as caught:
+        tg._call("X", "getUpdates", {})
+    assert "webhook is active" in str(caught.value)

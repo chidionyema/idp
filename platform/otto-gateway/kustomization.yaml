@@ -13,6 +13,7 @@ resources:
   - agent-env.yaml
   - binding-seed.yaml
   - deployment.yaml
+  - telegram-mirror.yaml
   - httproute.yaml
   - edge-manners.yaml
   - availability.yaml

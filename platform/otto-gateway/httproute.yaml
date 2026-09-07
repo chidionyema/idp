@@ -31,7 +31,27 @@ spec:
   hostnames:
     - "otto.${ESTATE_ZONE}"
   rules:
-    # Every inbound event, from every channel, for every customer. A prefix and not a list of
+    # Telegram, and only Telegram: the same door as the prefix rule below, answered by the
+    # same service, with one addition -- a copy of the request also reaches the JIT broker.
+    # The founder's approval taps are Telegram callback queries on the estate's one bot, and
+    # one bot has one webhook URL, so "otto or the broker" was the real choice until this
+    # rule. telegram-mirror.yaml carries the whole reason. An exact path outranks the prefix
+    # below whichever order they are written in, so this rule is the one Telegram matches.
+    - matches:
+        - path:
+            type: Exact
+            value: /webhook/telegram
+          method: POST
+      filters:
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: friendly-errors }
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: edge-headers }
+      backendRefs:
+        - group: traefik.io
+          kind: TraefikService
+          name: otto-and-the-jit-broker
+    # Every other inbound event, from every channel, for every customer. A prefix and not a list of
     # exact paths: carrying a channel this estate has never carried before must not require
     # editing this file.
     - matches:
