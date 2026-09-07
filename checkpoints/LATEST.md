@@ -1,34 +1,34 @@
-# LATEST
+## RESUME HERE
 
-## RESUME HERE — cyrus delivery door, 2026-09-06 13:45 GMT+1
+**2026-09-07 20:25Z, idp-1a.** Live pipeline risk, mid-investigation.
 
-Founder ask: ", ensure cyruus is working properly lso"
-(`~/.claude/docs/founder/2026-09-06T0248Z-deepseek-agent-appeas-stucj-a9476b49.md`)
-and the Live Proof Protocol in
-`~/.claude/docs/founder/2026-09-06T0310Z-to-ensure-pr-1954-fully-resolves-these-failure-79fbe16e.md`.
+**What just landed.** #2357 (kyverno batching: offline-gate 451s -> 152s, and the
+`if: github.event_name != 'pull_request'` line deleted so it runs pre-merge) and #2376
+(comment-only correction to `platform/jit/rbac.yaml`'s false header). Both merged 20:11.
+Then I added `offline-gate` to main's required checks, ruleset 21473806. Backup of the
+prior ruleset: `<session scratchpad>/ruleset-21473806.before.json`. STAGED, 60 min,
+telegram message_id=40355.
 
-Cyrus is UP: `cyrus-78fbc48cc8-hmq9v 1/1 Running`, 0 restarts, 4h44m, image
-main-5324-778422de, "📦 Managing 3 repositories". Eight walls found and merged:
-#1949, #1954, #1957, #1967, #1971, #1979.
+**The risk I am chasing.** Bot image-bump PRs auto-merge with SQUASH and arrive about
+every five minutes (20 of the last 40 merged PRs). PR #2381, opened 20:11:30, is red on
+`bdd` and `bdd-suites (acceptance)` — the failing step is "acceptance suite (strict on
+PRs to main)". Strict mode applies only on PRs, which is why main's own push runs at
+20:11 and 20:12 are both green and the breakage is invisible there. The previous bot PR
+#2377 passed acceptance at 20:06, so whatever this is started between 20:06 and 20:11 —
+the window my two merges landed in.
 
-Live proof passed: all three checkouts clean (`## main...origin/main`),
-`/var/lib/cyrus/.cyrus` writable with mcp-configs present, no credential in the pod
-manifest (0 secret values in `kubectl describe`), unsigned POST refused on every door
-(/linear-webhook 401, /github-webhook 403, /webhook 401).
+**Why this is urgent rather than merely red.** `offline-gate` is now a required check.
+If bot PRs are also red on bdd, the image-bump pipeline jams: auto-merge blocks and the
+PRs pile up.
 
-Open, wall 9: the Linear transport is still in **proxy mode**. EdgeWorker.js:477 reads
-`LINEAR_DIRECT_WEBHOOKS`, not CYRUS_HOST_EXTERNAL:
-    const useDirectWebhooks = process.env.LINEAR_DIRECT_WEBHOOKS?.toLowerCase() === "true";
-    const secret = useDirectWebhooks ? process.env.LINEAR_WEBHOOK_SECRET || ""
-                                     : process.env.CYRUS_API_KEY || "";
-So Linear is verified against a hosted-service bearer token that this estate does not
-have, instead of the Linear HMAC. GitHub is already `signature mode`. Fix: add
-`LINEAR_DIRECT_WEBHOOKS: "true"` to platform/cyrus/deployment.yaml. All four secret
-files are readable in the main container (0 "not readable" lines), so the secret is there.
+**Next step, and it is the one I was running when I stopped:** worktree at
+`<scratchpad>/wt-red` on origin/main, find the acceptance suite's command in
+`.github/workflows/`, run it locally with the PR-strict env (`SB_BDD_STRICT`, set from
+the base branch in `.github/workflows/ci.yml`; enforced in
+`sovereign/tests/bdd/conftest.py`) and read the actual failure. Do NOT assume it is
+mine — #2377 also shows `offline-gate fail 7m31s`, which predates the ruleset change and
+may be a separate, older breakage on bot PRs specifically.
 
-Also open: one pod Pending on a newer ReplicaSet (cyrus-5574899496-h448b), reason not yet
-read — the cluster API was timing out at 13:40.
-
-Then: move the Linear webhook registration (id 5c755f6e-c32e-477e-9382-be9eab8921a8) from
-/webhook to /linear-webhook, and drop the deprecated alias from httproute.yaml and from
-open_paths in sovereign/tests/bdd/test_gate_front_door_login.py.
+**If it is mine and not fixable in minutes:** remove `offline-gate` from ruleset 21473806
+first (restore from the backup json), then debug. Unjamming the pipeline outranks keeping
+the gate on.
