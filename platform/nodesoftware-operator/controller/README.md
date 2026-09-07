@@ -1,4 +1,4 @@
-# NodeSoftwareOperator controller (C2)
+# NodeSoftwareOperator controller (C2 + C3)
 
 This is the Go controller for the `RuntimeInstall` CRD defined in
 [`platform/nodesoftware-operator/crds/runtimeinstall.yaml`](../crds/runtimeinstall.yaml)
@@ -8,8 +8,8 @@ This is the Go controller for the `RuntimeInstall` CRD defined in
 2. Reads `spec.selector.nodeSelector` to find target nodes.
 3. Walks the state machine in [`internal/controller/state.go`](internal/controller/state.go):
    `Pending` → `Canary` → `Paused` (optional) → `RollingOut` → `Verified` (or `Failed`/`RolledBack`).
-4. Per node: cordon → drain → install (via the runtime handler pod) → verify (via the probe pod)
-   → uncordon.
+4. **Per node** (filled in by C3): cordon → drain → install (handler pod) → verify (probe pod) →
+   uncordon. Each step is idempotent and derived from cluster state on every reconcile.
 5. Honours `spec.rollback` on verification failure when `spec.failurePolicy = FailClosed`.
 
 ## Closed runtime set
@@ -34,12 +34,63 @@ The contract test in [`internal/controller/crd_contract_test.go`](internal/contr
 catches divergence between layers 1 and 2 once the CRD YAML lands on origin/main (it skips
 cleanly when the YAML isn't present).
 
+## Success condition
+
+`spec.verification.successCondition` is a **Go regular expression**, not a shell expression.
+The controller compiles it and matches against the probe pod's stdout. This avoids the
+controller spawning a shell to evaluate arbitrary CR input.
+
+Example for the gVisor runsc canary: `[0-9.]+-gvisor-[0-9]+` matches the kernel version
+printed by `uname -r` inside a runsc sandbox (which reports `6.1.0-gvisor-20240101.0-abcdef` or
+similar).
+
+## Per-node lifecycle
+
+```
+                      ┌─ node-level step loop ─────────────────────┐
+                      │                                            │
+sorted targets ──►    │  cordon  ──►  drain  ──►  install  ──►     │
+                      │      │              │           │         │
+                      │      ▼              ▼           ▼         │
+                      │   node patch    Eviction     handler pod   │
+                      │   (Unschedul-  subresource   (install       │
+                      │    able=true)  for every     script)       │
+                      │                 pod                         │
+                      │                                            │
+                      │  ◄────  verify  ◄──────────────────         │
+                      │      probe pod runs,                       │
+                      │      controller greps stdout               │
+                      │      against successCondition               │
+                      │      (regex match → continue)              │
+                      │                                            │
+                      │  ◄───  uncordon  ─────────────────         │
+                      │      node.Spec.Unschedulable=false         │
+                      │      append Verified entry to history      │
+                      │      pick next sorted target               │
+                      └────────────────────────────────────────────┘
+```
+
+Each step is a small handler in [`internal/controller/reconcile_actions.go`](internal/controller/reconcile_actions.go)
+or [`reconcile_install.go`](internal/controller/reconcile_install.go):
+
+| Verb | File | What it does |
+|------|------|--------------|
+| `Cordon` | `reconcile_actions.go` | patch `node.Spec.Unschedulable=true` |
+| `Drain` | `reconcile_actions.go` | Eviction subresource per pod (PDB-aware); skip DaemonSet + mirror pods |
+| `Install` | `reconcile_install.go` | create privileged hostPath-mounted pod running the install script; wait for Succeeded |
+| `Verify` | `reconcile_install.go` | create probe pod from `Spec.Verification.ProbePod`, wait for Succeeded, regex-match stdout |
+| `Uncordon` | `reconcile_actions.go` | patch `node.Spec.Unschedulable=false`, append `Verified` entry |
+| `Rollback` | `reconcile_install.go` | create uninstall pod, on success write `Failed` entry + transition to `RolledBack` |
+
+The Reconciler does NOT persist sub-state. On restart, it derives where each node is from cluster
+state (node is cordoned? handler pod exists? probe pod Succeeded?) and picks up mid-flight.
+
 ## Building
 
 ```sh
 cd platform/nodesoftware-operator/controller
 go build ./...                  # compile
-go test -count=1 ./...          # state machine + contract test
+go test -count=1 ./...          # 26 sub-tests pass + 1 CRD contract test skips (activates post-#2338)
 go vet ./...                    # static checks
 gofmt -l .                      # formatting (should be empty)
 ```
@@ -54,42 +105,49 @@ docker build -t ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG .
 
 ## What's NOT in this controller yet
 
-The reconciler in [`internal/controller/runtimeinstall_controller.go`](internal/controller/runtimeinstall_controller.go)
-wires the state machine to controller-runtime and stops at compile-clean + state-machine
-unit-tested. The side-effecting verbs (`ActionInstall`, `ActionCordon`, `ActionDrain`,
-`ActionUncordon`, `ActionVerify`, `ActionRollback`) currently log and requeue; the full
-install/cordon/drain pipeline is **milestone C3**, gated on the empirical proof (milestone D).
+The reconciler wires the state machine to cluster side effects for **Cordon / Drain / Install /
+Verify / Uncordon / Rollback**. What remains:
 
-The empirical proof (D) is the PR that:
+- **C4 (runsc handler image)**: the multi-stage Dockerfile under
+  `platform/nodesoftware-operator/runtimes/runsc/` that ships
+  `/usr/local/bin/nodesoftware-runsc-install`, `-uninstall`, `-probe`. Pushed to ghcr by
+  idp#140 image-automation. The controller code already invokes these via
+  `internal/handler/runsc/runsc.go`; the scripts are what C4 ships.
+- **D (empirical proof)**: deploy the controller + handler image to the cluster, flip
+  `estate.estate.io/suspend: "false"` on the canary CR, capture the canary node's `uname -r` log
+  line in the PR body.
+- **E (prototype cleanup)**: delete `platform/gvisor-runsc/` DaemonSet +
+  `gvisor-runsc-exception.yaml` PolicyException. The operator's lockdown grant replaces the
+  time-bounded exception.
 
-1. Flips `estate.estate.io/suspend: "false"` on `platform/gvisor-runtime/runtimeinstall.yaml`.
-2. Deploys the controller image to the cluster (Flux reconciles the row).
-3. Captures the canary node's `uname -r` log line (containing the `gvisor` kernel suffix).
-4. Records `status.rolloutHistory[0].outcome = Verified` for the canary node.
-
-Without (4), the controller's status would never leave `Pending` on a real cluster — which is
-exactly the safety net: the empirical-proof PR cannot land without the proof.
+Without D, no node is touched — the controller code is ready, but the operator image is not
+yet in ghcr and the suspend annotation is "true" on every CR.
 
 ## Layout
 
 ```
 platform/nodesoftware-operator/controller/
-├── Dockerfile                          # multi-stage build, distroless runtime
-├── go.mod / go.sum                     # controller-runtime v0.22.4 + k8s.io/api v0.35.2
+├── Dockerfile                              # multi-stage build, distroless runtime
+├── go.mod / go.sum                         # controller-runtime v0.22.4 + k8s.io/api v0.35.2
 ├── api/v1alpha1/
-│   ├── groupversion_info.go            # SchemeBuilder
-│   ├── runtimeinstall_types.go         # RuntimeInstall, RuntimeInstallSpec, RuntimeInstallStatus
-│   └── zz_generated_deepcopy.go        # hand-written DeepCopy (no controller-gen)
+│   ├── groupversion_info.go                # SchemeBuilder
+│   ├── runtimeinstall_types.go             # RuntimeInstall, RuntimeInstallSpec, RuntimeInstallStatus
+│   └── zz_generated_deepcopy.go            # hand-written DeepCopy (no controller-gen)
 ├── internal/
 │   ├── controller/
-│   │   ├── state.go                    # PURE state machine (tested without a fake client)
-│   │   ├── state_test.go               # 21 sub-tests covering Decide / CanAdvance / ShouldFailClosed
-│   │   ├── runtimeinstall_controller.go# Reconciler: reads CR, calls Decide, applies verb
-│   │   └── crd_contract_test.go        # CRD-YAML <-> Go-types contract test (skips when YAML absent)
+│   │   ├── state.go                        # PURE state machine (tested without a fake client)
+│   │   ├── state_test.go                   # 21 sub-tests covering Decide / CanAdvance / ShouldFailClosed
+│   │   ├── target.go                       # node-selection helpers (sorted by name, canary pin honoured)
+│   │   ├── target_test.go                  # 4 sub-tests for sortedTargetNodes, pickNextTarget, buildSnapshot, isSuspended
+│   │   ├── runtimeinstall_controller.go    # Reconciler entry point + dispatch
+│   │   ├── reconcile_actions.go            # Cordon / Drain / Uncordon
+│   │   ├── reconcile_install.go            # Install / Verify / Rollback + buildHandlerPod / readPodLog
+│   │   ├── types.go                        # shared aliases (ctrlResult, etc.)
+│   │   └── crd_contract_test.go            # CRD-YAML <-> Go-types contract test (skips when YAML absent)
 │   └── handler/
-│       ├── handler.go                  # Handler interface + Registry + ValidateClosedRuntime
-│       └── runsc/runsc.go              # gVisor runsc handler (Install/Uninstall/ProbeCommand)
-└── cmd/main.go                         # controller-runtime manager wiring
+│       ├── handler.go                      # Handler interface + Registry + ValidateClosedRuntime
+│       └── runsc/runsc.go                  # gVisor runsc handler (Install/Uninstall/ProbeCommand)
+└── cmd/main.go                             # controller-runtime manager wiring
 ```
 
 ## Suspend annotation
