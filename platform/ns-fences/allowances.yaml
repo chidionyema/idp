@@ -122,7 +122,9 @@ flows:
     # of the same conversation had been written down; that is not repeated here.
     # estate-db: the catalogue plugin's own Postgres (crew#102 follow-up, 2026-09-06: the enforced
     # replica on node-159 hung in its 14-plugin startup because the fence had never declared it).
-    egress: [dagster, estate-db, identity, kyverno, robusta]
+    # tailscale: "Pair my phone" reaches Sunshine on the Mac through the operator's egress
+    # proxy, which runs in that namespace (platform/backstage/overlays/oke/sunshine-egress.yaml).
+    egress: [dagster, estate-db, identity, kyverno, robusta, tailscale]
     ingress_from: [edge]
     # api.github.com. The portal's buttons are scaffolder templates whose one step is
     # `github:actions:dispatch`, and the catalogue also ingests entities and TechDocs over the
@@ -133,8 +135,12 @@ flows:
     # failed the same way. Every button on the portal was dead from the moment Calico began
     # enforcing the default-deny that flannel ignored. Same class as hermes-agent (PR 2107).
     egress_internet: [443]
+    # cluster-state and rotation-canary write their receipts to Object Storage as the node.
+    egress_metadata: true
   guacamole:
-    egress: [identity]
+    # tailscale: the estate Mac's screen is reached over the tailnet through the operator's
+    # egress proxy in that namespace (Service founder-mac-vnc).
+    egress: [identity, tailscale]
     ingress_from: [edge, monitoring]
   healing:
     egress: [llm]
@@ -186,9 +192,18 @@ flows:
     ingress_from: [observability, edge, dagster, robusta]
   observability:
     egress: [monitoring, identity, estate-db]
+    # telemetry-coverage, science-facts and the Langfuse alert drill each write a receipt to
+    # Object Storage as the node.
+    egress_internet: [443]
+    egress_metadata: true
     ingress_from: [edge, monitoring]
   observability-agent:
     egress: [observability]
+  tailscale:
+    # The operator's egress proxies are the only way anything in the cluster reaches the
+    # founder's Mac. Both doors on to it are declared on the other side too.
+    ingress_from: [backstage, guacamole]
+    egress_internet: [443]
   otto-golden:
     egress: [observability, hindsight]
     ingress_from: [edge]
@@ -208,6 +223,17 @@ flows:
     egress_internet: [443]
     ingress_from: [edge]
   identity:
+    # oauth2-proxy redeems every login code against the Oracle identity domain, and the front
+    # door's heartbeat (platform/identity/front-door-heartbeat.yaml) asks catalogue.mumchimp.com
+    # for its 302 -- both public names over 443. Measured 2026-09-07: a manual run of the
+    # heartbeat in this namespace returned `curl: (28) Connection timed out after 20001 ms`,
+    # and the CronJob has failed every five minutes since 2026-09-06 08:00, which is when
+    # Calico began enforcing the default-deny that flannel ignored. Same class as backstage
+    # above. That failure is what held oke-check red, and a red oke-check never ran
+    # bin/idp-tailscale-policy apply, so the tailnet grant for Sunshine (#2150, merged
+    # 2026-09-06 23:57) was still not live on 2026-09-07 and "Pair my phone" was dead.
+    egress_internet: [443]
+    egress_metadata: true
     ingress_from: [edge, backstage, guacamole, healthchecks, observability]
   dagster:
     # The scheduler is what makes HolmesGPT active (scheduler/estate_scheduler/holmes_watch.py):
@@ -254,6 +280,10 @@ flows:
     # 2026-09-06: estate-db-copy-temporal-r2 timed out on estate-rw from this namespace once Calico
     # enforced the fence; estate-db named temporal on its ingress side, this side named nothing.
     egress: [estate-db]
+    # kini-state writes its receipt to Object Storage as the node, over the public endpoint,
+    # proving who it is against the instance-metadata service first.
+    egress_internet: [443]
+    egress_metadata: true
   commerce:
     # Lago's ledger is database `lago` on the estate cluster, its queue is in this namespace, and
     # it publishes estate.commerce.order_paid to the bus. It reaches nothing else in the estate --
@@ -281,6 +311,8 @@ flows:
     # timeout 10000ms" in the store-web log and the page rendered without it. One TCP port to the
     # public address space is the whole hole; private ranges stay cut out by the generator.
     egress_internet: [443]
+    # store-db-backup writes the storefront's database dump to Object Storage as the node.
+    egress_metadata: true
     # ... and that hole alone was not enough, measured 2026-09-06 21:17Z with it live: the
     # ConnectTimeoutError kept coming (3 in two minutes) and origin_ms stayed at 10529. The
     # load balancer's public address is a Service of type LoadBalancer, so kube-proxy rewrites
