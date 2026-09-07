@@ -13,14 +13,12 @@ that behaviour through the shipped code: the ConfigMap body is compiled and run 
 backend, so a change to the manifest that breaks the logic fails here.
 """
 
-# ruff: noqa: S101, S102
+# ruff: noqa: S101
 #   S101: pytest cases assert.
-#   S102: the point of these cases is to run the collect.py the CronJob actually mounts,
-#   so the ConfigMap body is compiled here rather than copied into the test, where a copy
-#   would drift from the manifest and grade nothing.
 
+import importlib.util
 import pathlib
-import types
+import tempfile
 
 import yaml
 
@@ -30,17 +28,24 @@ MANIFEST = (
 
 
 def collect_module():
-    """Compile the collect.py the CronJob actually mounts, out of the ConfigMap in the manifest."""
+    """Load the collect.py the CronJob actually mounts, the way the CronJob loads it.
+
+    The ConfigMap is projected onto a volume and python runs the file from that path, so the
+    body is written to a file here and imported from it rather than copied into this test,
+    where a copy would drift from the manifest and grade nothing.
+    """
     for doc in yaml.safe_load_all(MANIFEST.read_text()):
         if (
             doc
             and doc.get("kind") == "ConfigMap"
             and "collect.py" in (doc.get("data") or {})
         ):
-            mod = types.ModuleType("science_collect")
-            exec(
-                compile(doc["data"]["collect.py"], str(MANIFEST), "exec"), mod.__dict__
-            )
+            d = tempfile.mkdtemp()
+            f = pathlib.Path(d) / "collect.py"
+            f.write_text(doc["data"]["collect.py"])
+            spec = importlib.util.spec_from_file_location("science_collect", f)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
             return mod
     raise AssertionError("science-facts.yaml carries no ConfigMap with collect.py")
 
