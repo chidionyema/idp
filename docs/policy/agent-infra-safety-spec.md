@@ -219,3 +219,91 @@ already runs. Wired to the golden signals, aborting and reverting on a 1% error-
 4. **W5.** Real new infrastructure, protecting the rarest class of change.
 
 W4 is already true and costs nothing.
+
+---
+
+# W0 — What the first pass of this spec missed
+
+The founder asked what we missed, and named the mathematical certainty himself. He is right that
+the first pass did not deliver it. These pieces are not extras; W0.1, W0.2 and W0.3 are the reason
+the certainty is not there yet, and they come with W1.
+
+## The honest statement of what W1 actually buys
+
+The record asks for a blast radius "mathematically constrained to zero". W1 removes the agent's
+*direct* write to production. It does not remove its write. The agent still writes to production —
+through Git, on Flux's next reconcile. So the boundary is not the API server. **The boundary is the
+merge gate, and the whole guarantee lives inside the scope-check binaries.** A bug in one of them
+is an arbitrary production write with a green tick on it.
+
+That is not a reason to weaken the claim. It is the instruction for where to spend the rigour.
+
+**W0.1 The machinery must sit outside what the agent can change.**
+Nothing in the first pass stopped an agent from opening a pull request against the things that
+constrain it: `bin/idp-image-only-diff` and every other scope check, `deploy-when-green.yml`, the
+gate rows in `AGENTS.md`, `platform/rbac/`, and `bin/idp-kube` itself. Those become permanently
+glass-break, and they need more than the founder's merge — `CODEOWNERS` already names him on
+`/bin/`, `/.github/`, `/platform/` and `/tests/`, so the work is proving the branch protection
+actually requires that review and that the Greenlane's GitHub App token cannot bypass it.
+
+*Done when:* a pull request from an agent that edits a scope check is refused by the repository,
+quoted, and the refusal is not something the agent can turn off.
+
+**W0.2 A scope check is proved against history, not against two fixtures.**
+Two fixtures say a checker handles two cases. The guarantee needs more: replay every pull request
+this repository has ever merged through each scope check and assert it admits only the class it
+claims. That produces a real number — "of N merged pull requests, this checker admits exactly
+these" — and it is the closest thing to the mathematical certainty available here.
+
+*Done when:* each scope check has a replay run over the merged history with its admitted set listed
+in full.
+
+**W0.3 The check and the merge are the same commit.**
+A scope check grades a diff; a force-push between the check and the merge changes what lands. The
+merge is pinned to the exact commit that passed, and a moved head is a refusal, not a re-check.
+
+**W0.4 The layer below Kubernetes, which the record does not cover at all.**
+The framework is written about the Kubernetes API. This cluster sits on OCI, and the credentials in
+`bin/idp-cloud` can delete the cluster, the database and the object storage outright — cluster RBAC
+is irrelevant to any of that. The same is true of the GitHub App token, which can rewrite main;
+Bitwarden, which holds every secret; and DNS. An agent confined to read-only inside Kubernetes
+while holding an OCI administrator key is not confined. W1's treatment — read by default, break
+glass recorded and announced — applies to all four, and the OCI one is as urgent as the Kubernetes
+one.
+
+**W0.5 Sign the proof.**
+The record says "a cryptographic signature *or* a passing CI test log". The first pass took only
+the log, and a log URL in a body the agent wrote is forgeable in principle. `cosign` is already in
+this repository, so the primitive is here: the shadow run signs its own result, the gate verifies
+the signature, and agent commits are signed too. Append-only by convention is not tamper-proof
+either — the audit sink must be one the agent's identity can append to and nothing else.
+
+**W0.6 The agent must not choose the assertions it is graded on.**
+Proof of Convergence as first written asserts whatever the agent decided to assert, so a weak
+assertion passes trivially. The assertion set is defined by the platform, per workload, and the
+pull request selects one rather than supplying one.
+
+**W0.7 An aggregate limit, and a switch he can reach.**
+One memory raise is safe; forty in an hour is a capacity incident, and neither the record nor the
+first pass bounds the *rate* of autonomous merges. The Greenlane gets a budget per hour and halts
+above it. Separately, one flag halts every autonomous merge, reachable from his phone with no
+terminal (LAW 54). Nothing in this repository does either today.
+
+**W0.8 A failed rollout must revert the commit, not only abort.**
+The record's Kyverno scenario says the pipeline "automatically reverts the PR". W5.4 as first
+written only aborted the rollout — and if the bad commit stays on main, Flux re-applies it on the
+next reconcile and the two fight indefinitely. The abort opens and merges a revert.
+
+**W0.9 The failure has to reach the agent that caused it.**
+The record says the system "pages the agent to tell it the fix failed in reality". There is no path
+today from an aborted rollout back to the agent that opened the pull request, so the agent retries
+the same fix. That path is part of W5.
+
+**W0.10 The morning summary.**
+"You sleep through the whole thing and just read a Slack summary in the morning." The first pass
+built per-event notifications and no digest. It is the cheapest item in this document and the one
+that decides whether he ever trusts the lane.
+
+**W0.11 The work already in flight was written under the old rules.**
+A gate catches what the thirty-odd open infrastructure branches change from here on. Nobody has
+read what they already contain. That is an audit pass, once, before they land.
