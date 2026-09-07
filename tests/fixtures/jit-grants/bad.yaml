@@ -1,0 +1,34 @@
+# What the gate must refuse. Every grant here is a real escalation an agent could reach for.
+apiVersion: idp.mumchimp.com/v1
+kind: GrantCatalogue
+grants:
+  # A token for patch on a Deployment: the holder rewrites serviceAccountName and escalates out.
+  - id: patch-anything
+    why: A workload needs a change
+    mode: token
+    verbs: [patch]
+    apiGroups: [apps]
+    resources: [deployments]
+    namespaces: [backstage]
+    max_ttl: 10m
+    rate_per_hour: 3
+  # Secrets, ever.
+  - id: read-a-secret
+    why: The agent needs a credential to debug
+    mode: token
+    verbs: [get]
+    apiGroups: [""]
+    resources: [secrets]
+    namespaces: [llm]
+    max_ttl: 5m
+    rate_per_hour: 1
+  # A core namespace, and a wildcard verb, and a TTL past the ceiling.
+  - id: fix-the-control-plane
+    why: kube-system needs attention
+    mode: broker-applies
+    verbs: ["*"]
+    apiGroups: [apps]
+    resources: [deployments]
+    namespaces: [kube-system]
+    max_ttl: 8h
+    rate_per_hour: 99
