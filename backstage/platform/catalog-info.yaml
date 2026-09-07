@@ -115,6 +115,34 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-agent-workforce
+  title: 'Infrastructure crew'
+  description: 'The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=agent-workforce'
+    estate/flux-kustomization: 'agent-workforce'
+    estate/path: './platform/agent-workforce'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+    - url: https://langfuse.${ESTATE_ZONE}
+      title: 'Model traces'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-alerts-github
+    - component:default/layer-llm
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-alerts
   title: 'Alert routing'
   description: 'Where a page goes: the founder''s phone, the board, never a private chat.'
@@ -232,6 +260,7 @@ spec:
     - component:default/layer-secret-store
     - component:default/layer-edge
     - component:default/layer-estate-db-migrate
+    - component:default/layer-alerts-github
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -267,6 +296,27 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: delivery
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-calico
+  title: 'Packet policy engine'
+  description: 'The engine that actually drops a packet a NetworkPolicy refuses; without it every fence in the estate is a comment.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=calico'
+    estate/flux-kustomization: 'calico'
+    estate/path: './platform/calico'
+    estate/cluster: 'oke'
+  tags: [platform, edge]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: edge
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -390,6 +440,47 @@ spec:
     - component:default/layer-external-secrets
     - component:default/layer-secret-store
     - component:default/layer-priority-classes
+    - component:default/layer-estate-db
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-cyrus
+  title: 'Agent orchestration'
+  description: 'The runtime that proves every engine works and publishes what it saw to the central collector.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=cyrus'
+    estate/flux-kustomization: 'cyrus'
+    estate/path: './platform/cyrus'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  providesApis:
+    - api:default/cyrus-api
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: cyrus-api
+  description: 'Agent orchestration: the HTTP interface, answering at cyrus.${ESTATE_ZONE}.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/agents
+  definition: |
+    # Not published. cyrus answers at cyrus.${ESTATE_ZONE}; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -648,6 +739,29 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-feature-register
+  title: 'Store register'
+  description: 'What the store sells and what each plan costs, computed once from features.yaml so the catalogue and the checkout read the same answer.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=feature-register'
+    estate/flux-kustomization: 'feature-register'
+    estate/path: './platform/features'
+    estate/cluster: 'oke'
+  tags: [platform, products]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: products
+  dependsOn:
+    - component:default/layer-backstage-namespace
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-flux-webhook
   title: 'Push-to-deploy door'
   description: 'The door GitHub knocks on the moment a change is merged, so the estate reconciles at once instead of waiting out the one-minute poll; the knock is refused unless it carries the shared token.'
@@ -859,26 +973,10 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: agents
-  providesApis:
-    - api:default/hermes-agent-api
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-secret-store
     - component:default/layer-alerts-github
----
-apiVersion: backstage.io/v1alpha1
-kind: API
-metadata:
-  name: hermes-agent-api
-  description: 'Hermes: the HTTP interface, answering at otto.${ESTATE_ZONE}.'
-spec:
-  type: openapi
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/agents
-  definition: |
-    # Not published. hermes-agent answers at otto.${ESTATE_ZONE}; this entity
-    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -929,6 +1027,29 @@ spec:
     - component:default/layer-external-secrets
     - component:default/layer-secret-store
     - component:default/layer-edge
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-human-vault-bridge
+  title: 'Vendor key bridge'
+  description: 'The human door: a vendor key the founder types once into a console reaches every workload that needs it, generated from platform/vendors/consoles.yaml so adding a vendor is one row and a renderer run.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=human-vault-bridge'
+    estate/flux-kustomization: 'human-vault-bridge'
+    estate/path: './platform/human-vault-bridge'
+    estate/cluster: 'oke'
+  tags: [platform, identity]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: identity
+  dependsOn:
+    - component:default/layer-human-vault
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -997,30 +1118,25 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: layer-agent-workforce
-  title: 'Infrastructure crew'
-  description: 'The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.'
+  name: layer-jit
+  title: 'Just-in-time access'
+  description: 'The only way a write reaches the cluster: an agent asks, the founder taps yes on his phone, and a token that expires in minutes is minted for that one verb. Nothing holds standing write access, including this.'
   annotations:
-    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=agent-workforce'
-    estate/flux-kustomization: 'agent-workforce'
-    estate/path: './platform/agent-workforce'
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=jit'
+    estate/flux-kustomization: 'jit'
+    estate/path: './platform/jit'
     estate/cluster: 'oke'
-  tags: [platform, agents]
+  tags: [platform, identity]
   links:
     - url: https://signoz.${ESTATE_ZONE}
       title: 'Live logs and metrics'
-    - url: https://langfuse.${ESTATE_ZONE}
-      title: 'Model traces'
 spec:
   type: platform-layer
   lifecycle: production
   owner: group:default/platform
-  system: agents
+  system: identity
   dependsOn:
-    - component:default/layer-scheduling
-    - component:default/layer-secret-store
-    - component:default/layer-alerts-github
-    - component:default/layer-llm
+    - component:default/layer-rbac
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -1248,6 +1364,27 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-ns-fences
+  title: 'Namespace fences'
+  description: 'Both-ways default-deny, a quota and request defaults around every namespace, generated from one allowances file so no namespace can be stood up without its walls.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=ns-fences'
+    estate/flux-kustomization: 'ns-fences'
+    estate/path: './platform/ns-fences'
+    estate/cluster: 'oke'
+  tags: [platform, edge]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: edge
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-observability
   title: 'Traces and model calls'
   description: 'Where every request and every model call is kept and searched.'
@@ -1340,7 +1477,7 @@ spec:
     - component:default/layer-secret-store
     - component:default/layer-edge
     - component:default/layer-event-bus
-    - component:default/layer-estate-db-migrate
+    - component:default/layer-alerts-github
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -1492,6 +1629,50 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-rbac
+  title: 'Who agents are'
+  description: 'The identity every agent on this estate actually uses, and it can read the cluster and write nothing; the ceiling above it is the just-in-time broker, and there is no third road.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=rbac'
+    estate/flux-kustomization: 'rbac'
+    estate/path: './platform/rbac'
+    estate/cluster: 'oke'
+  tags: [platform, identity]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: identity
+  dependsOn:
+    - component:default/layer-rbac-identity
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-rbac-identity
+  title: 'Bridge identity'
+  description: 'The credential the human-vault bridge signs in with, carried from the vault into flux-system so the binding that trusts it can be substituted before it is applied.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=rbac-identity'
+    estate/flux-kustomization: 'rbac-identity'
+    estate/path: './platform/rbac-identity'
+    estate/cluster: 'oke'
+  tags: [platform, identity]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: identity
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-reloader
   title: 'Config reloader'
   description: 'Restarts a workload when its secret or config changes, so nothing runs stale.'
@@ -1560,6 +1741,46 @@ spec:
   system: resilience
   dependsOn:
     - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-sandbox-launch
+  title: 'Sandbox launcher'
+  description: 'The moving lane behind the buyer sandbox: a branch only the founder''s button writes, so a person launches a demo and agents never deploy one.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=sandbox-launch'
+    estate/flux-kustomization: 'sandbox-launch'
+    estate/path: './platform/sandbox/launch'
+    estate/cluster: 'oke'
+  tags: [platform, products]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: products
+  providesApis:
+    - api:default/sandbox-launch-api
+  dependsOn:
+    - component:default/layer-edge
+    - component:default/layer-kyverno
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: sandbox-launch-api
+  description: 'Sandbox launcher: the HTTP interface, answering at sandbox.${ESTATE_ZONE}.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/products
+  definition: |
+    # Not published. sandbox-launch answers at sandbox.${ESTATE_ZONE}; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -1749,6 +1970,27 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-trivy
+  title: 'Vulnerability scanning'
+  description: 'What is wrong with the images and nodes already running: the operator that reads every workload and files a vulnerability report the security scan reads.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=trivy'
+    estate/flux-kustomization: 'trivy'
+    estate/path: './platform/trivy'
+    estate/cluster: 'oke'
+  tags: [platform, resilience]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: resilience
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-verification
   title: 'Verification wall'
   description: 'Proves, on every run, that the cluster''s pods are refused the key that signs a verdict; the probe is meant to stay refused.'
@@ -1810,26 +2052,3 @@ spec:
   definition: |
     # Not published. weave-gitops answers at catalogue.${ESTATE_ZONE}; this entity
     # exists so the catalogue records that the interface is reachable and who owns it.
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: layer-cyrus
-  title: 'Agent execution'
-  description: 'Takes an issue from either board -- GitHub or Linear -- and works it with whichever engine the label names: Claude, Codex, Cursor, Gemini or OpenCode. It holds no hand on the cluster; its output is a pull request and the founder merges it.'
-  annotations:
-    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=cyrus'
-    estate/flux-kustomization: 'cyrus'
-    estate/path: './platform/cyrus'
-    estate/cluster: 'oke'
-  tags: [platform, agents]
-  links:
-    - url: https://signoz.${ESTATE_ZONE}
-      title: 'Live logs and metrics'
-    - url: https://langfuse.${ESTATE_ZONE}
-      title: 'Model traces'
-spec:
-  type: platform-layer
-  lifecycle: production
-  owner: group:default/platform
-  system: agents

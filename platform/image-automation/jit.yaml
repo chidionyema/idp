@@ -1,0 +1,32 @@
+# The JIT broker's image (WJ.1-WJ.15). build-multiarch discovers platform/jit/Dockerfile on its
+# own -- bin/dockerfiles names it `jit` -- and pushes `main-<run>-<sha>` like every other estate
+# image. This row is what moves platform/jit/kustomization.yaml onto each new one.
+#
+# The deployment originally asked for `ghcr.io/chidionyema/idp-jit-broker:latest`: a repository
+# that does not exist under a moving tag this repository forbids. Both halves of that would have
+# been an ImagePullBackOff on the day it was applied, which is exactly how cyrus failed.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: jit
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/jit
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: jit
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: jit
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc
