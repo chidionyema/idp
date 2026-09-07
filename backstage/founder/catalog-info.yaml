@@ -624,6 +624,10 @@ metadata:
   description: "Open the estate Mac's screen in your browser to read logs, files and settings. Needs one switch on the Mac, once: System Settings > General > Sharing > Screen Sharing."
   annotations:
     estate/group: "Fix something"
+    # Founder 2026-09-07: "why should i be looking for essential tools at all".
+    # Reaching his own Mac is an everyday door, so it sits first in its group and
+    # on the front page band, not buried among fifty tiles.
+    estate/tier: daily
     idp/updated-by: "platform/guacamole (Flux row guacamole); the connection is seeded by the pod's init container from platform/guacamole/guacamole.yaml"
   tags: [founder, screen]
   links:
@@ -738,6 +742,10 @@ metadata:
   description: "Pair your phone with the estate Mac once, then see and drive its desktop with one tap."
   annotations:
     estate/group: "Fix something"
+    # Founder 2026-09-07: "why should i be looking for essential tools at all".
+    # Reaching his own Mac is an everyday door, so it sits first in its group and
+    # on the front page band, not buried among fifty tiles.
+    estate/tier: daily
     idp/updated-by: "backstage/packages/app/src/modules/home/PairPhone.tsx ships with the portal image; the Mac side is the Sunshine service on the estate Mac (platform/hermes-agent/mac-run.tpl row)"
   tags: [founder]
   links:

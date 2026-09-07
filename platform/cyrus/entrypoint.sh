@@ -80,7 +80,11 @@ link_config() {
 		echo "cyrus-entrypoint: no config at $CONFIG_SRC" >&2
 		return 0
 	}
-	ln -sfn "$CONFIG_SRC" "$HOME/.cyrus/config.json"
+	# A copy, not a symlink: cyrus migrates its own config on boot and writes it back, and a
+	# symlink into the read-only ConfigMap made that an EROFS exit (README, wall 6). Refreshed
+	# every start, so git stays the source of truth.
+	cp "$CONFIG_SRC" "$HOME/.cyrus/config.json"
+	chmod 0600 "$HOME/.cyrus/config.json"
 }
 
 case "${1:-}" in

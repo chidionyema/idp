@@ -28,6 +28,7 @@ import { metricsPlugin } from './modules/metrics';
 // crew#857: the scaffolder form reads the feature register (features.yaml) at
 // render time and shows prices from the pre-computed plan (plan.json).
 import { featureRegisterModule } from './modules/featureRegister';
+import { customEntityExtensionsPlugin } from '../../../plugins/custom-entity-extensions/src';
 
 export default createApp({
   features: [
@@ -48,5 +49,6 @@ export default createApp({
     wordsModule,
     metricsPlugin,
     featureRegisterModule,
+    customEntityExtensionsPlugin,
   ],
 });
