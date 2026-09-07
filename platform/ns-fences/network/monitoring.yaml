@@ -83,6 +83,9 @@ spec:
   - to:
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: edge
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: guacamole
     - namespaceSelector:
         matchLabels:
@@ -111,3 +114,6 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: observability
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: robusta

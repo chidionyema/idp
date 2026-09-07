@@ -160,3 +160,9 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: otto-gvisor-sandbox
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: prospector
