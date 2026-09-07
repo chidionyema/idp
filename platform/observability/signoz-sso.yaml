@@ -108,8 +108,15 @@ data:
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
     BASE = os.environ["SIGNOZ_URL"].rstrip("/")
-    EMAIL = os.environ["SIGNOZ_ROOT_EMAIL"]
-    PASSWORD = os.environ["SIGNOZ_ROOT_PASSWORD"]
+    # Files, not env vars: the estate's secrets-not-from-env-vars policy refuses a secretKeyRef,
+    # because an env var is on show in every `kubectl describe pod` and every crash dump. Read at
+    # each mint so a rotated Secret is picked up without a restart.
+    CRED = os.environ.get("SIGNOZ_ROOT_DIR", "/etc/signoz-root")
+
+
+    def _cred(name: str) -> str:
+        with open(os.path.join(CRED, name)) as fh:
+            return fh.read().strip()
 
     _cached = {"tokens": None, "until": 0.0}
 
@@ -118,13 +125,14 @@ data:
         now = time.time()
         if _cached["tokens"] and now < _cached["until"]:
             return _cached["tokens"]
+        email, password = _cred("email"), _cred("password")
         ctx_url = "{}/api/v2/sessions/context?ref=&email={}".format(
-            BASE, urllib.parse.quote(EMAIL)
+            BASE, urllib.parse.quote(email)
         )
         with urllib.request.urlopen(ctx_url, timeout=10) as fh:
             org_id = json.load(fh)["data"]["orgs"][0]["id"]
         body = json.dumps(
-            {"email": EMAIL, "password": PASSWORD, "orgId": org_id}
+            {"email": email, "password": password, "orgId": org_id}
         ).encode()
         req = urllib.request.Request(
             BASE + "/api/v2/sessions/email_password",
@@ -236,16 +244,30 @@ spec:
           env:
             - name: SIGNOZ_URL
               value: http://signoz.observability.svc.cluster.local:8080
-            - name: SIGNOZ_ROOT_EMAIL
-              valueFrom:
-                secretKeyRef: { name: signoz-root, key: email }
-            - name: SIGNOZ_ROOT_PASSWORD
-              valueFrom:
-                secretKeyRef: { name: signoz-root, key: password }
           volumeMounts:
             - name: app
               mountPath: /app/mint.py
               subPath: mint.py
+            - name: root-credential
+              mountPath: /etc/signoz-root
+              readOnly: true
+          # The minter binds 127.0.0.1 on purpose, and the kubelet probes a pod's own address, so
+          # the probe has to run inside the container. python3 is the one interpreter this image
+          # is, which makes an exec probe the smaller road than opening the port to the network.
+          readinessProbe:
+            exec:
+              command:
+                - python3
+                - -c
+                - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8081/healthz", timeout=3)
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - python3
+                - -c
+                - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8081/healthz", timeout=3)
+            periodSeconds: 30
           resources:
             requests: { cpu: 20m, memory: 64Mi }
             limits: { cpu: 20m, memory: 64Mi }
@@ -263,6 +285,12 @@ spec:
           configMap:
             name: signoz-sso
             items: [{ key: mint.py, path: mint.py }]
+        - name: root-credential
+          secret:
+            secretName: signoz-root
+            items:
+              - { key: email, path: email }
+              - { key: password, path: password }
         - name: tmp
           emptyDir: {}
 ---
@@ -271,6 +299,10 @@ kind: Service
 metadata:
   name: signoz-sso
   namespace: observability
+  labels:
+    # The same entity the route in front of it names: this is SigNoz's front door, not a new
+    # surface (require-catalogue-entity, docs/policy/every-interface-is-a-door.md).
+    backstage.io/kubernetes-id: founder-telemetry
 spec:
   selector:
     app: signoz-sso
