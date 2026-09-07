@@ -37,6 +37,18 @@ data:
              f"FROM signoz_logs.distributed_logs_v2 "
              f"WHERE timestamp > toUInt64(toUnixTimestamp(now()) - {WINDOW_SEC}) * 1000000000 "
              f"AND attributes_string['{ATTR}'] != '' GROUP BY source ORDER BY source")
+    # Asked only when the count above is zero, and it is what tells the two causes apart. Until
+    # 2026-09-07 a zero printed "the science writer never reached the collector", which the query
+    # could not support and which was wrong on the day it mattered: signoz-otel-collector was
+    # answering 200 to every writer and ClickHouse was refusing the insert behind it with
+    # `code: 241 ... memory limit exceeded ... maximum: 3.60 GiB`, so the road was open and the
+    # database was full. A reader who believed the sentence went looking at the writer (this
+    # session did, for an hour). Counting every log row of any kind over the same window separates
+    # them without guessing: rows here means the backend is being written to and the science lane
+    # alone is missing; no rows here means nothing at all is landing and the writer is not the
+    # place to start.
+    ALL_QUERY = (f"SELECT count() FROM signoz_logs.distributed_logs_v2 "
+                 f"WHERE timestamp > toUInt64(toUnixTimestamp(now()) - {WINDOW_SEC}) * 1000000000")
     def main(clickhouse=clickhouse, now=None):
         now = now or datetime.now(timezone.utc)
         at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -47,15 +59,30 @@ data:
         except Exception as e:  # a backend that cannot answer is BLIND, never a pass
             errors["logs"] = str(e)[:160]
         total = sum(s["rows"] for s in sources.values())
-        body = {"at": at, "window_sec": WINDOW_SEC, "attr": ATTR, "sources": sources, "backend_errors": errors}
-        if errors:
+        any_rows = None
+        if not sources and not errors:
+            try:
+                any_rows = int(clickhouse(ALL_QUERY)[0][0])
+            except Exception as e:
+                errors["all_rows"] = str(e)[:160]
+        body = {"at": at, "window_sec": WINDOW_SEC, "attr": ATTR, "sources": sources,
+                "rows_any_kind": any_rows, "backend_errors": errors}
+        if "logs" in errors:
             head = f"BLIND science-facts at {at} backend unreachable: {errors['logs']}"
         else:
             verdict = "ok" if sources else "FAIL"
             head = (f"{verdict} science-facts at {at} window_h={WINDOW_SEC // 3600} "
                     f"sources={len(sources)} rows={total}")
             if not sources:
-                head += f" (no row carried attribute {ATTR}: the science writer never reached the collector)"
+                head += f" (no row carried attribute {ATTR};"
+                if any_rows is None:
+                    head += " and the count of all rows could not be read, so which half is broken is unmeasured)"
+                elif any_rows:
+                    head += (f" {any_rows} log row(s) of other kinds did land in the window, so the"
+                             " collector and the database are taking writes and the science lane alone is missing)")
+                else:
+                    head += (" and no log row of any kind landed either, so the backend is not being"
+                             " written to at all -- read the collector's exporter errors before the writer)")
         return head, body
     if __name__ == "__main__":
         head, body = main()
