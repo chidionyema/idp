@@ -1,5 +1,5 @@
-// The front page layout. Backstage supplies the search field; the ten doors are drawn by
-// DoorGrid. The visit and starred cards are empty for a visitor and are not placed
+// The front page layout. Backstage supplies the search field, the everyday band is drawn by
+// Everyday and the ten doors by DoorGrid. The visit and starred cards are empty for a visitor and are not placed
 // (app-config.yaml); the layout still seats them if a config ever adds them. The plugin's
 // stamp-sized toolkit is the 2020 look and is not placed (the widget stays installed).
 //
@@ -14,6 +14,7 @@ import { ButtonLink, Flex, Grid } from '@backstage/ui';
 import { RiAddCircleLine, RiSearchLine } from '@remixicon/react';
 import { EstatePage } from '../shell';
 import { DoorGrid } from './DoorGrid';
+import { Everyday } from './Everyday';
 
 export function pickWidget(
   widgets: HomePageLayoutProps['widgets'],
@@ -78,6 +79,9 @@ export function EstateHomeLayout({ widgets }: HomePageLayoutProps) {
       }
     >
       {search && <div className="estate-home-search">{search}</div>}
+      {/* Founder 2026-09-07: the tools he opens most days come before the portal's own
+          pages, so reaching the estate Mac is never a search. everyday.ts picks them. */}
+      <Everyday />
       <DoorGrid />
       {visits.length > 0 && (
         <Grid.Root
