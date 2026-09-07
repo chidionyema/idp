@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import yaml
 
 from .broker import Broker, Refused
-from .telegram import Phone, digest
+from .telegram import Phone, digest, poll_forever
 
 
 def secret(name: str) -> str:
@@ -57,7 +57,6 @@ def killswitch_reader(path: str):
 class Handler(BaseHTTPRequestHandler):
     broker: Broker
     phone: Phone
-    webhook_secret: str
 
     def _body(self) -> dict:
         n = int(self.headers.get("Content-Length") or 0)
@@ -98,15 +97,6 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/grants":
                 with open(self.broker.catalogue_path) as fh:
                     return self._reply(200, yaml.safe_load(fh) or {})
-            if self.path == "/telegram":
-                # Telegram echoes this header on every delivery; a webhook URL that leaks
-                # is then still not a way in.
-                if (
-                    self.headers.get("X-Telegram-Bot-Api-Secret-Token")
-                    != self.webhook_secret
-                ):
-                    return self._reply(403, {"error": "not from telegram"})
-                return self._reply(200, {"result": self.phone.handle(self._body())})
         except Refused as exc:
             return self._reply(400, {"error": str(exc)})
         except Exception as exc:  # noqa: BLE001
@@ -163,10 +153,14 @@ def main() -> None:
     )
     phone = Phone(secret("TELEGRAM_BOT_TOKEN"), secret("TELEGRAM_CHAT_ID"), broker)
     Handler.broker, Handler.phone = broker, phone
-    Handler.webhook_secret = secret("TELEGRAM_WEBHOOK_SECRET")
     threading.Thread(
         target=_housekeeping, args=(broker, phone, ledger_path), daemon=True
     ).start()
+    # His taps arrive here, on a connection this process opens outward -- see
+    # telegram.poll_forever for why the broker pulls rather than being pushed to. Daemon,
+    # because the HTTP server below is what holds the process open: if the agent-facing
+    # door is gone there is nothing left worth approving.
+    threading.Thread(target=poll_forever, args=(phone,), daemon=True).start()
     # S104: an in-cluster Service must answer the kubelet probe and the gateway, and
     # neither arrives on loopback. R20 admits exactly this shape, because the namespace
     # carries a both-ways default-deny NetworkPolicy (platform/jit/fence.yaml): "all

@@ -598,3 +598,100 @@ def test_the_agent_client_says_the_broker_is_unreachable_instead_of_raising(
         ],
     ):
         assert mod.main(argv) == mod.CODES["refused"], argv
+
+
+# --- the answer gets back to the broker (WJ.6 delivery) ------------------------------
+#
+# There is no webhook. The broker opens the connection to Telegram and collects his tap from
+# getUpdates, so these grade the loop that does the collecting: it must clear any stale webhook
+# first (or every poll is a 409 and his tap silently goes nowhere), it must actually apply the
+# approval it collects, and it must not re-deliver an update that made the handler throw.
+
+
+class PollsExhausted(BaseException):
+    """Not an Exception on purpose. poll_forever swallows every Exception and retries, which
+    is what a broker must do with a network blip -- so a test that wants the loop to end has
+    to raise something it does not catch."""
+
+
+class FakeTelegram:
+    """Stands in for api.telegram.org. Records the methods called and hands back the updates
+    the test wants delivered, then an empty result forever so the loop has somewhere to stop."""
+
+    def __init__(self, updates):
+        self.calls, self.batches, self.offsets = [], [updates], []
+
+    def __call__(self, token, method, payload, timeout=20):
+        self.calls.append(method)
+        if method != "getUpdates":
+            return {"ok": True, "result": True}
+        self.offsets.append(payload.get("offset"))
+        if not self.batches:
+            raise PollsExhausted("no more polls")
+        return {"ok": True, "result": self.batches.pop(0)}
+
+
+def _poll_once(monkeypatch, phone, updates):
+    from broker import telegram as tg
+
+    fake = FakeTelegram(updates)
+    monkeypatch.setattr(tg, "_call", fake)
+    with pytest.raises(PollsExhausted):
+        tg.poll_forever(phone)
+    return fake
+
+
+def _tap(broker, req, chat_id):
+    return {
+        "update_id": 7,
+        "callback_query": {
+            "data": broker.callback_data(req.id, "approve"),
+            "message": {"chat": {"id": chat_id}},
+        },
+    }
+
+
+def test_a_stale_webhook_is_cleared_before_the_first_poll(tmp_path, monkeypatch):
+    broker = make(tmp_path)
+    fake = _poll_once(monkeypatch, Phone("t", "42", broker), [])
+    assert fake.calls[0] == "deleteWebhook", (
+        "a webhook left registered makes every getUpdates a 409, and his tap would go "
+        "nowhere with nothing to say so"
+    )
+
+
+def test_a_tap_collected_from_the_poll_grants_the_request(tmp_path, monkeypatch):
+    broker = make(tmp_path)
+    req = broker.ask(
+        "restart-workload", {"namespace": NS, "pod": "p"}, "why", "5m", "a"
+    )
+    phone = Phone("t", "42", broker)
+    _poll_once(monkeypatch, phone, [_tap(broker, req, 42)])
+    assert req.state == "granted"
+
+
+def test_a_tap_from_another_chat_collected_from_the_poll_is_refused(
+    tmp_path, monkeypatch
+):
+    broker = make(tmp_path)
+    req = broker.ask(
+        "restart-workload", {"namespace": NS, "pod": "p"}, "why", "5m", "a"
+    )
+    phone = Phone("t", "42", broker)
+    _poll_once(monkeypatch, phone, [_tap(broker, req, 999)])
+    assert req.state == "pending", (
+        "a correct signature in the wrong chat is still not him"
+    )
+
+
+def test_the_offset_advances_so_one_update_is_never_collected_twice(
+    tmp_path, monkeypatch
+):
+    broker = make(tmp_path)
+    req = broker.ask(
+        "restart-workload", {"namespace": NS, "pod": "p"}, "why", "5m", "a"
+    )
+    fake = _poll_once(monkeypatch, Phone("t", "42", broker), [_tap(broker, req, 42)])
+    assert fake.offsets[-1] == 8, (
+        "an update the loop already read must not come back on the next poll"
+    )

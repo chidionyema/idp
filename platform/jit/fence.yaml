@@ -3,8 +3,10 @@
 #
 # The fence matters more here than anywhere else in the estate. This is the one workload that
 # can mint write access on a cluster where nothing else holds any, so the set of things that
-# may speak to it is the set of things that could try. Two may: the gateway, which carries
-# Telegram's webhook, and the agents, which ask. Nothing else, in either direction.
+# may speak to it is the set of things that could try. Exactly one may: the agents, which ask.
+# Nothing else, in either direction -- and in particular nothing outside the cluster, because
+# the broker collects his answer on a connection it opens outward to api.telegram.org rather
+# than on a public door anyone can knock at (broker/telegram.py, poll_forever).
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -45,18 +47,13 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: the-two-that-may-speak-to-the-broker
+  name: the-one-that-may-speak-to-the-broker
   namespace: jit
 spec:
   podSelector:
     matchLabels: {app.kubernetes.io/name: jit-broker}
   policyTypes: [Ingress]
   ingress:
-    # The gateway, carrying Telegram's webhook: this is how a tap on his phone arrives.
-    - from:
-        - namespaceSelector:
-            matchLabels: {kubernetes.io/metadata.name: edge}
-      ports: [{protocol: TCP, port: 8080}]
     # The agents, asking. They reach /ask and /state and nothing else can be reached at all.
     - from:
         - namespaceSelector:
