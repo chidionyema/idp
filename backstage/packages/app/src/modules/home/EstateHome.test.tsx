@@ -10,7 +10,7 @@ import { configApiRef } from '@backstage/frontend-plugin-api';
 import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
 import { Entity } from '@backstage/catalog-model';
 import { EstateHome } from './EstateHome';
-import { ago, count, fluxState, layerState, podsOf, verdict } from './estate';
+import { ago, count, fluxState, isEstateInternal, layerState, podsOf, verdict } from './estate';
 import { REFRESH_MS, countInventory } from './useEstate';
 import { screenUrl } from './estate';
 
@@ -418,6 +418,30 @@ describe('EstateHome', () => {
     const dark = door('y');
     dark.metadata.tags = ['screen', 'no-address'];
     expect(screenUrl(dark)).toBeUndefined();
+  });
+
+  // Founder, 2026-09 (recorded in bin/catalog-gen): ephemeral per-session .claude scratch is
+  // tagged estate-internal so it is held apart (recoverable but not a person's first read).
+  it('hides an estate-internal record from the counted inventory but keeps a product', () => {
+    const noise: Entity = {
+      apiVersion: 'backstage.io/v1alpha1',
+      kind: 'Resource',
+      metadata: {
+        name: '.claude-directives-private-tmp-slot-0',
+        tags: ['ledger', 'estate-internal'],
+        description: 'Append-only ledger at ~/.claude/directives/...',
+      },
+      spec: { type: 'ledger', system: 'system:default/estate-internals' },
+    };
+    const product: Entity = layer('payments', 'platform');
+    expect(isEstateInternal(noise)).toBe(true);
+    expect(isEstateInternal(product)).toBe(false);
+    // The home page counts after dropping the tagged noise, exactly as useEstate reads it.
+    const held = [noise, product, layer('auth')].filter(e => !isEstateInternal(e));
+    expect(countInventory(held).map(r => `${r.kind}/${r.type ?? ''}:${r.count}`)).toEqual([
+      'Component/platform-layer:2',
+    ]);
+    expect(countInventory(held).reduce((n, r) => n + r.count, 0)).toBe(2);
   });
 
   it('is blind, not green, when the cluster does not answer', async () => {

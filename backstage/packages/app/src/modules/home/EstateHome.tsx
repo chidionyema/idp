@@ -465,6 +465,25 @@ const useStyles = makeStyles(theme => ({
   door: {
     maxWidth: '100%',
     '& .MuiButton-label': { whiteSpace: 'normal', overflowWrap: 'anywhere' },
+    // Founder, 2026-09-07: a loud saturated-blue filled block on every working tile reads as
+    // a 2020 dashboard, not the estate's quiet instrument. The open action is a tonal control
+    // (accent ink on a soft accent wash) - the same family as the state pills beside it - so
+    // the grid reads as cards, not a wall of buttons. The test id and target are unchanged.
+    '&.MuiButton-containedPrimary, &.MuiButton-root': {
+      backgroundColor: 'transparent',
+      color: theme.palette.primary.main,
+      border: `1px solid ${theme.palette.divider}`,
+      borderRadius: 999,
+      minHeight: 28,
+      padding: '4px 12px',
+      fontSize: 13,
+      fontWeight: 600,
+      '&:hover': {
+        backgroundColor: theme.palette.action.hover,
+        borderColor: theme.palette.primary.main,
+        boxShadow: 'none',
+      },
+    },
   },
   actions: { display: 'flex', flexWrap: 'wrap', gap: theme.spacing(1) },
   note: { fontSize: 13, color: theme.palette.text.secondary, margin: 0 },
