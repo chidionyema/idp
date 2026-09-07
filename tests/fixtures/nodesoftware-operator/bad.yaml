@@ -1,0 +1,117 @@
+# tests/fixtures/nodesoftware-operator/bad.yaml
+#
+# Three RuntimeInstall CRs in one file. Each one violates a different rule from
+# CRD-SPEC.md. The offline gate (bin/nodesoftware-operator-gate, milestone B)
+# must refuse **all three** with the named message; the good fixture
+# (good.yaml) must pass.
+#
+# The three failures cover the three lockdown-relevant refusals:
+#   1. Unknown runtime (closed-set violation -- "the Operator is not a remote-exec")
+#   2. No canary on a ProgressiveCanary rollout (option-c spirit -- "no fleet without proof")
+#   3. PauseDuration below the 30s minimum (the Operator's reconcile period would
+#      make the canary pause a no-op, silently regressing to AllAtOnce)
+---
+apiVersion: nodesoftware.estate.io/v1alpha1
+kind: RuntimeInstall
+metadata:
+  name: bad-unknown-runtime
+  namespace: nodesoftware-operator
+spec:
+  runtime: not-a-closed-set-value       # REFUSED: spec.runtime: Forbidden: not-a-closed-set-value
+  version: "1.0.0"
+  selector:
+    nodeSelector:
+      matchLabels:
+        sandbox.estate.io/gvisor: "true"
+  rolloutStrategy: ProgressiveCanary
+  canaryReplicas: 1
+  pauseDuration: 15m
+  failurePolicy: FailClosed
+  verification:
+    probePod:
+      spec:
+        restartPolicy: Never
+        runtimeClassName: runsc
+        containers:
+          - name: probe
+            image: gcr.io/distroless/static:latest
+            command: ["/bin/sh", "-c", "uname -r"]
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 65532
+              seccompProfile: {type: RuntimeDefault}
+    successCondition: "uname -r | grep -qE '[0-9.]+-gvisor-[0-9]+'"
+    timeoutSeconds: 300
+---
+apiVersion: nodesoftware.estate.io/v1alpha1
+kind: RuntimeInstall
+metadata:
+  name: bad-no-canary
+  namespace: nodesoftware-operator
+spec:
+  runtime: runsc
+  version: "1.0.0"
+  selector:
+    nodeSelector:
+      matchLabels:
+        sandbox.estate.io/gvisor: "true"
+  rolloutStrategy: ProgressiveCanary
+  canaryReplicas: 0                     # REFUSED: spec.canaryReplicas: must be >= 1
+  pauseDuration: 15m
+  failurePolicy: FailClosed
+  verification:
+    probePod:
+      spec:
+        restartPolicy: Never
+        runtimeClassName: runsc
+        containers:
+          - name: probe
+            image: gcr.io/distroless/static:latest
+            command: ["/bin/sh", "-c", "uname -r"]
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 65532
+              seccompProfile: {type: RuntimeDefault}
+    successCondition: "uname -r | grep -qE '[0-9.]+-gvisor-[0-9]+'"
+    timeoutSeconds: 300
+---
+apiVersion: nodesoftware.estate.io/v1alpha1
+kind: RuntimeInstall
+metadata:
+  name: bad-pause-too-short
+  namespace: nodesoftware-operator
+spec:
+  runtime: runsc
+  version: "1.0.0"
+  selector:
+    nodeSelector:
+      matchLabels:
+        sandbox.estate.io/gvisor: "true"
+  rolloutStrategy: ProgressiveCanary
+  canaryReplicas: 1
+  pauseDuration: 5s                    # REFUSED: spec.pauseDuration: below minimum 30s
+  failurePolicy: FailClosed
+  verification:
+    probePod:
+      spec:
+        restartPolicy: Never
+        runtimeClassName: runsc
+        containers:
+          - name: probe
+            image: gcr.io/distroless/static:latest
+            command: ["/bin/sh", "-c", "uname -r"]
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 65532
+              seccompProfile: {type: RuntimeDefault}
+    successCondition: "uname -r | grep -qE '[0-9.]+-gvisor-[0-9]+'"
+    timeoutSeconds: 300
