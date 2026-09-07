@@ -1,11 +1,12 @@
-# Stale pull-request runs are cancelled; main's own run is never cancelled.
+# Stale pull-request runs are cancelled; main's own run is never cancelled AND never evicted
+# from the queue, because every main commit gets its own concurrency group.
 name: ci
 on:
   pull_request:
   push:
     branches: [main]
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   grade:
