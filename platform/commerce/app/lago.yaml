@@ -48,7 +48,21 @@ spec:
         kind: HelmRepository
         name: lago
   install: {remediation: {retries: 3}}
-  upgrade: {remediation: {retries: 3}}
+  # `retries: 3` alone is a remediation that cannot run. Helm's default remediation for a failed
+  # upgrade is a rollback, and a rollback needs a prior release to roll back to; when the chart's
+  # pre-upgrade hook `Job/commerce/lago-migrate-db` timed out on 2026-09-07 there was none, so
+  # Flux answered `Stalled: MissingRollbackTarget -- Failed to perform remediation: missing target
+  # release for rollback: cannot remediate failed release` and stopped. Stalled is terminal: the
+  # three retries were never spent, the 10m interval never fired again, and the release sat wedged
+  # until a human forced it. `uninstall` is the one strategy that has something to do in that
+  # state -- it drops the failed release so the next reconcile installs cleanly. Safe here
+  # because nothing this chart owns holds data: the ledger lives in database `lago` on the
+  # estate's Postgres (platform/estate-db/cluster/databases.yaml) and the credentials come from
+  # the vault, so an uninstall removes Deployments and a hook Job and nothing else.
+  # `cleanupOnFail` so a half-applied upgrade does not leave objects the next install collides on.
+  upgrade:
+    cleanupOnFail: true
+    remediation: {retries: 3, strategy: uninstall}
   values:
     # The application version the chart renders into every image tag (getlago/api:v<version>,
     # getlago/front:v<version>). The chart's default, 1.33.4, ships Rails 8.0.2.1 with a
