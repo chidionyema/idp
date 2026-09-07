@@ -216,17 +216,65 @@ def check(docs: list[dict], source: str, live: set[str] | None = None) -> list[s
 # else, so sixteen NetworkPolicies were being reported as protection while denying nothing.
 POLICY_ENFORCING_CNI = ("cilium", "calico", "canal", "antrea", "kube-router", "weave-net")
 
+# The plugins that route pods and ignore every policy object. A cluster running one of these
+# alongside an enforcing CNI is not a fenced cluster: whichever plugin networked a given pod is
+# the one that decides whether policy applies to it, so the answer differs pod by pod.
+NON_ENFORCING_CNI = ("flannel",)
 
-def enforcing_cni() -> str | None:
-    """The name of whatever in kube-system actually reads a NetworkPolicy, or None."""
+
+def enforcing_cni() -> tuple[str | None, list[str]]:
+    """What in kube-system actually enforces NetworkPolicy, and what disqualifies the answer.
+
+    Before 2026-09-07 this matched a DaemonSet NAME and returned it. A name is not a measurement:
+    it answered the same whether the DaemonSet had two ready pods or none, and it could not see a
+    second CNI running beside it. That is how it was found -- `calico-node` was applied into
+    kube-system while `kube-flannel-ds` kept running, and for 23 hours this function reported
+    "calico is on the nodes to enforce the deny" for a cluster in which flannel still networked
+    every pod created before the rollout. Oracle refuses that arrangement outright: "Installing
+    the Calico network policy engine alongside the flannel CNI plugin causes network issues."
+
+    Two things are measured now, and both are disqualifying rather than advisory:
+
+    Ready on every node it is scheduled to. A CNI ready on one of two nodes enforces policy on
+    one of two nodes, and the pods on the other are unprotected -- a per-node answer that a single
+    cluster-wide "ok" line cannot honestly carry.
+
+    Alone. While a non-enforcing plugin is also ready, the datapath is split: the pods it
+    networked ignore policy and the pods the enforcing CNI networked do not. Reporting a pass
+    there is worse than reporting nothing, because the namespaces that ARE fenced look identical
+    to the ones that are not.
+    """
     raw = subprocess.run(
         ["kubectl", "get", "daemonset", "-n", "kube-system", "-o", "json"],
         capture_output=True, text=True, timeout=60, check=True).stdout
-    names = [d["metadata"]["name"] for d in json.loads(raw)["items"]]
-    for n in names:
+    sets = json.loads(raw)["items"]
+
+    def ready(d):
+        st = d.get("status", {})
+        want = st.get("desiredNumberScheduled", 0)
+        return want > 0 and st.get("numberReady", 0) == want, st.get("numberReady", 0), want
+
+    problems: list[str] = []
+    found = None
+    for d in sets:
+        n = d["metadata"]["name"]
         if any(c in n for c in POLICY_ENFORCING_CNI):
-            return n
-    return None
+            ok, have, want = ready(d)
+            if not ok:
+                problems.append(
+                    f"{n} is the policy-enforcing CNI but is ready on {have} of {want} node(s), "
+                    "so the pods on the rest are not covered by any policy")
+            found = found or n
+    for d in sets:
+        n = d["metadata"]["name"]
+        if any(c in n for c in NON_ENFORCING_CNI):
+            ok, have, _ = ready(d)
+            if have and found:
+                problems.append(
+                    f"{n} is ready on {have} node(s) alongside {found}: two CNIs are running, so "
+                    "whether a policy applies to a pod depends on which plugin networked it. "
+                    "This is the overlap Oracle refuses, not a fenced cluster")
+    return found, problems
 
 
 def live_docs() -> list[dict]:
@@ -256,7 +304,7 @@ def main() -> int:
     if args.live:
         try:
             docs, source = live_docs(), "the live cluster"
-            cni = enforcing_cni()
+            cni, cni_problems = enforcing_cni()
         except Exception as exc:  # noqa: BLE001 -- any failure to reach it is the same answer
             print(f"BLIND  ns-fence-gate could not read the cluster: {exc}")
             print("       This is not a pass. Nothing was checked.")
@@ -270,6 +318,14 @@ def main() -> int:
                   "and reporting the namespaces as fenced would be a claim the cluster cannot "
                   "support. Install a policy-enforcing CNI first "
                   "(platform/ns-fences/network/README.md).")
+            return 1
+        if cni_problems:
+            print("FAIL   ns-fence-gate: a policy-enforcing CNI is present but the cluster's "
+                  "network isolation is not a single answer.")
+            for p in cni_problems:
+                print(f"       - {p}")
+            print("       No namespace is reported as fenced while this holds: a per-pod or "
+                  "per-node answer cannot be carried by one cluster-wide line.")
             return 1
     else:
         docs, source = load_manifests(args.path), args.path
