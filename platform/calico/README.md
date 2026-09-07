@@ -34,6 +34,31 @@ Oracle refuses.
 2. **Disable Oracle's flannel add-on**, removing its resources. This is a cluster property rather
    than a manifest, and it is the one step Flux cannot take. Leaving the add-on enabled is what
    would make the overlap permanent, because its controller puts flannel back.
+
+   **This step is blocked, and the block was found by running it rather than by reading about
+   it.** On 2026-09-07 the call was made against `estate`:
+
+   ```
+   oci ce cluster disable-addon --cluster-id ocid1.cluster.oc1.uk-london-1.aaaaaaaak3vxje...jxq \
+       --addon-name Flannel --is-remove-existing-add-on true --force
+   ```
+
+   Oracle answered `400 InvalidParameter: Addon management is only supported on enhanced type
+   clusters`. `oci ce cluster get` reports `"type": "BASIC_CLUSTER"`, and `oci ce cluster
+   list-addons` reports `Flannel  ACTIVE` alongside CoreDNS, KubeProxy, NodeProblemDetector,
+   NvidiaGpuPlugin and ObservabilityAgent -- the add-on is there and is managed, it just cannot
+   be managed from a basic cluster.
+
+   So this step costs money and is one-way. Basic to enhanced is an in-place upgrade that cannot
+   be undone, and `OCI Kubernetes Engine - Enhanced Cluster` is GBP 0.07987 per cluster-hour =
+   GBP 57.51 a month against a free basic tier (Oracle price-list API, read 2026-08-29, recorded
+   in decision 0010). Basic is free. That is a founder decision under R14 and it is the same
+   decision 0010 parked as "not now, reopen when the enhanced tier is wanted for another
+   reason" -- this is that other reason, and it is a larger one than the Tailscale operator was.
+
+   Until it is taken, step 1 is the resting state: two CNIs running, the arrangement Oracle
+   refuses. `bin/ns-fence-gate --live` fails on exactly that and names it, which is the honest
+   receipt for where the cutover actually stands.
 3. **Prove it.** `bin/ns-fence-gate --live` refuses to report a pass while no CNI enforces policy,
    so a clean line from it is the receipt — not a guess from a quiet Flux.
 
