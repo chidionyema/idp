@@ -663,6 +663,29 @@ rules:
       - {expect: pass, args: [tests/fixtures/fits-a-node/good], note: the same cluster sized to fit, its one pinned workload named in the ledger beside it}
     ok: every pod could be placed again on the nodes that exist
     fail: a pod cannot be placed on any node, or a workload fits exactly one node and is not in platform/state/pinned-workloads.yaml
+  - id: reloader-operator-owned
+    label: reloader
+    statement: Reloader is off on a workload a custom resource owns; that operator owns its config
+      rollout, and Reloader on top of an operator is a loop, not a control
+    law: crew#684 rung 2
+    origin: incident 2026-09-08, SigNoz ClickHouse recreated every ~40s
+    planes:
+    - ci
+    requires:
+    - kyverno
+    run:
+    - kyverno
+    - test
+    - tests/fixtures/reloader
+    fixtures:
+      must_fail: tests/fixtures/reloader/operator-owned.yaml
+      must_pass: tests/fixtures/reloader/estate-owned.yaml
+    cases:
+    - expect: pass
+      tail_of: true
+    ok: 'reloader operator-owned: {tail}'
+    ok_fallback: an operator-owned workload has Reloader turned off; an estate-owned one keeps it
+    fail: kyverno test tests/fixtures/reloader
   - id: one-scheduler
     label: sched
     statement: >-
