@@ -31,16 +31,17 @@ spec:
       data:
         TELEGRAM_BOT_TOKEN: "{{ .token }}"
         TELEGRAM_CHAT_ID: "{{ .channel }}"
-        TELEGRAM_WEBHOOK_SECRET: "{{ .TELEGRAM_WEBHOOK_SECRET }}"
         JIT_SIGNING_KEY: "{{ .JIT_SIGNING_KEY }}"
-  # Three values, all minted in the vault and none typed here (LAW 46, R52):
+  # Two values, both minted in the vault and none typed here (LAW 46, R52):
   #   JIT_SIGNING_KEY          -- the HMAC key the approvals are signed with. An identity that
   #                               can read this can forge a tap, so it is the crown jewel of
   #                               the crown jewel and no agent ServiceAccount reaches namespace
   #                               jit at all.
-  #   TELEGRAM_BOT_TOKEN       -- the bot that sends the ask.
-  #   TELEGRAM_WEBHOOK_SECRET  -- echoed by Telegram on every delivery, so a leaked webhook URL
-  #                               is still not a way in.
+  #   TELEGRAM_BOT_TOKEN       -- the bot that sends the ask, and the connection the broker
+  #                               opens outward to collect his answer. There is no webhook and
+  #                               so no webhook secret: nothing inbound reaches this namespace,
+  #                               and the broker pulls his taps from Telegram over TLS it
+  #                               opened itself (broker/telegram.py, poll_forever).
   dataFrom:
     - extract: {key: flux-telegram}
     - extract: {key: jit-broker}
