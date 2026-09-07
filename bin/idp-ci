@@ -488,6 +488,12 @@ fence_enforcement_gate() { python3 "$IDP/bin/idp-fence-enforcement" "$1" >/dev/n
 # platform/calico README cutover (work order item 0): parses ONE calico-packet deny feed with
 # bin/idp-calico-deny-log. Takes one fixture path so the rung can prove it both ways in one run.
 calico_denyflow_gate() { python3 "$IDP/bin/idp-calico-deny-log" "$1" >/dev/null 2>&1; }
+# crew#892 CP4 (zero-trust-boundary.md step 5/6, deepseek-work-order item 12): grades ONE yaml
+# file/dir with bin/gvisor-cell-gate, which refuses a Pod in a cell namespace that does not name
+# the `gvisor` runtime, is privileged, uses host networking or mounts a hostPath. Takes one
+# fixture path so the rung proves it both ways in one run, mirroring the Kyverno ClusterPolicy it
+# guards (platform/edge/gvisor-admission.yaml) so the PR half cannot drift from the admission half.
+gvisor_cell_gate() { python3 "$IDP/bin/gvisor-cell-gate" "$1" >/dev/null 2>&1; }
 defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
 # 6a. main's verdict, against the live workflows rather than the fixtures (crew#865). On 2026-09-05
 #     nine of twelve ci runs on main were cancelled by the commit after them, so the one branch the
@@ -542,6 +548,20 @@ if calico_denyflow_gate "$IDP/tests/fixtures/calico-denyflow/feed-with-deny.log"
   say "ok    denyflow calico deny-feed parses into flows; an empty feed fails closed (README cutover)"
 else
   say "FAIL  denyflow calico deny-feed cannot tell a denied flow from no evidence (platform/calico README)"; fail=1
+fi
+
+# 6e. crew#892 CP4 (zero-trust-boundary.md step 5 one-run / work order item 12): the isolation
+#     break is caught in the pull request, not discovered on the cluster. Proved two ways in one
+#     run with the fixture pair: a Pod that asks to run in the otto-gvisor-sandbox cell without
+#     naming `runtimeClassName: gvisor` (or that is privileged, host-networked, or mounts a
+#     hostPath) must be refused, while a conforming cell Pod must be admitted. This grades the
+#     parsed object, mirroring the Kyverno admission policy that refuses the same shape at
+#     admission, so the repo half and the cluster half cannot drift apart.
+if gvisor_cell_gate "$IDP/tests/fixtures/gvisor-cell/good.yaml" \
+   && ! gvisor_cell_gate "$IDP/tests/fixtures/gvisor-cell/bad.yaml"; then
+  say "ok    gvisor   a cell Pod without the runtime class (or privileged, host-networked, hostPath) is refused; the conforming cell Pod passes"
+else
+  say "FAIL  gvisor   bin/gvisor-cell-gate cannot tell a gVisor cell boundary break from a conforming Pod (ZT step 5)"; fail=1
 fi
 
 # 6b. The namespace fence, against the estate rather than against its own fixtures (crew#839).

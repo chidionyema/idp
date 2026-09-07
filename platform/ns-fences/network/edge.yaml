@@ -122,6 +122,9 @@ spec:
           kubernetes.io/metadata.name: otto-golden
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: otto-gvisor-sandbox
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: prospector
 ---
 apiVersion: networking.k8s.io/v1

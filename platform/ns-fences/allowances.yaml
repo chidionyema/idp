@@ -278,9 +278,24 @@ flows:
     # private, which the internet hole cuts out by design. The flow is store-web -> edge, and
     # that is what it is declared as.
     egress: [edge]
+  otto-gvisor-sandbox:
+    # crew#892 CP4: the gVisor sandbox cell runs code a model wrote, so its fence is the cell
+    # decree (zero-trust-boundary.md step 5) — default-deny, and the one declared app route is
+    # the gateway (edge), so a sandboxed pod that is compromised cannot wander the estate; it
+    # can only reach the front door it talks through and, automatically from the generator, its
+    # own namespace, DNS, the API server and the LAW 50 collector. Deliberately NO egress to the
+    # internet and NO other namespace: a fence that lets an untrusted-code pod onto the wider
+    # estate is the exact isolation break step 6 grades. edge names this namespace back on its
+    # ingress_from below, so the gateway accepts the return path — one-direction-only declarations
+    # are the defect this estate has been bitten by twice.
+    egress: [edge]
   edge:
     egress: [backstage, dagster, guacamole, healthchecks, hermes-agent, identity, llm, mcp,
-             monitoring, observability, otto-gateway, otto-golden, hindsight, prospector]
+             monitoring, observability, otto-gateway, otto-golden, hindsight, prospector,
+             # crew#892 CP4: the gVisor sandbox cell's one declared app route is this gateway;
+             # it must be named here or the return path is cut (the estate's repeated
+             # one-direction-only defect: hindsight was cut from estate-db for exactly this).
+             otto-gvisor-sandbox]
     # The public listeners (traefik containerPorts web 8000 and websecure 8443, behind the OCI
     # load balancer with externalTrafficPolicy Local, so the source address is the client's).
     # The traefik pods still held flannel addresses when Calico started enforcing on 2026-09-06,
