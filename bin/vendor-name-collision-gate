@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""A deck that replaces a vendor operator may not reuse the operator's cluster-scoped names.
+
+A ClusterRole has no namespace. Moving a replacement deck's ServiceAccounts into `kube-system`
+separates nothing cluster-scoped, and `platform/calico/raw/README.md` said the opposite -- that
+unprefixed RBAC names "cannot collide with the operator's `calico-system` accounts". They did.
+
+What it cost: the tigera-operator left `calico-system` Terminating on a `tigera.io/cni-protector`
+finalizer no surviving controller can remove, which held ClusterRole/calico-node and
+ClusterRole/calico-cni-plugin in Terminating. The raw deck declared those same two names, so the
+calico Kustomization applied them and then waited on objects that can never be Ready and can never
+finish deleting -- `timeout waiting for: [ClusterRole/calico-cni-plugin status: 'Terminating', ...]`
+every 10 minutes for 37 hours. Because it never completed it never pruned, so the superseded
+tigera-operator HelmRelease it would have removed was still in the cluster three days later.
+
+Why a gate and not a note: that README also says the deck is "kept byte-faithful to the reviewed
+vendor reference". The next re-sync from upstream reintroduces the bare names and the deadlock with
+them, silently, in a diff that looks like fidelity. This refuses that diff.
+
+Usage: vendor-name-collision-gate PATH...   (a YAML file, or a directory of them)
+Exit 0 when every cluster-scoped RBAC name carries the estate prefix; 1 otherwise, listing them.
+"""
+import pathlib
+import sys
+
+import yaml
+
+PREFIX = "estate-"
+CLUSTER_SCOPED = {"ClusterRole", "ClusterRoleBinding"}
+
+
+def offenders(path):
+    for doc in yaml.safe_load_all(path.read_text()):
+        if not isinstance(doc, dict) or doc.get("kind") not in CLUSTER_SCOPED:
+            continue
+        name = (doc.get("metadata") or {}).get("name", "")
+        # `system:` names are the API server's own, never a vendor's to collide with.
+        if not name.startswith(PREFIX) and not name.startswith("system:"):
+            yield f"{path}: {doc['kind']}/{name} is a bare vendor name"
+
+
+def main(argv):
+    files = []
+    for arg in argv:
+        p = pathlib.Path(arg)
+        files += sorted(p.rglob("*.yaml")) if p.is_dir() else [p]
+    bad = [line for f in files for line in offenders(f)]
+    print("\n".join(bad) if bad else f"{len(files)} file(s): no bare vendor cluster-scoped name")
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

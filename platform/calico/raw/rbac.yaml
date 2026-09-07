@@ -39,7 +39,7 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: calico-kube-controllers
+  name: estate-calico-kube-controllers
 rules:
   # Nodes are watched to monitor for deletions.
   - apiGroups: [""]
@@ -144,11 +144,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: calico-kube-controllers
+  name: estate-calico-kube-controllers
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: calico-kube-controllers
+  name: estate-calico-kube-controllers
 subjects:
   - kind: ServiceAccount
     name: calico-kube-controllers
@@ -158,7 +158,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: calico-node
+  name: estate-calico-node
 rules:
   # Used for creating service account tokens for the CNI plugin.
   - apiGroups: [""]
@@ -303,11 +303,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: calico-node
+  name: estate-calico-node
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: calico-node
+  name: estate-calico-node
 subjects:
   - kind: ServiceAccount
     name: calico-node
@@ -318,7 +318,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: calico-cni-plugin
+  name: estate-calico-cni-plugin
 rules:
   - apiGroups: [""]
     resources:
@@ -352,11 +352,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: calico-cni-plugin
+  name: estate-calico-cni-plugin
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: calico-cni-plugin
+  name: estate-calico-cni-plugin
 subjects:
   - kind: ServiceAccount
     name: calico-cni-plugin
@@ -367,7 +367,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: calico-tier-getter
+  name: estate-calico-tier-getter
 rules:
   - apiGroups:
       - "projectcalico.org"
@@ -379,11 +379,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: calico-tier-getter
+  name: estate-calico-tier-getter
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: calico-tier-getter
+  name: estate-calico-tier-getter
 subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: User
