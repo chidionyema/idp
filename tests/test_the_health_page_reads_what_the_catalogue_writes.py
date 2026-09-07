@@ -129,14 +129,43 @@ def test_a_drill_that_passed_carries_a_status_and_a_staleness_the_page_reads(dri
 
 
 def test_the_page_survives_the_shape_the_generator_actually_writes_staleness_in(drill):
-    """`estate/stale` comes out as Python's `True`, not JSON's `true`; `=== 'true'` is a bug."""
+    """`estate/stale` comes out as Python's `True`, not JSON's `true`; `=== 'true'` is a bug.
+
+    R76: this grades the predicate, not the prose. It parses the staleness comparison out of
+    openReds.ts -- the transform chain applied to the annotation and the literal it is compared
+    against -- rebuilds that comparison in Python, and runs it over the value bin/catalog-gen
+    actually wrote. A page that compares the raw annotation against 'true' fails here because
+    the generator writes 'True'.
+    """
     written = drill["metadata"]["annotations"]["estate/stale"]
     src = OPEN_REDS.read_text()
-    if str(written) != "true":
-        assert "toLowerCase()" in src, (
-            f"the catalogue writes staleness as {written!r}, so the page has to case-fold it "
-            "before comparing; openReds.ts never calls toLowerCase()"
-        )
+
+    # String(ann[A.stale]).toLowerCase() === 'true'   ->  ("tolowercase",), "true"
+    m = re.search(
+        r"String\(\s*ann\[A\.stale\]\s*\)((?:\.[A-Za-z]+\(\))*)\s*===\s*'([^']*)'",
+        src,
+    )
+    assert m, (
+        "openReds.ts no longer compares String(ann[A.stale]) against a literal, so the Health "
+        "page's staleness predicate cannot be graded; find it and update this test"
+    )
+    transforms = tuple(t.lower() for t in re.findall(r"\.([A-Za-z]+)\(\)", m.group(1)))
+    literal = m.group(2)
+
+    APPLY = {"tolowercase": str.lower, "touppercase": str.upper, "trim": str.strip}
+    unknown = [t for t in transforms if t not in APPLY]
+    assert not unknown, (
+        f"openReds.ts applies {unknown} to the annotation; this test cannot run it"
+    )
+
+    value = str(written)
+    for t in transforms:
+        value = APPLY[t](value)
+
+    assert value == literal, (
+        f"the catalogue writes staleness as {written!r}; the page turns that into {value!r} "
+        f"and compares it against {literal!r}, so a stale drill never reaches the founder as red"
+    )
 
 
 def test_every_root_the_map_draws_from_is_a_domain_a_real_run_writes(catalogue):
