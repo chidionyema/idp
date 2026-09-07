@@ -193,6 +193,15 @@ metadata:
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 2
+  # A required hostname anti-affinity (below) means the pair can only roll by freeing a node
+  # first: a surge pod would need a third node this pool does not have, and would sit Pending
+  # for ever while the old ReplicaSet kept serving -- an outage that answers 200 (crew#307).
+  # Unset is the same bug: apps/v1 defaults maxUnavailable to 25%, which rounds down to 0 here.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
   selector:
     matchLabels:
       app: signoz-sso
@@ -203,13 +212,14 @@ spec:
     spec:
       affinity:
         podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                topologyKey: kubernetes.io/hostname
-                labelSelector:
-                  matchLabels:
-                    app: signoz-sso
+          # Required, not preferred. crew#555, enforced by require-availability at admission:
+          # two replicas the scheduler is merely encouraged to spread are one replica the
+          # moment it has a reason not to. Two nodes, two replicas, so required schedules.
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: signoz-sso
       securityContext:
         runAsNonRoot: true
         seccompProfile:
