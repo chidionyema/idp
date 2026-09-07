@@ -248,6 +248,42 @@ def grade_helm(hr, objs):
     return bad, replicas
 
 
+def traefik_backends(ns, nm, tsvcs, seen=None):
+    """The (namespace, name) pairs that actually serve a surface, seeing through a TraefikService.
+
+    A Gateway API backendRef may name a `traefik.io/TraefikService` instead of a Service --
+    Traefik registers the kind as an HTTPRoute backend (v3.7 pkg/provider/kubernetes/crd,
+    RegisterBackendFuncs). It is a router object, not a workload: nothing renders a Deployment
+    with its name, and before this the gate reported `otto-and-the-jit-broker is routed to but no
+    kustomization renders a Deployment for it` -- a BLIND about an object that can never have one,
+    while both real backends behind it were already graded `ok` two lines above.
+
+    `weighted` splits real traffic, so every service in it serves the surface and every one is
+    returned. `mirroring` returns the primary ONLY: Traefik discards the mirrored responses, so a
+    mirror that is down, slow or absent cannot change what the caller gets. Grading a fire-and-
+    forget copy as part of the surface's availability would make the surface fail for something
+    the surface does not depend on. The mirror is not ungraded, it is not part of this question --
+    its own directory grades it as a workload.
+
+    Returns the pair unchanged when it names no TraefikService, so a plain Service is untouched.
+    """
+    seen = seen or set()
+    if (ns, nm) in seen:  # a TraefikService may name another; a cycle is Traefik's problem, not a hang here
+        return []
+    ts = tsvcs.get((ns, nm))
+    if ts is None:
+        return [(ns, nm)]
+    seen = seen | {(ns, nm)}
+    spec = ts.get("spec") or {}
+    out = []
+    if isinstance(spec.get("mirroring"), dict):
+        m = spec["mirroring"]
+        out += traefik_backends(m.get("namespace", ns), m.get("name"), tsvcs, seen)
+    for w in (spec.get("weighted") or {}).get("services") or []:
+        out += traefik_backends(w.get("namespace", ns), w.get("name"), tsvcs, seen)
+    return out
+
+
 def judge(objs, surface, waivers):
     """(status, [detail], replicas, kind) for one surface rendered in objs.
 
@@ -312,14 +348,18 @@ def main(argv):
         seen = set()
         helm = {(o["metadata"].get("namespace", ""), o["metadata"]["name"]): o
                 for o in objs if o.get("kind") == "HelmRelease"}
+        tsvcs = {(o["metadata"].get("namespace", ""), o["metadata"]["name"]): o
+                 for o in objs if o.get("kind") == "TraefikService"}
         for rt in routes:
             rns = rt["metadata"].get("namespace", "")
             hosts = ", ".join(rt.get("spec", {}).get("hostnames") or ["(no hostname)"])
             for pr in rt.get("spec", {}).get("parentRefs") or []:
                 gateways.setdefault("%s/%s" % (pr.get("namespace", rns), pr.get("name")), set()).add(hosts)
             for rule in rt.get("spec", {}).get("rules") or []:
-                for ref in rule.get("backendRefs") or []:
-                    ns, nm = ref.get("namespace", rns), ref.get("name")
+                for ns, nm in [t
+                               for ref in rule.get("backendRefs") or []
+                               for t in traefik_backends(
+                                   ref.get("namespace", rns), ref.get("name"), tsvcs)]:
                     if (ns, nm) in seen:
                         continue
                     seen.add((ns, nm))
