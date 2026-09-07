@@ -329,25 +329,58 @@ print(sum(len(r.get("Misconfigurations") or []) for r in (d.get("Results") or []
     elif [ "${n_good:-1}" = ERR ] || [ "${n_good:-1}" -ne 0 ] 2>/dev/null; then
       say "BLIND manifests the must-pass fixture was refused ($n_good); the check disagrees with the estate's own policies"
       blind=1; probe_ok=0
+    else
+      # Third probe: the register's deadlines are real. .trivyignore.yaml defers real findings with
+      # a date, and the whole point of a date is that the gate goes red again by itself when it
+      # passes. The file first shipped with `expires:`, which trivy parses, validates and ignores --
+      # an entry dated 2020 still suppressed its finding, so every deferral in it was permanent and
+      # the file read as though it were not. The key is `expired_at`. This proves both halves on the
+      # must-fail fixture before trusting the register: one waiver dated in the past must leave the
+      # finding standing, the same waiver dated in the future must take it away. If either stops
+      # being true -- a rename upstream, a typo here -- the check says so instead of going quiet.
+      exp_dir="$(mktemp -d)"
+      printf 'misconfigurations:\n  - id: KSV-0017\n    paths: ["bad.yaml"]\n    expired_at: 2020-01-01\n' > "$exp_dir/past.yaml"
+      printf 'misconfigurations:\n  - id: KSV-0017\n    paths: ["bad.yaml"]\n    expired_at: 2099-01-01\n' > "$exp_dir/future.yaml"
+      n_past=$(trivy "${tv_args[@]}" --ignorefile "$exp_dir/past.yaml" tests/fixtures/trivy-config 2>/dev/null | tv_count)
+      n_future=$(trivy "${tv_args[@]}" --ignorefile "$exp_dir/future.yaml" tests/fixtures/trivy-config 2>/dev/null | tv_count)
+      rm -rf "$exp_dir"
+      if [ "${n_past:-0}" = ERR ] || [ "${n_future:-0}" = ERR ] || [ "${n_past:-0}" -le "${n_future:-0}" ] 2>/dev/null; then
+        say "BLIND manifests an expired waiver ($n_past findings) did not outweigh a live one ($n_future); the register's deadlines are not being read"
+        blind=1; probe_ok=0
+      fi
     fi
   fi
   if [ $probe_ok = 1 ]; then
     tv_ignore=()
     [ -f .trivyignore.yaml ] && tv_ignore=(--ignorefile .trivyignore.yaml)
-    out=$(trivy "${tv_args[@]}" --skip-dirs tests "${tv_ignore[@]}" . 2>/dev/null)
+    # .estate-idp is the copy of this repo the composite action clones beside the checkout it is
+    # grading; scanning it means grading a second copy of every file, and its paths match no entry
+    # in the register because every entry names a path in the repository under test.
+    out=$(trivy "${tv_args[@]}" --skip-dirs tests --skip-dirs .estate-idp "${tv_ignore[@]}" . 2>/dev/null)
     n=$(printf '%s' "$out" | tv_count)
     if [ "$n" = ERR ] || [ -z "$n" ]; then
       say "BLIND manifests trivy config produced no report that parsed; nothing was measured"; blind=1
     elif [ "$n" -gt 0 ]; then
       say "FAIL  manifests trivy config: $n HIGH or CRITICAL misconfiguration(s) not in the accepted-risk register"
+      # No escaped quotes in here and no `| head`: the first spelling of this printer used
+      # f-string subscripts with backslash-escaped quotes, which the shell passed through
+      # literally and python refused ("unexpected character after line continuation character"),
+      # so a real FAIL in CI named its count and listed nothing (run 34154634513). head closing
+      # the pipe then killed the printf with EPIPE on top. The limit is applied in python.
       [ $quiet = 1 ] || printf '%s' "$out" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
+rows = []
 for r in d.get("Results") or []:
     for m in r.get("Misconfigurations") or []:
         line = (m.get("CauseMetadata") or {}).get("StartLine") or "?"
-        print(f"      {m[\"Severity\"]:8s} {m[\"ID\"]}  {r[\"Target\"]}:{line}  {m.get(\"Title\", \"\")}")
-' | head -20
+        rows.append("      %-8s %s  %s:%s  %s" % (
+            m.get("Severity", ""), m.get("ID", ""), r.get("Target", ""), line, m.get("Title", "")))
+for row in rows[:20]:
+    print(row)
+if len(rows) > 20:
+    print("      ... and %d more" % (len(rows) - 20))'
+
       [ $quiet = 1 ] || say "      Fix it, or accept it on the record in .trivyignore.yaml with a reason and an expiry."
       fail=1
     else

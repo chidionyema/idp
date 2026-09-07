@@ -2,11 +2,18 @@
 #
 # This is not a mute button. Every entry names the finding, the exact paths it covers, why the
 # estate accepts it, and -- where the answer is "fix it, not now" -- the date the waiver dies and
-# the gate goes red again. An entry with no `expires` is structural: the finding is a property of
+# the gate goes red again. An entry with no `expired_at` is structural: the finding is a property of
 # what the software is, not a defect anyone intends to remove.
 #
 # A finding that is not in this file fails the security-scan job and blocks the merge. Adding an
 # entry is how a person accepts a risk on the record; it is not something to do to get green.
+#
+# The key is `expired_at`, and it is spelled that way because trivy 0.74.0 silently ignores any
+# other spelling. This file first shipped with `expires:`, which parses, validates and does
+# nothing: an entry dated 2020 still suppressed its finding. A register whose deadlines never
+# arrive is worse than one with no deadlines, because it reads like it has them. check 5 now
+# proves the expiry both ways on a fixture in every run, so a rename upstream fails the gate
+# rather than quietly making every deferral permanent.
 #
 # Baselined 2026-09-07 against trivy 0.74.0: 27 HIGH and CRITICAL findings outside tests/.
 # tests/ is not scanned at all -- its fixtures are deliberately-bad manifests that exist so the
@@ -99,7 +106,7 @@ misconfigurations:
       them. Kubernetes has no way to express metadata-only read -- see the note in
       docs/decisions on replacing this grant with ExternalSecret.status.refreshTime, which covers
       51 of the 74 graded Secrets today.
-    expires: 2026-12-31
+    expired_at: 2026-12-31
   - id: KSV-0056   # manage kubernetes networking
     paths: ["platform/oci/autoscaler/cluster-autoscaler.yaml"]
     statement: >-
@@ -128,7 +135,7 @@ misconfigurations:
       CronJob pod templates with no pod-level securityContext. Real finding, deferred: adding
       runAsNonRoot to a job that turns out to need root fails at the next tick, not in CI, so it
       is fixed and observed on its own.
-    expires: 2026-11-30
+    expired_at: 2026-11-30
   - id: KSV-0014   # root filesystem is not read-only
     paths: ["platform/llm/spend-breaker-digest.yaml", "platform/spire/proof.yaml"]
     statement: >-
@@ -136,4 +143,4 @@ misconfigurations:
       readOnlyRootFilesystem. Real finding, deferred with KSV-0118 above and for the same reason:
       spire-agent and the busybox init step write to disk, so this needs an emptyDir and a watched
       run, not a one-line edit in a CI pull request.
-    expires: 2026-11-30
+    expired_at: 2026-11-30
