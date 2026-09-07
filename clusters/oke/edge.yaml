@@ -171,7 +171,7 @@ spec:
     - name: ghcr.io/chidionyema/prospector-store-web
       newTag: main-140-50d66491b9847509d9a90e04d30cc73dac0c27e6 # {"$imagepolicy": "flux-system:prospector-store-web:tag"}
     - name: ghcr.io/chidionyema/prospector-store-api
-      newTag: main-140-50d66491b9847509d9a90e04d30cc73dac0c27e6 # {"$imagepolicy": "flux-system:prospector-store-api:tag"}
+      newTag: main-142-7453d76375fb7976b0a59474069e306659b3d4e1 # {"$imagepolicy": "flux-system:prospector-store-api:tag"}
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
