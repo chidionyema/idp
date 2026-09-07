@@ -325,3 +325,24 @@
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
+
+.estate-tile-actions .MuiButton-containedPrimary,
+.estate-home-actions .MuiButton-primary {
+  background-color: transparent;
+  color: var(--bui-fg-primary);
+  border: 1px solid var(--bui-border-2);
+  border-radius: 999px;
+  min-height: 28px;
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: none;
+  transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+}
+
+.estate-tile-actions .MuiButton-containedPrimary:hover,
+.estate-home-actions .MuiButton-primary:hover {
+  background-color: var(--bui-bg-neutral-1-hover);
+  border-color: var(--bui-fg-primary);
+  box-shadow: none;
+}
