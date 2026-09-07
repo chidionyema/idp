@@ -213,13 +213,19 @@ verification:
           resources:
             requests: {cpu: 10m, memory: 16Mi}
             limits:   {memory: 32Mi}
-  successCondition: "<shell expression>"
+  successCondition: "[0-9.]+-gvisor-[0-9]+"        # Go regexp; matched against probe stdout
   timeoutSeconds: 300                               # default; hard ceiling 1800
 ```
 
 Validation: `probePod` and `successCondition` are both required. A CR without
 either is refused by the gate. `timeoutSeconds` defaults to 300; the gate refuses
-anything > 1800.
+anything > 1800. `successCondition` is a Go regular expression (NOT a shell
+expression — the Operator compiles it with `regexp.Compile` and uses `MatchString`
+against the probe pod's stdout). Example for the runsc canary:
+`[0-9.]+-gvisor-[0-9]+` matches the kernel version printed by `uname -r` inside a
+runsc sandbox (which reports `6.1.0-gvisor-20240101.0-abcdef` or similar). The
+gate additionally validates that the pattern compiles — a CR with a malformed
+regex is refused at admission.
 
 The verification pod's RBAC is **read-only** at the cluster level (only get/list
 on its own pod). It does not get cordon/drain rights — the controller does that
