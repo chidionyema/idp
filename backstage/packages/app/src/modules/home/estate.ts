@@ -16,6 +16,18 @@ export const FLUX_LABEL = 'kustomize.toolkit.fluxcd.io/name';
 // A door probed more than three hours ago is not shown green (silent green is the defect class).
 export const STALE_AFTER_MS = 3 * 60 * 60 * 1000;
 
+// The tag bin/catalog-gen stamps on an ephemeral per-session/per-worktree .claude ledger that
+// it has moved onto the secondary `estate-internals` System ("Internal agent records"). These
+// are agent scratch, not estate surfaces or products; the founder's rule (recorded in
+// bin/catalog-gen) is that they sit in a lesser, clearly-separate section -- recoverable,
+// never deleted -- and are not what a reader scrolls past first. Durable op boards and real
+// products never carry this tag, so it picks out exactly the noise.
+export const ESTATE_INTERNAL_TAG = 'estate-internal';
+
+/** True for a catalogue entity the estate keeps apart: an ephemeral internal-agent record. */
+export const isEstateInternal = (e: Entity): boolean =>
+  (e.metadata.tags ?? []).includes(ESTATE_INTERNAL_TAG);
+
 export type Health = 'down' | 'stale' | 'unchecked' | 'up';
 export const HEALTH_LABEL: Record<Health, string> = {
   down: 'Down',

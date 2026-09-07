@@ -56,12 +56,13 @@ export function EstateHomeLayout({ widgets }: HomePageLayoutProps) {
     <EstatePage
       title="Today"
       lead={`${brand}. What needs you, and every door into the estate.`}
-      actions={
-        <Flex gap="2">
+      actions={(
+        <Flex gap="2" className="estate-home-actions">
           <ButtonLink
             href="/search"
             variant="secondary"
             size="medium"
+            className="estate-action estate-action-quiet"
             iconStart={<RiSearchLine />}
           >
             Find
@@ -70,12 +71,13 @@ export function EstateHomeLayout({ widgets }: HomePageLayoutProps) {
             href="/create"
             variant="primary"
             size="medium"
+            className="estate-action estate-action-strong"
             iconStart={<RiAddCircleLine />}
           >
             Create
           </ButtonLink>
         </Flex>
-      }
+      )}
     >
       {search && <div className="estate-home-search">{search}</div>}
       <DoorGrid />

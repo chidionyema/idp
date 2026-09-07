@@ -325,3 +325,50 @@
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
+
+/* One button family on the front page, in two weights.
+ *
+ * The two kits do not meet by themselves: a tile's Open is Backstage core's
+ * LinkButton, which is MUI and carries .MuiButton-*, while the two at the top of
+ * the page are @backstage/ui's ButtonLink, which carries bui- classes and no MUI
+ * class at all. A rule written for one slides silently off the other, which is how
+ * a page ends up with a solid blue Create above six outlined Opens. So both are
+ * named here, the bui half through a class this repo puts on it in homeLayout.tsx
+ * rather than a vendor class name we would be guessing at.
+ *
+ * 36px, not the 28 this started at: the founder opens this page on a phone, and a
+ * 28px target is a small thing to hit with a thumb (founder 2026-09-07, on the
+ * preview of this change).
+ */
+.estate-tile-actions .MuiButton-containedPrimary,
+.estate-home-actions .estate-action {
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: none;
+  transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+}
+
+/* Quiet: every repeated action. Six tiles meant six solid blue blocks competing
+ * with the six names they belong to; outlined, the name leads again. */
+.estate-tile-actions .MuiButton-containedPrimary,
+.estate-home-actions .estate-action-quiet {
+  background-color: transparent;
+  color: var(--bui-fg-primary);
+  border: 1px solid var(--bui-border-2);
+}
+
+.estate-tile-actions .MuiButton-containedPrimary:hover,
+.estate-home-actions .estate-action-quiet:hover {
+  background-color: var(--bui-bg-neutral-1-hover);
+  border-color: var(--bui-fg-primary);
+  box-shadow: none;
+}
+
+/* Loud: Create, and only Create. Quietening every button leaves a page with no
+ * first move on it; this keeps one, in the same shape as the rest. */
+.estate-home-actions .estate-action-strong {
+  border: 1px solid transparent;
+}
