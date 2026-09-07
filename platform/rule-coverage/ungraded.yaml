@@ -1,0 +1,40 @@
+# Fixture pairs that exist and are graded by nothing, as of 2026-09-07.
+#
+# Each of these is a rule someone wrote, built a bad case and a good case for, and either never
+# wired or wired into something since deleted. A gate that does not run produces no output, so
+# none of them ever went red -- the fixtures are the only trace left that the rule was meant to
+# exist. bin/idp-rule-coverage counts them; the count is allowed to fall and never to rise, the
+# same ratchet platform/scheduling/one-scheduler.yaml holds over the schedulers.
+#
+# `what` is read from the fixture files themselves. `grader` names what would have to run for the
+# entry to leave this list; where nothing in the tree implements it, the field says so rather than
+# guessing at one.
+version: 1
+ungraded:
+  - path: tests/fixtures/describe
+    what: a documented and an undocumented Dagster job definition, plus the HTML one renders to
+    grader: "estate_scheduler.describe --selftest, which derives a description through a wrapper -- it embeds its own cases and reads neither of these files"
+
+  - path: tests/fixtures/estate-view
+    what: recorded cluster, coverage and drift output for the estate view
+    grader: "bin/idp-estate-view, which exists and reads live state; nothing feeds it these three files"
+
+  - path: tests/fixtures/kyverno-rollout
+    what: seven Deployments -- the incident, the fix, and five shapes around them (percent-zero, Recreate, no strategy, no hard anti-affinity, zonal spread)
+    grader: "none in the tree. The Kyverno policy these were built against is not in platform/edge, and `kyverno test` has no test file naming them"
+
+  - path: tests/fixtures/no-token
+    what: a bad.yaml and a good.yaml pair about a workload holding a token
+    grader: "none in the tree"
+
+  - path: tests/fixtures/pipefail-verdict.bad.sh
+    what: a shell script whose verdict survives a failing pipe stage (LAW 55)
+    grader: "none in the tree. shellcheck at warning level does not catch a missing pipefail, which is why the pair was written"
+
+  - path: tests/fixtures/pipefail-verdict.good.sh
+    what: the same script with pipefail set
+    grader: "none in the tree"
+
+  - path: tests/fixtures/vault-refs
+    what: a bad and a good tree of vault references
+    grader: "bin/idp-vault-refs, which exists; it takes no fixture root, so these two trees reach it through nothing"

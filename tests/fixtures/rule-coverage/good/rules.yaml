@@ -1,0 +1,9 @@
+version: 1
+rules:
+  - id: graded
+    label: graded
+    run: [true]
+    fixtures: {must_fail: tests/fixtures/graded/bad.yaml, must_pass: tests/fixtures/graded/good.yaml}
+    cases:
+      - {expect: refuse, args: [tests/fixtures/graded/bad.yaml]}
+      - {expect: pass, args: [tests/fixtures/graded/good.yaml]}

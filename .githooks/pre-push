@@ -31,6 +31,20 @@ for v in $(compgen -e | grep '^GIT_' || true); do unset "$v"; done
 # that manufactures its own red is not a gate. The tool stays and CI runs it with the blanket on
 # (bin/idp-tests-for sets it from $CI); run it by hand here when you want it.
 "$IDP/bin/pr-report"
+# The session plane of rules.yaml, over the files this push changes (bin/idp-rules session).
+# The same registry the offline gate reads; the rows that carry planes: [ci, session] are the ones
+# a laptop can judge on a file it just wrote -- a hardcoded checkout path (LAW 46), a shell
+# expansion Flux would rewrite (incident 2026-09-06), a test that pins prose (R76). Seconds, and
+# lint-only (R58). A rule grades only the paths its session_glob claims, so it can never refuse
+# correct work in a file it does not understand (LAW 38).
+sess_base="$(git rev-parse --verify --quiet origin/main || true)"
+if [ -n "$sess_base" ]; then
+	sess_files="$(git diff --name-only --diff-filter=d "$sess_base"...HEAD | tr '\n' ' ')"
+	if [ -n "${sess_files// /}" ]; then
+		# shellcheck disable=SC2086  # the file list is meant to split
+		python3 "$IDP/bin/idp-rules" session --files $sess_files || exit 1
+	fi
+fi
 # crew#623 (founder 2026-08-29, "why did you not investigate cluster before starting"): the money
 # layer was written from a chart's values file and reasoned about, and its render failed 128 of the
 # cluster's own admission rules -- found by CI, 7 minutes and a red pull request later. The judge

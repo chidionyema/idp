@@ -19,8 +19,8 @@ in his own session). It never sends "please sign in".
 Incident: `bin/idp-oci-bootstrap` created `estate-tofu` without `manage domains in tenancy`; the
 first identity-domain apply was a 401 and a console request (Telegram 14017).
 
-Gate: `rule=provisioning_complete` in `policy/operating_model.rego`. Proof: `bin/policy-test`
-rows `opmodel-ok` (0) and `opmodel-half-provisioned` (1).
+Gate: `rule=provisioning_complete` in `policy/operating_model.rego`. Proof: `bin/idp-rules run --only operating-model-policy`, whose cases are
+`opmodel-ok` (pass) and `opmodel-half-provisioned` (refuse).
 
 ### 2. Policy-as-Code Gate (PaC)
 

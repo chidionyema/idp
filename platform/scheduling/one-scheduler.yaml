@@ -1,0 +1,145 @@
+# The recurring jobs that are not Dagster schedules yet.
+#
+# Founder, 2026-09-07: "we should only be using dagster for scheduling". Temporal is a durable
+# workflow engine, not a scheduler, and is not on this list. bin/idp-one-scheduler grades this
+# file against the tree: a new recurring job outside Dagster fails, and a row whose job is gone
+# fails too, so the list can only shrink.
+still_outside_dagster:
+- job: .github/workflows/catalog-render.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/conscience.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/demo-sandbox.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/deploy-when-green.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/estate-escrow.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/estate-inventory.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/estate-state.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/login-drill.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/matrix-review.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/messaging-drill.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/name-drift.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/oke-check.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/otto-parity.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/ping.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/pr-age.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/probe-mutations.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/stale.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/storefront-drill.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/ticket-verification.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/vault-reads.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/verdict-backstage.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/verdict-langfuse.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/verdict-signoz.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/wake-blocked.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: launchd/ai.estate.cockpit.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: launchd/ai.estate.headlamp.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: launchd/ai.estate.idp.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: launchd/ai.estate.kubeapi.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: launchd/ai.estate.scheduler.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: launchd/ai.estate.sovereign-worker.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/agent-workforce/cronjob.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/drills/drill-dispatcher.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/identity/front-door-heartbeat.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/llm/spend-breaker-digest.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/observability/signoz-retention.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/observability/telemetry-coverage.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/otto-gateway/answer-probe.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/otto-gateway/registration-reconciler.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/prospector/store-db-backup.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/research-engine/cronjob.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/sandbox/vcluster/sweeper.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/science/science-facts.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/spire/proof-cronjob.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/staging/canary/scheduler.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/state/cluster-state.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/temporal/kini-state.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'

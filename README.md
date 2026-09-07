@@ -63,5 +63,5 @@ fails if anything but the gateway listens on a non-loopback address.
 
 ## Licence
 
-Apache-2.0 (`LICENSE`). Every layer above is open source; `bin/policy-test` refuses a dependency
+Apache-2.0 (`LICENSE`). Every layer above is open source; `bin/idp-rules run --only licence-policy` refuses a dependency
 whose licence would block a sale ([the built-to-be-sold law](docs/reference/laws-and-guards.md)).

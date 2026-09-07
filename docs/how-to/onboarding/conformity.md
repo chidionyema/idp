@@ -4,7 +4,7 @@
 
 `bin/conformity-report` prints an EU AI Act Annex VI internal-control
 assessment to stdout, as markdown. It runs `bin/ai-act-gate`,
-`bin/security-policy-gate`, `bin/policy-test` and `bin/multiarch-gate` and
+`bin/security-policy-gate`, `bin/idp-rules` and `bin/multiarch-gate` and
 pastes each one's own summary line into the report, then lists every AI
 system from `platform/ai/systems.yaml` with its risk tier, role, owner and
 review-due date. Nothing about the assessment is computed by this script
@@ -34,7 +34,7 @@ proved there independently.
 bin/conformity-report                     assembles the report
 bin/ai-act-gate                           Annex IV per-system check
 bin/security-policy-gate                  the 14 ISO 27001-mapped controls
-bin/policy-test                           licence and placement policy fixtures
+bin/idp-rules                             licence and placement policy rows in rules.yaml
 bin/multiarch-gate                        R24 build coverage
 platform/ai/systems.yaml                  the systems this report lists
 docs/ai-systems/prospector/technical-file.md  cites this command
