@@ -1,21 +1,28 @@
-## RESUME HERE
+# RESUME HERE — 2026-09-04, session 5f6f4e72, research engine into the store front
 
-**Lane:** idp — one Postgres for the estate (idp#1450) and the default-account token rule (idp#1467).
+## What is in flight
 
-**idp#1450 `feat/one-estate-postgres`** — rebased onto main at a3b60464. One merge replaces ten
-Postgres servers with one CloudNativePG cluster, copies every database onto it and deletes the old
-servers, with each consumer's Flux row waiting on `estate-db-migrate` so nothing is pruned before it
-is copied. Four checks that graded the estate as it was are fixed: the platform catalogue gained a
-`data` system, `platform/alerts/alert.yaml` covers namespace `estate-db`, the Temporal acceptance
-test reads the estate address, and the research engine moved off `hindsight-db` onto
-`estate-rw.estate-db.svc.cluster.local`. Also registered `flux-webhook-token`, which reached main
-unregistered with idp#1463. Local: every changed kustomize dir builds, `bin/idp-root-trust` PASS.
-Next: push and watch the run.
+- **idp#1483** (auto-merge armed): the hourly research pass runs `--profile <lane>` on image
+  `sha-35bd1962`; the intake is `lane: subject` lines and the questions live in the lane.
+- **idp#1486** (auto-merge armed): the read side — CloudNativePG role `research_reader` with
+  `inRoles: [research_consumer]`, its password minted by `bin/idp-estate-seed` and copied into
+  `prospector-engine-env` as `RESEARCH_PG_PASSWORD`.
+- **research-engine#4** (green then merge by hand — private repo, auto-merge unavailable):
+  `db/ddl.sql` creates NOLOGIN `research_consumer` and grants it SELECT.
+- **prospector, branch `feat/research-grounded-signals`**: `prospector/research_intake.py` reads
+  admitted claims and renders a signal; next step is wiring it into
+  `prospector/scheduler/run_scheduled.py` where the tick calls `run_signal("")` (~line 1569),
+  adding `psycopg[binary]` to requirements, the env in `deploy/k8s/base/scheduler.yaml`, and
+  tests with a fake connection.
 
-**idp#1467 `fix/no-kube-token-by-default`** — Kyverno mutates `automountServiceAccountToken: false`
-onto pods running as the `default` service account. Red on
-`tests/test_incident_crew488_cp5_root_reds_are_never_green.py`: the security page table must be
-regenerated with `bin/idp-admission-policies` now that a policy was added. Next: regenerate, commit,
-push.
+## Why
 
-**Then:** back to the research engine (founder's standing instruction).
+crew#659: the factory generates blue-sky because the tick passes an empty signal. The research
+engine's admitted claims become that signal. The adapter is in prospector, never in the engine —
+research-engine SPEC-v1 §8 (a lane is data, an adapter is code in the consumer's repository).
+
+## Not to touch
+
+The idp working tree holds session 85f840c5's uncommitted `platform/flux-webhook/*` and
+`platform/oci/flux-webhook.tf`. Both idp pull requests went through the GitHub API for that
+reason; do not check out a branch over them.

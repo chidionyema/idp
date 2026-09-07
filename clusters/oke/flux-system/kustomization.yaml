@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
 - gotk-components.yaml
 - gotk-sync.yaml
+- ../../../platform/flux-webhook
 patches:
 # Founder, 2026-08-28: "ur drowning my telegram channel with repeated". Measured: the Flux Alert
 # broken-workload (platform/alerts/alert.yaml) re-sent HealthCheckFailed for the same two stalled
@@ -19,6 +20,15 @@ patches:
     - op: add
       path: /spec/template/spec/containers/0/args/-
       value: --rate-limit-interval=1h
+
+# The edge Gateway (prospector-edge) admits routes only from namespaces with this label.
+- target:
+    kind: Namespace
+    name: flux-system
+  patch: |
+    - op: add
+      path: /metadata/labels/idp.estate~1edge-attach
+      value: "true"
 
 # A restart of kustomize-controller, driven from git. Founder, 2026-09-04: "If the
 # kustomize-controller itself is deadlocked and needs a restart, the GitOps way is to touch its
