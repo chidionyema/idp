@@ -21,9 +21,20 @@
 # the jit layer down after it cleared its dependencies. The catalogue workload is still reachable,
 # through the `backstage` binding it actually lives in; `research-engine` is now bound where it runs.
 #
-# Nothing here touches Secrets, RBAC or the core namespaces. bin/idp-jit-grants refuses a
-# catalogue that asks for any of them, so this file cannot grow those verbs without that gate
-# going red first.
+# Nothing here touches Secrets or the core namespaces. It does touch RBAC -- `create`, `get` and
+# `delete` on roles and rolebindings, below -- because that is how a broker mints a grant at all.
+# This paragraph used to claim otherwise, and to claim that bin/idp-jit-grants would go red if the
+# file grew such a verb. Both were false. That gate reads platform/jit/grants.yaml, the catalogue
+# of what may be minted, and never read this file; `escalate` could have arrived here tomorrow
+# with every gate in the estate staying green. Trivy found it on 2026-09-07: KSV-0050, CRITICAL,
+# "Manage Kubernetes RBAC resources".
+#
+# What actually caps this role is the absence of two verbs. Kubernetes refuses to let an identity
+# create a Role carrying permissions it does not already hold unless it has `escalate`, or bind a
+# subject to a wider role unless it has `bind`. This role has neither, and no ClusterRoleBinding
+# names it, so it reaches the namespaces its RoleBindings name and stops. bin/idp-jit-broker-role
+# holds exactly that -- no escalate, no bind, no impersonate, no wildcard, no secrets, no
+# cluster-wide binding -- and bin/idp-ci runs it against this file, not only against fixtures.
 
 apiVersion: v1
 kind: ServiceAccount
