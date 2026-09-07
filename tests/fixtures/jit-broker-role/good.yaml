@@ -1,0 +1,211 @@
+# What the broker itself may do, and the reason it is a Role in nine namespaces rather than one
+# ClusterRole binding.
+#
+# The broker holds the union of its own catalogue and not one verb more. That is forced, not
+# chosen: Kubernetes refuses to let an identity create a Role carrying permissions it does not
+# already hold, so the broker must hold `patch deployments` and `delete pods` in order to mint a
+# token for them. The bound is therefore the catalogue, and bin/idp-jit-grants grades the
+# catalogue in CI -- widening what the broker can reach means widening a file that a gate reads.
+#
+# It is deliberately NOT a ClusterRoleBinding. A ClusterRole bound cluster-wide would reach
+# kube-system, flux-system and every namespace nobody has created yet; these RoleBindings reach
+# the ten namespaces the catalogue names and stop. A new namespace is not automatically in
+# range, which is the property you want the first time somebody adds one in a hurry.
+#
+# Nine, not the ten this file bound until 2026-09-07. Two of those ten were never namespaces:
+# `catalogue` is a Service and a Deployment inside `backstage` (platform/backstage/base/catalogue.yaml)
+# and `research-engine` is a CronJob inside `research` (platform/research-engine/cronjob.yaml). A
+# RoleBinding into a namespace that does not exist is not a grant that is merely unused -- the
+# server refuses the object, so the whole Kustomization stalls and the broker never starts. It did:
+# `RoleBinding/catalogue/jit-broker not found: namespaces "catalogue" not found`, which is what held
+# the jit layer down after it cleared its dependencies. The catalogue workload is still reachable,
+# through the `backstage` binding it actually lives in; `research-engine` is now bound where it runs.
+#
+# Nothing here touches Secrets, RBAC or the core namespaces. bin/idp-jit-grants refuses a
+# catalogue that asks for any of them, so this file cannot grow those verbs without that gate
+# going red first.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: jit-broker
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - serviceaccounts
+  verbs:
+  - create
+  - get
+  - delete
+- apiGroups:
+  - ''
+  resources:
+  - serviceaccounts/token
+  verbs:
+  - create
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - roles
+  - rolebindings
+  verbs:
+  - create
+  - get
+  - delete
+- apiGroups:
+  - ''
+  resources:
+  - pods
+  verbs:
+  - delete
+  - get
+  - list
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - statefulsets
+  verbs:
+  - get
+  - list
+  - patch
+- apiGroups:
+  - apps
+  resources:
+  - replicasets
+  verbs:
+  - get
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: backstage
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: commerce
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: hermes-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: llm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: notify
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: observability
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: otto-gateway
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: prospector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: research
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit

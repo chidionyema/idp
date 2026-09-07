@@ -1,0 +1,172 @@
+# Accepted risk register for `trivy config`, read by bin/estate-security-scan check 5.
+#
+# This is not a mute button. Every entry names the finding, the exact paths it covers, why the
+# estate accepts it, and -- where the answer is "fix it, not now" -- the date the waiver dies and
+# the gate goes red again. An entry with no `expired_at` is structural: the finding is a property of
+# what the software is, not a defect anyone intends to remove.
+#
+# A finding that is not in this file fails the security-scan job and blocks the merge. Adding an
+# entry is how a person accepts a risk on the record; it is not something to do to get green.
+#
+# The key is `expired_at`, and it is spelled that way because trivy 0.74.0 silently ignores any
+# other spelling. This file first shipped with `expires:`, which parses, validates and does
+# nothing: an entry dated 2020 still suppressed its finding. A register whose deadlines never
+# arrive is worse than one with no deadlines, because it reads like it has them. check 5 now
+# proves the expiry both ways on a fixture in every run, so a rename upstream fails the gate
+# rather than quietly making every deferral permanent.
+#
+# Baselined 2026-09-07 against trivy 0.74.0: 27 HIGH and CRITICAL findings outside tests/.
+# tests/ is not scanned at all -- its fixtures are deliberately-bad manifests that exist so the
+# gates in AGENTS.md can be proved to refuse them, and a scanner grading them would be grading
+# the test inputs of other gates (76 findings, all intentional).
+
+misconfigurations:
+  # ---------------------------------------------------------------- vendored upstream, byte-exact
+  # Two directories hold another project's release artifact, unmodified on purpose. Their
+  # provenance line is the guarantee -- editing them to satisfy a scanner would break the one
+  # property that makes them auditable, which is that they are byte-identical to the upstream
+  # release. The risk they carry is a choice of dependency, made elsewhere, and it is graded where
+  # it is real: check 4 of this same scan reads Trivy Operator's VulnerabilityReport CRDs for the
+  # images these manifests actually run, and this estate's own Kyverno ClusterPolicies judge the
+  # pods at admission.
+  - id: KSV-0009   # host network
+    paths: ["platform/calico/raw/*.yaml"]
+    statement: >-
+      Calico v3.32.2 manifests/calico.yaml, verbatim (platform/calico/raw/README.md names the
+      byte-source URL). A CNI cannot program the node's network from inside a pod sandbox:
+      hostNetwork, privileged and the host filesystem mounts are what a CNI IS, not an oversight
+      in how this one is configured. Replacing them would mean replacing Calico.
+  - id: KSV-0017   # privileged
+    paths: ["platform/calico/raw/*.yaml"]
+    statement: >-
+      As KSV-0009 above: calico-node is the CNI DaemonSet from the upstream v3.32.2 manifest.
+  - id: KSV-0014   # root filesystem is not read-only
+    paths: ["platform/calico/raw/*.yaml"]
+    statement: >-
+      As KSV-0009 above, upstream Calico v3.32.2 bytes.
+  - id: KSV-0121   # disallowed volumes
+    paths: ["platform/calico/raw/*.yaml"]
+    statement: >-
+      As KSV-0009 above: the hostPath mounts are how calico-node writes the CNI binary and config
+      onto the node.
+  - id: KSV-0056   # manage kubernetes networking
+    paths: ["platform/calico/raw/rbac.yaml"]
+    statement: >-
+      As KSV-0009 above. The finding is that Calico's ClusterRole can manage NetworkPolicy
+      objects, which is Calico's entire job -- it is this estate's policy enforcement layer.
+  - id: KSV-0046   # manage all resources
+    paths: ["clusters/oke/flux-system/gotk-components.yaml"]
+    statement: >-
+      Flux's own release artifact, installed by `flux install` and reconciled by Flux itself. The
+      controllers hold broad RBAC because they apply arbitrary manifests -- that is what a GitOps
+      controller does. Narrowing it here would be overwritten on the next Flux upgrade, and the
+      real control is what reaches the git repository Flux reconciles, which is this CI.
+  - id: KSV-0041   # manage secrets
+    paths: ["clusters/oke/flux-system/gotk-components.yaml"]
+    statement: >-
+      As KSV-0046 above: kustomize-controller decrypts and applies Secrets as part of reconciling
+      them, so it holds secrets access by construction.
+
+  # ------------------------------------------------------------------ RBAC the scanner misreads
+  - id: KSV-0046   # manage all resources
+    paths: ["platform/rbac-floor/agent-reader.yaml"]
+    statement: >-
+      False positive. The rule reads `resources: ["*"]`, which is what the check matches on, but
+      the verbs on it are strictly [get, list, watch]. The check does not look at verbs, so it
+      reports a read-only role as "manage all resources". Nothing here can create, update, patch
+      or delete anything, and the file's own header records the estate rule that no agent role
+      ever reads a Secret.
+  - id: KSV-0046   # manage all resources
+    paths: ["platform/weave-gitops/rbac.yaml"]
+    statement: >-
+      Same false positive shape as platform/rbac-floor/agent-reader.yaml, plus a `patch` verb on
+      Flux resources only, which is what the Reconcile and Suspend buttons in the Weave GitOps UI
+      call. It cannot patch anything outside the Flux API groups.
+  - id: KSV-0041   # manage secrets
+    paths: ["platform/weave-gitops/rbac.yaml"]
+    statement: >-
+      False positive, and deliberately so. The grant is pinned to
+      resourceNames: ["WEAVE-GITOPS-READS-NO-SECRET"] -- an uppercase name no Secret can ever
+      bear, because Kubernetes requires a Secret name to be a lowercase RFC-1123 subdomain. It
+      exists only to satisfy Weave GitOps' all-or-nothing namespace filter
+      (core/nsaccess/nsaccess.go DefautltWegoAppRules, v0.38.0), which drops every namespace from
+      the UI when any one of its fourteen expected rules is missing. The scanner reads
+      `secrets: [get, list]` and does not read resourceNames.
+
+  # --------------------------------------------------------- accepted, and the reason is written
+  - id: KSV-0041   # manage secrets
+    paths: ["platform/state/cluster-state.yaml"]
+    statement: >-
+      Accepted with eyes open, and the scanner is not wrong here. The collector needs the last
+      write time of every Secret a running pod consumes, to grade whether a rotated Secret
+      actually reached it (crew#722 CP2). It asks for PartialObjectMetadataList, so only names and
+      managedFields timestamps ever enter the pod, and it holds `list` without `get`. But that
+      protection is the client's Accept header, not RBAC: Kubernetes authorizes the request before
+      content negotiation, so the token itself would return values to a caller that asked for
+      them. Kubernetes has no way to express metadata-only read -- see the note in
+      docs/decisions on replacing this grant with ExternalSecret.status.refreshTime, which covers
+      51 of the 74 graded Secrets today.
+    expired_at: 2026-12-31
+  - id: KSV-0056   # manage kubernetes networking
+    paths: ["platform/oci/autoscaler/cluster-autoscaler.yaml"]
+    statement: >-
+      The OCI cluster autoscaler's upstream RBAC. It manages node lifecycle, which upstream ships
+      with endpoint and service access attached. Vendor-defined; narrowing it breaks scale-up.
+  - id: KSV-0108   # service with external IP
+    paths: ["platform/backstage/overlays/oke/sunshine-egress.yaml", "platform/guacamole/mac-egress.yaml"]
+    statement: >-
+      Both are the deliberate egress route from the cluster to the founder's Mac over the tailnet,
+      not a public address. The external IP is a tailnet IP, reachable only by devices on it.
+
+  # ------------------------------------------------- real, cheap, and deferred with a hard expiry
+  # These are the four CronJob pod templates and two Jobs that ship without a pod-level
+  # securityContext or without readOnlyRootFilesystem. They are genuine findings and the fix is a
+  # few lines each -- but each one changes a live scheduled workload, and a pod that turns out to
+  # need a writable root or a root uid fails at the next tick rather than in CI. They are fixed in
+  # their own change, graded by this gate, not folded into the change that turns the gate on.
+  # The expiry is the deadline: after it, these go red on every pull request.
+  - id: KSV-0118   # default security context configured
+    paths:
+      - "platform/observability/signoz-retention.yaml"
+      - "platform/observability/telemetry-coverage.yaml"
+      - "platform/science/science-facts.yaml"
+      - "platform/state/cluster-state.yaml"
+    statement: >-
+      CronJob pod templates with no pod-level securityContext. Real finding, deferred: adding
+      runAsNonRoot to a job that turns out to need root fails at the next tick, not in CI, so it
+      is fixed and observed on its own.
+    expired_at: 2026-11-30
+  - id: KSV-0014   # root filesystem is not read-only
+    paths: ["platform/llm/spend-breaker-digest.yaml", "platform/spire/proof.yaml"]
+    statement: >-
+      Both already set runAsNonRoot, a non-root uid and RuntimeDefault seccomp; what is missing is
+      readOnlyRootFilesystem. Real finding, deferred with KSV-0118 above and for the same reason:
+      spire-agent and the busybox init step write to disk, so this needs an emptyDir and a watched
+      run, not a one-line edit in a CI pull request.
+    expired_at: 2026-11-30
+
+  # KSV-0050, CRITICAL, on the JIT broker's own ClusterRole. It is not a defect and it is not
+  # going away: `create`, `get` and `delete` on roles and rolebindings is how a broker mints a
+  # time-boxed grant at all. What makes it safe is what the role does NOT carry. Kubernetes
+  # refuses to let an identity create a Role holding permissions it does not already hold, unless
+  # that identity has `escalate` (for the Role) or `bind` (for the RoleBinding). The broker has
+  # neither, and no ClusterRoleBinding names it -- so it reaches the namespaces its RoleBindings
+  # name and stops, and every grant it mints is capped at its own floor.
+  #
+  # Nothing enforced that until today. `bin/idp-jit-grants` grades platform/jit/grants.yaml, the
+  # catalogue of what may be minted; it never read the ClusterRole doing the minting. The file's
+  # own header claimed otherwise -- "Nothing here touches Secrets, RBAC or the core namespaces ...
+  # this file cannot grow those verbs without that gate going red first" -- and that was simply
+  # untrue: it could have grown `escalate` tomorrow with every gate staying green. So this waiver
+  # is paired with `bin/idp-jit-broker-role`, which refuses exactly the four properties above and
+  # is run in bin/idp-ci against both fixtures and the live file. The waiver expires when the gate
+  # stops proving its own reason.
+  - id: KSV-0050
+    paths:
+      - "platform/jit/rbac.yaml"
+    statement: >-
+      The broker must write Roles and RoleBindings to mint a grant. Capped by Kubernetes'
+      escalation-prevention rule because the role carries no escalate and no bind, and confined to
+      four namespaces because no ClusterRoleBinding names it. bin/idp-jit-broker-role holds all
+      four properties in CI (AGENTS.md, jit_broker_role_gate). Re-read at the next JIT review.
+    expired_at: 2026-12-31
