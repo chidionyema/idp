@@ -161,10 +161,52 @@ def write(path: str, docs: list[dict]) -> None:
         fh.write(BANNER + body)
 
 
+SINK = "observability"   # LAW 50: policy_docs grants this egress to everyone, declared or not.
+
+
+def one_sided(flows: dict) -> list[str]:
+    """Every declared flow needs both halves, or it is a closed door.
+
+    Both namespaces sit behind default-deny in both directions, so a packet from A to B is
+    dropped unless A declares `egress: [B]` AND B declares `ingress_from: [A]`. Until
+    2026-09-07 nothing checked that, and llm carried exactly this defect: estate-db admitted
+    llm, llm never named estate-db, and the router could not roll -- every new pod died on
+    `httpx.ConnectError: All connection attempts failed` in Prisma's startup health check
+    while two pods older than the fence went on serving. The half-declaration reads like an
+    allowance in the file and is a deny on the wire, which is the worst kind of lie a fence
+    can tell. The one edge not graded is the one into SINK: policy_docs() grants every namespace
+    egress to the collector for LAW 50 whether it asked or not, so that half is never declared
+    and its absence proves nothing.
+    """
+    bad = []
+    for a, row in sorted(flows.items()):
+        for b in sorted(set(row.get("egress") or [])):
+            if b == SINK:
+                continue
+            tgt = flows.get(b)
+            if tgt is not None and a not in (tgt.get("ingress_from") or []):
+                bad.append(f"{a} declares egress to {b}, but {b} does not admit {a}")
+    for b, row in sorted(flows.items()):
+        if b == SINK:
+            continue
+        for a in sorted(set(row.get("ingress_from") or [])):
+            src = flows.get(a)
+            if src is not None and b not in (src.get("egress") or []):
+                bad.append(f"{b} admits {a}, but {a} never declares egress to {b}")
+    return bad
+
+
 def main() -> int:
     allow = load("allowances.yaml")
     measured = load("measured.json")
     exempt, flows, sizing = allow["exempt"], allow["flows"], allow["sizing"]
+
+    half = one_sided(flows)
+    if half:
+        print("FAIL   idp-ns-fence-gen: a flow declared on one side only is a deny on the wire:")
+        for line in half:
+            print(f"       {line}")
+        return 1
 
     every = (declared_namespaces() | set(measured) | set(flows)) - set(exempt)
     # A ResourceQuota cannot be created into a namespace that does not exist yet, and Flux applies
