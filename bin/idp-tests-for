@@ -59,7 +59,7 @@ if [ "${SKIP_TESTS_ON_TRIVIAL:-1}" = 1 ]; then
 fi
 sel=$(
   for f in $changed; do
-    case "$f" in tests/test_*.py|sovereign/tests/*/*.py) [ -f "$IDP/$f" ] && echo "$f" ;; esac   # a deleted test file made pytest collect nothing: "no tests ran" and the push refused (2026-08-29)
+    case "$f" in (tests/test_*.py|sovereign/tests/*/*.py) [ -f "$IDP/$f" ] && echo "$f" ;; esac   # a deleted test file made pytest collect nothing: "no tests ran" and the push refused (2026-08-29)
     b=$(basename "$f")
     grep -rlF --include='*.py' -e "$f" -e "$b" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" | grep -v '/fixtures/' || true   # a fixture under tests/fixtures is proof material, not a test (test_unbound.py fails by design)
   done | sort -u
@@ -75,7 +75,7 @@ sel=$(
   # every test in the tree -- feeding tests/ into this would select 203 of 420 files, which is the
   # suite wearing a smaller name. Only the directories of the non-test files a push changes.
   dirs=$(for f in $changed; do
-    case "$f" in tests/*|sovereign/tests/*) continue ;; esac
+    case "$f" in (tests/*|sovereign/tests/*) continue ;; esac
     d=$(dirname "$f"); while [ "$d" != "." ] && [ "$d" != "/" ]; do echo "$d"; d=$(dirname "$d"); done
   done | sort -u)
   if [ -n "$dirs" ]; then
