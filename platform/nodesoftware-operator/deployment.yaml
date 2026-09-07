@@ -3,9 +3,18 @@
 # for the controller (the workload is bookkeeping, not data plane), not for the
 # runtime handler pods it schedules (those have their own requests below).
 #
-# `IMAGE_TAG` is substituted at Flux postBuild from the IMAGE_TAG field on
-# Secret ghcr-pull (platform/image-automation renders it). Same mechanism as
-# every other in-repo image reference (cyrus, hermes-agent, ...).
+# NOT APPLIED YET. This file is out of kustomization.yaml's resource list until the controller
+# image exists; see that file's header for the three things that must become true first.
+#
+# The `IMAGE_TAG` below is a placeholder and nothing substitutes it. The header used to say it
+# was "substituted at Flux postBuild from the IMAGE_TAG field on Secret ghcr-pull ... same
+# mechanism as every other in-repo image reference (cyrus, hermes-agent)". None of that held:
+# ghcr-pull is a kubernetes.io/dockerconfigjson Secret whose one key is `.dockerconfigjson`,
+# which is not a legal envsubst variable name and aborted the whole row's post-build; cyrus and
+# hermes-agent pin their images the estate's actual way, a `newTag:` in kustomization.yaml
+# carrying a `# {"$imagepolicy": ...}` marker that Flux image automation rewrites in git; and
+# envsubst substitutes `${IMAGE_TAG}`, never the bare word IMAGE_TAG, so even a correct source
+# would have left this string in the pod spec for the kubelet to fail to pull.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -59,11 +68,12 @@ spec:
             - --reconcile-period=15s         # see CRD-SPEC.md "pauseDuration"
             # The runsc handler image ships the install/uninstall/probe scripts
             # the controller invokes on each target node (per C4: PR #2396).
-            # Without this override, the controller's hardcoded default
-            # "ghcr.io/chidionyema/nodesoftware-runsc-handler:IMAGE_TAG"
-            # contains a literal "IMAGE_TAG" that the kubelet can't pull --
-            # Flux postBuild substitutes IMAGE_TAG here, exactly the same way
-            # it substitutes the operator image tag above.
+            # The controller's hardcoded default is
+            # "ghcr.io/chidionyema/nodesoftware-runsc-handler:IMAGE_TAG", which
+            # the kubelet cannot pull. This override does not fix that today: it
+            # carries the same placeholder, and nothing substitutes it (see the
+            # file header). Both become real tags when the handler image is built
+            # and given an ImagePolicy, not before.
             - --handler-image=ghcr.io/chidionyema/nodesoftware-runsc-handler:IMAGE_TAG
             - --handler-namespace=nodesoftware-operator
           ports:

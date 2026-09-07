@@ -101,7 +101,12 @@ The container image builds with the multi-stage `Dockerfile`:
 docker build -t ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG .
 ```
 
-`IMAGE_TAG` is substituted at Flux postBuild from `Secret/ghcr-pull` (idp#140 image-automation).
+`IMAGE_TAG` is a placeholder, not a substitution. The Flux row that claimed to substitute it
+from `Secret/ghcr-pull` could never have done so -- that Secret's one key is `.dockerconfigjson`,
+which is not a legal envsubst variable name, and it aborted the row's whole post-build until it
+was removed on 2026-09-08. This image is not built by any workflow yet; when it is, it gets an
+ImageRepository/ImagePolicy pair and a `$imagepolicy`-marked `newTag:` like every other image
+in the estate.
 
 ## What's NOT in this controller yet
 

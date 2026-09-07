@@ -1546,20 +1546,22 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
-      # IMAGE_TAG (idp#140 / image-automation): the ghcr-pull Secret carries the
-      # pinned digest of the controller image, written by the image-automation
-      # flow. Not optional: a missing tag must fail the row rather than deploy
-      # `:latest`, which the lockdown's image policy already refuses.
-      - kind: Secret
-        name: ghcr-pull
-        optional: false
-  wait: true
+  # No healthCheck and no wait: this row applies the CRD and the RBAC, which have no
+  # readiness of their own. The controller Deployment is not in the row yet (see
+  # platform/nodesoftware-operator/kustomization.yaml) because its image does not exist,
+  # and a healthCheck on a Deployment that can never become ready spends the whole 10m
+  # timeout every 10m interval and reports a failure event each time.
+  #
+  # Removed 2026-09-08: this row also read `substituteFrom: {kind: Secret, name: ghcr-pull}`,
+  # for a stated `IMAGE_TAG` field. ghcr-pull is a kubernetes.io/dockerconfigjson Secret and
+  # its one key is `.dockerconfigjson`; Flux loads every key of a substituteFrom source as a
+  # variable name, `.dockerconfigjson` is not a legal one, and the whole post-build aborted.
+  # This row had therefore never applied once -- 156 minutes old and the namespace empty --
+  # and gvisor-runtime, which dependsOn it, had never applied either. The estate pins images
+  # with Flux image automation and a `$imagepolicy` marker written into git (cyrus,
+  # hermes-agent, estate-mcp and eight more); nothing else in the estate substituted a pull
+  # secret, and a pull secret is referenced by name in a pod spec, never substituted as text.
   timeout: 10m
-  healthChecks:
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: nodesoftware-operator
-      namespace: nodesoftware-operator
 ---
 # Cyrus agent orchestration (crew#834): the execution layer that works an issue with any engine --
 # claude, codex, cursor, gemini or opencode -- and answers to both boards, GitHub and Linear.
