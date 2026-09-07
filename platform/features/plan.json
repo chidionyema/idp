@@ -188,6 +188,15 @@
       "storage_gb": 0,
       "title": "no customer identity layer; whichever product needs customers holds its own sign-in code, which is what this feature exists to end",
       "note": ""
+    },
+    {
+      "name": "human-key-door",
+      "tier": "on",
+      "cpu": 0.0,
+      "memory_gb": 0.0,
+      "storage_gb": 0.0,
+      "title": "the human-vault-bridge ExternalSecrets: every vendor in platform/vendors/consoles.yaml whose store_default is human-vault is read from Bitwarden Secrets Manager by name, once a minute, into the namespace that consumes it; the workload prefers it over the value the estate seeded into its own vault, so a key put in Bitwarden wins",
+      "note": ""
     }
   ],
   "total": {
@@ -196,7 +205,7 @@
     "storage_gb": 16.0
   },
   "depend_failures": [],
-  "switches_count": 40,
+  "switches_count": 41,
   "switches": [
     "alerts",
     "alerts-github",
@@ -218,6 +227,7 @@
     "healthchecks",
     "hermes-agent",
     "hindsight",
+    "human-vault-bridge",
     "identity",
     "image-automation",
     "kyverno",
