@@ -8,6 +8,134 @@ memory:
 - `~/.claude/docs/founder/2026-09-07T1528Z-this-is-the-net-super-inprotnsnt-peice-of-78f60e2c.md`
 - `~/.claude/docs/founder/2026-09-07T1532Z-sually-forces-platform-teams-to-constantly-micromanage-their-9cce7f2d.md`
 
+## SUPERSEDED ORDERING — the founder's redirect, 2026-09-07
+
+Record, verbatim and the only source (never paraphrased from memory):
+`~/.claude/docs/founder/2026-09-07T1606Z-ok-lets-add-these-also-ign-the-proof-c2f0f9be.md`
+
+He read the six-workstream plan below and rejected its shape, not its findings:
+
+> the blunt truth is that my previous, highly complex 6-workstream plan completely missed the
+> essence of your prompt: you are a founder, not a dedicated platform engineering team.
+> Building canary nodes, eBPF traffic shadowers, and automated mathematical convergence proofs is
+> massive, enterprise-grade friction. It is the opposite of seamless.
+
+And named what the gap actually is:
+
+> The real gap isn't a lack of GitOps pipelines. The gap is that we didn't design a Just-In-Time
+> (JIT) Cryptographic Access system.
+>
+> You want the agent to operate autonomously where safe, hit a wall, ask for a temporary key, do
+> the job, and have the key vanish into thin air without you ever cleaning up behind it.
+
+His instruction on scope: **"we drop workstreams W2 through W5. We focus solely on building the
+JIT Token Broker."** Answered "Yes" in the same message.
+
+**Nothing below is deleted.** W2 to W5 are parked, with this line as the path back (LAW 16): they
+describe real gaps that remain real, and if the estate ever grows a platform team they are the
+plan. They are not the founder's plan, and no session starts one without his word. W0 and W1 are
+not parked — they are the JIT system's own foundation and are folded into it below.
+
+---
+
+# WJ — The JIT Token Broker. The one thing we build.
+
+## The shape
+
+Static credentials are abandoned. Nothing holds standing write privilege on production — not an
+agent, not a session, not CI. Write is minted on demand, scoped to one named action, and dies by
+the passage of time rather than by anyone remembering to clean up.
+
+**WJ.1 Zero standing privileges (this is W1.1, unchanged).**
+Every agent identity — laptop session, in-cluster workload, CI job — is bound to read-only in
+Kubernetes and read-only in OCI. `bin/idp-kube` stops minting the founder's OCI principal.
+Diagnosis stays completely unrestricted: logs, metrics, events, manifests, everything but Secrets.
+Mutation is not possible, not discouraged.
+
+*Done when:* `bin/idp-kube auth whoami` no longer shows `system:masters`, reads still work, and a
+delete returns a quoted `Forbidden`.
+
+**WJ.2 The frictionless ask.**
+When an agent hits the wall it does not fail and it does not report back. It asks, in one message
+to the founder's phone carrying exactly three things, in plain English:
+
+- **The why** — "The Backstage pod is OOM crashing."
+- **The what** — the exact verb, kind, name and namespace: `patch deployment/backstage -n backstage`.
+- **The time to live** — "10 minutes."
+
+**WJ.3 The one-click grant.**
+He taps Approve. No terminal, no YAML, no repository (LAW 54, LAW 31). Deny is one tap too, and a
+silent no-answer is a deny — the request expires on its own.
+
+**WJ.4 The cryptographic auto-revoke — this is the mathematical certainty.**
+Approval mints a token with `kubectl create token --duration=<ttl>`, bound to a temporary Role
+scoped to exactly the resource and verbs in the ask. At the end of the TTL the JWT is invalid by
+its own signature. Nothing has to run for the revoke to happen: a crashed cleanup job, a network
+partition, a rogue agent and a forgotten session all fail closed, because expiry is a property of
+the token, not of a process. For OCI the same shape uses short-lived session tokens.
+
+This is what the earlier plan could not deliver. The blast radius is not argued from a scope
+checker that might have a bug — it is bounded by a signature that stops verifying.
+
+## The security core: the broker is the new crown jewel
+
+The broker can mint write access, so an agent that can forge an approval has admin. Four
+properties, and every one of them is load-bearing:
+
+**WJ.5 A grant is chosen, never composed.** The broker mints only from grant templates declared in
+git — a closed set naming verb, kind, namespace pattern and maximum TTL. The agent picks a template
+and fills its parameters; it cannot describe a permission of its own. A template that would grant
+`*`, `cluster-admin`, secrets, RBAC, or anything in the core blast radius is refused by a gate, not
+by review. (This is W0.6 generalised: **the agent does not get to author what it is measured or
+granted by.**)
+
+**WJ.6 The approval is signed and the agent never sees the channel.** The callback carries an HMAC
+over the request id, the template, the parameters and the TTL, verified by the broker against a key
+the agent's identity cannot read, and accepted only from the founder's own chat. An agent cannot
+reach the approval path even by holding its own request.
+
+**WJ.7 Every request, grant, denial, expiry and use is recorded — signed, append-only, and on the
+collector.** Cosign is already in this repository, so the primitive exists (W0.5): the ledger entry
+is signed, and the sink is one the agent's identity may append to and nothing else. Append-only by
+convention is not tamper-proof.
+
+**WJ.8 The broker and its templates are outside what the agent can change (W0.1).** The broker's
+code, its templates, `bin/idp-kube`, `platform/rbac/` and the gates are permanently glass-break,
+enforced by the repository and provably not bypassable by any merge bot.
+
+## The safety rails the earlier plan found, kept because they still apply
+
+These are the W0 items, restated against the JIT shape rather than the GitOps shape. None is
+dropped.
+
+- **WJ.9 A rate limit (W0.7).** One ten-minute patch is safe; forty in an hour is an incident.
+  The broker caps grants per hour and per template, and refuses above it.
+- **WJ.10 A kill switch he can reach (W0.7).** One tap halts every grant, standing and pending,
+  from his phone. No terminal.
+- **WJ.11 The morning summary (W0.10).** One message: what was asked, what he approved while
+  asleep, what expired unused, what was denied. The cheapest item here and the one that decides
+  whether he trusts it.
+- **WJ.12 The failure reaches the agent (W0.9).** When a granted action makes things worse, the
+  agent that asked is told, so it does not ask for the same grant again.
+- **WJ.13 Check and use are the same thing (W0.3).** The token encodes the scope, so there is no
+  gap between what was approved and what is used — the drift W0.3 worried about cannot exist here.
+- **WJ.14 The in-flight branches (W0.11).** Audited before they land; findings in the section at
+  the end of this document.
+- **WJ.15 The layer below Kubernetes (W0.4).** OCI, the GitHub App, Bitwarden and DNS get the same
+  treatment. An agent read-only in Kubernetes while holding an OCI administrator key is not
+  confined, and OCI's short-lived session tokens are the same primitive.
+
+## What was rejected, and why (headline rule 1)
+
+Teleport and HashiCorp Vault both solve brokered short-lived access and both were rejected by the
+founder by name as heavy identity brokers for a one-founder estate; Teleport is in zero files here.
+What remains is not a script standing in for a mature tool — it is thin glue over two vendor
+primitives that already exist and already do the cryptography: the Kubernetes TokenRequest API
+(`kubectl create token --duration`) and OCI short-lived session tokens. The expiry, which is the
+whole guarantee, is theirs, not ours.
+
+---
+
 ## The correction that shapes everything below: most of our agents have no pod
 
 The founder asked directly whether agents have pods, and whether this session does. Measured
@@ -307,3 +435,51 @@ that decides whether he ever trusts the lane.
 **W0.11 The work already in flight was written under the old rules.**
 A gate catches what the thirty-odd open infrastructure branches change from here on. Nobody has
 read what they already contain. That is an audit pass, once, before they land.
+
+---
+
+# The audit of the work already in flight (WJ.14 / W0.11), 2026-09-07
+
+Every unmerged branch was graded against the rules above, excluding the 2026-09-03 `backup/` and
+`rescue/` snapshots, which are recovery images rather than work. **82 branches touch
+infrastructure. 62 are clean. 20 are flagged, and 5 must not land in their current shape.**
+
+Uncommitted work is not the risk: of 25 working copies on the founder's machine only the main
+checkout has uncommitted infrastructure changes — three files of another session's Cyrus work,
+38 lines, no permission grant, no privileged or host-level setting, no cluster credential.
+
+## The five that must not land as they are
+
+| Branch | Age | Files | What it does |
+|---|---|---|---|
+| `temp-work` | 3 days | 19 | Adds `cluster-admin` and a ClusterRoleBinding to `platform/rbac/bridge.yaml` — the founder's phone bridge, which is deliberately `view` and says so in its own comment. Also adds `bin/idp-headlamp-mac`, `bin/idp-kubeapi-mac`, `bin/idp-phone-kubeconfig`. This is a standing credential being widened, which is the exact thing WJ replaces. |
+| `salvage/crew710-minimax-headers` | 2 days | 103 | Touches the entire autonomous-merge machinery in one branch — `deploy-when-green.yml`, `bin/idp-image-only-diff`, `bin/idp-pr-arm`, `bin/idp-pr-landable`, `bin/idp-ci` — plus `platform/spire/`. WJ.8's concern, live. |
+| `wt-render` | 10 days | 337 | Touches the cage and the gates together: `bin/idp-kube`, `bin/idp-cloud`, `bin/idp-ci`, `bin/repo-rulesets`, `platform/identity/`. Unreviewed for ten days. |
+| `road-b-raw-calico-swap` | 29 hours | 2 | 4 ClusterRoleBindings, 4 `privileged: true`, 1 `hostNetwork: true`, 13 `hostPath` in `platform/calico/raw-migration/`. Calico legitimately needs host access, so this is likely correct — and it is also the largest blast radius in the estate, so it is core glass-break and gets read line by line. |
+| `fix/tailscale-operator-tag` | 2 days | 17 | 6 ClusterRoleBindings, and it edits `bin/idp-oke-break-glass`, `bin/idp-estate-audit`, `bin/idp-estate-backup` and `platform/tailscale/policy.hujson` — the break-glass path itself. |
+
+## The rest of the flagged set
+
+Touching the cage in a small way, each to be read before merge: `fix/blind-line-names-the-real-fault`
+(`bin/idp-kube`, `bin/idp-cloud`), `fix/crew722-seed-needs-no-tofu` (`bin/idp-cloud`),
+`fix/crew727-intervals-one-value` (70 files, `platform/identity/`, `platform/spire/`),
+`wip/crew488-cp5-merge-main` (`platform/spire/exception.yaml`).
+
+Touching the machinery: `fix/kyverno-judge-grep-q-sigpipe-reads-green` (`bin/idp-ci`,
+`bin/repo-rulesets`), `fix/rollup-duplicate-runs` (`bin/idp-pr-landable`), `pr361-review`
+(`bin/idp-ci`), `test/r76-purge-prose-pinning` (`AGENTS.md`, `bin/idp-ci` — a rule change).
+
+Reaching the core blast radius, ordinary platform work needing his merge as they already do:
+`feat/otto-door-step5`, `feat/otto-memory-store`, `feat/otto-staging`, `fiu`,
+`fix/calico-tigera-reset-lands-raw`, `fix/commerce-onto-estate-db`,
+`fix/crew562-the-acl-locks-the-founder-out-of-his-own-mac`, `fix/human-vault-sdk-cycle`,
+`fix/kyverno-judge-audit-warn-split`, `fix/tailscale-operator-runs-as-root`,
+`otto-gateway-manifests`.
+
+## The rule this produces
+
+A branch may not change the machinery that constrains agents in the same commit as anything else.
+The five above are not refused; they are **split** — the cage or machinery change becomes its own
+small pull request the founder reads, and the rest lands normally. `temp-work`'s widening of the
+phone bridge to `cluster-admin` is the one change that is refused outright rather than split: WJ.1
+removes the need for it, and WJ replaces what it was reaching for.
