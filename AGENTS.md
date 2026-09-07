@@ -72,6 +72,7 @@ deprecate them. Eradicate them."
 | Every fixture pair in the tree is named by a registry case or a test; a fixture graded by nothing is a rule nobody runs, and the ledger of the ones still unwired only shrinks | LAW 45 | `python3 bin/idp-rule-coverage` | tests/fixtures/rule-coverage/bad | tests/fixtures/rule-coverage/good |
 | The broker mints only what it already holds: its own ClusterRole carries no escalate, no bind, no impersonate, no wildcard and no secrets, and no ClusterRoleBinding names it -- the absence that makes KSV-0050 on that file an accepted risk rather than a defect | WJ.5 | `python3 bin/idp-jit-broker-role` | tests/fixtures/jit-broker-role/bad.yaml | tests/fixtures/jit-broker-role/good.yaml |
 | A deck that replaces a vendor operator never reuses the operator's cluster-scoped names; a ClusterRole has no namespace, so moving the ServiceAccounts does not separate them | platform/calico/raw/README.md | `python3 bin/vendor-name-collision-gate` | tests/fixtures/vendor-names/bad.yaml | tests/fixtures/vendor-names/good.yaml |
+| A conditional's verdict is never a pipeline into grep in a script that sets pipefail: a failing left-hand stage inverts the answer silently. Capture the output first and grade the text. | LAW 55 | `bin/idp-pipeverdict` | tests/fixtures/pipefail-verdict.bad.sh | tests/fixtures/pipefail-verdict.good.sh |
 <!-- END GENERATED RULES TABLE -->
 
 Rules that are already types or tools, and so need no row: compose files must parse
