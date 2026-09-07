@@ -1,0 +1,30 @@
+# crew#892 CP4 — otto-gvisor-sandbox: the escrow namespace where gVisor-sandboxed Pods for
+# `execute_code` run (zero-trust-boundary.md step 5, deepseek-work-order item 12). It lives in
+# platform/edge, applied by the `edge` Flux Kustomization, next to the two things that gate it:
+# the RuntimeClass (gvisor-runtimeclass.yaml) and the admission policy that refuses a Pod here
+# unless it names that class and is not privileged (gvisor-admission.yaml).
+#
+# It enforces the `restricted` Pod Security Standard at the API-server layer (the gVisor
+# kernel is the second boundary below it). Why it is a top-level file here and not inside a
+# workload directory: a Kustomization whose `namespace:` transformer renames Namespace objects
+# would also rename this one, so the namespace is declared in the same row as its admission
+# control rather than under a workload that does not exist yet (no code-executing workload is
+# onboarded at this slice — only the cell that will host it).
+#
+# Its network fence is generated, not hand-written: platform/ns-fences/allowances.yaml declares
+# the boundary (default-deny, the `edge` gateway the one declared app route) and
+# bin/idp-ns-fence-gen fans it out the run after Flux has created the namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    # Flux manages it but must never prune it: protect-namespaces.yaml + tests then cover it
+    # (founder ruling 2026-08-29), and deleting the whole namespace accidentally would take
+    # every sandboxed workload with it. Remove this annotation in git first to retire it.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: otto-gvisor-sandbox
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
+    app.kubernetes.io/part-of: idp

@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Grade one YAML file or directory for a gVisor cell namespace violation (crew#892 CP4).
+
+crew#892 CP4 (zero-trust-boundary.md step 5 else, deepseek-work-order item 12): a Pod that runs
+code a model wrote lives in a cell namespace and must name the `gvisor` RuntimeClass, must not be
+privileged and must not reach for the host. The real refusal happens at admission -- the Kyverno
+ClusterPolicy in platform/edge/gvisor-admission.yaml enforces on the cluster. This gate is the
+step-6 PR half of the same boundary: it catches the bad pod in the pull request, before Kyverno,
+so an isolation break never reaches a merge. It grades the parsed object, never prose (R76).
+
+The single rule is mirror-written here so it cannot drift from the policy without this file's own
+fixture pair failing: a pod in a cell namespace that (1) does not set spec.runtimeClassName=gvisor,
+(2) runs any container or initContainer with securityContext.privileged=true, or (3) sets
+spec.hostNetwork=true, or (4) mounts a hostPath volume, is refused.
+
+Cell namespaces: the CP4 sandbox cell. It is declared as a small closed set of metadata.name so an
+escrow namespace is covered the moment it merges, and nothing here scans by prose or label guess.
+Extra namespaces are added here, deliberately, as they are born; the AGENTS.md row fixes the cell
+set to what this gate, the Kyverno policy and the Namespace manifest share.
+"""
+from __future__ import annotations
+
+import pathlib
+import sys
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover
+    sys.exit("gvisor-cell-gate needs PyYAML: python3 -m pip install pyyaml")
+
+CELL_NAMESPACES = {"otto-gvisor-sandbox"}
+REQUIRED_RUNTIME = "gvisor"
+
+
+def manifests(path: pathlib.Path):
+    """Every YAML document under `path`, whether file or directory."""
+    if path.is_dir():
+        files = sorted(p for p in path.rglob("*.yaml") if p.name != "kustomization.yaml")
+    else:
+        files = [path]
+    for f in files:
+        with open(f, encoding="utf-8") as fh:
+            for doc in yaml.safe_load_all(fh):
+                if isinstance(doc, dict) and doc.get("kind"):
+                    doc["__file"] = str(f)
+                    yield doc
+
+
+def _pod_templates(doc: dict):
+    """The Pod(s) a manifest declares: a bare Pod, or every pod template under a workload kind."""
+    kind = doc.get("kind")
+    if kind == "Pod":
+        yield doc, doc.get("spec") or {}
+        return
+    if kind in ("Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job"):
+        tpl = ((doc.get("spec") or {}).get("template") or {})
+        yield {
+            "kind": kind,
+            "metadata": doc.get("metadata") or {},
+            "spec": tpl.get("spec") or {},
+        }, tpl.get("spec") or {}
+
+
+def namespace_of(meta: dict) -> str:
+    return (meta or {}).get("namespace") or (meta or {}).get("name") or ""
+
+
+def violation(doc: dict) -> str | None:
+    """A sentence describing the first cell-namespace violation, or None when the doc is clean."""
+    kind = doc.get("kind")
+    if kind not in ("Pod", "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job"):
+        return None
+    meta = doc.get("metadata") or {}
+    ns = meta.get("namespace") or ""
+    if ns not in CELL_NAMESPACES:
+        return None
+    label = f"{kind}/{meta.get('name', '<unnamed>')} in {ns}"
+
+    if kind == "Pod":
+        plist = [doc]
+    else:
+        # A workload's pod template picks up the workload's name, not a stray doc name.
+        plist = [{"kind": kind, "spec": ((doc.get("spec") or {}).get("template") or {}).get("spec") or {}}]
+
+    for p in plist:
+        pspec = p.get("spec") or {}
+        if (pspec.get("runtimeClassName") or "") != REQUIRED_RUNTIME:
+            return f"{label}: a cell Pod must set spec.runtimeClassName={REQUIRED_RUNTIME}"
+        if pspec.get("hostNetwork"):
+            return f"{label}: a cell Pod must not set spec.hostNetwork=true"
+        for c in list(pspec.get("containers") or []) + list(pspec.get("initContainers") or []):
+            sc = c.get("securityContext") or {}
+            if sc.get("privileged"):
+                return f"{label}: container {c.get('name')} must not set securityContext.privileged=true"
+        vols = pspec.get("volumes") or []
+        if any("hostPath" in (v or {}) for v in vols):
+            return f"{label}: a cell Pod must not mount a hostPath volume"
+    return None
+
+
+def check(path: str) -> int:
+    p = pathlib.Path(path)
+    if not p.exists():
+        print(f"gvisor-cell-gate: nothing at {path}")
+        return 2
+    found = 0
+    for doc in manifests(p):
+        bad = violation(doc)
+        if bad:
+            print(f"{doc['__file']}: {bad}")
+            found += 1
+    if found:
+        print(f"gvisor-cell-gate: {found} cell-namespace violation(s) refused")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("gvisor-cell-gate: expected one fixture path (file or directory)")
+        sys.exit(2)
+    try:
+        sys.exit(check(sys.argv[1]))
+    except yaml.YAMLError as e:  # pragma: no cover
+        print(f"gvisor-cell-gate: unparseable YAML: {e}")
+        sys.exit(2)

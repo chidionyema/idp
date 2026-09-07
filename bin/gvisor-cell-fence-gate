@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""Refuse a gVisor-cell namespace whose fence allows internet egress (crew#892 CP4, ZT step 6).
+
+zero-trust-boundary.md step 5/6: the cell runs code a model wrote, so its network fence is
+default-deny with the gateway (`edge`) the one declared app route and NO egress to the internet.
+A fence that lets a compromised untrusted-code pod onto the public address space (or onto another
+tenant's private range) is the exact isolation break step 6 exists to catch in the pull request,
+before Kyverno and the CNI ever see it. This gate grades the `flows` declarations in
+platform/ns-fences/allowances.yaml (the single source the generator fans out into per-namespace
+NetworkPolicies): a cell namespace that declares `egress_internet` at all is refused.
+
+Why it grades allowances.yaml rather than a generated policy doc: allowances.yaml is what a
+reviewer reads and what the generator (crew#839) turns into the real NetworkPolicies on both the
+declared and the generated side. Step 6 protection is repo-half — catch the bad declaration the
+day it merges, mirroring the step-5 admission policy (platform/edge/gvisor-admission.yaml) and the
+repo-half gvisor-cell-gate. The cell member set is the same closed list gvisor-cell-gate and the
+namers share; add a cell namespace there AND here, deliberately, the AGENTS.md row ties them.
+
+It grades the parsed object graph: a flow entry named back by permissions rows, never prose (R76).
+"""
+from __future__ import annotations
+
+import pathlib
+import re
+import sys
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover
+    sys.exit("gvisor-cell-fence-gate needs PyYAML: python3 -m pip install pyyaml")
+
+# Closed set of cell namespaces (gvisor-cell-gate / the admission policy / this gate must agree).
+CELL_NAMESPACES = {"otto-gvisor-sandbox"}
+
+
+def load_allowances(path: str) -> dict:
+    return yaml.safe_load(pathlib.Path(path).read_text(encoding="utf-8"))
+
+
+def violation(path: str) -> str | None:
+    """A sentence naming the first cell namespace whose fence allows internet, or None if clean."""
+    doc = load_allowances(path)
+    flows = (doc or {}).get("flows") or {}
+    for ns in sorted(CELL_NAMESPACES):
+        entry = flows.get(ns)
+        if entry is None:
+            continue
+        if entry.get("egress_internet"):
+            ports = ", ".join(str(p) for p in sorted(set(entry["egress_internet"])))
+            return f"{ns}: a gVisor-cell fence must not allow internet egress (declared egress_internet: {ports})"
+        # A cell namespace may also have been given a broad egress to a namespace that itself has
+        # internet -- that is the gateway's own job, so it stays the allowed route; the direct
+        # hole is what fails above.
+    return None
+
+
+def check(path: str) -> int:
+    if not pathlib.Path(path).exists():
+        print(f"gvisor-cell-fence-gate: nothing at {path}")
+        return 2
+    try:
+        bad = violation(path)
+    except yaml.YAMLError as e:  # pragma: no cover
+        print(f"gvisor-cell-fence-gate: unparseable allowances YAML: {e}")
+        return 2
+    if bad:
+        print(f"gvisor-cell-fence-gate: {bad}")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("gvisor-cell-fence-gate: expected one allowances.yaml path")
+        sys.exit(2)
+    sys.exit(check(sys.argv[1]))

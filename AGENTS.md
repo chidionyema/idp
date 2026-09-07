@@ -30,6 +30,8 @@ Row format, one rule per row. `gate` is a shell function or command defined in `
 | One credential is one tenant's; the operator's road never widens the customer's (decision 0021) | tenant_split_gate | tests/fixtures/tenant-split/bad.yaml | tests/fixtures/tenant-split/good.yaml |
 | A profile of a denied packet is only ever a wall when the probe proved it could reach an allowed path; a probe that could not run is a fail-closed FAIL, never a pass (zero-trust-boundary.md step 1) | fence_enforcement_gate | tests/fixtures/fence-drill/gate-broken-fence.json | tests/fixtures/fence-drill/gate-good.json |
 | The 39 generated policies stay unwired until a deny feed has been read over a full cycle; an empty log feed is a fail-closed FAIL, never a clean bill (platform/calico README) | calico_denyflow_gate | tests/fixtures/calico-denyflow/feed-no-evidence.log | tests/fixtures/calico-denyflow/feed-with-deny.log |
+| A pod in the gVisor sandbox cell must name `runtimeClassName: gvisor` and must not be privileged, host-networked or mount a hostPath; the break is caught in the pull request (zero-trust-boundary.md step 5, crew#892 CP4) | gvisor_cell_gate | tests/fixtures/gvisor-cell/bad.yaml | tests/fixtures/gvisor-cell/good.yaml |
+| A gVisor-cell namespace fence is default-deny with the gateway the one allowed route; a fence granting the cell internet egress is a break caught in the pull request (zero-trust-boundary.md step 6, crew#892 CP4) | gvisor_cell_fence_gate | tests/fixtures/gvisor-cell-fence/bad.yaml | tests/fixtures/gvisor-cell-fence/good.yaml |
 
 Rules that are already types or tools, and so need no row: compose files must parse
 (`docker compose config`), the gateway config must match its release schema

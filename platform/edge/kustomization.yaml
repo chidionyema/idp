@@ -52,3 +52,11 @@ resources:
   # decision 0018: superset's chart-generated env Secret (connection facts, placeholder
   # password) and its deliberately empty Celery worker; the file says what each excuses.
   - superset-exception.yaml
+  # crew#892 CP4: the gVisor sandbox cell for execute_code. Three objects land as one set, in
+  # the same row that carries every other admission policy on the estate: the RuntimeClass
+  # (gvisor-runtimeclass.yaml), the Namespace it gates with the restricted PSA label
+  # (otto-gvisor-sandbox-namespace.yaml), and the ClusterPolicy that refuses a Pod there that
+  # does not name `runtimeClassName: gvisor` or that sets privileged:true (gvisor-admission.yaml).
+  - gvisor-runtimeclass.yaml
+  - otto-gvisor-sandbox-namespace.yaml
+  - gvisor-admission.yaml

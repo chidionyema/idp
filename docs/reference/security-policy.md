@@ -55,6 +55,7 @@ PR alongside these.
 | `dev-loop-mirrord-fence` | Enforce | mirrord agents only where the namespace allows the dev loop | `edge` | `platform/edge/dev-loop-policy.yaml` |
 | `flux-only-writes` | Enforce | Only Flux and the deploy workflow may change the cluster | `edge` | `platform/edge/flux-only-writes.yaml` |
 | `no-token-by-default` | Audit | A pod on the default account gets no Kubernetes token | `edge` | `platform/edge/no-token-by-default.yaml` |
+| `otto-gvisor-admission` | Enforce | otto-gvisor-sandbox requires runtimeClassName:gvisor and no privileged | `edge` | `platform/edge/gvisor-admission.yaml` |
 | `protect-namespaces` | Enforce | A platform namespace cannot be deleted | `edge` | `platform/edge/protect-namespaces.yaml` |
 | `provider-independence` | Enforce | Provider independence (R43) | `edge` | `platform/edge/provider-independence.yaml` |
 | `require-auto-reload` | Audit 1, Enforce 1 | Every workload restarts when its config changes | `edge` | `platform/edge/require-auto-reload.yaml` |
