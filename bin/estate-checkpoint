@@ -195,6 +195,14 @@ def stamp_path(repo, issue, agent, session):
 
 
 def publish(repo, issue, agent, session, body, dry_run=False):
+    # Before the throttle, never after: --dry-run is how a caller READS the record, and a caller
+    # that asked to see it must not be handed silence because an identical one was written 90
+    # seconds ago. Found 2026-09-07 deriving a checkpoints/LATEST.md from --dry-run and getting a
+    # 136-byte file with no record in it -- the throttle had returned "skipped" before the body
+    # was ever printed, and the caller had no way to tell that from an empty checkpoint.
+    if dry_run:
+        print(body)
+        return "dry-run"
     sp = stamp_path(repo, issue, agent, session)
     now = time.time()
     try:
@@ -205,9 +213,6 @@ def publish(repo, issue, agent, session, body, dry_run=False):
             return "skipped (unchanged, within %ds)" % MIN_INTERVAL_S
     except Exception:
         pass
-    if dry_run:
-        print(body)
-        return "dry-run"
     existing = find_comment(repo, issue, agent, session)
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
         fh.write(body)
@@ -332,6 +337,17 @@ def selftest():
 
         check("emit on a non-git dir exits 0 (fails open)",
               emit("o/r", 1, "cline", "s", "/", None, True) == 0)
+
+        # The 136-byte LATEST.md, pinned: two identical --dry-run runs inside the throttle window
+        # must both print the record. Only a run that WRITES is worth skipping.
+        import contextlib
+        import io
+        cap = io.StringIO()
+        with contextlib.redirect_stdout(cap):
+            publish("o/r", 1, "a", "s", body, dry_run=True)
+            publish("o/r", 1, "a", "s", body, dry_run=True)
+        check("--dry-run prints the record even when the throttle would skip it",
+              cap.getvalue().count("estate-checkpoint agent=") == 2)
         check("run() never raises on a missing binary", run(["definitely-not-a-binary-xyz"])[0] != 0)
 
         old = sys.stdin
