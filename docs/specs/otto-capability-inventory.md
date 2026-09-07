@@ -66,6 +66,7 @@ below with a receipt.
 - **Every tool call passes one gateway**: schema validated, tiered T0 to T3, taint-capped, audited, and the human is asked only for what cannot be undone. LIVE. `otto/gateway/core.py:109`. ADR 0024.
 - **Denials are structured, never exceptions**; a refused call says why. LIVE. `otto/gateway/denial.py:14`.
 - **Four model lanes, distinct families by construction**: judgment, bulk, verify, deep. A lane that shares a family with its checker refuses to boot. LIVE. `otto/router/config.py:259`.
+- **A fifth, explorer lane for propose-fix fan-out** (crew#892 CP3): default alias `deepseek`, the zero-cost tail; pinned on the running gateway via `OTTO_ROUTER_LANE_EXPLORE_MODEL`. LIVE (image-default) then pinned on deploy. `otto/router/config.py` (`explore`), `platform/otto-gateway/deployment.yaml`.
 - **Every claim carries a confidence and a verdict; an unverified claim is rendered with a warning prefix.** LIVE. `otto/router/render.py:15`.
 - **Budgets per lane and per task, in dollars, with a hard stop.** LIVE. `otto/router/budget.py:18`; `config.yaml limits.budget_hard_stop: true`.
 - **A verification plane with its own credentials**: Ed25519-signed verdicts, single-use nonces, forged or replayed verdicts rejected, a false-success corpus at zero leakage. BUILT. `otto/verify/verifier.py`. crew#768 CP3.

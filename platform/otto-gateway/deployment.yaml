@@ -269,6 +269,10 @@ spec:
             # minimax, gemini, deepseek and embed.
             - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "gemini" }
             - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "gemini" }
+            # crew#892 CP3: the explorer lane runs the cheap deepseek tail, pinned for
+            # the running gateway exactly like its lane siblings so the image default
+            # (deepseek) cannot drift from what the estate governance expects.
+            - { name: OTTO_ROUTER_LANE_EXPLORE_MODEL, value: "deepseek" }
             - { name: PYTHONUNBUFFERED, value: "1" }
             # docs/specs/otto-door-hands-and-senses.md step 5: the door's hands. HERMES_ENV_DIR is
             # the secret mount the shell above exports (Kyverno refuses secretKeyRef on a pod);
