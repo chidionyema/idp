@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: jit
+resources:
+  - fence.yaml
+  - rbac.yaml
+  - deployment.yaml
+configMapGenerator:
+  # The broker mints only from this file, and this is the only path by which it reaches the
+  # cluster: git, through Flux, into a ConfigMap. There is no second copy to drift.
+  - name: jit-grants
+    files: [grants.yaml]
+generatorOptions:
+  disableNameSuffixHash: true

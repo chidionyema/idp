@@ -1,0 +1,603 @@
+"""The JIT token broker: an agent asks, the founder taps once, the access expires by itself.
+
+Founder's specification, 2026-09-07, in
+`~/.claude/docs/founder/2026-09-07T1606Z-ok-lets-add-these-also-ign-the-proof-c2f0f9be.md`:
+
+    You want the agent to operate autonomously where safe, hit a wall, ask for a temporary
+    key, do the job, and have the key vanish into thin air without you ever cleaning up
+    behind it.
+
+Why this exists rather than Teleport or Vault: both were named and rejected in that same
+message as setup bloat for a one-founder estate. Everything below is thin glue over two
+primitives that are already installed -- the Kubernetes TokenRequest API, which mints a
+token that carries its own expiry in its signature, and Telegram, which is already how this
+estate talks to its founder.
+
+The guarantee is cryptographic, not procedural. A token minted with a ten minute duration
+stops being accepted by the API server at ten minutes and one second because the signature
+says so. No cleanup job has to run. A crashed broker, a partitioned network and a rogue
+agent all fail closed, which is the property no revocation-list design has.
+
+Four rules hold the security, and each is a function below:
+
+1. A grant is CHOSEN, never composed (`_load_grant`). The agent names an id from
+   platform/jit/grants.yaml and fills in declared parameters. It cannot describe the access
+   it wants, because a request body an agent writes is a request body an agent can widen.
+
+2. The approval is SIGNED and the agent never sees the channel (`_sign`, `_verify`). The
+   Telegram callback carries an HMAC over the whole request taken with a key that lives only
+   in the broker. An agent that could forge a callback would not need the founder.
+
+3. An approval is spent once (`_consume`). The same tap replayed is refused, so a captured
+   callback is not a second grant.
+
+4. Two modes, because Kubernetes permissions have no field-level scope (`_execute`). If a
+   token can `patch` a Deployment then its holder can rewrite `serviceAccountName` and keep
+   access after the token dies. So anything touching a pod spec is `broker-applies`: the
+   broker performs the exact approved change and the agent never holds the verb at all.
+   `bin/idp-jit-grants` refuses a catalogue that gets this wrong, and CI runs it.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import os
+import re
+import subprocess
+import time
+import uuid
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
+import yaml
+
+#: Ten minutes is the founder's example and the catalogue's ceiling is thirty. The
+#: TokenRequest API will not mint below its own floor, so a shorter ask is honoured as
+#: whatever the API server is willing to sign and the real expiry is read back from the
+#: token, never assumed.
+TTL = re.compile(r"^(\d+)([smh])$")
+_SECONDS = {"s": 1, "m": 60, "h": 3600}
+
+#: A quantity like 512Mi or 2Gi. Parsed, not trusted: the catalogue declares a maximum and
+#: a request above it is refused before the founder is ever asked, so his phone does not
+#: buzz for something that was never going to be allowed.
+_QUANTITY = re.compile(r"^(\d+(?:\.\d+)?)(Ki|Mi|Gi|Ti|K|M|G|T)?$")
+_SCALE = {
+    None: 1,
+    "K": 10**3,
+    "M": 10**6,
+    "G": 10**9,
+    "T": 10**12,
+    "Ki": 2**10,
+    "Mi": 2**20,
+    "Gi": 2**30,
+    "Ti": 2**40,
+}
+
+#: A Kubernetes object name. Anything else is an injection attempt against the shell-free
+#: argv we hand kubectl, or a typo; both are refused the same way.
+_NAME = re.compile(r"^[a-z0-9]([-a-z0-9.]{0,61}[a-z0-9])?$")
+
+#: An image tag. The catalogue marks rollback's tag `must_be_previously_deployed`, and that
+#: is checked against the workload's own rollout history rather than trusted, because a
+#: rollback to a tag this cluster has never run is not a rollback -- it is a deploy wearing
+#: the word rollback, and it would arrive on the founder's phone under the wrong sentence.
+_TAG = re.compile(r"^[\w][\w.-]{0,127}$")
+
+
+def ttl_seconds(v: str) -> int | None:
+    m = TTL.match(str(v or ""))
+    return int(m.group(1)) * _SECONDS[m.group(2)] if m else None
+
+
+def quantity_bytes(v: str) -> int | None:
+    m = _QUANTITY.match(str(v or "").strip())
+    return int(float(m.group(1)) * _SCALE[m.group(2)]) if m else None
+
+
+class Refused(Exception):
+    """The request does not become a question for the founder. He is only asked things
+    that are allowed to happen; everything else is answered here, with the reason."""
+
+
+@dataclass
+class Request:
+    id: str
+    grant_id: str
+    params: dict[str, str]
+    why: str
+    ttl: str
+    asked_by: str
+    asked_at: float
+    state: str = "pending"
+    reason: str = ""
+    result: dict[str, Any] = field(default_factory=dict)
+
+
+class Ledger:
+    """Append-only, and provably so.
+
+    The founder, on the first pass of this design: "Append-only by convention isn't
+    tamper-proof either." So each line carries the hash of the line before it and an HMAC
+    over both. Removing or editing any line breaks every hash after it, and `verify()`
+    says which line. Convention is not doing the work; the chain is.
+    """
+
+    def __init__(self, path: str, key: bytes):
+        self.path, self.key = path, key
+
+    def _tail_hash(self) -> str:
+        prev = "0" * 64
+        if os.path.exists(self.path):
+            with open(self.path) as fh:
+                for line in fh:
+                    if line.strip():
+                        prev = json.loads(line)["this"]
+        return prev
+
+    def append(self, event: str, **fields: Any) -> dict:
+        prev = self._tail_hash()
+        body = {"at": time.time(), "event": event, "prev": prev, **fields}
+        payload = json.dumps(body, sort_keys=True, separators=(",", ":"))
+        body["this"] = hashlib.sha256((prev + payload).encode()).hexdigest()
+        body["sig"] = hmac.new(
+            self.key, body["this"].encode(), hashlib.sha256
+        ).hexdigest()
+        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        with open(self.path, "a") as fh:
+            fh.write(json.dumps(body, sort_keys=True) + "\n")
+        return body
+
+    def verify(self) -> tuple[bool, str]:
+        prev = "0" * 64
+        if not os.path.exists(self.path):
+            return True, "empty"
+        with open(self.path) as fh:
+            for n, line in enumerate(fh, 1):
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                if rec.get("prev") != prev:
+                    return False, f"line {n} does not follow the line before it"
+                body = {k: v for k, v in rec.items() if k not in ("this", "sig")}
+                payload = json.dumps(body, sort_keys=True, separators=(",", ":"))
+                want = hashlib.sha256((prev + payload).encode()).hexdigest()
+                if want != rec.get("this"):
+                    return False, f"line {n} has been edited since it was written"
+                if not hmac.compare_digest(
+                    hmac.new(self.key, want.encode(), hashlib.sha256).hexdigest(),
+                    rec.get("sig", ""),
+                ):
+                    return False, f"line {n} is not signed by this broker"
+                prev = rec["this"]
+        return True, "intact"
+
+
+class Broker:
+    def __init__(
+        self,
+        catalogue: str,
+        key: bytes,
+        ledger_path: str,
+        notify: Callable[[Request, str], None] | None = None,
+        kube: Callable[..., tuple[int, str]] | None = None,
+        killswitch: Callable[[], str | None] | None = None,
+        now: Callable[[], float] = time.time,
+    ):
+        self.catalogue_path = catalogue
+        self.key = key
+        self.ledger = Ledger(ledger_path, key)
+        self.notify = notify or (lambda r, t: None)
+        self.kube = kube or _kubectl
+        self.killswitch = killswitch or (lambda: None)
+        self.now = now
+        self.pending: dict[str, Request] = {}
+        self.spent: set[str] = set()
+        self.history: list[tuple[float, str]] = []
+
+    # ---------------------------------------------------------------- the catalogue
+
+    def _load_grant(self, grant_id: str) -> dict:
+        with open(self.catalogue_path) as fh:
+            cat = yaml.safe_load(fh) or {}
+        for g in cat.get("grants") or []:
+            if g.get("id") == grant_id:
+                return g
+        raise Refused(
+            f"no grant called {grant_id!r}. The broker mints only what "
+            f"{os.path.basename(self.catalogue_path)} already describes, and adding to that "
+            f"file is a change to the estate's security boundary, not a request"
+        )
+
+    def _check_params(self, grant: dict, params: dict[str, str]) -> None:
+        declared = grant.get("parameters") or {}
+        for name in declared:
+            if declared[name].get("required") and not params.get(name):
+                raise Refused(
+                    f"grant {grant['id']} needs {name!r} and it was not given"
+                )
+        for name, value in params.items():
+            if name not in declared:
+                raise Refused(f"grant {grant['id']} takes no parameter {name!r}")
+            spec = declared[name]
+            kind = spec.get("type")
+            if kind in ("name", "namespace") and not _NAME.match(str(value)):
+                raise Refused(f"{name}={value!r} is not a Kubernetes object name")
+            if kind == "image_tag":
+                if not _TAG.match(str(value)):
+                    raise Refused(f"{name}={value!r} is not an image tag")
+                if spec.get("must_be_previously_deployed") and not self._was_deployed(
+                    params.get("namespace", ""), params.get("workload", ""), str(value)
+                ):
+                    raise Refused(
+                        f"this cluster has no record of {params.get('workload')} running "
+                        f"{value}. That is a deploy, not a rollback, and it is not what the "
+                        f"founder would be approving"
+                    )
+            if kind == "quantity":
+                got, cap = quantity_bytes(value), quantity_bytes(spec.get("max", ""))
+                if got is None:
+                    raise Refused(f"{name}={value!r} is not a quantity")
+                if cap is not None and got > cap:
+                    raise Refused(
+                        f"{name}={value} is above the {spec['max']} this grant allows. "
+                        f"A bigger ceiling is a capacity decision, not a ten-minute one"
+                    )
+        ns = params.get("namespace")
+        allowed = grant.get("namespaces") or []
+        if ns and ns not in allowed:
+            raise Refused(f"grant {grant['id']} does not reach namespace {ns!r}")
+
+    def _was_deployed(self, ns: str, workload: str, tag: str) -> bool:
+        """Ask the cluster, not the agent. A Deployment keeps its old ReplicaSets, and each
+        one carries the image it ran, so the rollout history is the record of what this
+        workload has actually served."""
+        rc, out = self.kube(
+            [
+                "get",
+                "replicaset",
+                "-n",
+                ns,
+                "-l",
+                f"app.kubernetes.io/name={workload}",
+                "-o",
+                "jsonpath={.items[*].spec.template.spec.containers[*].image}",
+            ]
+        )
+        if rc != 0:
+            return False
+        return any(img.rsplit(":", 1)[-1] == tag for img in out.split())
+
+    def _check_rate(self, grant: dict) -> None:
+        """One raise is a fix; forty in an hour is an incident nobody is watching.
+
+        The founder, first pass: "Nothing bounds the rate". So every grant declares one and
+        it is counted here, against approvals rather than asks -- a refused ask costs
+        nothing and should not lock out a real one.
+        """
+        cap = int(grant.get("rate_per_hour") or 0)
+        cutoff = self.now() - 3600
+        used = sum(1 for at, gid in self.history if gid == grant["id"] and at > cutoff)
+        if cap and used >= cap:
+            raise Refused(
+                f"grant {grant['id']} has been used {used} times in the last hour and its "
+                f"limit is {cap}. Something is looping, or this is not a ten-minute problem"
+            )
+
+    # ---------------------------------------------------------------- the ask
+
+    def ask(
+        self, grant_id: str, params: dict[str, str], why: str, ttl: str, asked_by: str
+    ) -> Request:
+        stopped = self.killswitch()
+        if stopped:
+            raise Refused(f"the broker is stopped: {stopped}")
+        grant = self._load_grant(grant_id)
+        self._check_params(grant, params)
+        self._check_rate(grant)
+
+        want, cap = ttl_seconds(ttl), ttl_seconds(grant.get("max_ttl", "10m"))
+        if want is None:
+            raise Refused(f"{ttl!r} is not a duration")
+        if cap is not None and want > cap:
+            raise Refused(
+                f"grant {grant_id} lives at most {grant['max_ttl']}, and {ttl} was asked for"
+            )
+        if not (why or "").strip():
+            raise Refused(
+                "every ask carries why, because the founder is answering it on a phone"
+            )
+
+        req = Request(
+            uuid.uuid4().hex,
+            grant_id,
+            dict(params),
+            why.strip(),
+            ttl,
+            asked_by,
+            self.now(),
+        )
+        self.pending[req.id] = req
+        self.ledger.append(
+            "asked",
+            request=req.id,
+            grant=grant_id,
+            params=params,
+            why=req.why,
+            ttl=ttl,
+            asked_by=asked_by,
+        )
+        self.notify(req, self._sign(req.id, "approve"))
+        return req
+
+    # ---------------------------------------------------------------- the approval
+
+    def _sign(self, request_id: str, verdict: str) -> str:
+        return hmac.new(
+            self.key, f"{request_id}:{verdict}".encode(), hashlib.sha256
+        ).hexdigest()
+
+    def _verify(self, request_id: str, verdict: str, sig: str) -> bool:
+        return hmac.compare_digest(self._sign(request_id, verdict), sig or "")
+
+    def _consume(self, request_id: str) -> None:
+        if request_id in self.spent:
+            raise Refused("that approval has already been used once")
+        self.spent.add(request_id)
+
+    #: Telegram gives a button 64 bytes of callback_data and no more, so the signature
+    #: travels truncated. 24 hex characters is 96 bits, which is far past forging for a
+    #: value that is single-use (`_consume`), rate limited, and accepted from exactly one
+    #: chat -- an attacker gets one guess, not the offline grind that would need the full
+    #: 256. The request id is shortened for the same reason and resolved by prefix.
+    SIG_CHARS = 24
+    ID_CHARS = 12
+
+    def callback_data(self, request_id: str, verdict: str) -> str:
+        return (
+            f"j:{request_id[: self.ID_CHARS]}:{verdict[0]}"
+            f":{self._sign(request_id, verdict)[: self.SIG_CHARS]}"
+        )
+
+    def decide_callback(self, data: str) -> Request:
+        """Verdict straight off a button press. Everything in `data` came back from
+        Telegram and is treated as hostile input: the id is looked up rather than trusted,
+        and the signature is compared in constant time before any state moves."""
+        try:
+            tag, short_id, verdict_char, sig = data.split(":", 3)
+        except ValueError:
+            raise Refused("that is not a broker button") from None
+        if tag != "j" or verdict_char not in ("a", "d"):
+            raise Refused("that is not a broker button")
+        verdict = "approve" if verdict_char == "a" else "deny"
+        matches = [r for r in self.pending if r.startswith(short_id)]
+        if len(matches) != 1:
+            raise Refused("no such request")
+        want = self._sign(matches[0], verdict)[: self.SIG_CHARS]
+        if not hmac.compare_digest(want, sig):
+            self.ledger.append("forged", request=matches[0], verdict=verdict)
+            raise Refused("that approval is not signed by this broker")
+        return self.decide(matches[0], verdict, self._sign(matches[0], verdict))
+
+    def expire_stale(self, after_s: int = 900) -> list[Request]:
+        """WJ.3: "a silent no-answer is a deny -- the request expires on its own." So a
+        request nobody answers is not a request that waits forever for a tap that might
+        come at 3am from someone holding his phone."""
+        gone = []
+        for req in self.pending.values():
+            if req.state == "pending" and self.now() - req.asked_at > after_s:
+                req.state = "expired"
+                self.ledger.append("expired", request=req.id)
+                gone.append(req)
+        return gone
+
+    def decide(self, request_id: str, verdict: str, sig: str) -> Request:
+        req = self.pending.get(request_id)
+        if req is None:
+            raise Refused("no such request")
+        # Without this the expiry above is decoration: a request that timed out at
+        # midnight would still be sitting in his chat at 3am, one tap from live, for
+        # whoever is holding the phone. A verdict is only ever spent on a live ask.
+        if req.state != "pending":
+            raise Refused(f"that request is already {req.state}")
+        if not self._verify(request_id, verdict, sig):
+            self.ledger.append("forged", request=request_id, verdict=verdict)
+            raise Refused("that approval is not signed by this broker")
+        self._consume(request_id)
+        if verdict != "approve":
+            req.state = "denied"
+            self.ledger.append("denied", request=request_id)
+            return req
+        grant = self._load_grant(req.grant_id)
+        self.history.append((self.now(), req.grant_id))
+        try:
+            req.result = self._execute(grant, req)
+            req.state = "granted"
+            self.ledger.append(
+                "granted",
+                request=request_id,
+                mode=grant.get("mode"),
+                expires_at=req.result.get("expires_at"),
+            )
+        except Exception as exc:  # noqa: BLE001 -- the agent must see it
+            req.state, req.reason = "failed", str(exc)
+            self.ledger.append("failed", request=request_id, reason=str(exc))
+        return req
+
+    # ---------------------------------------------------------------- doing the thing
+
+    def _execute(self, grant: dict, req: Request) -> dict:
+        mode = grant.get("mode")
+        if mode == "broker-applies":
+            return self._apply(grant, req)
+        if mode == "token":
+            return self._mint(grant, req)
+        raise Refused(f"grant {grant['id']} has no mode the broker knows")
+
+    def _mint(self, grant: dict, req: Request) -> dict:
+        """A token bound to a Role that exists only for this request.
+
+        The Role is deleted on the way out, but that deletion is housekeeping, not the
+        guarantee: the token stops working on its own. This is the whole reason the design
+        survives the broker crashing halfway through.
+        """
+        ns, sec = req.params["namespace"], ttl_seconds(req.ttl)
+        sa = f"jit-{req.id[:12]}"
+        rules = [
+            {
+                "apiGroups": grant.get("apiGroups", [""]),
+                "resources": grant.get("resources", []),
+                "verbs": grant.get("verbs", []),
+                "resourceNames": [
+                    v for k, v in req.params.items() if k not in ("namespace",)
+                ],
+            }
+        ]
+        self._kube_step("create", "serviceaccount", sa, "-n", ns)
+        self._kube_step(
+            "apply",
+            "-f",
+            "-",
+            stdin=yaml.safe_dump(
+                {
+                    "apiVersion": "rbac.authorization.k8s.io/v1",
+                    "kind": "Role",
+                    "metadata": {"name": sa, "namespace": ns},
+                    "rules": rules,
+                }
+            ),
+        )
+        self._kube_step(
+            "create",
+            "rolebinding",
+            sa,
+            f"--role={sa}",
+            f"--serviceaccount={ns}:{sa}",
+            "-n",
+            ns,
+        )
+        rc, out = self.kube(["create", "token", sa, "-n", ns, f"--duration={sec}s"])
+        if rc != 0:
+            raise Refused(
+                f"the API server would not mint the token: {out.strip()[:200]}"
+            )
+        token = out.strip()
+        return {
+            "mode": "token",
+            "token": token,
+            "namespace": ns,
+            "serviceaccount": sa,
+            "expires_at": _token_expiry(token) or self.now() + sec,
+        }
+
+    def _apply(self, grant: dict, req: Request) -> dict:
+        """The broker performs the approved change. The agent is told what happened and
+        never holds a credential, which is the only way to grant `patch` on a pod spec
+        without also granting the ability to keep the access."""
+        ns = req.params["namespace"]
+        if grant["id"] == "raise-memory-limit":
+            patch = {
+                "spec": {
+                    "template": {
+                        "spec": {
+                            "containers": [
+                                {
+                                    "name": req.params["workload"],
+                                    "resources": {
+                                        "limits": {"memory": req.params["memory"]}
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+            args = [
+                "patch",
+                "deployment",
+                req.params["workload"],
+                "-n",
+                ns,
+                "--type=strategic",
+                "-p",
+                json.dumps(patch),
+            ]
+        elif grant["id"] == "rollback-image":
+            rc, cur = self.kube(
+                [
+                    "get",
+                    "deployment",
+                    req.params["workload"],
+                    "-n",
+                    ns,
+                    "-o",
+                    "jsonpath={.spec.template.spec.containers[0].image}",
+                ]
+            )
+            if rc != 0:
+                raise Refused(f"cannot read the current image: {cur.strip()[:200]}")
+            repo = cur.rsplit(":", 1)[0]
+            args = [
+                "set",
+                "image",
+                f"deployment/{req.params['workload']}",
+                f"{req.params['workload']}={repo}:{req.params['tag']}",
+                "-n",
+                ns,
+            ]
+        else:
+            raise Refused(
+                f"grant {grant['id']} is broker-applies but the broker has no step for it"
+            )
+        rc, out = self.kube(args)
+        if rc != 0:
+            raise Refused(
+                f"the change was approved and then failed: {out.strip()[:300]}"
+            )
+        return {
+            "mode": "broker-applies",
+            "applied": " ".join(args[:4]),
+            "output": out.strip()[:400],
+        }
+
+    def _kube_step(self, *args: str, stdin: str | None = None) -> None:
+        """One step of the setup. `already exists` is not an error: a retried request must
+        land on the same Role rather than half a Role, so every step is idempotent."""
+        rc, out = (
+            self.kube(list(args), stdin) if stdin is not None else self.kube(list(args))
+        )
+        if rc != 0 and "already exists" not in out:
+            raise Refused(out.strip()[:200])
+
+
+def _token_expiry(token: str) -> float | None:
+    """Read the expiry out of the token the API server actually signed.
+
+    The founder's guarantee is "at exactly 10 minutes and 1 second, the cryptography
+    invalidates". That claim is only true of the number in the signed token, so it is read
+    back rather than assumed: the API server has a floor and will hand back a longer life
+    than was asked for, and the agent is told the real one.
+    """
+    try:
+        import base64
+
+        body = token.split(".")[1]
+        body += "=" * (-len(body) % 4)
+        return float(json.loads(base64.urlsafe_b64decode(body))["exp"])
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _kubectl(args: list[str], stdin: str | None = None) -> tuple[int, str]:
+    """Every cluster call in this estate goes through bin/idp-kube, which holds the
+    kubeconfig and the audit line; the broker is not an exception to that."""
+    idp = os.environ.get("IDP_ROOT") or os.getcwd()
+    p = subprocess.run(  # noqa: S603 -- argv is a list built from the catalogue and validated parameters; no shell
+        [os.path.join(idp, "bin", "idp-kube"), *args],
+        input=stdin,
+        capture_output=True,
+        text=True,
+    )
+    return p.returncode, (p.stdout or "") + (p.stderr or "")
