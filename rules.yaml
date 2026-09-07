@@ -804,3 +804,31 @@ rules:
       - {expect: pass, args: [platform/gvisor-runtime/runtimeinstall.yaml], live: true, note: "the first real RuntimeInstall, as committed"}
     ok: "a RuntimeInstall CR names a closed-set runtime, requires a canary, and a 30s+ pause; the bad fixture is refused"
     fail: "bin/nodesoftware-operator-gate cannot tell a well-formed CR from a closed-set / no-canary / too-short-pause violation"
+  - id: pipeverdict
+    label: pipeverdict
+    statement: >-
+      A conditional's verdict is never a pipeline into grep in a script that sets pipefail: a
+      failing left-hand stage inverts the answer silently. Capture the output first and grade the
+      text.
+    law: LAW 55
+    origin: incident 2026-08-25 (port-gate exited 1 on purpose and the leg failed with the message
+      exactly right)
+    planes: [ci, session]
+    session_glob: ["bin/*", "*.sh"]
+    fast: true
+    run: [bin/idp-pipeverdict]
+    fixtures:
+      must_fail: tests/fixtures/pipefail-verdict.bad.sh
+      must_pass: tests/fixtures/pipefail-verdict.good.sh
+    cases:
+      - expect: refuse
+        args: [tests/fixtures/pipefail-verdict.bad.sh]
+      - expect: pass
+        args: [tests/fixtures/pipefail-verdict.good.sh]
+      # The scope this rule was moved out of read bin/* and nothing else. This case is the one that
+      # would have gone red on the 632 tracked shell files outside it, and it is why the widening
+      # was safe to make: measured at zero hits before the move, not after.
+      - expect: pass
+        live: true
+    ok: "no shell file lets a pipeline exit status stand in for a grep match (LAW 55)"
+    fail: "a shell file lets a pipeline exit status stand in for a grep match (LAW 55)"
