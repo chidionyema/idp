@@ -124,6 +124,15 @@ flows:
     # replica on node-159 hung in its 14-plugin startup because the fence had never declared it).
     egress: [dagster, estate-db, identity, kyverno, robusta]
     ingress_from: [edge]
+    # api.github.com. The portal's buttons are scaffolder templates whose one step is
+    # `github:actions:dispatch`, and the catalogue also ingests entities and TechDocs over the
+    # same API. Measured 2026-09-07 in scaffolder.task_events on database `backstage`: the
+    # founder's own press of Launch the buyer sandbox, task 5764b629-99ba-4ad8-ad1f-7cfc7c129c42
+    # at 08:54:43Z, died with `HttpError: Connect Timeout Error (attempted address:
+    # api.github.com:443, timeout: 10000ms)`, and six of the last seven run-demo-sandbox tasks
+    # failed the same way. Every button on the portal was dead from the moment Calico began
+    # enforcing the default-deny that flannel ignored. Same class as hermes-agent (PR 2107).
+    egress_internet: [443]
   guacamole:
     egress: [identity]
     ingress_from: [edge, monitoring]
