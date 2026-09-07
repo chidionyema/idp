@@ -57,6 +57,15 @@ spec:
             - --metrics-bind-address=:8080
             - --health-probe-bind-address=:8081
             - --reconcile-period=15s         # see CRD-SPEC.md "pauseDuration"
+            # The runsc handler image ships the install/uninstall/probe scripts
+            # the controller invokes on each target node (per C4: PR #2396).
+            # Without this override, the controller's hardcoded default
+            # "ghcr.io/chidionyema/nodesoftware-runsc-handler:IMAGE_TAG"
+            # contains a literal "IMAGE_TAG" that the kubelet can't pull --
+            # Flux postBuild substitutes IMAGE_TAG here, exactly the same way
+            # it substitutes the operator image tag above.
+            - --handler-image=ghcr.io/chidionyema/nodesoftware-runsc-handler:IMAGE_TAG
+            - --handler-namespace=nodesoftware-operator
           ports:
             - name: metrics
               containerPort: 8080
