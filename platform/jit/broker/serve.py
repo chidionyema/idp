@@ -24,6 +24,25 @@ from .broker import Broker, Refused
 from .telegram import Phone, digest
 
 
+def secret(name: str) -> str:
+    """One secret value, read from the file the kubelet wrote, never from the environment.
+
+    A secret in an env var leaves the process's control the moment anything prints its
+    environment -- a crash dump, `kubectl describe pod`, a library's start-up log -- which is
+    why kyverno's secrets-not-from-env-vars refuses that shape at admission. The Secret is
+    mounted instead, one file per key, and this reads it once at start.
+
+    The environment is still the fallback, and only for the tests and a local run: nothing
+    in the cluster reaches it, because platform/jit/deployment.yaml sets no such variable.
+    """
+    path = os.path.join(os.environ.get("JIT_SECRETS", "/etc/jit-secrets"), name)
+    try:
+        with open(path) as fh:
+            return fh.read().strip()
+    except OSError:
+        return os.environ[name]
+
+
 def killswitch_reader(path: str):
     def read() -> str | None:
         try:
@@ -130,7 +149,7 @@ def _housekeeping(broker: Broker, phone: Phone, ledger_path: str) -> None:
 
 def main() -> None:
     root = os.environ.get("IDP_ROOT", ".")
-    key = os.environ["JIT_SIGNING_KEY"].encode()
+    key = secret("JIT_SIGNING_KEY").encode()
     ledger_path = os.environ.get("JIT_LEDGER", "/var/lib/jit/ledger.jsonl")
     broker = Broker(
         catalogue=os.environ.get(
@@ -142,11 +161,9 @@ def main() -> None:
             os.environ.get("JIT_KILLSWITCH", "/var/lib/jit/stopped")
         ),
     )
-    phone = Phone(
-        os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"], broker
-    )
+    phone = Phone(secret("TELEGRAM_BOT_TOKEN"), secret("TELEGRAM_CHAT_ID"), broker)
     Handler.broker, Handler.phone = broker, phone
-    Handler.webhook_secret = os.environ["TELEGRAM_WEBHOOK_SECRET"]
+    Handler.webhook_secret = secret("TELEGRAM_WEBHOOK_SECRET")
     threading.Thread(
         target=_housekeeping, args=(broker, phone, ledger_path), daemon=True
     ).start()

@@ -86,10 +86,12 @@ spec:
             - {name: JIT_GRANTS, value: /etc/jit/grants.yaml}
             - {name: JIT_LEDGER, value: /var/lib/jit/ledger.jsonl}
             - {name: JIT_KILLSWITCH, value: /var/lib/jit/stopped}
-            - {name: TELEGRAM_CHAT_ID, valueFrom: {secretKeyRef: {name: jit-broker, key: TELEGRAM_CHAT_ID}}}
-            - {name: TELEGRAM_BOT_TOKEN, valueFrom: {secretKeyRef: {name: jit-broker, key: TELEGRAM_BOT_TOKEN}}}
-            - {name: TELEGRAM_WEBHOOK_SECRET, valueFrom: {secretKeyRef: {name: jit-broker, key: TELEGRAM_WEBHOOK_SECRET}}}
-            - {name: JIT_SIGNING_KEY, valueFrom: {secretKeyRef: {name: jit-broker, key: JIT_SIGNING_KEY}}}
+            # The four secret values are NOT here. A secret in an env var is printed by every
+            # crash dump, `kubectl describe pod`, and any library that logs its environment on
+            # start -- which is why kyverno's secrets-not-from-env-vars refuses it. They arrive
+            # as files under this directory instead, one file per key, and the process reads
+            # them at start (broker/serve.py, secret()).
+            - {name: JIT_SECRETS, value: /etc/jit-secrets}
           # /healthz verifies the ledger's hash chain, so a broker whose record has been
           # tampered with fails its own probe and stops answering rather than carrying on
           # minting access nobody can any longer account for.
@@ -110,18 +112,26 @@ spec:
           volumeMounts:
             - {name: ledger, mountPath: /var/lib/jit}
             - {name: grants, mountPath: /etc/jit}
+            - {name: secrets, mountPath: /etc/jit-secrets, readOnly: true}
       volumes:
         - {name: ledger, persistentVolumeClaim: {claimName: jit-ledger}}
         # The catalogue is mounted from a ConfigMap that Flux writes from platform/jit/grants.yaml,
         # so the closed set the broker mints from is the file in git and cannot be edited in
         # the cluster without the change going through the gate first (WJ.8).
         - {name: grants, configMap: {name: jit-grants}}
+        # 0400, owned by the one uid the container runs as: the kubelet writes these files and
+        # nothing in the pod can rewrite them.
+        - {name: secrets, secret: {secretName: jit-broker, defaultMode: 0400}}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: jit-broker
   namespace: jit
+  # crew#307: a port that serves names the catalogue entity it belongs to, or admission refuses
+  # the object. layer-jit is generated into backstage/platform/catalog-info.yaml from this
+  # Kustomization's row in bin/catalog-platform.
+  labels: {backstage.io/kubernetes-id: layer-jit}
 spec:
   selector: {app.kubernetes.io/name: jit-broker}
   ports:
