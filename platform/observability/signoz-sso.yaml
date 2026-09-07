@@ -254,6 +254,10 @@ spec:
           env:
             - name: SIGNOZ_URL
               value: http://signoz.observability.svc.cluster.local:8080
+            # Without this the minter's own account of itself never leaves its stdout buffer, so
+            # a pod that restarted five times had nothing at all in `kubectl logs` to say why.
+            - name: PYTHONUNBUFFERED
+              value: "1"
           volumeMounts:
             - name: app
               mountPath: /app/mint.py
@@ -264,6 +268,13 @@ spec:
           # The minter binds 127.0.0.1 on purpose, and the kubelet probes a pod's own address, so
           # the probe has to run inside the container. python3 is the one interpreter this image
           # is, which makes an exec probe the smaller road than opening the port to the network.
+          #
+          # timeoutSeconds, and why it is not the default: an exec probe here starts a whole
+          # CPython interpreter, and this container is capped below. At the 20m it first shipped
+          # with, that start took longer than the kubelet's one-second default every single time
+          # -- 19 "Readiness probe failed: command timed out" in four minutes, then a liveness
+          # kill, on a minter that was serving fine. The interpreter start is the cost; the fix
+          # is to give the probe the room to pay it, and the container the cpu to make it quick.
           readinessProbe:
             exec:
               command:
@@ -271,6 +282,7 @@ spec:
                 - -c
                 - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8081/healthz", timeout=3)
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             exec:
               command:
@@ -278,9 +290,13 @@ spec:
                 - -c
                 - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8081/healthz", timeout=3)
             periodSeconds: 30
+            timeoutSeconds: 5
+          # Burstable on purpose: the minter idles between logins, so it asks for little, but a
+          # probe and a token mint both want a short burst of a core and a 20m ceiling starves
+          # them. The request is what the scheduler counts, and the namespace ceiling has room.
           resources:
-            requests: { cpu: 20m, memory: 64Mi }
-            limits: { cpu: 20m, memory: 64Mi }
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 250m, memory: 96Mi }
           securityContext:
             runAsUser: 65532
             allowPrivilegeEscalation: false
