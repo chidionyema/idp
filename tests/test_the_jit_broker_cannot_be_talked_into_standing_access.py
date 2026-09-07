@@ -20,7 +20,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "platform" / "jit"))
 
 from broker.broker import Broker, Refused, ttl_seconds  # noqa: E402
-from broker.telegram import Phone, digest  # noqa: E402
+from broker.telegram import Phone, ask_text, digest  # noqa: E402
 
 CATALOGUE = str(ROOT / "platform" / "jit" / "grants.yaml")
 KEY = b"a key the agent identity cannot read"
@@ -62,7 +62,23 @@ class FakeCluster:
         return 0, "patched"
 
 
-def make(tmp_path, cluster=None, stopped: str | None = None, now=None) -> Broker:
+class FakeProvider:
+    """Stands in for one of the layers below Kubernetes -- the OCI CLI, the DNS CLI, gh.
+    Records the argv, so the tests can read exactly what the broker would have run on a real
+    tenancy without one being anywhere near this suite (WJ.15)."""
+
+    def __init__(self, rc: int = 0, out: str = "done"):
+        self.calls: list[list[str]] = []
+        self.rc, self.out = rc, out
+
+    def __call__(self, args: list[str]) -> tuple[int, str]:
+        self.calls.append(args)
+        return self.rc, self.out
+
+
+def make(
+    tmp_path, cluster=None, stopped: str | None = None, now=None, providers=None
+) -> Broker:
     return Broker(
         catalogue=CATALOGUE,
         key=KEY,
@@ -70,6 +86,7 @@ def make(tmp_path, cluster=None, stopped: str | None = None, now=None) -> Broker
         kube=cluster or FakeCluster(),
         killswitch=lambda: stopped,
         now=now or time.time,
+        providers=providers,
     )
 
 
@@ -351,3 +368,233 @@ def test_a_duration_is_read_the_way_a_person_writes_one():
     assert ttl_seconds("30s") == 30
     assert ttl_seconds("2h") == 7200
     assert ttl_seconds("forever") is None
+
+
+# --- WJ.15: the layer below Kubernetes gets the same treatment -----------------------
+#
+# Zero standing privilege in one layer is not zero standing privilege. These prove the other
+# three layers go through the same ask, the same tap and the same refusals, and that none of
+# them can ever hand the agent a credential.
+
+
+def test_the_layers_below_kubernetes_never_hand_over_a_credential(tmp_path):
+    """The whole reason they are broker-applies: OCI's session token carries the minting
+    principal's entire policy set, GitHub's needs the App key, and DNS has no request-scoped
+    credential at all. Whatever comes back, it is an outcome and not something to hold."""
+    oci, dns, gh = FakeProvider(), FakeProvider(), FakeProvider()
+    b = make(tmp_path, providers={"oci": oci, "dns": dns, "github": gh})
+    for grant, params in (
+        ("oci-scale-node-pool", {"node_pool": "pool-a", "size": "4"}),
+        (
+            "dns-point-record",
+            {"record": "signoz", "record_type": "A", "target": "1.2.3.4"},
+        ),
+        (
+            "github-rerun-failed-checks",
+            {"repository": "chidionyema/prospector", "run_id": "12"},
+        ),
+    ):
+        req = b.ask(
+            grant, params, "the estate needs this for ten minutes", "5m", "agent"
+        )
+        done = approve(b, req)
+        assert done.result["mode"] == "broker-applies", grant
+        assert "token" not in done.result, f"{grant} handed the agent a credential"
+
+
+def test_each_layer_is_reached_through_its_own_tool_with_exactly_the_approved_values(
+    tmp_path,
+):
+    """The founder approved a node pool and a size; the argv the broker runs has to be those
+    values and no others, or what he tapped and what happened are two different things."""
+    oci = FakeProvider()
+    b = make(tmp_path, providers={"oci": oci})
+    req = b.ask(
+        "oci-scale-node-pool",
+        {"node_pool": "ocid1.nodepool.oc1..aaa", "size": "5"},
+        "the cluster has nowhere to schedule the collector",
+        "10m",
+        "agent",
+    )
+    approve(b, req)
+    assert len(oci.calls) == 1
+    argv = oci.calls[0]
+    assert argv[:3] == ["ce", "node-pool", "update"]
+    assert "ocid1.nodepool.oc1..aaa" in argv
+    assert argv[argv.index("--size") + 1] == "5"
+
+
+def test_a_node_pool_cannot_be_emptied_by_a_ten_minute_grant(tmp_path):
+    """`size: 0` is not a scale, it is an eviction of every workload on the pool. The floor
+    the grant declares is what stops the resize grant from being an outage button."""
+    oci = FakeProvider()
+    b = make(tmp_path, providers={"oci": oci})
+    with pytest.raises(Refused):
+        b.ask(
+            "oci-scale-node-pool",
+            {"node_pool": "pool-a", "size": "0"},
+            "the pool is idle and costing money",
+            "10m",
+            "agent",
+        )
+    assert oci.calls == [], "a refused ask still reached the tenancy"
+
+
+def test_a_record_the_grant_does_not_name_is_refused(tmp_path):
+    """The DNS equivalent of asking for kube-system: the record the estate is reached on."""
+    dns = FakeProvider()
+    b = make(tmp_path, providers={"dns": dns})
+    with pytest.raises(Refused):
+        b.ask(
+            "dns-point-record",
+            {"record": "gw", "record_type": "A", "target": "1.2.3.4"},
+            "the gateway moved and the record has to follow",
+            "10m",
+            "agent",
+        )
+    assert dns.calls == []
+
+
+def test_a_record_type_the_grant_does_not_write_is_refused(tmp_path):
+    """An NS record moves the zone rather than one name in it."""
+    b = make(tmp_path, providers={"dns": FakeProvider()})
+    with pytest.raises(Refused):
+        b.ask(
+            "dns-point-record",
+            {"record": "signoz", "record_type": "NS", "target": "ns1.example"},
+            "the zone should be delegated elsewhere",
+            "10m",
+            "agent",
+        )
+
+
+def test_a_repository_the_grant_does_not_name_is_refused(tmp_path):
+    """WJ.8 in the GitHub layer: the repository that holds the broker is not reachable, so a
+    re-run can never become a way back into the fence."""
+    gh = FakeProvider()
+    b = make(tmp_path, providers={"github": gh})
+    with pytest.raises(Refused):
+        b.ask(
+            "github-rerun-failed-checks",
+            {"repository": "chidionyema/idp", "run_id": "5"},
+            "a check failed on infrastructure rather than the change",
+            "5m",
+            "agent",
+        )
+    assert gh.calls == []
+
+
+def test_a_layer_the_broker_cannot_reach_is_refused_not_reported_as_done(tmp_path):
+    """A grant whose provider has no runner must fail loudly. Reporting an approval as applied
+    when nothing ran is the one outcome that teaches the founder to stop reading the tap."""
+    b = make(tmp_path, providers={})
+    req = b.ask(
+        "oci-scale-node-pool",
+        {"node_pool": "pool-a", "size": "4"},
+        "the cluster has nowhere to schedule the collector",
+        "10m",
+        "agent",
+    )
+    done = approve(b, req)
+    assert done.state == "failed", done.state
+
+
+def test_a_failure_below_kubernetes_reaches_the_agent(tmp_path):
+    """WJ.12, one layer down: the agent has to learn the tenancy refused it, or it asks for
+    the same grant again."""
+    b = make(
+        tmp_path,
+        providers={"oci": FakeProvider(rc=1, out="ServiceError: LimitExceeded")},
+    )
+    req = b.ask(
+        "oci-scale-node-pool",
+        {"node_pool": "pool-a", "size": "6"},
+        "the cluster has nowhere to schedule the collector",
+        "10m",
+        "agent",
+    )
+    done = approve(b, req)
+    assert done.state == "failed"
+    assert "LimitExceeded" in (done.reason or ""), done.reason
+
+
+def test_every_grant_in_the_catalogue_names_a_layer_the_broker_can_actually_reach(
+    tmp_path,
+):
+    """The catalogue and the broker are two files, and a grant naming a provider with no
+    runner is a 3am approval that does nothing. This is the check that keeps them in step."""
+    import yaml
+
+    from broker.broker import BELOW
+
+    with open(CATALOGUE) as fh:
+        grants = yaml.safe_load(fh)["grants"]
+    unreachable = [
+        g["id"]
+        for g in grants
+        if str(g.get("provider") or "kubernetes") != "kubernetes"
+        and g.get("provider") not in BELOW
+    ]
+    assert not unreachable, (
+        f"the catalogue offers grants the broker cannot perform: {unreachable}"
+    )
+
+
+def test_the_lock_screen_names_the_layer_and_what_will_actually_happen(tmp_path):
+    """WJ.2 and WJ.15 together. Ten minutes on the cluster and ten minutes on the tenancy are
+    not the same risk, and a broker-applies grant hands nothing over -- both have to be on the
+    message, because it is the only thing he reads before tapping."""
+    b = make(tmp_path, providers={"oci": FakeProvider()})
+    req = b.ask(
+        "oci-scale-node-pool",
+        {"node_pool": "pool-a", "size": "4"},
+        "the cluster has nowhere to schedule the collector",
+        "10m",
+        "agent",
+    )
+    text = ask_text(req, b._load_grant("oci-scale-node-pool"))
+    assert "oci" in text, text
+    assert "update-node-pool" in text, text
+    assert "nothing is handed over" in text, text
+
+    k = b.ask(
+        "restart-workload", {"namespace": NS, "pod": "p"}, "it is wedged", "5m", "agent"
+    )
+    ktext = ask_text(k, b._load_grant("restart-workload"))
+    assert "oci" not in ktext, ktext
+    assert "Ends* by itself after 5m" in ktext, ktext
+
+
+def test_the_agent_client_says_the_broker_is_unreachable_instead_of_raising(
+    monkeypatch,
+):
+    """Found by running it: `idp-jit grants` with no broker up printed a urllib stack trace.
+    An agent reading that learns nothing and cannot tell it apart from its own bug, so the
+    client now answers in words and exits `refused` -- the founder was never woken, which is
+    exactly what that code means."""
+    import importlib.machinery
+    import importlib.util
+
+    spec = importlib.util.spec_from_loader(
+        "idp_jit",
+        importlib.machinery.SourceFileLoader("idp_jit", str(ROOT / "bin" / "idp-jit")),
+    )
+    mod = importlib.util.module_from_spec(spec)
+    monkeypatch.setenv("JIT_BROKER_URL", "http://127.0.0.1:9")
+    spec.loader.exec_module(mod)
+
+    for argv in (
+        ["grants"],
+        [
+            "ask",
+            "--grant",
+            "restart-workload",
+            "--namespace",
+            NS,
+            "--pod",
+            "p",
+            "--why",
+            "the pod is wedged and a restart is the whole fix",
+        ],
+    ):
+        assert mod.main(argv) == mod.CODES["refused"], argv

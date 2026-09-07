@@ -11,6 +11,14 @@ comes back here in words, so the agent does not ask for the same grant twice.
                 --workload backstage --memory 2Gi \
                 --why "the Backstage pod is OOM crashing" --ttl 10m
 
+The layers below Kubernetes work the same way and read the same way (WJ.15); they only ever
+hand back an outcome, never a credential, so there is nothing to export afterwards:
+
+    idp-jit ask --grant oci-scale-node-pool --node_pool "$POOL" --size 5 \
+                --why "nothing will schedule; the pool is full" --ttl 10m
+
+    idp-jit grants        every grant, its layer and what it takes
+
 Exit codes are the contract: 0 granted, 3 denied, 4 refused before he was asked, 5 the
 approved change failed, 6 he never answered. Anything an agent scripts around can tell
 those apart without parsing English.
@@ -27,6 +35,13 @@ import urllib.error
 import urllib.request
 
 BROKER = os.environ.get("JIT_BROKER_URL", "http://jit-broker.jit.svc.cluster.local:8080")
+# Every parameter any grant in platform/jit/grants.yaml declares, so the agent can write
+# --namespace rather than --param namespace=. WJ.15 added the three layers below Kubernetes,
+# and their parameters are here for the same reason.
+KNOWN_PARAMS = (
+    "namespace", "workload", "memory", "tag", "pod",
+    "node_pool", "size", "record", "record_type", "target", "repository", "run_id",
+)
 CODES = {"granted": 0, "denied": 3, "refused": 4, "failed": 5, "timeout": 6}
 
 
@@ -38,6 +53,15 @@ def _post(path: str, body: dict) -> tuple[int, dict]:
             return fh.status, json.load(fh)
     except urllib.error.HTTPError as exc:
         return exc.code, json.loads(exc.read() or b"{}")
+    except OSError as exc:
+        # The broker being unreachable is the ordinary case on a laptop and during a rollout,
+        # and it is not the agent's mistake. A stack trace here reads as a bug in the caller
+        # and teaches nothing; the exit code says "refused before he was asked", which is the
+        # truth -- the founder was never woken.
+        return 0, {
+            "unreachable": True,
+            "reason": f"the broker is not answering on {BROKER}: {exc}",
+        }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -50,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--ttl", default="10m")
     a.add_argument("--wait", type=int, default=900, help="seconds to wait for the tap")
     a.add_argument("--param", action="append", default=[], metavar="k=v")
-    for known in ("namespace", "workload", "memory", "tag", "pod"):
+    for known in KNOWN_PARAMS:
         a.add_argument(f"--{known}")
 
     sub.add_parser("grants", help="list what may be asked for")
@@ -58,17 +82,24 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "grants":
         code, body = _post("/grants", {})
+        if body.get("unreachable"):
+            print(f"BLOCKED  {body['reason']}", file=sys.stderr)
+            return CODES["refused"]
         for g in body.get("grants", []):
-            print(f"{g['id']:24} {g.get('mode',''):16} {g.get('describes','')}")
+            layer = g.get("provider", "kubernetes")
+            print(f"{g['id']:28} {layer:12} {g.get('mode',''):16} {g.get('describes','')}")
         return 0
 
     params = dict(kv.split("=", 1) for kv in args.param if "=" in kv)
-    for known in ("namespace", "workload", "memory", "tag", "pod"):
+    for known in KNOWN_PARAMS:
         if getattr(args, known, None):
             params[known] = getattr(args, known)
 
     code, body = _post("/ask", {"grant": args.grant, "params": params, "why": args.why,
                                 "ttl": args.ttl, "asked_by": os.environ.get("JIT_AGENT", "agent")})
+    if body.get("unreachable"):
+        print(f"BLOCKED  {body['reason']}", file=sys.stderr)
+        return CODES["refused"]
     if code != 200:
         print(f"refused: {body.get('error', 'the broker would not take the ask')}", file=sys.stderr)
         return CODES["refused"]

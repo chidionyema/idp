@@ -85,6 +85,8 @@ _NAME = re.compile(r"^[a-z0-9]([-a-z0-9.]{0,61}[a-z0-9])?$")
 #: rollback to a tag this cluster has never run is not a rollback -- it is a deploy wearing
 #: the word rollback, and it would arrive on the founder's phone under the wrong sentence.
 _TAG = re.compile(r"^[\w][\w.-]{0,127}$")
+_RRTYPE = re.compile(r"^[A-Za-z]{1,10}$")
+_REPO = re.compile(r"^[A-Za-z0-9_.-]{1,39}/[A-Za-z0-9_.-]{1,100}$")
 
 
 def ttl_seconds(v: str) -> int | None:
@@ -185,6 +187,7 @@ class Broker:
         kube: Callable[..., tuple[int, str]] | None = None,
         killswitch: Callable[[], str | None] | None = None,
         now: Callable[[], float] = time.time,
+        providers: dict[str, Callable[[list[str]], tuple[int, str]]] | None = None,
     ):
         self.catalogue_path = catalogue
         self.key = key
@@ -192,6 +195,10 @@ class Broker:
         self.notify = notify or (lambda r, t: None)
         self.kube = kube or _kubectl
         self.killswitch = killswitch or (lambda: None)
+        # WJ.15. One runner per layer below Kubernetes, injected the same way the cluster is,
+        # so a test can read the exact argv the broker would run without a tenancy, a zone or
+        # a GitHub App anywhere near it.
+        self.providers = dict(PROVIDER_COMMANDS if providers is None else providers)
         self.now = now
         self.pending: dict[str, Request] = {}
         self.spent: set[str] = set()
@@ -236,6 +243,27 @@ class Broker:
                         f"{value}. That is a deploy, not a rollback, and it is not what the "
                         f"founder would be approving"
                     )
+            if kind == "repository" and not _REPO.match(str(value)):
+                raise Refused(f"{name}={value!r} is not an owner/repository")
+            if kind == "record_type" and not _RRTYPE.match(str(value)):
+                raise Refused(f"{name}={value!r} is not a DNS record type")
+            if kind == "integer":
+                try:
+                    got = int(str(value))
+                except ValueError:
+                    raise Refused(f"{name}={value!r} is not a whole number") from None
+                cap = spec.get("max")
+                if cap is not None and got > int(cap):
+                    raise Refused(f"{name}={got} is above the {cap} this grant allows")
+                floor = spec.get("min")
+                if floor is not None and got < int(floor):
+                    raise Refused(
+                        f"{name}={got} is below the {floor} this grant allows. Taking a node "
+                        f"pool below its floor is an eviction, and an eviction is an outage "
+                        f"decision rather than a ten-minute one"
+                    )
+                if got < 0:
+                    raise Refused(f"{name}={got} is negative")
             if kind == "quantity":
                 got, cap = quantity_bytes(value), quantity_bytes(spec.get("max", ""))
                 if got is None:
@@ -245,10 +273,29 @@ class Broker:
                         f"{name}={value} is above the {spec['max']} this grant allows. "
                         f"A bigger ceiling is a capacity decision, not a ten-minute one"
                     )
-        ns = params.get("namespace")
-        allowed = grant.get("namespaces") or []
-        if ns and ns not in allowed:
-            raise Refused(f"grant {grant['id']} does not reach namespace {ns!r}")
+        # Every layer bounds itself by the same shape: the grant names the things it reaches,
+        # and a parameter that is not one of them is refused before the founder is ever shown
+        # it. Kubernetes bounds by namespace; DNS by record; GitHub by repository (WJ.15).
+        for param, allow_field, noun in (
+            ("namespace", "namespaces", "namespace"),
+            ("record", "records", "DNS record"),
+            ("repository", "repositories", "repository"),
+        ):
+            got = params.get(param)
+            allowed = [str(a) for a in grant.get(allow_field) or []]
+            if (
+                got
+                and allowed
+                and str(got) not in allowed
+                and str(got) not in [a.rsplit("/", 1)[-1] for a in allowed]
+            ):
+                raise Refused(f"grant {grant['id']} does not reach the {noun} {got!r}")
+        rtype = params.get("record_type")
+        types = [str(t).upper() for t in grant.get("record_types") or []]
+        if rtype and types and str(rtype).upper() not in types:
+            raise Refused(
+                f"grant {grant['id']} does not write {str(rtype).upper()} records"
+            )
 
     def _was_deployed(self, ns: str, workload: str, tag: str) -> bool:
         """Ask the cluster, not the agent. A Deployment keeps its old ReplicaSets, and each
@@ -429,12 +476,50 @@ class Broker:
     # ---------------------------------------------------------------- doing the thing
 
     def _execute(self, grant: dict, req: Request) -> dict:
+        """WJ.15. Which layer the grant acts on decides who performs it, and only Kubernetes
+        can hand anything over: below it there is no credential that is both scoped to what
+        the founder approved and self-expiring, so the broker performs the act and the agent
+        is told the outcome. bin/idp-jit-grants refuses `mode: token` on those providers, so
+        the branch below can never be reached with one.
+        """
+        provider = str(grant.get("provider") or "kubernetes").lower()
         mode = grant.get("mode")
+        if provider != "kubernetes":
+            if mode != "broker-applies":
+                raise Refused(
+                    f"grant {grant['id']} is mode {mode!r} on {provider}, and nothing below "
+                    f"Kubernetes hands over a credential"
+                )
+            runner = self.providers.get(provider)
+            if runner is None:
+                raise Refused(
+                    f"the broker has no way to act on {provider!r}. A provider it cannot "
+                    f"reach is refused here rather than reported as done"
+                )
+            return self._apply_below(provider, runner, grant, req)
         if mode == "broker-applies":
             return self._apply(grant, req)
         if mode == "token":
             return self._mint(grant, req)
         raise Refused(f"grant {grant['id']} has no mode the broker knows")
+
+    def _apply_below(self, provider, runner, grant: dict, req: Request) -> dict:
+        """One argv, built from the grant and the parameters the founder saw, run by the
+        provider's own command. Nothing here is composed from agent text: the operation comes
+        out of the catalogue and every value has already been checked against what that grant
+        declares."""
+        args = BELOW[provider](grant, req)
+        rc, out = runner(args)
+        if rc != 0:
+            raise Refused(
+                f"the change was approved and then failed on {provider}: {out.strip()[:300]}"
+            )
+        return {
+            "mode": "broker-applies",
+            "provider": provider,
+            "applied": " ".join(args[:5]),
+            "output": out.strip()[:400],
+        }
 
     def _mint(self, grant: dict, req: Request) -> dict:
         """A token bound to a Role that exists only for this request.
@@ -601,3 +686,90 @@ def _kubectl(args: list[str], stdin: str | None = None) -> tuple[int, str]:
         text=True,
     )
     return p.returncode, (p.stdout or "") + (p.stderr or "")
+
+
+# ------------------------------------------------------------------ WJ.15, below Kubernetes
+#
+# Three layers the estate also runs on, each reached through the tool that already owns it, and
+# each doing exactly one thing. There is no general "run an OCI command" here on purpose: the
+# operation is a constant in this file, and only its parameters come from the request, so a grant
+# cannot be talked into a different act than the one on the founder's phone.
+
+
+def _oci_args(grant: dict, req: "Request") -> list[str]:
+    """Resize a node pool, between the floor and the ceiling the grant declares. The floor is
+    what stops this being a way to evict every workload on the cluster: `size: 0` is refused by
+    _check_params before the founder is ever shown it."""
+    return [
+        "ce",
+        "node-pool",
+        "update",
+        "--node-pool-id",
+        req.params["node_pool"],
+        "--size",
+        str(int(req.params["size"])),
+        "--wait-for-state",
+        "SUCCEEDED",
+    ]
+
+
+def _dns_args(grant: dict, req: "Request") -> list[str]:
+    """Point one record at one target. The record, its type and the zone are all checked
+    against the grant before this is built."""
+    return [
+        "dns",
+        "record",
+        "rrset",
+        "update",
+        "--domain",
+        req.params["record"],
+        "--rtype",
+        str(req.params["record_type"]).upper(),
+        "--items",
+        json.dumps(
+            [
+                {
+                    "domain": req.params["record"],
+                    "rtype": str(req.params["record_type"]).upper(),
+                    "rdata": req.params["target"],
+                    "ttl": 300,
+                }
+            ]
+        ),
+        "--force",
+    ]
+
+
+def _github_args(grant: dict, req: "Request") -> list[str]:
+    """Re-run the jobs that failed on a workflow run. It runs the workflow the merged commit
+    already carries and cannot introduce one, which is why this is the only GitHub act in the
+    catalogue."""
+    return [
+        "api",
+        "--method",
+        "POST",
+        f"repos/{req.params['repository']}/actions/runs/{int(req.params['run_id'])}/rerun-failed-jobs",
+    ]
+
+
+BELOW = {"oci": _oci_args, "dns": _dns_args, "github": _github_args}
+
+
+def _provider_runner(binary: str) -> Callable[[list[str]], tuple[int, str]]:
+    """Run one provider's own CLI. The binary is a constant, the argv is a list, and there is
+    no shell -- so nothing in a request can become a second command."""
+
+    def run(args: list[str]) -> tuple[int, str]:
+        p = subprocess.run(  # noqa: S603 -- constant binary, argv is a list built in this file from validated parameters; no shell
+            [binary, *args], capture_output=True, text=True
+        )
+        return p.returncode, (p.stdout or "") + (p.stderr or "")
+
+    return run
+
+
+PROVIDER_COMMANDS = {
+    "oci": _provider_runner("oci"),
+    "dns": _provider_runner("oci"),
+    "github": _provider_runner("gh"),
+}

@@ -36,15 +36,27 @@ def _call(token: str, method: str, payload: dict) -> dict:
 def ask_text(req: Request, grant: dict) -> str:
     """The three things WJ.2 names, in the order a person reads them on a lock screen: what
     is wrong, what will be done about it, and how long the door stays open."""
+    # Kubernetes grants describe themselves as a verb on a resource; the layers below have no
+    # verbs, they have operations. Either way the founder is shown the act, never "a grant".
     what = grant.get("describes") or " ".join(
-        (grant.get("verbs") or ["?"])[:1] + (grant.get("resources") or ["?"])[:1]
+        (grant.get("verbs") or [])[:1] + (grant.get("resources") or [])[:1]
+        or (grant.get("operations") or [grant.get("id", "?")])[:1]
     )
     params = ", ".join(f"{k}={v}" for k, v in sorted(req.params.items()))
+    # WJ.15: ten minutes on the cluster and ten minutes on the tenancy are not the same risk,
+    # so the layer is on the lock screen rather than inferred from the grant's name.
+    provider = str(grant.get("provider") or "kubernetes")
+    where = "" if provider == "kubernetes" else f" on *{provider}*"
+    holds = (
+        "*Ends* by itself after {ttl}, whatever happens next."
+        if grant.get("mode") == "token"
+        else "*Ends* when this one change is done; nothing is handed over."
+    ).format(ttl=req.ttl)
     return (
-        f"*{req.asked_by}* needs {req.ttl} of write access.\n\n"
+        f"*{req.asked_by}* needs {req.ttl} of write access{where}.\n\n"
         f"*Why* {req.why}\n"
         f"*What* {what} — {params}\n"
-        f"*Ends* by itself after {req.ttl}, whatever happens next."
+        f"{holds}"
     )
 
 

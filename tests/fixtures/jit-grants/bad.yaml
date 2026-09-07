@@ -32,3 +32,57 @@ grants:
     namespaces: [kube-system]
     max_ttl: 8h
     rate_per_hour: 99
+  # WJ.15, the layer below Kubernetes. Each of these is the same escalation one layer down.
+  # A vault read: standing access with extra steps, since a secret does not expire when the
+  # grant does.
+  - id: read-the-vault
+    provider: bitwarden
+    why: The agent needs the vendor key to debug a call
+    mode: broker-applies
+    operations: [get-item]
+    max_ttl: 5m
+    rate_per_hour: 1
+  # A provider nobody has graded. An unread provider is not a small grant.
+  - id: press-the-thing
+    provider: stripe
+    why: A charge needs refunding and the agent can do it
+    mode: broker-applies
+    operations: [refund]
+    max_ttl: 5m
+    rate_per_hour: 1
+  # An OCI session token: it carries the whole policy set of the principal that minted it, so
+  # there is no such thing as a ten-minute scope on it.
+  - id: oci-session
+    provider: oci
+    why: The agent needs to look at the tenancy for ten minutes
+    mode: token
+    operations: [update-node-pool]
+    max_ttl: 10m
+    rate_per_hour: 2
+  # Deleting the node pool, and an identity change, on the layer the cluster is built from.
+  - id: oci-tidy-up
+    provider: oci
+    why: An unused node pool is costing money and should go
+    mode: broker-applies
+    operations: [delete-node-pool, create-policy]
+    max_ttl: 10m
+    rate_per_hour: 2
+  # Moving the record every surface is reached on, including the one that stops the broker.
+  - id: dns-move-the-front-door
+    provider: dns
+    why: The gateway moved and the apex has to follow it
+    mode: broker-applies
+    records: ["@", gw]
+    record_types: [A, NS]
+    max_ttl: 10m
+    rate_per_hour: 2
+  # Write on the repository that holds the broker, its catalogue and its gate.
+  - id: github-land-it
+    provider: github
+    why: A pull request is green and should go in without waiting
+    mode: broker-applies
+    repositories: [chidionyema/idp]
+    permissions: [contents, administration]
+    operations: [merge-pull-request]
+    max_ttl: 5m
+    rate_per_hour: 3
