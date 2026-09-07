@@ -1,0 +1,5 @@
+# Written by .github/workflows/demo-sandbox.yml, run https://github.com/chidionyema/idp/actions/runs/34070848704. Read by clusters/oke/sandbox.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - state.yaml
