@@ -10,8 +10,7 @@ import { useMemo } from 'react';
 import type { ReactElement } from 'react';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import type { HomePageLayoutProps } from '@backstage/plugin-home-react/alpha';
-import { ButtonLink, Flex, Grid } from '@backstage/ui';
-import { RiAddCircleLine, RiSearchLine } from '@remixicon/react';
+import { Grid } from '@backstage/ui';
 import { EstatePage } from '../shell';
 import { DoorGrid } from './DoorGrid';
 
@@ -56,26 +55,6 @@ export function EstateHomeLayout({ widgets }: HomePageLayoutProps) {
     <EstatePage
       title="Today"
       lead={`${brand}. What needs you, and every door into the estate.`}
-      actions={
-        <Flex gap="2">
-          <ButtonLink
-            href="/search"
-            variant="secondary"
-            size="medium"
-            iconStart={<RiSearchLine />}
-          >
-            Find
-          </ButtonLink>
-          <ButtonLink
-            href="/create"
-            variant="primary"
-            size="medium"
-            iconStart={<RiAddCircleLine />}
-          >
-            Create
-          </ButtonLink>
-        </Flex>
-      }
     >
       {search && <div className="estate-home-search">{search}</div>}
       <DoorGrid />

@@ -142,6 +142,19 @@ backend:
         $file: /run/secrets/backstage/POSTGRES_PASSWORD
       database: ${POSTGRES_DB}
 
+# The container overrides app-config.yaml's integrations wholesale (Backstage replaces
+# arrays, it never merges them). Under `yarn start` the token is ${GITHUB_TOKEN} from
+# backstage/.env; here the estate refuses secrets in env vars, so the token is a mounted
+# file: an installation token of the estate-agents App, minted in-cluster and narrowed to
+# the backstage lane (platform/github-app/lanes.json), mounted by
+# platform/backstage/overlays/oke from github-token.yaml. Without it the scaffolder's
+# github:actions:dispatch fails "No token available for host: github.com" (2026-09-06).
+integrations:
+  github:
+    - host: github.com
+      token:
+        $file: /run/secrets/backstage-github/GITHUB_TOKEN
+
 catalog:
   locations:
     # The org, hand-written in git and rendered by Flux from backstage/org/catalog-info.yaml.

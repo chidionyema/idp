@@ -325,3 +325,56 @@
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
+
+/* One button family across the portal, in two weights.
+ *
+ * There is one kit now. Every button that navigates is @backstage/ui's ButtonLink and
+ * carries .estate-action, so this rule is the only place the shape is written. It used to
+ * name .MuiButton-containedPrimary alongside it, because a tile's Open was Backstage core's
+ * LinkButton -- Material-UI -- while the two at the top of the page were bui, and a rule
+ * written for one slid silently off the other; that is how a page ended up with a solid blue
+ * Create above six outlined Opens. Naming both class families was a patch over the split, and
+ * it left a third copy of the same pill in EstateHome's `door` JSS rule at a different size.
+ * Both are gone with the Material-UI buttons that needed them.
+ *
+ * 36px, not the 28 this started at: the founder opens this page on a phone, and a
+ * 28px target is a small thing to hit with a thumb (founder 2026-09-07, on the
+ * preview of this change).
+ *
+ * .estate-page-actions, not .estate-home-actions: the shell puts that class on every page's
+ * action bar, so naming it here is what makes Health and Tools match the front page instead
+ * of only the front page having the shape (founder 2026-09-07: "why the look not matching
+ * home page").
+ */
+.estate-tile-actions .estate-action,
+.estate-page-actions .estate-action {
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: none;
+  transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+}
+
+/* Quiet: every repeated action. Six tiles meant six solid blue blocks competing
+ * with the six names they belong to; outlined, the name leads again. */
+.estate-tile-actions .estate-action,
+.estate-page-actions .estate-action-quiet {
+  background-color: transparent;
+  color: var(--bui-fg-primary);
+  border: 1px solid var(--bui-border-2);
+}
+
+.estate-tile-actions .estate-action:hover,
+.estate-page-actions .estate-action-quiet:hover {
+  background-color: var(--bui-bg-neutral-1-hover);
+  border-color: var(--bui-fg-primary);
+  box-shadow: none;
+}
+
+/* Loud: Create, and only Create. Quietening every button leaves a page with no
+ * first move on it; this keeps one, in the same shape as the rest. */
+.estate-page-actions .estate-action-strong {
+  border: 1px solid transparent;
+}
