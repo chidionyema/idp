@@ -1,0 +1,80 @@
+# Publish an Agent Foundry trainer Space to Hugging Face (from the portal).
+#
+# What this template does, and the line it does not cross: it dispatches a
+# workflow on the agent-foundry repo (chidionyema/agent-foundry) carrying the
+# operator's choices from the form. The workflow runs on the self-hosted runner
+# in idp/platform/agent-foundry/runner/. The HF token is NOT in GitHub Secrets
+# and NOT in Backstage config -- ESO reads it from the estate vault (human-vault
+# / Bitwarden) and mounts it as a mode-0400 file at /etc/agent-foundry/hf_token
+# on the runner pod, where HF_TOKEN_FILE points the deploy script at it. Backstage
+# remains stateless; the workflow does not pass any credential (LAW 31, R52,
+# ORDER.md §6).
+#
+# The script itself enforces the same policy: refuses dark if no audit sink is
+# configured, refuses if the token file's mode is looser than 0400, and posts
+# the deploy row to the estate's task_executions table when $AF_DATABASE_URL is
+# set (LAW 50, ORDER.md §6).
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: publish-agent-foundry-trainer
+  title: Publish Agent Foundry trainer to HF Space
+  description: >-
+    Create + push an Agent Foundry LoRA-trainer Space (sdk=docker) to
+    Hugging Face from the portal. You supply the Space name and visibility;
+    the token lives in the estate vault, the runner pod mounts it at runtime,
+    nothing touches GitHub Secrets or your laptop.
+  tags:
+    - agent-foundry
+    - hf-space
+    - founder-action
+spec:
+  owner: group:default/platform
+  type: founder-action
+
+  parameters:
+    - title: Space details
+      properties:
+        spaceName:
+          title: Space slug
+          type: string
+          description: >-
+            The HF Space slug (lowercase, hyphens; unique on HF Hub).
+          pattern: '^[a-z0-9][a-z0-9-]{1,40}$'
+        visibility:
+          title: Visibility
+          type: string
+          enum: ["public", "private"]
+          default: "public"
+
+    - title: Source (advanced; defaults to repo's foundry/space dir)
+      required: []
+      properties:
+        sourceDir:
+          title: Source directory override
+          type: string
+          description: >-
+            Override path to a different Space skeleton. Leave empty to use the
+            repo's default <repo>/foundry/space.
+          default: ""
+
+    - title: Dry run
+      properties:
+        dryRun:
+          title: Dry run only (print plan, do not create)
+          type: boolean
+          default: false
+
+  steps:
+    - id: dispatch
+      name: Trigger agent-foundry Space deploy workflow
+      action: github:actions:dispatch
+      input:
+        repoUrl: github.com?owner=chidionyema&repo=agent-foundry
+        workflowId: agent-foundry-space-deploy.yml
+        branchOrTagName: main
+        workflowInputs:
+          space_name: ${{ parameters.spaceName }}
+          visibility: ${{ parameters.visibility }}
+          source_dir: ${{ parameters.sourceDir }}
+          dry_run: ${{ parameters.dryRun }}
