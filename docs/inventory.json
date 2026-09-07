@@ -25,10 +25,10 @@
    "read": "UNKNOWN"
   },
   "kubernetes": {
-   "DRIFTED": 8,
+   "DRIFTED": 47,
    "GHOST": 0,
-   "MANAGED": 1988,
-   "ORPHAN": 1901,
+   "MANAGED": 1960,
+   "ORPHAN": 1941,
    "UNKNOWN": false,
    "read": "yes"
   },
@@ -57,7 +57,7 @@
    "read": "UNKNOWN"
   }
  },
- "generated_at": "2026-09-07T02:34:44Z",
+ "generated_at": "2026-09-07T07:23:33Z",
  "rows": [
   {
    "declared_in": "Kustomization flux-system/cluster-state",
@@ -4003,6 +4003,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-547cff85f-regcred",
+   "name": "scan-vulnerabilityreport-547cff85f-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-547d997bd7-regcred",
    "name": "scan-vulnerabilityreport-547d997bd7-regcred",
    "plane": "kubernetes",
@@ -4048,6 +4057,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-549bb74fb9-regcred",
+   "name": "scan-vulnerabilityreport-549bb74fb9-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-54cb95c555-regcred",
    "name": "scan-vulnerabilityreport-54cb95c555-regcred",
    "plane": "kubernetes",
@@ -4086,6 +4104,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-54f5b9cfdc-regcred",
    "name": "scan-vulnerabilityreport-54f5b9cfdc-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-54f7f9555c-regcred",
+   "name": "scan-vulnerabilityreport-54f7f9555c-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -4201,6 +4228,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-56c86b4d97-regcred",
+   "name": "scan-vulnerabilityreport-56c86b4d97-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-56d797c88f-regcred",
    "name": "scan-vulnerabilityreport-56d797c88f-regcred",
    "plane": "kubernetes",
@@ -4275,6 +4311,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-575d7c4647-regcred",
    "name": "scan-vulnerabilityreport-575d7c4647-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-57b7b84b8c-regcred",
+   "name": "scan-vulnerabilityreport-57b7b84b8c-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -4453,6 +4498,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-5959d68865-regcred",
+   "name": "scan-vulnerabilityreport-5959d68865-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-596f47c99b-regcred",
    "name": "scan-vulnerabilityreport-596f47c99b-regcred",
    "plane": "kubernetes",
@@ -4552,6 +4606,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-5b75c955d5-regcred",
+   "name": "scan-vulnerabilityreport-5b75c955d5-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-5b7846d864-regcred",
    "name": "scan-vulnerabilityreport-5b7846d864-regcred",
    "plane": "kubernetes",
@@ -4563,6 +4626,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-5b795fc67c-regcred",
    "name": "scan-vulnerabilityreport-5b795fc67c-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-5b896ddfbc-regcred",
+   "name": "scan-vulnerabilityreport-5b896ddfbc-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -4624,8 +4696,26 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-5c4f9856b-regcred",
+   "name": "scan-vulnerabilityreport-5c4f9856b-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-5c56bbbdb9-regcred",
    "name": "scan-vulnerabilityreport-5c56bbbdb9-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-5c5957bbbd-regcred",
+   "name": "scan-vulnerabilityreport-5c5957bbbd-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -4678,6 +4768,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-5cb77b859c-regcred",
+   "name": "scan-vulnerabilityreport-5cb77b859c-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-5cbc58897-regcred",
    "name": "scan-vulnerabilityreport-5cbc58897-regcred",
    "plane": "kubernetes",
@@ -4689,6 +4788,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-5cd5c99f94-regcred",
    "name": "scan-vulnerabilityreport-5cd5c99f94-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-5cd6c9b49-regcred",
+   "name": "scan-vulnerabilityreport-5cd6c9b49-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -5236,6 +5344,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-67b7d74697-regcred",
+   "name": "scan-vulnerabilityreport-67b7d74697-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-67b87c64fd-regcred",
    "name": "scan-vulnerabilityreport-67b87c64fd-regcred",
    "plane": "kubernetes",
@@ -5247,6 +5364,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-67bf4f66d-regcred",
    "name": "scan-vulnerabilityreport-67bf4f66d-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-67c554fdd8-regcred",
+   "name": "scan-vulnerabilityreport-67c554fdd8-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -5283,6 +5409,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-687b56dd6b-regcred",
    "name": "scan-vulnerabilityreport-687b56dd6b-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-68879df5cd-regcred",
+   "name": "scan-vulnerabilityreport-68879df5cd-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -5335,6 +5470,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-68ffc966f7-regcred",
+   "name": "scan-vulnerabilityreport-68ffc966f7-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-6946b596-regcred",
    "name": "scan-vulnerabilityreport-6946b596-regcred",
    "plane": "kubernetes",
@@ -5364,6 +5508,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-694894565c-regcred",
    "name": "scan-vulnerabilityreport-694894565c-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-694c7cf75d-regcred",
+   "name": "scan-vulnerabilityreport-694c7cf75d-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -5427,6 +5580,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-69f9f8bf86-regcred",
    "name": "scan-vulnerabilityreport-69f9f8bf86-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-69fc8c557f-regcred",
+   "name": "scan-vulnerabilityreport-69fc8c557f-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -5632,6 +5794,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-6cb97df9b5-regcred",
+   "name": "scan-vulnerabilityreport-6cb97df9b5-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-6cbf85c554-regcred",
    "name": "scan-vulnerabilityreport-6cbf85c554-regcred",
    "plane": "kubernetes",
@@ -5652,6 +5823,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-6cf7688df6-regcred",
    "name": "scan-vulnerabilityreport-6cf7688df6-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-6d49ff76d7-regcred",
+   "name": "scan-vulnerabilityreport-6d49ff76d7-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -5706,6 +5886,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-6db8694d88-regcred",
    "name": "scan-vulnerabilityreport-6db8694d88-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-6dcc5656fb-regcred",
+   "name": "scan-vulnerabilityreport-6dcc5656fb-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -5956,6 +6145,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-74d8fcb8f9-regcred",
+   "name": "scan-vulnerabilityreport-74d8fcb8f9-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-74f65b975c-regcred",
    "name": "scan-vulnerabilityreport-74f65b975c-regcred",
    "plane": "kubernetes",
@@ -6181,6 +6379,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-769dd76688-regcred",
+   "name": "scan-vulnerabilityreport-769dd76688-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-76b4cfbf77-regcred",
    "name": "scan-vulnerabilityreport-76b4cfbf77-regcred",
    "plane": "kubernetes",
@@ -6226,6 +6433,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-776b46d95b-regcred",
+   "name": "scan-vulnerabilityreport-776b46d95b-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-7777bd74fc-regcred",
    "name": "scan-vulnerabilityreport-7777bd74fc-regcred",
    "plane": "kubernetes",
@@ -6246,6 +6462,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-778dd8bd4b-regcred",
    "name": "scan-vulnerabilityreport-778dd8bd4b-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-779b74ddb7-regcred",
+   "name": "scan-vulnerabilityreport-779b74ddb7-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -6343,6 +6568,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-78995cc75d-regcred",
+   "name": "scan-vulnerabilityreport-78995cc75d-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-78b47846bd-regcred",
    "name": "scan-vulnerabilityreport-78b47846bd-regcred",
    "plane": "kubernetes",
@@ -6424,6 +6658,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-79bcd58f44-regcred",
+   "name": "scan-vulnerabilityreport-79bcd58f44-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-79bd96d96-regcred",
    "name": "scan-vulnerabilityreport-79bd96d96-regcred",
    "plane": "kubernetes",
@@ -6469,6 +6712,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-7b678c79d9-regcred",
+   "name": "scan-vulnerabilityreport-7b678c79d9-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-7b76f9c4b6-regcred",
    "name": "scan-vulnerabilityreport-7b76f9c4b6-regcred",
    "plane": "kubernetes",
@@ -6496,6 +6748,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-7b96bfcb49-regcred",
+   "name": "scan-vulnerabilityreport-7b96bfcb49-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-7b9768b588-regcred",
    "name": "scan-vulnerabilityreport-7b9768b588-regcred",
    "plane": "kubernetes",
@@ -6516,6 +6777,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-7b9c5fcbf6-regcred",
    "name": "scan-vulnerabilityreport-7b9c5fcbf6-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-7bb8557c94-regcred",
+   "name": "scan-vulnerabilityreport-7bb8557c94-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -6658,6 +6928,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-7cd85f795f-regcred",
+   "name": "scan-vulnerabilityreport-7cd85f795f-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-7cdb89cf54-regcred",
    "name": "scan-vulnerabilityreport-7cdb89cf54-regcred",
    "plane": "kubernetes",
@@ -6696,6 +6975,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-7d6db9bddf-regcred",
    "name": "scan-vulnerabilityreport-7d6db9bddf-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-7d75f6d7b-regcred",
+   "name": "scan-vulnerabilityreport-7d75f6d7b-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -6795,6 +7083,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-7dd659f87c-regcred",
    "name": "scan-vulnerabilityreport-7dd659f87c-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-7df669c8fc-regcred",
+   "name": "scan-vulnerabilityreport-7df669c8fc-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -7045,6 +7342,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-85556957dd-regcred",
+   "name": "scan-vulnerabilityreport-85556957dd-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-856666c648-regcred",
    "name": "scan-vulnerabilityreport-856666c648-regcred",
    "plane": "kubernetes",
@@ -7083,6 +7389,24 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-85b9d4966f-regcred",
    "name": "scan-vulnerabilityreport-85b9d4966f-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-85cddfccb6-regcred",
+   "name": "scan-vulnerabilityreport-85cddfccb6-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-85ddcf54c8-regcred",
+   "name": "scan-vulnerabilityreport-85ddcf54c8-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -7182,6 +7506,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-8778db9c4-regcred",
    "name": "scan-vulnerabilityreport-8778db9c4-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-897bf577c-regcred",
+   "name": "scan-vulnerabilityreport-897bf577c-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -7342,6 +7675,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-c495c4464-regcred",
+   "name": "scan-vulnerabilityreport-c495c4464-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-c4cb7ff6f-regcred",
    "name": "scan-vulnerabilityreport-c4cb7ff6f-regcred",
    "plane": "kubernetes",
@@ -7425,6 +7767,15 @@
    "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-c76576d9b-regcred",
    "name": "scan-vulnerabilityreport-c76576d9b-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-c89b4cddd-regcred",
+   "name": "scan-vulnerabilityreport-c89b4cddd-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -7531,6 +7882,15 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-db5887b4c-regcred",
+   "name": "scan-vulnerabilityreport-db5887b4c-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-db98cc5b-regcred",
    "name": "scan-vulnerabilityreport-db98cc5b-regcred",
    "plane": "kubernetes",
@@ -7558,8 +7918,35 @@
   },
   {
    "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-ddcd5c674-regcred",
+   "name": "scan-vulnerabilityreport-ddcd5c674-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "trivy-system/Secret/scan-vulnerabilityreport-df8d68c9-regcred",
    "name": "scan-vulnerabilityreport-df8d68c9-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-dff59d7bb-regcred",
+   "name": "scan-vulnerabilityreport-dff59d7bb-regcred",
+   "plane": "kubernetes",
+   "type": "Secret",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "trivy-system/Secret/scan-vulnerabilityreport-f576556db-regcred",
+   "name": "scan-vulnerabilityreport-f576556db-regcred",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "ORPHAN",
@@ -13192,8 +13579,8 @@
   },
   {
    "declared_in": "owned by CronJob/agent-workforce",
-   "id": "agent-workforce/Job/agent-workforce-29812455",
-   "name": "agent-workforce-29812455",
+   "id": "agent-workforce/Job/agent-workforce-29812740",
+   "name": "agent-workforce-29812740",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13201,8 +13588,8 @@
   },
   {
    "declared_in": "owned by CronJob/agent-workforce",
-   "id": "agent-workforce/Job/agent-workforce-29812470",
-   "name": "agent-workforce-29812470",
+   "id": "agent-workforce/Job/agent-workforce-29812755",
+   "name": "agent-workforce-29812755",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13210,8 +13597,8 @@
   },
   {
    "declared_in": "owned by CronJob/cluster-state",
-   "id": "backstage/Job/cluster-state-29812455",
-   "name": "cluster-state-29812455",
+   "id": "backstage/Job/cluster-state-29812740",
+   "name": "cluster-state-29812740",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13219,8 +13606,8 @@
   },
   {
    "declared_in": "owned by CronJob/cluster-state",
-   "id": "backstage/Job/cluster-state-29812470",
-   "name": "cluster-state-29812470",
+   "id": "backstage/Job/cluster-state-29812755",
+   "name": "cluster-state-29812755",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13237,21 +13624,12 @@
   },
   {
    "declared_in": "owned by CronJob/spiffe-proof",
-   "id": "backstage/Job/spiffe-proof-29812470",
-   "name": "spiffe-proof-29812470",
+   "id": "backstage/Job/spiffe-proof-29812755",
+   "name": "spiffe-proof-29812755",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
    "why": ""
-  },
-  {
-   "declared_in": "",
-   "id": "dagster/Job/dagster-run-b94bb92c-5c9b-45a4-ad53-5f623f3a01ca",
-   "name": "dagster-run-b94bb92c-5c9b-45a4-ad53-5f623f3a01ca",
-   "plane": "kubernetes",
-   "type": "Job",
-   "verdict": "ORPHAN",
-   "why": "no Flux owner label, no owner"
   },
   {
    "declared_in": "Kustomization flux-system/estate-db-migrate",
@@ -13264,8 +13642,8 @@
   },
   {
    "declared_in": "owned by CronJob/drill-dispatcher",
-   "id": "flux-system/Job/drill-dispatcher-29812473",
-   "name": "drill-dispatcher-29812473",
+   "id": "flux-system/Job/drill-dispatcher-29812758",
+   "name": "drill-dispatcher-29812758",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13282,8 +13660,8 @@
   },
   {
    "declared_in": "owned by CronJob/descheduler",
-   "id": "healing/Job/descheduler-29812450",
-   "name": "descheduler-29812450",
+   "id": "healing/Job/descheduler-29812740",
+   "name": "descheduler-29812740",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13291,8 +13669,8 @@
   },
   {
    "declared_in": "owned by CronJob/descheduler",
-   "id": "healing/Job/descheduler-29812460",
-   "name": "descheduler-29812460",
+   "id": "healing/Job/descheduler-29812750",
+   "name": "descheduler-29812750",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13300,8 +13678,8 @@
   },
   {
    "declared_in": "owned by CronJob/descheduler",
-   "id": "healing/Job/descheduler-29812470",
-   "name": "descheduler-29812470",
+   "id": "healing/Job/descheduler-29812760",
+   "name": "descheduler-29812760",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13327,8 +13705,8 @@
   },
   {
    "declared_in": "owned by CronJob/front-door-heartbeat",
-   "id": "identity/Job/front-door-heartbeat-29812460",
-   "name": "front-door-heartbeat-29812460",
+   "id": "identity/Job/front-door-heartbeat-29812750",
+   "name": "front-door-heartbeat-29812750",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13336,8 +13714,8 @@
   },
   {
    "declared_in": "owned by CronJob/front-door-heartbeat",
-   "id": "identity/Job/front-door-heartbeat-29812465",
-   "name": "front-door-heartbeat-29812465",
+   "id": "identity/Job/front-door-heartbeat-29812755",
+   "name": "front-door-heartbeat-29812755",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13345,17 +13723,8 @@
   },
   {
    "declared_in": "owned by CronJob/front-door-heartbeat",
-   "id": "identity/Job/front-door-heartbeat-29812470",
-   "name": "front-door-heartbeat-29812470",
-   "plane": "kubernetes",
-   "type": "Job",
-   "verdict": "MANAGED",
-   "why": ""
-  },
-  {
-   "declared_in": "owned by CronJob/front-door-heartbeat",
-   "id": "identity/Job/front-door-heartbeat-29812475",
-   "name": "front-door-heartbeat-29812475",
+   "id": "identity/Job/front-door-heartbeat-29812760",
+   "name": "front-door-heartbeat-29812760",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13381,17 +13750,8 @@
   },
   {
    "declared_in": "owned by CronJob/spend-velocity-check",
-   "id": "llm/Job/spend-velocity-check-29812470",
-   "name": "spend-velocity-check-29812470",
-   "plane": "kubernetes",
-   "type": "Job",
-   "verdict": "MANAGED",
-   "why": ""
-  },
-  {
-   "declared_in": "owned by CronJob/spend-velocity-check",
-   "id": "llm/Job/spend-velocity-check-29812475",
-   "name": "spend-velocity-check-29812475",
+   "id": "llm/Job/spend-velocity-check-29812760",
+   "name": "spend-velocity-check-29812760",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13444,8 +13804,8 @@
   },
   {
    "declared_in": "owned by CronJob/science-facts",
-   "id": "observability/Job/science-facts-29812447",
-   "name": "science-facts-29812447",
+   "id": "observability/Job/science-facts-29812747",
+   "name": "science-facts-29812747",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13471,8 +13831,8 @@
   },
   {
    "declared_in": "owned by CronJob/telemetry-coverage",
-   "id": "observability/Job/telemetry-coverage-29812455",
-   "name": "telemetry-coverage-29812455",
+   "id": "observability/Job/telemetry-coverage-29812740",
+   "name": "telemetry-coverage-29812740",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13480,8 +13840,8 @@
   },
   {
    "declared_in": "owned by CronJob/telemetry-coverage",
-   "id": "observability/Job/telemetry-coverage-29812470",
-   "name": "telemetry-coverage-29812470",
+   "id": "observability/Job/telemetry-coverage-29812755",
+   "name": "telemetry-coverage-29812755",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13498,8 +13858,8 @@
   },
   {
    "declared_in": "owned by CronJob/otto-answer-probe",
-   "id": "otto-gateway/Job/otto-answer-probe-29812470",
-   "name": "otto-answer-probe-29812470",
+   "id": "otto-gateway/Job/otto-answer-probe-29812755",
+   "name": "otto-answer-probe-29812755",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13516,8 +13876,8 @@
   },
   {
    "declared_in": "owned by CronJob/otto-registration-reconciler",
-   "id": "otto-gateway/Job/otto-registration-reconciler-29812475",
-   "name": "otto-registration-reconciler-29812475",
+   "id": "otto-gateway/Job/otto-registration-reconciler-29812760",
+   "name": "otto-registration-reconciler-29812760",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13525,8 +13885,8 @@
   },
   {
    "declared_in": "owned by CronJob/store-db-backup",
-   "id": "prospector/Job/store-db-backup-29811077",
-   "name": "store-db-backup-29811077",
+   "id": "prospector/Job/store-db-backup-29812517",
+   "name": "store-db-backup-29812517",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13534,8 +13894,8 @@
   },
   {
    "declared_in": "owned by CronJob/research-engine",
-   "id": "research/Job/research-engine-29812403",
-   "name": "research-engine-29812403",
+   "id": "research/Job/research-engine-29812703",
+   "name": "research-engine-29812703",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13543,17 +13903,8 @@
   },
   {
    "declared_in": "owned by CronJob/research-engine",
-   "id": "research/Job/research-engine-29812463",
-   "name": "research-engine-29812463",
-   "plane": "kubernetes",
-   "type": "Job",
-   "verdict": "MANAGED",
-   "why": ""
-  },
-  {
-   "declared_in": "owned by CronJob/canary-scheduler",
-   "id": "staging/Job/canary-scheduler-29812470",
-   "name": "canary-scheduler-29812470",
+   "id": "research/Job/research-engine-29812763",
+   "name": "research-engine-29812763",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13579,8 +13930,8 @@
   },
   {
    "declared_in": "owned by CronJob/kini-state",
-   "id": "temporal/Job/kini-state-29812455",
-   "name": "kini-state-29812455",
+   "id": "temporal/Job/kini-state-29812740",
+   "name": "kini-state-29812740",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13588,8 +13939,8 @@
   },
   {
    "declared_in": "owned by CronJob/kini-state",
-   "id": "temporal/Job/kini-state-29812470",
-   "name": "kini-state-29812470",
+   "id": "temporal/Job/kini-state-29812755",
+   "name": "kini-state-29812755",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -13695,6 +14046,15 @@
    "why": ""
   },
   {
+   "declared_in": "owned by Workflow/backstage-pod-kill-l4lpx",
+   "id": "backstage/WorkflowNode/entry-wbjzp",
+   "name": "entry-wbjzp",
+   "plane": "kubernetes",
+   "type": "WorkflowNode",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
    "declared_in": "owned by Workflow/backstage-pod-kill-65lrq",
    "id": "backstage/WorkflowNode/entry-wmxb9",
    "name": "entry-wmxb9",
@@ -13707,6 +14067,15 @@
    "declared_in": "owned by WorkflowNode/entry-wmxb9",
    "id": "backstage/WorkflowNode/experiment-49gfr",
    "name": "experiment-49gfr",
+   "plane": "kubernetes",
+   "type": "WorkflowNode",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
+   "declared_in": "owned by WorkflowNode/entry-wbjzp",
+   "id": "backstage/WorkflowNode/experiment-qs9jg",
+   "name": "experiment-qs9jg",
    "plane": "kubernetes",
    "type": "WorkflowNode",
    "verdict": "MANAGED",
@@ -13731,6 +14100,15 @@
    "why": ""
   },
   {
+   "declared_in": "owned by WorkflowNode/experiment-qs9jg",
+   "id": "backstage/WorkflowNode/kill-one-njccv",
+   "name": "kill-one-njccv",
+   "plane": "kubernetes",
+   "type": "WorkflowNode",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
    "declared_in": "owned by WorkflowNode/experiment-xrgv5",
    "id": "backstage/WorkflowNode/kill-one-x52nl",
    "name": "kill-one-x52nl",
@@ -13749,9 +14127,27 @@
    "why": ""
   },
   {
+   "declared_in": "owned by WorkflowNode/entry-wbjzp",
+   "id": "backstage/WorkflowNode/receipt-mqfqn",
+   "name": "receipt-mqfqn",
+   "plane": "kubernetes",
+   "type": "WorkflowNode",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
    "declared_in": "owned by WorkflowNode/entry-blmrp",
    "id": "backstage/WorkflowNode/receipt-q6rqm",
    "name": "receipt-q6rqm",
+   "plane": "kubernetes",
+   "type": "WorkflowNode",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
+   "declared_in": "owned by WorkflowNode/experiment-qs9jg",
+   "id": "backstage/WorkflowNode/steady-state-7fkxl",
+   "name": "steady-state-7fkxl",
    "plane": "kubernetes",
    "type": "WorkflowNode",
    "verdict": "MANAGED",
@@ -13785,6 +14181,15 @@
    "why": ""
   },
   {
+   "declared_in": "owned by Workflow/langfuse-alert-drill-48g4q",
+   "id": "observability/WorkflowNode/entry-8wxzl",
+   "name": "entry-8wxzl",
+   "plane": "kubernetes",
+   "type": "WorkflowNode",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
    "declared_in": "owned by Workflow/langfuse-alert-drill-first-run",
    "id": "observability/WorkflowNode/entry-vq75m",
    "name": "entry-vq75m",
@@ -13797,6 +14202,15 @@
    "declared_in": "owned by WorkflowNode/entry-vq75m",
    "id": "observability/WorkflowNode/experiment-574rc",
    "name": "experiment-574rc",
+   "plane": "kubernetes",
+   "type": "WorkflowNode",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
+   "declared_in": "owned by WorkflowNode/entry-8wxzl",
+   "id": "observability/WorkflowNode/experiment-g95nt",
+   "name": "experiment-g95nt",
    "plane": "kubernetes",
    "type": "WorkflowNode",
    "verdict": "MANAGED",
@@ -13824,6 +14238,24 @@
    "declared_in": "owned by WorkflowNode/experiment-jmr8s",
    "id": "observability/WorkflowNode/fail-web-9rkc4",
    "name": "fail-web-9rkc4",
+   "plane": "kubernetes",
+   "type": "WorkflowNode",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
+   "declared_in": "owned by WorkflowNode/experiment-g95nt",
+   "id": "observability/WorkflowNode/fail-web-rzlq7",
+   "name": "fail-web-rzlq7",
+   "plane": "kubernetes",
+   "type": "WorkflowNode",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
+   "declared_in": "owned by WorkflowNode/experiment-g95nt",
+   "id": "observability/WorkflowNode/receipt-b99cg",
+   "name": "receipt-b99cg",
    "plane": "kubernetes",
    "type": "WorkflowNode",
    "verdict": "MANAGED",
@@ -13860,6 +14292,24 @@
    "declared_in": "Kustomization flux-system/chaos",
    "id": "backstage/Workflow/backstage-pod-kill-first-run",
    "name": "backstage-pod-kill-first-run",
+   "plane": "kubernetes",
+   "type": "Workflow",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
+   "declared_in": "owned by Schedule/backstage-pod-kill",
+   "id": "backstage/Workflow/backstage-pod-kill-l4lpx",
+   "name": "backstage-pod-kill-l4lpx",
+   "plane": "kubernetes",
+   "type": "Workflow",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
+   "declared_in": "owned by Schedule/langfuse-alert-drill",
+   "id": "observability/Workflow/langfuse-alert-drill-48g4q",
+   "name": "langfuse-alert-drill-48g4q",
    "plane": "kubernetes",
    "type": "Workflow",
    "verdict": "MANAGED",
@@ -14452,8 +14902,8 @@
   },
   {
    "declared_in": "owned by K8sGPT/estate",
-   "id": "healing/Result/agentworkforceagentworkforce29812410c7jzc",
-   "name": "agentworkforceagentworkforce29812410c7jzc",
+   "id": "healing/Result/agentworkforceagentworkforce29812725rn7sn",
+   "name": "agentworkforceagentworkforce29812725rn7sn",
    "plane": "kubernetes",
    "type": "Result",
    "verdict": "MANAGED",
@@ -14461,8 +14911,8 @@
   },
   {
    "declared_in": "owned by K8sGPT/estate",
-   "id": "healing/Result/agentworkforceagentworkforce29812425sqcdf",
-   "name": "agentworkforceagentworkforce29812425sqcdf",
+   "id": "healing/Result/agentworkforceagentworkforce29812740wplhv",
+   "name": "agentworkforceagentworkforce29812740wplhv",
    "plane": "kubernetes",
    "type": "Result",
    "verdict": "MANAGED",
@@ -14470,17 +14920,8 @@
   },
   {
    "declared_in": "owned by K8sGPT/estate",
-   "id": "healing/Result/backstagecatalogue",
-   "name": "backstagecatalogue",
-   "plane": "kubernetes",
-   "type": "Result",
-   "verdict": "MANAGED",
-   "why": ""
-  },
-  {
-   "declared_in": "owned by K8sGPT/estate",
-   "id": "healing/Result/backstagecatalogue6b7f8bb7d55bzpt",
-   "name": "backstagecatalogue6b7f8bb7d55bzpt",
+   "id": "healing/Result/backstagereceiptmqfqnlf9g4",
+   "name": "backstagereceiptmqfqnlf9g4",
    "plane": "kubernetes",
    "type": "Result",
    "verdict": "MANAGED",
@@ -14508,6 +14949,15 @@
    "declared_in": "owned by K8sGPT/estate",
    "id": "healing/Result/healthcheckshealthchecks",
    "name": "healthcheckshealthchecks",
+   "plane": "kubernetes",
+   "type": "Result",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
+   "declared_in": "owned by K8sGPT/estate",
+   "id": "healing/Result/healthcheckshealthchecks6d7dd57c962gmsb",
+   "name": "healthcheckshealthchecks6d7dd57c962gmsb",
    "plane": "kubernetes",
    "type": "Result",
    "verdict": "MANAGED",
@@ -14551,8 +15001,8 @@
   },
   {
    "declared_in": "owned by K8sGPT/estate",
-   "id": "healing/Result/mcpestatemcp6cb8dd5b87wzdll",
-   "name": "mcpestatemcp6cb8dd5b87wzdll",
+   "id": "healing/Result/mcpestatemcp6cb8dd5b87qbwx7",
+   "name": "mcpestatemcp6cb8dd5b87qbwx7",
    "plane": "kubernetes",
    "type": "Result",
    "verdict": "MANAGED",
@@ -14562,6 +15012,33 @@
    "declared_in": "owned by K8sGPT/estate",
    "id": "healing/Result/mcpgithubmcp",
    "name": "mcpgithubmcp",
+   "plane": "kubernetes",
+   "type": "Result",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
+   "declared_in": "owned by K8sGPT/estate",
+   "id": "healing/Result/observabilityreceiptb99cg66jjw",
+   "name": "observabilityreceiptb99cg66jjw",
+   "plane": "kubernetes",
+   "type": "Result",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
+   "declared_in": "owned by K8sGPT/estate",
+   "id": "healing/Result/observabilitysciencefacts29812747qtnhc",
+   "name": "observabilitysciencefacts29812747qtnhc",
+   "plane": "kubernetes",
+   "type": "Result",
+   "verdict": "MANAGED",
+   "why": ""
+  },
+  {
+   "declared_in": "owned by K8sGPT/estate",
+   "id": "healing/Result/observabilitysignozclickhouse",
+   "name": "observabilitysignozclickhouse",
    "plane": "kubernetes",
    "type": "Result",
    "verdict": "MANAGED",
@@ -14686,8 +15163,8 @@
   },
   {
    "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.05646c9cd4aa3b28e851c423676c0f9ec346760fb48af93ca577dc0d8cc98b84",
-   "name": "k8s-pod-network.05646c9cd4aa3b28e851c423676c0f9ec346760fb48af93ca577dc0d8cc98b84",
+   "id": "_/IPAMHandle/k8s-pod-network.004e5106e5f54687d6c260a205659a167b3879a3c2d44c142f3cc57defbb8b62",
+   "name": "k8s-pod-network.004e5106e5f54687d6c260a205659a167b3879a3c2d44c142f3cc57defbb8b62",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -14695,8 +15172,8 @@
   },
   {
    "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.0adf20b4d1d58d1939767697c50b925c40f9d216c54683ede2427026178f6cd5",
-   "name": "k8s-pod-network.0adf20b4d1d58d1939767697c50b925c40f9d216c54683ede2427026178f6cd5",
+   "id": "_/IPAMHandle/k8s-pod-network.12685c60d1ed95f00a4d52458d8fcdc785ec01b7c96f05c51f2141152a096719",
+   "name": "k8s-pod-network.12685c60d1ed95f00a4d52458d8fcdc785ec01b7c96f05c51f2141152a096719",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -14704,8 +15181,8 @@
   },
   {
    "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.24e388d47d0f9447a8554726ac57a37c9cd2745ad006127ef3a9b36df6af1e1e",
-   "name": "k8s-pod-network.24e388d47d0f9447a8554726ac57a37c9cd2745ad006127ef3a9b36df6af1e1e",
+   "id": "_/IPAMHandle/k8s-pod-network.23f3eb3251df4b83e05eb5de34a1432ec8b5f77e1dcdfa0b5b4009f718084ce4",
+   "name": "k8s-pod-network.23f3eb3251df4b83e05eb5de34a1432ec8b5f77e1dcdfa0b5b4009f718084ce4",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -14722,8 +15199,8 @@
   },
   {
    "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.258af98e2dcb7712ac999e4c5944a58aeae41f33d032f66f56942615260b2cdb",
-   "name": "k8s-pod-network.258af98e2dcb7712ac999e4c5944a58aeae41f33d032f66f56942615260b2cdb",
+   "id": "_/IPAMHandle/k8s-pod-network.32115606e610322dafc284ec1892f5348aa2ed682f27549ea4d5f7dde154d4aa",
+   "name": "k8s-pod-network.32115606e610322dafc284ec1892f5348aa2ed682f27549ea4d5f7dde154d4aa",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -14731,8 +15208,8 @@
   },
   {
    "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.2f99633f41593d8b7a209ed1dfb992abfdec0fc751f7143568c0a237ed402972",
-   "name": "k8s-pod-network.2f99633f41593d8b7a209ed1dfb992abfdec0fc751f7143568c0a237ed402972",
+   "id": "_/IPAMHandle/k8s-pod-network.370ccc1a1770a7da8fe5e47774ec2110e393967a418443ae63afdf668b6c10c9",
+   "name": "k8s-pod-network.370ccc1a1770a7da8fe5e47774ec2110e393967a418443ae63afdf668b6c10c9",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -14740,62 +15217,8 @@
   },
   {
    "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.323519097fb0b906874dfe9fc61e9d48ee99ab50931492ac721105437a19755a",
-   "name": "k8s-pod-network.323519097fb0b906874dfe9fc61e9d48ee99ab50931492ac721105437a19755a",
-   "plane": "kubernetes",
-   "type": "IPAMHandle",
-   "verdict": "ORPHAN",
-   "why": "no Flux owner label, no owner"
-  },
-  {
-   "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.3decb43fb052f8229002a93bb1fd9759bddce491c5aa079a00a5d594debeec7d",
-   "name": "k8s-pod-network.3decb43fb052f8229002a93bb1fd9759bddce491c5aa079a00a5d594debeec7d",
-   "plane": "kubernetes",
-   "type": "IPAMHandle",
-   "verdict": "ORPHAN",
-   "why": "no Flux owner label, no owner"
-  },
-  {
-   "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.48511349a79af63f5d14133ed8dff3d14ef7f323510957538fb2395c8f830a7b",
-   "name": "k8s-pod-network.48511349a79af63f5d14133ed8dff3d14ef7f323510957538fb2395c8f830a7b",
-   "plane": "kubernetes",
-   "type": "IPAMHandle",
-   "verdict": "ORPHAN",
-   "why": "no Flux owner label, no owner"
-  },
-  {
-   "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.485ed28c0dd6b2ba62822652641add775b71880e54711783565605dc480c39f5",
-   "name": "k8s-pod-network.485ed28c0dd6b2ba62822652641add775b71880e54711783565605dc480c39f5",
-   "plane": "kubernetes",
-   "type": "IPAMHandle",
-   "verdict": "ORPHAN",
-   "why": "no Flux owner label, no owner"
-  },
-  {
-   "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.61158ad694c97bef3962cdabc297c09ceabbd885e0ebfbf811e00ec6c823968b",
-   "name": "k8s-pod-network.61158ad694c97bef3962cdabc297c09ceabbd885e0ebfbf811e00ec6c823968b",
-   "plane": "kubernetes",
-   "type": "IPAMHandle",
-   "verdict": "ORPHAN",
-   "why": "no Flux owner label, no owner"
-  },
-  {
-   "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.6a36245130ad38a8b8c7715f15266dac865f836200fa1cb864d52406ca4bcbb8",
-   "name": "k8s-pod-network.6a36245130ad38a8b8c7715f15266dac865f836200fa1cb864d52406ca4bcbb8",
-   "plane": "kubernetes",
-   "type": "IPAMHandle",
-   "verdict": "ORPHAN",
-   "why": "no Flux owner label, no owner"
-  },
-  {
-   "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.70e66f8b1c0e2bb45f6d347c782301275478a26211097f303df84c8d1b6793f8",
-   "name": "k8s-pod-network.70e66f8b1c0e2bb45f6d347c782301275478a26211097f303df84c8d1b6793f8",
+   "id": "_/IPAMHandle/k8s-pod-network.5b86eb33165ec5a26d27fde372688de52b021553b73932621d0024cc713763ed",
+   "name": "k8s-pod-network.5b86eb33165ec5a26d27fde372688de52b021553b73932621d0024cc713763ed",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -14812,26 +15235,8 @@
   },
   {
    "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.76d92ecbc9bbf873896a405e90f231de19bc9c1d9fdb9ef9e8055b4df97ea8cf",
-   "name": "k8s-pod-network.76d92ecbc9bbf873896a405e90f231de19bc9c1d9fdb9ef9e8055b4df97ea8cf",
-   "plane": "kubernetes",
-   "type": "IPAMHandle",
-   "verdict": "ORPHAN",
-   "why": "no Flux owner label, no owner"
-  },
-  {
-   "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.77370d70c595748e3cbf54c08271f40fb1a20e5621ea799b2510ae416c2c8dd6",
-   "name": "k8s-pod-network.77370d70c595748e3cbf54c08271f40fb1a20e5621ea799b2510ae416c2c8dd6",
-   "plane": "kubernetes",
-   "type": "IPAMHandle",
-   "verdict": "ORPHAN",
-   "why": "no Flux owner label, no owner"
-  },
-  {
-   "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.7f013dbf4b27b5d83503aa2997a799a74686fd61d5f4d4ee5e3ca51e3105f230",
-   "name": "k8s-pod-network.7f013dbf4b27b5d83503aa2997a799a74686fd61d5f4d4ee5e3ca51e3105f230",
+   "id": "_/IPAMHandle/k8s-pod-network.8b46820f1ab8bd5ddc3140a9ba2cfc6f678c86380c9336a81442d50fb80dc2cc",
+   "name": "k8s-pod-network.8b46820f1ab8bd5ddc3140a9ba2cfc6f678c86380c9336a81442d50fb80dc2cc",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -14848,17 +15253,8 @@
   },
   {
    "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.94f4852d84131fe3b5c8b3a4aaf149b287181a740d58283c79da81d82dd598cc",
-   "name": "k8s-pod-network.94f4852d84131fe3b5c8b3a4aaf149b287181a740d58283c79da81d82dd598cc",
-   "plane": "kubernetes",
-   "type": "IPAMHandle",
-   "verdict": "ORPHAN",
-   "why": "no Flux owner label, no owner"
-  },
-  {
-   "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.95465069e94966dca33d0c5ba7860c6a41342a376e2b283a448ba4b7895ff88b",
-   "name": "k8s-pod-network.95465069e94966dca33d0c5ba7860c6a41342a376e2b283a448ba4b7895ff88b",
+   "id": "_/IPAMHandle/k8s-pod-network.94735ca72b87c3729df50b3b8204947fe591609642f5b67b9f831dd9fab37b3d",
+   "name": "k8s-pod-network.94735ca72b87c3729df50b3b8204947fe591609642f5b67b9f831dd9fab37b3d",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -14875,8 +15271,8 @@
   },
   {
    "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.a3ad3fd9f936a85532ef37c0450a87b8af4d8cbb007895e8ad724eb80df2033e",
-   "name": "k8s-pod-network.a3ad3fd9f936a85532ef37c0450a87b8af4d8cbb007895e8ad724eb80df2033e",
+   "id": "_/IPAMHandle/k8s-pod-network.a4aec97f936fbe38f7ecfe608cebdfa7457ddc6d900329ec94bd8706f0997ec0",
+   "name": "k8s-pod-network.a4aec97f936fbe38f7ecfe608cebdfa7457ddc6d900329ec94bd8706f0997ec0",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -14884,8 +15280,8 @@
   },
   {
    "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.a4aec97f936fbe38f7ecfe608cebdfa7457ddc6d900329ec94bd8706f0997ec0",
-   "name": "k8s-pod-network.a4aec97f936fbe38f7ecfe608cebdfa7457ddc6d900329ec94bd8706f0997ec0",
+   "id": "_/IPAMHandle/k8s-pod-network.a618a24bf7ddfa85dc0759bdb205c35d627d57ce7451fdb401dcc559a2d13931",
+   "name": "k8s-pod-network.a618a24bf7ddfa85dc0759bdb205c35d627d57ce7451fdb401dcc559a2d13931",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -14902,8 +15298,8 @@
   },
   {
    "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.aa08fb5793b75d95c238d0e2e71cbd7411b4353960e03432572f95b49afb4c0d",
-   "name": "k8s-pod-network.aa08fb5793b75d95c238d0e2e71cbd7411b4353960e03432572f95b49afb4c0d",
+   "id": "_/IPAMHandle/k8s-pod-network.b6c3315cfdbad4549a017de1391b359605325c8cf1a10ba812167bee06f7fe64",
+   "name": "k8s-pod-network.b6c3315cfdbad4549a017de1391b359605325c8cf1a10ba812167bee06f7fe64",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -14920,6 +15316,24 @@
   },
   {
    "declared_in": "",
+   "id": "_/IPAMHandle/k8s-pod-network.b9c4874e62f4b4679a55c501f1652f3b41c528cb734e10d50c0afd3a48b7ffc9",
+   "name": "k8s-pod-network.b9c4874e62f4b4679a55c501f1652f3b41c528cb734e10d50c0afd3a48b7ffc9",
+   "plane": "kubernetes",
+   "type": "IPAMHandle",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "_/IPAMHandle/k8s-pod-network.bb0a21b63e2eaacd1f54785b08172543071ced6459d519b2a8477e8c5ac9b1ec",
+   "name": "k8s-pod-network.bb0a21b63e2eaacd1f54785b08172543071ced6459d519b2a8477e8c5ac9b1ec",
+   "plane": "kubernetes",
+   "type": "IPAMHandle",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "_/IPAMHandle/k8s-pod-network.bdc542f47176a43e24ac931d497a05b6cd704f9d7fb62494a1d788d0d62c6db5",
    "name": "k8s-pod-network.bdc542f47176a43e24ac931d497a05b6cd704f9d7fb62494a1d788d0d62c6db5",
    "plane": "kubernetes",
@@ -14929,8 +15343,35 @@
   },
   {
    "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.d54b3cdbae6245809579464f34a4f901ed8c80e2fba31b1b770b3523510cc247",
-   "name": "k8s-pod-network.d54b3cdbae6245809579464f34a4f901ed8c80e2fba31b1b770b3523510cc247",
+   "id": "_/IPAMHandle/k8s-pod-network.be67a8f5931aa1f80d1bf72705ff77f6ff3e931e943db4f1421c83cf1a7c045e",
+   "name": "k8s-pod-network.be67a8f5931aa1f80d1bf72705ff77f6ff3e931e943db4f1421c83cf1a7c045e",
+   "plane": "kubernetes",
+   "type": "IPAMHandle",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "_/IPAMHandle/k8s-pod-network.c8ac3907fd8d30ac2739b28fada7bdff2bd03ba77e966db454b466cd14363116",
+   "name": "k8s-pod-network.c8ac3907fd8d30ac2739b28fada7bdff2bd03ba77e966db454b466cd14363116",
+   "plane": "kubernetes",
+   "type": "IPAMHandle",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "_/IPAMHandle/k8s-pod-network.cdcb33f20b04c45d2756de85c7ef66e5b8fd0ff50354f1e7734036b07b6e83c8",
+   "name": "k8s-pod-network.cdcb33f20b04c45d2756de85c7ef66e5b8fd0ff50354f1e7734036b07b6e83c8",
+   "plane": "kubernetes",
+   "type": "IPAMHandle",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "_/IPAMHandle/k8s-pod-network.d71096eeb9594e7a3d219a43838ba64a34a40009da8100c56ef8b35d27ba7d3f",
+   "name": "k8s-pod-network.d71096eeb9594e7a3d219a43838ba64a34a40009da8100c56ef8b35d27ba7d3f",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -14974,8 +15415,8 @@
   },
   {
    "declared_in": "",
-   "id": "_/IPAMHandle/k8s-pod-network.e1fbfa7c301798d80e48b173423276fb9b61a36bf3e88113102b7863623777d6",
-   "name": "k8s-pod-network.e1fbfa7c301798d80e48b173423276fb9b61a36bf3e88113102b7863623777d6",
+   "id": "_/IPAMHandle/k8s-pod-network.dff4b51b31e3348750be83c63d63b91dbb682f8a9e389dfea1c33a99e5b7a09f",
+   "name": "k8s-pod-network.dff4b51b31e3348750be83c63d63b91dbb682f8a9e389dfea1c33a99e5b7a09f",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -14994,6 +15435,24 @@
    "declared_in": "",
    "id": "_/IPAMHandle/k8s-pod-network.e23e4e431cc17d6ae8e14a1170804414f41e692242718242aadc82fd89357d57",
    "name": "k8s-pod-network.e23e4e431cc17d6ae8e14a1170804414f41e692242718242aadc82fd89357d57",
+   "plane": "kubernetes",
+   "type": "IPAMHandle",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "_/IPAMHandle/k8s-pod-network.e629a4940cf8fd503966a4367526bd712ddbd2596c92da164534f8d15c59cddf",
+   "name": "k8s-pod-network.e629a4940cf8fd503966a4367526bd712ddbd2596c92da164534f8d15c59cddf",
+   "plane": "kubernetes",
+   "type": "IPAMHandle",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
+   "id": "_/IPAMHandle/k8s-pod-network.f401380409d0770594e6f4d85d1c3a62443db260a72347cc846dce2bc6836591",
+   "name": "k8s-pod-network.f401380409d0770594e6f4d85d1c3a62443db260a72347cc846dce2bc6836591",
    "plane": "kubernetes",
    "type": "IPAMHandle",
    "verdict": "ORPHAN",
@@ -16814,8 +17273,8 @@
    "name": "agent-workforce",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16823,8 +17282,8 @@
    "name": "alerts",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/alerts-secret' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16832,8 +17291,8 @@
    "name": "alerts-github",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16841,8 +17300,8 @@
    "name": "alerts-secret",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16850,8 +17309,8 @@
    "name": "autoscaler",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16859,8 +17318,8 @@
    "name": "backstage",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16886,8 +17345,8 @@
    "name": "chaos",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/observability' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16914,7 +17373,7 @@
    "plane": "kubernetes",
    "type": "Kustomization",
    "verdict": "DRIFTED",
-   "why": "health check failed after 31.96483ms: failed early due to stalled resources: [HelmRelease/commerce/lago status: 'Failed']"
+   "why": "dependency 'flux-system/commerce-data' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16922,8 +17381,8 @@
    "name": "commerce-data",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16931,8 +17390,8 @@
    "name": "cyrus",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16940,8 +17399,8 @@
    "name": "dagster",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16949,8 +17408,8 @@
    "name": "dns",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16958,8 +17417,8 @@
    "name": "drills",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/alerts-github' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16985,8 +17444,8 @@
    "name": "estate-db",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -16994,8 +17453,8 @@
    "name": "estate-db-migrate",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/estate-db' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17048,8 +17507,8 @@
    "name": "flux-webhook",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17066,8 +17525,8 @@
    "name": "guacamole",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/identity' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17075,8 +17534,8 @@
    "name": "healing",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/llm' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17084,8 +17543,8 @@
    "name": "healing-analyzer",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/healing' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17102,8 +17561,8 @@
    "name": "hermes-agent",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17111,8 +17570,8 @@
    "name": "hindsight",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17120,8 +17579,8 @@
    "name": "human-vault",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17129,8 +17588,8 @@
    "name": "identity",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17138,8 +17597,8 @@
    "name": "image-automation",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17165,8 +17624,8 @@
    "name": "llm",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17192,8 +17651,8 @@
    "name": "monitoring",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17201,8 +17660,8 @@
    "name": "monitoring-rules",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/monitoring' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17210,8 +17669,8 @@
    "name": "notify",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17228,8 +17687,8 @@
    "name": "observability",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/estate-db-migrate' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17246,8 +17705,8 @@
    "name": "otto-gateway",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17255,8 +17714,8 @@
    "name": "otto-golden",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17264,8 +17723,8 @@
    "name": "otto-golden-secret",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17310,7 +17769,7 @@
    "plane": "kubernetes",
    "type": "Kustomization",
    "verdict": "DRIFTED",
-   "why": "health check failed after 5m0.022142327s: timeout waiting for: [ExternalSecret/flux-system/bridge-identity status: 'InProgress']"
+   "why": "Reconciliation in progress"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17318,8 +17777,8 @@
    "name": "reloader",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17327,8 +17786,8 @@
    "name": "research-engine",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17336,8 +17795,8 @@
    "name": "robusta",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17372,8 +17831,8 @@
    "name": "science",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/observability' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17390,8 +17849,8 @@
    "name": "secret-store",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/external-secrets' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17417,8 +17876,8 @@
    "name": "tailscale",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17444,8 +17903,8 @@
    "name": "verification",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/secret-store' is not ready"
   },
   {
    "declared_in": "flux-system (git)",
@@ -17453,8 +17912,8 @@
    "name": "weave-gitops",
    "plane": "kubernetes",
    "type": "Kustomization",
-   "verdict": "MANAGED",
-   "why": ""
+   "verdict": "DRIFTED",
+   "why": "dependency 'flux-system/identity' is not ready"
   },
   {
    "declared_in": "Kustomization flux-system/scheduling",
@@ -17790,7 +18249,7 @@
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/prospector",
+   "declared_in": "Kustomization flux-system/edge",
    "id": "_/ClusterPolicy/secrets-not-from-env-vars",
    "name": "secrets-not-from-env-vars",
    "plane": "kubernetes",
@@ -20634,7 +21093,7 @@
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/otto-gateway",
+   "declared_in": "Kustomization flux-system/ns-fences",
    "id": "otto-gateway/NetworkPolicy/allow-dns-egress",
    "name": "allow-dns-egress",
    "plane": "kubernetes",
@@ -20706,7 +21165,7 @@
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/otto-gateway",
+   "declared_in": "Kustomization flux-system/ns-fences",
    "id": "otto-gateway/NetworkPolicy/default-deny-all",
    "name": "default-deny-all",
    "plane": "kubernetes",
@@ -20742,7 +21201,7 @@
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/otto-golden",
+   "declared_in": "Kustomization flux-system/ns-fences",
    "id": "otto-golden/NetworkPolicy/allow-dns-egress",
    "name": "allow-dns-egress",
    "plane": "kubernetes",
@@ -20796,7 +21255,7 @@
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/otto-golden",
+   "declared_in": "Kustomization flux-system/ns-fences",
    "id": "otto-golden/NetworkPolicy/default-deny-all",
    "name": "default-deny-all",
    "plane": "kubernetes",
@@ -34846,6 +35305,15 @@
   },
   {
    "declared_in": "",
+   "id": "_/VolumeAttachment/csi-eec87ee69acfe3c9d37c1886d60f8bb1903aa3a702dea07b06de8c44a0d65708",
+   "name": "csi-eec87ee69acfe3c9d37c1886d60f8bb1903aa3a702dea07b06de8c44a0d65708",
+   "plane": "kubernetes",
+   "type": "VolumeAttachment",
+   "verdict": "ORPHAN",
+   "why": "no Flux owner label, no owner"
+  },
+  {
+   "declared_in": "",
    "id": "_/VolumeAttachment/csi-f5381c34ecd44373af82311b861477db01e264a1d1d299944b359548f2550295",
    "name": "csi-f5381c34ecd44373af82311b861477db01e264a1d1d299944b359548f2550295",
    "plane": "kubernetes",
@@ -34857,15 +35325,6 @@
    "declared_in": "",
    "id": "_/VolumeAttachment/csi-f8a5daf78c8c95933980e5f5769c49f7bfe4d91b629e5fb33233a2613f00d2e6",
    "name": "csi-f8a5daf78c8c95933980e5f5769c49f7bfe4d91b629e5fb33233a2613f00d2e6",
-   "plane": "kubernetes",
-   "type": "VolumeAttachment",
-   "verdict": "ORPHAN",
-   "why": "no Flux owner label, no owner"
-  },
-  {
-   "declared_in": "",
-   "id": "_/VolumeAttachment/csi-fdafa490df3e7d7796db3cbcfc280b0a9e5fdb92eb51ab80850ea4ef7c64ec03",
-   "name": "csi-fdafa490df3e7d7796db3cbcfc280b0a9e5fdb92eb51ab80850ea4ef7c64ec03",
    "plane": "kubernetes",
    "type": "VolumeAttachment",
    "verdict": "ORPHAN",
@@ -35377,7 +35836,7 @@
   },
   {
    "declared_in": "",
-   "id": "86e33f954f96a1860a5631f0d2d55275",
+   "id": "e7881196f92978922e0e81e99ddf8194",
    "name": "mumchimp.com TXT",
    "plane": "cloudflare",
    "type": "dns_record",
@@ -35386,7 +35845,7 @@
   },
   {
    "declared_in": "",
-   "id": "e7881196f92978922e0e81e99ddf8194",
+   "id": "86e33f954f96a1860a5631f0d2d55275",
    "name": "mumchimp.com TXT",
    "plane": "cloudflare",
    "type": "dns_record",
