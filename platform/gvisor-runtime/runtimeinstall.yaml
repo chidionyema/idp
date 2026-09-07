@@ -76,5 +76,5 @@ spec:
             resources:
               requests: {cpu: 10m, memory: 16Mi}
               limits:   {memory: 32Mi}
-    successCondition: "uname -r | grep -qE '[0-9.]+-gvisor-[0-9]+'"
+    successCondition: "[0-9.]+-gvisor-[0-9]+"
     timeoutSeconds: 300

@@ -138,8 +138,11 @@ spec:
                     successCondition:
                       type: string
                       description: >-
-                        Shell expression the Operator evaluates against the
-                        probe pod's logs. Empty = no verdict.
+                        Go regular expression the Operator compiles and matches
+                        against the probe pod's stdout. Empty = no verdict
+                        (refused by the gate). The Operator does NOT spawn a
+                        shell to evaluate this field; only Go-regexp shapes
+                        are accepted.
                     timeoutSeconds:
                       type: integer
                       minimum: 30

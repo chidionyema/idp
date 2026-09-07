@@ -183,6 +183,23 @@ def validate(doc: dict) -> list[tuple[str, str]]:
                 "cannot tell Verified from Failed)",
             )
         )
+    elif isinstance(sc, str) and sc:
+        # The Operator compiles this with Go's regexp.Compile and uses MatchString
+        # against the probe pod's stdout -- shell metachars are passed through to the
+        # regex engine, not to a shell. A CR with a malformed regex would crash the
+        # controller's reconcile loop, so we refuse here at admission.
+        import re as _re
+
+        try:
+            _re.compile(sc)
+        except _re.error as e:
+            errors.append(
+                _err(
+                    name,
+                    f"spec.verification.successCondition: not a valid Go regexp "
+                    f"(the Operator compiles this with regexp.Compile): {e}",
+                )
+            )
     ts = ver.get("timeoutSeconds", 300)
     if (
         not isinstance(ts, int)
