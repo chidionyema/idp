@@ -4,7 +4,8 @@ kind: Template
 metadata:
   name: run-vault-reads
   title: Audit vault reads
-  description: Lists who read what from the vault and flags anything outside the expected pattern.
+  description: Lists who read what from the vault, and checks every key the cluster asks for is still
+    in it.
   tags:
   - founder-action
   - estate
