@@ -1136,7 +1136,7 @@ spec:
   owner: group:default/platform
   system: identity
   dependsOn:
-    - component:default/layer-rbac
+    - component:default/layer-rbac-floor
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -1630,8 +1630,8 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: layer-rbac
-  title: 'Who agents are'
-  description: 'The identity every agent on this estate actually uses, and it can read the cluster and write nothing; the ceiling above it is the just-in-time broker, and there is no third road.'
+  title: 'Break-glass bridge'
+  description: 'The one road in that does not go through an agent at all: a machine the founder can reach when the cluster will not let anyone else in.'
   annotations:
     backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=rbac'
     estate/flux-kustomization: 'rbac'
@@ -1648,6 +1648,27 @@ spec:
   system: identity
   dependsOn:
     - component:default/layer-rbac-identity
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-rbac-floor
+  title: 'Who agents are'
+  description: 'The identity every agent on this estate actually uses, and it can read the cluster and write nothing; the ceiling above it is the just-in-time broker, and there is no third road.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=rbac-floor'
+    estate/flux-kustomization: 'rbac-floor'
+    estate/path: './platform/rbac-floor'
+    estate/cluster: 'oke'
+  tags: [platform, identity]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: identity
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

@@ -1,5 +1,7 @@
+# The break-glass bridge, and only it. agent-reader moved to platform/rbac-floor because this
+# Kustomization cannot apply at all until terraform publishes the bridge instance's OCID, and the
+# floor every agent stands on must not wait on a machine it never touches.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - bridge.yaml
-  - agent-reader.yaml

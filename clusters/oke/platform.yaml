@@ -1435,6 +1435,24 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: rbac-floor
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/rbac-floor
+  prune: true
+  wait: true
+  timeout: 5m
+---
+# The break-glass bridge's ClusterRoleBinding. Kept apart from the row above on purpose: this one
+# cannot apply until terraform publishes bridge-instance-ocid, and for two days it took the estate's
+# agent RBAC floor down with it.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: rbac
   namespace: flux-system
 spec:
@@ -1459,7 +1477,7 @@ spec:
 ---
 # The JIT token broker (WJ.1-WJ.15). This is the only workload in the estate that can mint write
 # access on a cluster where -- from the row above this one -- agents hold none. It is reconciled
-# after rbac deliberately: agent-reader is the floor that makes this broker the only ceiling, and
+# after rbac-floor deliberately: agent-reader is the floor that makes this broker the only ceiling, and
 # a broker standing up before that floor exists would be a second way to write, not the only one.
 #
 # `wait: true` on purpose. A broker that is half-applied is a broker whose fence may be up while
@@ -1472,7 +1490,7 @@ metadata:
 spec:
   interval: 10m
   dependsOn:
-    - name: rbac
+    - name: rbac-floor
   sourceRef:
     kind: GitRepository
     name: flux-system

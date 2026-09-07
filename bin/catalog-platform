@@ -87,10 +87,15 @@ LAYERS = {
         "Just-in-time access",
         "The only way a write reaches the cluster: an agent asks, the founder taps yes on his phone, and a token that expires in minutes is minted for that one verb. Nothing holds standing write access, including this.",
     ),
-    "rbac": (
+    "rbac-floor": (
         "identity",
         "Who agents are",
         "The identity every agent on this estate actually uses, and it can read the cluster and write nothing; the ceiling above it is the just-in-time broker, and there is no third road.",
+    ),
+    "rbac": (
+        "identity",
+        "Break-glass bridge",
+        "The one road in that does not go through an agent at all: a machine the founder can reach when the cluster will not let anyone else in.",
     ),
     "rbac-identity": (
         "identity",
