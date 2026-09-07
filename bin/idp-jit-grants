@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Grade the JIT broker's grant catalogue: can anything in it be turned into admin? (WJ.5)
+
+WHY THIS EXISTS. The broker mints write access on a cluster where nothing else holds any, so the
+catalogue it mints from is the estate's new crown jewel. A grant that reads small and is not --
+`patch deployment`, which lets its holder swap serviceAccountName for a privileged account -- turns
+ten approved minutes into standing admin. This refuses those at the file, before a founder is ever
+shown one on his phone at 3am.
+
+  bin/idp-jit-grants [FILE ...]     default: platform/jit/grants.yaml
+
+`ok|FAIL  jit-grants  <why>`; exit 0 clean, 1 a grant that could escalate, 2 BLIND (nothing to
+read -- an unreadable catalogue is never treated as an empty one).
+"""
+
+import re
+import sys
+
+import yaml
+
+# Never, at any TTL, in any namespace, in either mode.
+FORBIDDEN_RESOURCES = {
+    # the credentials themselves
+    "secrets", "serviceaccounts",
+    # the permission system: granting over it grants everything
+    "roles", "rolebindings", "clusterroles", "clusterrolebindings",
+    # cluster-scoped state one namespace should never reach
+    "nodes", "namespaces", "customresourcedefinitions", "persistentvolumes",
+    "priorityclasses", "storageclasses", "csidrivers",
+    # the admission and policy pipeline
+    "validatingwebhookconfigurations", "mutatingwebhookconfigurations",
+    "clusterpolicies", "policies", "networkpolicies",
+    # a shell in any pod is that pod's service account
+    "pods/exec", "pods/attach", "pods/portforward", "pods/ephemeralcontainers",
+    # quotas and limits bound every other grant; moving them moves the ceiling
+    "resourcequotas", "limitranges",
+}
+FORBIDDEN_VERBS = {"*", "escalate", "bind", "impersonate", "deletecollection"}
+# Namespaces where a mistake is an outage for everything, not for one workload.
+CORE_NAMESPACES = {
+    "kube-system", "kube-public", "kube-node-lease", "flux-system", "kyverno",
+    "calico-system", "calico-apiserver", "tigera-operator", "cert-manager",
+    "external-secrets", "spire-mgmt", "spire-server", "gatekeeper-system",
+    "edge", "identity", "rbac", "jit",
+}
+# A verb that can rewrite a pod spec is an escalation path, because a pod spec names the service
+# account it runs as and the host paths it mounts. These may exist -- as an outcome the broker
+# applies, never as a token the agent holds.
+POD_SPEC_RESOURCES = {
+    "deployments", "statefulsets", "daemonsets", "replicasets", "replicationcontrollers",
+    "jobs", "cronjobs", "pods", "podtemplates",
+}
+MUTATING_VERBS = {"create", "patch", "update", "apply"}
+TTL_CEILING_S = 30 * 60
+RATE_CEILING = 10
+TTL = re.compile(r"^(\d+)([smh])$")
+SECONDS = {"s": 1, "m": 60, "h": 3600}
+
+
+def ttl_seconds(v):
+    m = TTL.match(str(v or ""))
+    return int(m.group(1)) * SECONDS[m.group(2)] if m else None
+
+
+def grade_one(g):
+    """Every reason this grant is refused, in the order a reader would find them."""
+    bad, gid = [], g.get("id") or "<a grant with no id>"
+
+    if not g.get("id"):
+        bad.append("has no id, so nothing can name it in an audit line")
+    why = (g.get("why") or "").strip()
+    if len(why) < 12:
+        bad.append("has no plain-English reason; the founder is shown this sentence and nothing else")
+
+    mode = g.get("mode")
+    if mode not in ("token", "broker-applies"):
+        bad.append(f"mode is {mode!r}, and the only modes are token and broker-applies")
+
+    verbs = {str(v).lower() for v in g.get("verbs") or []}
+    resources = {str(r).lower() for r in g.get("resources") or []}
+    namespaces = {str(n) for n in g.get("namespaces") or []}
+    groups = {str(a) for a in g.get("apiGroups", g.get("apigroups")) or []}
+
+    if not verbs:
+        bad.append("names no verbs")
+    if not resources:
+        bad.append("names no resources")
+    if not namespaces:
+        bad.append("names no namespaces, and a grant with no namespace is a cluster-wide grant")
+
+    for v in sorted(verbs & FORBIDDEN_VERBS):
+        bad.append(f"asks for the verb {v!r}, which is a way to widen itself")
+    for r in sorted(resources & FORBIDDEN_RESOURCES):
+        bad.append(f"reaches {r!r}, which no time-boxed grant may ever reach")
+    if "*" in groups:
+        bad.append("asks for every API group")
+    for n in sorted(namespaces & CORE_NAMESPACES):
+        bad.append(f"names the core namespace {n!r}, where a mistake is an estate outage")
+    if "*" in namespaces or "" in namespaces:
+        bad.append("names every namespace")
+
+    # The escalation this file exists for.
+    if mode == "token" and (verbs & MUTATING_VERBS) and (resources & POD_SPEC_RESOURCES):
+        hit = sorted(verbs & MUTATING_VERBS)[0], sorted(resources & POD_SPEC_RESOURCES)[0]
+        bad.append(
+            f"hands over a token for {hit[0]} on {hit[1]}, and a pod spec names the service account "
+            f"it runs as -- so the holder rewrites it and keeps the access after the token dies. "
+            f"This grant must be mode: broker-applies"
+        )
+
+    secs = ttl_seconds(g.get("max_ttl"))
+    if secs is None:
+        bad.append(f"has no readable max_ttl (got {g.get('max_ttl')!r})")
+    elif secs <= 0 or secs > TTL_CEILING_S:
+        bad.append(f"lives {g.get('max_ttl')}, past the {TTL_CEILING_S // 60}-minute ceiling")
+
+    rate = g.get("rate_per_hour")
+    if not isinstance(rate, int) or not 1 <= rate <= RATE_CEILING:
+        bad.append(
+            f"has rate_per_hour {rate!r}; one raise is safe and forty in an hour is a capacity "
+            f"incident, so every grant declares 1 to {RATE_CEILING}"
+        )
+
+    return gid, bad
+
+
+def grade(text):
+    try:
+        doc = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        return None, f"the catalogue does not parse: {str(e).splitlines()[0]}"
+    if not isinstance(doc, dict) or doc.get("kind") != "GrantCatalogue":
+        return None, "this is not a GrantCatalogue, and an unreadable catalogue is never an empty one"
+    grants = doc.get("grants")
+    if not isinstance(grants, list) or not grants:
+        return None, "the catalogue lists no grants; an empty catalogue is never a clean bill"
+
+    problems = []
+    for g in grants:
+        if not isinstance(g, dict):
+            problems.append(f"a grant is {type(g).__name__}, not a mapping")
+            continue
+        gid, bad = grade_one(g)
+        problems += [f"{gid}: {b}" for b in bad]
+
+    if problems:
+        return False, f"{len(problems)} escalation(s) in {len(grants)} grant(s): " + "; ".join(problems)
+    return True, f"{len(grants)} grant(s), none of which can be turned into standing access"
+
+
+def main():
+    paths = sys.argv[1:] or ["platform/jit/grants.yaml"]
+    rc = 0
+    for p in paths:
+        try:
+            text = open(p).read()
+        except OSError as e:
+            print(f"FAIL    jit-grants  BLIND, cannot read {p}: {e.strerror}")
+            return 2
+        ok, why = grade(text)
+        if ok is None:
+            print(f"FAIL    jit-grants  BLIND, {p}: {why}")
+            rc = max(rc, 2)
+        elif ok:
+            print(f"ok      jit-grants  {p}: {why}")
+        else:
+            print(f"FAIL    jit-grants  {p}: {why}")
+            rc = max(rc, 1)
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())

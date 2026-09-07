@@ -500,6 +500,12 @@ gvisor_cell_gate() { python3 "$IDP/bin/gvisor-cell-gate" "$1" >/dev/null 2>&1; }
 # step-5 admission policy + gvisor-cell-gate (a compromised untrusted-code pod must not reach the
 # public address space or another tenant's private range).
 gvisor_cell_fence_gate() { python3 "$IDP/bin/gvisor-cell-fence-gate" "$1" >/dev/null 2>&1; }
+# WJ.5 (docs/policy/agent-infra-safety-spec.md): grades ONE JIT grant catalogue with
+# bin/idp-jit-grants, which refuses a grant that can be turned into standing access -- a token for
+# a verb that rewrites a pod spec, a reach into secrets or RBAC, a core namespace, a wildcard, a
+# TTL past the ceiling, or no rate limit. Takes one fixture path so the rung proves it both ways in
+# one run: the broker mints only from this file, so a hole here is admin at 3am.
+jit_grants_gate() { python3 "$IDP/bin/idp-jit-grants" "$1" >/dev/null 2>&1; }
 defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
 # 6a. main's verdict, against the live workflows rather than the fixtures (crew#865). On 2026-09-05
 #     nine of twelve ci runs on main were cancelled by the commit after them, so the one branch the
@@ -528,6 +534,20 @@ if ! tenant_split_gate "$IDP/tests/fixtures/tenant-split/bad.yaml" \
   say "ok    twohats  idp-tenant-split refuses one secret under two tenants; the clean split passes"
 else
   say "FAIL  twohats  idp-tenant-split cannot tell one-secret-one-tenant from a leak (decision 0021)"; fail=1
+fi
+
+# 6d. WJ.5: the JIT broker mints only from platform/jit/grants.yaml, so that file is the estate's
+#     crown jewel and is graded both ways in one run. The bad fixture is three real escalations --
+#     a token for `patch deployment` (whose holder rewrites serviceAccountName and keeps the access
+#     after the token dies), a reach into secrets, and a wildcard verb on kube-system for eight
+#     hours -- and every one must be refused. Then the live catalogue itself, where a real hole
+#     fails this.
+if ! jit_grants_gate "$IDP/tests/fixtures/jit-grants/bad.yaml" \
+   && jit_grants_gate "$IDP/tests/fixtures/jit-grants/good.yaml" \
+   && jit_grants_gate "$IDP/platform/jit/grants.yaml"; then
+  say "ok    jitgrant idp-jit-grants refuses the escalating catalogue; the live one cannot become standing access"
+else
+  say "FAIL  jitgrant idp-jit-grants cannot tell a time-boxed grant from a route to admin (WJ.5)"; fail=1
 fi
 
 # 6c. zero-trust-boundary.md step 1 (work order item 1): a denied packet is dropped, and a probe

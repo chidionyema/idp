@@ -1,0 +1,71 @@
+# The closed set of things the JIT broker may ever mint. WJ.5.
+#
+# WHY A CATALOGUE AND NOT A REQUEST BODY. The broker can mint write access on a cluster where
+# nothing else holds any, so an agent that can describe its own permission has admin the moment it
+# is creative. Here it cannot describe one: it names a grant from this file and fills the
+# parameters that grant declares. Anything not in this file cannot be asked for, so it cannot be
+# approved by a tired founder at 3am either -- the phone only ever shows a row that already passed
+# bin/idp-jit-grants.
+#
+# WHY TWO MODES. Kubernetes RBAC has no field-level scope, so `patch deployment` is not the small
+# permission it reads as: it lets the holder change serviceAccountName to a privileged account, or
+# add a hostPath mount, and escalate out of the grant entirely. So for every verb that can rewrite
+# a pod spec the agent gets no token at all -- it gets an outcome. `mode: broker-applies` means the
+# broker performs exactly the parameterised change the founder saw on his phone and hands back the
+# result. The agent never holds the verb. bin/idp-jit-grants refuses any escalating grant that asks
+# for `mode: token`, so this is a property of the file, not a habit.
+#
+# WHY THE TTLs ARE SHORT. The revoke is the token expiring, not a cleanup job running (WJ.4). A
+# short life is the whole guarantee, and 30 minutes is the ceiling this file may declare.
+#
+# Changing this file is glass-break, permanently (WJ.8): CODEOWNERS names the founder on
+# /platform/, and no merge bot may land a change here.
+
+apiVersion: idp.mumchimp.com/v1
+kind: GrantCatalogue
+grants:
+  # The founder's own worked example: the 3am OOMKill.
+  - id: raise-memory-limit
+    why: A workload is being killed for memory and needs a higher ceiling to stay up
+    mode: broker-applies
+    verbs: [patch]
+    apiGroups: [apps]
+    resources: [deployments, statefulsets]
+    namespaces: [backstage, catalogue, commerce, hermes-agent, llm, notify, observability, otto-gateway, prospector, research-engine]
+    max_ttl: 10m
+    rate_per_hour: 3
+    parameters:
+      workload: {type: name, required: true}
+      namespace: {type: namespace, required: true}
+      memory: {type: quantity, required: true, max: 2Gi}
+
+  # Restarting a crash-looping workload. Deleting a Pod is a restart; the Deployment recreates it.
+  # It cannot rewrite a pod spec, so a token is safe here and the agent gets one.
+  - id: restart-workload
+    why: A workload is crash-looping or wedged and a restart is the whole fix
+    mode: token
+    verbs: [delete]
+    apiGroups: [""]
+    resources: [pods]
+    namespaces: [backstage, catalogue, commerce, hermes-agent, llm, notify, observability, otto-gateway, prospector, research-engine]
+    max_ttl: 5m
+    rate_per_hour: 4
+    parameters:
+      pod: {type: name, required: true}
+      namespace: {type: namespace, required: true}
+
+  # Rolling one workload back to an image tag it already ran. Rewrites a pod spec field, so the
+  # broker applies it rather than handing over patch.
+  - id: rollback-image
+    why: A new image is failing in production and the previous one is known good
+    mode: broker-applies
+    verbs: [patch]
+    apiGroups: [apps]
+    resources: [deployments]
+    namespaces: [backstage, catalogue, commerce, hermes-agent, llm, notify, observability, otto-gateway, prospector, research-engine]
+    max_ttl: 10m
+    rate_per_hour: 2
+    parameters:
+      workload: {type: name, required: true}
+      namespace: {type: namespace, required: true}
+      tag: {type: image_tag, required: true, must_be_previously_deployed: true}
