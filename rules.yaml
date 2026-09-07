@@ -792,9 +792,10 @@ rules:
         args: [tests/fixtures/pipefail-verdict.bad.sh]
       - expect: pass
         args: [tests/fixtures/pipefail-verdict.good.sh]
-      # The scope this rule was moved out of read bin/* and nothing else. This case is the one that
-      # would have gone red on the 632 tracked shell files outside it, and it is why the widening
-      # was safe to make: measured at zero hits before the move, not after.
+      # The scope this rule was moved out of read bin/* and nothing else. This case reads all 231
+      # tracked shell files, 8 of them outside bin/, and it is why the widening was safe to make:
+      # measured at zero hits over those 8 before the move, not after. (The number in this comment
+      # was 632 until idp-1a counted it on #2390; nobody had taken it.)
       - expect: pass
         live: true
     ok: "no shell file lets a pipeline exit status stand in for a grep match (LAW 55)"
