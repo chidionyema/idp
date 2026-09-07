@@ -19,7 +19,27 @@ spec:
   # Reloader, and a mint's only job is to stay inside the token's 60-minute life.
   refreshInterval: 45m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
-  target: { name: backstage-github, creationPolicy: Owner }
+  target:
+    name: backstage-github
+    creationPolicy: Owner
+    template:
+      # Founder, 2026-09-07: "our portl cant afford to ever go downn", and on the churn this
+      # file caused: "backstage never had this problem until ... token revoked after 45 mins
+      # and we came up with this shit show". He is right, and the dates say so. #1032
+      # (2026-08-31) made every workload restart when its config changes; #1991 (2026-09-06)
+      # gave the portal a token that is replaced every 45 minutes. Apart, both are correct.
+      # Together they restarted the portal 32 times a day, at half capacity for up to three
+      # minutes each time, because a two-node pool with hard anti-affinity cannot surge
+      # (crew#307).
+      #
+      # The mint is not the problem; the restart is. Reloader reads this annotation and leaves
+      # this one Secret alone, so a rotated token no longer rolls the Deployment. Every other
+      # Secret and ConfigMap the portal mounts still rolls it, which is what #1032 was for.
+      # The kubelet still refreshes the mounted file in place, so the token on disk stays
+      # current between deploys.
+      metadata:
+        annotations:
+          reloader.stakater.com/ignore: "true"
   dataFrom:
     - sourceRef:
         generatorRef:
