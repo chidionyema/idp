@@ -32,16 +32,23 @@ spec:
         TELEGRAM_BOT_TOKEN: "{{ .token }}"
         TELEGRAM_CHAT_ID: "{{ .channel }}"
         JIT_SIGNING_KEY: "{{ .JIT_SIGNING_KEY }}"
+        # flux-telegram's, deliberately, and not the broker's own entry: Telegram signs each
+        # delivery with the secret the webhook was *registered* with, and the thing that
+        # registered it is platform/otto-gateway/registration-reconciler.yaml using exactly
+        # this value (its OTTO_ALERTS_WEBHOOK_SECRET is `flux-telegram`, property
+        # `webhook_secret`). A broker checking any other value refuses every real tap.
+        TELEGRAM_WEBHOOK_SECRET: "{{ .webhook_secret }}"
   # Two values, both minted in the vault and none typed here (LAW 46, R52):
   #   JIT_SIGNING_KEY          -- the HMAC key the approvals are signed with. An identity that
   #                               can read this can forge a tap, so it is the crown jewel of
   #                               the crown jewel and no agent ServiceAccount reaches namespace
   #                               jit at all.
-  #   TELEGRAM_BOT_TOKEN       -- the bot that sends the ask, and the connection the broker
-  #                               opens outward to collect his answer. There is no webhook and
-  #                               so no webhook secret: nothing inbound reaches this namespace,
-  #                               and the broker pulls his taps from Telegram over TLS it
-  #                               opened itself (broker/telegram.py, poll_forever).
+  #   TELEGRAM_BOT_TOKEN       -- the bot that sends the ask.
+  #   TELEGRAM_WEBHOOK_SECRET  -- the token Telegram signs each delivery of his tap with. It
+  #                               is flux-telegram's and not the broker's own, because the
+  #                               broker registers no webhook: it is handed a mirrored copy of
+  #                               the one otto-gateway registered
+  #                               (platform/otto-gateway/telegram-mirror.yaml).
   dataFrom:
     - extract: {key: flux-telegram}
     - extract: {key: jit-broker}

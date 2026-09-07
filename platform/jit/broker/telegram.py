@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import os
-import time
+import urllib.error
 import urllib.request
 
 from .broker import Broker, Refused, Request
@@ -30,8 +30,22 @@ def _call(token: str, method: str, payload: dict, timeout: int = 20) -> dict:
         data=body,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=timeout) as fh:  # noqa: S310 -- API is an https literal
-        return json.load(fh)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as fh:  # noqa: S310 -- API is an https literal
+            return json.load(fh)
+    except urllib.error.HTTPError as exc:
+        # urlopen raises before anything reads the body, and the body is the only place
+        # Telegram says what it refused. `HTTP Error 409: Conflict` is equally true of a
+        # webhook that is already registered and of a second reader on the same bot, and
+        # those want opposite repairs -- on 2026-09-07 the broker printed that bare line
+        # every five seconds for hours and named neither. The token travels in the URL and
+        # never in the body, so the body is safe to carry into a log line (LAW 21).
+        said = exc.read().decode("utf-8", "replace")[:500]
+        try:
+            said = json.loads(said).get("description") or said
+        except ValueError:
+            pass
+        raise RuntimeError(f"telegram {method}: {exc.code} {said}") from None
 
 
 def ask_text(req: Request, grant: dict) -> str:
@@ -133,73 +147,6 @@ class Phone:
                 req.state = "denied"
         self.broker.ledger.append("stopped", reason=reason)
         return "stopped"
-
-
-def poll_forever(phone: Phone) -> None:
-    """How his tap actually reaches the broker: the broker pulls it, nothing pushes.
-
-    Telegram delivers either way -- a webhook it POSTs to, or getUpdates the bot calls. The
-    webhook road wants a public hostname, a listener, a certificate and a DNS record in front
-    of the one workload in this estate that can mint write access, and the estate's single
-    Gateway lives in the prospector repository, so it is also a second pull request in a second
-    repository before one tap can arrive. This road wants none of that: nothing inbound reaches
-    namespace jit at all, which is the shape platform/jit/fence.yaml already wants (LAW 23, the
-    smaller road; LAW 21, secure by default).
-
-    It is also the stronger provenance, not a weaker one. A webhook proves "Telegram sent this"
-    with a shared header that a leak spends; here the broker opens the TLS connection to
-    api.telegram.org itself, so there is nothing for anyone else to send. The check that carries
-    the security is unchanged either way: every callback_data holds the HMAC the broker minted
-    and `Broker.decide_callback` verifies it, and `_from_founder` refuses any chat but his.
-
-    One replica is what makes this correct rather than merely convenient: getUpdates hands each
-    update to exactly one reader, and platform/jit/deployment.yaml holds the broker at one for
-    the separate reason that pending requests live in memory.
-    """
-    # A webhook left registered by an earlier run turns every getUpdates into a 409 and this
-    # loop into a silent no-op -- the failure where he taps, nothing happens, and nothing says
-    # so. Clearing it first makes exactly one delivery road live.
-    try:
-        _call(phone.token, "deleteWebhook", {"drop_pending_updates": False})
-    except Exception as exc:  # noqa: BLE001
-        print(f"jit telegram: deleteWebhook failed: {exc}", flush=True)
-    offset = 0
-    while True:
-        try:
-            # A 50-second long poll, so an idle broker costs about one request a minute rather
-            # than a busy loop, and a tap is picked up the moment it is made.
-            got = _call(
-                phone.token,
-                "getUpdates",
-                {
-                    "offset": offset,
-                    "timeout": 50,
-                    "allowed_updates": ["callback_query"],
-                },
-                timeout=70,
-            )
-        except Exception as exc:  # noqa: BLE001
-            # Never fatal. A broker that exits on a network blip is a broker that stops asking,
-            # and WJ.3 already reads a silence as a no -- so the safe direction is to keep
-            # trying rather than to die quietly.
-            print(f"jit telegram: getUpdates failed: {exc}", flush=True)
-            time.sleep(5)
-            continue
-        if not got.get("ok"):
-            print(
-                f"jit telegram: getUpdates refused: {got.get('description')}",
-                flush=True,
-            )
-            time.sleep(5)
-            continue
-        for update in got.get("result") or []:
-            # Advance the offset before handling: an update that makes the handler throw must
-            # not be re-delivered forever, and the ledger already holds what happened to it.
-            offset = max(offset, int(update.get("update_id", 0)) + 1)
-            try:
-                print(f"jit telegram: {phone.handle(update)}", flush=True)
-            except Exception as exc:  # noqa: BLE001
-                print(f"jit telegram: update {offset - 1} failed: {exc}", flush=True)
 
 
 # WJ.11 -----------------------------------------------------------------------
