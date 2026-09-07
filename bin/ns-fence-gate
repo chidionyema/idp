@@ -221,6 +221,19 @@ POLICY_ENFORCING_CNI = ("cilium", "calico", "canal", "antrea", "kube-router", "w
 # the one that decides whether policy applies to it, so the answer differs pod by pod.
 NON_ENFORCING_CNI = ("flannel",)
 
+# How to ask a running pod which plugin set it up. A CNI writes its own annotation onto the pod
+# when it wires the sandbox, and that annotation is the only per-pod evidence of who owns the
+# datapath -- a DaemonSet's readiness says a plugin is installed, never which pods it took.
+#
+# Measured 2026-09-07 on `estate`: 69 pods carried cni.projectcalico.org/podIP and 106 did not,
+# split on a clean line at 2026-09-06T20:02Z with no interleaving. Both plugins' DaemonSets were
+# ready 2/2 the whole time, so no DaemonSet reading could have told those two groups apart.
+#
+# Only entries proved against a live cluster belong here. An enforcing CNI that is not in this map
+# cannot be graded per pod, and that is a FAIL rather than a pass: an ungradeable coverage claim
+# is the thing this gate exists to refuse.
+CNI_POD_ANNOTATION = {"calico": "cni.projectcalico.org/podIP"}
+
 
 def enforcing_cni() -> tuple[str | None, list[str]]:
     """What in kube-system actually enforces NetworkPolicy, and what disqualifies the answer.
@@ -265,16 +278,58 @@ def enforcing_cni() -> tuple[str | None, list[str]]:
                     f"{n} is the policy-enforcing CNI but is ready on {have} of {want} node(s), "
                     "so the pods on the rest are not covered by any policy")
             found = found or n
-    for d in sets:
-        n = d["metadata"]["name"]
-        if any(c in n for c in NON_ENFORCING_CNI):
-            ok, have, _ = ready(d)
-            if have and found:
-                problems.append(
-                    f"{n} is ready on {have} node(s) alongside {found}: two CNIs are running, so "
-                    "whether a policy applies to a pod depends on which plugin networked it. "
-                    "This is the overlap Oracle refuses, not a fenced cluster")
+    others = [d["metadata"]["name"] for d in sets
+              if any(c in d["metadata"]["name"] for c in NON_ENFORCING_CNI) and ready(d)[1]]
+    if found:
+        problems += uncovered_pods(found, others)
     return found, problems
+
+
+def uncovered_pods(cni: str, others: list[str]) -> list[str]:
+    """Pods the enforcing CNI did not wire, which are the pods its policy does not reach.
+
+    A first version of this check failed the whole cluster whenever a non-enforcing DaemonSet was
+    ready. That is unmeasurable on a managed cluster and would have made the gate permanently red
+    here: OKE ships flannel as a managed add-on, add-on removal is refused on a basic cluster
+    (`400 InvalidParameter: Addon management is only supported on enhanced type clusters`,
+    2026-09-07), so kube-flannel-ds runs whatever the datapath is actually doing. A gate that can
+    never go green grades nothing, which is the same defect it was written to catch.
+
+    What decides the datapath is not which plugins are installed but which one wrote each pod's
+    config, and the node resolves that by sorting /etc/cni/net.d -- 10-calico.conflist before
+    10-flannel.conflist. So the honest question is per pod, and the pod answers it directly.
+
+    hostNetwork pods are skipped: they share the node's stack, are never wired by a CNI and are
+    outside every NetworkPolicy by construction, so counting them would inflate the gap forever.
+    """
+    key = next((a for c, a in CNI_POD_ANNOTATION.items() if c in cni), None)
+    if key is None:
+        return [f"{cni} enforces NetworkPolicy but this gate has no measured pod annotation for "
+                f"it, so which pods it actually wired cannot be counted. Add a proved entry to "
+                f"CNI_POD_ANNOTATION; an ungraded coverage claim is not a pass"]
+    raw = subprocess.run(
+        ["kubectl", "get", "pods", "--all-namespaces", "-o", "json"],
+        capture_output=True, text=True, timeout=120, check=True).stdout
+    stranded: dict[str, int] = {}
+    covered = 0
+    for pod in json.loads(raw)["items"]:
+        if pod["spec"].get("hostNetwork") or pod.get("status", {}).get("phase") != "Running":
+            continue
+        meta = pod["metadata"]
+        if key in (meta.get("annotations") or {}):
+            covered += 1
+        else:
+            stranded[meta["namespace"]] = stranded.get(meta["namespace"], 0) + 1
+    if not stranded:
+        return []
+    total = sum(stranded.values())
+    worst = sorted(stranded.items(), key=lambda kv: -kv[1])[:5]
+    where = ", ".join(f"{ns} ({n})" for ns, n in worst)
+    beside = f" beside {', '.join(others)}" if others else ""
+    return [f"{total} running pod(s) carry no {key} annotation, so {cni} did not wire them and its "
+            f"policy does not reach them{beside}; {covered} pod(s) are covered. Worst: {where}. "
+            "Restarting a pod moves it onto the enforcing CNI; until every one has moved, whether "
+            "a fence applies depends on when the pod happened to start"]
 
 
 def live_docs() -> list[dict]:
