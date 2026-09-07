@@ -1325,9 +1325,20 @@ const Ready = ({ estate }: { estate: Estate }) => {
   );
 };
 
-export const EstateHome = () => {
-  const config = useApi(configApiRef);
-  const brand = config.getOptionalString('app.title') ?? 'Estate';
+/**
+ * The estate overview: what needs your hand, and every system's state.
+ *
+ * Founder, 2026-09-07, on a fortnight of work he could not find: "why not seeing this work",
+ * "and ncant see it". This was the reason. All of it -- the dominant state mark, the needs-your-
+ * hand band, the role headers, the health-check timestamps, the owner and held-since rows --
+ * rendered only inside EstateHome, and EstateHome was mounted at /estate, a route homeModule.tsx
+ * deliberately keeps "off the front page and off the menu". Nothing linked to it. The front page
+ * meanwhile promised "What needs you, and every door into the estate" and drew neither.
+ *
+ * So the body is its own component now, with no page chrome of its own, and the front page draws
+ * it. /estate still exists and still renders exactly this, wrapped in its own page.
+ */
+export const EstateOverview = () => {
   const { loaded, retry } = useEstate();
   // The nav links at /#screens and /#kubernetes changed the URL and moved nothing: no
   // scrollIntoView existed anywhere on this page. Focus moves too, so the section is announced
@@ -1354,6 +1365,21 @@ export const EstateHome = () => {
     };
   }, []);
   return (
+    <>
+      {loaded.state === 'loading' && <Loading />}
+      {loaded.state === 'error' && (
+        <CatalogueUnavailable error={loaded.error} retry={retry} />
+      )}
+      {loaded.state === 'ready' && <Ready estate={loaded} />}
+    </>
+  );
+};
+
+/** /estate: the same overview, on a page of its own. */
+export const EstateHome = () => {
+  const config = useApi(configApiRef);
+  const brand = config.getOptionalString('app.title') ?? 'Estate';
+  return (
     <EstatePage
       title={brand}
       lead={PAGE.tagline}
@@ -1367,11 +1393,7 @@ export const EstateHome = () => {
         </Text>
       }
     >
-      {loaded.state === 'loading' && <Loading />}
-      {loaded.state === 'error' && (
-        <CatalogueUnavailable error={loaded.error} retry={retry} />
-      )}
-      {loaded.state === 'ready' && <Ready estate={loaded} />}
+      <EstateOverview />
     </EstatePage>
   );
 };

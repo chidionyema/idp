@@ -15,6 +15,7 @@ import { RiAddCircleLine, RiSearchLine } from '@remixicon/react';
 import { EstatePage } from '../shell';
 import { DoorGrid } from './DoorGrid';
 import { Everyday } from './Everyday';
+import { EstateOverview } from './EstateHome';
 
 export function pickWidget(
   widgets: HomePageLayoutProps['widgets'],
@@ -82,6 +83,12 @@ export function EstateHomeLayout({ widgets }: HomePageLayoutProps) {
       {/* Founder 2026-09-07: the tools he opens most days come before the portal's own
           pages, so reaching the estate Mac is never a search. everyday.ts picks them. */}
       <Everyday />
+      {/* Founder 2026-09-07: "why not seeing this work", "and ncant see it". The overview --
+          what needs your hand, every system's state, who owns it and when it was last checked --
+          rendered only at /estate, a route homeModule.tsx keeps off the menu, so nothing ever
+          linked to it. The lead above this line has promised "What needs you" all along; now the
+          page keeps the promise. /estate still renders the same component. */}
+      <EstateOverview />
       <DoorGrid />
       {visits.length > 0 && (
         <Grid.Root
