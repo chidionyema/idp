@@ -1,0 +1,17 @@
+# crew#892 CP4: the namespace the gvisor-runsc installer DaemonSet lives in. Declared here, not
+# under a workload directory, because (a) there is no workload -- this is one node-side
+# installer -- and (b) a kustomization namespace: transformer would rename it, which would break
+# the Kyverno exception's match.namespaces below. The PSA label is baseline: the DaemonSet in
+# daemonset.yaml needs privileged + hostPath + host network + host PID, and the Kyverno
+# exception (platform/edge/gvisor-runsc-exception.yaml) is the only thing that lets it land.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: gvisor-runsc
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
+    app.kubernetes.io/part-of: idp

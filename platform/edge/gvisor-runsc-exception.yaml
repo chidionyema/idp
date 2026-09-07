@@ -1,0 +1,109 @@
+# crew#892 CP4 (ZT step 5): the time-bounded lockdown waiver for the gvisor-runsc installer.
+#
+# Time-bounded on purpose (this is the founder's lockdown 2026-09-03 spirit, not an exemption):
+# the estate's bundled Kyverno CRD schema (tests/fixtures/kubeconform/crd-schemas/kyverno.io/
+# policyexception_v2.json) is frozen at a Kyverno v1.13 schema that does NOT declare Kyverno's
+# upstream `expirationTime` field, and the estate's pattern is Flux-driven reconciliation rather
+# than in-cluster jobs. So the lock that keeps "temporary" honest is git + Flux itself: this
+# file exists only as long as a commit keeps it; a `STAGED:` PR removes it (or edits the body
+# to an empty match block, which has the same lockdown-re-binding effect). The renewal contract
+# documented in the `crew#892-cp4-renew-by` annotation below names the deadline after which
+# this exception must either be renewed on quoted proof OR removed by an explicit PR.
+#
+# Why explicit `ruleNames` instead of `["*"]`: an empirical run on the must-fail signoz fixture
+# (tests/fixtures/kyverno/must-fail, intentionally unpatched so every PSS restricted + best-
+# practice rule refuses) showed that `ruleNames: ["*"]` against a single narrow `match` block in
+# a multi-policy context exempts **all** failing rules on the matched resource. The minimal
+# isolated test (one policy, one Pod) scoped correctly; the full estate build (53 policies, 90+
+# rules) leaked the wildcard across every PSS restricted rule. Pinning each rule name explicitly
+# (and its autogen sibling where Kyverno autogenerates one) keeps the exemption to the single
+# installer DaemonSet's pod template and nothing else.
+#
+# Why `kinds: ["DaemonSet", "Pod"]`: the offline judge (bin/idp-kyverno-render) evaluates the
+# DaemonSet kind via its OWN rules (matched by `DaemonSet`) and the pod template Kyverno would
+# synthesise from it via autogen rules (matched by `Pod`). Both kinds must appear in the match
+# block, or one half of every autogen rule fires. The names list pairs the DaemonSet name with
+# the pod template name bin/lib/kyverno_pods.py generates offline (`gvisor-runsc-installer-pod`),
+# so the exemption is tight to this one installer.
+#
+# Why `match.any` (not `match.resources`): the estate's bundled Kyverno CLI is v1.13, whose
+# PolicyException schema only recognises `match.any: [{resources: ...}]`. The newer
+# `match.resources: ...` form is valid in Kyverno v1.14+ but the CLI aborts the entire exception
+# load on a single unknown field, and `kyverno apply` silently admits every resource when the
+# exception load fails -- which is the must-fail fixture flip that this PR fixed. The `match.any`
+# form is the schema-supported one on this estate.
+#
+# `match` is tight on purpose: `namespaces: ["gvisor-runsc"]` only, names limited to the
+# DaemonSet and its offline-synthesised pod template. Adding a second installer DaemonSet in this
+# namespace in the future would need either a second exception or a name pattern -- which is the
+# friction the lockdown spirit wants.
+#
+# The renewal PR's obligation: it must quote the operator's `uname -r` log line proving the
+# install works on Oracle Linux 8.10 arm64 + cri-o (the spec's own unproven risk) -- e.g.
+# `kubectl exec -n otto-gvisor-sandbox drill-pod -- uname -r` returning `...-gvisor` -- and
+# extend the `crew#892-cp4-renew-by` annotation below by the renewal period. Without that
+# quoted proof the renewal is not a `STAGED:` PR; it is an unrequested exception extension.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: gvisor-runsc-installer-is-host-software
+  namespace: kyverno
+  annotations:
+    policies.kyverno.io/title: gVisor runsc installer is host-side software (crew#892 CP4)
+    policies.kyverno.io/category: crew#892 CP4 (ZT step 5)
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      A time-bounded waiver for the gvisor-runsc installer DaemonSet (see platform/gvisor-runsc/
+      daemonset.yaml). The file exists in git only as long as a renewal PR keeps it; after the
+      `crew#892-cp4-renew-by` deadline below, a follow-up `STAGED:` PR removes it and the
+      lockdown re-binds. See file header for the renewal contract and the rule-name pin.
+    # The renewal-deadline annotation is the lock: the file's existence past this date WITHOUT
+    # a renewal PR that quotes operator proof is itself a lockdown violation. Update this
+    # annotation in the renewal PR (with the operator's quoted `uname -r` proof in the PR body).
+    # Kubernetes annotation names are RFC 1123 (DNS label/subset: alphanum, '-', '_', '.'), so the
+    # ticket hash is encoded in base32 (no '#') and the deadline lives in the value, not the name.
+    crew-892-cp4-renew-by: "2026-09-15T00:00:00Z"
+spec:
+  exceptions:
+    # PSS baseline (pod-security/baseline bundle, pulled in by pod-security/restricted's
+    # ../baseline reference, Kyverno policies @ ef9843f08d25b3555fe69616f8612c9f915af5d4)
+    - policyName: disallow-host-namespaces
+      ruleNames: ["host-namespaces", "autogen-host-namespaces"]
+    - policyName: disallow-host-path
+      ruleNames: ["host-path", "autogen-host-path"]
+    - policyName: disallow-privileged-containers
+      ruleNames: ["privileged-containers", "autogen-privileged-containers"]
+    # PSS restricted (pod-security/restricted bundle, Kyverno policies @ ef9843f08d25b3555fe69616f8612c9f915af5d4)
+    - policyName: disallow-capabilities-strict
+      ruleNames: ["require-drop-all", "adding-capabilities-strict", "autogen-require-drop-all", "autogen-adding-capabilities-strict"]
+    - policyName: disallow-privilege-escalation
+      ruleNames: ["privilege-escalation", "autogen-privilege-escalation"]
+    - policyName: require-run-as-non-root-user
+      ruleNames: ["run-as-non-root-user", "autogen-run-as-non-root-user"]
+    - policyName: require-run-as-nonroot
+      ruleNames: ["run-as-non-root", "autogen-run-as-non-root"]
+    - policyName: restrict-seccomp-strict
+      ruleNames: ["check-seccomp-strict", "autogen-check-seccomp-strict"]
+    - policyName: restrict-volume-types
+      ruleNames: ["restricted-volumes", "autogen-restricted-volumes"]
+    # Best practices (same upstream SHA)
+    - policyName: disallow-latest-tag
+      ruleNames: ["require-image-tag", "validate-image-tag", "autogen-require-image-tag", "autogen-validate-image-tag"]
+    - policyName: require-requests-limits
+      ruleNames: ["validate-resources", "autogen-validate-resources"]
+    - policyName: require-pod-probes
+      ruleNames: ["validate-probes", "autogen-validate-probes"]
+    - policyName: drop-all-capabilities
+      ruleNames: ["require-drop-all", "autogen-require-drop-all"]
+    - policyName: require-ro-rootfs
+      ruleNames: ["validate-readOnlyRootFilesystem", "autogen-validate-readOnlyRootFilesystem"]
+    - policyName: disallow-default-namespace
+      ruleNames: ["validate-namespace", "validate-podcontroller-namespace", "autogen-validate-namespace", "autogen-validate-podcontroller-namespace"]
+    - policyName: secrets-not-from-env-vars
+      ruleNames: ["secrets-not-from-env-vars", "secrets-not-from-envfrom", "autogen-secrets-not-from-env-vars", "autogen-secrets-not-from-envfrom"]
+  match:
+    any:
+      - resources:
+          kinds: ["DaemonSet", "Pod"]
+          namespaces: ["gvisor-runsc"]
+          names: ["gvisor-runsc-installer", "gvisor-runsc-installer-pod"]

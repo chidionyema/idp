@@ -60,3 +60,10 @@ resources:
   - gvisor-runtimeclass.yaml
   - otto-gvisor-sandbox-namespace.yaml
   - gvisor-admission.yaml
+  # crew#892 CP4 (ZT step 5): a narrow, time-bounded Kyverno waiver for the gvisor-runsc
+  # installer DaemonSet (platform/gvisor-runsc/daemonset.yaml). It expires on
+  # 2026-09-15T00:00:00Z unless a `STAGED:` PR renews it. Renewed only on proof the install
+  # works: the operator's quoted `uname -r` log line from a Pod in otto-gvisor-sandbox that
+  # shows a gvisor kernel. Until the proof the exception expires, the lockdown re-binds the
+  # gvisor-runsc namespace, and the DaemonSet cannot be recreated without a fresh waiver.
+  - gvisor-runsc-exception.yaml

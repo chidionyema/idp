@@ -1,0 +1,12 @@
+# crew#892 CP4 (ZT step 5): the gvisor-runsc installer DaemonSet + its namespace. One namespace
+# (`gvisor-runsc`) + one DaemonSet. The DaemonSet's own Pod template installs /usr/local/bin/runsc
+# on the node and writes /etc/crio/crio.conf.d/99-gvisor.conf so cri-o advertises the runsc
+# handler to the kubelet. The narrow time-bounded Kyverno waiver (platform/edge/
+# gvisor-runsc-exception.yaml) is what lets it land at admission; the lockdown re-binds on
+# 2026-09-15T00:00:00Z unless explicitly renewed.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: gvisor-runsc
+resources:
+  - namespace.yaml
+  - daemonset.yaml

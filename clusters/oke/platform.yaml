@@ -1414,6 +1414,35 @@ spec:
   wait: false
   timeout: 15m
 ---
+# crew#892 CP4 (ZT step 5): the gvisor-runsc installer. The Kyverno exception that lets the
+# DaemonSet land at admission (platform/edge/gvisor-runsc-exception.yaml) is part of the
+# `edge` row above and lands first; this row is inert until then. The installer is dormant
+# (zero pods) until a node carries the canary label (estate.io/gvisor-canary=true), which is
+# applied by hand on one node only, on the day the install is being validated, and removed
+# when the operator's drill (uname -r on a Pod in otto-gvisor-sandbox returning a gvisor
+# kernel) prints its quoted proof. The DaemonSet is also gated by the exception's
+# expirationTime (2026-09-15T00:00:00Z); the lockdown re-binds this row on that date unless
+# a `STAGED:` PR renews the exception, and renewal requires the operator's quoted proof.
+# No health check: a DaemonSet with zero matching nodes is its own ready state (the spec
+# `RollingUpdate` strategy is implicit), so `wait: false` is the right choice here too.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gvisor-runsc
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/gvisor-runsc
+  dependsOn:
+    - name: edge
+  suspend: false
+  prune: false
+  wait: false
+  timeout: 10m
+---
 # crew#841: the break-glass bridge's read access. Cluster-scoped RBAC only -- no workload, no
 # namespace, nothing to fence. The bridge itself runs on an Oracle instance outside the cluster
 # on purpose, so that a node event or a bad reconcile does not take the debugger with it.

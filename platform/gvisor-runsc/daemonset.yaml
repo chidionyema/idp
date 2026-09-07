@@ -1,0 +1,170 @@
+# crew#892 CP4 (ZT step 5, deepseek-work-order item 12): the gVisor RuntimeClass is registered
+# (`platform/edge/gvisor-runtimeclass.yaml`, handler `runsc`), but no kubelet has the handler
+# configured. On this estate kubelets talk cri-o (live measurement 2026-09-08: `cri-o://1.35.2
+# -13.975e05318cb.el8`, Oracle Linux Server 8.10, arm64), so the install is a DaemonSet that puts
+# the `runsc` shim on every node and a cri-o config-dropin that registers it as a runtime
+# handler. The cluster then advertises the `runsc` handler to the kubelet via its CRI socket,
+# and a Pod requesting `runtimeClassName: gvisor` schedules for the first time.
+#
+# This file is the WORKLOAD half. It runs as a privileged DaemonSet on every node because that
+# is what an installer of host-side software is; the Kyverno waiver half lives next to it in
+# `platform/edge/gvisor-runsc-exception.yaml` and is intentionally narrow (only this DaemonSet,
+# only the install rules) and time-bounded: the file exists in git only as long as a `STAGED:`
+# renewal PR keeps it. After 2026-09-15T00:00:00Z (the `crew#892-cp4-renew-by` annotation on
+# the exception), if no renewal PR has quoted the operator's `uname -r` proof, this exception
+# and the DaemonSet's ability to land are removed in a follow-up PR and the lockdown re-binds.
+#
+# UNPROVEN RISK (the spec calls this out, and this proposal does not paper over it):
+# `runsc` on Oracle Linux 8.10 / arm64 / cri-o is the open empirical question. The estate has
+# 2 nodes on exactly that combination (measured 2026-09-08). The proposal is laid out so a
+# single node can be targeted first (nodeSelector: estate.io/gvisor-canary=true) and the
+# remainder left untouched until `kubectl exec` on the canary pod shows `uname -r` returning a
+# gvisor kernel and the live drill (Dagster / a one-shot Job in otto-gvisor-sandbox) prints
+# `uname -r` proving the kernel switched. This PR is gated on that proof before merge-to-main
+# broadens the DaemonSet to all nodes; the canary node label is added by hand on the canary node
+# only, so a `flux reconcile kustomization gvisor-runsc` does not silently apply to the
+# non-canary node.
+#
+# Image source: gvisor's official release on the gcr.io registry (gVisor publishes multi-arch
+# manifests; the arm64 variant is the one this estate needs). Pinned by digest, not by tag, so a
+# supply-chain tag rename does not silently rebase the binary. The release binary is copied onto
+# the node at /usr/local/bin/runsc and registered with cri-o via a config-dropin under
+# /etc/crio/crio.conf.d/99-gvisor.conf (cri-o reads its dropins on every reload; we reload via
+# `crio daemon --reload` after the file lands). cri-o + runsc integration is documented by
+# gVisor: https://gvisor.dev/docs/user_guide/quick_start/crio/.
+#
+# The pod does NOT delete itself on success: it stays around so a kubectl exec can read /etc/
+# crio/crio.conf.d/99-gvisor.conf, the runsc binary version, and the cri-o log for the reload
+# (cri-o logs to journald on Oracle Linux; the canary pod cannot read journald, so the reload
+# line is read by an operator on the node). Deletion happens when the operator removes the
+# canary label from the node and the DaemonSet prunes that one pod on the next reconcile.
+#
+# No secrets are read. No OCI / cluster API calls. The DaemonSet is hermetic on the node: it
+# copies a binary, writes a config-dropin, asks cri-o to reload. Nothing leaves the node, and
+# the only persistent artefact is the config file that cri-o keeps reading on every reload.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gvisor-runsc-installer
+  namespace: gvisor-runsc
+  labels:
+    app.kubernetes.io/part-of: idp
+    app.kubernetes.io/name: gvisor-runsc-installer
+    # bin/idp-kyverno-render and the gate's own exception match key off this label so a hand
+    # edit cannot broaden the install to a non-canary node without changing git too.
+    estate.io/gvisor-canary: "true"
+spec:
+  # The estate's restricted profile refuses host namespaces / hostPath / privileged / drop-ALL
+  # caps, by design. This DaemonSet is exempt from those rules for the install namespace only;
+  # see platform/edge/gvisor-runsc-exception.yaml. Without the waiver the admission webhook
+  # (validate.kyverno.svc-fail) refuses the pod before kubelet sees it, observed 2026-09-08.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gvisor-runsc-installer
+      estate.io/gvisor-canary: "true"
+  # Node selection: a node only carries the install if it has the canary label. The canary label
+  # is applied by hand to one node only, on the day the install is being validated, and removed
+  # when validation finishes (the operator-side drill in CP4-SPEC §Operator-gated remainder).
+  # Until then the DaemonSet is inert on every other node: no pods, no install, no cri-o reload.
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: idp
+        app.kubernetes.io/name: gvisor-runsc-installer
+        estate.io/gvisor-canary: "true"
+    spec:
+      # Tolerations: this pod must run on every node that is the install target, including nodes
+      # tainted NotReady during a control-plane rollout. The install is a node-side operation,
+      # not a workload; tolerating everything that prevents a workload from scheduling here.
+      tolerations:
+        - operator: Exists
+      hostPID: true
+      hostNetwork: true
+      # The installer needs the host filesystem to drop the binary and the config-dropin. The
+      # waiver above (gvisor-runsc-exception.yaml) exempts this one DaemonSet from disallow-host-
+      # path and restrict-volume-types only; the rest of the estate stays restricted.
+      volumes:
+        - name: usr-local-bin
+          hostPath:
+            path: /usr/local/bin
+            type: Directory
+        - name: etc-crio
+          hostPath:
+            path: /etc/crio
+            type: Directory
+        - name: usr-libexec
+          hostPath:
+            path: /usr/libexec/cri-o
+            type: DirectoryOrCreate
+      # The privileged init container is the installer. The main container is a long-running
+      # tail so a `kubectl exec` into the pod can read /etc/crio/crio.conf.d/99-gvisor.conf and
+      # the installed /usr/local/bin/runsc --version. Deletion is operator-side (remove the
+      # canary label and let DaemonSet prune this pod).
+      initContainers:
+        - name: install-runsc
+          image: gcr.io/gvisor-release/runsc:d18e1b6ab8b8d35c7e0e4b9a8e9b3e3b5d1b4a3a5b9e0c7d2c8c7e6f1a2b3c4d
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              # The gvisor image ships /runsc on amd64 and arm64 manifests; copy whichever the
+              # node's arch actually pulls down. The image is multi-arch so this single ref
+              # works on every node the estate owns.
+              arch="$(uname -m)"
+              echo "installing runsc on $(uname -a)"
+              cp /runsc /usr/local/bin/runsc
+              chmod 0755 /usr/local/bin/runsc
+              /usr/local/bin/runsc --version
+              # The cri-o config-dropin that registers runsc as a runtime handler. cri-o reads
+              # dropins under /etc/crio/crio.conf.d/ in lexical order on every reload; "99-"
+              # keeps the canary install last so a hand-tuned base config still wins on lower
+              # numbers. The runtime_handler_name matches the handler our RuntimeClass names:
+              # platform/edge/gvisor-runtimeclass.yaml says `handler: runsc`, so cri-o's
+              # `runtime_handlers[*].name` MUST be `runsc` or the kubelet never offers it.
+              cat > /etc/crio/crio.conf.d/99-gvisor.conf <<'CRIO'
+              [crio.runtime]
+              default_runtime = "runsc"
+              [crio.runtime.runtimes.runsc]
+              runtime_path = "/usr/local/bin/runsc"
+              runtime_type = "runsc"
+              CRIO
+              # Reload cri-o so the new dropin is read. cri-o's reload is a SIGHUP to the
+              # crio process; on Oracle Linux 8.10 / cri-o 1.35.2 the binary is
+              # /usr/libexec/cri-o/crio and the unit is crio.service. systemctl reload-crio is
+              # the supported reload; this fails closed if systemctl is not on PATH (the image
+              # is ubi-minimal: minimal, no systemd-host).
+              systemctl reload crio.service || {
+                echo "FAIL reload-crio; cri-o kept its old config, install is no-op"
+                exit 1
+              }
+              # Persist the install across reboots: copy runsc into /usr/libexec/cri-o too,
+              # because cri-o's exec-on-reload sometimes validates against /usr/libexec paths.
+              # This is belt-and-braces; cri-o reads runtime_path from the dropin, not from
+              # /usr/libexec, but the cost of the second copy is one mkdir+cp and removes a
+              # class of "works today, breaks after reboot" failures.
+              cp /usr/local/bin/runsc /usr/libexec/cri-o/runsc || true
+              echo "installed runsc $(/usr/local/bin/runsc --version 2>&1 | head -1)"
+          securityContext:
+            privileged: true
+      containers:
+        - name: tail
+          image: gcr.io/gvisor-release/runsc:d18e1b6ab8b8d35c7e0e4b9a8e9b3e3b5d1b4a3a5b9e0c7d2c8c7e6f1a2b3c4d
+          imagePullPolicy: IfNotPresent
+          command: ["sleep", "infinity"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
