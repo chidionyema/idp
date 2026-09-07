@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""idp-jit -- how an agent asks for ten minutes of write access, and how it waits.
+
+WJ.2 says an agent that hits the wall "does not fail and it does not report back". This is
+the command that makes that true: it blocks until the founder taps, then either performs
+nothing (because the broker already did the change) or hands back a token that dies on its
+own. WJ.12 is the other half -- when the approved action makes things worse, the failure
+comes back here in words, so the agent does not ask for the same grant twice.
+
+    idp-jit ask --grant raise-memory-limit --namespace backstage \
+                --workload backstage --memory 2Gi \
+                --why "the Backstage pod is OOM crashing" --ttl 10m
+
+The layers below Kubernetes work the same way and read the same way (WJ.15); they only ever
+hand back an outcome, never a credential, so there is nothing to export afterwards:
+
+    idp-jit ask --grant oci-scale-node-pool --node_pool "$POOL" --size 5 \
+                --why "nothing will schedule; the pool is full" --ttl 10m
+
+    idp-jit grants        every grant, its layer and what it takes
+
+Exit codes are the contract: 0 granted, 3 denied, 4 refused before he was asked, 5 the
+approved change failed, 6 he never answered. Anything an agent scripts around can tell
+those apart without parsing English.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+
+BROKER = os.environ.get("JIT_BROKER_URL", "http://jit-broker.jit.svc.cluster.local:8080")
+# Every parameter any grant in platform/jit/grants.yaml declares, so the agent can write
+# --namespace rather than --param namespace=. WJ.15 added the three layers below Kubernetes,
+# and their parameters are here for the same reason.
+KNOWN_PARAMS = (
+    "namespace", "workload", "memory", "tag", "pod",
+    "node_pool", "size", "record", "record_type", "target", "repository", "run_id",
+)
+CODES = {"granted": 0, "denied": 3, "refused": 4, "failed": 5, "timeout": 6}
+
+
+def _post(path: str, body: dict) -> tuple[int, dict]:
+    req = urllib.request.Request(BROKER + path, data=json.dumps(body).encode(),  # noqa: S310 -- BROKER is an in-cluster http URL from the environment
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as fh:  # noqa: S310 -- same request object, already constrained
+            return fh.status, json.load(fh)
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read() or b"{}")
+    except OSError as exc:
+        # The broker being unreachable is the ordinary case on a laptop and during a rollout,
+        # and it is not the agent's mistake. A stack trace here reads as a bug in the caller
+        # and teaches nothing; the exit code says "refused before he was asked", which is the
+        # truth -- the founder was never woken.
+        return 0, {
+            "unreachable": True,
+            "reason": f"the broker is not answering on {BROKER}: {exc}",
+        }
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="idp-jit")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    a = sub.add_parser("ask", help="ask the founder for time-boxed write access")
+    a.add_argument("--grant", required=True, help="an id from platform/jit/grants.yaml")
+    a.add_argument("--why", required=True, help="one plain sentence; he reads it on a phone")
+    a.add_argument("--ttl", default="10m")
+    a.add_argument("--wait", type=int, default=900, help="seconds to wait for the tap")
+    a.add_argument("--param", action="append", default=[], metavar="k=v")
+    for known in KNOWN_PARAMS:
+        a.add_argument(f"--{known}")
+
+    sub.add_parser("grants", help="list what may be asked for")
+    args, extra = ap.parse_known_args(argv)
+
+    if args.cmd == "grants":
+        code, body = _post("/grants", {})
+        if body.get("unreachable"):
+            print(f"BLOCKED  {body['reason']}", file=sys.stderr)
+            return CODES["refused"]
+        for g in body.get("grants", []):
+            layer = g.get("provider", "kubernetes")
+            print(f"{g['id']:28} {layer:12} {g.get('mode',''):16} {g.get('describes','')}")
+        return 0
+
+    params = dict(kv.split("=", 1) for kv in args.param if "=" in kv)
+    for known in KNOWN_PARAMS:
+        if getattr(args, known, None):
+            params[known] = getattr(args, known)
+
+    code, body = _post("/ask", {"grant": args.grant, "params": params, "why": args.why,
+                                "ttl": args.ttl, "asked_by": os.environ.get("JIT_AGENT", "agent")})
+    if body.get("unreachable"):
+        print(f"BLOCKED  {body['reason']}", file=sys.stderr)
+        return CODES["refused"]
+    if code != 200:
+        print(f"refused: {body.get('error', 'the broker would not take the ask')}", file=sys.stderr)
+        return CODES["refused"]
+
+    rid = body["request"]
+    print(f"asked; waiting up to {args.wait}s for the founder to tap ({rid[:8]})", file=sys.stderr)
+    deadline = time.time() + args.wait
+    while time.time() < deadline:
+        time.sleep(3)
+        code, body = _post("/state", {"request": rid})
+        state = body.get("state")
+        if state == "granted":
+            result = body.get("result", {})
+            if result.get("mode") == "broker-applies":
+                print(result.get("applied", "applied"), file=sys.stderr)
+            else:
+                print(result.get("token", ""))
+            return 0
+        if state == "denied":
+            print("denied", file=sys.stderr)
+            return CODES["denied"]
+        if state == "failed":
+            print(f"the change was approved and then failed: {body.get('reason')}", file=sys.stderr)
+            return CODES["failed"]
+    print("he did not answer; a silence is a no (WJ.3)", file=sys.stderr)
+    return CODES["timeout"]
+
+
+if __name__ == "__main__":
+    sys.exit(main())

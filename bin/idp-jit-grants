@@ -18,6 +18,52 @@ import sys
 
 import yaml
 
+# WJ.15. Kubernetes is one layer; the estate also runs on OCI, on GitHub and on DNS, and a
+# founder who has to approve a Kubernetes change on his phone and then hand out a standing OCI
+# key has not been given zero standing privilege -- he has been given it in one place. So a grant
+# names the provider it acts on, and every provider is graded here, on the same page, by the same
+# gate. A grant that names a provider this file has never heard of is refused: an ungraded
+# provider is not a small grant, it is an unread one.
+PROVIDERS = {"kubernetes", "github", "oci", "dns"}
+# Who may hand the agent a credential at all (mode: token). The bar is not "this provider has
+# short-lived tokens" -- it is "the platform can mint one scoped to the parameters the founder
+# approved, that dies on its own". Kubernetes clears it: `kubectl create token --duration` against
+# a Role built for one request. The others do not, and each for its own reason:
+#   github  an installation token is short-lived and scoped, but minting one needs the App private
+#           key, and a broker that hands out tokens cut from that key has made the key the blast
+#           radius. The broker keeps the key and performs the act.
+#   oci     a session token carries the whole policy set of the principal that minted it. There is
+#           no per-request scope, so a ten-minute OCI token is ten minutes of everything.
+#   dns     the provider has no request-scoped credential at all.
+# So everything below Kubernetes is broker-applies: the founder approves an outcome, the broker
+# performs it, and the agent never holds anything.
+TOKEN_PROVIDERS = {"kubernetes"}
+# A secret store is not a provider a grant may ever name. The broker exists so that access is
+# short-lived; a secret read once is standing access with extra steps, and it cannot be revoked by
+# an expiry. Reaching a vault is a rotation, not a grant.
+SECRET_PROVIDERS = {"bitwarden", "vault", "estate-vault", "1password", "secretsmanager"}
+
+# GitHub. The repository that holds the broker, its catalogue and its gate is the fence itself
+# (WJ.8): a write grant there is a way to rewrite what may be granted, so no grant reaches it.
+GITHUB_PROTECTED_REPOS = {"idp"}
+# Permissions that are administration by another name, or that rewrite what CI will run.
+GITHUB_FORBIDDEN_PERMISSIONS = {
+    "administration", "members", "organization_administration", "organization_secrets",
+    "secrets", "actions_variables", "environments", "workflows", "pages", "repository_hooks",
+    "deployments", "contents",
+}
+# OCI. Destroying the cluster, the node pool or the tenancy's identity is not a ten-minute act.
+OCI_FORBIDDEN_OPERATIONS = {
+    "delete-cluster", "delete-node-pool", "delete-vcn", "delete-bucket", "delete-db-system",
+    "create-policy", "update-policy", "delete-policy", "create-user", "add-user-to-group",
+    "update-group", "generate-api-key", "create-auth-token", "update-security-list",
+}
+# DNS. The zone apex and the record the gateway answers on are the estate's front door; pointing
+# either somewhere else is an outage for every surface at once, including the one the founder
+# would use to stop the broker (WJ.10).
+DNS_FORBIDDEN_RECORDS = {"@", "*", "www", "gw", "gateway", "auth", "id", "identity"}
+DNS_FORBIDDEN_TYPES = {"NS", "SOA", "CAA", "DNSKEY", "DS"}
+
 # Never, at any TTL, in any namespace, in either mode.
 FORBIDDEN_RESOURCES = {
     # the credentials themselves
@@ -76,6 +122,116 @@ def grade_one(g):
     if mode not in ("token", "broker-applies"):
         bad.append(f"mode is {mode!r}, and the only modes are token and broker-applies")
 
+    # WJ.15. A grant with no provider is a Kubernetes grant, which is what the first three were
+    # written as; everything else has to say so, and has to be one this file grades.
+    provider = str(g.get("provider") or "kubernetes").lower()
+    if provider in SECRET_PROVIDERS:
+        bad.append(
+            f"acts on {provider!r}, a secret store. A secret handed over once does not expire "
+            f"when the grant does, so it is standing access whatever the TTL says; reaching a "
+            f"vault is a rotation, not a grant"
+        )
+        return gid, bad
+    if provider not in PROVIDERS:
+        bad.append(
+            f"names the provider {provider!r}, which this gate does not grade. An ungraded "
+            f"provider is not a small grant, it is an unread one"
+        )
+        return gid, bad
+    if mode == "token" and provider not in TOKEN_PROVIDERS:
+        bad.append(
+            f"is mode: token on {provider}, where the platform cannot mint a credential that is "
+            f"both scoped to these parameters and self-expiring. Below Kubernetes the founder "
+            f"approves an outcome and the broker performs it: this grant must be broker-applies"
+        )
+
+    bad += GRADERS[provider](g)
+    bad += grade_ttl_and_rate(g)
+    return gid, bad
+
+
+def grade_ttl_and_rate(g):
+    """The two limits every grant carries, whatever it acts on."""
+    bad = []
+    secs = ttl_seconds(g.get("max_ttl"))
+    if secs is None:
+        bad.append(f"has no readable max_ttl (got {g.get('max_ttl')!r})")
+    elif secs <= 0 or secs > TTL_CEILING_S:
+        bad.append(f"lives {g.get('max_ttl')}, past the {TTL_CEILING_S // 60}-minute ceiling")
+
+    rate = g.get("rate_per_hour")
+    if not isinstance(rate, int) or not 1 <= rate <= RATE_CEILING:
+        bad.append(
+            f"has rate_per_hour {rate!r}; one raise is safe and forty in an hour is a capacity "
+            f"incident, so every grant declares 1 to {RATE_CEILING}"
+        )
+    return bad
+
+
+def grade_github(g):
+    """A GitHub grant names repositories and permissions, and may name neither the repository
+    that holds the fence nor a permission that is administration under another name."""
+    bad = []
+    repos = {str(r).rsplit("/", 1)[-1] for r in g.get("repositories") or []}
+    perms = {str(p).lower() for p in g.get("permissions") or []}
+    ops = {str(o).lower() for o in g.get("operations") or []}
+    if not repos:
+        bad.append("names no repositories, and a GitHub grant with no repository is org-wide")
+    if not ops:
+        bad.append("names no operations, so nothing bounds what the broker would do with it")
+    if "*" in repos:
+        bad.append("names every repository")
+    for r in sorted(repos & GITHUB_PROTECTED_REPOS):
+        bad.append(
+            f"reaches {r!r}, the repository that holds the broker, its catalogue and its gate. "
+            f"A write there is a way to rewrite what may be granted (WJ.8)"
+        )
+    for p in sorted(perms & GITHUB_FORBIDDEN_PERMISSIONS):
+        bad.append(f"asks for the {p!r} permission, which is administration under another name")
+    return bad
+
+
+def grade_oci(g):
+    """An OCI grant names the operations it may run, and none of them may destroy a resource
+    or touch identity."""
+    bad = []
+    ops = {str(o).lower() for o in g.get("operations") or []}
+    if not ops:
+        bad.append("names no operations, and an OCI grant with no operation is the whole tenancy")
+    if "*" in ops:
+        bad.append("names every OCI operation")
+    for o in sorted(ops & OCI_FORBIDDEN_OPERATIONS):
+        bad.append(f"may run {o!r}, which is not something a ten-minute grant undoes")
+    for o in sorted(ops):
+        if o.startswith("delete-") and o not in OCI_FORBIDDEN_OPERATIONS:
+            bad.append(f"may run {o!r}; a delete on this layer is not reversible by an expiry")
+    return bad
+
+
+def grade_dns(g):
+    """A DNS grant names the records it may move, and may not move the ones the estate is
+    reached on -- including the one the founder would use to stop the broker."""
+    bad = []
+    records = {str(r).lower() for r in g.get("records") or []}
+    types = {str(t).upper() for t in g.get("record_types") or []}
+    if not records:
+        bad.append("names no records, and a DNS grant with no record is the whole zone")
+    if not types:
+        bad.append("names no record types")
+    for r in sorted(records & DNS_FORBIDDEN_RECORDS):
+        bad.append(
+            f"moves {r!r}, which the estate is reached on. Pointing it elsewhere takes down "
+            f"every surface at once, including the one that stops the broker (WJ.10)"
+        )
+    for t in sorted(types & DNS_FORBIDDEN_TYPES):
+        bad.append(f"writes {t} records, which move the zone itself rather than one name in it")
+    return bad
+
+
+def grade_kubernetes(g):
+    """The original three checks, unchanged in what they refuse."""
+    bad = []
+    mode = g.get("mode")
     verbs = {str(v).lower() for v in g.get("verbs") or []}
     resources = {str(r).lower() for r in g.get("resources") or []}
     namespaces = {str(n) for n in g.get("namespaces") or []}
@@ -108,20 +264,15 @@ def grade_one(g):
             f"This grant must be mode: broker-applies"
         )
 
-    secs = ttl_seconds(g.get("max_ttl"))
-    if secs is None:
-        bad.append(f"has no readable max_ttl (got {g.get('max_ttl')!r})")
-    elif secs <= 0 or secs > TTL_CEILING_S:
-        bad.append(f"lives {g.get('max_ttl')}, past the {TTL_CEILING_S // 60}-minute ceiling")
+    return bad
 
-    rate = g.get("rate_per_hour")
-    if not isinstance(rate, int) or not 1 <= rate <= RATE_CEILING:
-        bad.append(
-            f"has rate_per_hour {rate!r}; one raise is safe and forty in an hour is a capacity "
-            f"incident, so every grant declares 1 to {RATE_CEILING}"
-        )
 
-    return gid, bad
+GRADERS = {
+    "kubernetes": grade_kubernetes,
+    "github": grade_github,
+    "oci": grade_oci,
+    "dns": grade_dns,
+}
 
 
 def grade(text):

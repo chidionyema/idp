@@ -1,0 +1,112 @@
+# The broker itself.
+#
+# One replica, deliberately. Pending requests live in memory, and a second replica would hold a
+# different set of them -- his tap would arrive at whichever pod the Service picked and find no
+# such request about half the time. The cost of that choice is that a restart drops the pending
+# asks, which is the correct direction to fail: a dropped ask is an agent that waits and times
+# out (WJ.3 already calls a silence a no), whereas a shared cache would be a second place an
+# approval could be spent. The ledger is on a volume and survives the restart.
+#
+# It holds no standing cloud credential. The only thing it can do is what platform/jit/rbac.yaml
+# grants, which is the union of the catalogue and nothing else.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: jit-broker
+  namespace: jit
+spec:
+  refreshInterval: 10m
+  secretStoreRef: {kind: ClusterSecretStore, name: estate-vault}
+  target: {name: jit-broker, creationPolicy: Owner}
+  # Three values, all minted in the vault and none typed here (LAW 46, R52):
+  #   JIT_SIGNING_KEY          -- the HMAC key the approvals are signed with. An identity that
+  #                               can read this can forge a tap, so it is the crown jewel of
+  #                               the crown jewel and no agent ServiceAccount reaches namespace
+  #                               jit at all.
+  #   TELEGRAM_BOT_TOKEN       -- the bot that sends the ask.
+  #   TELEGRAM_WEBHOOK_SECRET  -- echoed by Telegram on every delivery, so a leaked webhook URL
+  #                               is still not a way in.
+  dataFrom:
+    - extract: {key: jit-broker}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jit-ledger
+  namespace: jit
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jit-broker
+  namespace: jit
+  labels: {app.kubernetes.io/name: jit-broker}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: jit-broker}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: jit-broker}
+    spec:
+      serviceAccountName: jit-broker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: broker
+          image: ghcr.io/chidionyema/idp-jit-broker:latest
+          command: [python3, -m, broker.serve]
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - {name: PORT, value: "8080"}
+            - {name: JIT_GRANTS, value: /etc/jit/grants.yaml}
+            - {name: JIT_LEDGER, value: /var/lib/jit/ledger.jsonl}
+            - {name: JIT_KILLSWITCH, value: /var/lib/jit/stopped}
+            - {name: TELEGRAM_CHAT_ID, valueFrom: {secretKeyRef: {name: jit-broker, key: TELEGRAM_CHAT_ID}}}
+            - {name: TELEGRAM_BOT_TOKEN, valueFrom: {secretKeyRef: {name: jit-broker, key: TELEGRAM_BOT_TOKEN}}}
+            - {name: TELEGRAM_WEBHOOK_SECRET, valueFrom: {secretKeyRef: {name: jit-broker, key: TELEGRAM_WEBHOOK_SECRET}}}
+            - {name: JIT_SIGNING_KEY, valueFrom: {secretKeyRef: {name: jit-broker, key: JIT_SIGNING_KEY}}}
+          # /healthz verifies the ledger's hash chain, so a broker whose record has been
+          # tampered with fails its own probe and stops answering rather than carrying on
+          # minting access nobody can any longer account for.
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 30
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 60
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 200m, memory: 256Mi}
+          volumeMounts:
+            - {name: ledger, mountPath: /var/lib/jit}
+            - {name: grants, mountPath: /etc/jit}
+      volumes:
+        - {name: ledger, persistentVolumeClaim: {claimName: jit-ledger}}
+        # The catalogue is mounted from a ConfigMap that Flux writes from platform/jit/grants.yaml,
+        # so the closed set the broker mints from is the file in git and cannot be edited in
+        # the cluster without the change going through the gate first (WJ.8).
+        - {name: grants, configMap: {name: jit-grants}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jit-broker
+  namespace: jit
+spec:
+  selector: {app.kubernetes.io/name: jit-broker}
+  ports:
+    - {name: http, port: 8080, targetPort: http}

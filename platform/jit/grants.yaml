@@ -26,6 +26,7 @@ kind: GrantCatalogue
 grants:
   # The founder's own worked example: the 3am OOMKill.
   - id: raise-memory-limit
+    provider: kubernetes
     why: A workload is being killed for memory and needs a higher ceiling to stay up
     mode: broker-applies
     verbs: [patch]
@@ -42,6 +43,7 @@ grants:
   # Restarting a crash-looping workload. Deleting a Pod is a restart; the Deployment recreates it.
   # It cannot rewrite a pod spec, so a token is safe here and the agent gets one.
   - id: restart-workload
+    provider: kubernetes
     why: A workload is crash-looping or wedged and a restart is the whole fix
     mode: token
     verbs: [delete]
@@ -57,6 +59,7 @@ grants:
   # Rolling one workload back to an image tag it already ran. Rewrites a pod spec field, so the
   # broker applies it rather than handing over patch.
   - id: rollback-image
+    provider: kubernetes
     why: A new image is failing in production and the previous one is known good
     mode: broker-applies
     verbs: [patch]
@@ -69,3 +72,57 @@ grants:
       workload: {type: name, required: true}
       namespace: {type: namespace, required: true}
       tag: {type: image_tag, required: true, must_be_previously_deployed: true}
+
+  # WJ.15. Below Kubernetes. The estate also runs on OCI, on GitHub and on DNS, and zero standing
+  # privilege in one layer is not zero standing privilege. These three go through the same ask,
+  # the same tap, the same ledger, the same rate limit and the same kill switch -- and all three
+  # are broker-applies, because none of those providers can mint a credential that is scoped to
+  # what the founder approved and dies on its own. bin/idp-jit-grants refuses `mode: token` on
+  # any of them, so that is a property of the file rather than a habit.
+
+  # The node pool is out of room and the fix is two more nodes for an hour. Growing is allowed;
+  # shrinking is not -- draining a node is an eviction, and an eviction is an outage decision.
+  - id: oci-scale-node-pool
+    provider: oci
+    why: The cluster has no room left to schedule a workload and needs another node
+    mode: broker-applies
+    operations: [update-node-pool]
+    compartment: oke
+    max_ttl: 10m
+    rate_per_hour: 2
+    parameters:
+      node_pool: {type: name, required: true}
+      size: {type: integer, required: true, max: 6, min: 2}
+
+  # A surface is answering on the wrong address after a rebuild. The record moves to a target
+  # this estate already runs; the apex, the gateway and the identity records are refused by the
+  # gate, so the road back is never the thing being moved.
+  - id: dns-point-record
+    provider: dns
+    why: A surface answers on the wrong address and one record has to point at the live one
+    mode: broker-applies
+    records: [signoz, langfuse, backstage, portal, catalogue, prospector, hermes]
+    record_types: [A, CNAME]
+    max_ttl: 10m
+    rate_per_hour: 2
+    parameters:
+      record: {type: name, required: true}
+      record_type: {type: record_type, required: true}
+      target: {type: name, required: true}
+
+  # A check failed on infrastructure, not on the change. Re-running a job runs the workflow the
+  # merged commit already carries; it cannot introduce one. The repository that holds the broker
+  # is refused by the gate whatever this asks for, so a re-run can never be a way back into the
+  # fence (WJ.8).
+  - id: github-rerun-failed-checks
+    provider: github
+    why: A pull request check failed on infrastructure rather than on the change itself
+    mode: broker-applies
+    repositories: [chidionyema/prospector, chidionyema/hermes-v2, chidionyema/crew]
+    permissions: [actions]
+    operations: [rerun-failed-jobs]
+    max_ttl: 5m
+    rate_per_hour: 3
+    parameters:
+      repository: {type: repository, required: true}
+      run_id: {type: integer, required: true, max: 999999999999}
