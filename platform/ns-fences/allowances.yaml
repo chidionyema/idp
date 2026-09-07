@@ -175,9 +175,12 @@ flows:
     # which is how an agent -- an assistant session, Otto on Telegram -- asks the investigator
     # a question. Both directions declared, as above.
     egress: [observability, hindsight, robusta, llm]
-    ingress_from: [edge, hermes-agent]
+    ingress_from: [edge, hermes-agent, otto-gateway]
   monitoring:
-    egress: [guacamole, robusta]
+    # edge: Alertmanager and Prometheus are reached through the gateway, which is why edge has
+    # admitted monitoring since the fence was written -- but this side never said so, and a
+    # half-declaration is a deny on the wire.
+    egress: [guacamole, robusta, edge]
     # dagster: the scheduler reads Alertmanager's firing alerts to decide there is
     # anything worth investigating at all.
     ingress_from: [observability, edge, dagster, robusta]
@@ -286,6 +289,7 @@ flows:
     # that is what it is declared as.
     egress: [edge]
   otto-gvisor-sandbox:
+    ingress_from: [edge]
     # crew#892 CP4: the gVisor sandbox cell runs code a model wrote, so its fence is the cell
     # decree (zero-trust-boundary.md step 5) — default-deny, and the one declared app route is
     # the gateway (edge), so a sandboxed pod that is compromised cannot wander the estate; it
@@ -310,4 +314,4 @@ flows:
     # would have been unreachable from the internet with no rule here.
     ingress_public: [8000, 8443]
     # Prometheus scrapes the traefik metrics listener (9100) from monitoring.
-    ingress_from: [monitoring]
+    ingress_from: [monitoring, otto-gvisor-sandbox, prospector]
