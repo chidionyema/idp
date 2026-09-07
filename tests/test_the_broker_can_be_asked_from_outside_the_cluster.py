@@ -5,7 +5,7 @@ WJ.2 says an agent that hits a wall does not fail and does not report back: it a
 restart, `restart-workload` in platform/jit/grants.yaml is exactly that grant, and there was
 no address to request it at -- platform/jit/fence.yaml admitted namespaces `agents` and
 `edge`, and the public route carries the Telegram webhook alone (`POST
-https://otto.mumchimp.com/ask` answered 404, measured that day).
+https://otto.${ESTATE_ZONE}/ask` answered 404, measured that day).
 
 The door added for it is the tailnet's, and it only exists if four files agree: the Service
 asks the operator for a device under one tag, the ACL names that same tag and port, the two

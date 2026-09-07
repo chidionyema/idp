@@ -82,7 +82,7 @@ def _doors() -> list[str]:
     name resolves and nothing more is needed. Outside it -- which is where the agents actually
     run -- that name resolves to nothing, and until 2026-09-07 there was no second address at
     all: platform/jit/fence.yaml admitted namespaces `agents` and `edge`, and the public route
-    carries the Telegram webhook alone (`POST https://otto.mumchimp.com/ask` answered 404,
+    carries the Telegram webhook alone (`POST https://otto.${ESTATE_ZONE}/ask` answered 404,
     measured that day). So an agent on the founder's Mac could not ask for a grant, and one
     did not: the CNI cutover needed 97 pods restarted, `restart-workload` in grants.yaml is
     exactly that grant, and there was no reachable way to request it. That is the wall WJ.2

@@ -146,12 +146,12 @@ metadata:
   # Why it needed one. WJ.2 says an agent that hits the wall "does not fail and it does not
   # report back" -- it asks. Until this annotation the asking door faced the pod network only:
   # fence.yaml admitted namespaces `agents` and `edge`, and the public HTTPRoute carries the
-  # Telegram webhook alone (`POST https://otto.mumchimp.com/ask` answers 404, measured
+  # Telegram webhook alone (`POST https://otto.${ESTATE_ZONE}/ask` answers 404, measured
   # 2026-09-07). So an agent running anywhere but inside the cluster could not ask at all, and
   # on 2026-09-07 one could not: the boundary work needed 97 pods restarted, `restart-workload`
   # in grants.yaml is exactly that grant, and there was no reachable way to request it.
   #
-  # Why the tailnet and not the public edge. Exposing /ask on otto.mumchimp.com would need a
+  # Why the tailnet and not the public edge. Exposing /ask on the public host would need a
   # credential in front of it, and a credential minted to answer this is a second identity
   # layer for one door -- refused by the estate's SSO policy and by LAW 54 (no fresh key while
   # one exists). The tailnet is the identity layer that already exists here, it is federated,
