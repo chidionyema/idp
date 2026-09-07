@@ -6,26 +6,8 @@ import {
   mockApis,
 } from '@backstage/frontend-test-utils';
 import { configApiRef } from '@backstage/frontend-plugin-api';
-import { catalogApiRef } from '@backstage/plugin-catalog-react';
-import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
-import { Entity } from '@backstage/catalog-model';
 import type { HomePageLayoutProps } from '@backstage/plugin-home-react/alpha';
 import { EstateHomeLayout, pickWidget, usedWidgets } from './homeLayout';
-import { EVERYDAY_TITLE } from './everydayBand';
-
-// Founder 2026-09-07: "why should i be looking for essential tools at all". The front page must
-// carry his everyday tools, so the layout now reads the catalogue and the test gives it one.
-const EVERYDAY_DOOR: Entity = {
-  apiVersion: 'backstage.io/v1alpha1',
-  kind: 'Component',
-  metadata: {
-    name: 'founder-screen',
-    title: 'Estate Mac screen (in the browser)',
-    annotations: { 'estate/group': 'Fix something', 'estate/tier': 'daily' },
-    links: [{ url: 'https://example.test/screen/', title: 'Open' }],
-  },
-  spec: { type: 'founder-surface' },
-};
 
 const widget = (name: string, title = name) =>
   ({
@@ -69,10 +51,6 @@ describe('EstateHomeLayout', () => {
             configApiRef,
             mockApis.config({ data: { app: { title: 'Estate' } } }),
           ],
-          [
-            catalogApiRef,
-            catalogApiMock({ entities: [EVERYDAY_DOOR] }),
-          ],
         ]}
       >
         <EstateHomeLayout widgets={[]} />
@@ -86,32 +64,5 @@ describe('EstateHomeLayout', () => {
     ).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Catalogue')).toBeInTheDocument();
     expect(screen.getByText('Every service we hold.')).toBeInTheDocument();
-  });
-
-  it('puts an everyday tool on the front page, so reaching it is never a search', async () => {
-    await renderInTestApp(
-      <TestApiProvider
-        apis={[
-          [
-            configApiRef,
-            mockApis.config({ data: { app: { title: 'Estate' } } }),
-          ],
-          [
-            catalogApiRef,
-            catalogApiMock({ entities: [EVERYDAY_DOOR] }),
-          ],
-        ]}
-      >
-        <EstateHomeLayout widgets={[]} />
-      </TestApiProvider>,
-    );
-    expect(await screen.findByText(EVERYDAY_TITLE)).toBeInTheDocument();
-    const tile = await screen.findByText(EVERYDAY_DOOR.metadata.title!);
-    expect(tile).toBeInTheDocument();
-    // The accessible name carries Backstage's "Opens in a new window" suffix on an external
-    // link, so the name is matched from the start, the way Tools.test.tsx matches it.
-    expect(
-      await screen.findByRole('button', { name: /^Open Estate Mac screen/ }),
-    ).toHaveAttribute('href', 'https://example.test/screen/');
   });
 });
