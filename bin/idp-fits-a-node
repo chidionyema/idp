@@ -18,8 +18,15 @@ founder's call to fund. The count may fall and never rise, and an entry that is 
 pinned is stale and fails too, so the list cannot rot into decoration.
 
 Usage:  bin/idp-fits-a-node [SNAPSHOT_DIR]
+        bin/idp-fits-a-node --receipt RECEIPT.json
   SNAPSHOT_DIR holds nodes.json and pods.json (`kubectl get nodes/pods -A -o json`).
   With no argument the cluster is read live through bin/idp-kube.
+  --receipt reads the `placement` section of a cluster-state receipt, which is how this runs
+  in CI: CI has no cluster to ask, and a gate that only ever grades its own fixtures is a gate
+  that cannot tell a rule that passes from a rule that has stopped matching. The receipt is
+  written from inside the cluster every 15 minutes by platform/state/cluster-state.yaml. The
+  rows are rehydrated into the same shapes the live read produces, so there is exactly one
+  placement algorithm below and two ways to feed it -- never two copies of the rule.
 """
 import json
 import pathlib
@@ -84,14 +91,59 @@ def requests(pod):
     return c, m
 
 
+def rehydrate(placement):
+    """A receipt's compact rows, back into the node and pod shapes the live read produces.
+
+    Only the fields the algorithm below actually reads are rebuilt. A field the receipt does
+    not carry is not invented: an absent one arrives as its empty value and is graded as such.
+    """
+    nodes = [{"metadata": {"name": n["name"]},
+              "spec": {"unschedulable": n.get("unschedulable", False)},
+              "status": {"allocatable": {"cpu": f"{n['cpu_allocatable_m']}m",
+                                         "memory": f"{n['memory_allocatable_mi']}Mi"},
+                         "conditions": [{"type": "Ready", "status": "True"}]}}
+             for n in placement["nodes"]]
+    pods = []
+    for r in placement["pods"]:
+        owners = ([{"kind": r["owner_kind"], "name": r["owner_name"]}]
+                  if r.get("owner_kind") else [])
+        conditions = ([{"type": "PodScheduled", "status": "False",
+                        "reason": r.get("unschedulable_reason", ""),
+                        "message": r["unschedulable"]}] if r.get("unschedulable") else [])
+        pods.append({"metadata": {"namespace": r["namespace"], "name": r["name"],
+                                  "ownerReferences": owners},
+                     "spec": {"nodeName": r["node"],
+                              "containers": [{"resources": {"requests": {
+                                  "cpu": f"{r['cpu_request_m']}m",
+                                  "memory": f"{r['memory_request_mi']}Mi"}}}]},
+                     "status": {"phase": r["phase"], "conditions": conditions}})
+    return nodes, pods
+
+
 def main():
-    src = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else None
-    try:
-        nodes = read(src, "nodes", [])["items"]
-        pods = read(src, "pods", ["-A"])["items"]
-    except Exception as exc:  # noqa: BLE001 -- any failure to read is BLIND, never a pass
-        print(f"BLIND fits-a-node the cluster could not be read ({exc}); nothing was graded")
-        return 0
+    argv = sys.argv[1:]
+    src = None
+    if argv and argv[0] == "--receipt":
+        if len(argv) < 2:
+            print("BLIND fits-a-node --receipt needs a path; nothing was graded")
+            return 0
+        try:
+            body = json.loads(pathlib.Path(argv[1]).read_text())
+            placement = body["placement"]
+            if not placement.get("nodes") or not placement.get("pods"):
+                raise ValueError("the receipt carries no placement rows")
+            nodes, pods = rehydrate(placement)
+        except Exception as exc:  # noqa: BLE001 -- an unreadable receipt is BLIND, never a pass
+            print(f"BLIND fits-a-node the receipt could not be read ({exc}); nothing was graded")
+            return 0
+    else:
+        src = pathlib.Path(argv[0]) if argv else None
+        try:
+            nodes = read(src, "nodes", [])["items"]
+            pods = read(src, "pods", ["-A"])["items"]
+        except Exception as exc:  # noqa: BLE001 -- any failure to read is BLIND, never a pass
+            print(f"BLIND fits-a-node the cluster could not be read ({exc}); nothing was graded")
+            return 0
 
     ready = {n["metadata"]["name"]: (cpu(n["status"]["allocatable"]["cpu"]),
                                     mem(n["status"]["allocatable"]["memory"]))

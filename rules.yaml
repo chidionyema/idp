@@ -659,8 +659,8 @@ rules:
     requires_python: [yaml]
     fixtures: {must_fail: tests/fixtures/fits-a-node/bad, must_pass: tests/fixtures/fits-a-node/good}
     cases:
-      - {expect: refuse, args: [tests/fixtures/fits-a-node/bad], note: a database the scheduler has already refused, and two workloads that could not be placed again}
-      - {expect: pass, args: [tests/fixtures/fits-a-node/good], note: the same cluster sized to fit, its one pinned workload named in the ledger beside it}
+      - {expect: refuse, args: [tests/fixtures/fits-a-node/bad], note: "a database the scheduler has already refused, and two workloads that could not be placed again"}
+      - {expect: pass, args: [tests/fixtures/fits-a-node/good], note: "the same cluster sized to fit, its one pinned workload named in the ledger beside it"}
     ok: every pod could be placed again on the nodes that exist
     fail: a pod cannot be placed on any node, or a workload fits exactly one node and is not in platform/state/pinned-workloads.yaml
   - id: reloader-operator-owned
