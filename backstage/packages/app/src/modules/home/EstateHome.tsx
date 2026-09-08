@@ -79,6 +79,22 @@ export {
 } from './estate';
 export type { Health } from './estate';
 
+// Founder's five daily doors (Lane 2 — guessed from the estate's daily rhythm).
+// Each door is a catalogue entity the founder checks every morning.
+// These are guesses — the founder should confirm or rename.
+interface FounderDoor {
+  entity: Entity;
+  meaning: string;
+}
+
+const founderDoors: FounderDoor[] = [
+  { entity: { metadata: { name: 'doors', title: 'Doors' } }, meaning: 'Which doors are open or closed right now' },
+  { entity: { metadata: { name: 'health', title: 'Health' } }, meaning: 'What is failing or needs attention' },
+  { entity: { metadata: { name: 'state', title: 'State' } }, meaning: 'Is the estate receipt live or stale' },
+  { entity: { metadata: { name: 'reports', title: 'Reports' } }, meaning: 'What shipped and what did not' },
+  { entity: { metadata: { name: 'secrets', title: 'Secrets' } }, meaning: 'Vault secrets ages and rotations' },
+];
+
 const useStyles = makeStyles(theme => ({
   wrap: { display: 'flex', flexDirection: 'column', gap: theme.spacing(3) },
   // The dominant state leader (directive 1): a full-width strip tinted by the worst present
@@ -1096,7 +1112,48 @@ const Ready = ({ estate }: { estate: Estate }) => {
         </section>
       )}
 
-      <section className={classes.section} data-testid="band-everything">
+      </section>
+       )}
+
+       {/* Founder's five */}
+       <section
+         className={classes.section}
+         data-testid="band-founder-five"
+         aria-label="Founder's five daily doors"
+       >
+         <h2 className={classes.h}>
+           <SectionIcon section="everything" />
+           Founder's five
+           <span className={classes.hCount}>5 doors</span>
+         </h2>
+         <p className={classes.hDesc}>
+           The five places the estate checks every morning: doors, health, state,
+           reports, secrets. Each one proves it answers.
+         </p>
+         <div className={classes.counters} data-testid="founder-five">
+           {founderDoors.map(d => {
+             const s = stateOf(d.entity);
+             return (
+               <button
+                 key={d.entity.metadata.name}
+                 className={classes.counter}
+                 data-testid={`founder-${d.entity.metadata.name}`}
+                 data-state={s.state}
+                 onClick={() => navigate(entityPath(d.entity))}
+                 title={d.meaning}
+               >
+                 <span className={classes.counterIcon}>
+                   <StateIcon state={s.state} />
+                 </span>
+                 <span className={classes.n}>{s.count}</span>
+                 <span className={classes.meaning}>{d.meaning}</span>
+               </button>
+             );
+           })}
+         </div>
+       </section>
+
+       <section className={classes.section} data-testid="band-everything">
         <h2 className={classes.h}>
           <SectionIcon section="everything" />
           {SECTIONS.everything.title}
