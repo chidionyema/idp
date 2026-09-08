@@ -444,6 +444,13 @@ flows:
              otto-gvisor-sandbox,
              # The sandbox shop's route: demo-sandbox admits edge, so edge must name it
              # back or the return path is cut -- the same one-direction-only defect.
+             # cyrus: the Linear agent's door is the HTTPRoute at cyrus.${ESTATE_ZONE}
+             # (platform/cyrus/httproute.yaml). cyrus is exempt from this generator because it
+             # carries its own fence, which already admits edge on 3456 -- so the both-halves
+             # grader could not see that this side never named it. Traefik's own veth dropped
+             # every webhook delivery: 8,544 packets on one node when read on 2026-09-08, and a
+             # 504 "Starting up" page for every Linear and GitHub delivery since the route was made.
+             cyrus,
              demo-sandbox]
     # The public listeners (traefik containerPorts web 8000 and websecure 8443, behind the OCI
     # load balancer with externalTrafficPolicy Local, so the source address is the client's).

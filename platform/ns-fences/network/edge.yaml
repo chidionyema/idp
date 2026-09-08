@@ -86,6 +86,9 @@ spec:
           kubernetes.io/metadata.name: backstage
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: cyrus
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: dagster
     - namespaceSelector:
         matchLabels:
