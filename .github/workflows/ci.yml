@@ -395,6 +395,32 @@ jobs:
   # response timeout ejects it -- the failure the `always()` above is written against, one event
   # further on. Its base sha is the only thing that differs: a queued entry is built on main and
   # carries `merge_group.base_sha` instead of a pull request's.
+  # The commit-time plane is .githooks/pre-commit, and it only exists on a machine that has the
+  # estate's hooks installed. This is the plane that does not depend on a laptop. It reads its row
+  # ids out of .pre-commit-config.yaml, so it can never grade a different set than the commit runs.
+  generated:
+    needs: fast-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - uses: ./.github/actions/estate-tools
+      - name: every generated file matches its generator
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pre-commit
+          ids=$(python3 -c "import yaml; print(' '.join(h['id'] for r in yaml.safe_load(open('.pre-commit-config.yaml'))['repos'] for h in r['hooks'] if 'git add' in h.get('entry','')))")
+          echo "regenerating rows: $ids"
+          for id in $ids; do pre-commit run --all-files "$id" || true; done
+          if ! git diff --quiet || [ -n "$(git status --porcelain)" ]; then
+            echo "::error::a generated file does not match its generator -- run the generator and commit its output"
+            git --no-pager diff --stat
+            git status --porcelain
+            exit 1
+          fi
+          echo "ok    generated  every row in .pre-commit-config.yaml renders the tree that is committed"
+
+
   executes-gate:
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest

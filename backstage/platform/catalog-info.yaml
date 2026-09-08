@@ -1204,8 +1204,24 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: identity
+  providesApis:
+    - api:default/jit-api
   dependsOn:
     - component:default/layer-rbac-floor
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: jit-api
+  description: 'Just-in-time access: the HTTP interface, answering at otto.${ESTATE_ZONE}.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/identity
+  definition: |
+    # Not published. jit answers at otto.${ESTATE_ZONE}; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
