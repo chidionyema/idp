@@ -95,6 +95,11 @@ def ask_keyboard(broker: Broker, req: Request) -> dict:
 class Phone:
     def __init__(self, token: str, chat_id: str, broker: Broker):
         self.token, self.chat_id, self.broker = token, str(chat_id), broker
+        # request id -> the message id of its pinned ask, so the pin can be lifted when the
+        # request reaches a terminal state. In memory only: a broker that restarts loses the
+        # map, and an orphaned pin is a stale header, not a stuck grant -- the ledger and the
+        # TTL remain the record of what was actually spent.
+        self._pinned: dict[str, int] = {}
 
     def _from_founder(self, update: dict) -> bool:
         """WJ.6: accepted only from the founder's own chat. An agent that somehow obtained a
@@ -103,7 +108,26 @@ class Phone:
         return str((cb.get("message") or {}).get("chat", {}).get("id")) == self.chat_id
 
     def send_ask(self, req: Request, grant: dict) -> None:
-        _call(
+        """Send the ask, then pin it.
+
+        LAW 47 says a founder blocker is loud and one action. The ask was neither, and the
+        reason is in platform/jit/deployment.yaml:21 -- this broker reuses the alerts row's
+        bot and channel, so the approval button lands in the same chat as Robusta's crash
+        reports and the Flux reds. Founder, 2026-09-08 (~/.claude/docs/founder/
+        2026-09-08T0953Z-and-also-wtf-is-this-4991d777.md): "welli dnt see it cos its a
+        fucking ness of alerts ... inpossible to se naything". An approval nobody can find
+        is not an approval lane.
+
+        A pinned message sits in the chat header above every later alert, so the ask stays
+        findable however much noise arrives after it. The pin is silent -- the message
+        itself already notified -- and it comes off the moment the request is decided, so
+        the header shows a pending ask or nothing, never a stale one.
+
+        Pinning is best-effort: a bot without pin rights in the chat still sent the ask, and
+        refusing the whole ask because the header could not be written would be the worse
+        failure. The ledger records that it could not, so a silent pin outage is visible.
+        """
+        sent = _call(
             self.token,
             "sendMessage",
             {
@@ -113,6 +137,42 @@ class Phone:
                 "reply_markup": ask_keyboard(self.broker, req),
             },
         )
+        message_id = ((sent or {}).get("result") or {}).get("message_id")
+        if message_id is None:
+            return
+        self._pinned[req.id] = message_id
+        try:
+            _call(
+                self.token,
+                "pinChatMessage",
+                {
+                    "chat_id": self.chat_id,
+                    "message_id": message_id,
+                    "disable_notification": True,
+                },
+            )
+        except RuntimeError as exc:
+            self.broker.ledger.append("pin-failed", request=req.id, said=str(exc)[:160])
+
+    def _unpin(self, request_id: str) -> None:
+        """Take the ask out of the chat header once it is answered or gone.
+
+        Called on every terminal state, not only on a grant: a denied or expired ask left
+        pinned is a header that lies about what is waiting on him.
+        """
+        message_id = self._pinned.pop(request_id, None)
+        if message_id is None:
+            return
+        try:
+            _call(
+                self.token,
+                "unpinChatMessage",
+                {"chat_id": self.chat_id, "message_id": message_id},
+            )
+        except RuntimeError as exc:
+            self.broker.ledger.append(
+                "unpin-failed", request=request_id, said=str(exc)[:160]
+            )
 
     def handle(self, update: dict) -> str:
         cb = update.get("callback_query") or {}
@@ -128,6 +188,7 @@ class Phone:
             req = self.broker.decide_callback(data)
         except Refused as exc:
             return f"refused: {exc}"
+        self._unpin(req.id)
         if req.state == "granted":
             return "granted"
         return req.state if req.state != "failed" else f"failed: {req.reason}"
