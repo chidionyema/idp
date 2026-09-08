@@ -12,6 +12,7 @@ resources:
   - telegram-secret.yaml
   - router-key.yaml
   - config.yaml
+  - router-lanes.yaml
   - deployment.yaml
   - httproute.yaml
   - edge-manners.yaml
