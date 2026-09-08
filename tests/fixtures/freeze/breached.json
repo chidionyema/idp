@@ -1,0 +1,19 @@
+{
+  "repo": "chidionyema/idp",
+  "freezes": [
+    {
+      "issue": "chidionyema/crew#739",
+      "title": "FREEZE: nothing is released (founder, 2026-08-31)",
+      "workflows": [
+        {"name": "build-multiarch", "state": "active"},
+        {"name": "catalog-render", "state": "active"},
+        {"name": "conscience", "state": "disabled_manually"},
+        {"name": "deploy-when-green", "state": "disabled_manually"},
+        {"name": "image-update-pr", "state": "active"},
+        {"name": "kini-finish", "state": "disabled_manually"},
+        {"name": "oke-check", "state": "active"},
+        {"name": "vault-seed", "state": "active"}
+      ]
+    }
+  ]
+}

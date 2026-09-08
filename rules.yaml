@@ -900,3 +900,30 @@ rules:
       - {expect: pass, live: true, note: "the estate's own tree, which owns nothing with Crossplane yet"}
     ok: "no cloud object is claimed by both OpenTofu and Crossplane"
     fail: "a cloud object is claimed by both OpenTofu and Crossplane; each controller will undo the other at the reconcile interval"
+
+  # The founder wrote a release lock on 2026-08-31 -- "no more releases", "LOCK DOWN" -- naming
+  # eight workflows to stay off until he said otherwise. Measured 2026-09-08: the issue was still
+  # open with no comment on it, five of the eight were back on, the newest had run 40 minutes
+  # earlier, and main had taken 1,210 commits since, 709 of them robot image updates. Nothing read
+  # the page, so nothing noticed for eight days. This row is that page becoming a measurement.
+  - id: freeze
+    label: freeze
+    statement: >-
+      A release lock the founder wrote is measured against the estate rather than believed: a
+      freeze issue open on the board while a workflow it names can still run is refused
+    law: LAW 2, LAW 28, crew#739
+    origin: founder 2026-08-31, "no more releases" -- "LOCK DOWN" -- "NOTHING ELSE GETS RELEASED"
+    planes: [ci]
+    requires: [gh]
+    run: [python3, bin/idp-freeze]
+    fixtures:
+      must_fail: tests/fixtures/freeze/breached.json
+      must_pass: tests/fixtures/freeze/honoured.json
+    cases:
+      - {expect: refuse, args: [tests/fixtures/freeze/breached.json]}
+      - {expect: pass, args: [tests/fixtures/freeze/honoured.json]}
+      - {expect: pass, args: [tests/fixtures/freeze/none-open.json], note: "the ordinary day: no lock is written, so nothing is locked"}
+      - {expect: refuse, args: [tests/fixtures/freeze/names-nothing.json], note: "a lock this gate cannot read is refused, never passed quietly"}
+      - {expect: pass, live: true, note: "the board's open freeze issues against the live state of this repository's workflows"}
+    ok: "every workflow named by an open freeze is switched off, or no freeze is open"
+    fail: "a freeze is open on the board and a workflow it locked can still run; either the lock stands and the switches go back off, or the founder closes the issue"

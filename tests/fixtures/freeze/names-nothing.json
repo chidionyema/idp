@@ -1,0 +1,10 @@
+{
+  "repo": "chidionyema/idp",
+  "freezes": [
+    {
+      "issue": "chidionyema/crew#999",
+      "title": "FREEZE: stop everything",
+      "workflows": []
+    }
+  ]
+}

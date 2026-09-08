@@ -77,6 +77,7 @@ deprecate them. Eradicate them."
 | A RuntimeInstall CR names a runtime in the closed set the NodeSoftwareOperator knows, requires a canary on ProgressiveCanary rollouts, and rejects pause durations that would make the canary pause a no-op | NodeSoftwareOperator option c, goal b9217bea | `bin/nodesoftware-operator-gate` | tests/fixtures/nodesoftware-operator/bad.yaml | tests/fixtures/nodesoftware-operator/good.yaml |
 | A conditional's verdict is never a pipeline into grep in a script that sets pipefail: a failing left-hand stage inverts the answer silently. Capture the output first and grade the text. | LAW 55 | `bin/idp-pipeverdict` | tests/fixtures/pipefail-verdict.bad.sh | tests/fixtures/pipefail-verdict.good.sh |
 | One cloud resource has exactly one owner: a Crossplane external-name that matches an OpenTofu resource under platform/oci is two controllers undoing each other, forever | decision 0026 | `python3 bin/idp-split-brain` | tests/fixtures/split-brain/bad | tests/fixtures/split-brain/good |
+| A release lock the founder wrote is measured against the estate rather than believed: a freeze issue open on the board while a workflow it names can still run is refused | LAW 2, LAW 28, crew#739 | `python3 bin/idp-freeze` | tests/fixtures/freeze/breached.json | tests/fixtures/freeze/honoured.json |
 <!-- END GENERATED RULES TABLE -->
 
 Rules that are already types or tools, and so need no row: compose files must parse
