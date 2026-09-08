@@ -68,15 +68,25 @@ clickhouse:
     # tracker from 2.73 to 2.06 GiB, deleting no telemetry and buying no node. The TTLs below stop
     # them coming back; the truncate was the one-off that cleared what had already accumulated.
     #
-    # The number stays where the cluster actually has it. Git said 4Gi and the live pod has run at
-    # 5632Mi since #2388's rollback never reached it (the observability Kustomization was stalled
-    # behind a failed signoz HelmRelease pre-upgrade hook, itself a casualty of the recreate loop).
-    # With live RSS measured at 4.49 GiB, a reconcile carrying 4Gi would have OOMed the database
-    # the moment the pipeline unstuck. 5632Mi is what is live, so the reconcile is a no-op on
-    # memory and cannot kill it. Lowering it belongs to a measurement taken after the TTLs have
-    # held for a day, not to this commit.
-    requests: { cpu: 200m, memory: 5632Mi }
-    limits: { cpu: 2000m, memory: 5632Mi }
+    # The number does not change, and that is the finding: the purge is what made 4Gi correct.
+    # Raising it was tried on 2026-09-08 and was wrong. The live pod had drifted to 5632Mi --
+    # #2388's rollback never reached the cluster, because the observability Kustomization was
+    # stalled behind a failed signoz HelmRelease pre-upgrade hook, itself a casualty of the
+    # recreate loop -- and with RSS measured at 4.49 GiB against a 27 GiB database, matching git to
+    # the drift looked like the safe move. It was not. Restarting the process to reclaim the
+    # allocator memory the truncate had freed but never returned to the OS (RSS 4.82 GiB while the
+    # tracker read 2.62) released the pod's place on the node, and 5632Mi fitted neither node:
+    # "0/2 nodes are available: 2 Insufficient cpu, 2 Insufficient memory". The database was
+    # Unschedulable until the live ClickHouseInstallation was patched back to 200m / 4Gi. That is
+    # the trap platform/state/pinned-workloads.yaml exists to catch: a workload that holds its
+    # place only because it already has it does not come back from an eviction.
+    #
+    # 4Gi is now right rather than merely unchanged. The database is 4.36 GiB on disk, not 27.37,
+    # so the merges that were sitting on the ceiling have a fraction of the work. If a measurement
+    # after the TTLs have held a day says otherwise, that is when the number moves -- and the
+    # honest outcome of a purge like this is usually a diff of zero, not banked headroom.
+    requests: { cpu: 200m, memory: 4Gi }
+    limits: { cpu: 2000m, memory: 4Gi }
   # crew#483 (2026-08-28, diagnose run 33172481714): once the node agents reached the collector
   # (c03fb77), signoz-otel-collector logged `code: 241 ... (total) memory limit exceeded: would use
   # 3.61 GiB ... current RSS: 1.87 GiB, maximum: 3.60 GiB` on every batch of spans, logs and
