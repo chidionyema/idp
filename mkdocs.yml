@@ -25,6 +25,10 @@ nav:
       - AI model stack: explanation/architecture/model-stack.md
   - Own models, every experiment: reference/forge/index.md
   - Estate showcase: SHOWCASE.md
+  - Buyer showcase:
+      - Install wedge (the buyer's first hour): showcase/install-wedge.md
+      - Demo script: showcase/demo-script.md
+      - Buyer journey storyboard: showcase/buyer-journey-storyboard.md
   - Conscience: CONSCIENCE.md
   - "Founder: shipped, changed for you, stuck": FOUNDER.md
   - "Union: the founder and the crew":

@@ -166,8 +166,14 @@ claimed here.
 
 1. The `rules.yaml` split-brain row and its two fixtures, before any operator is installed. The
    guard predates the thing it guards.
+   **Shipped 2026-09-07:** `bin/idp-split-brain`, the `rules.yaml` row and both fixtures (#2449).
 2. Crossplane core plus `provider-family-oci` with only the sub-providers the first move needs,
    under Flux, with Workload Identity and no stored credential.
+   **Shipped 2026-09-08:** `platform/crossplane/` (chart 2.4.0, the family provider and
+   `provider-oci-objectstorage` v1.3.0, a `DeploymentRuntimeConfig` pinning the service account
+   name, and a `ProviderConfig` whose credential blob is two keys and no key material),
+   `platform/oci/crossplane.tf` (the IAM statement that is the entire boundary), and the two
+   `Kustomization` rows in `clusters/oke/platform.yaml`. `ESTATE_OCI_REGION` joins the DNA.
 3. The Claim emitter branch in `compile_storage()`, behind `ESTATE_STORAGE_PROVIDER`.
 4. One workload's secrets moved off OpenTofu, with the `random_password` and `oci_vault_secret`
    resources deleted in the same pull request — never both sides, per the guard above. The

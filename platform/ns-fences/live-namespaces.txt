@@ -5,6 +5,7 @@ calico-system
 cert-manager
 chaos-mesh
 commerce
+crossplane-system
 cyrus
 dagster
 default

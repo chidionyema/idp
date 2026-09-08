@@ -40,15 +40,36 @@ take to their board.
 
 Every product above has three ways in:
 
-1. **Run the install wedge** — a single image, `idp/quickstart`, that runs the
-   platform on a fresh k3d cluster in 30 minutes. The drill is the demo; the
-   screenshot is the case study.
-2. **Read the showcase** — `/showcase` on the install wedge renders the live
-   estate bar, the per-system health donuts, and the buyer sandbox launch
-   button. The showcase is the page a buyer's engineer opens first.
+1. **Launch the buyer sandbox** — the one-button wedge on the portal runs the
+   canonical `flux create kustomization demo-sandbox` command from
+   [the runbook](../runbooks/demo-sandbox.md). Within two minutes a
+   cluster-in-a-cluster a buyer's engineer holds for one or four hours;
+   bounded, catalogued, mortal. The wedge is the same Flux path every other
+   Kustomization on the cluster uses — no second install path, no hand-built
+   demo environment. The drill runs hourly; the screenshot is the case study.
+2. **Read the showcase** — [`/showcase`](../SHOWCASE.md) renders the live estate
+   bar (`ELITE / GAP / BLIND`), the per-system health donuts, the five Otto
+   LIVE capabilities, and the buyer sandbox launch button. The page is rebuilt
+   by [`bin/estate-showcase`](../bin/estate-showcase) from the on-disk catalogue;
+   `bin/estate-showcase --check` exits `0` when the audit page is fresh.
 3. **Call us** — for the platform itself, for the bundles, and for any product
    that needs a tenant, a SOC 2 conversation, or a procurement-grade security
    one-pager.
+
+The three pages a buyer's engineer opens first live under
+[`docs/showcase/`](../showcase/install-wedge.md): the
+[install-wedge narrative](../showcase/install-wedge.md),
+the [demo script](../showcase/demo-script.md), and the
+[buyer-journey storyboard](../showcase/buyer-journey-storyboard.md). The
+audit page and the rule chain are on disk; the screenshot is the receipt.
+
+> A note on `idp/quickstart`: that phrase appears throughout this catalogue as
+> a working name for "the install wedge". The implementation is the Flux-based
+> buyer sandbox above. Bundling the whole platform into a single container
+> image would be a "stitched-together solution" the platform's one-platform
+> rule (see `AGENTS.md` "THE HEADLINE") forbids; the request
+> is filed as a `FOUNDER ACTION` on
+> [the install-wedge page](../showcase/install-wedge.md).
 
 The drill runs hourly. The receipts land in the collector. The case study is
 the dogfood chain: we ship every product here because we use every product here.

@@ -189,6 +189,12 @@ flows:
   agent-workforce:
     egress: [observability, llm]
     egress_internet: [443]
+  # decision 0026 step 2. The provider pods talk to the OCI control plane over 443 and
+  # nothing else; the collector hop is the usual one. Not rendered until the namespace is
+  # on the cluster (idp-ns-fence-gen defers what live-namespaces.txt does not hold).
+  crossplane-system:
+    egress: [observability]
+    egress_internet: [443]
   keda:
     egress: [observability]
   llm:
