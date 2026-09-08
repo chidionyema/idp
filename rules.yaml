@@ -675,7 +675,9 @@ rules:
   - id: reloader-operator-owned
     label: reloader
     statement: Reloader is off on a workload a custom resource owns; that operator owns its config
-      rollout, and Reloader on top of an operator is a loop, not a control
+      rollout, and Reloader on top of an operator is a loop, not a control. A Secret re-minted on
+      a timer says what Reloader does with it (ignore, or a sentence why the roll is wanted);
+      a silent one is refused
     law: crew#684 rung 2
     origin: incident 2026-09-08, SigNoz ClickHouse recreated every ~40s
     planes:

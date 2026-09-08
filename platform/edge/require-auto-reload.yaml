@@ -137,6 +137,56 @@ spec:
                 the mounted ConfigMap or Secret, Reloader rolls the pod, the new pod changes what
                 the operator writes. Measured twice -- tailscale 2026-09-02 (689 StatefulSet
                 generations) and SigNoz ClickHouse 2026-09-08 (a new pod every ~40s).
+    # Rung 3, added 2026-09-08 after Cyrus reached Deployment revision 654: a new ReplicaSet every
+    # ten minutes, a pod that never finished a job, a public door that timed out. Two correct
+    # controls made the loop. Rule 1 stamps auto="true" on every workload, and an ExternalSecret
+    # with a generatorRef re-mints its Secret every refreshInterval by design; Reloader rolled the
+    # pod on every mint (the one line that differed between ReplicaSets was the env var it
+    # injects, STAKATER_CYRUS_GITHUB_SECRET). The same pair sat on mcp/agentgateway (revision
+    # 1448), hermes-agent-gateway (433) and otto-gateway (136), and had been fixed once by hand on
+    # the portal (platform/backstage/overlays/oke/github-token.yaml, crew#307) -- a fix nothing
+    # generalised, so the next deck walked into it again.
+    #
+    # A timer-minted Secret must therefore say which of two things it is, and silence is refused:
+    #   reloader.stakater.com/ignore: "true" on the produced Secret (spec.target.template) -- the
+    #     consumer reads the mounted file on every call, so the mint reaches it with no restart;
+    #   idp.platform/reload-on-mint on the ExternalSecret -- the consumer reads at boot, the roll
+    #     on every mint is the rotation mechanism, and the author has said so in a sentence.
+    # A generator with refreshInterval 0 is minted once and never re-minted: no timer, nothing to
+    # roll on, not matched. This is a validation on the ExternalSecret rather than a mutation
+    # because the policy cannot know how the consumer reads the file; the author can, and must say.
+    - name: a-timer-minted-secret-says-what-reloader-does-with-it
+      match:
+        any:
+          - resources:
+              kinds: [external-secrets.io/v1/ExternalSecret]
+              operations: [CREATE, UPDATE]
+      preconditions:
+        all:
+          - key: "{{ length(request.object.spec.dataFrom[?sourceRef.generatorRef] || `[]`) }}"
+            operator: GreaterThan
+            value: 0
+          - key: "{{ to_string(request.object.spec.refreshInterval || '0') }}"
+            operator: AnyNotIn
+            value: ["0", "0s", "0m", "0h"]
+      validate:
+        failureAction: Enforce
+        message: >-
+          ExternalSecret {{ request.object.metadata.name }} is re-minted every
+          {{ request.object.spec.refreshInterval }} and says nothing about Reloader, which rolls
+          every workload that mounts it on every mint (Cyrus, 2026-09-08, revision 654). Either
+          put reloader.stakater.com/ignore: "true" under spec.target.template.metadata.annotations
+          because the consumer reads the file per call, or write a sentence under
+          metadata.annotations.idp.platform/reload-on-mint because it reads at boot.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.target.template.metadata.annotations.\"reloader.stakater.com/ignore\" || '' }}"
+                operator: NotEquals
+                value: "true"
+              - key: "{{ length(request.object.metadata.annotations.\"idp.platform/reload-on-mint\" || '') }}"
+                operator: LessThan
+                value: 40
     - name: no-hand-kept-reload-list
       match:
         any:
