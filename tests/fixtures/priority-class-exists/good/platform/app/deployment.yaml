@@ -1,0 +1,19 @@
+# The same workload naming a class the tree next to it actually declares.
+# the real ones live, which is exactly how idp-infrastructure survived review. Admission
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodesoftware-operator
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: nodesoftware-operator }
+  template:
+    metadata:
+      labels: { app: nodesoftware-operator }
+    spec:
+      priorityClassName: platform-batch
+      containers:
+        - name: manager
+          image: ghcr.io/example/nodesoftware-operator:v1

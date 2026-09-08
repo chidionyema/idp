@@ -48,7 +48,11 @@ spec:
       automountServiceAccountToken: true    # controller-runtime needs the token
       imagePullSecrets:
         - name: ghcr-pull
-      priorityClassName: idp-infrastructure # scheduling/priority-classes (R76)
+      # platform-batch, not infrastructure-critical: that class is the radio-room set
+      # (traefik, langfuse, the gateways, cluster-state), enforced by name in
+      # platform/scheduling/require-priority-class.yaml. This controller ranks above
+      # default and yields to them. See platform/priority-classes/priorityclasses.yaml.
+      priorityClassName: platform-batch
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

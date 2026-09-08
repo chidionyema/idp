@@ -1015,3 +1015,35 @@ rules:
       a SecretStore or ClusterSecretStore names a provider outside the cluster that its
       namespace's fence gives it no route to; the store reports InvalidProviderConfig and every
       ExternalSecret behind it stops
+
+  - id: priority-class-exists
+    label: priority-class-exists
+    fast: true
+    statement: >-
+      Every priorityClassName a workload names is a PriorityClass this tree declares or one of
+      the two Kubernetes ships; a class that exists nowhere is refused at admission, not at apply
+    law: "incident 2026-09-08, nodesoftware-operator"
+    origin: >-
+      platform/nodesoftware-operator/deployment.yaml named priorityClassName idp-infrastructure.
+      No such class is declared in this tree and none exists in the cluster, so the apiserver
+      refused every pod the ReplicaSet asked for -- `pods "nodesoftware-operator-6d87fb9cbd-" is
+      forbidden: no PriorityClass with name idp-infrastructure was found`. The Deployment sat at
+      ReplicaFailure/FailedCreate and its Flux row went HealthCheckFailed. The name survived
+      review because the line carried a comment pointing at the directory where the real classes
+      live, which makes a wrong name look checked, and because the failure names a scheduling
+      concept, so it reads like capacity rather than a typo.
+    planes: [ci, session]
+    session_glob: ['platform/**/*.yaml', 'platform/**/*.yml', 'clusters/**/*.yaml', 'apps/**/*.yaml']
+    run: [python3, bin/idp-priority-class-exists]
+    cluster: {policy: null, why: "the apiserver already refuses the pod; the cost is that it refuses it after the manifest has merged and reconciled"}
+    fixtures:
+      must_fail: tests/fixtures/priority-class-exists/bad
+      must_pass: tests/fixtures/priority-class-exists/good
+    cases:
+      - {expect: refuse, args: [tests/fixtures/priority-class-exists/bad]}
+      - {expect: pass, args: [tests/fixtures/priority-class-exists/good]}
+      - {expect: pass, live: true, note: "this repository's own workloads and priority classes"}
+    ok: "every priorityClassName in the tree resolves to a class that exists"
+    fail: >-
+      a workload names a PriorityClass that neither this tree declares nor Kubernetes ships;
+      admission refuses every pod it asks for and the Deployment reports FailedCreate

@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Every priorityClassName a workload names is a class that exists.
+
+crew#539 gave the estate three PriorityClasses and a Kyverno policy that asks every
+platform workload to name one. Nothing checked that the name it picked was real.
+
+On 2026-09-08 `platform/nodesoftware-operator/deployment.yaml` named
+`idp-infrastructure`. No such class is declared anywhere in this tree and none exists
+in the cluster, so the apiserver refused every pod the ReplicaSet asked for:
+
+    pods "nodesoftware-operator-6d87fb9cbd-" is forbidden:
+    no PriorityClass with name idp-infrastructure was found
+
+The Deployment sat at ReplicaFailure/FailedCreate, its Flux row went HealthCheckFailed,
+and the failure names a scheduling concept -- so it reads like capacity, not a typo. It
+survived review because the line carries a comment pointing at the directory where the
+real classes live, which makes a wrong name look checked.
+
+A PriorityClass is cluster-scoped and admission-time: the reference either resolves or
+the pod is never created. That is exactly the shape a static check settles, and it is
+cheap -- the set of declared classes is a dozen lines of YAML.
+
+Grades: the name resolves to a PriorityClass this tree declares, or to one of the two
+classes Kubernetes ships. A value that is not a plain name -- a Kyverno pattern like
+"?*", a Helm template, a variable -- is not a reference and is skipped.
+"""
+import os
+import re
+import sys
+
+import yaml
+
+# Kubernetes creates these two itself on every cluster; nothing in a tree declares them.
+BUILTIN = {"system-cluster-critical", "system-node-critical"}
+
+SKIP = {".git", ".venv", "node_modules", "vendor", "site", "__pycache__"}
+
+# A reference is a plain DNS-1123 name. "?*" is a Kyverno pattern, {{ .Values.x }} is a
+# Helm template, ${FOO} is a Flux substitution: none of them name a class.
+NAME = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
+
+YAML_EXT = (".yaml", ".yml")
+
+
+def files(root, keep_fixtures):
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP]
+        rel = os.path.relpath(dirpath, root)
+        if not keep_fixtures and rel.startswith(os.path.join("tests", "fixtures")):
+            dirnames[:] = []
+            continue
+        for name in filenames:
+            if name.endswith(YAML_EXT):
+                yield os.path.join(dirpath, name)
+
+
+def docs(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except (OSError, UnicodeDecodeError):
+        return None, []
+    if "priorityClassName" not in text and "PriorityClass" not in text:
+        return text, []
+    try:
+        return text, [d for d in yaml.safe_load_all(text) if isinstance(d, dict)]
+    except yaml.YAMLError:
+        # A file this parser cannot read is graded by whatever gate owns its schema.
+        return text, []
+
+
+def named(node, out):
+    """Collect every priorityClassName value anywhere in a document."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "priorityClassName" and isinstance(value, str):
+                out.add(value.strip())
+            else:
+                named(value, out)
+    elif isinstance(node, list):
+        for item in node:
+            named(item, out)
+
+
+def line_of(text, value):
+    for number, line in enumerate(text.splitlines(), 1):
+        if "priorityClassName" in line and value in line:
+            return number
+    return 0
+
+
+def main(argv):
+    root = os.path.abspath(argv[1]) if len(argv) > 1 else os.getcwd()
+    # A fixture tree is passed as the root on purpose; the repository's own run skips it.
+    keep_fixtures = len(argv) > 1
+
+    declared = set()
+    used = []  # (path, value, line)
+
+    for path in files(root, keep_fixtures):
+        text, documents = docs(path)
+        if not documents:
+            continue
+        for document in documents:
+            if document.get("kind") == "PriorityClass":
+                name = (document.get("metadata") or {}).get("name")
+                if isinstance(name, str):
+                    declared.add(name)
+            values = set()
+            named(document, values)
+            for value in values:
+                if NAME.match(value):
+                    used.append((path, value, line_of(text, value)))
+
+    known = declared | BUILTIN
+    bad = [(p, v, n) for p, v, n in used if v not in known]
+
+    if bad:
+        print("FAIL: a workload names a PriorityClass that does not exist")
+        for path, value, number in sorted(set(bad)):
+            where = os.path.relpath(path, root)
+            print("  %s:%d names %r" % (where, number, value))
+        print("  declared here: %s" % ", ".join(sorted(declared) or ["none"]))
+        print("  Kubernetes ships: %s" % ", ".join(sorted(BUILTIN)))
+        return 1
+
+    print(
+        "PASS: %d priorityClassName references, all resolved (%d declared here, 2 built in)"
+        % (len(used), len(declared))
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
