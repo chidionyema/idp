@@ -305,3 +305,64 @@ def test_the_scan_reads_the_addresses_it_claims_to_read():
         "the research engine's LITELLM_BASE_URL is the hop this scan was built from and it is "
         "not in the result"
     )
+
+
+# A host the pod dials itself. An image reference is not one of these: the kubelet pulls images on
+# the node, over the node's own network, where no pod policy applies.
+EXTERNAL_HOST = re.compile(r"(?:https://|oci://)([a-z0-9.-]+\.[a-z]{2,})")
+INTERNAL_HOST = re.compile(r"\.svc\b|\$\{ESTATE_ZONE\}|localhost|127\.0\.0\.1")
+
+INTERNET_EGRESS = "allow-internet-egress"
+
+
+def _pod_spec(doc):
+    spec = doc.get("spec") or {}
+    template = (spec.get("template") or {}).get("spec")
+    if template:
+        return template
+    job = ((spec.get("jobTemplate") or {}).get("spec") or {}).get("template") or {}
+    return job.get("spec") or {}
+
+
+def test_every_pod_that_dials_the_internet_sits_behind_a_fence_that_allows_it():
+    """An image pull is the node's traffic; a container running curl is the pod's.
+
+    Measured 2026-09-08T00:39Z: pod estate-mcp-6cb8dd5b87-8gnpt was created onto Calico and sat in
+    CrashLoopBackOff on its `fetch-estate-db` init container, whose whole command is
+    `flux pull artifact oci://ghcr.io/chidionyema/idp/estate-db`. Its one log line was "pulling
+    artifact from ghcr.io/chidionyema/idp/estate-db:latest" and then nothing. The mcp fence
+    rendered no allow-internet-egress at all, so the pull had nowhere to go.
+
+    This is a different gap from the cross-namespace one above and was missed by that scan
+    entirely: the destination is not a namespace, so no declaration between two rows could ever
+    have covered it.
+    """
+    open_to_internet = {
+        namespace
+        for namespace, docs in _policies().items()
+        if any(d["metadata"]["name"] == INTERNET_EGRESS for d in docs)
+    }
+    fenced = set(_policies())
+    closed = []
+    for path, doc in _docs(PLATFORM):
+        namespace = _namespace(doc)
+        if namespace not in fenced or namespace in open_to_internet:
+            continue
+        pod = _pod_spec(doc)
+        for container in (pod.get("initContainers") or []) + (
+            pod.get("containers") or []
+        ):
+            words = list(container.get("command") or []) + list(
+                container.get("args") or []
+            )
+            words += [e.get("value", "") for e in container.get("env") or []]
+            for host in EXTERNAL_HOST.findall(" ".join(str(w) for w in words)):
+                if INTERNAL_HOST.search(host):
+                    continue
+                closed.append(f"{namespace}/{container['name']} dials {host} ({path})")
+    assert not closed, (
+        "these containers dial the public internet from inside a fence that renders no "
+        + INTERNET_EGRESS
+        + ":\n"
+        + "\n".join(sorted(set(closed)))
+    )

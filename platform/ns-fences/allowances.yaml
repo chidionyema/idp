@@ -207,6 +207,15 @@ flows:
     # which is how an agent -- an assistant session, Otto on Telegram -- asks the investigator
     # a question. Both directions declared, as above.
     egress: [observability, hindsight, robusta, llm]
+    # The server does not ship its data. Both init containers run `flux pull artifact
+    # oci://ghcr.io/chidionyema/idp/estate-db` (platform/mcp/estate-mcp.yaml), so the pod itself
+    # dials the public internet before the server starts -- this is not an image pull, which the
+    # kubelet performs on the node and no pod policy sees. Measured 2026-09-08T00:39Z: pod
+    # estate-mcp-6cb8dd5b87-8gnpt, created onto Calico, sat in CrashLoopBackOff on
+    # `fetch-estate-db` with the single log line "pulling artifact from
+    # ghcr.io/chidionyema/idp/estate-db:latest" and no result, while the mcp fence rendered no
+    # allow-internet-egress at all.
+    egress_internet: [443]
     ingress_from: [edge, hermes-agent, otto-gateway]
   monitoring:
     # edge: Alertmanager and Prometheus are reached through the gateway, which is why edge has
