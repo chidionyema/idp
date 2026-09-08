@@ -79,28 +79,18 @@ export {
 } from './estate';
 export type { Health } from './estate';
 
-// Founder's five daily doors (Lane 2 — guessed from the estate's daily rhythm).
-// Each door is a catalogue entity the founder checks every morning.
-// These are guesses — the founder should confirm or rename.
-interface FounderDoor {
-  entity: Entity;
-  meaning: string;
-}
-
-// An Entity is apiVersion + kind + metadata; a literal carrying metadata alone does not
-// type-check, and the five doors are ordinary catalogue Components like any other.
-const door = (name: string, title: string): Entity => ({
-  apiVersion: 'backstage.io/v1alpha1',
-  kind: 'Component',
-  metadata: { name, title },
-});
-
-const founderDoors: FounderDoor[] = [
-  { entity: door('doors', 'Doors'), meaning: 'Which doors are open or closed right now' },
-  { entity: door('health', 'Health'), meaning: 'What is failing or needs attention' },
-  { entity: door('state', 'State'), meaning: 'Is the estate receipt live or stale' },
-  { entity: door('reports', 'Reports'), meaning: 'What shipped and what did not' },
-  { entity: door('secrets', 'Secrets'), meaning: 'Vault secrets ages and rotations' },
+// Founder's five daily doors (Lane 2). Each row names a door that
+// backstage/founder/catalog-info.yaml actually defines, so the band resolves against the same
+// catalogue the rest of this page reads. The five entities this replaced were invented here and
+// carried names no entity holds -- 'doors', 'health', 'state', 'reports', 'secrets' -- so every
+// lookup missed and the band read a state off undefined. The resolution below drops a name the
+// catalogue does not hold rather than inventing a state for it.
+const FOUNDER_DOORS: { name: string; meaning: string }[] = [
+  { name: 'founder-gods-view', meaning: 'What shipped, what changed for you, what is stuck' },
+  { name: 'founder-crew-board', meaning: 'Every request you have made, and where each one is' },
+  { name: 'founder-showcase', meaning: 'The whole estate on one page, live' },
+  { name: 'founder-jobs', meaning: 'Whether every scheduled job checked in' },
+  { name: 'founder-drills', meaning: 'The receipts: which drills ran and what they proved' },
 ];
 
 const useStyles = makeStyles(theme => ({
@@ -942,6 +932,18 @@ const Ready = ({ estate }: { estate: Estate }) => {
     return m;
   }, [estate, now]);
   const stateOf = (e: Entity): LayerState => states.get(e.metadata.name)!;
+  // The five daily doors, resolved against the catalogue. A name the catalogue does not hold is
+  // dropped here rather than carried into the band with no state, which is what made the old
+  // hand-written entities render off undefined.
+  const founderFive = useMemo(
+    () =>
+      FOUNDER_DOORS.flatMap(({ name, meaning }) => {
+        const entity = estate.doors.find(e => e.metadata.name === name);
+        const s = entity && states.get(name);
+        return entity && s ? [{ entity, meaning, s }] : [];
+      }),
+    [estate, states],
+  );
   const all = [...estate.layers, ...estate.doors];
   const counts = count(all.map(e => stateOf(e).state));
 
@@ -1130,32 +1132,35 @@ const Ready = ({ estate }: { estate: Estate }) => {
          <h2 className={classes.h}>
            <SectionIcon section="everything" />
            Founder's five
-           <span className={classes.hCount}>5 doors</span>
+           <span className={classes.hCount}>
+              {founderFive.length} door{founderFive.length === 1 ? '' : 's'}
+            </span>
          </h2>
          <p className={classes.hDesc}>
            The five places the estate checks every morning: doors, health, state,
            reports, secrets. Each one proves it answers.
          </p>
          <div className={classes.counters} data-testid="founder-five">
-           {founderDoors.map(d => {
-             const s = stateOf(d.entity);
-             return (
-               <button
-                 key={d.entity.metadata.name}
-                 className={classes.counter}
-                 data-testid={`founder-${d.entity.metadata.name}`}
-                 data-state={s.state}
-                 onClick={() => navigate(entityPath(d.entity))}
-                 title={d.meaning}
-               >
-                 <span className={classes.counterIcon}>
-                   <StateIcon state={s.state} />
-                 </span>
-                 <span className={classes.n}>{d.entity.metadata.title}</span>
-                 <span className={classes.meaning}>{d.meaning}</span>
-               </button>
-             );
-           })}
+           {founderFive.map(({ entity, meaning, s }) => (
+             <button
+               type="button"
+               key={entity.metadata.name}
+               className={classes.counter}
+               data-testid={`founder-${entity.metadata.name}`}
+               data-state={s.state}
+               onClick={() => navigate(entityPath(entity))}
+               title={`${meaning}. ${s.why}`}
+             >
+               <span className={classes.counterIcon}>
+                 <StateIcon state={s.state} />
+               </span>
+               <span className={classes.word}>
+                 <Dot state={s.state} />
+                 {STATE_WORD[s.state]}
+               </span>
+               <span className={classes.meaning}>{meaning}</span>
+             </button>
+           ))}
          </div>
        </section>
 
