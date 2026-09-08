@@ -1,0 +1,5 @@
+# Append-only ledgers. Two branches each appending one row is not a conflict, it is two rows,
+# and git cannot know that without being told. crew learned this on 2026-09-08 when two pull
+# requests each appended one guard row and the second could not merge; this file exists so idp
+# never spends a session on the same nothing.
+docs/conscience-history.jsonl   merge=union

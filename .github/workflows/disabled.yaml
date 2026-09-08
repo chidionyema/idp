@@ -1,0 +1,18 @@
+# Workflows this repository deliberately does not run, and why.
+#
+# GitHub's enabled/disabled switch lives in settings, not in the tree, so a workflow can be off
+# for a week while its file reads perfectly and every check stays green -- which is exactly what
+# happened to deploy-when-green.yml between 2026-08-31 and 2026-09-08. bin/idp-mechanism-gate
+# --live compares GitHub's answer to this file: a workflow that is off and not named here is a
+# refusal, and a name here with no reason is not a reason.
+disabled:
+  .github/workflows/portability-drill.yml: >-
+    Switched off in settings on or about 2026-08-29, immediately after two consecutive failures
+    (runs at 17:25:37Z and 17:26:10Z; the 17:17:31Z run before them was green). No decision
+    record says who turned it off or why, and this is the LAW 19 portability proof, so being
+    dark is a real gap rather than a choice -- it is written down here so it stops being an
+    invisible one. Reopen by fixing the drill, not by deleting this line.
+  .github/workflows/kini-finish.yml: >-
+    Switched off in settings on or about 2026-08-31. It is the founder's "Finish KINI" button
+    and it fires only on his own `FINISH: KINI` comment, so an idle one costs nothing; every
+    run in its history is `skipped`. Turned back on when KINI is next closed out.
