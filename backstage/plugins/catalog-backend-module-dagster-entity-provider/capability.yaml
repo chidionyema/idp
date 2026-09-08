@@ -1,0 +1,12 @@
+id: auto-catalog-backend-module-dagster-entity-provider
+name: catalog-backend-module-dagster-entity-provider
+repo: idp
+path: idp/backstage/plugins/catalog-backend-module-dagster-entity-provider
+state: NO_CLUSTER_HOME
+git_branch: feat/idp-lands-its-own-green-pull-requests
+last_commit: '2026-08-27'
+code_files: 7
+test_files: 0
+indicators:
+- package.json
+requires_deep_review: true

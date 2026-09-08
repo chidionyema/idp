@@ -1,0 +1,12 @@
+id: auto-custom-entity-extensions
+name: custom-entity-extensions
+repo: idp
+path: idp/backstage/plugins/custom-entity-extensions
+state: NO_CLUSTER_HOME
+git_branch: feat/idp-lands-its-own-green-pull-requests
+last_commit: '2026-09-07'
+code_files: 4
+test_files: 0
+indicators:
+- package.json
+requires_deep_review: true

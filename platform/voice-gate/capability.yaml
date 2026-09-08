@@ -1,0 +1,12 @@
+id: auto-voice-gate
+name: voice-gate
+repo: idp
+path: idp/platform/voice-gate
+state: NO_CLUSTER_HOME
+git_branch: feat/idp-lands-its-own-green-pull-requests
+last_commit: '2026-09-07'
+code_files: 14
+test_files: 5
+indicators:
+- Cargo.toml
+requires_deep_review: true

@@ -1,0 +1,12 @@
+id: auto-messaging
+name: messaging
+repo: idp
+path: idp/platform/messaging
+state: HAS_CLUSTER_MANIFEST
+git_branch: feat/idp-lands-its-own-green-pull-requests
+last_commit: '2026-08-31'
+code_files: 8
+test_files: 0
+indicators:
+- go.mod
+requires_deep_review: true

@@ -1,108 +1,69 @@
-# CHECKPOINT — 2026-09-08, crew#920 Otto enterprise readiness
+# RESUME HERE — 2026-09-08
 
-## RESUME HERE
+## The fire
+Estate at 26/80 Flux Kustomizations Ready and climbing slowly. Only 5-6 are actually broken;
+the rest are queued behind `edge`. Every root failure is an admission webhook timing out.
 
-**The estate is blocked on one founder action, pinned to Telegram (message_id 43319).**
+## Root cause, four converging angles
+The API server cannot reach pods on node `10.0.159.197`.
+- cert-manager: 3 of 3 pods on .197 -> its webhook fails 100%
+- external-secrets: 4 of 4 pods on .197 -> its webhook fails 100%
+- kyverno: 1 of 2 pods on .197 -> fails ~50%, which is the 13<->26 oscillation
+- kustomize-controller was on .197 and fetched no artifact at all; PR #2546 moved it to
+  .221 by podAffinity and artifact fetching recovered completely.
 
-Flux is deadlocked estate-wide. 0 of 80 Kustomizations Ready: 15 ArtifactFailed, 61
-DependencyNotReady, 4 Progressing. Every artifact fetch fails with
-`dial tcp 10.96.202.29:80: i/o timeout` against `source-controller.flux-system.svc.cluster.local.`
+Mechanism (not proved, kernel state is not readable from `agent-reader`): flannel's DaemonSet
+was deleted but `flannel.1` and its 10.244.0.0/16 routes survive in the node kernel and
+collide with Calico's. Both nodes still carry `flannel.alpha.coreos.com/backend-data`, VNI 1.
 
-### The measurement (two angles, LAW 15)
+## Staged with the founder (telegram 43621)
+Scale the OKE node pool 2 -> 3 (no room to drain .197 at 91/95 percent CPU requested), then
+recycle 10.0.159.197. Step one is the `oci-scale-node-pool` JIT grant, which is also the
+end-to-end break-glass proof crew#920 wants. `jit-broker` is 1/1 Running on .221 now.
 
-- `helm-controller` pod is on node `10.0.148.221`, the same node as `source-controller`
-  (`10.244.117.185`). 31 of 32 HelmReleases are Ready. Its fetches from that ClusterIP work.
-- `kustomize-controller` pod is on node `10.0.159.197` (`10.244.3.87`). 0 of 80 Kustomizations
-  Ready, every fetch timing out against the same ClusterIP, same port 80.
+## In flight — the durable fix I can land without his hand
+An admission webhook with `failurePolicy: Fail` and one replica is a cluster-wide single point
+of failure: losing its node stops every apply in the estate, including the apply that repairs
+it. cert-manager-webhook and external-secrets-webhook are both `replicas: 1`, no PDB, no
+anti-affinity. Kyverno already has 2 + required anti-affinity, which is why it degrades to 50%
+instead of 100%.
 
-Same service, same artifact, only the node differs. Every GitRepository and OCIRepository is
-Ready with a stored artifact, so the sources are fine and the path to them is not.
+`bin/idp-availability-gate` already encodes exactly this standard (replicas >= 2, PDB as
+maxUnavailable, required podAntiAffinity on hostname) but `grade_helm` reads only the
+TOP-LEVEL chart keys, so a sub-chart deployment like `webhook.replicaCount` is invisible to it.
+That is the blind spot to close.
 
-### Cause, and what was eliminated
+Three-part change, one PR:
+1. `bin/idp-availability-gate`: `grade_helm(hr, objs, component=None)` reads
+   `values[component]` for replicaCount / podDisruptionBudget / affinity; `judge` passes it
+   through; the `also_graded` loop reads an optional `component:` key and keys `settled` on
+   surface+component.
+2. `platform/edge/cert-manager.yaml` and `platform/secrets/external-secrets.yaml`:
+   `webhook.replicaCount: 2`, `webhook.podDisruptionBudget {enabled: true, maxUnavailable: 1}`,
+   `webhook.affinity` required podAntiAffinity on `kubernetes.io/hostname`.
+3. `platform/availability.yaml`: two `also_graded` rows naming those webhooks + component.
+4. A test beside `tests/test_the_availability_gate_sees_through_a_traefik_router.py` (same
+   SourceFileLoader import pattern) proving `grade_helm` both ways on a component.
 
-Two CNIs hold `10.244.0.0/16` at once: `kube-flannel-ds` 2/2 Running since 2026-08-25, and
-Calico since 38h ago. Seven pods still carry no `cni.projectcalico.org/podIP`:
-`identity/oauth2-proxy`, `estate-db/cnpg-controller`, `observability/superset`, and four
-short-lived `receipt-*` jobs.
+Chart keys verified with `helm show values`: cert-manager v1.21.1 and external-secrets 2.9.0
+both expose `webhook.replicaCount`, `webhook.podDisruptionBudget`, `webhook.affinity`.
 
-Eliminated: Felix is looping normally with no errors; both flux pods are on Calico; VXLAN is up
-with tunnel addresses on both nodes; `flux-system/allow-egress` permits all same-namespace
-traffic on all ports; no Calico GlobalNetworkPolicies exist; both kube-proxy pods have been
-quiet and healthy since 2026-08-27.
+Honest limit: two replicas turns "never converges" into "converges on retry" (50% like
+kyverno). The full cure is still the node.
 
-Not measured: that the double CNI is the reason. This session holds `agent-reader` and cannot
-create a pod, exec into one, or restart a controller, so the probe that would settle it could
-not run.
+## Still open, crew#920
+- ephemeral/shadow cluster #2471, gated on #2470
+- JIT broker end to end with a real tap (WJ.2/3/4) — the node-pool scale is the honest target
+- ClickHouse still CrashLoopBackOff, 38 restarts
+- second CNI plan in the tree: platform/cni/cilium-values.yaml + the cilium-replace playbook in
+  bin/idp-oke-break-glass, offered to the founder, not started (glass-break gated)
+- crossplane-providers fails on a missing oci.upbound.io/v1beta1 CRD; gates nothing
 
-### The staged action
+## RESUME HERE (session e5728c64, 2026-09-08 18:35Z)
 
-```
-kubectl -n kube-system delete daemonset kube-flannel-ds
-kubectl -n identity rollout restart deploy/oauth2-proxy
-kubectl -n estate-db rollout restart deploy/cnpg-controller
-kubectl -n observability rollout restart deploy/superset
-```
-
-Confirm with `kubectl get kustomization -A | grep -c True`.
-
-### What is queued behind it
-
-1. `chi-signoz-clickhouse-cluster-0-0-0` is crash-looping at 31 restarts on the old config.
-   `d0816557` (PR #2535, merged, CI green) fixes it and is waiting on Flux.
-2. `signoz-clickhouse` then gets endpoints, and langfuse's database job stops timing out.
-3. observability catches up from `a38150d4`.
-4. langfuse-web and langfuse-worker drop 1000m -> 500m each (#2429). That returned CPU is what
-   lets the queue on two nodes at 91% and 95% requested finally schedule.
-5. Otto's verify lane leaves gemini (#2518).
-
-## IN FLIGHT
-
-Worktree `scratchpad/wt-flux`, branch `fix/flux-control-plane-colocates`: a podAffinity patch in
-`clusters/oke/flux-system/kustomization.yaml` pinning kustomize-controller to
-source-controller's node, so the control plane never again deadlocks on the overlay it is
-responsible for repairing. It takes effect only after Flux is applying again.
-
-## STILL OPEN, crew#920
-
-- Ephemeral/shadow cluster, issue #2471 under umbrella #2470 (vcluster). Not started.
-- JIT break-glass broker proved end to end with one real tap on the founder's phone.
-- Ten scheduled jobs folded onto the one scheduler. Blocked: another session holds that repo.
-- The capability board graded.
-
-## MERGED THIS SESSION
-
-- #2535 -> `d0816557` — ClickHouse system-log TTL inside the engine string, plus the LAW 45 gate
-  `bin/idp-clickhouse-system-log-ttl` and its fixture pair, registered in `rules.yaml`.
-- #2527 — otto-golden rehearsal, CI green.
-
-## RESUME HERE — 2026-09-08, the estate-wide Flux deadlock
-
-**Fire, root cause, proved twice.** Two defects, both in the namespace fences, both live-measured:
-
-1. *Flannel was still running under Calico.* Its `FLANNEL-POSTRTG` chain masqueraded every
-   `10.244.0.0/16` packet to the node's own address (6,740,000 packets / 652 MB measured), so
-   cross-node Calico traffic matched no `podSelector` and died at Calico's end-of-tier DROP.
-   Fixed live: DaemonSet deleted, chain flushed on both nodes, `10-flannel.conflist` removed,
-   the 7 pods still on flannel addresses recreated. Flannel is in no manifest in this repo — it
-   was an out-of-band OKE addon, so Flux will not re-apply it.
-
-2. *No namespace serving an admission webhook allowed ingress from the control plane.*
-   `allow-apiserver-egress` existed; the mirror never did. Fixed in `bin/idp-ns-fence-gen`
-   (`ingress_apiserver` key) and merged as PR #2549.
-
-**What is left, and it is the last thing standing.** PR #2549's ingress rule names
-`ESTATE_APISERVER_CIDR` (`10.0.0.11/32`) and that address matched **zero packets**. Measured on
-the live cluster by opening one fence to `0.0.0.0/0` and reading `/proc/net/nf_conntrack`: an
-admission webhook sees its caller as one of three addresses — the control-plane subnet
-(`10.0.0.8/29`, OKE runs several apiservers behind the advertised endpoint), a worker address
-(`10.0.144.0/20`), or a Calico VXLAN tunnel address from the pod pool (`10.244.0.0/16`) when the
-call lands on the node the webhook replica is *not* on. That last one is why kyverno (a replica
-per node) answered while cert-manager (one replica) timed out, from the same fence, same cluster,
-same minute.
-
-Branch `fix/the-fence-names-every-address-the-apiserver-arrives-as`: three CIDR keys in
-`clusters/oke/estate-config.yaml`, `WEBHOOK_CALLER_CIDRS` in `bin/idp-ns-fence-gen`, the
-regenerated fences, and a test. All 8 webhook namespaces already carry the fix live.
-
-**Founder action still open: crew#739.** The freeze says nothing is released; 7 of its 8 barred
-workflows are back on. One word on that issue — "stands" or "closed" — and nobody else can give it.
+Leaving: investor brief (published, artifact 7d2683e1-9afc-4d8b-a99e-04de4b63cfe4, version "Counted figures only").
+Opening: worktree `fix/hindsight-offline-hub` for a two-line fix, hindsight-api hangs on an outbound call to
+huggingface.co that the namespace egress fence never answers (SYN_SENT to 3.174.141.51:443 inside the pod).
+Handoff for the DeepSeek lane: `docs/specs/2026-09-08-cyrus-and-knowledge-base-work-order.md` (Cyrus rolls every
+ten minutes: GithubAccessToken generator at 10m plus Reloader auto=true; knowledge base moves to hindsight).
+Founder record for DeepSeek's recovery: `~/.claude/docs/founder/2026-09-08T1817Z-update-entory-the-estate-platform-recovery-is-done-6089258a.md`.

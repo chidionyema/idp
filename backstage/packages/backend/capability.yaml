@@ -1,0 +1,13 @@
+id: auto-backend
+name: backend
+repo: idp
+path: idp/backstage/packages/backend
+state: HAS_CLUSTER_MANIFEST
+git_branch: feat/idp-lands-its-own-green-pull-requests
+last_commit: '2026-09-06'
+code_files: 6
+test_files: 0
+indicators:
+- Dockerfile
+- package.json
+requires_deep_review: true

@@ -1,0 +1,12 @@
+id: auto-idp
+name: idp
+repo: idp
+path: idp
+state: HAS_CLUSTER_MANIFEST
+git_branch: feat/idp-lands-its-own-green-pull-requests
+last_commit: '2026-09-08'
+code_files: 574
+test_files: 174
+indicators:
+- pyproject.toml
+requires_deep_review: true
