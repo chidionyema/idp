@@ -71,7 +71,11 @@ spec:
               # Pinned to the commit that built it, so the image the cluster runs can be read
               # in the repository it came from. Built by the research-engine repository's own
               # image workflow on a GitHub runner, never on the founder's Mac (LAW 31).
-              image: ghcr.io/chidionyema/research-engine:sha-80040fd15f298bd80369c99aea13e443fa4512bf
+              # 2026-09-08: sha-80040fd was amd64-only, but the OKE node the job schedules on is
+              # arm64, so every hourly run died ErrImagePull -> DeadlineExceeded. The image
+              # workflow now builds multi-arch (linux/amd64,linux/arm64); e7a7369 is the merge
+              # on feat/cp1-skeleton whose index carries both.
+              image: ghcr.io/chidionyema/research-engine:sha-e7a7369cfa7f543db6eb50d68778a02130e17e99
               command: ["/bin/sh", "-c"]
               args:
                 - |
