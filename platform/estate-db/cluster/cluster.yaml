@@ -16,6 +16,17 @@ kind: Cluster
 metadata:
   name: estate
   namespace: estate-db
+  annotations:
+    # The flannel -> Calico cutover (platform/healing/descheduler.yaml, profile cni-cutover)
+    # reaches every pod an eviction can reach. It cannot reach these two: CloudNativePG holds a
+    # PodDisruptionBudget over its own instances, so evicting the primary is refused, and it is
+    # right to refuse -- a database does not move by being killed. This annotation is how you
+    # ask CloudNativePG instead, and it does the safe thing: replica first, wait for it to catch
+    # up, switch the primary over, then restart the old one. Both pods come back on Calico.
+    #
+    # The value is a fixed instant, not a template. CloudNativePG restarts when it changes, so
+    # this is one restart on the day it merges and nothing on every reconcile after.
+    kubectl.kubernetes.io/restartedAt: "2026-09-08T08:30:00Z"
 spec:
   instances: 2
   # PostgreSQL 18, and it is not a preference. Langfuse's own server already runs postgres:18
