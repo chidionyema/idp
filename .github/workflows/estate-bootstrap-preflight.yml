@@ -1,3 +1,5 @@
+# button: Check the estate can start itself from nothing
+# founder: Reads every password and key the platform needs and refuses the change if any of them has no way to be created without you doing it by hand.
 # Estate bootstrap gate (founder 2026-09-08: "the whole system can just boot up ready without
 # anyone remembering scripts"). Catches "a credential nobody has a bootstrapper for" before it
 # lands on main.
