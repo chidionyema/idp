@@ -17,6 +17,43 @@ cd "$top"
 mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR)
 [ "${#staged[@]}" -eq 0 ] && exit 0
 
+# 178 files in this tree are generated and committed, and CI grades several of them by exact match
+# -- but until 2026-09-08 nothing regenerated them at commit time. The only reminder that a
+# derivative had gone stale was a red check ten minutes later, on another machine: idp#2477 and
+# idp#2495 both failed on the same generator within the same hour, and neither failure was a
+# mistake in the change, only in remembering a command. A gate that can compute the right answer
+# should write it, not refuse the commit and make a person type it -- the estate's python guard
+# already reformats and re-stages on this same hook rather than refusing.
+#
+# Each row is: a name, the staged paths that make an output stale, the generator, and the paths to
+# re-stage after it runs. The generator is the authority; the tree follows it.
+regen() {
+  local name=$1 inputs=$2 gen=$3 outs=$4
+  printf '%s\n' "${staged[@]}" | grep -qE "$inputs" || return 0
+  [ -x "$top/${gen%% *}" ] || return 0     # LAW 38: no tool, no verdict -- never a refusal
+  # shellcheck disable=SC2086  # $gen and $outs are this file's own words, split on purpose
+  if ! (cd "$top" && python3 $gen >/dev/null 2>&1); then
+    echo "pre-commit: $gen failed; run it by hand to see why"; return 1
+  fi
+  # shellcheck disable=SC2086
+  git add -- $outs 2>/dev/null || true
+  if ! git diff --cached --quiet -- $outs; then
+    echo "pre-commit: regenerated and staged $name ($outs)"
+  fi
+}
+
+# The inputs include each generator's own output: a hand-edit of a generated file is drift too,
+# and every one of these files says so in its own banner. The generator settles it either way.
+regen portal-buttons '^(\.github/workflows/|backstage/templates/founder-actions/)' \
+  'bin/idp-portal-buttons' 'backstage/templates/founder-actions' || exit 1
+regen agents-md '^(rules\.yaml|AGENTS\.md)$' \
+  'bin/idp-rules render-agents-md' 'AGENTS.md' || exit 1
+regen vendor-render '^(platform/vendors/consoles\.yaml|llm/config(\.base)?\.yaml|platform/llm/config(\.base)?\.yaml)$' \
+  'bin/idp-vendor-render' 'llm/config.yaml platform/llm/config.yaml' || exit 1
+
+# The rows above can add files, and everything below grades the staged set.
+mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR)
+
 # Phase 1 of the founder's playbook names pre-commit; when it is installed and the repo carries
 # .pre-commit-config.yaml, that config is the checks (same ruff and shellcheck, repo: local).
 pc="$(command -v pre-commit || true)"; [ -x "$top/.venv/bin/pre-commit" ] && pc="$top/.venv/bin/pre-commit"
