@@ -94,6 +94,23 @@ grants:
       node_pool: {type: name, required: true}
       size: {type: integer, required: true, max: 6, min: 2}
 
+  # The estate bootstrap writes a vault value during seed (initial seed or rotation) and the cloud
+  # runner does not hold a long-lived OCI write verb. The broker applies the change with its own
+  # compartment-scoped principal; the TTL is the revocation. The runner's OIDC token only ever
+  # authorises an ask, never the call itself.
+  - id: oci-vault-write
+    provider: oci
+    why: The estate bootstrap writes a vault value during seed and the runner never holds the verb
+    mode: broker-applies
+    operations: [create-secret, update-secret]
+    compartment: estate
+    secrets: [agent_foundry_runner, estate_seed_keys, estate_runbook_secrets]
+    max_ttl: 10m
+    rate_per_hour: 5
+    parameters:
+      secret_name: {type: name, required: true}
+      contents_b64: {type: base64_blob, required: true, encrypted_in_transit: true}
+
   # A surface is answering on the wrong address after a rebuild. The record moves to a target
   # this estate already runs; the apex, the gateway and the identity records are refused by the
   # gate, so the road back is never the thing being moved.
