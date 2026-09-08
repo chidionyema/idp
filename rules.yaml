@@ -865,3 +865,26 @@ rules:
         live: true
     ok: "no shell file lets a pipeline exit status stand in for a grep match (LAW 55)"
     fail: "a shell file lets a pipeline exit status stand in for a grep match (LAW 55)"
+
+  # --- decision 0026: Crossplane owns Day-2 and OpenTofu owns the ground. The guard predates the
+  #     thing it guards -- this row is step 1 of that record's order of work, written and green
+  #     before any operator is installed, so the first Claim ever merged is already judged.
+  - id: split-brain
+    label: split
+    fast: true   # a regex walk of platform/oci plus the YAML that names a Crossplane group
+    statement: >-
+      One cloud resource has exactly one owner: a Crossplane external-name that matches an
+      OpenTofu resource under platform/oci is two controllers undoing each other, forever
+    law: decision 0026
+    origin: founder 2026-09-07, "i think if crossplane has benefits for us we need to work out how to fit it in"
+    planes: [ci]
+    run: [python3, bin/idp-split-brain]
+    fixtures:
+      must_fail: tests/fixtures/split-brain/bad
+      must_pass: tests/fixtures/split-brain/good
+    cases:
+      - {expect: refuse, args: [tests/fixtures/split-brain/bad]}
+      - {expect: pass, args: [tests/fixtures/split-brain/good]}
+      - {expect: pass, live: true, note: "the estate's own tree, which owns nothing with Crossplane yet"}
+    ok: "no cloud object is claimed by both OpenTofu and Crossplane"
+    fail: "a cloud object is claimed by both OpenTofu and Crossplane; each controller will undo the other at the reconcile interval"
