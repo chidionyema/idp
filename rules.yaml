@@ -763,6 +763,46 @@ rules:
     ok: "a change that was never proved in the shadow dimension cannot reach the Greenlane (W2.3)"
     fail: "a change without a green Proof-of-Convergence on its own head could be auto-merged (W2.3)"
 
+  - id: limit-raise-only
+    label: limit
+    statement: >-
+      A change to a workload passes the low-risk lane only when its sole difference is a strict
+      increase of a resources.limits.memory/cpu value on one workload; a request change (which
+      the scheduler counts), a lower limit, or any other edit is refused -- YAML ancestry is read
+      from the full parsed old and new files, never guessed from a git hunk
+    law: W3.1
+    origin: docs/policy/agent-infra-safety-spec.md
+    planes: [ci]
+    run: [python3, bin/idp-limit-raise-only-diff]
+    cluster: {policy: null, why: "the subject is a pull request diff, which no admission controller sees"}
+    fixtures: {must_fail: tests/fixtures/limit-raise/request, must_pass: tests/fixtures/limit-raise/good}
+    cases:
+      - {expect: pass, args: [--old, tests/fixtures/limit-raise/good/old/w.yaml, --new, tests/fixtures/limit-raise/good/new/w.yaml]}
+      - {expect: refuse, args: [--old, tests/fixtures/limit-raise/request/old/w.yaml, --new, tests/fixtures/limit-raise/request/new/w.yaml], note: "a request raise is not a limit raise"}
+      - {expect: refuse, args: [--old, tests/fixtures/limit-raise/lower/old/w.yaml, --new, tests/fixtures/limit-raise/lower/new/w.yaml], note: "a lower limit is not a raise"}
+      - {expect: refuse, args: [--old, tests/fixtures/limit-raise/config/old/w.yaml, --new, tests/fixtures/limit-raise/config/new/w.yaml], note: "a config/image edit is not a limit raise"}
+    ok: "a change that is exactly a limit raise on one workload can use the low-risk lane (W3.1)"
+    fail: "a request raise, lower limit, or wider edit could pass the low-risk lane (W3.1)"
+
+  - id: rollback-only
+    label: rollback
+    statement: >-
+      A pull request rolls one workload back only when every changed line is a newTag: whose value
+      that same file has already carried on origin/main; a tag never on main is a forward deploy
+      and waits, and a change that edits anything but a tag is refused -- the prior footprint is
+      proved from history, never assumed from age
+    law: W3.2
+    origin: docs/policy/agent-infra-safety-spec.md
+    planes: [ci]
+    run: [python3, bin/idp-rollback-only-diff]
+    cluster: {policy: null, why: "the subject is a pull request diff, which no admission controller sees"}
+    fixtures: {must_fail: tests/fixtures/rollback/forward-new-tag.diff, must_pass: tests/fixtures/rollback/rollback-known-good.diff}
+    cases:
+      - {expect: pass, args: [--diff, tests/fixtures/rollback/rollback-known-good.diff, --carried, tests/fixtures/rollback/carried.txt]}
+      - {expect: refuse, args: [--diff, tests/fixtures/rollback/forward-new-tag.diff, --carried, tests/fixtures/rollback/carried.txt], note: "a tag never carried on main is a forward deploy"}
+      - {expect: refuse, args: [--diff, tests/fixtures/rollback/not-only-tag.diff, --carried, tests/fixtures/rollback/carried.txt], note: "a change that is not only a tag"}
+    ok: "a rollback to a tag this release already ran on main can use the low-risk lane (W3.2)"
+    fail: "a forward tag or a wider edit could pass the rollback lane (W3.2)"
 
   - id: sovereign-command
     label: command

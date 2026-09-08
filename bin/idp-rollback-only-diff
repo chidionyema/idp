@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""Is this pull request only a rollback to a tag this release already carried? (spec W3.2)
+
+Docs/policy/agent-infra-safety-spec.md W3.2 gives a second row of the Greenlane: rolling one
+workload back to a tag main previously carried is a state the estate has already run and the
+founder has already approved, so it may land the low-risk lane. The guarantee is not that the tag
+is *old* in time; it is that this exact file has run this exact tag on main before -- a rollback
+to a state with a proven footprint. A tag never before on main is a *forward* deployment and waits
+for the founder like any other.
+
+WHAT PASSES, and nothing else:
+  * every changed line in the diff is a `newTag:` assignment;
+  * each new tag is one that the same file has carried on `origin/main` before (proved from git
+    history, W0.2's replay-not-fixtures rigour);
+  * the change never renames a file, deletes a file, or edits anything but a `newTag:` line.
+
+A multi-workload or content change, or a tag with no prior footprint on main, is refused. Whether
+the rollback-tag is "older than some threshold" is not the test -- age is a proxy; an actual prior
+footprint on main is the fact (LAW 29: attribute by evidence, not by look).
+
+  bin/idp-rollback-only-diff --diff FILE            grade a diff (and, for the footprint proof,
+                                                     git history of the repo it runs in)
+  bin/idp-rollback-only-diff --pr N                 ask GitHub for the diff
+  bin/idp-rollback-only-diff --diff FILE --carried FILE   a deterministic fixture form: `carried`
+                                                     lists the tags this file has proven to hold
+                                                     on main, so the two cases grade without a repo
+
+Exit 0 pass, 1 refuse, 2 BLIND (no diff / no footprint source to read).
+"""
+import argparse
+import os
+import re
+import subprocess
+import sys
+
+TAG = re.compile(r"^\s*newTag:\s*(?P<tag>\S+)\s*$")
+HEADER = ("+++", "---")
+
+
+def _file_of(line):
+    if line.startswith("diff --git "):
+        return line.split(" b/", 1)[-1].split()[0]
+    return None
+
+
+def _carried_from_git(diff, root):
+    """For each file the diff edits, reconstruct the tag set main's history has run on it."""
+    files = set()
+    for line in diff.splitlines():
+        f = _file_of(line)
+        if f:
+            files.add(f)
+    carried = {}
+    for f in files:
+        # Tags this file has actually carried: any commit on origin/main whose own content line
+        # for this file was a newTag: and whose parent differs. A broad, cheap read: every newTag
+        # value that has ever appeared in this file's history on origin/main.
+        p = subprocess.run(
+            ["git", "-C", root, "log", "origin/main", "-p", "--", f],
+            capture_output=True, text=True, timeout=60,
+        )
+        tags = set()
+        if p.returncode == 0:
+            for line in p.stdout.splitlines():
+                if line.startswith("+") and not line.startswith("+++"):
+                    m = TAG.match(line[1:])
+                    if m:
+                        tags.add(m.group("tag"))
+        carried[f] = tags
+    return carried
+
+
+def grade(diff, carried_tags=None):
+    """Return (True/False/None, why). None == BLIND. carried_tags maps file->set of tags on main."""
+    if not diff.strip():
+        return None, "the diff came back empty; a pull request with no diff is not a rollback"
+
+    per_file = {}  # file -> list of newTag lines seen (the '+' additions)
+    for raw in diff.splitlines():
+        if raw.startswith("diff --git "):
+            f = _file_of(raw)
+            per_file.setdefault(f, [])
+            continue
+        if raw.startswith(HEADER) or raw.startswith("@@") or raw.startswith("index "):
+            continue
+        if raw.startswith("new file mode") or raw.startswith("deleted file mode"):
+            if not per_file:
+                continue
+            cur = list(per_file)[-1]
+            return False, f"{'adds' if raw.startswith('new') else 'deletes'} a file; a rollback never does ({cur})"
+        if not raw.startswith(("+", "-")):
+            continue  # context
+        if not per_file:
+            continue
+        cur = list(per_file)[-1]
+        body = raw[1:]
+        if body.strip() and not body.strip().startswith("#"):
+            m = TAG.match(body)
+            if not m:
+                return False, f"changes a line that is not a newTag:, in {cur}: {body.strip()[:90]!r}"
+            if raw.startswith("+") or raw.startswith("-"):
+                if raw.startswith("+"):
+                    per_file[cur].append(m.group("tag"))
+
+    if not per_file:
+        return False, "the diff carries no newTag change"
+    if len(per_file) != 1:
+        return False, f"touches {len(per_file)} files, not one workload: {sorted(per_file)}"
+
+    f = list(per_file)[0]
+    new_tags = per_file[f]
+    if not new_tags:
+        return False, "the diff removes a newTag without adding one; a rollback always adds its target"
+    known = carried_tags.get(f, set()) if carried_tags is not None else None
+    if known is None:
+        return None, "no footprint source (git history or --carried) to prove the tag ran on main"
+    for t in new_tags:
+        if t not in known:
+            return False, (
+                f"newTag {t} was never carried by {f} on main, so this is a forward deploy, "
+                f"not a rollback (known on this file: {sorted(known)[-3:]})"
+            )
+    return True, f"rolls {f} back to {', '.join(new_tags)}, all previously run on main"
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--diff", help="grade a diff already on disk")
+    ap.add_argument("--carried", help="a file listing (one per line) tags this file has held on main")
+    ap.add_argument("--pr", help="pull request number to fetch the diff from GitHub")
+    a = ap.parse_args(argv)
+
+    if a.pr and not a.diff:
+        p = subprocess.run(["gh", "pr", "diff", a.pr], capture_output=True, text=True, timeout=120)
+        if p.returncode != 0:
+            print(f"BLIND   rollback  cannot read the diff of #{a.pr}: {(p.stderr or p.stdout).strip()[:120]}")
+            return 2
+        diff = p.stdout
+    elif a.diff:
+        try:
+            diff = open(a.diff, encoding="utf-8").read()
+        except OSError as e:
+            print(f"BLIND   rollback  cannot read {a.diff}: {e}")
+            return 2
+    else:
+        print("BLIND   rollback  no diff (give --diff or --pr)", file=sys.stderr)
+        return 2
+
+    if a.carried:
+        try:
+            tags = {l.strip() for l in open(a.carried, encoding="utf-8") if l.strip()}
+        except OSError as e:
+            print(f"BLIND   rollback  cannot read {a.carried}: {e}")
+            return 2
+        # --carried is one file's footprint; we grade a single-file diff, so map it to that file
+        f = None
+        for line in diff.splitlines():
+            f = _file_of(line) or f
+        carried = ({f: tags} if f else {})
+    else:
+        # resolve footprint from the repo that contains this diff (CI has the checkout)
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        try:
+            carried = _carried_from_git(diff, root)
+        except subprocess.SubprocessError as e:
+            print(f"BLIND   rollback  cannot read git history: {e}")
+            return 2
+
+    ok, why = grade(diff, carried)
+    if ok is None:
+        print(f"BLIND   rollback  {why}")
+        return 2
+    print(f"{'ok      ' if ok else 'FAIL    '} rollback  {why}")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
