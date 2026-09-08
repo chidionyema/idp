@@ -8,6 +8,9 @@ kind: ExternalSecret
 metadata:
   name: hermes-agent-env
   namespace: otto-gateway
+  annotations:
+    idp.platform/reload-on-mint: >-
+      the gateway reads the mounted env file at boot, so the roll every 45m is how a fresh installation token reaches it before its 60m expiry
 spec:
   # 45m keeps every mint inside the GitHub token's 60-minute life (see hermes-agent/gateway.yaml).
   refreshInterval: 45m

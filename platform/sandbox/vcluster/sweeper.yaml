@@ -19,6 +19,9 @@ kind: ExternalSecret
 metadata:
   name: sandbox-sweeper-github
   namespace: demo-sandbox
+  annotations:
+    idp.platform/reload-on-mint: >-
+      the consumer is a CronJob, which Reloader never rolls; each run mounts whatever token is current
 spec:
   # 45m like hermes-agent (crew#736): the only job is staying inside the token's 60-minute life.
   refreshInterval: 45m
