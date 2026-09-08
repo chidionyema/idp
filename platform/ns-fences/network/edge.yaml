@@ -89,6 +89,9 @@ spec:
           kubernetes.io/metadata.name: dagster
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: demo-sandbox
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: guacamole
     - namespaceSelector:
         matchLabels:
