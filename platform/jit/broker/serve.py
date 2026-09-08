@@ -87,6 +87,9 @@ class Handler(BaseHTTPRequestHandler):
     # here -- not the broker's own entry, which nothing registered anything with.
     webhook_secret: str = ""
     telegram_path: str = "/webhook/telegram"
+    #: What the edge puts in front of every path when the request came through the public
+    #: door. Empty means there is no public door and every path arrives bare.
+    public_prefix: str = ""
 
     def _body(self) -> dict:
         n = int(self.headers.get("Content-Length") or 0)
@@ -113,17 +116,42 @@ class Handler(BaseHTTPRequestHandler):
         sent = self.headers.get("Authorization") or ""
         return sent[7:] if sent.startswith("Bearer ") else ""
 
+    #: Everything the broker answers is reachable from a public door (public-door.yaml), so
+    #: every path is behind the agent key except two, and both have a reason. The Telegram
+    #: path carries its own credential -- the secret token Telegram signs each delivery with,
+    #: plus the HMAC inside callback_data -- and Telegram does not hold the estate's agent
+    #: key. `/healthz` is a GET the kubelet makes from the node, which holds no key either,
+    #: and it answers with the ledger's own verdict on itself and nothing about the estate.
+    AGENT_DOORS = ("/ask", "/state", "/grants", "/identity")
+
+    def path_after_prefix(self) -> str:
+        """The path with the public door's prefix removed.
+
+        The edge routes `https://otto.${ESTATE_ZONE}/jit/ask` here, because the shared Gateway
+        listener carries one hostname and this broker does not get its own. Stripping the
+        prefix in the broker rather than rewriting it at the edge is the smaller road: it is
+        one branch here that a test can run, instead of a URLRewrite filter whose behaviour
+        belongs to whichever ingress implementation happens to be installed.
+        """
+        prefix = self.public_prefix
+        if prefix and self.path.startswith(prefix + "/"):
+            return self.path[len(prefix) :]
+        return self.path
+
     def do_POST(self) -> None:  # noqa: N802
         try:
-            if self.path == "/ask":
-                # 401 before the body is even read, and separately from the ask itself, so a
-                # bad key reads as "I am not who I said" rather than the 400 that means "what
-                # you asked for is not allowed" -- and so an unauthenticated caller learns
-                # nothing about the catalogue, not even whether a grant id exists.
+            path = self.path_after_prefix()
+            if path in self.AGENT_DOORS:
+                # 401 before the body is even read, and separately from what the door then
+                # does, so a bad key reads as "I am not who I said" rather than the 400 that
+                # means "what you asked for is not allowed" -- and so an unauthenticated
+                # caller learns nothing at all: not which grants exist, not whether a request
+                # id is real, not even whether a grant id it named is in the catalogue.
                 try:
                     self.broker.authenticate(self._bearer())
                 except Refused as exc:
                     return self._reply(401, {"error": str(exc)})
+            if path == "/ask":
                 b = self._body()
                 req = self.broker.ask(
                     b["grant"],
@@ -135,15 +163,16 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 self.phone.send_ask(req, self.broker._load_grant(req.grant_id))
                 return self._reply(200, {"request": req.id})
-            if self.path == "/identity":
-                # A wrong key is a 401 and not the 400 every other Refused answers with --
-                # the caller has to be able to tell "I am not who I said" from "what you
-                # asked for is not allowed".
+            if path == "/identity":
+                # Already authenticated above; identity() checks the key again on its own
+                # account because it is also the thing that decides what the key buys, and a
+                # Refused from it is still a 401 rather than the 400 every other Refused
+                # answers with.
                 try:
                     return self._reply(200, self.broker.identity(self._bearer()))
                 except Refused as exc:
                     return self._reply(401, {"error": str(exc)})
-            if self.path == "/state":
+            if path == "/state":
                 req = self.broker.pending.get(self._body().get("request", ""))
                 if req is None:
                     return self._reply(404, {"error": "no such request"})
@@ -151,7 +180,7 @@ class Handler(BaseHTTPRequestHandler):
                     200,
                     {"state": req.state, "reason": req.reason, "result": req.result},
                 )
-            if self.path == self.telegram_path:
+            if path == self.telegram_path:
                 # First of the two checks. A mirrored request reaches this port from the edge
                 # rather than from the agents, so the shared token is what separates Telegram
                 # from anyone else who found the Service; the HMAC in callback_data is the
@@ -181,7 +210,7 @@ class Handler(BaseHTTPRequestHandler):
                 # carries no chat text, no token and no callback data (LAW 21).
                 print(f"jit telegram: mirrored delivery handled: {handled}", flush=True)
                 return self._reply(200, {"handled": handled})
-            if self.path == "/grants":
+            if path == "/grants":
                 with open(self.broker.catalogue_path) as fh:
                     return self._reply(200, yaml.safe_load(fh) or {})
         except Refused as exc:
@@ -191,7 +220,7 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(404, {"error": "no such door"})
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path == "/healthz":
+        if self.path_after_prefix() == "/healthz":
             ok, why = self.broker.ledger.verify()
             return self._reply(200 if ok else 500, {"ledger": why})
         self._reply(404, {"error": "no such door"})
@@ -249,6 +278,7 @@ def main() -> None:
     Handler.broker, Handler.phone = broker, phone
     Handler.webhook_secret = secret("TELEGRAM_WEBHOOK_SECRET")
     Handler.telegram_path = os.environ.get("JIT_TELEGRAM_PATH", "/webhook/telegram")
+    Handler.public_prefix = os.environ.get("JIT_PUBLIC_PREFIX", "")
     threading.Thread(
         target=_housekeeping, args=(broker, phone, ledger_path), daemon=True
     ).start()

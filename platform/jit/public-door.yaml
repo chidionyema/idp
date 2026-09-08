@@ -1,0 +1,64 @@
+# The broker's address from anywhere, and the reason it is a path and not a hostname.
+#
+# Until this file an agent could reach the broker from exactly two places: inside the cluster,
+# where the Service name resolves, and over the tailnet, where platform/tailscale/policy.hujson
+# names the founder's own devices. Neither is where the agents actually run. An agent on a
+# GitHub runner, in a cloud sandbox, or on any machine that is not his laptop could not ask for
+# a grant at all -- which is WJ.2's wall with no door to ask at, and it is why the ledger is
+# still empty.
+#
+# A hostname of its own would be the obvious shape and is not available: the shared Gateway
+# lives in the prospector repository, each of its listeners carries one hostname and one
+# certificate, and adding a thirteenth is a change in another repository plus a certificate to
+# issue -- for a door that needs no branding and is read by no human. So this is a path prefix
+# on the host that already exists, and platform/jit/broker/serve.py strips the prefix back off
+# (`Handler.public_prefix`, JIT_PUBLIC_PREFIX in deployment.yaml). Stripping it in the broker
+# rather than rewriting it at the edge is deliberate: one branch with a test around it, instead
+# of a URLRewrite filter whose behaviour belongs to whichever ingress happens to be installed.
+#
+# What makes a public door acceptable at all is what is behind it. Every path the broker
+# answers -- /ask, /state, /grants, /identity -- refuses a caller that does not present the
+# estate's agent key, before it reads the body. A stranger who finds this URL learns nothing:
+# not which grants exist, not whether a request id is real, not whether a grant id it named is
+# in the catalogue. And the key is not what buys the access. The founder's tap is. The key only
+# says the ask came from an agent of this estate, so the name he reads on his phone is worth
+# reading.
+#
+# /healthz is deliberately absent from the rules below. It is a GET the kubelet makes from the
+# node, it is not on this road, and a health path on a public door is a free liveness oracle
+# for whoever is scanning.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: jit-broker
+  namespace: jit
+  labels:
+    backstage.io/kubernetes-id: jit-broker
+  annotations:
+    # The check is one hop in, in broker/serve.py, and this names it the way otto-gateway's
+    # route names its own: an auth annotation that says where to look, so a reader of the
+    # route does not conclude from its absence that there is none.
+    idp.estate/auth: jit-agent-key
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-otto
+  hostnames:
+    - "otto.${ESTATE_ZONE}"
+  rules:
+    # An exact list and not a prefix. A prefix would carry any path the broker ever grows,
+    # including one added without this file being reopened; these four are the doors an agent
+    # uses and the set is small enough to write down.
+    - matches:
+        - path: {type: Exact, value: /jit/ask}
+          method: POST
+        - path: {type: Exact, value: /jit/state}
+          method: POST
+        - path: {type: Exact, value: /jit/grants}
+          method: POST
+        - path: {type: Exact, value: /jit/identity}
+          method: POST
+      backendRefs:
+        - name: jit-broker
+          port: 8080

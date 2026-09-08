@@ -7,6 +7,7 @@ kind: Kustomization
 # kustomize refuses the ten identical RoleBinding/jit ids it produces (LAW 45).
 resources:
   - fence.yaml
+  - public-door.yaml
   - rbac.yaml
   - deployment.yaml
 configMapGenerator:

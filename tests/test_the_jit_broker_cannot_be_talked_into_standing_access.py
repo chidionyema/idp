@@ -625,7 +625,7 @@ def test_the_agent_client_says_the_broker_is_unreachable_instead_of_raising(
 SECRET_TOKEN = "the-token-telegram-was-registered-with"
 
 
-def _door(broker, phone, secret_token=SECRET_TOKEN):
+def _door(broker, phone, secret_token=SECRET_TOKEN, public_prefix=""):
     """The real HTTP door on a loopback port, not a stand-in: the check under test reads a
     header, and a fake handler would grade the test's own idea of the request."""
     from broker import serve as srv
@@ -633,6 +633,7 @@ def _door(broker, phone, secret_token=SECRET_TOKEN):
     srv.Handler.broker, srv.Handler.phone = broker, phone
     srv.Handler.webhook_secret = secret_token
     srv.Handler.telegram_path = "/webhook/telegram"
+    srv.Handler.public_prefix = public_prefix
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), srv.Handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
@@ -806,7 +807,7 @@ def _idp_jit():
     return mod
 
 
-def _ask_over_http(httpd, key: str | None, grant="restart-workload"):
+def _ask_over_http(httpd, key: str | None, grant="restart-workload", path="/ask"):
     host, port = httpd.server_address[0], httpd.server_address[1]
     conn = http.client.HTTPConnection(host, port, timeout=5)
     headers = {"Content-Type": "application/json"}
@@ -814,7 +815,7 @@ def _ask_over_http(httpd, key: str | None, grant="restart-workload"):
         headers["Authorization"] = f"Bearer {key}"
     conn.request(
         "POST",
-        "/ask",
+        path,
         json.dumps(
             {
                 "grant": grant,
@@ -998,3 +999,82 @@ def test_a_client_holding_no_key_refuses_before_it_dials(tmp_path, monkeypatch):
         httpd.shutdown()
     assert rc == mod.CODES["refused"]
     assert phone.sent == []
+
+
+# --- the public door, and the prefix the edge puts in front of it ---------------------
+#
+# The shared Gateway listener carries one hostname and this broker does not get one of its own,
+# so the public route is a path prefix on the host that already exists and the broker strips it
+# back off (platform/jit/public-door.yaml). Stripping it here rather than rewriting it at the
+# edge is one branch with a test around it, instead of a URLRewrite filter whose behaviour
+# belongs to whichever ingress happens to be installed.
+
+
+def test_a_prefixed_path_reaches_the_same_door_as_a_bare_one(tmp_path):
+    broker = make(tmp_path, agent_key=AGENT_KEY)
+    phone = SilentPhone()
+    httpd = _door(broker, phone, public_prefix="/jit")
+    try:
+        code, body = _ask_over_http(httpd, AGENT_KEY.decode(), path="/jit/ask")
+    finally:
+        httpd.shutdown()
+    assert code == 200, body
+    assert phone.sent == [body["request"]]
+
+
+def test_the_prefixed_path_is_behind_the_same_key(tmp_path):
+    """The whole argument for a public door is that everything behind it refuses a stranger.
+    A prefix that skipped the check would be a way in through the front."""
+    broker = make(tmp_path, agent_key=AGENT_KEY)
+    phone = SilentPhone()
+    httpd = _door(broker, phone, public_prefix="/jit")
+    try:
+        code, _ = _ask_over_http(httpd, None, path="/jit/ask")
+    finally:
+        httpd.shutdown()
+    assert code == 401
+    assert phone.sent == []
+
+
+def test_a_prefixed_path_is_not_a_door_when_no_prefix_is_configured(tmp_path):
+    """A broker with no public door must not answer the public door's paths. Otherwise the
+    prefix is a second name for every route, reachable wherever the pod is reachable."""
+    broker = make(tmp_path, agent_key=AGENT_KEY)
+    httpd = _door(broker, SilentPhone(), public_prefix="")
+    try:
+        code, _ = _ask_over_http(httpd, AGENT_KEY.decode(), path="/jit/ask")
+    finally:
+        httpd.shutdown()
+    assert code == 404
+
+
+def test_the_prefix_is_stripped_once_and_only_at_the_front(tmp_path):
+    """`/jit/jit/ask` is not `/ask`. A repeated or embedded prefix has to stay a 404, or the
+    exact-path rules in the route stop meaning what they say."""
+    broker = make(tmp_path, agent_key=AGENT_KEY)
+    httpd = _door(broker, SilentPhone(), public_prefix="/jit")
+    try:
+        doubled, _ = _ask_over_http(httpd, AGENT_KEY.decode(), path="/jit/jit/ask")
+        embedded, _ = _ask_over_http(httpd, AGENT_KEY.decode(), path="/ask/jit")
+    finally:
+        httpd.shutdown()
+    assert (doubled, embedded) == (404, 404)
+
+
+def test_healthz_answers_on_the_prefix_and_is_not_on_the_public_route(tmp_path):
+    """The kubelet's GET arrives bare, from the node. The prefixed form working is harmless;
+    what matters is that platform/jit/public-door.yaml does not route it, and the manifest
+    test in tests/test_the_broker_can_be_asked_from_outside_the_cluster.py grades that."""
+    broker = make(tmp_path, agent_key=AGENT_KEY)
+    httpd = _door(broker, SilentPhone(), public_prefix="/jit")
+    host, port = httpd.server_address[0], httpd.server_address[1]
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request("GET", "/healthz")
+        bare = conn.getresponse()
+        bare.read()
+        code = bare.status
+        conn.close()
+    finally:
+        httpd.shutdown()
+    assert code == 200
