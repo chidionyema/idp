@@ -82,42 +82,29 @@ spec:
       # 2026-09-08).
       maxNoOfPodsToEvictPerNode: 50
       profiles:
-        # The flannel -> Calico cutover, and it is a profile rather than a script because the
-        # thing that has to happen is exactly what this operator already does: recreate a pod.
-        # Calico became the CNI that answers CNI ADD at 2026-09-06T20:xx (calico-node 36h old on
-        # 2026-09-08T08:18Z), and every pod created since has come up on it -- measured over the
-        # twenty youngest pods in the cluster, all Calico. A pod older than that boundary is still
-        # on flannel and stays there until something recreates it; 78 were, across 68 controllers.
+        # The flannel -> Calico cutover profile was HERE and is paused, 2026-09-08T10:5xZ.
+        # It is not deleted prose: it is one revert away, and chidionyema/idp#2541 is where the
+        # decision to bring it back is recorded.
         #
-        # PodLifeTime with the boundary as its threshold names that set and no other: nothing
-        # younger than 36h can be pre-Calico. It respects PodDisruptionBudgets (the descheduler
-        # evicts through the eviction API), so a two-replica front door never loses both.
+        # What happened. The profile merged at 09:20Z (#2501) and did exactly what it was built
+        # to do: at ~10:10Z it evicted the flux-system, external-secrets and llm pods off flannel.
+        # They came back on a dataplane that is half-migrated, and lost their Service path. Both
+        # nodes carry OKE's own marker `last-migration-failure=get_kubesvc_failure`, and both
+        # calico-node AND kube-flannel-ds are still Running on both nodes -- two dataplanes
+        # programming one node's rules. ClusterIP traffic then fails, same-node as well as
+        # cross-node: source-controller times out at 10.96.202.29:80, and external-secrets times
+        # out to bitwarden-sdk-server while sitting on the same node. Thirty-plus Kustomizations
+        # and every ExternalSecret in the estate went down behind it.
         #
-        # evictSystemCriticalPods, and not the other profile's priorityThreshold, because twelve
-        # of the 78 sit at or above 1000000 -- traefik, the flux controllers, metrics-server --
-        # and a cutover that skips the front door and the reconcilers is not a cutover. estate-db
-        # is excluded: CloudNativePG restarts its own cluster replica-first with a switchover, and
-        # the annotation on the Cluster is how you ask (platform/estate-db/cluster/cluster.yaml).
+        # The premise the profile was written on is the part that did not hold. It reads: "Calico
+        # became the CNI that answers CNI ADD ... every pod created since has come up on it". A
+        # pod coming up with a Calico IP is not the same fact as a pod whose Service path works,
+        # and nothing measured the second one before 78 pods were moved onto it. That is the
+        # lesson worth keeping: a cutover's readiness test is a request completing end to end
+        # through a ClusterIP, never an address in the right range (THE EMPIRICAL PROOF RULE).
         #
-        # This profile is temporary by construction. When the flannel count reaches zero it evicts
-        # nothing, and it comes out in the pull request that records the zero -- chidionyema/idp#2499.
-        # The receipt is the live count falling, not a test that reads this file back: the estate
-        # deleted 322 of those on 2026-09-04 (519d59e8) and bin/test-executes-gate refuses the 323rd.
-        - name: cni-cutover
-          pluginConfig:
-            - name: DefaultEvictor
-              args:
-                ignorePvcPods: false
-                evictLocalStoragePods: true
-                evictSystemCriticalPods: true
-            - name: PodLifeTime
-              args:
-                maxPodLifeTimeSeconds: 129600
-                namespaces:
-                  exclude: [estate-db]
-          plugins:
-            deschedule:
-              enabled: [PodLifeTime]
+        # It comes back when the migration is finished or reversed and a real cross-node request
+        # over a ClusterIP has been measured completing -- not before.
         - name: rebalance-after-node-swap
           pluginConfig:
             - name: DefaultEvictor
