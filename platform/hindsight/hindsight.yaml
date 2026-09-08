@@ -62,6 +62,12 @@ spec:
         # day: MiniMax-M3 answered 200 with no exception. This is the estate's memory; MiniMax-M3 is
         # the lane with a clean record, and it does not wait on a key the founder rotates himself.
         HINDSIGHT_API_LLM_MODEL: minimax
+        # Never call huggingface.co at boot. The namespace fence only allows egress to
+        # estate-db, llm and observability, so the hub call sits in SYN_SENT forever and
+        # the startup probe fails (observed 2026-09-08 inside the pod: 3.174.141.51:443).
+        # The embedding and reranker models are already on the image; offline is correct.
+        HF_HUB_OFFLINE: "1"
+        TRANSFORMERS_OFFLINE: "1"
       persistence:
         modelCache: { enabled: true, size: 5Gi }   # the local embedding model survives a restart
       extraVolumes: [{ name: tmp, emptyDir: {} }]  # the only writable path besides the model cache
