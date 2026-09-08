@@ -1112,8 +1112,6 @@ const Ready = ({ estate }: { estate: Estate }) => {
         </section>
       )}
 
-      </section>
-       )}
 
        {/* Founder's five */}
        <section
