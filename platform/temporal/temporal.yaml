@@ -39,7 +39,11 @@ spec:
                 labels:
                   backstage.io/kubernetes-id: founder-temporal
   interval: 10m
-  timeout: 15m
+  # The 1.6.0 schema migration (temporal + temporal_visibility on the estate Postgres) ran
+  # longer than the old 15m default, so Helm's upgrade waiter timed out mid-migration and rolled
+  # back before the job could complete — every attempt re-triggered it. 45m lets a cold migration
+  # finish; interval stays 10m for quick post-migration convergence (crew#713, 2026-09-08).
+  timeout: 45m
   chart:
     spec:
       chart: temporal
