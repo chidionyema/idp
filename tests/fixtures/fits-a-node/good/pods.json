@@ -1,0 +1,109 @@
+{
+ "items": [
+  {
+   "metadata": {
+    "name": "db-0",
+    "namespace": "observability",
+    "ownerReferences": [
+     {
+      "kind": "StatefulSet",
+      "name": "db"
+     }
+    ]
+   },
+   "spec": {
+    "containers": [
+     {
+      "name": "c",
+      "resources": {
+       "requests": {
+        "cpu": "500m",
+        "memory": "1Gi"
+       }
+      }
+     }
+    ],
+    "nodeName": "n1"
+   },
+   "status": {
+    "phase": "Running",
+    "conditions": [
+     {
+      "type": "PodScheduled",
+      "status": "True"
+     }
+    ]
+   }
+  },
+  {
+   "metadata": {
+    "name": "cache-0",
+    "namespace": "observability",
+    "ownerReferences": [
+     {
+      "kind": "StatefulSet",
+      "name": "cache"
+     }
+    ]
+   },
+   "spec": {
+    "containers": [
+     {
+      "name": "c",
+      "resources": {
+       "requests": {
+        "cpu": "500m",
+        "memory": "1Gi"
+       }
+      }
+     }
+    ],
+    "nodeName": "n1"
+   },
+   "status": {
+    "phase": "Running",
+    "conditions": [
+     {
+      "type": "PodScheduled",
+      "status": "True"
+     }
+    ]
+   }
+  },
+  {
+   "metadata": {
+    "name": "web-abc123-x",
+    "namespace": "apps",
+    "ownerReferences": [
+     {
+      "kind": "ReplicaSet",
+      "name": "web-abc123"
+     }
+    ]
+   },
+   "spec": {
+    "containers": [
+     {
+      "name": "c",
+      "resources": {
+       "requests": {
+        "cpu": "500m",
+        "memory": "3Gi"
+       }
+      }
+     }
+    ],
+    "nodeName": "n2"
+   },
+   "status": {
+    "phase": "Running",
+    "conditions": [
+     {
+      "type": "PodScheduled",
+      "status": "True"
+     }
+    ]
+   }
+  }
+ ]
+}

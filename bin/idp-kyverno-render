@@ -53,7 +53,33 @@ primary="$("$IDP/bin/idp-repo-root" "$IDP")"
 pol="${IDP_KYVERNO_POLICIES:-$primary/../prospector-main/deploy/k8s/policies}"
 if [ -f "$pol/kustomization.yaml" ]; then src="$pol"
 else src="$IDP/tests/fixtures/kyverno/upstream"; fi
-kubectl kustomize "$src" > "$S/policies.yaml"
+# This reaches the network, and until 2026-09-07 nothing here said so. Both policy sources --
+# prospector's deploy/k8s/policies and the fallback fixture -- list eight `github.com/kyverno/
+# policies` and `raw.githubusercontent.com` resources pinned at ef9843f0, so `kubectl kustomize`
+# git-fetches them on every single judging run: this script, the offline-gate rung, and the two
+# acceptance tests that call it for real. One GitHub blip is therefore a red verdict about the
+# estate's manifests, which is a verdict the run did not measure.
+#
+# It cost a red run the day this was written: PR #2381, run 34158837766, `fatal: repository
+# 'https://raw.githubusercontent.com/kyverno/policies/' not found : exit status 128`, from the
+# acceptance suite. The identical commit passed on run 34158835555 minutes later with nothing
+# changed, which is the signature of a fetch and not of a defect.
+#
+# Three attempts with a widening pause. A fetch that still fails is BLIND (exit 2), never a pass
+# and never a plain red: the distinction is the whole point, because "GitHub was unreachable" and
+# "your manifests break a policy" are different facts and the second one is the only one worth
+# waking somebody for. LAW 28, and the same reason crew#539 made a missing policy set BLIND.
+for attempt in 1 2 3; do
+  kubectl kustomize "$src" > "$S/policies.yaml" 2>"$S/kustomize.err" && break
+  if [ "$attempt" = 3 ]; then
+    echo "BLIND  policies  could not assemble the policy set from $src after 3 attempts;"
+    echo "                 nothing was judged. Both sources fetch pinned upstream policies over"
+    echo "                 the network, so this is usually GitHub and not this repository:"
+    sed 's/^/                 /' "$S/kustomize.err"   # stdout, like every other BLIND line here
+    exit 2
+  fi
+  sleep $((attempt * 4))
+done
 own=$("$IDP/bin/idp-kyverno-own-policies" "$IDP/platform" "$S/policies.yaml")
 n=$(grep -c '^kind: ClusterPolicy' "$S/policies.yaml")
 echo "policies  $n ClusterPolicies: $src plus this repo's platform/"

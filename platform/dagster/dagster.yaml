@@ -51,10 +51,8 @@ spec:
       # CreateContainerConfigError on exactly this: secret "dagster-celery-config-secret"
       # not found (2026-09-02T15:2xZ).
       celeryConfigSecretName: ""
-
     imagePullSecrets:
       - name: ghcr-pull
-
     # crew: one Postgres for the estate. This chart used to bundle its own server
     # (docker.io/library/postgres:14.6, database `test`, user `test`, and the chart's own
     # default password) and it no longer does. The data moved with it: the copy Job in
@@ -67,12 +65,10 @@ spec:
       postgresqlDatabase: dagster
       service:
         port: 5432
-
     # The chart reads this at the top level, not under global -- it was under global here, where
     # the chart never looked, which is why a generated Secret existed at all. Off: the password
     # comes from the vault through external-secrets, and nothing generates one.
     generatePostgresqlPasswordSecret: false
-
     dagsterWebserver:
       # The chart default (docker.io/dagster/dagster-celery-k8s) publishes no arm64 build and
       # every node is arm64 (kubelet ErrImagePull, 2026-09-02T15:2xZ). The estate-scheduler
@@ -81,7 +77,7 @@ spec:
       # docs/reference/policy/dagster-arm64-images.md
       image:
         repository: ghcr.io/chidionyema/estate-scheduler
-        tag: "main-3357-d1f0d6fc88a3f9513f7e784509e8b059667dc2ad" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+        tag: "main-6325-c2546f127f593eaf8cb553748be8e99eb7365557" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
         pullPolicy: IfNotPresent
       # crew#555: founder-facing namespace, so 2 replicas. The chart exposes replicaCount but
       # no spread or strategy value for the webserver; the spread is a postRenderer patch below,
@@ -132,7 +128,6 @@ spec:
         # answering on 80 outside, where every consumer knocks (Backstage names
         # dagster-dagster-webserver.dagster.svc:80).
         port: 3000
-
     dagsterDaemon:
       enabled: true
       # The chart default (docker.io/dagster/dagster-celery-k8s) publishes no arm64 build and
@@ -142,7 +137,7 @@ spec:
       # docs/reference/policy/dagster-arm64-images.md
       image:
         repository: ghcr.io/chidionyema/estate-scheduler
-        tag: "main-3357-d1f0d6fc88a3f9513f7e784509e8b059667dc2ad" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+        tag: "main-6325-c2546f127f593eaf8cb553748be8e99eb7365557" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
         pullPolicy: IfNotPresent
       initContainerResources:
         requests:
@@ -163,12 +158,25 @@ spec:
         periodSeconds: 30
         timeoutSeconds: 10
         failureThreshold: 3
+      # 2026-09-08, cgroup cpu.stat inside dagster-daemon-9cd8bd67f-jqptq:
+      #   nr_periods 599698  nr_throttled 293577  throttled_usec 24468029307
+      # 49.0% of every CPU scheduling period was throttled, 6.8 hours of it. At a quarter core
+      # the daemon could not answer its own `dagster-daemon liveness-check` inside the probe's
+      # 10s (Unhealthy event 2026-09-08 00:2xZ), and it holds the code server to a 2-second
+      # gRPC deadline it was too starved to meet. Limits raised, requests with them so the
+      # scheduler is placed on a node that can actually give it the CPU.
+      # 2026-09-08, same day, correcting the line above it: the request was raised to 200m and
+      # the node had nothing to give. `kubectl top nodes` reports USAGE (58% and 26%); the two
+      # nodes were at 99% and 96% of committed CPU *requests*, and the scheduler refused the new
+      # pod outright -- "0/2 nodes are available: 2 Insufficient cpu". Requests are a reservation
+      # and buy no CPU; the CFS quota that was throttling this pod is the LIMIT. So the limit
+      # keeps the rise and the request goes back to what it was, which costs no capacity at all.
       resources:
         requests:
           cpu: 100m
           memory: 384Mi
         limits:
-          cpu: 250m
+          cpu: 750m
           memory: 768Mi
       podSecurityContext:
         runAsNonRoot: true
@@ -191,7 +199,6 @@ spec:
         config:
           queuedRunCoordinator:
             maxConcurrentRuns: 2
-
     runLauncher:
       type: K8sRunLauncher
       config:
@@ -226,12 +233,10 @@ spec:
             podTemplateSpecMetadata:
               labels:
                 backstage.io/kubernetes-id: estate-scheduler
-
     # The daemon writes a telemetry id into DAGSTER_HOME at boot; that directory is a
     # read-only mount here, so boot died with PermissionError (.telemetry, 2026-09-02T16:4xZ).
     telemetry:
       enabled: false
-
     dagster-user-deployments:
       enabled: true
       # The subchart falls back to its own default when the global name is empty
@@ -243,7 +248,7 @@ spec:
         - name: estate-scheduler
           image:
             repository: ghcr.io/chidionyema/estate-scheduler
-            tag: "main-3357-d1f0d6fc88a3f9513f7e784509e8b059667dc2ad" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+            tag: "main-6325-c2546f127f593eaf8cb553748be8e99eb7365557" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
             pullPolicy: IfNotPresent
           dagsterApiGrpcArgs:
             - "-h"
@@ -255,12 +260,24 @@ spec:
           port: 3030
           includeConfigInLaunchedRuns:
             enabled: true
+          # 2026-09-08, cgroup cpu.stat inside the two estate-scheduler code servers:
+          #   ...bg857  nr_periods 2017271  nr_throttled 1363677  throttled_usec 125974838117
+          #   ...hqpm2  nr_periods  656852  nr_throttled  431930  throttled_usec  41461685332
+          # 67.6% and 65.8% of every CPU scheduling period throttled -- 35.0 and 11.5 hours of
+          # wall time spent stopped. The daemon gives a code server 2 seconds to answer, and in
+          # the six hours before this change it logged 698 "Could not reach user code server /
+          # request timed out due to taking longer than 2 seconds" against 80 schedule
+          # evaluations that got through. Memory was never the constraint: both replicas sit at
+          # ~172Mi of 768Mi. CPU was, and it is the whole defect.
+          # 2026-09-08: request reverted from 250m to 100m for the reason recorded on the daemon
+          # above -- the nodes are at 99% and 96% of committed requests, so raising this one made
+          # the replica unschedulable. The limit is what was throttling it, and the limit stays.
           resources:
             requests:
               cpu: 100m
               memory: 384Mi
             limits:
-              cpu: 250m
+              cpu: 1000m
               memory: 768Mi
           podSecurityContext:
             runAsNonRoot: true
@@ -325,7 +342,6 @@ spec:
                   labelSelector:
                     matchLabels:
                       deployment: estate-scheduler
-
   # CPU request total: 100m (postgresql) + 2x100m (webserver) + 100m (daemon) + 50m (runLauncher) + 2x100m (user-deploy) = 650m standing (crew#555: webserver and user-deploy run 2 replicas)
   # The postRenderers add the priorityClassName, security contexts and labels the chart does not expose.
   postRenderers:

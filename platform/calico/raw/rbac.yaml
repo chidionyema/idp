@@ -218,6 +218,27 @@ rules:
     verbs:
       - watch
       - list
+  # Felix watches VirtualMachineInstanceMigrations so a live-migrating KubeVirt VM keeps its
+  # policy while it moves. Upstream's calico-node ClusterRole carries this rule; Road B's deck
+  # was transcribed without it, and kubevirt IS installed here, so the list came back `forbidden`
+  # rather than `no such resource`. Felix does not treat that as "a thing I may ignore" -- it
+  # calls it a datastore failure and restarts the whole watcher:
+  #
+  #   felix/watchercache.go 274: Failed to perform list of current data during resync
+  #     ListRoot=".../v3/pc.org/livemigrations" error=connection is unauthorized:
+  #     virtualmachineinstancemigrations.kubevirt.io is forbidden
+  #   felix/watchercache.go 284: Connection to datastore has failed - signaling error to client
+  #
+  # Once per second, on both nodes, since the deck landed 29 hours ago. Read-only verbs, and
+  # the same three upstream grants -- this widens nothing the canonical deck does not already
+  # give calico-node.
+  - apiGroups: ["kubevirt.io"]
+    resources:
+      - virtualmachineinstancemigrations
+    verbs:
+      - get
+      - list
+      - watch
   # Used by Calico for policy information.
   - apiGroups: [""]
     resources:

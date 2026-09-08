@@ -445,6 +445,52 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-crossplane
+  title: 'Cloud control loop'
+  description: 'Keeps the cloud resources the estate asks for looking the way the repository says they should; a change made in a provider console is put back at the next reconcile instead of surviving until someone runs a plan.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=crossplane'
+    estate/flux-kustomization: 'crossplane'
+    estate/path: './platform/crossplane'
+    estate/cluster: 'oke'
+  tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: delivery
+  dependsOn:
+    - component:default/layer-scheduling
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-crossplane-providers
+  title: 'Cloud control loop providers'
+  description: 'The provider packages and credentials the cloud control loop uses to talk to Oracle Cloud, kept separate so a provider can be upgraded without touching the loop itself.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=crossplane-providers'
+    estate/flux-kustomization: 'crossplane-providers'
+    estate/path: './platform/crossplane/providers'
+    estate/cluster: 'oke'
+  tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: delivery
+  dependsOn:
+    - component:default/layer-crossplane
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-cyrus
   title: 'Agent orchestration'
   description: 'The runtime that proves every engine works and publishes what it saw to the central collector.'
@@ -861,6 +907,29 @@ spec:
   definition: |
     # Not published. guacamole answers at catalogue.${ESTATE_ZONE}; this entity
     # exists so the catalogue records that the interface is reachable and who owns it.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-gvisor-runtime
+  title: 'The gVisor sandbox runtime'
+  description: 'The RuntimeInstall that puts gVisor on the sandbox nodes, so a pod in the sandbox cell runs against a kernel of its own instead of the host''s.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=gvisor-runtime'
+    estate/flux-kustomization: 'gvisor-runtime'
+    estate/path: './platform/gvisor-runtime'
+    estate/cluster: 'oke'
+  tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: scheduling
+  dependsOn:
+    - component:default/layer-nodesoftware-operator
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -1336,6 +1405,33 @@ spec:
   system: observability
   dependsOn:
     - component:default/layer-monitoring
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-nodesoftware-operator
+  title: 'Node software installs'
+  description: 'The one controller that installs software onto the nodes themselves -- a sandbox runtime, a GPU driver -- one node at a time, cordoning it first and rolling back if the probe on that node fails.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=nodesoftware-operator'
+    estate/flux-kustomization: 'nodesoftware-operator'
+    estate/path: './platform/nodesoftware-operator'
+    estate/cluster: 'oke'
+  tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: scheduling
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-image-automation
+    - component:default/layer-edge
+    - component:default/layer-rbac-identity
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

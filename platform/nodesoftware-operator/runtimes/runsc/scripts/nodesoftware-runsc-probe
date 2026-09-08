@@ -1,0 +1,40 @@
+#!/bin/bash
+#
+# nodesoftware-runsc-probe — verify we are running inside a gVisor runsc sandbox.
+#
+# Invoked by the NodeSoftwareOperator controller from inside a probe pod pinned
+# to the target node with runtimeClassName=gvisor. The probe pod IS scheduled
+# with runsc, so by the time this script runs, we are by definition inside a
+# gVisor kernel — the script just makes that observable so the controller's
+# successCondition regex can match.
+#
+# Emits a single line on stdout containing the detected kernel string. gVisor
+# sandboxes report a kernel version that contains "gvisor" in /proc/version;
+# this is the signal the controller's successCondition
+# [0-9.]+-gvisor-[0-9]+ locks on.
+#
+# Exit code:
+#   0 = inside gVisor, prints "verified: <kernel string>"
+#   1 = NOT inside gVisor, prints "FAILED: ..." on stderr
+#
+# Trap note: on bash 5.2, an EXIT trap normalises the script's exit code to 0
+# when the script is invoked via shebang and `set -e` triggers the failure path
+# (LAW 45 regression noted: the controller's reconcile_install.go checks the
+# pod's exit code via pod.Status, but we want the script's own exit code to be
+# honest too). ERR fires inside the script and does NOT override exit code.
+
+set -euo pipefail
+
+trap 'printf "probe: FAILED to detect gVisor kernel (rc=%%d)\n" "$?" >&2' ERR
+
+PROCVER="$(cat /proc/version 2>/dev/null || uname -a)"
+
+case "${PROCVER}" in
+*gvisor*)
+	printf 'verified: %s\n' "${PROCVER}"
+	;;
+*)
+	printf 'FAILED: proc=%s\n' "${PROCVER}" >&2
+	exit 1
+	;;
+esac

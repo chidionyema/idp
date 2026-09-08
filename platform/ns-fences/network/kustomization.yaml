@@ -4,11 +4,15 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+- agent-workforce.yaml
+- agents.yaml
 - backstage.yaml
 - cert-manager.yaml
 - chaos-mesh.yaml
 - commerce.yaml
+- crossplane-system.yaml
 - dagster.yaml
+- demo-sandbox.yaml
 - edge.yaml
 - estate-db.yaml
 - event-bus.yaml
@@ -26,11 +30,13 @@ resources:
 - mcp.yaml
 - metrics-server.yaml
 - monitoring.yaml
+- nodesoftware-operator.yaml
 - notify.yaml
 - observability-agent.yaml
 - observability.yaml
 - otto-gateway.yaml
 - otto-golden.yaml
+- otto-gvisor-sandbox.yaml
 - prospector.yaml
 - reloader.yaml
 - research.yaml
@@ -41,4 +47,5 @@ resources:
 - staging.yaml
 - tailscale.yaml
 - temporal.yaml
+- trivy-system.yaml
 - weave-gitops.yaml

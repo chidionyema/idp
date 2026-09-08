@@ -86,6 +86,9 @@ spec:
           kubernetes.io/metadata.name: estate-db
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: notify
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: observability
 ---
 apiVersion: networking.k8s.io/v1
@@ -140,6 +143,9 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: otto-gateway
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: research
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: robusta

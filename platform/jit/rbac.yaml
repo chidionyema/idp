@@ -220,3 +220,42 @@ subjects:
 - kind: ServiceAccount
   name: jit-broker
   namespace: jit
+---
+# The identity door (WJ.1), and the narrowest Role in this file by a wide margin.
+#
+# It is deliberately NOT another RoleBinding to the jit-broker ClusterRole. That ClusterRole
+# carries `delete pods` and `patch deployments`, and binding it into `agents` would hand the
+# broker those verbs over the agents' own namespace in order to buy one token -- a namespace
+# the catalogue never names and no grant reaches. So: one Role, one resource, one verb, one
+# resourceName.
+#
+# `resourceNames: [agent-reader]` is what makes this safe to hold at all. Without it the verb
+# is "mint a token for any ServiceAccount in namespace agents", and the next ServiceAccount
+# somebody creates there is inside the broker's reach without anyone editing this file.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jit-broker-identity
+  namespace: agents
+rules:
+- apiGroups: ['']
+  resources:
+  - serviceaccounts/token
+  resourceNames:
+  - agent-reader
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker-identity
+  namespace: agents
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: jit-broker-identity
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit

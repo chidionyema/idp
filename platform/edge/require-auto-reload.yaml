@@ -72,6 +72,71 @@ spec:
               # `+()` is Kyverno's add-if-absent anchor: a workload that already carries the key --
               # "true" or an explicit "false" with a reason -- is left exactly as its author wrote it.
               +(reloader.stakater.com/auto): "true"
+    # Rung 2, added 2026-09-08 after the same perpetual-motion machine ran a second time.
+    #
+    # The tailscale note above is the first instance: a workload whose own controller rewrites a
+    # Secret or ConfigMap the pod mounts, so Reloader rolls it, so the controller rewrites again.
+    # The remedy taken then was the namespace `tailscale` in the exclude list above -- a hand-kept
+    # list of names, in the file whose header calls a hand-kept list of names the bug surface,
+    # because "a list that omits the Secret added yesterday reads exactly like a list that is
+    # complete". Six days later it read exactly like a complete one. SigNoz's ClickHouse entered
+    # the identical loop in `observability`, which is not on that list: the Altinity operator
+    # writes the ClickHouse pod's OWN IP into the mounted ConfigMap
+    # chi-signoz-clickhouse-common-usersd on every reconcile, Reloader rolls the StatefulSet, the
+    # new pod has a new IP, and the operator writes again. Measured 2026-09-08 from the namespace's
+    # events, one cycle every ~40 seconds, restartCount 0 because each pod is a new pod:
+    #   UpdateCompleted ConfigMap ...-common-usersd
+    #   Reloaded (reportingComponent=reloader-configmaps) Updated StatefulSet chi-...-cluster-0-0
+    #   Killing pod / Scheduled pod (new IP)  ->  UpdateCompleted ConfigMap ...
+    # ClickHouse needs none of it: users.d/*.xml is the directory ClickHouse itself watches and
+    # reloads live, so the roll was never buying the reload it was there to buy.
+    #
+    # So this rule stops listing the instances and reads the property they share, off the object:
+    # a workload owned by a custom resource has a controller that owns its config rollout, and the
+    # sentence already written above for tailscale is the general case -- "the operator owns those
+    # StatefulSets; config rollout there is the operator's job, not Reloader's". A native owner
+    # (ReplicaSet, Deployment, StatefulSet, DaemonSet, Job, CronJob) is not that: it is Kubernetes
+    # owning a pod template, and Reloader is exactly right there.
+    #
+    # It sits after rule 1 on purpose. Rule 1 has already injected "true" by the time this runs,
+    # and the patch here is unanchored, so it overwrites -- an existing "true" on a workload that
+    # is already looping is corrected on the operator's next update, not merely prevented on the
+    # next create.
+    #
+    # Blast radius, measured against the live cluster on 2026-09-08 before this was written --
+    # every workload in the estate carrying a non-native owner, all four annotated "true" and none
+    # of them graded by anything until now:
+    #   observability/chi-signoz-clickhouse-cluster-0-0  ClickHouseInstallation  (the fire)
+    #   monitoring/prometheus-kps                        Prometheus
+    #   monitoring/alertmanager-kps                      Alertmanager
+    #   healing/estate                                   K8sGPT
+    # It does NOT subsume tailscale, and the exclude above therefore keeps that namespace: those
+    # StatefulSets are created by the tailscale operator with no ownerReferences at all (measured
+    # the same day -- `ts-founder-mac-vnc-92d4f` and `ts-sunshine-mac-ql4xm` both report `[]`), so
+    # there is no owner on the object to read. Deleting that line on the strength of this rule
+    # would be the failure this whole file is about: asserting a cover that was never measured.
+    - name: an-operator-owned-workload-is-its-operators-job
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, StatefulSet, DaemonSet]
+              operations: [CREATE, UPDATE]
+      preconditions:
+        all:
+          - key: "{{ length((request.object.metadata.ownerReferences || `[]`)[?kind != 'ReplicaSet' && kind != 'Deployment' && kind != 'StatefulSet' && kind != 'DaemonSet' && kind != 'Job' && kind != 'CronJob']) }}"
+            operator: GreaterThan
+            value: 0
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            annotations:
+              reloader.stakater.com/auto: "false"
+              idp.platform/reload-opt-out-reason: >-
+                A custom resource owns this workload, so its operator owns the config rollout.
+                Reloader on top of that operator is a loop, not a control: the operator rewrites
+                the mounted ConfigMap or Secret, Reloader rolls the pod, the new pod changes what
+                the operator writes. Measured twice -- tailscale 2026-09-02 (689 StatefulSet
+                generations) and SigNoz ClickHouse 2026-09-08 (a new pod every ~40s).
     - name: no-hand-kept-reload-list
       match:
         any:

@@ -1,4 +1,9 @@
 {
+  "agent-workforce": {
+    "cpu_millicores": 675,
+    "memory_mib": 2304,
+    "pods": 3
+  },
   "backstage": {
     "cpu_millicores": 460,
     "memory_mib": 2592,
@@ -178,6 +183,11 @@
     "cpu_millicores": 470,
     "memory_mib": 1216,
     "pods": 9
+  },
+  "trivy-system": {
+    "cpu_millicores": 50,
+    "memory_mib": 64,
+    "pods": 1
   },
   "weave-gitops": {
     "cpu_millicores": 50,

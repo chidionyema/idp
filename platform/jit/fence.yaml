@@ -70,6 +70,16 @@ spec:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: edge}
       ports: [{protocol: TCP, port: 8080}]
+    # The tailnet, asking from outside the cluster. deployment.yaml's Service carries
+    # tailscale.com/expose, so the operator runs an ingress proxy in namespace `tailscale` and
+    # that proxy is what dials this port -- the tailnet peer never appears as a pod. Who may
+    # reach the proxy is decided a layer above, by platform/tailscale/policy.hujson, which is
+    # deny-by-default and names the founder's devices and nothing else. The declaration on the
+    # other side is `egress: [jit]` in platform/ns-fences/allowances.yaml.
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: tailscale}
+      ports: [{protocol: TCP, port: 8080}]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -92,6 +102,14 @@ spec:
     - to:
         - ipBlock: {cidr: 10.0.0.0/8}
       ports: [{protocol: TCP, port: 6443}]
+    # WJ.7: the collector, to ship the signed ledger record off this node. Without this rule
+    # the sink fails silently on a default-deny fence -- broker/collector.py swallows the
+    # error by design, so the symptom would be an audit trail that is complete in the pod and
+    # empty in SigNoz, which is the worst of the three possible outcomes.
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: observability}
+      ports: [{protocol: TCP, port: 4318}]
 ---
 apiVersion: v1
 kind: ResourceQuota

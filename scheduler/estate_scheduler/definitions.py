@@ -58,6 +58,23 @@ IDP = Path(__file__).resolve().parents[2]
 # Dagster schedules run in UTC unless told otherwise (docs: guides/automate/schedules).
 # The launchd crons these replaced were laptop-local, so every schedule is too.
 TIMEZONE = os.environ.get("ESTATE_TZ", "Europe/London")
+
+# Where THIS instance can actually execute a command.
+#
+# 2026-09-08, measured in the OKE Dagster's own run storage: 108 runs, 108 FAILURE, zero
+# successes, ever. The event log of the last one says why in one line --
+#   exec /.claude/scripts/hc-wrap.sh prospector-offsite-backup /Documents/code/...
+# -- Mac paths whose `~` expanded to nothing inside a Linux container. Every live row in
+# schedule.yml is `runs_on: mac`, and both the cluster and the laptop load this same module,
+# which until now dropped only `runs_on: retire`. So the cluster faithfully built 36 jobs it
+# is physically incapable of running and failed every one, while looking, from outside, exactly
+# like a scheduler that simply had nothing to do.
+#
+# A row now runs where it says it runs. Nothing else changes: `retire` matches no runner and
+# still gets no job, and on the Mac every `runs_on: mac` row is built exactly as before.
+# The platform decides the default so an instance needs no configuration to know where it is;
+# ESTATE_RUNNER overrides it for a test or a second Linux runner.
+RUNNER = os.environ.get("ESTATE_RUNNER") or ("mac" if sys.platform == "darwin" else "cluster")
 SCHEDULE_FILE = Path(os.environ.get("ESTATE_SCHEDULE", IDP / "scheduler" / "schedule.yml"))
 FAILURE_LOG = IDP / "run" / "scheduler-failures.jsonl"
 BREAKER_TRIP = 3
@@ -309,8 +326,10 @@ def build() -> Definitions:
     spec = load_spec()
     jobs, schedules, sensors = {}, [], [estate_failure_log, holmes_alert_sensor]
     # A row graded `runs_on: retire` (crew#516) has left the Mac; it gets no job and no
-    # schedule. crew#539: ai.idp.reconcile kept ticking retired and failing exit 2.
-    spec = {label: s for label, s in spec.items() if s.get("runs_on") != "retire"}
+    # schedule. crew#539: ai.idp.reconcile kept ticking retired and failing exit 2. `retire`
+    # matches no runner, so the comparison below covers it and every other value at once: a row
+    # is built by the instance it names and by no other.
+    spec = {label: s for label, s in spec.items() if s.get("runs_on", "mac") == RUNNER}
     for label, s in spec.items():
         jobs[label] = make_job(label, s)
     for label, s in spec.items():
@@ -319,6 +338,15 @@ def build() -> Definitions:
         if s.get("after"):
             up = s["after"]
             if up not in jobs:
+                # Either the upstream row does not exist, or it runs somewhere this instance
+                # does not. Say which, because the second reads as a typo and is not one.
+                where = load_spec().get(up, {}).get("runs_on")
+                if where:
+                    raise ValueError(
+                        f"{label}: after={up!r} runs_on={where!r}, but this instance is "
+                        f"{RUNNER!r}. A dependency cannot cross runners -- move one of them, "
+                        f"or give {label} a cron of its own."
+                    )
                 raise ValueError(f"{label}: after={up!r} is not a job in {SCHEDULE_FILE}")
             sensors.append(make_dependency_sensor(label, s, jobs[label], jobs[up]))
     # holmes_investigation is not a schedule.yml row: it runs no command and is

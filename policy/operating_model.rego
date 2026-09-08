@@ -7,8 +7,7 @@
 # Input is reports/pr.json from bin/pr-report:
 #
 #   {"pr": {"number": 154, "files": ["platform/oci/identity/main.tf"], "added": "<added lines>",
-#           "body": "<PR body>", "labels": ["canary"]},
-#    "budget_monthly_usd": 50}
+#           "body": "<PR body>", "labels": ["canary"]}}
 #
 # Every deny message has the shape "rule=<name> | <what is wrong> | fix: <what to change>",
 # so the CI comment that carries it back to the author is the structured rejection the
@@ -16,6 +15,19 @@
 #
 # DENY only. Each rule is paired in policy/fixtures (opmodel-*.json) with a case it must
 # permit, because a gate that refuses correct work is an outage (LAW 38).
+#
+# WHAT IS NOT HERE, AND WHY IT MAY NOT COME BACK. Eight rules graded the WORDING of a pull
+# request body: Cost-delta-usd-month:, Drill:, Matrix:, Optimised:, Lifecycle:, Breaker:,
+# Control:, and four Architecture-law lines. The founder ordered them cut on 2026-09-04
+# ("sorry we need tto cutr all thid crap, wate of tine, renive it"; "dot need all this waste
+# and friction"; "addingzero value, paper work for nothing") because, in his words as the
+# commit that removed the workflow recorded them, "nothing they check is measured against the
+# running estate". That commit (7d27292f) deleted the workflow and left the rules, the
+# fixtures and the pre-push hook rung standing, so the paperwork went on refusing local
+# pushes for four more days. This commit finishes the deletion.
+#
+# The five rules that remain read the world, never the prose: the files a PR changes, the
+# lines it adds, the labels on it, and the founder's own DENY: word.
 
 package main
 
@@ -105,30 +117,12 @@ deny contains msg if {
 	msg := sprintf("rule=founder_denied | the founder replied `DENY: %s` on this PR | fix: do not merge; address his reason and open a new PR with a new word", [approval_word])
 }
 
-# --- cost_budget -------------------------------------------------------------------------
-# A platform/oci change declares its monthly cost delta; over budget is a refusal, not a
-# review comment. The budget is estate-defaults.yaml cost.budget_monthly_usd, passed in.
-
+# `canary` is the one survivor of the cost/canary pair, so infra_change is defined here now;
+# it lived in the cost_budget section this commit deleted. It reads the files a PR changes,
+# never its prose.
 infra_change if {
 	some f in input.pr.files
 	startswith(f, "platform/oci/")
-}
-
-cost_line := to_number(m[0][1]) if {
-	m := regex.find_all_string_submatch_n(`(?m)^Cost-delta-usd-month:\s*(-?[0-9]+(?:\.[0-9]+)?)`, input.pr.body, 1)
-	count(m) == 1
-}
-
-deny contains msg if {
-	infra_change
-	not cost_line
-	msg := "rule=cost_budget | a platform/oci change declares no monthly cost delta | fix: add `Cost-delta-usd-month: <number>` to the PR body (0 for a no-cost change), priced from ADR 0004"
-}
-
-deny contains msg if {
-	infra_change
-	cost_line > input.budget_monthly_usd
-	msg := sprintf("rule=cost_budget | monthly cost delta %v USD exceeds the budget %v USD | fix: reduce the change, or raise cost.budget_monthly_usd in estate-defaults.yaml in its own PR with the founder's APPROVE: budget", [cost_line, input.budget_monthly_usd])
 }
 
 # --- canary ------------------------------------------------------------------------------
@@ -141,345 +135,6 @@ deny contains msg if {
 	not "canary" in input.pr.labels
 	msg := "rule=canary | a platform/oci change carries no `canary` label | fix: `gh pr edit <n> --add-label canary` once the plan names its canary step (dev subnet, one node, or `--check` only)"
 }
-
-# --- drill_named -------------------------------------------------------------------------
-# Founder, 2026-08-26, after the front door failed three times in a row on first use: "we need
-# test discipline". A platform layer is not changed on the strength of a plan and a green unit
-# suite; the PR names the drill in drills/catalogue.yaml that signs in, rebuilds or restores
-# through the layer it touches. A layer no drill covers gets its drill in the same PR.
-
-drilled_prefixes := {"platform/", "clusters/"}
-
-touches_drilled_layer if {
-	some f in input.pr.files
-	some p in drilled_prefixes
-	startswith(f, p)
-}
-
-drill_line := m[0][1] if {
-	m := regex.find_all_string_submatch_n(`(?m)^Drill:\s*(\S+)`, input.pr.body, 1)
-	count(m) == 1
-}
-
-deny contains msg if {
-	touches_drilled_layer
-	not drill_line
-	msg := "rule=drill_named | the PR changes a platform layer (platform/, clusters/) and names no drill that exercises it | fix: add `Drill: <name>` to the PR body, naming an entry in drills/catalogue.yaml (add the drill in this PR if none covers the layer)"
-}
-
-# The gate reads drills/catalogue.yaml from idp main, so a drill the PR itself adds is not in
-# input.drills yet (idp#191 was refused for naming the row it created). A `- name:` line added
-# to the catalogue in this PR's diff counts.
-drills_added_in_pr contains name if {
-	"drills/catalogue.yaml" in input.pr.files
-	some m in regex.find_all_string_submatch_n(`(?m)^\+\s*-\s*name:\s*(\S+)`, input.pr.added, -1)
-	name := m[1]
-}
-
-deny contains msg if {
-	touches_drilled_layer
-	drill_line
-	not drill_line in input.drills
-	not drill_line in drills_added_in_pr
-	msg := sprintf("rule=drill_named | `Drill: %s` names no entry in drills/catalogue.yaml | fix: use a catalogued drill name, or add the drill to the catalogue in this PR", [drill_line])
-}
-
-# --- architecture_laws (crew#254) --------------------------------------------------------
-# Founder, 2026-08-25 (crew#250): every PR passes the four Living Estate laws before merging
-# (crew/docs/ARCHITECTURE_LAWS.md "The pull-request checklist"). The body carries a
-# `## Architecture laws` section with one line per law; each line is a command or a path that
-# proves the law for this change, or `n/a:` with a reason. A sentence is neither. The gate
-# grades the shape of the line (a `/`, a backtick, an `->`, or `n/a: <reason>`); whether the
-# command proves the law is the reviewer's job, and the per-law mechanical gates land as the
-# layers do (LAW 1 bin/cloud-agnostic-gate is live).
-#
-# PAUSED 2026-08-28 (founder, crew#254 5456132029, after the gate refused idp#625 twice): "lets pause
-# this for now", "causing delivery friction, needs to be betetr designed", "agents dont undertnd the
-# languae used", "needs nore precision". The section is still read and printed as a warning; it
-# never blocks a merge until the four laws are rewritten as one command each, in plain words.
-
-laws := {"1": "zero-gravity", "2": "fractal", "3": "nervous system", "4": "calibration"}
-
-has_laws_heading if regex.match(`(?m)^## Architecture laws\s*$`, input.pr.body)
-
-law_line_ok(n) if {
-	regex.match(sprintf(`(?m)^- LAW %s %s: (n/a: \S.*|[^\n]*[/\x60][^\n]*|[^\n]*->[^\n]*)$`, [n, laws[n]]), input.pr.body)
-}
-
-# Only a PR input is graded: the other fixtures in policy/fixtures (node pools, placement,
-# commands) carry no pr at all and are not pull requests.
-warn contains msg if {
-	is_string(input.pr.body)
-	not has_laws_heading
-	msg := "rule=architecture_laws | the PR body has no `## Architecture laws` section | fix: copy the four-line checklist from crew/docs/ARCHITECTURE_LAWS.md into the body; each line a command, a path or `n/a: <reason>`"
-}
-
-warn contains msg if {
-	is_string(input.pr.body)
-	has_laws_heading
-	some n, slug in laws
-	not law_line_ok(n)
-	msg := sprintf("rule=architecture_laws | `- LAW %s %s:` is missing or is a sentence | fix: make it the command or path that proves the law for this change, or `n/a: <reason>`", [n, slug])
-}
-
-# --- matrix_cited (ADR 0009, crew#562) ------------------------------------------------------
-# Founder, 2026-08-28: "we need a matrix for decision making — rather than asking these
-# questions it should be auto — for all requirements" and "i like the matrix, enforce it".
-# A pull request that makes a build-or-buy decision names the scored entry in
-# docs/decisions/decision-matrix.yaml with a `Matrix: <slug>` line. Two shapes of PR are that
-# decision: one that adds an ADR (a `# NNNN.` title line under docs/decisions/), and one that
-# brings a new chart onto a platform layer (an added `kind: HelmRelease`). input.matrix is the
-# slug list bin/matrix-gate --slugs prints from idp main; a slug the PR itself adds counts.
-
-adds_adr if {
-	some f in input.pr.files
-	regex.match(`^docs/decisions/\d{4}-.+\.md$`, f)
-	regex.match(`(?m)^\+# \d{4}\. `, input.pr.added)
-}
-
-adds_helmrelease if {
-	touches_drilled_layer
-	regex.match(`(?m)^\+kind:\s*HelmRelease\s*$`, input.pr.added)
-}
-
-decides if adds_adr
-decides if adds_helmrelease
-
-matrix_line := m[0][1] if {
-	m := regex.find_all_string_submatch_n(`(?m)^Matrix:\s*(\S+)`, input.pr.body, 1)
-}
-
-slugs_added_in_pr contains s if {
-	"docs/decisions/decision-matrix.yaml" in input.pr.files
-	some m in regex.find_all_string_submatch_n(`(?m)^\+\s*-\s*slug:\s*(\S+)`, input.pr.added, -1)
-	s := m[1]
-}
-
-deny contains msg if {
-	decides
-	not matrix_line
-	msg := "rule=matrix_cited | the PR adds an ADR or a new HelmRelease and names no scored decision | fix: add `Matrix: <slug>` to the PR body, naming an entry in docs/decisions/decision-matrix.yaml (score it in this PR if none covers the choice; every cell needs evidence)"
-}
-
-deny contains msg if {
-	decides
-	matrix_line
-	not matrix_line in input.matrix
-	not matrix_line in slugs_added_in_pr
-	msg := sprintf("rule=matrix_cited | `Matrix: %s` names no entry in docs/decisions/decision-matrix.yaml | fix: use a scored slug, or add the decision to the matrix in this PR", [matrix_line])
-}
-
-# --- optimised_plan (LAW 51, crew#584) ------------------------------------------------------
-# Founder, 2026-08-29: "optimise before build ... note this process down as it will become law ...
-# how to plan and optimise before starting any execution ... i want to trial and if successful to
-# enforce this process". Trial measured on crew#584 5459773413: go -> three PRs merged in 12 min
-# against a 45-minute estimate. The body carries one `Optimised:` line of the shape the procedure
-# fixes (~/AGENTS-FULL.md): `Optimised: <steps before> -> <after>, <round trips before> -> <after>;
-# cut: <what, why>`. The gate grades the shape: a number on each side of an `->` and a `cut:` clause.
-# A sentence ("we made it faster") is not a plan that was counted.
-
-optimised_line_ok if {
-	# The arrow may be ASCII `->` or U+2192, and the clause `cut:` or `Cut:` after `;` or `.`:
-	# idp#1012 carried a counted plan ("4 → 2 steps, 3 → 1 round trip. Cut: ...") and was refused
-	# for the bytes of its arrow, not for anything the rule is trying to grade. LAW 38 -- a guard
-	# that refuses correct work is an outage. The property is still two counts and a cut clause.
-	regex.match(`(?m)^Optimised: [^\n]*\d[^\n]*(->|→)[^\n]*\d[^\n]*[;.] *[Cc]ut: \S[^\n]*$`, input.pr.body)
-}
-
-# WHEN THE RULE STARTS JUDGING. LAW 51 landed on main in dca2a929 at 2026-08-29T02:28:20Z. Between
-# that commit and the next hour the rule turned nine open pull requests red -- five on prospector,
-# four here -- every one of them written, reviewed and green before the law existed. Their authors
-# could only have cleared it by inventing a counted plan for work nobody counted, which is a
-# fabricated receipt, and LAW 38 says a guard that refuses correct work is an outage. So the rule
-# reads the PR's opening time: from the moment the law existed, the plan is a precondition; before
-# it, there was nothing to precede. A report with no `createdAt` is judged -- the field is absent
-# only on a hand-built fixture or an old report, and the safe default there is to grade, not skip.
-law51_landed := "2026-08-29T02:28:20Z"
-
-opened_before_law51 if {
-	is_string(input.pr.createdAt)
-	input.pr.createdAt < law51_landed
-}
-
-deny contains msg if {
-	is_string(input.pr.body)
-	not optimised_line_ok
-	not opened_before_law51
-	msg := "rule=optimised_plan | the PR body has no counted `Optimised:` line (LAW 51) | fix: plan first, then add `Optimised: <steps before> -> <after>, <round trips before> -> <after>; cut: <what, why>` — numbers on both sides of the arrow and a cut clause; the procedure is in ~/AGENTS-FULL.md"
-}
-
-# --- lifecycle_row (crew#618, founder 2026-08-29) -------------------------------------------
-# "no PR covering critical infra like this can have setup going to void: reusable? expiration? we
-# need policy." A pull request that touches a root credential's birth (bin/idp-bootstrap-*, the
-# vendor registry, the GitHub App files, or any `secrets.SEED_*` line in a workflow) carries one
-# `Lifecycle:` line naming the row on docs/reference/policy/credential-lifecycle.md. The test
-# tests/test_incident_crew618_every_root_has_a_life_cycle.py grades the page itself; this grades
-# that the author looked at it.
-
-lifecycle_landed := "2026-08-29T09:30:00Z"
-
-touches_a_root if {
-	some f in input.pr.files
-	regex.match(`^(bin/idp-bootstrap-|platform/vendors/|platform/github-app/)`, f)
-}
-
-touches_a_root if {
-	some f in input.pr.files
-	startswith(f, ".github/workflows/")
-	regex.match(`(?m)^\+.*secrets\.SEED_`, input.pr.added)
-}
-
-lifecycle_line_ok if {
-	regex.match(`(?m)^Lifecycle: \S[^\n]*$`, input.pr.body)
-}
-
-opened_before_lifecycle if {
-	is_string(input.pr.createdAt)
-	input.pr.createdAt < lifecycle_landed
-}
-
-deny contains msg if {
-	is_string(input.pr.body)
-	touches_a_root
-	not lifecycle_line_ok
-	not opened_before_lifecycle
-	msg := "rule=lifecycle_row | the PR touches a root credential's birth and the body has no `Lifecycle:` line (crew#618) | fix: add `Lifecycle: <SEED_NAME> row on docs/reference/policy/credential-lifecycle.md` and make sure the row exists with expiry, rotation and revocation filled"
-}
-
-# --- self_heal_has_breaker (crew#678 CP2, founder 2026-08-30) --------------------------------
-# Founder, 2026-08-30 (crew#678): self-healing needs a circuit breaker -- bounded attempts, a
-# cool-off, a visible open state, and loud when open. The CP1 inventory on crew#678 found four
-# repair loops with none (a browser bridge restarted every 60 s forever; a kickstart with no
-# attempt count; `helm-retry` with no record of prior tries). A pull request that adds a
-# self-healing verb (`flux reconcile ... --reset`, `delete pod`, `launchctl kickstart`,
-# `rollout restart`, `systemctl restart`) in a script, a workflow or the healing layer carries
-# one `Breaker:` line saying how many attempts, how long the cool-off is and where the open
-# state can be seen, or `Breaker: n/a — <why this is an alarm, not a repair loop>`.
-
-self_heal_prefixes := {"bin/", "scripts/", ".github/workflows/", "platform/healing/", "scheduler/"}
-
-self_heal_verb := `(?m)^\+[^\n]*(flux reconcile [^\n]*--reset|delete pod\b|launchctl kickstart|rollout restart|systemctl restart)`
-
-adds_self_heal if {
-	some f in input.pr.files
-	some p in self_heal_prefixes
-	startswith(f, p)
-	regex.match(self_heal_verb, input.pr.added)
-}
-
-breaker_line_ok if {
-	regex.match(`(?m)^Breaker: \d+ attempts?, \d+ ?(s|m|h|min|minutes?|hours?) cool-off, open (state )?(at|in) \S[^\n]*$`, input.pr.body)
-}
-
-breaker_line_ok if {
-	regex.match(`(?m)^Breaker: n/a [-—] \S[^\n]*$`, input.pr.body)
-}
-
-# Same shape as optimised_plan: a pull request opened before the rule existed is not refused
-# for a line nobody could have known to write (LAW 38).
-breaker_landed := "2026-08-30T04:40:00Z"
-
-opened_before_breaker if {
-	is_string(input.pr.createdAt)
-	input.pr.createdAt < breaker_landed
-}
-
-deny contains msg if {
-	adds_self_heal
-	not breaker_line_ok
-	not opened_before_breaker
-	msg := "rule=self_heal_has_breaker | the PR adds a self-healing action (reconcile --reset, delete pod, kickstart, restart) and names no circuit breaker (crew#678) | fix: add `Breaker: <N> attempts, <M>h cool-off, open state at <where a person sees it>` to the body, or `Breaker: n/a — <why this is an alarm, not a repair loop>`"
-}
-
-# --- control_shipped ---------------------------------------------------------------------
-# Founder, 2026-08-30, docs/reference/incidents/2026-08-30-three-incidents-one-defect.md:
-# "Every infra change ships a control or says why not." Machine-checked here rather than
-# written down, on his own reasoning: "prose in a CLAUDE.md is itself an invariant living in
-# someone's head, you'd be violating your own pattern" -- a rule nobody can be stopped by is a
-# wish (LAW 44). Three incidents in one day shared one defect: a change went in and the thing
-# that would have caught it did not exist.
-#
-# A pull request that touches the world -- the same three prefixes verify-claims.yml grades,
-# platform/, clusters/ and bin/idp-* -- carries `Control: <path>` naming a file THIS pull
-# request changes under tests/, policy/ or platform/edge/: a test, a policy rule or an
-# admission rule. Naming a path the diff does not contain is refused, so the line cannot be
-# satisfied by pointing at something that already existed or does not exist at all.
-#
-# `Control: none: <reason>` is the "or says why not" half, and it is deliberately allowed: the
-# point is a written record on the pull request, not a control forced onto a change that does
-# not need one.
-#
-# What this does NOT do, said plainly so nobody reads more into a green gate than it earns
-# (the estate's fix-proved-on-the-wrong-surface class): naming a control file is not proof the
-# control covers this change. That is the reviewer's job. What the rule buys is that the
-# author must point at one and, in pointing, notice when there is nothing to point at --
-# which is exactly what happened on #1027, whose body named no control for the nine-row
-# uninstall sweep that then destroyed the evidence of the next incident (undone in #1032).
-
-world_prefixes := {"platform/", "clusters/", "bin/idp-"}
-
-control_prefixes := {"tests/", "policy/", "platform/edge/"}
-
-touches_the_world if {
-	some f in input.pr.files
-	some p in world_prefixes
-	startswith(f, p)
-}
-
-# The backticks are stripped, and that is not cosmetic. Every body in this estate writes a path
-# in backticks -- the five DoD rows above this line do, and so does the fix hint this rule prints.
-# Without the strip, an author who names a real control the pull request really ships is refused
-# with "is not a control this PR ships", which is a guard refusing correct work: LAW 38, and an
-# outage of the gate rather than of the rule it protects. Found on #1047, 2026-08-31, by an author
-# who had shipped the control and could not tell from the message what was wrong with the line.
-control_line := trim(trim_space(m[0][1]), "`") if {
-	m := regex.find_all_string_submatch_n(`(?m)^Control:[ \t]*(\S.*)$`, input.pr.body, 1)
-	count(m) == 1
-}
-
-control_is_none if startswith(control_line, "none:")
-
-control_none_reason := trim_space(substring(control_line, 5, -1)) if control_is_none
-
-control_is_shipped_in_this_pr if {
-	control_line in input.pr.files
-	some p in control_prefixes
-	startswith(control_line, p)
-}
-
-# Same grandfather clause as optimised_plan and self_heal_has_breaker: a pull request opened
-# before the rule existed is not refused for a line nobody could have known to write (LAW 38).
-control_landed := "2026-08-31T04:00:00Z"
-
-opened_before_control if {
-	is_string(input.pr.createdAt)
-	input.pr.createdAt < control_landed
-}
-
-deny contains msg if {
-	touches_the_world
-	not opened_before_control
-	not control_line
-	msg := "rule=control_shipped | the PR changes platform/, clusters/ or bin/idp-* and names no control | fix: add `Control: <path>` to the body naming a test, policy rule or admission rule THIS PR changes under tests/, policy/ or platform/edge/, or `Control: none: <why this change needs none>`"
-}
-
-deny contains msg if {
-	touches_the_world
-	not opened_before_control
-	control_is_none
-	count(control_none_reason) < 20
-	msg := "rule=control_shipped | `Control: none:` gives no reason | fix: say in a sentence why this change ships no test, policy rule or admission rule"
-}
-
-deny contains msg if {
-	touches_the_world
-	not opened_before_control
-	control_line
-	not control_is_none
-	not control_is_shipped_in_this_pr
-	msg := sprintf("rule=control_shipped | `Control: %s` is not a control this PR ships | fix: name a file the PR changes under tests/, policy/ or platform/edge/, or `Control: none: <reason>`", [control_line])
-}
-
 
 # --- no_zone_literal_added ---------------------------------------------------------------
 # Founder, 2026-09-01 (crew#796), on the store carrying 61 live lines of the zone name while

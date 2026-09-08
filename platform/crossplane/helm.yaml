@@ -1,0 +1,102 @@
+# Crossplane core: the day-2 control loop of decision 0026. OpenTofu owns the ground the cluster
+# stands on and keeps owning it; Crossplane owns what the cluster asks for afterwards, and the
+# difference between them is drift correction. A bucket OpenTofu created is correct until someone
+# changes it in the console, and nobody finds out until the next plan; a bucket Crossplane owns is
+# put back at the reconcile interval. bin/idp-split-brain is the guard that keeps exactly one of
+# them owning any given object, and it shipped before this did, on purpose.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: crossplane
+  namespace: crossplane-system
+spec:
+  interval: 24h
+  url: https://charts.crossplane.io/stable
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: crossplane
+  namespace: crossplane-system
+spec:
+  interval: 10m
+  timeout: 10m
+  chart:
+    spec:
+      chart: crossplane
+      version: 2.4.0
+      sourceRef:
+        kind: HelmRepository
+        name: crossplane
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3 }
+  values:
+    # One replica. This is a control loop over a handful of objects, not a data path, and the
+    # estate's two nodes are at 89% of allocatable CPU requests; a second replica buys an
+    # availability property nothing here needs and costs a node's remaining headroom.
+    replicas: 1
+    resourcesCrossplane:
+      requests: { cpu: 50m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+    resourcesRBACManager:
+      requests: { cpu: 25m, memory: 128Mi }
+      limits: { cpu: 250m, memory: 256Mi }
+    metrics:
+      enabled: true
+    securityContextCrossplane:
+      runAsNonRoot: true
+      runAsUser: 65532
+      runAsGroup: 65532
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      # The namespace enforces the restricted pod-security profile, which wants these two named
+      # and not merely defaulted; the chart renders this map wholesale, so what is written here is
+      # what lands on the container (verified by helm template against chart 2.4.0).
+      capabilities: { drop: [ALL] }
+      seccompProfile: { type: RuntimeDefault }
+    securityContextRBACManager:
+      runAsNonRoot: true
+      runAsUser: 65532
+      runAsGroup: 65532
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      # The namespace enforces the restricted pod-security profile, which wants these two named
+      # and not merely defaulted; the chart renders this map wholesale, so what is written here is
+      # what lands on the container (verified by helm template against chart 2.4.0).
+      capabilities: { drop: [ALL] }
+      seccompProfile: { type: RuntimeDefault }
+  postRenderers:
+    # Two things the chart does not carry and this cluster refuses without. Both are Kyverno
+    # ClusterPolicies in Enforce, so an unpatched render is refused at admission, not warned
+    # about: bin/idp-kyverno-render names them before the pull request is opened.
+    - kustomize:
+        patches:
+          # require-catalogue-entity (platform/edge): anything that serves a port names the
+          # catalogue entity it belongs to. crossplane-webhooks is the chart's own webhook
+          # Service; the entity is the generated layer row for this Flux Kustomization.
+          - target: { kind: Service }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: layer-crossplane
+          # require-pod-probes: the core deployment ships a startupProbe, the RBAC manager ships
+          # none. It serves only its metrics port, so the probe is a TCP connect to that port --
+          # it proves the process is listening without asserting an HTTP path the chart never
+          # documents.
+          - target: { kind: Deployment, name: crossplane-rbac-manager }
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: { name: crossplane-rbac-manager }
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: crossplane
+                        livenessProbe: &rbac { tcpSocket: { port: 8080 }, initialDelaySeconds: 20, periodSeconds: 30 }
+                        readinessProbe: *rbac

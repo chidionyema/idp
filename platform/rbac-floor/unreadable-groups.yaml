@@ -1,0 +1,37 @@
+# Custom resource groups this cluster serves that agent-reader deliberately cannot read.
+#
+# The point of this file is that the absence of a grant is never silent. agent-reader.yaml lists
+# what agents may read; before 2026-09-08 anything missing from it was missing for one of two
+# reasons -- someone judged it unsafe, or nobody had noticed the group existed -- and the file
+# looked identical either way. 23 of the 36 groups turned out to be the second kind.
+#
+# So: a group is either granted in agent-reader.yaml or it is here with a sentence. An agent that
+# hits a Forbidden on something in this list is looking at a decision; on anything else, at a gap
+# worth reporting.
+#
+# Regenerate the comparison with the live cluster:
+#   bin/idp-kube get crd -o json | python3 -c '...'   # groups served
+#   the apiGroups of the ClusterRole in agent-reader.yaml   # groups granted
+# The honest gap: nothing runs that comparison automatically yet, because CI has no cluster to ask
+# and a check that reports blind as green is worse than no check. It wants the CRD group list in
+# the cluster-state receipt (platform/state/cluster-state.yaml), the same wiring
+# bin/idp-fits-a-node needs for its live case.
+version: 1
+withheld:
+  - group: hub.traefik.io
+    kinds: APIAuth, ManagedApplication, ManagedSubscription, Uplink, and 11 others
+    why: >-
+      Traefik Hub's objects carry API credentials and subscription identity by design, so a read
+      grant here is a read grant on credentials. Nothing in the tree references the group -- on
+      2026-09-08 `git grep -l hub.traefik.io` returned only docs/inventory.json, which is the
+      generated CRD inventory and not a use. The CRDs are installed by the Traefik chart whether
+      or not Hub is licensed. If the estate ever adopts Hub, grant the routing kinds by name the
+      way aquasecurity.github.io is granted, never the group.
+  - group: aquasecurity.github.io
+    kinds: ExposedSecretReport only
+    why: >-
+      The rest of the group is granted by name in agent-reader.yaml. An ExposedSecretReport
+      carries the matched secret string itself, which is a secret value in a place it can be read
+      again (LAW 21). platform/trivy/trivy.yaml:53 has exposedSecretScannerEnabled false, so there
+      are none today; naming the exclusion is what stops the grant widening silently on the day
+      that flag flips.

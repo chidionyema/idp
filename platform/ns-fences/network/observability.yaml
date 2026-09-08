@@ -144,7 +144,154 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: agent-workforce
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: agents
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: backstage
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: cert-manager
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: chaos-mesh
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: commerce
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: crossplane-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: cyrus
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: dagster
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: default
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: demo-sandbox
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: edge
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: estate-db
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: event-bus
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: external-secrets
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: flux-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: guacamole
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: healing
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: healthchecks
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: hermes-agent
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: hindsight
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: identity
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: infra-crew
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: jit
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: keda
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-node-lease
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-public
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kyverno
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: llm
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: mcp
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: metrics-server
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: nodesoftware-operator
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: notify
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: observability-agent
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: otto-gateway
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: otto-golden
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: otto-gvisor-sandbox
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: prospector
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: reloader
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: research
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: robusta
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: scheduling
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: searxng
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: spire-mgmt
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: staging
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: tailscale
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: temporal
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: trivy-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: weave-gitops

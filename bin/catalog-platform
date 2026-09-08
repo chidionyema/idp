@@ -72,6 +72,16 @@ SYSTEMS = {
 
 # kustomization name -> (area, plain title, one sentence)
 LAYERS = {
+    "crossplane": (
+        "delivery",
+        "Cloud control loop",
+        "Keeps the cloud resources the estate asks for looking the way the repository says they should; a change made in a provider console is put back at the next reconcile instead of surviving until someone runs a plan.",
+    ),
+    "crossplane-providers": (
+        "delivery",
+        "Cloud control loop providers",
+        "The provider packages and credentials the cloud control loop uses to talk to Oracle Cloud, kept separate so a provider can be upgraded without touching the loop itself.",
+    ),
     "flux-webhook": (
         "delivery",
         "Push-to-deploy door",
@@ -278,6 +288,16 @@ LAYERS = {
         "scheduling",
         "Metrics",
         "Pod and node usage, the numbers autoscaling reads.",
+    ),
+    "nodesoftware-operator": (
+        "scheduling",
+        "Node software installs",
+        "The one controller that installs software onto the nodes themselves -- a sandbox runtime, a GPU driver -- one node at a time, cordoning it first and rolling back if the probe on that node fails.",
+    ),
+    "gvisor-runtime": (
+        "scheduling",
+        "The gVisor sandbox runtime",
+        "The RuntimeInstall that puts gVisor on the sandbox nodes, so a pod in the sandbox cell runs against a kernel of its own instead of the host's.",
     ),
     "scheduling": (
         "scheduling",

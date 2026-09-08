@@ -113,7 +113,7 @@ func parseRuntimeEnumFromCRD(t *testing.T, path string) []string {
 				continue
 			}
 			if strings.HasPrefix(t2, "enum:") {
-				return parseEnumLines(t2)
+				return parseEnum(t, lines, j)
 			}
 			// Some other field appeared; this isn't the right "runtime:".
 			break
@@ -123,8 +123,16 @@ func parseRuntimeEnumFromCRD(t *testing.T, path string) []string {
 	return nil
 }
 
-// parseEnumLines handles both enum shapes.
-func parseEnumLines(enumLine string) []string {
+// parseEnum handles both enum shapes. The block shape matters: the CRD is inline today
+// (`enum: [runsc, kata, nvidia]`), but every YAML formatter rewrites an inline sequence into a
+// block one, and the previous version returned nil for the block shape. A nil there does not
+// read as "could not parse" -- it reads as an empty YAML enum, and the caller reports
+// `closed runtime set drifted: YAML=[], Go=[runsc kata nvidia]`. A true-looking failure with a
+// false reason is worse than no test, so the block shape is parsed and an unrecognised shape
+// fails with its own message.
+func parseEnum(t *testing.T, lines []string, at int) []string {
+	t.Helper()
+	enumLine := strings.TrimSpace(lines[at])
 	// Strip the "enum:" prefix.
 	rest := strings.TrimSpace(strings.TrimPrefix(enumLine, "enum:"))
 	// Strip any trailing inline comment ("# ...") so it doesn't fool the suffix check.
@@ -145,8 +153,35 @@ func parseEnumLines(enumLine string) []string {
 		}
 		return out
 	}
-	// Multi-line: caller should re-parse the file; for now return whatever rest is.
-	return nil
+	// Block shape: `enum:` alone on its line, then one `- value` per line, all indented
+	// further than the `enum:` key. Stop at the first line that is not one of those.
+	if rest != "" {
+		t.Fatalf("enum on line %d is neither an inline array nor a bare `enum:`: %q", at+1, enumLine)
+	}
+	indent := len(lines[at]) - len(strings.TrimLeft(lines[at], " "))
+	out := []string{}
+	for k := at + 1; k < len(lines); k++ {
+		raw := lines[k]
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if len(raw)-len(strings.TrimLeft(raw, " ")) <= indent || !strings.HasPrefix(trimmed, "- ") {
+			break
+		}
+		val := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+		if idx := strings.Index(val, "#"); idx >= 0 {
+			val = strings.TrimSpace(val[:idx])
+		}
+		val = strings.Trim(val, `"'`)
+		if val != "" {
+			out = append(out, val)
+		}
+	}
+	if len(out) == 0 {
+		t.Fatalf("enum on line %d parsed to nothing; the CRD's enum shape is not one this test handles", at+1)
+	}
+	return out
 }
 
 func closedKeys(m map[string]struct{}) []string {

@@ -1,0 +1,201 @@
+# NodeSoftwareOperator Deployment -- the controller pod, run as the SA above.
+# Two replicas (leader election): HA without paying for five. Resources sized
+# for the controller (the workload is bookkeeping, not data plane), not for the
+# runtime handler pods it schedules (those have their own requests below).
+#
+# The controller's image: tag is filled by the kustomize `images:` block in
+# kustomization.yaml from platform/image-automation/controller.yaml
+# ($imagepolicy: flux-system:controller:tag). The runsc handler image's tag is
+# filled the same way (platform/image-automation/runsc.yaml) on the
+# `runsc-handler-mirror` initContainer below; the controller's source reads
+# that initContainer's image at startup (cmd/main.go:resolveHandlerImage) and
+# uses it as the InstallImage for the handler pods it schedules. No more
+# literal `:IMAGE_TAG` in this file -- cyrus pattern, image-automation owns it.
+#
+# PR #2416 had removed deployment.yaml from kustomization.yaml's resource list ("NOT APPLIED
+# YET") pending a workflow that pushes the image, an ImageRepository/ImagePolicy pair in
+# platform/image-automation, and a $imagepolicy-marked newTag here. All three are now true
+# (PR #2438); this file is back in the resource list and the Flux row's healthCheck + wait
+# in clusters/oke/platform.yaml go with it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodesoftware-operator
+  namespace: nodesoftware-operator
+  labels:
+    app.kubernetes.io/name: nodesoftware-operator
+    app.kubernetes.io/part-of: idp
+    app.kubernetes.io/component: controller
+spec:
+  replicas: 2                              # HA without paying for five
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0                    # never two-down; reconcile is rare
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nodesoftware-operator
+      app.kubernetes.io/part-of: idp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nodesoftware-operator
+        app.kubernetes.io/part-of: idp
+        app.kubernetes.io/component: controller
+    spec:
+      serviceAccountName: nodesoftware-operator
+      automountServiceAccountToken: true    # controller-runtime needs the token
+      imagePullSecrets:
+        - name: ghcr-pull
+      priorityClassName: idp-infrastructure # scheduling/priority-classes (R76)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault             # PSS restricted (edge/policies)
+      initContainers:
+        # Mirror container: holds the runsc handler image as a real PodSpec
+        # container image: field so the kustomize `images:` $imagepolicy
+        # marker can rewrite it. The container itself runs noop
+        # (/bin/sh -c true) -- the controller reads its own pod's spec at
+        # startup, finds this initContainer's image, and uses it as the
+        # InstallImage for the handler pods it schedules. The image never
+        # needs to be referenced anywhere else in the cluster; this is the
+        # one place Flux image automation writes the tag to. Renaming or
+        # removing this initContainer would break the controller's
+        # --handler-image resolution; do not.
+        - name: runsc-handler-mirror
+          image: ghcr.io/chidionyema/runsc
+          command: ["/bin/sh", "-c", "true"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            seccompProfile:
+              type: RuntimeDefault
+      containers:
+        - name: controller
+          image: ghcr.io/chidionyema/controller
+          imagePullPolicy: IfNotPresent
+          args:
+            - --leader-elect=true
+            - --leader-election-namespace=nodesoftware-operator
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+            - --reconcile-period=15s         # see CRD-SPEC.md "pauseDuration"
+            # --handler-image is filled at startup by resolveHandlerImage()
+            # (cmd/main.go) from the runsc-handler-mirror initContainer's
+            # image: field. No flag here on purpose: a flag would freeze
+            # the tag at apply time and break image-automation.
+            # --handler-namespace is also empty by default; the controller's
+            # Reconciler.applyDefaults fills it to the controller's own namespace
+            # (PR #2404), so the kubebuilder scaffold default
+            # 'nodesoftware-operator-system' never reaches a handler pod.
+          ports:
+            - name: metrics
+              containerPort: 8080
+            - name: health
+              containerPort: 8081
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+# The Service that fronts the metrics + health probes (used by Prometheus and
+# by the flux row's healthChecks below). ClusterIP only.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nodesoftware-operator
+  namespace: nodesoftware-operator
+  labels:
+    app.kubernetes.io/name: nodesoftware-operator
+    app.kubernetes.io/part-of: idp
+    # crew#307: a port that serves names the catalogue entity it belongs to, or
+    # platform/edge/require-catalogue-entity.yaml refuses the object at admission.
+    # layer-nodesoftware-operator is generated into backstage/platform/catalog-info.yaml
+    # from this Kustomization's row by bin/catalog-platform.
+    backstage.io/kubernetes-id: layer-nodesoftware-operator
+spec:
+  clusterIP: None                         # headless; replica-per-pod DNS
+  selector:
+    app.kubernetes.io/name: nodesoftware-operator
+    app.kubernetes.io/part-of: idp
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+    - name: health
+      port: 8081
+      targetPort: health
+---
+# ServiceMonitor (Prometheus Operator CR) -- the controller emits its own
+# metrics; the estate's single Prometheus scrapes them. Wired through the same
+# mechanism as every other controller's metrics in this repo.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nodesoftware-operator
+  namespace: nodesoftware-operator
+  labels:
+    app.kubernetes.io/name: nodesoftware-operator
+    app.kubernetes.io/part-of: idp
+    release: kube-prometheus-stack          # the monitoring chart's selector
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nodesoftware-operator
+      app.kubernetes.io/part-of: idp
+  endpoints:
+    - port: metrics
+      interval: 30s

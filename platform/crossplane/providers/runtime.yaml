@@ -1,0 +1,46 @@
+# How the provider proves who it is, and the reason nothing here is a credential.
+#
+# OKE Workload Identity: the pod presents its own service account to OCI IAM, and an IAM policy
+# names that exact cluster, namespace and service account as the thing allowed to act. There is no
+# key to mint, none to store, none to rotate, and none that keeps working if it leaks -- a token
+# minted this way is worthless off this cluster. That is R52 read literally: one root per provider,
+# set once, and code mints the rest.
+#
+# serviceAccountTemplate is the load-bearing line. Crossplane names a provider's service account
+# after the package by default, with a hash, and an IAM policy cannot match a name that changes.
+# Pinning it makes the policy in platform/oci/crossplane.tf a statement about a name that will
+# still be true after the next package upgrade.
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: oci-workload-identity
+spec:
+  serviceAccountTemplate:
+    metadata:
+      name: crossplane-provider-oci
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          # The provider pods land in the same restricted namespace as the core chart. Crossplane
+          # gives a provider deployment a sane default securityContext, but not a seccomp profile,
+          # and a default the upstream can change is not a fence -- so it is stated here.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: package-runtime
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              env:
+                - { name: OCI_RESOURCE_PRINCIPAL_VERSION, value: "2.2" }
+                - { name: OCI_RESOURCE_PRINCIPAL_REGION, value: "${ESTATE_OCI_REGION}" }
+                - { name: OCI_RESOURCE_PRINCIPAL_WORKLOAD_IDENTITY, value: "1" }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 500m, memory: 512Mi }

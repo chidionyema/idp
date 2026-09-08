@@ -775,6 +775,61 @@ spec:
       name: keda-add-ons-http
       namespace: keda
 ---
+# Decision 0026 step 2: Crossplane's control plane. The core chart only -- no provider, no
+# ProviderConfig -- so a chart failure cannot take the providers with it, and so the providers
+# can wait on the CRDs this row installs (pkg.crossplane.io/v1) rather than racing them.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: scheduling
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/crossplane
+  prune: true
+  wait: true
+  timeout: 15m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: crossplane
+      namespace: crossplane-system
+---
+# Decision 0026 step 2, second half: the OCI provider, its runtime config and the ProviderConfig
+# that names OKE Workload Identity. Separate from the row above because Provider is a CRD the
+# chart installs -- this path cannot even be validated until crossplane has reconciled, which is
+# what dependsOn buys. No health check on the Provider: a Provider becomes Healthy only after it
+# has pulled and unpacked its package, which on a cold node is minutes, and a Kustomization that
+# waits on it would hold the whole reconcile. The wall is bin/idp-ci and the drill, not a timeout.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane-providers
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: crossplane
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/crossplane/providers
+  prune: true
+  wait: false
+  timeout: 15m
+  postBuild:
+    substituteFrom:
+      # ${ESTATE_OCI_REGION}: the provider reads it twice (resource-principal env, credential
+      # blob). Not optional -- a missing ConfigMap must fail the row rather than hand the
+      # provider the literal string '${ESTATE_OCI_REGION}' as a region.
+      - kind: ConfigMap
+        name: estate-config
+---
 # crew#516 CP5 slice 1: the science lane's facts counted in the collector's backend, from inside
 # the cluster (platform/science/science-facts.yaml). Reader: bin/idp-science-facts.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -1499,6 +1554,70 @@ spec:
   wait: true
   timeout: 5m
 ---
+# NodeSoftwareOperator (crew#892 CP4 next phase, goal b9217bea option c):
+# the controller that owns every node-level software install on the estate
+# (runsc, kata, nvidia, ...), gated by the RuntimeInstall CRD
+# (platform/nodesoftware-operator/crds/runtimeinstall.yaml) and the offline
+# gate (bin/nodesoftware-operator-gate). The CRD lands in the same row as the
+# controller so the API exists before any reconcile attempt. The lockdown
+# (flux-only-writes.yaml) blocks every ocid1.user.* principal; this row runs as
+# system:serviceaccount, so it passes through unchanged.
+#
+# Depends on:
+#   - scheduling  the PriorityClass (idp-infrastructure) the controller mounts
+#   - secret-store the ghcr-pull image pull secret (every image-automation flow)
+#   - image-automation the ClusterSecretStore that backs ghcr-pull
+#   - edge the Kyverno policies that gate every Pod (PSS restricted), so the
+#     controller's own PodSecurityContext above is enforced at admission
+#   - rbac-identity the platform RBAC row that namespaces ClusterRoleBindings
+#     (the operator's RBAC is cluster-scoped, so it lands as its own row,
+#     never nested in another)
+#
+# suspend: false means Flux converges the controller as soon as the merged
+# image exists in ghcr. Until the controller source lands (next commit on
+# this branch), the row will fail healthChecks because the image does not
+# exist; this is the safety net. The empirical-proof commit (operator
+# reconciles a RuntimeInstall on a canary node and writes status.rolloutHistory)
+# is the one that flips the row green in the cluster.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: nodesoftware-operator
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/nodesoftware-operator
+  prune: true
+  dependsOn:
+    - name: scheduling
+    - name: secret-store
+    - name: image-automation
+    - name: edge
+    - name: rbac-identity
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+  # Historical note (kept from the broken mechanism removed on 2026-09-08 by PR #2416):
+  # this row previously read `substituteFrom: {kind: Secret, name: ghcr-pull}` for a
+  # stated `IMAGE_TAG` field. ghcr-pull is a kubernetes.io/dockerconfigjson Secret whose
+  # one key is `.dockerconfigjson`; Flux loads every key of a substituteFrom source as a
+  # variable name, `.dockerconfigjson` is not a legal one, and the whole post-build aborted
+  # before applying anything. That substituteFrom is gone; the image is now pinned via Flux
+  # image automation and a `$imagepolicy` marker in kustomization.yaml (cyrus, hermes-agent
+  # and ten more already use it). A pull secret is referenced by name in a pod spec, never
+  # substituted as text.
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: nodesoftware-operator
+      namespace: nodesoftware-operator
+---
 # Cyrus agent orchestration (crew#834): the execution layer that works an issue with any engine --
 # claude, codex, cursor, gemini or opencode -- and answers to both boards, GitHub and Linear.
 # It holds no cluster verbs: its output is an ordinary pull request and Flux reconciles the merge.
@@ -1525,6 +1644,29 @@ spec:
     - name: secret-store
   wait: true
   timeout: 10m
+---
+# The first RuntimeInstall CR (crew#892 CP4 next phase, goal b9217bea option c).
+# Dark until the operator lands: the CR carries estate.estate.io/suspend: "true"
+# so the operator's reconcile loop leaves it alone. The CRD row (nodesoftware-operator)
+# must land first, because the CRD has to exist before this CR can be admitted.
+# One CR, one namespace, one row -- a future gvisor-runtime-2 (kata, nvidia) would
+# land as platform/gvisor-runtime/kata/install.yaml in the same dir, not as a new Flux row.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gvisor-runtime
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/gvisor-runtime
+  prune: true
+  dependsOn:
+    - name: nodesoftware-operator
+  wait: true
+  timeout: 5m
 ---
 # crew#846: the fourth question estate-security-scan asks (platform/trivy) -- container image and
 # cluster vulnerability scanning, which the estate ran nowhere before this row.

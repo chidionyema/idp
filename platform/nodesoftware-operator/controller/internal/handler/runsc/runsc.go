@@ -27,8 +27,11 @@ import (
 
 // Handler is the runsc handler implementation.
 type Handler struct {
-	// InstallImage is the handler image (carries the install/uninstall/probe scripts). Pinned
-	// by digest in production. The chart substitutes IMAGE_TAG at deploy time.
+	// InstallImage is the handler image (carries the install/uninstall/probe scripts). The
+	// controller's main (cmd/main.go) resolves this at startup from the runsc-handler-mirror
+	// initContainer's image: field, so Flux image-automation owns the tag. Empty string is a
+	// hard error from New() rather than a fallback default: there is no safe default here,
+	// only the broken literal that PR #2396 was written to fix.
 	InstallImage string
 
 	// HostRoot is the hostPath the handler pod mounts to access the target node's filesystem.
@@ -36,15 +39,17 @@ type Handler struct {
 	HostRoot string
 }
 
-// New constructs a runsc Handler with sensible defaults.
-func New(installImage, hostRoot string) *Handler {
+// New constructs a runsc Handler. installImage is required (cmd/main.go resolves it from the
+// pod's own initContainer image before reaching this point); an empty installImage is rejected
+// here rather than silently falling back to a literal default that kubelet can never pull.
+func New(installImage, hostRoot string) (*Handler, error) {
 	if installImage == "" {
-		installImage = "ghcr.io/chidionyema/nodesoftware-runsc-handler:IMAGE_TAG"
+		return nil, fmt.Errorf("runsc: installImage required (cmd/main.go should resolve it from the runsc-handler-mirror initContainer image; check --handler-image-source)")
 	}
 	if hostRoot == "" {
 		hostRoot = "/host"
 	}
-	return &Handler{InstallImage: installImage, HostRoot: hostRoot}
+	return &Handler{InstallImage: installImage, HostRoot: hostRoot}, nil
 }
 
 // Runtime returns "runsc".
