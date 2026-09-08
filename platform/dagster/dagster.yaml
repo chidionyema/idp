@@ -163,12 +163,19 @@ spec:
         periodSeconds: 30
         timeoutSeconds: 10
         failureThreshold: 3
+      # 2026-09-08, cgroup cpu.stat inside dagster-daemon-9cd8bd67f-jqptq:
+      #   nr_periods 599698  nr_throttled 293577  throttled_usec 24468029307
+      # 49.0% of every CPU scheduling period was throttled, 6.8 hours of it. At a quarter core
+      # the daemon could not answer its own `dagster-daemon liveness-check` inside the probe's
+      # 10s (Unhealthy event 2026-09-08 00:2xZ), and it holds the code server to a 2-second
+      # gRPC deadline it was too starved to meet. Limits raised, requests with them so the
+      # scheduler is placed on a node that can actually give it the CPU.
       resources:
         requests:
-          cpu: 100m
+          cpu: 200m
           memory: 384Mi
         limits:
-          cpu: 250m
+          cpu: 750m
           memory: 768Mi
       podSecurityContext:
         runAsNonRoot: true
@@ -255,12 +262,21 @@ spec:
           port: 3030
           includeConfigInLaunchedRuns:
             enabled: true
+          # 2026-09-08, cgroup cpu.stat inside the two estate-scheduler code servers:
+          #   ...bg857  nr_periods 2017271  nr_throttled 1363677  throttled_usec 125974838117
+          #   ...hqpm2  nr_periods  656852  nr_throttled  431930  throttled_usec  41461685332
+          # 67.6% and 65.8% of every CPU scheduling period throttled -- 35.0 and 11.5 hours of
+          # wall time spent stopped. The daemon gives a code server 2 seconds to answer, and in
+          # the six hours before this change it logged 698 "Could not reach user code server /
+          # request timed out due to taking longer than 2 seconds" against 80 schedule
+          # evaluations that got through. Memory was never the constraint: both replicas sit at
+          # ~172Mi of 768Mi. CPU was, and it is the whole defect.
           resources:
             requests:
-              cpu: 100m
+              cpu: 250m
               memory: 384Mi
             limits:
-              cpu: 250m
+              cpu: 1000m
               memory: 768Mi
           podSecurityContext:
             runAsNonRoot: true
