@@ -11,6 +11,7 @@ kind: Kustomization
 # `suspend: true`; wiring this path in (un-suspend + operator teardown) is a separate
 # cluster-control change that only runs after this manifest passes review.
 resources:
+  - flannel-daemonset.yaml
   - calico-config.yaml
   - rbac.yaml
   - calico-node.yaml
