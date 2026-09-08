@@ -159,6 +159,12 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: hermes-agent
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: identity
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: monitoring
     - namespaceSelector:
         matchLabels:
