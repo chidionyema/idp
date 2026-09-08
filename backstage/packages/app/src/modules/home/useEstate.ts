@@ -45,6 +45,7 @@ export type Loaded =
 const FLUX = '/apis/kustomize.toolkit.fluxcd.io/v1/kustomizations';
 const DEMO_SANDBOX_KUSTOMIZATIONS = '/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/demo-sandbox/kustomizations';
 const DEPLOYMENTS = '/apis/apps/v1/deployments';
+const LANGFUSE_HEALTH = '/api/v1/namespaces/observability/services/langfuse-frontend:80/proxy/health';
 /** The cluster is re-read this often while the page is open; the catalogue is not. */
 export const REFRESH_MS = 60_000;
 
@@ -89,10 +90,11 @@ export const useEstate = () => {
           if (!r.ok) throw new Error(`${path} answered ${r.status}`);
           return (await r.json()) as { items: unknown[] };
         };
-        const [k, d, demoK] = await Promise.all([
+        const [k, d, demoK, langfuseHealth] = await Promise.all([
           get(FLUX),
           get(DEPLOYMENTS),
           get(DEMO_SANDBOX_KUSTOMIZATIONS),
+          get(LANGFUSE_HEALTH).then(() => true).catch(() => false),
         ]);
         const kustomizations: Record<string, FluxObject> = {};
         for (const o of k.items as FluxObject[]) {
@@ -128,6 +130,7 @@ export const useEstate = () => {
             deployments: d.items as DeploymentObject[],
             readAt: Date.now(),
             demoSandbox,
+            langfuseHealthy: langfuseHealth,
           },
         };
       } catch (e) {

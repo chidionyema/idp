@@ -83,6 +83,7 @@ export type Live =
       kustomizations: Record<string, FluxObject>;
       deployments: DeploymentObject[];
       readAt: number;
+      langfuseHealthy: boolean;
     }
   | undefined;
 
