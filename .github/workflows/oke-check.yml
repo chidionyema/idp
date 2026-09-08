@@ -24,7 +24,7 @@ on:
         options: [diagnose, architect-doctor, otto-parity, otto-lockdown, otto-restore, healthchecks-door, cilium-unchain, cilium-replace, helm-retry, webhooks-restart, namespace-unstick, ghcr-pull-restore, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll, router-spend, registries-conf, ns-fences]
         default: diagnose
   pull_request:
-    paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
+    paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-fits-a-node", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
 permissions:
   id-token: write   # the OIDC token this job trades for OCI access
   contents: read
@@ -498,6 +498,27 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
         run: bin/idp-cluster-state --json
+      # crew#684 rung 3: the placement question, asked against the receipt this job just read.
+      # bin/idp-fits-a-node ran in no CI job and no workflow -- only against its own fixtures --
+      # so on 2026-09-07 it graded nothing while ClickHouse sat Unschedulable and the aggregate
+      # capacity row above read fine. Aggregate free memory is not a place to put a pod. The
+      # receipt now carries the per-pod requests the gate needs, so it asks the live question
+      # here, where the machine identity that can read the receipt lives. An unreadable receipt
+      # is BLIND and exits 0; a real placement problem is red.
+      - name: bin/idp-fits-a-node (placement, from the same receipt)
+        if: ${{ always() }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+        run: |
+          set -uo pipefail
+          # Line 1 of the receipt is the graded summary; the rest is the JSON body.
+          bin/idp-cloud object get --bucket "${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}" \
+            --name state/cluster 2>/dev/null | tail -n +2 > "$RUNNER_TEMP/receipt.json" || true
+          bin/idp-fits-a-node --receipt "$RUNNER_TEMP/receipt.json"
+
       # crew#846: the image-vulnerability question estate-security-scan asks is the only one that
       # has nothing to lint in git -- it reads Trivy Operator's VulnerabilityReport objects off the
       # cluster. This job holds the machine identity, so it is where that question is asked;

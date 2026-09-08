@@ -170,9 +170,15 @@ spec:
       # 10s (Unhealthy event 2026-09-08 00:2xZ), and it holds the code server to a 2-second
       # gRPC deadline it was too starved to meet. Limits raised, requests with them so the
       # scheduler is placed on a node that can actually give it the CPU.
+      # 2026-09-08, same day, correcting the line above it: the request was raised to 200m and
+      # the node had nothing to give. `kubectl top nodes` reports USAGE (58% and 26%); the two
+      # nodes were at 99% and 96% of committed CPU *requests*, and the scheduler refused the new
+      # pod outright -- "0/2 nodes are available: 2 Insufficient cpu". Requests are a reservation
+      # and buy no CPU; the CFS quota that was throttling this pod is the LIMIT. So the limit
+      # keeps the rise and the request goes back to what it was, which costs no capacity at all.
       resources:
         requests:
-          cpu: 200m
+          cpu: 100m
           memory: 384Mi
         limits:
           cpu: 750m
@@ -271,9 +277,12 @@ spec:
           # request timed out due to taking longer than 2 seconds" against 80 schedule
           # evaluations that got through. Memory was never the constraint: both replicas sit at
           # ~172Mi of 768Mi. CPU was, and it is the whole defect.
+          # 2026-09-08: request reverted from 250m to 100m for the reason recorded on the daemon
+          # above -- the nodes are at 99% and 96% of committed requests, so raising this one made
+          # the replica unschedulable. The limit is what was throttling it, and the limit stays.
           resources:
             requests:
-              cpu: 250m
+              cpu: 100m
               memory: 384Mi
             limits:
               cpu: 1000m

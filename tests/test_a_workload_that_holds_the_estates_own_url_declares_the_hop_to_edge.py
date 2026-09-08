@@ -41,6 +41,25 @@ DOOR = "edge"
 
 NAMESPACE_LABEL = "kubernetes.io/metadata.name"
 
+# The one collector every workload emits to (LAW 50). idp-ns-fence-gen grants every namespace
+# egress to it whether the namespace asked or not, which is the whole of the law on the egress
+# side and none of it on the ingress side -- see the SINK block in that file.
+COLLECTOR = "observability"
+
+# A cluster-internal address as a manifest spells it: service.namespace.svc[.cluster.local].
+SERVICE_ADDRESS = re.compile(
+    r"\b([a-z0-9][a-z0-9-]*)\.([a-z0-9][a-z0-9-]*)\.svc(?:\.cluster\.local)?\b"
+)
+
+# Kinds that name an address without being the thing that dials it.
+#   Job          -- a one-shot migration that has already run is not a standing dialler; its pod
+#                   is gone and will not be recreated, so declaring a hop for it would open a
+#                   door for nobody. A CronJob is the opposite case and is graded.
+#   Middleware   -- a Traefik middleware describes what the gateway does with a request. The pod
+#                   that dials a forwardAuth address is traefik, in the edge namespace, not
+#                   anything in the namespace the middleware object happens to live in.
+NAMES_BUT_DOES_NOT_DIAL = {"Job", "Middleware"}
+
 
 def _run(*argv):
     return subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, check=False)
@@ -197,3 +216,92 @@ def test_a_workload_naming_only_its_own_hostname_is_not_called_a_dialler():
 def test_the_heartbeat_that_measured_this_is_still_the_case_the_rule_covers():
     """The defect this rule was written from: identity curling catalogue.<zone>."""
     assert "catalogue.${ESTATE_ZONE}" in _dials().get("identity", {})
+
+
+def _service_dials(fenced):
+    """namespace -> {(destination, service): file} for every cross-namespace address it holds.
+
+    This is the general form of the rule at the top of this file. The front door was one
+    hostname; a Service address is the same capability spelled the other way, and the same
+    twenty-second silence when the fence says no.
+    """
+    found = {}
+    for path, doc in _docs(PLATFORM):
+        if doc.get("kind") in NAMES_BUT_DOES_NOT_DIAL:
+            continue
+        source = _namespace(doc)
+        if source not in fenced:
+            continue
+        for text in _strings(doc):
+            for service, destination in SERVICE_ADDRESS.findall(text):
+                if destination == source or destination not in fenced:
+                    continue
+                found.setdefault(source, {}).setdefault((destination, service), path)
+    return found
+
+
+def test_every_fenced_namespace_can_reach_the_one_collector():
+    """LAW 50's grant was one-sided until 2026-09-08, so the law generated its own outage.
+
+    policy_docs() appends the collector to every namespace's egress -- and until this was fixed
+    gave the collector no matching ingress, so observability's allow-declared-ingress admitted
+    edge and monitoring and nobody else. Both namespaces are default-deny in both directions, so
+    every other namespace's traces were dropped at the collector's door. Silently: an OTLP
+    exporter drops what it cannot deliver and the workload goes on serving.
+    """
+    policies = _policies()
+    closed = []
+    for namespace in sorted(policies):
+        if namespace == COLLECTOR:
+            continue
+        leaves, arrives = _hop_is_open(policies, namespace, COLLECTOR)
+        if not (leaves and arrives):
+            closed.append(
+                f"{namespace} -> {COLLECTOR}: egress={leaves} ingress={arrives}"
+            )
+    assert not closed, (
+        "LAW 50 says every workload emits to the one collector, and these namespaces cannot:\n"
+        + "\n".join(closed)
+    )
+
+
+def test_every_live_workload_that_dials_another_namespace_declares_the_hop():
+    """The pre-flight for the roll onto the enforcing CNI.
+
+    A fence gap is invisible while the two pods are still wired by flannel and becomes a drop the
+    moment either is recreated onto Calico. On 2026-09-08 the estate was half rolled -- 96 pods on
+    flannel, 39 on Calico -- so every undeclared hop here is an outage with a date on it rather
+    than a hypothetical. Finding them by reading the manifests costs nothing; finding them by
+    restarting a pod costs whatever that pod does.
+    """
+    policies = _policies()
+    fenced = set(policies)
+    assert len(fenced) > 20, (
+        f"only {len(fenced)} fenced namespaces rendered; the walk found nothing"
+    )
+    closed = []
+    for source, hops in sorted(_service_dials(fenced).items()):
+        for (destination, service), path in sorted(hops.items()):
+            leaves, arrives = _hop_is_open(policies, source, destination)
+            if not (leaves and arrives):
+                closed.append(
+                    f"{source} -> {destination} ({service}, {path}): "
+                    f"egress={leaves} ingress={arrives}"
+                )
+    assert not closed, (
+        "these workloads dial across a fence that does not declare the hop; each is a drop on "
+        "the day its pod lands on Calico:\n" + "\n".join(closed)
+    )
+
+
+def test_the_scan_reads_the_addresses_it_claims_to_read():
+    """A walk that matched nothing would pass the rule above without grading anything."""
+    fenced = set(_policies())
+    dials = _service_dials(fenced)
+    assert len(dials) >= 10, (
+        f"only {len(dials)} namespaces found dialling; the regex missed"
+    )
+    assert ("llm", "litellm") in dials.get("research", {}), (
+        "the research engine's LITELLM_BASE_URL is the hop this scan was built from and it is "
+        "not in the result"
+    )
