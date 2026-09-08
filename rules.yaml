@@ -18,6 +18,11 @@
 # `bin/idp-rules run`. There is no second place to edit.
 version: 1
 
+# The ceiling on rules that admit in live_gap that they have no real input yet. bin/idp-rules
+# refuses a run where more rules than this name a gap, so the number may only fall. An escape
+# hatch with no ratchet is how a temporary exception becomes the permanent state.
+live_gap_budget: 12
+
 rules:
   - id: flux-subst
     fast: true   # cheap enough for the 60-second fast gate
@@ -193,6 +198,7 @@ rules:
       the permitting case is the live migration rung in bin/idp-ci, which applies bin/scheduler-migrate twice and rolls it back under a real dagster
     run: [bin/migration-gate]
     fixtures: {must_fail: tests/fixtures/migration-not-idempotent, must_pass: bin/scheduler-migrate}
+    live_elsewhere: "bin/idp-ci:337 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back"
     cases:
       - {expect: refuse, args: [tests/fixtures/migration-not-idempotent]}
     ok: "migration-gate refuses the non-idempotent fixture"
@@ -221,6 +227,7 @@ rules:
     planes: [ci]
     run: [bin/owner-account-gate]
     fixtures: {must_fail: tests/fixtures/owner-accounts/bad.yaml, must_pass: tests/fixtures/owner-accounts/good.yaml}
+    live_gap: "chidionyema/idp#2452 -- pointed at docs/reference/owner-accounts.yaml, the file it exists to grade, this gate exits 1: six provider accounts name no second owner. The live case lands with the fix, not before it."
     cases:
       - {expect: pass, args: [tests/fixtures/owner-accounts/good.yaml]}
       - {expect: refuse, args: [tests/fixtures/owner-accounts/bad.yaml]}
@@ -251,6 +258,7 @@ rules:
       bin/idp-conscience --selftest is itself the both-ways proof: it scores the good fixture 2/2, the bad one 1/2, and refuses a tenet with no command
     run: [python3, bin/idp-conscience, --selftest]
     fixtures: {must_fail: "a tenet row with no command", must_pass: bin/idp-conscience}
+    live_elsewhere: ".github/workflows/conscience.yml:94 -- the conscience job runs the gate bare over the estate's own tenet rows, not the selftest"
     cases:
       - {expect: pass}
     ok: "idp-conscience scores the good fixture 2/2, the bad 1/2, and refuses a tenet with no command"
@@ -266,6 +274,7 @@ rules:
     run: [python3, -m, estate_scheduler.describe, --selftest]
     cwd: scheduler
     fixtures: {must_fail: tests/fixtures/schedule-undescribed.yml, must_pass: tests/fixtures/schedule-described.yml}
+    live_gap: "chidionyema/idp#2452 -- the selftest grades the describer, not the estate's schedules. bin/idp-verify:170 runs it for real, and bin/idp-verify is invoked by no workflow: a gate that runs only when somebody types it is not a plane."
     cases:
       - {expect: pass}
     ok: "job descriptions derive from the script, and are refused when absent"
@@ -344,6 +353,7 @@ rules:
     planes: [ci]
     run: [python3, bin/idp-tenant-split]
     fixtures: {must_fail: tests/fixtures/tenant-split/bad.yaml, must_pass: tests/fixtures/tenant-split/good.yaml}
+    live_gap: "chidionyema/idp#2452 -- a bare run over the repository returns 15 findings, every one of the shape 'no data.seed.sql to grade'. That reads like the gate scanning past its own subject rather than 15 tenant defects, and it wants reading before either is claimed."
     cases:
       - {expect: refuse, args: [tests/fixtures/tenant-split/bad.yaml]}
       - {expect: pass, args: [tests/fixtures/tenant-split/good.yaml]}
@@ -376,6 +386,7 @@ rules:
     planes: [ci]
     run: [python3, bin/idp-fence-enforcement]
     fixtures: {must_fail: tests/fixtures/fence-drill/gate-broken-fence.json, must_pass: tests/fixtures/fence-drill/gate-good.json}
+    live_gap: "chidionyema/idp#2452 -- the input is a fence drill receipt and nothing in .github writes one, so the three fixtures are the only fence profiles this rule has ever read."
     cases:
       - {expect: pass, args: [tests/fixtures/fence-drill/gate-good.json]}
       - {expect: refuse, args: [tests/fixtures/fence-drill/gate-broken-fence.json]}
@@ -392,6 +403,7 @@ rules:
     planes: [ci]
     run: [python3, bin/idp-calico-deny-log]
     fixtures: {must_fail: tests/fixtures/calico-denyflow/feed-no-evidence.log, must_pass: tests/fixtures/calico-denyflow/feed-with-deny.log}
+    live_gap: "chidionyema/idp#2452 -- no real deny feed is collected anywhere, and worse, bin/idp-calico-deny-log:35 names its own passing fixture as the default input for a rule whose statement is that an empty feed is a fail-closed FAIL."
     cases:
       - {expect: pass, args: [tests/fixtures/calico-denyflow/feed-with-deny.log]}
       - {expect: refuse, args: [tests/fixtures/calico-denyflow/feed-no-evidence.log]}
@@ -412,6 +424,9 @@ rules:
     cases:
       - {expect: pass, args: [tests/fixtures/gvisor-cell/good.yaml]}
       - {expect: refuse, args: [tests/fixtures/gvisor-cell/bad.yaml]}
+      # Every manifest the platform declares. The gate prints how many landed in the cell
+      # namespace, so a run that matched nothing reads as nothing graded rather than as ok.
+      - {expect: pass, args: [platform]}
     ok: "a cell Pod without the runtime class (or privileged, host-networked, hostPath) is refused; the conforming cell Pod passes"
     fail: "bin/gvisor-cell-gate cannot tell a gVisor cell boundary break from a conforming Pod (ZT step 5)"
 
@@ -429,6 +444,8 @@ rules:
     cases:
       - {expect: pass, args: [tests/fixtures/gvisor-cell-fence/good.yaml]}
       - {expect: refuse, args: [tests/fixtures/gvisor-cell-fence/bad.yaml]}
+      # The fence the estate actually declares for the sandbox cell, not a copy of it.
+      - {expect: pass, args: [platform/ns-fences/allowances.yaml]}
     ok: "a gVisor-cell fence granting internet egress is refused; the default-deny cell fence passes"
     fail: "bin/gvisor-cell-fence-gate cannot tell a cell fence that leaks to the internet from the default-deny fence (ZT step 6)"
 
@@ -475,6 +492,7 @@ rules:
     requires: [conftest]
     run: [conftest, test, --parser, json, -p, policy]
     fixtures: {must_fail: policy/fixtures/sell-blocking.json, must_pass: policy/fixtures/clean.json}
+    live_gap: "chidionyema/idp#2452 -- bin/pr-report writes reports/pr.json and runs conftest over it, and no workflow in .github invokes bin/pr-report. Every conftest rule in this file grades policy/fixtures and nothing else."
     cases:
       - {expect: pass, args: [policy/fixtures/clean.json], note: "an ordinary permissive tree, including packages with no licence metadata"}
       - {expect: refuse, args: [policy/fixtures/sell-blocking.json], note: "AGPL, SSPL, BUSL, Elastic, non-commercial CC, Commons Clause"}
@@ -490,6 +508,7 @@ rules:
     requires: [conftest]
     run: [conftest, test, --parser, json, -p, policy]
     fixtures: {must_fail: policy/fixtures/placement-misplaced.json, must_pass: policy/fixtures/placement-ok.json}
+    live_gap: "chidionyema/idp#2452 -- same as licence-policy: the producer bin/pr-report exists and no workflow runs it."
     cases:
       - {expect: pass, args: [policy/fixtures/placement-ok.json]}
       - {expect: refuse, args: [policy/fixtures/placement-misplaced.json]}
@@ -508,6 +527,7 @@ rules:
     requires: [conftest]
     run: [conftest, test, --parser, json, -p, policy]
     fixtures: {must_fail: policy/fixtures/capacity-over-cap.json, must_pass: policy/fixtures/capacity-under-cap.json}
+    live_elsewhere: "bin/idp-oke-rebuild:66 -- the rebuild grades reports/capacity.json, the real node-pool plan, before it provisions anything"
     cases:
       - {expect: pass, args: [policy/fixtures/capacity-under-cap.json]}
       - {expect: refuse, args: [policy/fixtures/capacity-over-cap.json]}
@@ -529,6 +549,7 @@ rules:
     requires: [conftest]
     run: [conftest, test, --parser, json, -p, policy]
     fixtures: {must_fail: policy/fixtures/opmodel-half-provisioned.json, must_pass: policy/fixtures/opmodel-ok.json}
+    live_gap: "chidionyema/idp#2452 -- same as licence-policy, and this is the costly one: the Optimised line, the cost line, the canary label and the named drill are graded against 21 checked-in examples and against no pull request that was ever opened."
     cases:
       - {expect: pass, args: [policy/fixtures/opmodel-ok.json]}
       - {expect: refuse, args: [policy/fixtures/opmodel-half-provisioned.json]}
@@ -569,6 +590,7 @@ rules:
     requires: [conftest]
     run: [conftest, test, --parser, json, -p, policy]
     fixtures: {must_fail: policy/fixtures/notoil-doc-manual.json, must_pass: policy/fixtures/notoil-doc-founder-action.json}
+    live_gap: "chidionyema/idp#2452 -- bin/idp-no-toil:88 does run conftest over real documents, and no workflow in .github invokes bin/idp-no-toil."
     cases:
       - {expect: refuse, args: [policy/fixtures/notoil-doc-manual.json]}
       - {expect: pass, args: [policy/fixtures/notoil-doc-founder-action.json]}
@@ -584,6 +606,7 @@ rules:
     requires: [conftest]
     run: [conftest, test, --parser, json, -p, policy]
     fixtures: {must_fail: policy/fixtures/conscience-bad.json, must_pass: policy/fixtures/conscience-clean.json}
+    live_gap: "chidionyema/idp#2452 -- same as licence-policy: the producer bin/pr-report exists and no workflow runs it."
     cases:
       - {expect: refuse, args: [policy/fixtures/conscience-bad.json], expect_rules: [no_provider_in_diff, no_floating_tag, new_script_has_a_test, incident_has_a_guard, new_dependency_has_a_ledger_entry]}
       - {expect: pass, args: [policy/fixtures/conscience-clean.json]}
@@ -658,6 +681,7 @@ rules:
     run: [python3, bin/idp-fits-a-node]
     requires_python: [yaml]
     fixtures: {must_fail: tests/fixtures/fits-a-node/bad, must_pass: tests/fixtures/fits-a-node/good}
+    live_elsewhere: ".github/workflows/oke-check.yml:520 -- the cluster-state job feeds it the same receipt the state collector wrote, so the placement it grades is the one the scheduler saw (#2444)"
     cases:
       - {expect: refuse, args: [tests/fixtures/fits-a-node/bad], note: "a database the scheduler has already refused, and two workloads that could not be placed again"}
       - {expect: pass, args: [tests/fixtures/fits-a-node/good], note: "the same cluster sized to fit, its one pinned workload named in the ledger beside it"}
@@ -679,6 +703,7 @@ rules:
     fixtures:
       must_fail: tests/fixtures/reloader-blind
       must_pass: tests/fixtures/reloader
+    live_elsewhere: "bin/idp-ci:437 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them"
     cases:
     - expect: refuse
       args:
@@ -725,6 +750,7 @@ rules:
     run: [python3, bin/idp-glass-break]
     cluster: {policy: null, why: "the subject is a pull request, which no admission controller sees"}
     fixtures: {must_fail: tests/fixtures/glass-break/bad.json, must_pass: tests/fixtures/glass-break/good.json}
+    live_gap: "chidionyema/idp#2452 -- the input is a pull request as JSON and nothing writes one in CI, so the gate that holds the WJ.8 line has never read a real pull request."
     cases:
       - {expect: refuse, args: [tests/fixtures/glass-break/bad.json]}
       - {expect: pass, args: [tests/fixtures/glass-break/good.json]}
@@ -743,6 +769,7 @@ rules:
     run: [conftest, test, --parser, json, -p, policy, --namespace, sovereign.command]
     cluster: {policy: null, why: "the subject is a command a sovereign agent proposes, which no admission controller sees"}
     fixtures: {must_fail: policy/fixtures/command-not-allowlisted.json, must_pass: policy/fixtures/command-allowed.json}
+    live_gap: "chidionyema/idp#2452 -- same as licence-policy: no workflow feeds this rule a command a sovereign agent actually asked to run."
     cases:
       # The namespace is load-bearing and was the reason these three fixtures read as ungraded:
       # the package is `sovereign.command`, and a conftest run without --namespace evaluates
