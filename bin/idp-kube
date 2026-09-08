@@ -49,36 +49,50 @@ if [ "${1:-}" = "--break-glass" ]; then
   printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${JIT_AGENT:-unknown}" "$REASON" >>"$STATE/break-glass.log"
 fi
 command -v kubectl >/dev/null || blind "kubectl is not installed"
-fresh=0
-if [ "$refresh" -eq 0 ] && [ -f "$KC" ] && [ -n "$(find "$KC" -mmin "-$MAX_MIN" 2>/dev/null)" ]; then fresh=1; fi
-if [ "$fresh" -eq 0 ]; then
-  cl=$("$IDP/bin/idp-cloud" cluster list 2>&1) || blind "cluster list failed: $(printf '%s' "$cl" | tail -1 | cut -c1-160) -- refresh the session with bin/idp-oci-login"
-  # crew#345: the cluster is picked by name (OCI_CLUSTER_NAME, default estate), never by position;
-  # a compartment with several ACTIVE clusters made NR==1 mint a kubeconfig for the wrong one.
-  want="${OCI_CLUSTER_NAME:-estate}"
-  cid=$(printf '%s\n' "$cl" | awk -v n="$want" '$1==n{print $2; exit}')
-  [ -n "$cid" ] || blind "no ACTIVE cluster named $want; ACTIVE: $(printf '%s\n' "$cl" | awk '{print $1}' | paste -sd, -) -- set OCI_CLUSTER_NAME"
-  mkdir -p "$STATE" && chmod 700 "$STATE"
-  out=$("$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$KC" 2>&1) || blind "create-kubeconfig failed ($want): $(printf '%s' "$out" | tail -1 | sed -E 's/.*"code": "([^"]+)".*"message": "([^"]+)".*/\1: \2/' | cut -c1-240)"
-  chmod 600 "$KC"
-  # The OCI CLI writes `command: oci`, a bare name, and that is only findable when the caller has a
-  # login shell's PATH. Headlamp.app launched from Finder does not: a GUI app inherits
-  # /usr/bin:/bin:/usr/sbin:/sbin, `oci` lives outside all four, the exec plugin cannot run, and
-  # Headlamp falls back to the one thing ADR 0003 and ADR 0007 refuse -- "Please paste your
-  # authentication token". So the path is resolved here, once, at the moment the file is minted.
-  # Resolved with command -v, never written down: the machine is not named in a tracked file (LAW 46).
-  OCI_BIN="$(command -v oci || true)"
-  if [ -n "$OCI_BIN" ]; then
-    tmp="$KC.$$"
-    # The CLI also prints an API-key advisory on every call unless SUPPRESS_LABEL_WARNING is set;
-    # the plugin's env block carries it, so no consumer needs a shell that exports it.
-    sed -e "s|^\( *command: \)oci *$|\1$OCI_BIN|" -e 's|^\( *\)env: \[\] *$|\1env: [{name: SUPPRESS_LABEL_WARNING, value: "True"}]|' "$KC" >"$tmp" && mv "$tmp" "$KC" && chmod 600 "$KC"
+
+# The identity every command below runs as. Three ways to get it, cheapest first, and only
+# the third involves the founder at all.
+RKC="$STATE/kubeconfig-reader"
+USE=""
+
+reader_is_fresh() { [ -f "$RKC" ] && [ -n "$(find "$RKC" -mmin "-$MAX_MIN" 2>/dev/null)" ]; }
+
+# Way two: ask the broker. This is WJ.1's client half and the reason this file no longer
+# needs a founder.
+#
+# What it replaces: until 2026-09-08 `downgrade()` below ran `kubectl create token
+# agent-reader` under $KC -- a kubeconfig whose user is an `exec` credential calling
+# `oci generate-token`. So the read-only identity every agent in this estate runs as was
+# minted, every hour, by the founder's own administrator principal, from the one machine his
+# OCI session lives on. `auth whoami` answering `agent-reader` was true and hid that: the
+# downgrade was real, the thing performing it was not an agent.
+#
+# bin/idp-jit identity writes the whole kubeconfig -- token, API address and CA -- from what
+# the broker returns, so a device needs no `oci` CLI, no OCI login and no laptop. What it
+# needs is one agent key. That is a smaller secret in every direction that matters: it buys
+# an hour of reads on this cluster, and the thing it replaced was a tenancy administrator
+# with no expiry.
+from_broker() {
+  mkdir -p "$STATE" && chmod 700 "$STATE" || return 1
+  "$IDP/bin/idp-jit" identity --kubeconfig "$RKC" >/dev/null 2>&1 || return 1
+  [ -s "$RKC" ] || return 1
+  return 0
+}
+
+if [ "$BREAK" -eq 0 ]; then
+  # Way one: the cached reader kubeconfig, still inside its window. No broker, no cloud, no
+  # network round trip at all -- and the token carries its own expiry, so a stale cache is a
+  # credential that stops working rather than one lying around.
+  if [ "$refresh" -eq 0 ] && reader_is_fresh; then
+    USE="$RKC"
+  elif from_broker; then
+    USE="$RKC"
   fi
 fi
-# The downgrade. One call with the founder's kubeconfig mints a token for agent-reader, and that
-# token -- not his principal -- is what every command below runs as. The token carries its own
-# expiry, so a stale cache is a token that stops working rather than a credential lying around.
-RKC="$STATE/kubeconfig-reader"
+
+# The old downgrade, kept for way three only: one call with the founder's kubeconfig mints a
+# token for agent-reader, and that token -- not his principal -- is what runs. On a device
+# that can reach the broker this is never called.
 downgrade() {
   local tok
   tok=$(KUBECONFIG="$KC" kubectl create token agent-reader -n agents --duration=3600s 2>/dev/null) || return 1
@@ -90,21 +104,46 @@ downgrade() {
   return 0
 }
 
-USE="$KC"
-if [ "$BREAK" -eq 0 ]; then
-  if [ "$fresh" -eq 1 ] && [ -f "$RKC" ] && [ -n "$(find "$RKC" -mmin "-$MAX_MIN" 2>/dev/null)" ]; then
-    USE="$RKC"
+# Way three, and the only one that touches the founder's principal: mint the kubeconfig from
+# the cloud. This is what every call did before the broker existed. It stays for two reasons
+# and no others -- --break-glass is defined as running as him, and a device that cannot reach
+# the broker must not lose the cluster on the day this merges.
+if [ -z "$USE" ]; then
+  fresh=0
+  if [ "$refresh" -eq 0 ] && [ -f "$KC" ] && [ -n "$(find "$KC" -mmin "-$MAX_MIN" 2>/dev/null)" ]; then fresh=1; fi
+  if [ "$fresh" -eq 0 ]; then
+    cl=$("$IDP/bin/idp-cloud" cluster list 2>&1) || blind "cluster list failed: $(printf '%s' "$cl" | tail -1 | cut -c1-160) -- refresh the session with bin/idp-oci-login"
+    # crew#345: the cluster is picked by name (OCI_CLUSTER_NAME, default estate), never by position;
+    # a compartment with several ACTIVE clusters made NR==1 mint a kubeconfig for the wrong one.
+    want="${OCI_CLUSTER_NAME:-estate}"
+    cid=$(printf '%s\n' "$cl" | awk -v n="$want" '$1==n{print $2; exit}')
+    [ -n "$cid" ] || blind "no ACTIVE cluster named $want; ACTIVE: $(printf '%s\n' "$cl" | awk '{print $1}' | paste -sd, -) -- set OCI_CLUSTER_NAME"
+    mkdir -p "$STATE" && chmod 700 "$STATE"
+    out=$("$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$KC" 2>&1) || blind "create-kubeconfig failed ($want): $(printf '%s' "$out" | tail -1 | sed -E 's/.*"code": "([^"]+)".*"message": "([^"]+)".*/\1: \2/' | cut -c1-240)"
+    chmod 600 "$KC"
+    # The OCI CLI writes `command: oci`, a bare name, and that is only findable when the caller has a
+    # login shell's PATH. Headlamp.app launched from Finder does not: a GUI app inherits
+    # /usr/bin:/bin:/usr/sbin:/sbin, `oci` lives outside all four, the exec plugin cannot run, and
+    # Headlamp falls back to the one thing ADR 0003 and ADR 0007 refuse -- "Please paste your
+    # authentication token". So the path is resolved here, once, at the moment the file is minted.
+    # Resolved with command -v, never written down: the machine is not named in a tracked file (LAW 46).
+    OCI_BIN="$(command -v oci || true)"
+    if [ -n "$OCI_BIN" ]; then
+      tmp="$KC.$$"
+      # The CLI also prints an API-key advisory on every call unless SUPPRESS_LABEL_WARNING is set;
+      # the plugin's env block carries it, so no consumer needs a shell that exports it.
+      sed -e "s|^\( *command: \)oci *$|\1$OCI_BIN|" -e 's|^\( *\)env: \[\] *$|\1env: [{name: SUPPRESS_LABEL_WARNING, value: "True"}]|' "$KC" >"$tmp" && mv "$tmp" "$KC" && chmod 600 "$KC"
+    fi
+  fi
+  if [ "$BREAK" -eq 1 ]; then
+    USE="$KC"
   elif downgrade; then
     USE="$RKC"
   else
-    # Phase 1 of the rollout, and it is deliberately a warning rather than a refusal. Failing
-    # closed here would mean that on the day this merges, every session in flight loses the
-    # cluster at once -- and the estate is already recovering from sessions colliding. So while
-    # agent-reader does not yet exist in the cluster this behaves exactly as it did yesterday
-    # and says so on every call. The moment the ServiceAccount is applied, every session is
-    # downgraded with no further change to this file. platform/rbac/agent-reader.yaml is the
-    # switch; `bin/idp-kube auth whoami` is how you know which side of it you are on.
-    printf 'warn    kube  agent-reader not in the cluster yet; running as the founder. Apply platform/rbac/agent-reader.yaml (WJ.1)\n' >&2
+    # Still a warning rather than a refusal, and now it names both doors. Failing closed here
+    # would mean every session in flight loses the cluster at once.
+    printf 'warn    kube  neither the broker nor agent-reader answered; running as the founder. See issue #2470 (WJ.1)\n' >&2
+    USE="$KC"
   fi
 fi
 

@@ -29,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import yaml
 
 from .broker import Broker, Refused
+from .collector import sink_from_env
 from .telegram import Phone, digest
 
 
@@ -49,6 +50,22 @@ def secret(name: str) -> str:
             return fh.read().strip()
     except OSError:
         return os.environ[name]
+
+
+def optional_secret(name: str) -> str:
+    """A secret the broker works without, read the same way as one it does not.
+
+    JIT_AGENT_KEY arrives with platform/jit/deployment.yaml's ExternalSecret, and an
+    ExternalSecret is a controller reconciling, not an atomic event: between this image
+    starting and that key landing there is a window. Raising in that window would put the
+    broker in CrashLoopBackOff and take the approval path down with it, to protect a door
+    that simply is not open yet. So an absent key means `identity()` refuses every caller,
+    and every other door keeps working.
+    """
+    try:
+        return secret(name)
+    except (OSError, KeyError):
+        return ""
 
 
 def killswitch_reader(path: str):
@@ -86,9 +103,27 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # the ledger is the record, not stderr noise
         return
 
+    def _bearer(self) -> str:
+        """The credential out of the Authorization header, or an empty string.
+
+        The key travels in the header rather than the body: it is where a bearer credential
+        belongs, this handler's log_message is silenced, and a body is what gets echoed into
+        an error message by the next person to add a door.
+        """
+        sent = self.headers.get("Authorization") or ""
+        return sent[7:] if sent.startswith("Bearer ") else ""
+
     def do_POST(self) -> None:  # noqa: N802
         try:
             if self.path == "/ask":
+                # 401 before the body is even read, and separately from the ask itself, so a
+                # bad key reads as "I am not who I said" rather than the 400 that means "what
+                # you asked for is not allowed" -- and so an unauthenticated caller learns
+                # nothing about the catalogue, not even whether a grant id exists.
+                try:
+                    self.broker.authenticate(self._bearer())
+                except Refused as exc:
+                    return self._reply(401, {"error": str(exc)})
                 b = self._body()
                 req = self.broker.ask(
                     b["grant"],
@@ -96,9 +131,18 @@ class Handler(BaseHTTPRequestHandler):
                     b.get("why", ""),
                     b.get("ttl", "10m"),
                     b.get("asked_by", "agent"),
+                    attested=True,
                 )
                 self.phone.send_ask(req, self.broker._load_grant(req.grant_id))
                 return self._reply(200, {"request": req.id})
+            if self.path == "/identity":
+                # A wrong key is a 401 and not the 400 every other Refused answers with --
+                # the caller has to be able to tell "I am not who I said" from "what you
+                # asked for is not allowed".
+                try:
+                    return self._reply(200, self.broker.identity(self._bearer()))
+                except Refused as exc:
+                    return self._reply(401, {"error": str(exc)})
             if self.path == "/state":
                 req = self.broker.pending.get(self._body().get("request", ""))
                 if req is None:
@@ -190,9 +234,16 @@ def main() -> None:
         ),
         key=key,
         ledger_path=ledger_path,
+        # WJ.7: the record of who was given write access to this estate does not live on
+        # one node's disk any more. It is still written there first -- that file is what
+        # /healthz verifies the chain of -- and then shipped to the collector every other
+        # workload already reports to. None when OTEL_EXPORTER_OTLP_ENDPOINT is unset,
+        # which is a laptop run, not the deployment (platform/jit/deployment.yaml sets it).
+        ledger_sink=sink_from_env(),
         killswitch=killswitch_reader(
             os.environ.get("JIT_KILLSWITCH", "/var/lib/jit/stopped")
         ),
+        agent_key=optional_secret("JIT_AGENT_KEY").encode(),
     )
     phone = Phone(secret("TELEGRAM_BOT_TOKEN"), secret("TELEGRAM_CHAT_ID"), broker)
     Handler.broker, Handler.phone = broker, phone

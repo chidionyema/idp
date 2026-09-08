@@ -38,11 +38,20 @@ spec:
         # this value (its OTTO_ALERTS_WEBHOOK_SECRET is `flux-telegram`, property
         # `webhook_secret`). A broker checking any other value refuses every real tap.
         TELEGRAM_WEBHOOK_SECRET: "{{ .webhook_secret }}"
+        # The bootstrap key an agent presents at /identity. It is not an approval key and
+        # cannot become one: holding it buys a one-hour agent-reader token, which is reads.
+        # It is the broker's own entry rather than a shared one because it is the one value
+        # that has to exist on a laptop, and a key that leaves the cluster must be rotatable
+        # without touching anything that has not left it.
+        JIT_AGENT_KEY: "{{ .JIT_AGENT_KEY }}"
   # Two values, both minted in the vault and none typed here (LAW 46, R52):
   #   JIT_SIGNING_KEY          -- the HMAC key the approvals are signed with. An identity that
   #                               can read this can forge a tap, so it is the crown jewel of
   #                               the crown jewel and no agent ServiceAccount reaches namespace
   #                               jit at all.
+  #   JIT_AGENT_KEY            -- what a device presents to be handed the read-only identity.
+  #                               Deliberately the weakest of the three: it mints agent-reader
+  #                               and nothing else, so losing it costs an hour of reads.
   #   TELEGRAM_BOT_TOKEN       -- the bot that sends the ask.
   #   TELEGRAM_WEBHOOK_SECRET  -- the token Telegram signs each delivery of his tap with. It
   #                               is flux-telegram's and not the broker's own, because the
@@ -100,6 +109,12 @@ spec:
             # as files under this directory instead, one file per key, and the process reads
             # them at start (broker/serve.py, secret()).
             - {name: JIT_SECRETS, value: /etc/jit-secrets}
+            # WJ.7 and LAW 50. The same collector every other workload in this estate
+            # reports to -- there is one, and a second would be the stitching the headline
+            # rule refuses. Unset on a laptop, where the ledger file is the only copy.
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318"}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
           # /healthz verifies the ledger's hash chain, so a broker whose record has been
           # tampered with fails its own probe and stops answering rather than carrying on
           # minting access nobody can any longer account for.

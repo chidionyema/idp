@@ -46,6 +46,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -127,8 +128,13 @@ class Ledger:
     says which line. Convention is not doing the work; the chain is.
     """
 
-    def __init__(self, path: str, key: bytes):
+    def __init__(self, path: str, key: bytes, sink=None):
         self.path, self.key = path, key
+        # WJ.7: where the record goes to survive this node. broker/collector.py ships each
+        # line to the estate collector; None means the file is the only copy, which is what a
+        # unit test and a laptop run get. The file is written first either way, so a sink that
+        # is down costs delivery, never the record.
+        self.sink = sink
 
     def _tail_hash(self) -> str:
         prev = "0" * 64
@@ -150,6 +156,25 @@ class Ledger:
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         with open(self.path, "a") as fh:
             fh.write(json.dumps(body, sort_keys=True) + "\n")
+            # The record is worthless if the process dies between write and disk, and this is
+            # the one write in the broker where that matters: everything else can be redone,
+            # an account of who was given write access cannot.
+            fh.flush()
+            os.fsync(fh.fileno())
+        if self.sink is not None:
+            # Deliberately after the file, and deliberately swallowing everything: a broker that
+            # refuses a 3am approval because a metrics pipeline is unreachable has turned an
+            # observability outage into an access outage. OTLPSink already returns False rather
+            # than raising for a network fault; this catch is what makes that a property of the
+            # ledger rather than a promise the next sink has to keep. The record is on disk and
+            # fsynced above, so the only thing lost here is delivery.
+            try:
+                self.sink(dict(body))
+            except Exception as boom:  # noqa: BLE001
+                print(
+                    f"warn   jit-ledger: sink refused the record: {boom}",
+                    file=sys.stderr,
+                )
         return body
 
     def verify(self) -> tuple[bool, str]:
@@ -178,6 +203,26 @@ class Ledger:
 
 
 class Broker:
+    #: The read-only identity every agent in this estate runs as. platform/rbac/agent-reader.yaml
+    #: is the object; naming it here means the broker and bin/idp-kube cannot drift apart on the
+    #: string, which is the whole reason the door exists.
+    AGENT_SA = "agent-reader"
+    AGENT_NS = "agents"
+    #: An hour, matching what bin/idp-kube already asked the API server for. Long enough that a
+    #: session is not re-authenticating between commands, short enough that a copied token is
+    #: worthless by morning.
+    AGENT_TTL_SECONDS = 3600
+    #: Identities are not grants and are never approved, so the only thing bounding them is this.
+    #: A handful of sessions refreshing hourly sits far below it; a leaked bootstrap key being
+    #: replayed does not.
+    AGENT_IDENTITIES_PER_HOUR = 60
+
+    #: Where the cluster publishes its own address and certificate, for exactly this purpose.
+    #: kubeadm writes it and OKE keeps it; `system:public-info-viewer` makes it readable by
+    #: anyone, authenticated or not, because a client needs it *before* it has a credential.
+    CLUSTER_INFO_NS = "kube-public"
+    CLUSTER_INFO_CM = "cluster-info"
+
     def __init__(
         self,
         catalogue: str,
@@ -188,10 +233,12 @@ class Broker:
         killswitch: Callable[[], str | None] | None = None,
         now: Callable[[], float] = time.time,
         providers: dict[str, Callable[[list[str]], tuple[int, str]]] | None = None,
+        agent_key: bytes | None = None,
+        ledger_sink=None,
     ):
         self.catalogue_path = catalogue
         self.key = key
-        self.ledger = Ledger(ledger_path, key)
+        self.ledger = Ledger(ledger_path, key, sink=ledger_sink)
         self.notify = notify or (lambda r, t: None)
         self.kube = kube or _kubectl
         self.killswitch = killswitch or (lambda: None)
@@ -203,6 +250,9 @@ class Broker:
         self.pending: dict[str, Request] = {}
         self.spent: set[str] = set()
         self.history: list[tuple[float, str]] = []
+        # Empty on a broker that has not been given one, which is a broker that cannot
+        # identify anybody -- `identity()` refuses rather than defaulting open.
+        self.agent_key = agent_key or b""
 
     # ---------------------------------------------------------------- the catalogue
 
@@ -333,11 +383,172 @@ class Broker:
                 f"limit is {cap}. Something is looping, or this is not a ten-minute problem"
             )
 
+    # ------------------------------------------------- the agent's own identity
+
+    def _check_identity_rate(self) -> None:
+        cutoff = self.now() - 3600
+        used = sum(1 for at, what in self.history if what == "identity" and at > cutoff)
+        if used >= self.AGENT_IDENTITIES_PER_HOUR:
+            raise Refused(
+                f"{used} identities have been minted in the last hour and the limit is "
+                f"{self.AGENT_IDENTITIES_PER_HOUR}. Either something is looping or this key "
+                f"is being replayed by somebody who is not an agent of this estate"
+            )
+
+    def authenticate(self, presented: str) -> None:
+        """Prove the caller is an agent of this estate, or refuse.
+
+        Factored out of `identity()` so the `/ask` door can stand behind the same check.
+        Until it did,
+        `asked_by` was a string in the request body and nothing else: anything that could open
+        a socket to port 8080 -- any pod in any namespace the fence let through, a compromised
+        sidecar, a mistyped port-forward -- could put a name on an ask and make the founder's
+        phone buzz with it. The founder still taps every one, so the hole was never standing
+        access; it was provenance, which is worse in one specific way. The whole design rests
+        on him reading an ask and deciding, and a name he cannot trust is a name that makes
+        every future ask worth less than the one before it.
+
+        One key covers every agent, so what this proves is "an agent of this estate", not
+        which one. `asked_by` stays a label, and the ledger now records that it was attested
+        rather than merely asserted. Per-agent keys are WJ.13's problem, not this door's.
+        """
+        if not self.agent_key:
+            raise Refused(
+                "this broker holds no agent key, so it cannot identify anyone. "
+                "platform/jit/deployment.yaml is where JIT_AGENT_KEY arrives"
+            )
+        if not hmac.compare_digest(presented or "", self.agent_key.decode()):
+            # No ledger line, and for the reason the Telegram path already gives: this door is
+            # reachable from outside the cluster, so a line per refusal is a way for a stranger
+            # to fill the ledger volume. The ledger records what the broker did, and it did
+            # nothing. compare_digest because a byte-at-a-time comparison leaks the key to
+            # whoever can time it.
+            raise Refused("not an agent of this estate")
+
+    def identity(self, presented: str) -> dict:
+        """Mint the read-only identity an agent runs as, for a caller that proves it is one.
+
+        WJ.1 ends "`bin/idp-kube` stops minting the founder's OCI principal." Until this door
+        existed it could not. Measured 2026-09-08 at bin/idp-kube:84: the downgrade ran
+        `kubectl create token agent-reader -n agents` under $KC, a kubeconfig whose user is an
+        `exec` credential calling `oci generate-token` -- the founder's own OCI principal, on
+        his laptop. The identity every agent runs as was therefore minted, every hour, by an
+        administrator credential that existed on exactly one machine. `auth whoami` answering
+        `agent-reader` was true and hid that: the downgrade was real, the thing performing it
+        was not an agent.
+
+        This is deliberately not a grant and never reaches the founder's phone. agent-reader
+        holds reads and nothing else -- it is the floor every agent already stands on, not an
+        elevation above it -- so there is nothing to approve. What the door changes is which
+        credential a device must hold in order to become an agent: an agent's own, scoped to
+        reads and revocable by itself, instead of the founder's, scoped to the tenancy.
+
+        The bootstrap key is still a secret on a device, and no amount of design removes that
+        -- something has to be the root. The difference worth the code is what that root can
+        do when the device is lost: read this cluster for an hour, rather than administer the
+        tenancy until somebody notices.
+        """
+        stopped = self.killswitch()
+        if stopped:
+            raise Refused(f"the broker is stopped: {stopped}")
+        self.authenticate(presented)
+        self._check_identity_rate()
+        rc, out = self.kube(
+            [
+                "create",
+                "token",
+                self.AGENT_SA,
+                "-n",
+                self.AGENT_NS,
+                f"--duration={self.AGENT_TTL_SECONDS}s",
+            ]
+        )
+        if rc != 0:
+            raise Refused(
+                f"the API server would not mint the identity: {out.strip()[:200]}"
+            )
+        self.history.append((self.now(), "identity"))
+        # WJ.7: the issuance is on the record, the token is not. A ledger that holds the
+        # credential it recorded is a second copy of every credential the broker ever made.
+        self.ledger.append(
+            "identity",
+            subject=f"{self.AGENT_NS}:{self.AGENT_SA}",
+            ttl=self.AGENT_TTL_SECONDS,
+        )
+        return {
+            "token": out.strip(),
+            "expires_in": self.AGENT_TTL_SECONDS,
+            "subject": f"system:serviceaccount:{self.AGENT_NS}:{self.AGENT_SA}",
+            **self._cluster_address(),
+        }
+
+    def _cluster_address(self) -> dict:
+        """Where the cluster is and the certificate that proves it, read from the cluster.
+
+        A token alone does not let a device reach the API server: it also needs the address
+        and the CA. Until this method the only thing on any device that knew either was the
+        kubeconfig `bin/idp-cloud cluster kubeconfig` mints, which requires the `oci` CLI and
+        the founder's own login -- so handing back a token and nothing else would have left
+        the Mac exactly as load-bearing as before, with an extra door.
+
+        The obvious fix was to write the endpoint into clusters/oke/estate-config.yaml and
+        plumb it here through Flux substitution. That was not needed. Measured 2026-09-08:
+        `kube-public/cluster-info` exists on this cluster and holds both values, and it read
+        clean as `agent-reader`, so the read floor already permits it. This is what that
+        ConfigMap is for -- kubeadm publishes it, and `system:public-info-viewer` makes it
+        world-readable, precisely because a joining client needs the address and the CA
+        before it holds any credential at all. So the estate keeps one copy of a machine
+        fact, in the cluster, and no file names it (LAW 46).
+        """
+        rc, out = self.kube(
+            [
+                "get",
+                "configmap",
+                self.CLUSTER_INFO_CM,
+                "-n",
+                self.CLUSTER_INFO_NS,
+                "-o",
+                "jsonpath={.data.kubeconfig}",
+            ]
+        )
+        if rc != 0:
+            raise Refused(
+                f"the cluster does not publish its own address at "
+                f"{self.CLUSTER_INFO_NS}/{self.CLUSTER_INFO_CM}: {out.strip()[:200]}"
+            )
+        try:
+            cluster = yaml.safe_load(out)["clusters"][0]["cluster"]
+            server, authority = cluster["server"], cluster["certificate-authority-data"]
+        except (yaml.YAMLError, KeyError, IndexError, TypeError) as exc:
+            raise Refused(
+                f"{self.CLUSTER_INFO_NS}/{self.CLUSTER_INFO_CM} is not a kubeconfig: {exc}"
+            ) from None
+        # OKE publishes `server: <host>:6443` with no scheme, and kubectl refuses a server
+        # that has none. Measured 2026-09-08: the value in this cluster's ConfigMap is bare.
+        server = str(server)
+        if not server.startswith(("http://", "https://")):
+            server = "https://" + server
+        return {"server": server, "ca": authority}
+
     # ---------------------------------------------------------------- the ask
 
     def ask(
-        self, grant_id: str, params: dict[str, str], why: str, ttl: str, asked_by: str
+        self,
+        grant_id: str,
+        params: dict[str, str],
+        why: str,
+        ttl: str,
+        asked_by: str,
+        attested: bool = False,
     ) -> Request:
+        """`attested` is the door's word that the caller proved the estate's agent key.
+
+        The check itself is at the door and not here on purpose: anything holding a reference
+        to this object is already inside the process that holds the key, so a second check
+        here would defend against nothing and would only make the record less honest by
+        being unfalsifiable. What travels is the verdict, and the ledger keeps it either way
+        -- an in-process caller writes `attested: false`, which is exactly what it is.
+        """
         stopped = self.killswitch()
         if stopped:
             raise Refused(f"the broker is stopped: {stopped}")
@@ -375,6 +586,10 @@ class Broker:
             why=req.why,
             ttl=ttl,
             asked_by=asked_by,
+            # The name is still self-declared -- one key covers every agent -- but a reader of
+            # the ledger can now tell an ask whose caller proved the estate's agent key from
+            # one that merely reached the port, which before this field no reader could.
+            attested=attested,
         )
         self.notify(req, self._sign(req.id, "approve"))
         return req

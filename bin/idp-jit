@@ -19,6 +19,11 @@ hand back an outcome, never a credential, so there is nothing to export afterwar
 
     idp-jit grants        every grant, its layer and what it takes
 
+Both `ask` and `identity` present the same one secret this device holds, JIT_AGENT_KEY, and
+the broker refuses either door without it. It is not what buys the access -- only the
+founder's tap does that -- it is what says the ask came from an agent of this estate at all,
+so that the name he reads on his phone is worth reading.
+
 Exit codes are the contract: 0 granted, 3 denied, 4 refused before he was asked, 5 the
 approved change failed, 6 he never answered. Anything an agent scripts around can tell
 those apart without parsing English.
@@ -97,11 +102,11 @@ def _doors() -> list[str]:
     return [IN_CLUSTER] + [d for d in (_tailnet_door(),) if d]
 
 
-def _post(path: str, body: dict) -> tuple[int, dict]:
+def _post(path: str, body: dict, headers: dict | None = None) -> tuple[int, dict]:
     tried = []
     for door in _doors():
         req = urllib.request.Request(door + path, data=json.dumps(body).encode(),  # noqa: S310 -- an http URL from the environment or the local tailscale daemon
-                                     headers={"Content-Type": "application/json"})
+                                     headers={"Content-Type": "application/json", **(headers or {})})
         try:
             with urllib.request.urlopen(req, timeout=30) as fh:  # noqa: S310 -- same request object, already constrained
                 return fh.status, json.load(fh)
@@ -122,6 +127,69 @@ def _post(path: str, body: dict) -> tuple[int, dict]:
     }
 
 
+def _agent_key() -> str | None:
+    """The one secret a device holds. Environment first, then a file mode 600 under the same
+    state directory bin/idp-kube caches in.
+
+    Something has to be the root and no design removes that. What the estate gets for this
+    one is the difference between a device that can read this cluster for an hour and a
+    device that can administer the tenancy: before WJ.1 the second was what sat on the
+    laptop, as an OCI API key with no expiry at all.
+    """
+    from_env = os.environ.get("JIT_AGENT_KEY")
+    if from_env:
+        return from_env
+    state = os.environ.get("IDP_KUBE_STATE") or os.path.join(
+        os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "idp")
+    try:
+        with open(os.path.join(state, "agent-key")) as fh:
+            return fh.read().strip() or None
+    except OSError:
+        return None
+
+
+def _identity(path: str | None) -> int:
+    """WJ.1's client half: become an agent of this estate without the founder's credential.
+
+    What comes back is everything a device needs to reach the cluster and nothing more --
+    a one-hour read-only token, the API address, and the CA. No `oci` CLI, no founder login,
+    no laptop. Written as a kubeconfig here rather than parsed in shell so that exactly one
+    place in the estate knows the shape of the file.
+    """
+    key = _agent_key()
+    if not key:
+        print("BLOCKED  this device holds no agent key. Set JIT_AGENT_KEY, or put it in "
+              "$XDG_STATE_HOME/idp/agent-key", file=sys.stderr)
+        return CODES["refused"]
+    code, body = _post("/identity", {}, {"Authorization": f"Bearer {key}"})
+    if body.get("unreachable"):
+        print(f"BLOCKED  {body['reason']}", file=sys.stderr)
+        return CODES["refused"]
+    if code != 200:
+        print(f"refused: {body.get('error', 'the broker would not identify this device')}",
+              file=sys.stderr)
+        return CODES["refused"]
+    if not path:
+        print(body["token"])
+        return 0
+    doc = {
+        "apiVersion": "v1", "kind": "Config", "current-context": "estate",
+        "clusters": [{"name": "estate", "cluster": {
+            "server": body["server"], "certificate-authority-data": body["ca"]}}],
+        "users": [{"name": "agent-reader", "user": {"token": body["token"]}}],
+        "contexts": [{"name": "estate",
+                      "context": {"cluster": "estate", "user": "agent-reader"}}],
+    }
+    # Written through a private temporary file and renamed, so a reader never sees a
+    # half-written kubeconfig and the token is never briefly world-readable (LAW 21).
+    tmp = f"{path}.{os.getpid()}"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        json.dump(doc, fh)
+    os.replace(tmp, path)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="idp-jit")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -136,7 +204,14 @@ def main(argv: list[str] | None = None) -> int:
         a.add_argument(f"--{known}")
 
     sub.add_parser("grants", help="list what may be asked for")
+
+    i = sub.add_parser("identity", help="become this estate's read-only agent on any device")
+    i.add_argument("--kubeconfig", help="write a kubeconfig here instead of printing the token")
+
     args, extra = ap.parse_known_args(argv)
+
+    if args.cmd == "identity":
+        return _identity(args.kubeconfig)
 
     if args.cmd == "grants":
         code, body = _post("/grants", {})
@@ -153,8 +228,19 @@ def main(argv: list[str] | None = None) -> int:
         if getattr(args, known, None):
             params[known] = getattr(args, known)
 
+    # Same credential the identity door takes, and for the same reason: without it, anything
+    # that can open a socket to the broker can put any name on an ask and make the founder's
+    # phone buzz with it. He taps every one either way, so this is provenance rather than
+    # access -- and the design is only as good as his trust in the name on the screen.
+    key = _agent_key()
+    if not key:
+        print("BLOCKED  this device holds no agent key, so the broker will not take an ask "
+              "from it. Set JIT_AGENT_KEY, or put it in $XDG_STATE_HOME/idp/agent-key",
+              file=sys.stderr)
+        return CODES["refused"]
     code, body = _post("/ask", {"grant": args.grant, "params": params, "why": args.why,
-                                "ttl": args.ttl, "asked_by": os.environ.get("JIT_AGENT", "agent")})
+                                "ttl": args.ttl, "asked_by": os.environ.get("JIT_AGENT", "agent")},
+                       {"Authorization": f"Bearer {key}"})
     if body.get("unreachable"):
         print(f"BLOCKED  {body['reason']}", file=sys.stderr)
         return CODES["refused"]

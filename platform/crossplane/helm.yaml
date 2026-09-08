@@ -67,3 +67,36 @@ spec:
       # what lands on the container (verified by helm template against chart 2.4.0).
       capabilities: { drop: [ALL] }
       seccompProfile: { type: RuntimeDefault }
+  postRenderers:
+    # Two things the chart does not carry and this cluster refuses without. Both are Kyverno
+    # ClusterPolicies in Enforce, so an unpatched render is refused at admission, not warned
+    # about: bin/idp-kyverno-render names them before the pull request is opened.
+    - kustomize:
+        patches:
+          # require-catalogue-entity (platform/edge): anything that serves a port names the
+          # catalogue entity it belongs to. crossplane-webhooks is the chart's own webhook
+          # Service; the entity is the generated layer row for this Flux Kustomization.
+          - target: { kind: Service }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: layer-crossplane
+          # require-pod-probes: the core deployment ships a startupProbe, the RBAC manager ships
+          # none. It serves only its metrics port, so the probe is a TCP connect to that port --
+          # it proves the process is listening without asserting an HTTP path the chart never
+          # documents.
+          - target: { kind: Deployment, name: crossplane-rbac-manager }
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: { name: crossplane-rbac-manager }
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: crossplane
+                        livenessProbe: &rbac { tcpSocket: { port: 8080 }, initialDelaySeconds: 20, periodSeconds: 30 }
+                        readinessProbe: *rbac
