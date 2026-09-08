@@ -57,6 +57,28 @@ spec:
                 name: every-interface-is-a-door
                 labels:
                   backstage.io/kubernetes-id: founder-chaos
+          # The flannel -> Calico cutover. platform/healing/descheduler.yaml (#2501) reaches every
+          # pod an eviction can reach; the descheduler never evicts a DaemonSet pod, by design --
+          # evicting one only makes the controller put it back on the same node. So the eight pods
+          # of the four platform DaemonSets moved a different way: a pod-template annotation, which
+          # is what a rollout is. The value is a fixed instant, so this is one roll on the day it
+          # merges and nothing on every reconcile after -- the same shape as the restartedAt
+          # annotation on the CloudNativePG cluster in the same cutover.
+          #
+          # A post-render patch and not a chart value because the three charts spell pod annotations
+          # three different ways, and a key a chart ignores fails silently. kustomize patches the
+          # rendered DaemonSet, so it cannot miss.
+          - target: { kind: DaemonSet }
+            patch: |
+              apiVersion: apps/v1
+              kind: DaemonSet
+              metadata:
+                name: cni-cutover
+              spec:
+                template:
+                  metadata:
+                    annotations:
+                      platform.idp/cni-cutover: "2026-09-08T09:30:00Z"
   interval: 10m
   chart:
     spec:
