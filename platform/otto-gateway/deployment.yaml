@@ -240,7 +240,23 @@ spec:
             # this estate can never call: it holds no Anthropic API key by decision, because
             # Claude capacity here is the Pro Max subscription reached through `claude -p`.
             # Leaving the default in place is what routed every message to needs_human.
-            - { name: OTTO_ROUTER_LANE_JUDGMENT_MODEL, value: "deepseek" }
+            # minimax, since 2026-09-08. It was deepseek, and deepseek has no money: measured
+            # from the router pod that day, 40 of 40 calls to it answered
+            # `DeepseekException {"message":"Insufficient Balance"}`. The judgment lane is the
+            # one that answers the founder, so every question he asked walked deepseek (no
+            # balance), the router's two retries, then the fallback hop to gemini, which was
+            # over Google's per-minute token ceiling and returned a retryDelay of up to 57s.
+            # The probe measured the result: `lane=judgment model=deepseek latency_ms=45252
+            # URLError` -- its 45-second budget spent before the chain reached a lane that
+            # could answer. That wait is the founder's "we wait for a nodel to finish and then
+            # swtich whih fails all the tine" (2026-09-08).
+            #
+            # minimax is the only lane with a clean record on the same measurement: 137 of 137
+            # calls to MiniMax-M3 and 9 of 9 to M2.7 returned without an exception. It also
+            # restores the family separation the verify lane's note below describes and which
+            # the move to deepseek quietly broke -- judgment on minimax, verify on gemini, so
+            # a wrong answer and its check never come from the same vendor.
+            - { name: OTTO_ROUTER_LANE_JUDGMENT_MODEL, value: "minimax" }
             # `gemini`, not `fast`: otto/router/config.py derives a lane's family from an
             # explicit map (_DEFAULT_MODEL_FAMILIES) and refuses any model absent from it --
             # "policy defect: model 'fast' is in no family mapping", logged as
@@ -269,10 +285,14 @@ spec:
             # minimax, gemini, deepseek and embed.
             - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "gemini" }
             - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "gemini" }
-            # crew#892 CP3: the explorer lane runs the cheap deepseek tail, pinned for
-            # the running gateway exactly like its lane siblings so the image default
-            # (deepseek) cannot drift from what the estate governance expects.
-            - { name: OTTO_ROUTER_LANE_EXPLORE_MODEL, value: "deepseek" }
+            # crew#892 CP3 pinned the explorer lane to the cheap deepseek tail, for the
+            # running gateway exactly like its lane siblings so the image default cannot
+            # drift from what the estate governance expects. The pin stays; the value moves
+            # for the same measured reason as the judgment lane above -- the DeepSeek account
+            # answered "Insufficient Balance" on every one of 40 calls on 2026-09-08, so the
+            # cheap tail was not cheap, it was absent. It goes back to deepseek in one line
+            # the moment the account has a balance, and crew#920 carries that.
+            - { name: OTTO_ROUTER_LANE_EXPLORE_MODEL, value: "minimax" }
             - { name: PYTHONUNBUFFERED, value: "1" }
             # docs/specs/otto-door-hands-and-senses.md step 5: the door's hands. HERMES_ENV_DIR is
             # the secret mount the shell above exports (Kyverno refuses secretKeyRef on a pod);
