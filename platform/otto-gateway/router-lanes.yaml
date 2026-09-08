@@ -1,0 +1,103 @@
+# The four lanes Otto's door routes on, in one place.
+#
+# They used to be literals in two files -- platform/otto-gateway/deployment.yaml for the
+# door and platform/otto-gateway/answer-probe.yaml for the drill that grades it -- and the
+# probe's own comment recorded the consequence twice before this file existed: "#1678 moved
+# the door's bulk and verify lanes to kimi on 2026-09-05 and left these two behind, after
+# which every run of this probe reported Otto unable to answer while the door was
+# answering." It happened again on 2026-09-08, the other way round and worse: idp#2504
+# moved the door's judgment lane to minimax and its bulk lane to gemini, the probe was left
+# on deepseek, and run otto-answer-probe-29814330 reported
+#
+#   ok answer-probe tenant=estate lane=judgment model=deepseek latency_ms=1198 5 chars
+#
+# -- a green drill for a lane the door no longer uses. An instrument nobody can trust is not
+# an instrument (LAW 28), and a drill grades what a person actually experiences (LAW 53).
+#
+# A gate that detects the drift would only report it. One ConfigMap, consumed by both
+# workloads through envFrom, makes the drift impossible to write (LAW 23: the smaller road).
+# Reloader rolls the door on a change here (reloader.stakater.com/auto on the Deployment)
+# and the CronJob reads it on its next run, so one edit moves both.
+#
+# The values are lane names on the estate router, never vendor model identifiers (LAW 34).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otto-router-lanes
+  namespace: otto-gateway
+  labels:
+    app: otto-gateway
+    app.kubernetes.io/name: otto-gateway
+    app.kubernetes.io/part-of: idp
+data:
+  # The library's built-in default for the judgment lane is "anthropic/claude", which this
+  # estate can never call: it holds no Anthropic API key by decision, because Claude
+  # capacity here is the Pro Max subscription reached through `claude -p`. Leaving the
+  # default in place is what routed every message to needs_human.
+  #
+  # minimax, since 2026-09-08. It was deepseek, and deepseek had no money: measured from the
+  # router pod that day, 40 of 40 calls to it answered
+  # `DeepseekException {"message":"Insufficient Balance"}`. The judgment lane is the one that
+  # answers the founder, so every question he asked walked deepseek (no balance), the
+  # router's two retries, then the fallback hop to gemini, which was over Google's
+  # per-minute token ceiling and returned a retryDelay of up to 57s. The probe measured the
+  # result: `lane=judgment model=deepseek latency_ms=45252 URLError` -- its 45-second budget
+  # spent before the chain reached a lane that could answer. That wait is the founder's "we
+  # wait for a nodel to finish and then swtich whih fails all the tine" (2026-09-08).
+  #
+  # minimax is the only lane with a clean record on the same measurement: 137 of 137 calls
+  # to MiniMax-M3 and 9 of 9 to M2.7 returned without an exception. It also restores the
+  # family separation the verify lane's note below describes and which the move to deepseek
+  # quietly broke -- judgment on minimax, the verify lane on another vendor, so a wrong
+  # answer and its check never come from the same one. (Verify sat on gemini when that was
+  # written; it moved to deepseek the same day, on the measurement below.)
+  OTTO_ROUTER_LANE_JUDGMENT_MODEL: "minimax"
+
+  # `gemini`, not `fast`: otto/router/config.py derives a lane's family from an explicit map
+  # (_DEFAULT_MODEL_FAMILIES) and refuses any model absent from it -- "policy defect: model
+  # 'fast' is in no family mapping", logged as worker.answer_failed on every inbound message
+  # (founder's log, 2026-09-05,
+  # ~/.claude/docs/founder/2026-09-05T0218Z-eed-seed-sql-25-notice-relation-channel-binding-d1240816.md).
+  # The map knowing only vendor identifiers, while this estate configures lanes by router
+  # alias (LAW 34), is the defect underneath: hermes-v2#77 adds every estate alias to it.
+  #
+  # gemini, since 2026-09-05 13:30Z. The earlier readings that ruled it out ("not served",
+  # "empty credit") were the otto router key's allowlist (kimi, minimax, deepseek) refusing
+  # it with 403, not the router. Measured through the router with its own key: gemini, fast,
+  # minimax and embed all answer. The key rows in bin/idp-estate-seed allow minimax, gemini,
+  # deepseek and embed.
+  #
+  # bulk and verify moved gemini -> deepseek on 2026-09-08. Measured on the live
+  # router over the two hours to 10:45Z (both litellm pods, 24,955 lines):
+  #
+  #   model                      answered   failed
+  #   gemini/gemini-2.5-flash           5      102   <- the `gemini` alias
+  #   openai/MiniMax-M3                71        0
+  #   deepseek-v4-flash                97       24
+  #   gemini/gemini-embedding-001      66        0
+  #
+  # The 102 gemini failures are all RESOURCE_EXHAUSTED with no quotaId and no retryDelay --
+  # the unbilled shape, not a ceiling this estate can stay under. Five answers out of 107 is
+  # not a lane. Leaving verify there is worse than leaving bulk there: otto/verify/
+  # reply_judge.py returns None on any failure, and otto/router/render.py marks every line
+  # of an unjudged reply with the unverified prefix, so a verify lane that cannot answer
+  # stamps a warning on every sentence Otto sends -- which is the founder reading him as
+  # useless, on a reply that was in fact fine.
+  #
+  # deepseek's 24 failures are one message, all 24: "This response_format type is
+  # unavailable now". Nothing under otto/ sets response_format (grep: zero occurrences), so
+  # those calls are another workload's; from Otto's own calls the row is 97 for 97.
+  #
+  # Family separation still holds -- judgment on minimax, verify on deepseek -- so a wrong
+  # answer and its check never come from one vendor. It returns to a Google row the moment
+  # one is billed, and crew#920 carries that.
+  OTTO_ROUTER_LANE_BULK_MODEL: "deepseek"
+  OTTO_ROUTER_LANE_VERIFY_MODEL: "deepseek"
+
+  # crew#892 CP3 pinned the explorer lane to the cheap deepseek tail, for the running gateway
+  # exactly like its lane siblings so the image default cannot drift from what the estate
+  # governance expects. It was moved to minimax earlier on 2026-09-08, when the DeepSeek
+  # account answered "Insufficient Balance" on every one of 40 calls -- the cheap tail was
+  # not cheap, it was absent. The account is funded again (97 answers in the two hours
+  # measured below), so the pin is restored to what CP3 declared.
+  OTTO_ROUTER_LANE_EXPLORE_MODEL: "deepseek"

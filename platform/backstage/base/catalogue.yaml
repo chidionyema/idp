@@ -86,7 +86,14 @@ spec:
           startupProbe:
             httpGet: { path: /.backstage/health/v1/readiness, port: http }
             periodSeconds: 5
-            failureThreshold: 36   # 180s; compose.yml gives start_period 120s
+            # 2026-09-08: measured on the live pods, not chosen. The replica that started took
+            # 09:22:54Z -> 09:25:54Z = 180s to answer readiness, and the budget was 36 x 5s = 180s
+            # exactly. Zero margin: a replica a single period slower never starts at all, and
+            # catalogue-c8b8f898d-txtbc did not -- seven restarts, every one killed at the same
+            # 503 on /.backstage/health/v1/readiness while plugin initialization was still running.
+            # Backstage's boot is a fixed amount of work that a 50m CPU request does not get a
+            # steady share of, so the time moves with whatever else the node is doing.
+            failureThreshold: 90   # 450s, 2.5x the slowest boot measured; compose.yml start_period 120s
           readinessProbe:
             httpGet: { path: /.backstage/health/v1/readiness, port: http }
             periodSeconds: 15
@@ -94,7 +101,12 @@ spec:
             httpGet: { path: /.backstage/health/v1/liveness, port: http }
             periodSeconds: 30
           resources:
-            requests: { cpu: 50m, memory: 512Mi }   # crew#584 zealot rule 1: micro CPU request, burst limit; the memory floor stays (incident-set)
+            # The 50m request is what made the boot time a coin flip: the scheduler and the CFS
+            # share are both computed from the request, so under node contention this container
+            # gets 50m of a core to do three minutes of single-threaded plugin loading. The
+            # request buys a predictable boot; the burst limit below is unchanged (crew#584
+            # zealot rule 1), as is the memory floor (incident-set).
+            requests: { cpu: 250m, memory: 512Mi }
             limits: { cpu: 1000m, memory: 1Gi }
           volumeMounts:
             - name: estate

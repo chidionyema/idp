@@ -1,10 +1,16 @@
-# crew#539 CP6/CP7: the healing loops. Flux row `healing` in clusters/oke/platform.yaml, after
-# scheduling (the PriorityClass the evictor reads), llm (the router K8sGPT talks to) and secret-store.
+# crew#539 CP6: the eviction loop, and nothing else. Flux row `healing` in
+# clusters/oke/platform.yaml, after `scheduling` alone -- the PriorityClass the evictor reads.
+#
+# K8sGPT moved out to ./k8sgpt on 2026-09-08. It reads the LiteLLM router, so its row depends on
+# `llm` and `secret-store`; the descheduler reads neither. While they shared one row that row
+# carried K8sGPT's dependencies, so an LLM wobble stopped the estate's evictor -- and on
+# 2026-09-08 it did: the descheduler policy that finishes the flannel -> Calico cutover (#2501)
+# sat undelivered behind `dependency 'flux-system/llm' is not ready` while every lane the
+# router feeds was itself degraded. A self-healing loop that stops when the estate is unwell is
+# the one that was needed.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: healing
 resources:
   - namespace.yaml
-  - external-secret.yaml
   - descheduler.yaml
-  - k8sgpt.yaml

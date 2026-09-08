@@ -439,6 +439,11 @@ LAYERS = {
         "Self-healing",
         "Spots a sick workload, explains it and moves it.",
     ),
+    "healing-k8sgpt": (
+        "resilience",
+        "Failure explainer",
+        "Reads a stuck or crashing workload and says in plain English what is wrong with it.",
+    ),
     "healing-analyzer": (
         "resilience",
         "Healing analyser",

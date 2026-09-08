@@ -953,8 +953,6 @@ spec:
   system: resilience
   dependsOn:
     - component:default/layer-scheduling
-    - component:default/layer-llm
-    - component:default/layer-secret-store
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -977,7 +975,32 @@ spec:
   owner: group:default/platform
   system: resilience
   dependsOn:
+    - component:default/layer-healing-k8sgpt
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-healing-k8sgpt
+  title: 'Failure explainer'
+  description: 'Reads a stuck or crashing workload and says in plain English what is wrong with it.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=healing-k8sgpt'
+    estate/flux-kustomization: 'healing-k8sgpt'
+    estate/path: './platform/healing/k8sgpt'
+    estate/cluster: 'oke'
+  tags: [platform, resilience]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: resilience
+  dependsOn:
     - component:default/layer-healing
+    - component:default/layer-llm
+    - component:default/layer-secret-store
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

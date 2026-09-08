@@ -187,6 +187,11 @@ spec:
               git config --global credential.helper "!$HERMES_HOME/bin/gh auth git-credential"
               git config --global --add safe.directory '*'
               exec python -m otto.ingress
+          # The router lanes, one source for the door and for the probe that grades it.
+          # envFrom, not env: an inline env entry of the same name would win over the
+          # ConfigMap and put the drift straight back.
+          envFrom:
+            - configMapRef: { name: otto-router-lanes }
           env:
             - { name: OTTO_INGRESS_PORT, value: "8080" }
             - { name: OTTO_INGRESS_DB_HOST, value: estate-rw.estate-db.svc.cluster.local }
@@ -235,44 +240,13 @@ spec:
             # The estate's one model router, by its in-cluster Service name -- no vendor host,
             # no key in this file (LAW 46, LAW 43: one router, not a second path to a vendor).
             - { name: LITELLM_BASE_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
-            # Lane names on the estate router, never vendor model identifiers (LAW 34). The
-            # library's built-in default for the judgment lane is "anthropic/claude", which
-            # this estate can never call: it holds no Anthropic API key by decision, because
-            # Claude capacity here is the Pro Max subscription reached through `claude -p`.
-            # Leaving the default in place is what routed every message to needs_human.
-            - { name: OTTO_ROUTER_LANE_JUDGMENT_MODEL, value: "deepseek" }
-            # `gemini`, not `fast`: otto/router/config.py derives a lane's family from an
-            # explicit map (_DEFAULT_MODEL_FAMILIES) and refuses any model absent from it --
-            # "policy defect: model 'fast' is in no family mapping", logged as
-            # worker.answer_failed on every inbound message (founder's log, 2026-09-05,
-            # ~/.claude/docs/founder/2026-09-05T0218Z-eed-seed-sql-25-notice-relation-channel-binding-d1240816.md).
-            # The value has to clear two independent checks, and `gemini` only clears one.
-            # It is in the family map (google, distinct from judgment's minimax), but the
-            # running router does not serve it: `GET /model/info` with the gateway pod's own
-            # key returned exactly `kimi` and `minimax` (measured from inside the pod,
-            # 2026-09-05). The rows in platform/llm/config.yaml are not all in the running
-            # router. `kimi` clears both -- served, and family moonshot -- so it is the value
-            # that actually lets a message through. The map knowing only vendor identifiers,
-            # while this estate configures lanes by router alias (LAW 34), is the defect
-            # underneath: hermes-v2#77 adds every estate alias to it.
-            # gemini, since 2026-09-05 13:30Z. The two readings above that ruled it out ("not served",
-            # "empty credit") were the otto router key's allowlist (kimi, minimax, deepseek) refusing
-            # it with 403, not the router. Measured through the router with its own key: gemini, fast,
-            # minimax and embed all answer. deepseek had no alias there -- its row left
-            # platform/llm/config.yaml on 2026-09-04 (vendor 401) -- so probe
-            # otto-answer-probe-29810160 read 400 on bulk and verify.
-            # bulk is deepseek again since 2026-09-05 13:50Z: the founder re-added the DeepSeek
-            # key in the console (the row is console-owned, #1632), its litellm-db row is named
-            # `deepseek`, the alias every chain in platform/vendors/consoles.yaml uses, and it
-            # answers through the router on both replicas. verify stays on gemini, a family
-            # apart from the minimax judgment lane. The key rows in bin/idp-estate-seed allow
-            # minimax, gemini, deepseek and embed.
-            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "gemini" }
-            - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "gemini" }
-            # crew#892 CP3: the explorer lane runs the cheap deepseek tail, pinned for
-            # the running gateway exactly like its lane siblings so the image default
-            # (deepseek) cannot drift from what the estate governance expects.
-            - { name: OTTO_ROUTER_LANE_EXPLORE_MODEL, value: "deepseek" }
+            # The four lane values are not here. They are one ConfigMap,
+            # platform/otto-gateway/router-lanes.yaml, read through the envFrom above,
+            # because this door and the drill that grades it (answer-probe.yaml) held
+            # them as separate literals and drifted apart twice -- #1678 on 2026-09-05
+            # and idp#2504 on 2026-09-08, when the probe reported a green judgment lane
+            # on deepseek while the door ran minimax. That file carries the values and
+            # the measurements behind each one.
             - { name: PYTHONUNBUFFERED, value: "1" }
             # docs/specs/otto-door-hands-and-senses.md step 5: the door's hands. HERMES_ENV_DIR is
             # the secret mount the shell above exports (Kyverno refuses secretKeyRef on a pod);

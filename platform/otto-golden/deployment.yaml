@@ -98,6 +98,12 @@ spec:
               export OTTO_TELEGRAM_BOT_TOKEN="$(cat /run/secrets/otto-staging-telegram/OTTO_TELEGRAM_BOT_TOKEN)"
               export LITELLM_API_KEY="$(cat /run/secrets/otto-golden-router-key/LITELLM_API_KEY)"
               exec python -m otto.boot
+          # The router lanes, from the one ConfigMap the door reads (declared in
+          # platform/otto-gateway/router-lanes.yaml, second document). envFrom, not env: an
+          # inline entry of the same name would win over the ConfigMap and put the drift
+          # straight back -- which is what the two lane literals that used to sit below were.
+          envFrom:
+            - configMapRef: { name: otto-router-lanes }
           env:
             - name: OTTO_BOOT_PORT
               value: "8080"
@@ -105,47 +111,6 @@ spec:
               value: /etc/otto/boot.yaml
             - name: PYTHONUNBUFFERED
               value: "1"
-            # Founder 2026-09-02: Kimi is Otto's primary. The judgment lane is the default
-            # lane (otto/router/config.py default_lane="judgment"); this override points it at
-            # the router's kimi alias (platform/llm/config.yaml) once otto.router serves boot.
-            # minimax, not kimi. The estate router lists kimi at /v1/models but
-            # refuses it at /v1/chat/completions with 400 "Invalid model name
-            # passed in model=kimi"; minimax and deepseek answer 200 to the same
-            # request with this pod's own key. Measured from inside this pod on
-            # 2026-09-04. otto/router/config.py already calls minimax the
-            # founder-verified lane.
-            - name: OTTO_ROUTER_LANE_JUDGMENT_MODEL
-              value: deepseek
-            # The bulk lane's shipped default is also minimax, and otto/router/config.py
-            # refuses a configuration whose judgment and bulk lanes share one model family
-            # so their error modes cannot correlate. With judgment overridden to minimax
-            # above, that refusal fired on every inbound message: this pod logged
-            # "policy defect: judgment and bulk lanes share one model family ('minimax')"
-            # as webhook.pipeline_error and answered nothing. Measured from inside the pod
-            # on 2026-09-04 against image main-68-ce246e2. Bulk is not on the Telegram path
-            # (default_lane is judgment), so it is the lane that moves.
-            # gemini, not deepseek, since 2026-09-04: the deepseek lane answers 401 at the vendor
-            # and its row has left the rendered config, so bulk pointed at nothing.
-            #
-            # The value here was `fast` until 2026-09-05, on the assumption that a router alias
-            # gets a family the same way a vendor identifier does. It does not:
-            # otto/router/config.py derives the family from _DEFAULT_MODEL_FAMILIES, a literal
-            # map of vendor identifiers plus `minimax`, `gemini`, `claude` and `deepseek`, and
-            # refuses anything absent from it -- "policy defect: model 'fast' is in no family
-            # mapping", which is what both doors logged on every message. The replacement has to
-            # be both in the map and served by the running router. `gemini` is in the map but
-            # not served: `GET /model/info` from inside the gateway pod returned exactly `kimi`
-            # and `minimax` on 2026-09-05. `kimi` is both -- family moonshot, distinct from
-            # judgment's minimax -- so it is the value here.
-              # gemini, since 2026-09-05 13:30Z. The two readings above that ruled it out ("not served",
-              # "empty credit") were the otto router key's allowlist (kimi, minimax, deepseek) refusing
-              # it with 403, not the router. Measured through the router with its own key: gemini, fast,
-              # minimax and embed all answer. deepseek is no alias there at all -- its row left
-              # platform/llm/config.yaml on 2026-09-04 (vendor 401) and the console row is
-              # deepseek-v4-flash -- so probe otto-answer-probe-29810160 read 400 on bulk and verify.
-              # The key rows in bin/idp-estate-seed now allow minimax, gemini and embed.
-            - name: OTTO_ROUTER_LANE_BULK_MODEL
-              value: deepseek
             # The estate's memory (platform/hindsight), one bank for every surface, so a
             # person remembered from Telegram is remembered on the next channel too.
             # otto/memory/hindsight.py: unset is a no-op, unreachable never costs an answer.

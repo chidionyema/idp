@@ -12,10 +12,11 @@ resources:
   - telegram-secret.yaml
   - router-key.yaml
   - config.yaml
+  - router-lanes.yaml
   - deployment.yaml
   - httproute.yaml
   - edge-manners.yaml
   - availability.yaml
 images:
   - name: ghcr.io/chidionyema/hermes-agent
-    newTag: main-97-27b97c4312382210c9dbfe6c9042a2118dba649f # {"$imagepolicy": "flux-system:hermes-agent:tag"}
+    newTag: main-98-743de6d8213a24005b1ac56140dbaa248f6b7048 # {"$imagepolicy": "flux-system:hermes-agent:tag"}

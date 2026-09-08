@@ -96,6 +96,16 @@ data:
   # The control plane's own address as the kubernetes Endpoints object reports it; the one
   # place it is written. bin/idp-ns-fence-gen opens every namespace fence to it (crew#102).
   ESTATE_APISERVER_CIDR: "10.0.0.11/32"
+  # The three networks an admission webhook can see its caller as; bin/idp-ns-fence-gen opens
+  # every webhook namespace's fence to them (crew#102). ESTATE_APISERVER_CIDR above is only the
+  # address the kubernetes Endpoints object advertises, and an ingress rule naming just that
+  # matched zero packets on 2026-09-08: OKE runs several apiservers behind it, the call can land
+  # on either worker, and when the webhook's only replica is on the other worker Calico SNATs the
+  # packet to the entry node's VXLAN tunnel address, which comes from the pod pool. The subnet
+  # names are the OCI display names: cp-tiafzl, workers-tiafzl.
+  ESTATE_CP_SUBNET_CIDR: "10.0.0.8/29"
+  ESTATE_WORKER_CIDR: "10.0.144.0/20"
+  ESTATE_POD_CIDR: "10.244.0.0/16"
   OTLP_ENDPOINT: "http://signoz-otel-collector.observability.svc:4318"
   # decision 0017: the Bitwarden organisation and project the human secret door reads
   # (platform/human-vault/store.yaml). Public identifiers, not secrets - the same rule as

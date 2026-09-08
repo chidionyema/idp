@@ -73,6 +73,31 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: allow-apiserver-webhook-ingress
+  namespace: chaos-mesh
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: ${ESTATE_CP_SUBNET_CIDR}
+    - ipBlock:
+        cidr: ${ESTATE_WORKER_CIDR}
+    - ipBlock:
+        cidr: ${ESTATE_POD_CIDR}
+    ports:
+    - protocol: TCP
+      port: 10080
+    - protocol: TCP
+      port: 10081
+    - protocol: TCP
+      port: 10250
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: allow-declared-egress
   namespace: chaos-mesh
 spec:

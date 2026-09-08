@@ -1,0 +1,33 @@
+# The rehearsal's copy of platform/otto-gateway/router-lanes.yaml, which is where the values
+# and the whole measured record behind them live. Read that file; this one is the same four
+# values in the namespace next door.
+#
+# Why a copy at all. Each overlay carries a `namespace:` transformer, so one document naming
+# the other namespace inside either overlay is rewritten back and kustomize refuses the build
+# with an ID conflict; and a cross-directory `resources:` reference builds under Flux (which
+# runs with the load restrictor off) while `kustomize build` in CI refuses it. The two files
+# are held identical by bin/otto-lane-parity, wired in bin/idp-ci and in rules.yaml, so a
+# change to one and not the other is refused in the pull request rather than discovered as a
+# rehearsal that rehearses something else.
+#
+# That is what this file is fixing. otto-golden carried `judgment: deepseek` and
+# `bulk: deepseek` inline, and otto/router/config.py refuses a configuration whose judgment
+# and bulk lanes share one model family, so their error modes cannot correlate. This pod
+# could not have answered a message if one had arrived -- most of why 72 hours of its log
+# held one boot line and nothing else.
+#
+# No `namespace:` here on purpose: the overlay's transformer sets otto-golden, and naming it
+# twice is a second place for it to be wrong.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otto-router-lanes
+  labels:
+    app: otto-golden
+    app.kubernetes.io/name: otto-golden
+    app.kubernetes.io/part-of: idp
+data:
+  OTTO_ROUTER_LANE_JUDGMENT_MODEL: "minimax"
+  OTTO_ROUTER_LANE_BULK_MODEL: "deepseek"
+  OTTO_ROUTER_LANE_VERIFY_MODEL: "deepseek"
+  OTTO_ROUTER_LANE_EXPLORE_MODEL: "deepseek"

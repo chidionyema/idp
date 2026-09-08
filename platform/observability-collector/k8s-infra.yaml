@@ -44,6 +44,21 @@ spec:
                 name: every-interface-is-a-door
                 labels:
                   backstage.io/kubernetes-id: founder-telemetry
+          # The flannel -> Calico cutover, same patch and same reasoning as
+          # platform/chaos/mesh/helmrelease.yaml: the descheduler profile in #2501 never evicts a
+          # DaemonSet pod, so these move by a pod-template annotation instead. Fixed instant, so it
+          # rolls once on merge and never again.
+          - target: { kind: DaemonSet }
+            patch: |
+              apiVersion: apps/v1
+              kind: DaemonSet
+              metadata:
+                name: cni-cutover
+              spec:
+                template:
+                  metadata:
+                    annotations:
+                      platform.idp/cni-cutover: "2026-09-08T09:30:00Z"
   # crew#584 (oke-check 33234280926, 2026-08-29T04:40Z): the old observability/k8s-infra object was
   # pruned after idp#702 and helm-controller's uninstall of it hit the SAME Helm release name this
   # object had just upgraded to v7 ("release mismatch", 03:47Z). The uninstall stripped the v7

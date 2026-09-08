@@ -135,6 +135,26 @@ NOT_THE_INTERNET = [
 APISERVER_CIDR = "${ESTATE_APISERVER_CIDR}"
 APISERVER_PORTS = (6443, 12250)
 
+# The three addresses an admission webhook can actually see its caller as, measured on the live
+# cluster 2026-09-08 by opening one fence to 0.0.0.0/0 and reading /proc/net/nf_conntrack:
+#   1. the control-plane subnet, because ESTATE_APISERVER_CIDR is only the address the kubernetes
+#      Endpoints object advertises -- OKE runs several apiservers behind it and an outbound call
+#      carries the instance's own address, not the endpoint's. A /32 here matched zero packets.
+#   2. a worker address, when the call lands on the node the webhook pod runs on.
+#   3. a Calico VXLAN tunnel address, when it does not. The call arrives at whichever node the
+#      load balancer picked; if the only replica lives on the other node, the packet crosses the
+#      overlay and is SNATed to the entry node's tunnel address, which is drawn from the pod
+#      pool. This is why a webhook with a replica on every node looked healthy while a
+#      single-replica one timed out: kyverno answered and cert-manager did not, from the same
+#      fence, on the same cluster, at the same minute.
+# Naming only the first two leaves a single-replica webhook unreachable half the time, which
+# reads as a flake and is not one. Substituted by Flux like APISERVER_CIDR above.
+WEBHOOK_CALLER_CIDRS = (
+    "${ESTATE_CP_SUBNET_CIDR}",
+    "${ESTATE_WORKER_CIDR}",
+    "${ESTATE_POD_CIDR}",
+)
+
 
 def internet_egress_doc(ns: str, ports: list) -> dict:
     return {
@@ -210,6 +230,25 @@ def policy_docs(ns: str, flows: dict, emitters: set | None = None) -> list[dict]
             "to": [{"ipBlock": {"cidr": APISERVER_CIDR}}],
             "ports": [{"protocol": "TCP", "port": p} for p in APISERVER_PORTS]}]},
     })
+    webhook_ports = flows.get("ingress_apiserver") or []
+    if webhook_ports:
+        # The mirror of allow-apiserver-egress, and the half that was missing. A namespace that
+        # serves an admission webhook is called BY the control plane, which sits outside the pod
+        # network and outside every namespace selector, so default-deny drops it and only an
+        # ipBlock can name it. Found live 2026-09-08: kyverno's fail-closed webhook was
+        # unreachable, so every write to the cluster was refused and Flux sat at 0/80. It had
+        # been latent for eleven days because flannel's FLANNEL-POSTRTG masquerade was rewriting
+        # every Calico packet's source to the node's own address -- 6.74M packets, 652MB -- so
+        # the control plane's calls arrived looking like node traffic that some other rule let
+        # through. Remove flannel and the gap is a total outage; leave it and the fence is a lie.
+        docs.append({
+            "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+            "metadata": {"name": "allow-apiserver-webhook-ingress", "namespace": ns},
+            "spec": {"podSelector": {}, "policyTypes": ["Ingress"], "ingress": [{
+                "from": [{"ipBlock": {"cidr": c}} for c in WEBHOOK_CALLER_CIDRS],
+                "ports": [{"protocol": "TCP", "port": int(x)}
+                          for x in sorted(set(webhook_ports))]}]},
+        })
     egress = list(flows.get("egress") or [])
     if ns != SINK:
         egress.append(SINK)  # LAW 50: every workload emits to the one collector.

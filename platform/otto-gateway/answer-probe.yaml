@@ -216,6 +216,10 @@ spec:
               # runs -- no pip install, no second image to keep patched (LAW 43).
               image: docker.io/library/python:3.11-slim
               command: ["python3", "/scripts/probe.py"]
+              # The router lanes, from the one object the door reads. envFrom, not env:
+              # an inline entry of the same name would win and restore the drift.
+              envFrom:
+                - configMapRef: { name: otto-router-lanes }
               env:
                 - name: OTTO_TENANT_ID
                   value: "estate"
@@ -229,19 +233,13 @@ spec:
                 # 03:45Z: judgment ok on minimax in 1511 ms, bulk and verify both 403.
                 - name: LITELLM_BASE_URL
                   value: "http://litellm.llm.svc.cluster.local:4000/v1"
-                - name: OTTO_ROUTER_LANE_JUDGMENT_MODEL
-                  value: "deepseek"
-                # gemini, since 2026-09-05 13:30Z. The two readings above that ruled it out ("not served",
-                # "empty credit") were the otto router key's allowlist (kimi, minimax, deepseek) refusing
-                # it with 403, not the router. Measured through the router with its own key: gemini, fast,
-                # minimax and embed all answer. deepseek is no alias there at all -- its row left
-                # platform/llm/config.yaml on 2026-09-04 (vendor 401) and the console row is
-                # deepseek-v4-flash -- so probe otto-answer-probe-29810160 read 400 on bulk and verify.
-                # The key rows in bin/idp-estate-seed now allow minimax, gemini and embed.
-                - name: OTTO_ROUTER_LANE_BULK_MODEL
-                  value: "deepseek"
-                - name: OTTO_ROUTER_LANE_VERIFY_MODEL
-                  value: "gemini"
+                # No lane literals here. The lanes arrive from the otto-router-lanes
+                # ConfigMap through the envFrom above -- the same object the door reads,
+                # so this drill can no longer grade a lane the door does not use. It did
+                # exactly that on 2026-09-08: run otto-answer-probe-29814330 reported
+                # `lane=judgment model=deepseek latency_ms=1198` while the door ran
+                # minimax, and the comment this replaces recorded the same class of drift
+                # on 2026-09-05 (#1678).
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://signoz-otel-collector.observability.svc:4318"
               volumeMounts:

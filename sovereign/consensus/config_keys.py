@@ -17,7 +17,11 @@ from typing import Any
 
 CONSENSUS_KEYS: dict[str, tuple[Any, type, str, str]] = {
     "consensus.cheap_model": (
-        "deepseek", str, "SB_CONSENSUS_CHEAP_MODEL",
+        # 2026-09-08, the cost mandate: this said "deepseek", an account at $0 since 2026-09-04.
+        # It is the code-side twin of `[routing] cheap` in AGENTS.md and the two must agree --
+        # test_cp30 grades the router's chain tails against THIS value, so the dead lane here was
+        # what forced every fallback chain to end in a guaranteed 401.
+        "minimax", str, "SB_CONSENSUS_CHEAP_MODEL",
         "Single model used for a non-destructive op: the cheapest entry the estate router "
         "serves (idp platform/llm/config.yaml; the local ollama lane is laptop-only, crew#313)"),
     "consensus.request_timeout_s": (

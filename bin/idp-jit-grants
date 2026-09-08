@@ -13,6 +13,8 @@ shown one on his phone at 3am.
 read -- an unreadable catalogue is never treated as an empty one).
 """
 
+import ast
+import pathlib
 import re
 import sys
 
@@ -267,6 +269,66 @@ def grade_kubernetes(g):
     return bad
 
 
+BROKER = pathlib.Path(__file__).resolve().parent.parent / "platform/jit/broker/broker.py"
+
+
+def implemented(path=BROKER):
+    """The set of grant ids the broker actually has a step for, read out of its source.
+
+    Read with `ast` and not by importing it: the gate must grade a catalogue on a runner that
+    has never installed the broker's dependencies, and importing a web service to ask it a
+    question about itself is a way to make a linter start a server.
+
+    Two names carry the answer. `APPLIES` maps a grant id to the step that performs it below
+    Kubernetes; `KUBERNETES_APPLIES` names the ids `Broker._apply` has a branch for. A
+    `mode: token` grant needs neither -- minting is generic.
+    """
+    tree = ast.parse(path.read_text())
+    found = {"APPLIES": set(), "KUBERNETES_APPLIES": set()}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        name = getattr(node.targets[0], "id", None)
+        if name not in found:
+            continue
+        if isinstance(node.value, ast.Dict):
+            keys = node.value.keys
+        elif isinstance(node.value, (ast.Set, ast.List, ast.Tuple)):
+            keys = node.value.elts
+        else:
+            continue
+        found[name] = {k.value for k in keys if isinstance(k, ast.Constant)}
+    return found["APPLIES"], found["KUBERNETES_APPLIES"]
+
+
+def grade_implemented(g, below, kube):
+    """Can the broker actually do this?
+
+    WHY THIS CHECK EXISTS, and it is the only one here that is not about escalation. On
+    2026-09-08 `oci-vault-write` (#2496) shipped in the catalogue with no step in the broker,
+    and this gate passed it -- because every check above asks whether a grant can be turned
+    into standing access, and none asked whether the grant does anything. So the row was real,
+    the ask was real, the button on the founder's phone was real, and the act behind it did not
+    exist; worse, the broker dispatched below-Kubernetes acts by provider, so the approved vault
+    write would have been handed to the node pool resizer. Founder, that morning: "and also wtf
+    is this" (~/.claude/docs/founder/2026-09-08T0953Z-and-also-wtf-is-this-4991d777.md).
+
+    A grant the broker cannot perform is not a small defect in a catalogue like this one. Every
+    other line of this file works to make the founder's tap mean exactly one thing; a row with
+    no step makes it mean nothing, and he finds out by tapping.
+    """
+    if g.get("mode") != "broker-applies":
+        return []
+    provider = str(g.get("provider") or "kubernetes").lower()
+    known = kube if provider == "kubernetes" else below
+    if str(g.get("id")) in known:
+        return []
+    return [
+        "is broker-applies and the broker has no step for it, so the founder would approve an "
+        "act nothing performs"
+    ]
+
+
 GRADERS = {
     "kubernetes": grade_kubernetes,
     "github": grade_github,
@@ -275,7 +337,8 @@ GRADERS = {
 }
 
 
-def grade(text):
+def grade(text, broker=BROKER):
+    below, kube = implemented(broker)
     try:
         doc = yaml.safe_load(text)
     except yaml.YAMLError as e:
@@ -292,11 +355,14 @@ def grade(text):
             problems.append(f"a grant is {type(g).__name__}, not a mapping")
             continue
         gid, bad = grade_one(g)
-        problems += [f"{gid}: {b}" for b in bad]
+        problems += [f"{gid}: {b}" for b in bad + grade_implemented(g, below, kube)]
 
     if problems:
-        return False, f"{len(problems)} escalation(s) in {len(grants)} grant(s): " + "; ".join(problems)
-    return True, f"{len(grants)} grant(s), none of which can be turned into standing access"
+        return False, f"{len(problems)} problem(s) in {len(grants)} grant(s): " + "; ".join(problems)
+    return True, (
+        f"{len(grants)} grant(s), none of which can be turned into standing access, and each "
+        f"of which the broker has a step for"
+    )
 
 
 def main():
