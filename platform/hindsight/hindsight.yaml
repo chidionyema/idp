@@ -35,6 +35,12 @@ spec:
     remediation: { retries: 3 }
   upgrade:
     remediation: { retries: 3 }
+    # A deployment this chart leaves in a Failed state (its own probe recycles a slow/bad start)
+    # is "stalled" to Helm's upgrade waiter, so a normal upgrade aborts and rolls back without
+    # ever applying the corrected values or postRenderer (2026-09-08: hindsight stayed on the old
+    # gemini+envFrom render through two correct PRs). force: true makes Helm replace the stuck
+    # deployment instead of waiting on it, so the current health-correct values land.
+    force: true
   values:
     existingSecret: hindsight-env   # platform/hindsight/external-secret.yaml
     postgresql:
