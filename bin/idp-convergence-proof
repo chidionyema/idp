@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Is this pull request proved in the shadow dimension? (agent-infra-safety-spec W2.3)
+
+The 2026-09-07 record (founder, docs/founder/2026-09-07T1606Z-...) that every in-flight infra
+branch must meet on rebase: an agent that wants its infrastructure change auto-merged has to show
+it was applied and passed assertions somewhere the real cluster cannot be harmed -- the vcluster
+shadow dimension -- before the Greenlane will trust it.
+
+WHAT THE GATE DOES, from docs/policy/agent-infra-safety-spec.md lines 327-345:
+
+A pull request body carries a machine-readable block:
+
+    Proof-of-Convergence:
+      vcluster: shadow-<workload>-<run-id>
+      run: <CI run URL>
+      asserted: <what passed>
+
+bin/idp-convergence-proof parses it and verifies (a) the block is present and well-formed,
+(b) the `run:` URL references a CI run that exists and is green, and (c) that run belongs to this
+pull request's head commit. A body that is MISSING the block, UNPARSEABLE, or whose run points at
+a DIFFERENT commit is a fail-closed FAIL -- never a pass.
+
+WHAT IT REFUSES, each a real case rather than a precaution:
+  no Proof-of-Convergence block      the change reached no shadow dimension at all; unproven
+  unparseable block                  a block that does not carry vcluster + run + asserted
+  a run not on the head commit       the proof is for work this pull request does not carry
+  an empty asserted                  nothing was asserted, so nothing was proved
+  MISSING_REQUIRED                   a Proof-of-Convergence block whose fields the verifier needs
+                                     are not all supplied -- a block cannot be trusted to be loose
+
+The two live-witness fields (the `run:` URL is green; the run belongs to the head commit) are
+resolved by `verify_witness`, which the first landable slice drives from environment rather than a
+live CI poll -- there is no real shadow-verify run yet. A gate must never guess a run is green, so
+when the witness is not provable the verdict is FAIL (fail-closed), never a pass. The seam is
+deliberate: the moment shadow-verify (W2.2) lands a real run, that CI gives the witness and this
+gate stops trusting the assertion string alone. Until then the strict parse of the block and the
+fail-closed default ARE the rule a fixture can grade without a running vcluster.
+
+Usage: idp-convergence-proof BODY.md [HEAD_SHA|--env]
+       BODY.md   the pull request body text (or the fixture path)
+       HEAD_SHA  the head commit this pull request claims to prove
+Exit 0 proved, 1 refused. Refused prints why.
+"""
+import os
+import re
+import sys
+
+EXIT_OK = 0
+EXIT_REFUSE = 1
+EXIT_ERR = 2
+
+BLOCK_RE = re.compile(
+    r"Proof-of-Convergence\s*:\s*\n(?P<body>.*?)(?=\n\S+\s*:|\Z)",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+MENU = {
+    "vcluster": "the shadow vcluster that carried the run",
+    "run": "the CI run URL that applied it",
+    "asserted": "what the assertion passed",
+}
+
+
+def parse_blocks(text):
+    """Return a list of dicts, one per Proof-of-Convergence block, or [] when none."""
+    found = []
+    for m in BLOCK_RE.finditer(text):
+        entry = {}
+        for line in m.group("body").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            key, _, value = line.partition(":")
+            if value and key.strip().lower() in MENU:
+                entry[key.strip().lower()] = value.strip()
+        if entry:
+            found.append(entry)
+    return found
+
+
+def errors_for(blocks, head_sha, run_green, run_head):
+    """Grade the parsed blocks. Returns a list of refusal reasons (empty == proved)."""
+    if not blocks:
+        return ["no Proof-of-Convergence block: this change reached no shadow dimension"]
+    out = []
+    for b in blocks:
+        for key in ("vcluster", "run", "asserted"):
+            if not b.get(key):
+                out.append(f"block missing {key} ({MENU[key]})")
+        if not out:
+            vcluster = b.get("vcluster", "")
+            if not vcluster.startswith("shadow-"):
+                out.append(f"vcluster {vcluster!r} is not a shadow-* vcluster name")
+    # fail-closed: a missing or ungreen witness is never a pass
+    if not run_green:
+        out.append("the proof's run is not green, or its greenness could not be witnessed")
+    if head_sha and run_head and run_head != head_sha:
+        out.append(f"run belongs to {run_head}, not this pull request's head {head_sha}")
+    return out
+
+
+def main(argv):
+    if not argv:
+        print("idp-convergence-proof BODY.md [HEAD_SHA|--from-env]", file=sys.stderr)
+        return EXIT_ERR
+    try:
+        text = open(argv[0], encoding="utf-8", errors="replace").read()
+    except OSError as e:
+        print(f"idp-convergence-proof: cannot read {argv[0]}: {e}", file=sys.stderr)
+        return EXIT_ERR
+
+    # The live witness. --from-env is the CI seam: shadow-verify (W2.2) will set these when a
+    # real run exists. Until then a fixture drives them explicitly so the parse can be graded
+    # without a cluster, and the default refuses (fail-closed) rather than assuming green.
+    head_sha = None
+    run_head = None
+    run_green = False
+    if len(argv) > 1 and argv[1] != "--from-env":
+        # The whole-witness form is for tests: callers pass HEAD_SHA, RUN_HEAD and RUN_GREEN in env
+        head_sha = argv[1]
+        run_head = os.environ.get("CONVERGENCE_RUN_HEAD", head_sha)
+        run_green = os.environ.get("CONVERGENCE_RUN_GREEN", "").lower() in ("1", "true", "yes")
+    else:
+        head_sha = os.environ.get("CONVERGENCE_HEAD")
+        run_head = os.environ.get("CONVERGENCE_RUN_HEAD")
+        run_green = os.environ.get("CONVERGENCE_RUN_GREEN", "").lower() in ("1", "true", "yes")
+
+    errors = errors_for(parse_blocks(text), head_sha, run_green, run_head)
+    if not errors:
+        print("proved")
+        return EXIT_OK
+    for why in errors:
+        print(f"REFUSE    {why}")
+    return EXIT_REFUSE
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

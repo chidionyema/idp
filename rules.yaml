@@ -744,6 +744,26 @@ rules:
     ok: "the broker and its floor cannot land on a green check alone (WJ.8)"
     fail: "a change to the broker could be auto-merged or self-approved (WJ.8)"
 
+  - id: convergence-proof
+    label: proof
+    statement: >-
+      An infrastructure pull request reaches the merge gate with a Proof-of-Convergence; a body
+      with no such block, or whose proof's run is not a green run on its own head commit, is
+      refused -- a missing or unparseable proof is a fail-closed FAIL, never a pass
+    law: W2.3
+    origin: docs/policy/agent-infra-safety-spec.md
+    planes: [ci]
+    run: [python3, bin/idp-convergence-proof]
+    cluster: {policy: null, why: "the subject sits in a pull request body and the proof refers to a shadow run no admission controller can see"}
+    fixtures: {must_fail: tests/fixtures/convergence/no-proof.md, must_pass: tests/fixtures/convergence/proved.md}
+    cases:
+      - {expect: refuse, args: [tests/fixtures/convergence/no-proof.md, HEAD]}
+      - {expect: pass, args: [tests/fixtures/convergence/proved.md, HEAD], env: {CONVERGENCE_RUN_GREEN: "1", CONVERGENCE_RUN_HEAD: HEAD}}
+      - {expect: refuse, args: [tests/fixtures/convergence/proved.md, HEAD], env: {CONVERGENCE_RUN_GREEN: "1", CONVERGENCE_RUN_HEAD: OTHER}}
+    ok: "a change that was never proved in the shadow dimension cannot reach the Greenlane (W2.3)"
+    fail: "a change without a green Proof-of-Convergence on its own head could be auto-merged (W2.3)"
+
+
   - id: sovereign-command
     label: command
     statement: >-
