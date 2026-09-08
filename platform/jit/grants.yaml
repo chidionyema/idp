@@ -108,7 +108,7 @@ grants:
     max_ttl: 10m
     rate_per_hour: 5
     parameters:
-      secret_name: {type: name, required: true}
+      secret_name: {type: vault_secret_name, required: true}
       contents_b64: {type: base64_blob, required: true, encrypted_in_transit: true}
 
   # A surface is answering on the wrong address after a rebuild. The record moves to a target

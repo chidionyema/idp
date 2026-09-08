@@ -40,6 +40,8 @@ Four rules hold the security, and each is a function below:
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -88,6 +90,10 @@ _NAME = re.compile(r"^[a-z0-9]([-a-z0-9.]{0,61}[a-z0-9])?$")
 _TAG = re.compile(r"^[\w][\w.-]{0,127}$")
 _RRTYPE = re.compile(r"^[A-Za-z]{1,10}$")
 _REPO = re.compile(r"^[A-Za-z0-9_.-]{1,39}/[A-Za-z0-9_.-]{1,100}$")
+# A vault secret is not a Kubernetes object: OCI names them with underscores, and the estate's
+# own seed entries (estate_seed_keys, agent_foundry_runner) are spelled that way. Grading them
+# with _NAME refused every real one.
+_VAULT_NAME = re.compile(r"^[A-Za-z0-9_-]{1,255}$")
 
 
 def ttl_seconds(v: str) -> int | None:
@@ -268,6 +274,29 @@ class Broker:
             f"file is a change to the estate's security boundary, not a request"
         )
 
+    def _check_implemented(self, grant: dict) -> None:
+        """A grant the broker cannot perform never reaches the phone.
+
+        The catalogue and the code that performs it are two files, and until 2026-09-08 nothing
+        held them together: `oci-vault-write` shipped in the catalogue with no step in this file
+        and passed `bin/idp-jit-grants`, because that gate asks whether a grant can become
+        standing access and never asked whether the broker can do it at all. So the ask was
+        real, the button was real, the tap was real, and the act was not.
+
+        Refusing here rather than in `_apply` is the difference between an agent being told no
+        and the founder being woken to approve nothing. `bin/idp-jit-grants` now grades the same
+        two sets at merge time, so this branch is the belt and that gate is the braces.
+        """
+        provider = str(grant.get("provider") or "kubernetes").lower()
+        if grant.get("mode") != "broker-applies":
+            return
+        known = KUBERNETES_APPLIES if provider == "kubernetes" else set(APPLIES)
+        if grant["id"] not in known:
+            raise Refused(
+                f"grant {grant['id']} is broker-applies and the broker has no step for it. "
+                f"An ask nobody can perform is refused before it is shown to anyone"
+            )
+
     def _check_params(self, grant: dict, params: dict[str, str]) -> None:
         declared = grant.get("parameters") or {}
         for name in declared:
@@ -292,6 +321,21 @@ class Broker:
                         f"this cluster has no record of {params.get('workload')} running "
                         f"{value}. That is a deploy, not a rollback, and it is not what the "
                         f"founder would be approving"
+                    )
+            if kind == "vault_secret_name" and not _VAULT_NAME.match(str(value)):
+                raise Refused(f"{name}={value!r} is not a vault secret name")
+            if kind == "base64_blob":
+                # The value is the secret, so it is never quoted back -- only its shape is.
+                # Checked here rather than at the provider because a bad-request echo from a
+                # cloud CLI is one of the ways a secret reaches a log (LAW 21).
+                try:
+                    raw = base64.b64decode(str(value), validate=True)
+                except (binascii.Error, ValueError):
+                    raise Refused(f"{name} is not base64") from None
+                cap = int(spec.get("max_bytes", 65536))
+                if len(raw) > cap:
+                    raise Refused(
+                        f"{name} is {len(raw)} bytes, above the {cap} this grant allows"
                     )
             if kind == "repository" and not _REPO.match(str(value)):
                 raise Refused(f"{name}={value!r} is not an owner/repository")
@@ -330,6 +374,7 @@ class Broker:
             ("namespace", "namespaces", "namespace"),
             ("record", "records", "DNS record"),
             ("repository", "repositories", "repository"),
+            ("secret_name", "secrets", "vault secret"),
         ):
             got = params.get(param)
             allowed = [str(a) for a in grant.get(allow_field) or []]
@@ -553,6 +598,7 @@ class Broker:
         if stopped:
             raise Refused(f"the broker is stopped: {stopped}")
         grant = self._load_grant(grant_id)
+        self._check_implemented(grant)
         self._check_params(grant, params)
         self._check_rate(grant)
 
@@ -719,22 +765,27 @@ class Broker:
         raise Refused(f"grant {grant['id']} has no mode the broker knows")
 
     def _apply_below(self, provider, runner, grant: dict, req: Request) -> dict:
-        """One argv, built from the grant and the parameters the founder saw, run by the
-        provider's own command. Nothing here is composed from agent text: the operation comes
-        out of the catalogue and every value has already been checked against what that grant
-        declares."""
-        args = BELOW[provider](grant, req)
-        rc, out = runner(args)
-        if rc != 0:
+        """The step this grant names, run by the provider's own command. Nothing here is
+        composed from agent text: the step comes out of APPLIES, keyed by the grant id, and
+        every value has already been checked against what that grant declares.
+
+        Keyed by the grant and not by the provider, and that is the whole repair. It used to
+        be `BELOW[provider]`, so every OCI grant ran the one OCI step that existed -- the node
+        pool resize. On 2026-09-08 a second OCI grant landed (`oci-vault-write`, #2496) with no
+        step of its own, and this line would have handed its approved vault write to the node
+        pool resizer, which then looked for a `node_pool` parameter that grant does not declare.
+        A founder tap, and a crash in the shape of a different act. Founder, that morning:
+        "and also wtf is this" (~/.claude/docs/founder/
+        2026-09-08T0953Z-and-also-wtf-is-this-4991d777.md). A grant now reaches its own step or
+        it reaches none, and `_check_implemented` refuses it before the phone ever buzzes.
+        """
+        handler = APPLIES.get(grant["id"])
+        if handler is None:
             raise Refused(
-                f"the change was approved and then failed on {provider}: {out.strip()[:300]}"
+                f"grant {grant['id']} names an act the broker has no step for. It is refused "
+                f"here rather than run as some other grant's step"
             )
-        return {
-            "mode": "broker-applies",
-            "provider": provider,
-            "applied": " ".join(args[:5]),
-            "output": out.strip()[:400],
-        }
+        return handler(grant, req, runner, provider)
 
     def _mint(self, grant: dict, req: Request) -> dict:
         """A token bound to a Role that exists only for this request.
@@ -967,7 +1018,140 @@ def _github_args(grant: dict, req: "Request") -> list[str]:
     ]
 
 
-BELOW = {"oci": _oci_args, "dns": _dns_args, "github": _github_args}
+def _oci_vault_write(grant: dict, req: "Request", run, provider: str) -> dict:
+    """Write one vault value the estate bootstrap needs, under a name the grant allows.
+
+    Two calls and not one, because the OCI CLI addresses an existing secret by OCID and a new
+    one by name: the list resolves the name the founder approved into the id, and the write is
+    a create when the list finds nothing. Both calls carry the compartment the broker is
+    configured with, never one out of the request, so a name the grant permits can still only
+    be written in the one compartment this broker holds.
+
+    The three OCIDs come from the broker's own environment (JIT_OCI_COMPARTMENT_ID,
+    JIT_OCI_VAULT_ID, JIT_OCI_KEY_ID) and are refused when absent. A broker with no vault
+    configured says so instead of failing halfway through an approved change.
+
+    The value never appears in the record. `contents_b64` is the secret itself, so it is kept
+    out of the argv summary, and the provider's own error text is scrubbed of it before it is
+    quoted anywhere -- a bad-request echo is the classic way a secret reaches a log (LAW 21).
+    """
+    compartment = os.environ.get("JIT_OCI_COMPARTMENT_ID", "").strip()
+    vault = os.environ.get("JIT_OCI_VAULT_ID", "").strip()
+    key = os.environ.get("JIT_OCI_KEY_ID", "").strip()
+    missing = [
+        n
+        for n, v in (
+            ("JIT_OCI_COMPARTMENT_ID", compartment),
+            ("JIT_OCI_VAULT_ID", vault),
+            ("JIT_OCI_KEY_ID", key),
+        )
+        if not v
+    ]
+    if missing:
+        raise Refused(
+            f"this broker has no vault configured ({', '.join(missing)} unset), so it cannot "
+            f"perform a vault write it was approved for"
+        )
+
+    name = req.params["secret_name"]
+    blob = req.params["contents_b64"]
+
+    def scrub(text: str) -> str:
+        return text.replace(blob, "<contents>") if blob else text
+
+    rc, out = run(
+        ["vault", "secret", "list", "--compartment-id", compartment, "--name", name]
+    )
+    if rc != 0 and "NotAuthorizedOrNotFound" not in out:
+        raise Refused(f"cannot read the vault: {scrub(out).strip()[:300]}")
+    try:
+        found = (json.loads(out or "{}").get("data") or []) if rc == 0 else []
+    except json.JSONDecodeError:
+        found = []
+    live = [d for d in found if str(d.get("lifecycle-state", "")).upper() != "DELETED"]
+
+    if live:
+        args = [
+            "vault",
+            "secret",
+            "update-base64",
+            "--secret-id",
+            str(live[0]["id"]),
+            "--secret-content-content",
+            blob,
+            "--force",
+        ]
+        did = "updated"
+    else:
+        args = [
+            "vault",
+            "secret",
+            "create-base64",
+            "--compartment-id",
+            compartment,
+            "--vault-id",
+            vault,
+            "--key-id",
+            key,
+            "--secret-name",
+            name,
+            "--secret-content-content",
+            blob,
+        ]
+        did = "created"
+
+    rc, out = run(args)
+    if rc != 0:
+        raise Refused(
+            f"the vault write was approved and then failed: {scrub(out).strip()[:300]}"
+        )
+    return {
+        "mode": "broker-applies",
+        "provider": provider,
+        "applied": f"vault secret {did} {name}",
+        "output": f"{did} {name}",
+    }
+
+
+def _argv_step(build) -> Callable[..., dict]:
+    """The three original acts, each still one argv and one run.
+
+    The wrapper exists so APPLIES holds one shape -- a step that takes the grant, the request
+    and the runner -- whether the act is a single command or, as with the vault write, a
+    resolve and then a write.
+    """
+
+    def step(grant: dict, req: "Request", run, provider: str) -> dict:
+        args = build(grant, req)
+        rc, out = run(args)
+        if rc != 0:
+            raise Refused(
+                f"the change was approved and then failed on {provider}: {out.strip()[:300]}"
+            )
+        return {
+            "mode": "broker-applies",
+            "provider": provider,
+            "applied": " ".join(args[:5]),
+            "output": out.strip()[:400],
+        }
+
+    return step
+
+
+# Every act the broker can perform below Kubernetes, keyed by the grant that names it. This
+# table and the non-Kubernetes rows of platform/jit/grants.yaml must be the same set;
+# bin/idp-jit-grants fails the build when they are not.
+APPLIES = {
+    "oci-scale-node-pool": _argv_step(_oci_args),
+    "oci-vault-write": _oci_vault_write,
+    "dns-point-record": _argv_step(_dns_args),
+    "github-rerun-failed-checks": _argv_step(_github_args),
+}
+
+# The same set for Kubernetes, where the act is a branch of Broker._apply rather than a row
+# here. A `mode: token` grant needs no entry: minting is generic, and the Role it cuts is the
+# grant itself.
+KUBERNETES_APPLIES = {"raise-memory-limit", "rollback-image"}
 
 
 def _provider_runner(binary: str) -> Callable[[list[str]], tuple[int, str]]:

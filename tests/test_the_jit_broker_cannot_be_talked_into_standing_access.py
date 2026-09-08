@@ -18,6 +18,7 @@ import threading
 import time
 import urllib.error
 from http.server import ThreadingHTTPServer
+from types import SimpleNamespace
 
 import pytest
 
@@ -215,6 +216,74 @@ def test_a_button_press_fits_inside_what_telegram_will_carry(tmp_path):
         "restart-workload", {"namespace": NS, "pod": "p"}, "why", "5m", "a"
     )
     assert len(broker.callback_data(req.id, "approve").encode()) <= 64
+
+
+def test_the_ask_is_pinned_while_it_waits_and_unpinned_the_moment_it_is_answered(
+    tmp_path, monkeypatch
+):
+    """The tap has to be findable, and this broker shares a chat with every alert.
+
+    platform/jit/deployment.yaml gives the broker the alerts row's bot and channel, so the
+    approval button lands in the same chat as Robusta's crash reports and the Flux reds.
+    Founder, 2026-09-08: "welli dnt see it cos its a fucking ness of alerts ... inpossible to
+    se naything". A pinned message sits in the chat header above everything that arrives after
+    it; unpinning on the decision is what stops the header from lying about what is waiting.
+    """
+    import broker.telegram as tg
+
+    calls = []
+
+    def fake(token, method, payload, timeout=20):
+        calls.append((method, payload))
+        return {"result": {"message_id": 4242}}
+
+    monkeypatch.setattr(tg, "_call", fake)
+
+    broker = make(tmp_path)
+    req = broker.ask("restart-workload", {"namespace": NS, "pod": "p"}, "w", "5m", "a")
+    phone = tg.Phone("t", "111", broker)
+    phone.send_ask(req, broker._load_grant(req.grant_id))
+
+    assert [m for m, _ in calls] == ["sendMessage", "pinChatMessage"]
+    assert calls[1][1]["message_id"] == 4242
+    # Silent: the message it pins has already made the noise.
+    assert calls[1][1]["disable_notification"] is True
+
+    phone.handle(
+        {
+            "callback_query": {
+                "data": broker.callback_data(req.id, "deny"),
+                "message": {"chat": {"id": "111"}},
+            }
+        }
+    )
+    # Denied, not granted -- and it still comes off the header. An answered ask left pinned is
+    # a header that lies about what is waiting on him.
+    assert req.state == "denied"
+    assert calls[-1][0] == "unpinChatMessage"
+    assert calls[-1][1]["message_id"] == 4242
+
+
+def test_an_ask_still_reaches_him_when_the_bot_cannot_pin(tmp_path, monkeypatch):
+    """A bot without pin rights in the chat has still sent the ask. Refusing the whole ask
+    because the header could not be written would be the worse failure, so the pin is
+    best-effort and the ledger records that it could not."""
+    import broker.telegram as tg
+
+    def fake(token, method, payload, timeout=20):
+        if method == "pinChatMessage":
+            raise RuntimeError("not enough rights to pin a message")
+        return {"result": {"message_id": 7}}
+
+    monkeypatch.setattr(tg, "_call", fake)
+
+    broker = make(tmp_path)
+    req = broker.ask("restart-workload", {"namespace": NS, "pod": "p"}, "w", "5m", "a")
+    tg.Phone("t", "111", broker).send_ask(req, broker._load_grant(req.grant_id))
+
+    with open(broker.ledger.path) as fh:
+        events = [json.loads(line)["event"] for line in fh if line.strip()]
+    assert "pin-failed" in events
 
 
 def test_a_tap_from_a_chat_that_is_not_his_is_refused(tmp_path):
@@ -532,23 +601,143 @@ def test_a_failure_below_kubernetes_reaches_the_agent(tmp_path):
 def test_every_grant_in_the_catalogue_names_a_layer_the_broker_can_actually_reach(
     tmp_path,
 ):
-    """The catalogue and the broker are two files, and a grant naming a provider with no
-    runner is a 3am approval that does nothing. This is the check that keeps them in step."""
+    """The catalogue and the broker are two files, and a grant naming an act with no step is
+    a 3am approval that does nothing. This is the check that keeps them in step.
+
+    It used to ask a weaker question -- whether the grant's *provider* had a runner -- and that
+    is how `oci-vault-write` (#2496) passed: OCI had a runner, the node pool resizer, and the
+    vault write would have been handed to it. The set is keyed by the grant now, on both sides.
+    """
     import yaml
 
-    from broker.broker import BELOW
+    from broker.broker import APPLIES, KUBERNETES_APPLIES
 
     with open(CATALOGUE) as fh:
         grants = yaml.safe_load(fh)["grants"]
     unreachable = [
         g["id"]
         for g in grants
-        if str(g.get("provider") or "kubernetes") != "kubernetes"
-        and g.get("provider") not in BELOW
+        if g.get("mode") == "broker-applies"
+        and g["id"]
+        not in (
+            KUBERNETES_APPLIES
+            if str(g.get("provider") or "kubernetes") == "kubernetes"
+            else APPLIES
+        )
     ]
     assert not unreachable, (
         f"the catalogue offers grants the broker cannot perform: {unreachable}"
     )
+
+
+def test_the_gate_refuses_a_grant_with_no_step_even_when_it_escalates_nothing(tmp_path):
+    """The check bin/idp-jit-grants was missing.
+
+    Every other check in that gate asks whether a grant can be turned into standing access.
+    `oci-vault-write` (#2496) could not -- and it also could not be performed, because no code
+    existed for it, and it passed. The catalogue below escalates nothing and still has to fail.
+    """
+    gate = _load_gate()
+    clean_but_absent = tmp_path / "c.yaml"
+    clean_but_absent.write_text(
+        "apiVersion: idp.internal/v1\n"
+        "kind: GrantCatalogue\n"
+        "grants:\n"
+        "  - id: oci-invent-a-thing\n"
+        "    provider: oci\n"
+        "    why: something plausible\n"
+        "    mode: broker-applies\n"
+        "    operations: [update-node-pool]\n"
+        "    max_ttl: 10m\n"
+        "    rate_per_hour: 2\n"
+    )
+    ok, why = gate.grade(clean_but_absent.read_text())
+    assert ok is False, why
+    assert "no step for it" in why
+
+    ok, why = gate.grade(open(CATALOGUE).read())
+    assert ok is True, why
+
+
+def _load_gate():
+    """Load bin/idp-jit-grants by path. It has no .py suffix and is not a package, which is
+    how workspace.yaml loads code locations too (LAW 45)."""
+    import importlib.machinery
+    import importlib.util
+
+    spec = importlib.util.spec_from_loader(
+        "idp_jit_grants",
+        importlib.machinery.SourceFileLoader(
+            "idp_jit_grants", str(ROOT / "bin" / "idp-jit-grants")
+        ),
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_a_grant_the_broker_cannot_perform_is_refused_before_the_phone_rings(tmp_path):
+    """The founder is never woken to approve an act nothing performs.
+
+    The catalogue this broker loads is the real one, so the refusal has to be provoked with a
+    grant id it does not hold -- which is the same code path, and the same answer, as a grant
+    that is in the catalogue with no step behind it. Before 2026-09-08 the equivalent ask
+    reached the phone and failed on the far side of the tap.
+    """
+    b = make(tmp_path, providers={"oci": FakeProvider()})
+    unimplemented = {
+        "id": "oci-invent-a-thing",
+        "provider": "oci",
+        "mode": "broker-applies",
+    }
+    with pytest.raises(Refused) as e:
+        b._check_implemented(unimplemented)
+    assert "no step" in str(e.value)
+
+    # And the guard is not simply refusing everything: the seven real grants pass it, which is
+    # what makes the refusal above mean something.
+    import yaml
+
+    with open(CATALOGUE) as fh:
+        for g in yaml.safe_load(fh)["grants"]:
+            b._check_implemented(g)
+
+
+def test_an_approved_vault_write_never_runs_another_grants_step(tmp_path):
+    """The specific defect of #2496, pinned.
+
+    Dispatching below-Kubernetes acts by provider meant every OCI grant ran the one OCI step
+    that existed. This asserts the vault write builds a vault argv -- and, because the value is
+    the secret, that the record of what happened does not contain it (LAW 21).
+    """
+    import os
+
+    from broker.broker import APPLIES
+
+    seen = []
+
+    def run(args):
+        seen.append(args)
+        return 0, "{}"
+
+    os.environ.update(
+        {
+            "JIT_OCI_COMPARTMENT_ID": "ocid1.compartment.oc1..test",
+            "JIT_OCI_VAULT_ID": "ocid1.vault.oc1..test",
+            "JIT_OCI_KEY_ID": "ocid1.key.oc1..test",
+        }
+    )
+    req = SimpleNamespace(
+        id="r1", params={"secret_name": "estate_seed_keys", "contents_b64": "c3Vw"}
+    )
+    out = APPLIES["oci-vault-write"]({"id": "oci-vault-write"}, req, run, "oci")
+
+    assert [a[:3] for a in seen] == [
+        ["vault", "secret", "list"],
+        ["vault", "secret", "create-base64"],
+    ], seen
+    assert "node-pool" not in " ".join(" ".join(a) for a in seen)
+    assert "c3Vw" not in json.dumps(out)
 
 
 def test_the_lock_screen_names_the_layer_and_what_will_actually_happen(tmp_path):
