@@ -30,6 +30,11 @@ export type Estate = {
   live: Live;
   /** Why the cluster could not be read, in the cluster's words, when `live` is undefined. */
   liveError?: string;
+  demoSandbox?: {
+    ttlSecondsRemaining: number;
+    creationTimestamp: string;
+    kustomizationName: string;
+  };
 };
 
 export type Loaded =
@@ -38,6 +43,7 @@ export type Loaded =
   | ({ state: 'ready' } & Estate);
 
 const FLUX = '/apis/kustomize.toolkit.fluxcd.io/v1/kustomizations';
+const DEMO_SANDBOX_KUSTOMIZATIONS = '/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/demo-sandbox/kustomizations';
 const DEPLOYMENTS = '/apis/apps/v1/deployments';
 /** The cluster is re-read this often while the page is open; the catalogue is not. */
 export const REFRESH_MS = 60_000;
@@ -83,15 +89,45 @@ export const useEstate = () => {
           if (!r.ok) throw new Error(`${path} answered ${r.status}`);
           return (await r.json()) as { items: unknown[] };
         };
-        const [k, d] = await Promise.all([get(FLUX), get(DEPLOYMENTS)]);
+        const [k, d, demoK] = await Promise.all([
+          get(FLUX),
+          get(DEPLOYMENTS),
+          get(DEMO_SANDBOX_KUSTOMIZATIONS),
+        ]);
         const kustomizations: Record<string, FluxObject> = {};
-        for (const o of k.items as FluxObject[])
+        for (const o of k.items as FluxObject[]) {
           kustomizations[o.metadata.name] = o;
+        }
+
+        let demoSandbox: Estate['demoSandbox'] = undefined;
+        const demoSandboxKustomization = (demoK.items as FluxObject[]).find(
+          o => o.metadata.labels?.['idp.estate/sandbox'] === 'true',
+        );
+
+        if (demoSandboxKustomization) {
+          const ttlLabel = demoSandboxKustomization.metadata.annotations?.['cleanup.kyverno.io/ttl'];
+          const creationTimestamp = demoSandboxKustomization.metadata.creationTimestamp;
+
+          if (ttlLabel && creationTimestamp) {
+            const ttlSeconds = parseInt(ttlLabel, 10);
+            const created = new Date(creationTimestamp).getTime();
+            const now = Date.now();
+            const elapsedSeconds = Math.floor((now - created) / 1000);
+            const ttlSecondsRemaining = Math.max(0, ttlSeconds - elapsedSeconds);
+
+            demoSandbox = {
+              ttlSecondsRemaining,
+              creationTimestamp,
+              kustomizationName: demoSandboxKustomization.metadata.name,
+            };
+          }
+        }
         return {
           live: {
             kustomizations,
             deployments: d.items as DeploymentObject[],
             readAt: Date.now(),
+            demoSandbox,
           },
         };
       } catch (e) {
