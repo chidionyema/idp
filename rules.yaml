@@ -900,3 +900,26 @@ rules:
       - {expect: pass, live: true, note: "the estate's own tree, which owns nothing with Crossplane yet"}
     ok: "no cloud object is claimed by both OpenTofu and Crossplane"
     fail: "a cloud object is claimed by both OpenTofu and Crossplane; each controller will undo the other at the reconcile interval"
+
+  - id: mechanism
+    label: mechanism
+    fast: true
+    statement: >-
+      A mechanism this repository depends on may not be switched off, deleted or unproduced:
+      every `uses:` resolves to a workflow in the tree, and every workflow GitHub is not
+      running is named with a reason in .github/workflows/disabled.yaml
+    law: "incident 2026-09-08, ten days of nothing merging and nothing red"
+    origin: 'founder 2026-09-08, "agents should be responsiblefor their own own, all this chasing is fricion"'
+    planes: [ci]
+    run: [python3, bin/idp-mechanism-gate]
+    fixtures:
+      must_fail: tests/fixtures/mechanism/bad
+      must_pass: tests/fixtures/mechanism/good
+    cases:
+      - {expect: refuse, args: [tests/fixtures/mechanism/bad]}
+      - {expect: pass, args: [tests/fixtures/mechanism/good]}
+      - {expect: pass, live: true, note: "this repository's own workflows"}
+    ok: "every workflow the tree calls exists, and every workflow GitHub has switched off says why"
+    fail: >-
+      a workflow calls one that is not in the tree (GitHub fails that run at startup with no job
+      and no log), or a workflow is disabled in settings with no line in the tree saying why

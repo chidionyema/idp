@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""A mechanism this repository depends on may not be switched off, deleted or unproduced.
+
+Every automation that failed silently in this estate failed the same way, and no check ever
+went red for any of them:
+
+  * crew's merge bot required a check named `review-gate`, and the founder deleted
+    review-gate.yml on 2026-08-29. A required check no workflow produces can never appear, so
+    the bot refused every pull request in the repository for ten days and said so only in its
+    own run log (docs/incidents, crew).
+  * idp's `founder-word.yml` and `conscience.yml` both call
+    `./.github/workflows/operating-model-gate.yml`, which was deleted as collateral in
+    7d27292f on 2026-09-04. GitHub fails a run whose `uses:` does not resolve at startup, with
+    no job and no log, so the founder's own `APPROVE: <word>` comment has done nothing since.
+    Three consecutive failures on 2026-09-08 and nothing anywhere said so.
+  * idp's `deploy-when-green.yml` -- the only thing in this repository that lands a pull
+    request without a person -- was set to `disabled_manually` in GitHub's settings around
+    2026-08-31. Eight days, zero runs, and the tree cannot see it: the workflow file is
+    perfect, the switch is somewhere else.
+
+The class is one thing: the mechanism lives in the tree, the fact of whether it runs lives
+outside it. So this gate reads both. The tree half runs everywhere and needs no network. The
+settings half runs where a token exists and is a fail-closed UNKNOWN when it cannot read,
+never a pass.
+
+  idp-mechanism-gate [ROOT]          the tree half: every `uses:` resolves
+  idp-mechanism-gate --live [ROOT]   and the settings half: every workflow is enabled
+
+# Standard: docs/STANDARDS.md "CI" -- one gate per class of break, proved both ways.
+# Rejected: actionlint -- it validates a workflow's own syntax and it already runs here. It
+#   resolves no local `uses:` against the tree (a deleted callee is a runtime failure, not a
+#   syntax error) and it cannot see GitHub's enabled/disabled switch at all.
+# Rejected: a scheduled workflow that pings itself -- a disabled workflow does not run, so the
+#   thing being measured is the thing that would do the measuring.
+# Deviation: none.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import sys
+
+import yaml
+
+# `    uses: ./.github/workflows/operating-model-gate.yml`
+LOCAL_USES = re.compile(r"^\s*uses:\s*(\./\.github/workflows/[^\s@#]+)", re.M)
+# `    uses: chidionyema/idp/.github/workflows/operating-model-gate.yml@main`
+SAME_REPO_USES = re.compile(
+    r"^\s*uses:\s*([\w.-]+/[\w.-]+)(/\.github/workflows/[^\s@#]+)@", re.M
+)
+
+WORKFLOWS = os.path.join(".github", "workflows")
+
+
+def workflow_files(root: str) -> list[str]:
+    base = os.path.join(root, WORKFLOWS)
+    if not os.path.isdir(base):
+        return []
+    return sorted(
+        os.path.join(base, n) for n in os.listdir(base) if n.endswith((".yml", ".yaml"))
+    )
+
+
+def this_repo(root: str) -> str:
+    """OWNER/REPO for this checkout, or "" when there is no origin to read it from."""
+    try:
+        url = subprocess.run(
+            ["git", "-C", root, "remote", "get-url", "origin"],  # noqa: S603,S607 -- fixed argv, no shell, root is this checkout
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    m = re.search(r"[:/]([\w.-]+/[\w.-]+?)(?:\.git)?$", url)
+    return m.group(1) if m else ""
+
+
+def unresolved_calls(root: str) -> list[str]:
+    """Every `uses:` naming a reusable workflow of this repo that is not on disk."""
+    here = this_repo(root)
+    breaks: list[str] = []
+    for path in workflow_files(root):
+        text = open(path, errors="replace").read()
+        where = os.path.relpath(path, root)
+        wanted = [m.group(1)[2:] for m in LOCAL_USES.finditer(text)]
+        for repo, rel in (
+            (m.group(1), m.group(2)) for m in SAME_REPO_USES.finditer(text)
+        ):
+            if here and repo.lower() == here.lower():
+                wanted.append(rel.lstrip("/"))
+        for rel in wanted:
+            if not os.path.isfile(os.path.join(root, rel)):
+                breaks.append(f"{where} calls {rel}, and no such file is in the tree")
+    return breaks
+
+
+def allowed_off(root: str) -> dict[str, str]:
+    """Workflows deliberately switched off, path -> the reason, from the tree."""
+    path = os.path.join(root, WORKFLOWS, "disabled.yaml")
+    if not os.path.isfile(path):
+        return {}
+    doc = yaml.safe_load(open(path)) or {}
+    return {str(k): str(v) for k, v in (doc.get("disabled") or {}).items()}
+
+
+def switched_off(root: str) -> tuple[list[str], list[str]]:
+    """(breaks, blind) -- workflows GitHub is not running that the tree does not excuse."""
+    repo = this_repo(root)
+    if not repo:
+        return [], ["no origin remote, so GitHub's own switch could not be read"]
+    try:
+        out = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/actions/workflows",
+                "--paginate",  # noqa: S603,S607 -- fixed argv, no shell; repo comes from the checkout's own remote
+                "-q",
+                '.workflows[]|"\\(.state)\\t\\(.path)"',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return [], [f"gh could not read {repo}: {exc}"]
+    if out.returncode != 0:
+        return [], [
+            f"gh could not read {repo}: {out.stderr.strip().splitlines()[-1:] or ''}"
+        ]
+    excused = allowed_off(root)
+    breaks = []
+    for line in out.stdout.splitlines():
+        state, _, path = line.partition("\t")
+        if state == "active" or not path:
+            continue
+        if path in excused:
+            continue
+        breaks.append(
+            f"{path} is {state} in GitHub's settings, and no line in "
+            f"{WORKFLOWS}/disabled.yaml says why"
+        )
+    return breaks, []
+
+
+def main(argv: list[str]) -> int:
+    live = "--live" in argv
+    rest = [a for a in argv if not a.startswith("-")]
+    root = (
+        os.path.abspath(rest[0])
+        if rest
+        else os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    )
+
+    breaks = unresolved_calls(root)
+    blind: list[str] = []
+    if live:
+        off, blind = switched_off(root)
+        breaks += off
+
+    for line in breaks:
+        print(f"REFUSE  {line}")
+    for line in blind:
+        print(f"BLIND   {line}")
+    if breaks:
+        print(
+            f"REFUSE  mechanism-gate: {len(breaks)} mechanism(s) the tree depends on will not run"
+        )
+        return 1
+    if blind:
+        print(
+            "BLIND   mechanism-gate: the settings half could not be read; that is not a pass"
+        )
+        return 2
+    scope = "every `uses:` resolves" + (
+        " and every workflow is enabled" if live else ""
+    )
+    print(f"ok      mechanism-gate  {scope}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

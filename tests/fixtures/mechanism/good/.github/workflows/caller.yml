@@ -1,0 +1,7 @@
+name: caller
+on:
+  issue_comment:
+    types: [created]
+jobs:
+  gate:
+    uses: ./.github/workflows/callee.yml
