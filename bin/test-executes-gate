@@ -28,7 +28,11 @@ BASE="${1:-origin/main}"
 # which a reads-only test opens, and hermes-v2's test_incident_crew751 passed this gate as
 # "runs something" on exactly that. `importlib` and `spec_from_file` load a module of this
 # repository and call it, which is running something.
-EXECUTES='subprocess|requests\.|httpx|socket\.|urllib\.request|os\.system|pexpect|docker\.|kubernetes\.client|importlib|spec_from_file'
+# `http.server` and `http.client` are here because a test that stands up a real HTTP door on
+# loopback and posts to it is the strongest kind of behavioural test in this repository, and
+# the list did not name it: tests/test_the_jit_ledger_leaves_the_node_it_was_written_on.py
+# drives a real OTLP collector through four failure modes and was refused as reading files.
+EXECUTES='subprocess|requests\.|httpx|socket\.|urllib\.request|http\.server|http\.client|os\.system|pexpect|docker\.|kubernetes\.client|importlib|spec_from_file'
 
 added=$(cd "$IDP" && git diff --name-only --diff-filter=A "$BASE...HEAD" -- 'tests/*.py' 2>/dev/null)
 [ -n "$added" ] || { echo "ok    executes  no new test file in this change"; exit 0; }
