@@ -130,12 +130,18 @@ question is: is it useful for business and engineers".
 `docs/marketing/capabilities.yaml` is the register (50 rows, five ranges). It was written by a
 sweep, once. The lane makes it a gate:
 
-1. `bin/capability-register-gate` (Python, one file): walk `sovereign/*`, `platform/*`, `mcp`,
-   `forge`, `backstage/plugins/*`, and every sibling repository named in `docs/reference/repos.yaml`
-   (create that file: one row per repository under the dev root, path relative to the dev root,
-   never absolute, LAW 46). A directory with a README or a test file and no register row fails,
-   naming the directory. A register row whose path no longer exists fails. A row with empty
-   `useful_for` older than 30 days fails until it is retired or argued.
+1. `bin/capability-register-gate` (Python, one file) runs in CI and reads two planes and
+   nothing else: the GitHub organisation (`gh api /user/repos` and each repository's tree, for
+   README and test files) and the cluster inventory the daily estate-inventory workflow already
+   writes. It never reads a laptop path; the dev root, `~/dev/code`, is not a plane (founder,
+   2026-09-08 20:25Z: "an enterprise startup's inventory is depending on laptop?"). A repository
+   or a directory with a README or a test file and no register row fails, naming it. A register
+   row whose path no longer exists on GitHub fails. A row with empty `useful_for` older than 30
+   days fails until it is retired or argued. Corollary, done first: every repository under the
+   dev root is on GitHub with nothing unpushed. Counted 2026-09-08 20:26Z: crew 37 dirty files,
+   hermes-v2 223, mumchimp-medusa 20, QAlgo 8, maestro and survival-stack one unpushed commit
+   each; prospector-main, popdd-py and popdd-ts are not repository checkouts on this machine
+   and must be confirmed on GitHub before the register cites them.
 2. `docs/marketing/capabilities.md` is rendered from the yaml by the gate (`--render`), the way
    `bin/idp-rules render-agents-md` renders AGENTS.md; `--check` in `bin/idp-ci` refuses drift.
 3. A row in `rules.yaml` with fixtures `tests/fixtures/capability-register/{bad,good}`; LAW 32
