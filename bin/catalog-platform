@@ -72,6 +72,16 @@ SYSTEMS = {
 
 # kustomization name -> (area, plain title, one sentence)
 LAYERS = {
+    "crossplane": (
+        "delivery",
+        "Cloud control loop",
+        "Keeps the cloud resources the estate asks for looking the way the repository says they should; a change made in a provider console is put back at the next reconcile instead of surviving until someone runs a plan.",
+    ),
+    "crossplane-providers": (
+        "delivery",
+        "Cloud control loop providers",
+        "The provider packages and credentials the cloud control loop uses to talk to Oracle Cloud, kept separate so a provider can be upgraded without touching the loop itself.",
+    ),
     "flux-webhook": (
         "delivery",
         "Push-to-deploy door",

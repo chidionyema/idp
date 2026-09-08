@@ -1,0 +1,16 @@
+# Crossplane's own namespace. The chart and the provider documentation both assume
+# crossplane-system by name -- the ProviderConfig's secretRef names it, and so does every OCI IAM
+# policy statement that grants this cluster's workload identity anything. Renaming it would mean
+# rewriting a policy that lives in OpenTofu, so it keeps the name the ecosystem expects.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: crossplane-system
+  labels:
+    app.kubernetes.io/part-of: idp
+    # The provider pods run the upstream package image; `restricted` is what the estate enforces
+    # everywhere else and the packages are built to satisfy it.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
