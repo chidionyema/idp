@@ -134,6 +134,34 @@ def test_the_two_fail_closed_webhooks_in_this_estate_survive_losing_a_node():
         assert replicas >= 2, "%s webhook has %s replicas" % (name, replicas)
 
 
+def test_a_required_anti_affinity_ships_with_a_strategy_that_can_roll():
+    """The anti-affinity that spreads two replicas is the same one that can freeze the rollout.
+
+    `a-rollout-can-always-free-a-node` (crew#307), in this same policy file, refused both of
+    these the first time they were rendered: a required podAntiAffinity on hostname plus the
+    apps/v1 default strategy is a deadlock. 25% of two replicas rounds down to maxUnavailable 0,
+    so a rollout must place its surge pod on a node no replica holds -- and having no such node
+    is the entire point of the anti-affinity. The rollout sits Pending for ever while the old
+    ReplicaSet keeps answering 200, which is the shape of outage this whole change exists to
+    end, arriving through the fix for it.
+    """
+    for relpath, name in (
+        ("platform/edge/cert-manager.yaml", "cert-manager"),
+        ("platform/secrets/external-secrets.yaml", "external-secrets"),
+    ):
+        rolling = _release(relpath, name)["spec"]["values"]["webhook"]["strategy"][
+            "rollingUpdate"
+        ]
+        assert int(rolling["maxUnavailable"]) >= 1, (
+            "%s: at maxUnavailable 0 no replica steps down, so no node ever frees"
+            % name
+        )
+        assert int(rolling["maxSurge"]) == 0, (
+            "%s: a surge pod needs a node the anti-affinity promises does not exist"
+            % name
+        )
+
+
 def test_the_anti_affinity_selector_does_not_rest_on_the_release_name():
     """`app.kubernetes.io/instance` is the Helm release name.
 
