@@ -162,6 +162,31 @@ describe('age', () => {
   }, 15_000);
 });
 
+describe("the founder's five", () => {
+  // The band shipped resolving five names the catalogue does not hold. Every lookup missed, the
+  // tile read .state off undefined, and the whole page threw -- and nothing rendered this band in
+  // a test, so a green type-check and a green suite both said it was fine. These two cases render
+  // it: one where the catalogue holds the doors, one where it does not.
+  it('shows a door the catalogue holds, and says its state', async () => {
+    const now = new Date().toISOString();
+    await render(
+      [door('founder-gods-view', 'ok 200', now), layer('backstage')],
+      kubernetes({}),
+    );
+    const tile = await screen.findByTestId('founder-founder-gods-view');
+    expect(tile).toHaveAttribute('data-state');
+    expect(tile.getAttribute('data-state')).toBeTruthy();
+  });
+
+  it('drops a door the catalogue does not hold instead of rendering it stateless', async () => {
+    await render([layer('backstage')], kubernetes({}));
+    expect(await screen.findByTestId('band-founder-five')).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('founder-founder-gods-view'),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe('EstateHome', () => {
   afterEach(() => {
     jest.useRealTimers();
