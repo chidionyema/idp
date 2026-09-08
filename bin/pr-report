@@ -6,9 +6,6 @@
 #   pr-report <number>            write reports/pr.json and run conftest; exit 1 on a deny
 #   pr-report <number> --comment  same, and post the deny lines as one PR comment
 #
-# The budget comes from estate-defaults.yaml infrastructure.monthly_cap_usd (crew#281); a
-# number typed here would be a second copy of it.
-#
 # IDP_ROOT lets the policy and the budget live in a different checkout from the pull
 # request being judged (crew#292 CP3). The reusable workflow checks the caller repo out
 # to . and idp to ./.idp, then sets IDP_ROOT=./.idp: `gh pr view` reads the caller's PR
@@ -26,7 +23,6 @@ if [ -z "$n" ]; then
 fi
 for t in gh jq conftest python3; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
 mkdir -p "$REPORTS"
-budget=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['infrastructure']['monthly_cap_usd'])" "$IDP/estate-defaults.yaml")
 # createdAt: a rule that lands today may not red a PR that was planned yesterday. `rule=optimised_plan`
 # (LAW 51) did exactly that on the morning it landed and reddened nine already-reviewed PRs across
 # two repos, so the policy compares this field against the commit that introduced the rule.
@@ -62,20 +58,8 @@ founder=$(gh repo view --json owner -q .owner.login 2>/dev/null || echo "")
 gh pr view "$n" --json comments -q --arg f "$founder" \
   '{founder: $f, approvals: [.comments[] | select(.author.login == $f) | .body | capture("(?m)^APPROVE:\\s*(?<w>\\S+)") | .w], denials: [.comments[] | select(.author.login == $f) | .body | capture("(?m)^DENY:\\s*(?<w>\\S+)") | .w]}' \
   > "$REPORTS/pr-words.json" 2>/dev/null || echo '{"founder": "", "approvals": [], "denials": []}' > "$REPORTS/pr-words.json"
-# The drills the policy may name: the catalogue on IDP_ROOT (main) and, always, the catalogue at
-# the PR head. bin/idp-pr-catalogues resolves both and carries the two incidents that shaped the
-# rule (idp#191, idp#1014); a copy it cannot fetch is skipped, and idp-drill-names treats a
-# missing file as adding nothing.
-cats=()
-while IFS= read -r c; do cats+=("$c"); done < <(
-  "$IDP/bin/idp-pr-catalogues" "$n" "$IDP" "$REPORTS/pr-catalogue.yaml"
-)
-drills=$("$IDP/bin/idp-drill-names" "${cats[@]}" 2>/dev/null || echo '[]')
-# ADR 0009 (crew#562): the scored decisions a PR may cite with `Matrix: <slug>`; the rule
-# matrix_cited also accepts a slug the PR itself adds to the matrix.
-matrix=$(python3 "$IDP/bin/matrix-gate" --slugs 2>/dev/null || echo '[]')
-jq -n --slurpfile m "$REPORTS/pr-meta.json" --slurpfile w "$REPORTS/pr-words.json" --rawfile a "$REPORTS/pr-added.txt" --rawfile z "$REPORTS/pr-zone.txt" --argjson b "$budget" --argjson d "$drills" --argjson x "$matrix" \
-  '{pr: ($m[0] + {added: $a, zone_literals: ($z | split("\n") | map(select(length > 0)))} + $w[0]), budget_monthly_usd: $b, drills: $d, matrix: $x}' > "$REPORTS/pr.json"
+jq -n --slurpfile m "$REPORTS/pr-meta.json" --slurpfile w "$REPORTS/pr-words.json" --rawfile a "$REPORTS/pr-added.txt" --rawfile z "$REPORTS/pr-zone.txt" \
+  '{pr: ($m[0] + {added: $a, zone_literals: ($z | split("\n") | map(select(length > 0)))} + $w[0])}' > "$REPORTS/pr.json"
 out=$(conftest test --parser json -p "$IDP/policy" "$REPORTS/pr.json" 2>&1); rc=$?
 if [ "$src" -eq 1 ]; then
   out=$(printf '%s\nFAIL - pr.json - main - rule=no_secret_added fix: gitleaks flagged an added line (bin/idp-pr-secrets reports/pr-added.txt); rename the field or remove the value, never allow-list it\n' "$out"); rc=1
