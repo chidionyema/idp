@@ -104,26 +104,40 @@ clickhouse:
     merges_mutations_memory_usage_to_ram_ratio: "0.3"
     # 2026-09-08: ClickHouse's own system logs default to no TTL, so on a 20Gi volume they grew to
     # 23.0 GiB and pushed the server onto its memory ceiling merging them (see the resources block
-    # above for the measurement). These keys render into config.d through the Altinity operator's
-    # slash-nested settings form, one <ttl> per system log table. trace_log is a profiler and the
-    # single worst offender at 12.67 GiB, so it keeps one day; zookeeper_log was inflated by the
-    # recreate loop and keeps one; the rest keep three, which is longer than any incident window
-    # this estate has needed and small enough that merges of them stay off the ceiling. Nothing
-    # here touches a signoz_* table -- telemetry retention is signoz-retention.yaml's job and is
-    # deliberately not changed.
-    trace_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
-    zookeeper_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
-    processors_profile_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
-    query_thread_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
-    query_views_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
+    # above for the measurement). Nothing here touches a signoz_* table -- telemetry retention is
+    # signoz-retention.yaml's job and is deliberately not changed.
+    #
+    # The retention MUST be written inside <engine>, never as a sibling <ttl>. The Altinity
+    # operator's own chi-signoz-clickhouse-common-configd already ships an <engine> for fourteen
+    # of these tables (01-clickhouse-03-query_log.xml and its neighbours), and ClickHouse refuses
+    # to start when a system table has both: exit 36, "If 'engine' is specified for system table,
+    # TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make
+    # sense. (BAD_ARGUMENTS)". The first attempt at this block used <table>/ttl keys and took the
+    # server down for two hours on 2026-09-08 -- CrashLoopBackOff, 27 restarts, no endpoints on
+    # signoz-clickhouse, which stalled the observability Kustomization on the langfuse-clickhouse-
+    # database health check, which held langfuse's two reserved cores and starved both nodes.
+    # bin/idp-clickhouse-system-log-ttl is the gate that refuses the sibling form.
+    #
+    # Each string below is the operator's own engine string with the interval shortened, so the
+    # only thing that differs from a config ClickHouse already accepts is the number of days.
+    # trace_log is a profiler and the single worst offender at 12.67 GiB, so it keeps one day;
+    # zookeeper_log was inflated by the recreate loop and keeps one; the rest keep three, which is
+    # longer than any incident window this estate has needed.
+    trace_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    zookeeper_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    processors_profile_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    query_thread_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    query_views_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    session_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    asynchronous_insert_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    blob_storage_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    part_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    query_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    metric_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    asynchronous_metric_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    # text_log is the one table the operator gives no <engine>, so the sibling form is correct
+    # there and only there.
     text_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
-    session_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
-    asynchronous_insert_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
-    blob_storage_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
-    part_log/ttl: "event_date + INTERVAL 3 DAY DELETE"
-    query_log/ttl: "event_date + INTERVAL 3 DAY DELETE"
-    metric_log/ttl: "event_date + INTERVAL 3 DAY DELETE"
-    asynchronous_metric_log/ttl: "event_date + INTERVAL 3 DAY DELETE"
   persistence:
     size: 20Gi
   zookeeper:

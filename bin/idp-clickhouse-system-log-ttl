@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""Refuse a ClickHouse system-log retention written as a sibling <ttl>.
+
+Incident 2026-09-08. platform/observability/values.yaml set thirteen Altinity
+``settings`` keys of the form ``query_log/ttl``. The clickhouse-operator's own
+ConfigMap (``chi-signoz-clickhouse-common-configd``, files
+``01-clickhouse-03-query_log.xml`` and its neighbours) already ships an
+``<engine>`` for fourteen system tables, each carrying its own ``TTL`` clause.
+ClickHouse refuses to start when a system table has both::
+
+  Code: 36. DB::Exception: If 'engine' is specified for system table, TTL
+  parameters should be specified directly inside 'engine' and 'ttl' setting
+  doesn't make sense. (BAD_ARGUMENTS)
+
+The server exited 36 on every boot: CrashLoopBackOff, 27 restarts in 122
+minutes, ``signoz-clickhouse`` with no endpoints. That stalled the
+``observability`` Kustomization on its ``Job/langfuse-clickhouse-database``
+health check ("connect timed out: signoz-clickhouse:9000"), which pinned
+lastApplied thirty commits back, which kept langfuse-web and langfuse-worker on
+the 1000m reservations that #2429 had already removed in git -- 2000m of 5.8
+allocatable cores. Both nodes went to 91% and 95% CPU requested, flux's own
+controllers were evicted, and every merged change stopped reaching the cluster.
+One malformed stanza, the whole estate.
+
+The rule: for a table the operator gives an ``<engine>``, retention goes inside
+that engine string (``<table>/engine``), never beside it (``<table>/ttl``).
+``text_log`` is the one table with no operator engine, so the sibling form is
+correct there and only there.
+
+Usage: idp-clickhouse-system-log-ttl            scan the repository
+       idp-clickhouse-system-log-ttl FILE...    scan the named files
+Exit 0 clean, 1 on any hit.
+"""
+import os
+import re
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# The tables chi-signoz-clickhouse-common-configd defines an <engine> for, read off
+# the live ConfigMap on 2026-09-08. text_log is deliberately absent: the operator
+# ships no engine for it, so a sibling <ttl> is the only form it has.
+ENGINE_OWNED = frozenset({
+    "query_log", "part_log", "trace_log", "asynchronous_insert_log",
+    "asynchronous_metric_log", "backup_log", "blob_storage_log", "crash_log",
+    "metric_log", "query_thread_log", "query_views_log", "session_log",
+    "zookeeper_log", "processors_profile_log",
+})
+
+# `  query_log/ttl: "..."` -- the Altinity slash-nested settings form.
+SIBLING_TTL = re.compile(r"^\s*([a-z_]+)/ttl\s*:")
+# `<query_log>` ... `<ttl>` on a later line -- the same mistake in raw XML.
+XML_TABLE = re.compile(r"<([a-z_]+)>\s*$")
+XML_TTL = re.compile(r"<ttl>")
+XML_CLOSE = re.compile(r"</([a-z_]+)>")
+
+
+def scan(path):
+    """Yield (line number, table, line) for every sibling-<ttl> retention."""
+    try:
+        lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+    except OSError:
+        return
+    open_table = None
+    for n, line in enumerate(lines, 1):
+        if line.lstrip().startswith("#"):
+            continue
+        m = SIBLING_TTL.match(line)
+        if m and m.group(1) in ENGINE_OWNED:
+            yield n, m.group(1), line.strip()
+            continue
+        closing = XML_CLOSE.search(line)
+        if closing and closing.group(1) == open_table:
+            open_table = None
+        opening = XML_TABLE.search(line)
+        if opening and opening.group(1) in ENGINE_OWNED:
+            open_table = opening.group(1)
+        elif open_table and XML_TTL.search(line):
+            yield n, open_table, line.strip()
+            open_table = None
+
+
+def targets(argv):
+    if argv:
+        return argv
+    # tests/fixtures is skipped on a repository walk: the refusing fixture is meant to
+    # contain the break, and the registry grades it by naming it as an argument.
+    skip = os.path.join(ROOT, "tests", "fixtures")
+    found = []
+    for base, dirs, files in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d not in (".git", "node_modules", ".venv")]
+        if base.startswith(skip):
+            continue
+        for f in files:
+            if f.endswith((".yaml", ".yml", ".xml")):
+                found.append(os.path.join(base, f))
+    return found
+
+
+def main(argv):
+    hits = []
+    for path in targets(argv):
+        for n, table, line in scan(path):
+            hits.append((os.path.relpath(path, ROOT), n, table, line))
+    for path, n, table, line in hits:
+        print(f"{path}:{n}: system table `{table}` has an operator <engine>; "
+              f"put the TTL inside `{table}/engine`, not beside it -- {line}")
+    if hits:
+        print(f"\n{len(hits)} sibling-<ttl> retention(s). ClickHouse exits 36 on boot with "
+              "\"If 'engine' is specified for system table, TTL parameters should be "
+              "specified directly inside 'engine'\". Incident 2026-09-08.")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -923,3 +923,32 @@ rules:
     fail: >-
       a workflow calls one that is not in the tree (GitHub fails that run at startup with no job
       and no log), or a workflow is disabled in settings with no line in the tree saying why
+
+  - id: clickhouse-system-log-ttl
+    label: clickhouse-system-log-ttl
+    fast: true
+    statement: >-
+      A ClickHouse system table the operator gives an <engine> carries its retention inside that
+      engine string, never as a sibling <ttl>; ClickHouse exits 36 on boot when both are present
+    law: "incident 2026-09-08, signoz-clickhouse CrashLoopBackOff"
+    origin: >-
+      One malformed stanza took the estate down: the server exited 36 on every boot, so
+      signoz-clickhouse had no endpoints, so the observability Kustomization hung on its
+      Job/langfuse-clickhouse-database health check, so lastApplied stayed thirty commits back,
+      so langfuse kept the two reserved cores #2429 had already removed in git -- and both nodes
+      went to 91% and 95% CPU requested, evicting flux's own controllers.
+    planes: [ci, session]
+    session_glob: ['platform/**/*.yaml', 'platform/**/*.yml']
+    run: [python3, bin/idp-clickhouse-system-log-ttl]
+    cluster: {policy: null, why: "the break is in the chart values; admission never sees the rendered config.d XML"}
+    fixtures:
+      must_fail: tests/fixtures/clickhouse-system-log-ttl/bad.yaml
+      must_pass: tests/fixtures/clickhouse-system-log-ttl/good.yaml
+    cases:
+      - {expect: refuse, args: [tests/fixtures/clickhouse-system-log-ttl/bad.yaml]}
+      - {expect: pass, args: [tests/fixtures/clickhouse-system-log-ttl/good.yaml]}
+      - {expect: pass, live: true, note: "this repository's own platform manifests"}
+    ok: "every ClickHouse system-log retention is inside its engine string"
+    fail: >-
+      a system table the Altinity operator ships an <engine> for also has a sibling <ttl>, which
+      ClickHouse refuses at startup with BAD_ARGUMENTS and exit 36
