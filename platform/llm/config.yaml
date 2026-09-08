@@ -182,7 +182,7 @@ router_settings:
     # sits in this chain: a hop that always refuses is latency, not redundancy. That sentence
     # now applies to Gemini itself, so it moved to the back -- see the measurement on the
     # gemini block below.
-    - deepseek: [minimax, gemini]
+    - deepseek: [gemini, minimax]
 
     # Measured from inside the router pod 2026-09-04 21:5xZ: MiniMax answers 401 `invalid api
     # key (2049)` on https://api.minimax.io/v1/chat/completions (request id
@@ -202,7 +202,13 @@ router_settings:
     # a cooldown and can never answer, which is the founder's "we wait for a nodel to finish
     # and then swtich whih fails all the tine" (2026-09-08) in its purest form. So the chain
     # is minimax -> deepseek and stops: two vendors, both answering, no dead hop.
-    - minimax: [deepseek]
+    # 2026-09-08, the founder's cost mandate. Every chain on main ended in `deepseek`,
+    # an account at $0 that has answered 401 since 2026-09-04, so the last hop of every
+    # fallback was a guaranteed refusal and there was nothing free underneath it. This
+    # file already says twice that a hop which always refuses is latency, not redundancy;
+    # here that is applied. deepseek stays a chain HEAD, so the lane rejoins the moment
+    # the founder adds its key in the LiteLLM console -- no pull request, no session.
+    - minimax: [gemini]
 
     # Gemini stopped heading any chain on 2026-09-08. Measured over the two hours to
     # 10:45Z on both live router pods (24,955 log lines): gemini/gemini-2.5-flash
@@ -228,9 +234,9 @@ router_settings:
     # `default` and `fast` are themselves Gemini rows (gemini-2.5-pro and -2.5-flash), so
     # naming gemini in their own fallback lists was a hop back to the model that had just
     # failed. Those entries are gone rather than reordered.
-    - gemini: [minimax, deepseek]
-    - default: [minimax, deepseek]
-    - fast: [minimax, deepseek]
+    - gemini: [minimax]
+    - default: [gemini, minimax]
+    - fast: [gemini, minimax]
 
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
   # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored
