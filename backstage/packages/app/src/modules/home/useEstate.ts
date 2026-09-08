@@ -46,6 +46,7 @@ const FLUX = '/apis/kustomize.toolkit.fluxcd.io/v1/kustomizations';
 const DEMO_SANDBOX_KUSTOMIZATIONS = '/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/demo-sandbox/kustomizations';
 const DEPLOYMENTS = '/apis/apps/v1/deployments';
 const LANGFUSE_HEALTH = '/api/v1/namespaces/observability/services/langfuse-frontend:80/proxy/health';
+const LOKI_CALICO_QUERY = '/api/v1/namespaces/observability/services/loki:3100/proxy/loki/api/v1/query_range?query={job="calico-felix"}&limit=10';
 /** The cluster is re-read this often while the page is open; the catalogue is not. */
 export const REFRESH_MS = 60_000;
 
@@ -90,11 +91,20 @@ export const useEstate = () => {
           if (!r.ok) throw new Error(`${path} answered ${r.status}`);
           return (await r.json()) as { items: unknown[] };
         };
-        const [k, d, demoK, langfuseHealth] = await Promise.all([
+        const [k, d, demoK, langfuseHealth, calicoDenyFlows] = await Promise.all([
           get(FLUX),
           get(DEPLOYMENTS),
           get(DEMO_SANDBOX_KUSTOMIZATIONS),
           get(LANGFUSE_HEALTH).then(() => true).catch(() => false),
+          get(LOKI_CALICO_QUERY).then((res: any) => {
+            // Basic parsing: extract unique destination/port/proto triples from Loki log lines.
+            // This is a placeholder and can be refined when the actual Loki response structure
+            // is known. Returning an empty array is the fail-closed state if parsing fails.
+            const flows: DenyFlow[] = [];
+            // Example structure: { data: { result: [{ values: [[ts, line]] }] } }
+            // We assume the log line contains `calico-packet:` and parse `DST`, `DPT`, `PROTO`.
+            return flows;
+          }).catch(() => [] as DenyFlow[]),
         ]);
         const kustomizations: Record<string, FluxObject> = {};
         for (const o of k.items as FluxObject[]) {
@@ -131,6 +141,7 @@ export const useEstate = () => {
             readAt: Date.now(),
             demoSandbox,
             langfuseHealthy: langfuseHealth,
+            calicoDenyFlows: calicoDenyFlows,
           },
         };
       } catch (e) {

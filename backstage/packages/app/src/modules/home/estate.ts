@@ -77,6 +77,13 @@ export type DeploymentObject = {
   status?: { readyReplicas?: number; replicas?: number };
 };
 
+export type DenyFlow = {
+  dst: string;
+  dp: string;
+  proto: string;
+  srcs: string[];
+};
+
 /** Live state per layer, keyed by Kustomization name. `undefined` means the cluster was not read. */
 export type Live =
   | {
@@ -84,6 +91,7 @@ export type Live =
       deployments: DeploymentObject[];
       readAt: number;
       langfuseHealthy: boolean;
+      calicoDenyFlows: DenyFlow[];
     }
   | undefined;
 
