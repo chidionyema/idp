@@ -1,0 +1,22 @@
+# The consumer reads at boot, so the roll on every mint is the rotation mechanism, said in a sentence.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: minted-declared
+  namespace: cyrus
+  annotations:
+    idp.platform/reload-on-mint: >-
+      the gateway reads the mounted env file at boot, so the roll every 45m is how a fresh
+      installation token reaches it before its 60m expiry
+spec:
+  refreshInterval: 45m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: minted-declared
+    creationPolicy: Owner
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: GithubAccessToken
+          name: minted-declared

@@ -1,0 +1,18 @@
+# Minted once, never re-minted: no timer, nothing to roll on, not matched.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: minted-once
+  namespace: cyrus
+spec:
+  refreshInterval: 0
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: minted-once
+    creationPolicy: Owner
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: GithubAccessToken
+          name: minted-once

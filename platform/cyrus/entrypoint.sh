@@ -38,6 +38,17 @@ chmod 0700 "$ASKPASS"
 export GIT_ASKPASS="$ASKPASS"
 export GIT_TERMINAL_PROMPT=0
 
+# gh takes the same road. GH_TOKEN outranks GITHUB_TOKEN inside gh, so a wrapper first on PATH
+# reads the file on every call and the boot-time export above only serves code that reads the
+# variable once. Without this a pod that now lives for days (Reloader no longer rolls it on
+# every mint, see external-secret.yaml) would hand gh an installation token that expired an
+# hour after boot.
+GH_WRAP=${TMPDIR:-/tmp}/cyrus-bin
+mkdir -p "$GH_WRAP"
+printf '#!/bin/sh\nGH_TOKEN=$(cat %s) exec %s "$@"\n' "$GH_TOKEN_PATH" "$(command -v gh)" >"$GH_WRAP/gh"
+chmod 0700 "$GH_WRAP/gh"
+export PATH="$GH_WRAP:$PATH"
+
 # Without a username git asks for that first and the helper answers it with the token,
 # which fails as a 403 that reads like a permissions problem rather than a protocol one.
 git config --global credential."https://github.com".username x-access-token
