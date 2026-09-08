@@ -1,0 +1,4 @@
+# The must-fail half of a pair whose ONLY claimant spells its path a segment at a time.
+# If bin/idp-rule-coverage ever stops collapsing the quote-slash-quote joint, this pair goes
+# unclaimed and the good fixture starts failing -- which is the point of it being here.
+graded: false

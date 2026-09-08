@@ -45,6 +45,17 @@ def claimants(root: pathlib.Path) -> dict[str, set[str]]:
     claimants rather than a bare set means the verdict can say who grades what.
     """
     pat = re.compile(r"(?:tests|policy)/fixtures/[\w./-]+")
+    # A path built a segment at a time is still a name. `ROOT / "tests" / "fixtures" / "x.json"`
+    # is how a third of this repo's tests reach their fixture, and to a plain textual scan it
+    # reads as no claim at all -- so a fixture graded ONLY that way was reported ungraded. Four
+    # such tests exist today and every one of them was invisible here; they passed only because
+    # something else happened to name the same fixture literally. That is a trap that fires on
+    # whoever writes the next one (chidionyema/idp#2559 was the one it fired on).
+    #
+    # Collapsing the quote-slash-quote joint turns the segment form back into the flat form
+    # before the scan, so both spellings mean the same thing to this gate. It is done on a copy
+    # of the text and nothing else changes: the question stays "does anything name it".
+    joint = re.compile(r"""["']\s*/\s*["']""")
     out: dict[str, set[str]] = {}
     for f in root.rglob("*"):
         if not f.is_file() or ".git/" in str(f):
@@ -58,7 +69,7 @@ def claimants(root: pathlib.Path) -> dict[str, set[str]]:
             text = f.read_text(errors="ignore")
         except OSError:
             continue
-        for m in pat.findall(text):
+        for m in pat.findall(joint.sub("/", text)):
             out.setdefault(m, set()).add(rel)
     return out
 
