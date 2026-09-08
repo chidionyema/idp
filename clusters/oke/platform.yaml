@@ -1582,6 +1582,20 @@ spec:
   prune: true
   wait: true
   timeout: 5m
+  # public-door.yaml routes `otto.${ESTATE_ZONE}`, and the zone is one value in
+  # clusters/*/estate-config.yaml (R46) that only Flux's variable substitution can fill in. This
+  # row declared none, so Flux handed the API the literal and the API refused it:
+  #
+  #   HTTPRoute/jit/jit-broker dry-run failed (Invalid): spec.hostnames[0]:
+  #   Invalid value: "otto.${ESTATE_ZONE}"
+  #
+  # A Kustomization whose dry-run fails applies nothing, so the broker's whole deck stopped at
+  # #2487 -- lastAppliedRevision stuck on 8e326927 and `get httproute -n jit` empty for three
+  # weeks. The public door has never once been up. Same block the `platform` row carries.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
 ---
 # NodeSoftwareOperator (crew#892 CP4 next phase, goal b9217bea option c):
 # the controller that owns every node-level software install on the estate
