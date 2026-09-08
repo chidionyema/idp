@@ -1,6 +1,15 @@
 {
- "receipts": [],
- "taken": "2026-09-07T14:03Z",
+ "receipts": [
+  {
+   "merged_at": "2026-09-07T17:25:33Z",
+   "number": 2327,
+   "repo": "chidionyema/idp",
+   "title": "Custom entity extensions plugin: direct actions + thoughtful overviews",
+   "url": "https://github.com/chidionyema/idp/pull/2327",
+   "use": "r / Group / Domain entity kinds still fall through to the generic fallback."
+  }
+ ],
+ "taken": "2026-09-08T02:05Z",
  "waiting": [
   {
    "cp": "CP1",
