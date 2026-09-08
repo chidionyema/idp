@@ -474,6 +474,16 @@ flows:
     # ipBlock names it. Omit this and the webhook is unreachable; a fail-closed one then
     # refuses every write to the cluster (found live 2026-09-08, kyverno, Flux 0/80).
     ingress_apiserver: [10250]
+    # And the controller calls OUT, which is the half that was still missing on 2026-09-08.
+    # ClusterSecretStore/estate-vault authenticates as InstancePrincipal: the pod reads a
+    # short-lived certificate from the instance-metadata service at 169.254.169.254, then signs
+    # its calls to OCI's secrets endpoint over the public internet. Default-deny egress allowed
+    # neither, and the store reported `unable to create client / InvalidProviderConfig` -- which
+    # names nothing about a network. Every ExternalSecret in the estate then failed with
+    # `ClusterSecretStore "estate-vault" is not ready`, and the 29 Flux rows waiting on
+    # secret-store waited forever.
+    egress_internet: [443]
+    egress_metadata: true
   spire-mgmt:
     # Serves an admission webhook, so the control plane calls IN. It is outside the pod
     # network and outside every namespace selector, so default-deny drops it and only an
