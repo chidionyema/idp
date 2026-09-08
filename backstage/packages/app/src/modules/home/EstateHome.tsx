@@ -87,12 +87,20 @@ interface FounderDoor {
   meaning: string;
 }
 
+// An Entity is apiVersion + kind + metadata; a literal carrying metadata alone does not
+// type-check, and the five doors are ordinary catalogue Components like any other.
+const door = (name: string, title: string): Entity => ({
+  apiVersion: 'backstage.io/v1alpha1',
+  kind: 'Component',
+  metadata: { name, title },
+});
+
 const founderDoors: FounderDoor[] = [
-  { entity: { metadata: { name: 'doors', title: 'Doors' } }, meaning: 'Which doors are open or closed right now' },
-  { entity: { metadata: { name: 'health', title: 'Health' } }, meaning: 'What is failing or needs attention' },
-  { entity: { metadata: { name: 'state', title: 'State' } }, meaning: 'Is the estate receipt live or stale' },
-  { entity: { metadata: { name: 'reports', title: 'Reports' } }, meaning: 'What shipped and what did not' },
-  { entity: { metadata: { name: 'secrets', title: 'Secrets' } }, meaning: 'Vault secrets ages and rotations' },
+  { entity: door('doors', 'Doors'), meaning: 'Which doors are open or closed right now' },
+  { entity: door('health', 'Health'), meaning: 'What is failing or needs attention' },
+  { entity: door('state', 'State'), meaning: 'Is the estate receipt live or stale' },
+  { entity: door('reports', 'Reports'), meaning: 'What shipped and what did not' },
+  { entity: door('secrets', 'Secrets'), meaning: 'Vault secrets ages and rotations' },
 ];
 
 const useStyles = makeStyles(theme => ({
@@ -1143,7 +1151,7 @@ const Ready = ({ estate }: { estate: Estate }) => {
                  <span className={classes.counterIcon}>
                    <StateIcon state={s.state} />
                  </span>
-                 <span className={classes.n}>{s.count}</span>
+                 <span className={classes.n}>{d.entity.metadata.title}</span>
                  <span className={classes.meaning}>{d.meaning}</span>
                </button>
              );
