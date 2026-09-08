@@ -108,7 +108,65 @@ rules:
       - monitoring.coreos.com
       - temporal.io
       - spiffe.io
+      # Added 2026-09-08. The 15 groups above were a hand-kept list that had gone stale by 23 of
+      # the 36 custom resource groups this cluster actually serves -- among them the gateway, the
+      # estate's Postgres, the estate's ClickHouse, and Kyverno's own policies. It was found the
+      # way that list always gets found: an agent diagnosing SigNoz's ClickHouse recreate loop
+      # (idp#2425) could read the operator's log and the ConfigMap it rewrote, but not the
+      # ClickHouseInstallation those were about, so it reasoned around the object rather than
+      # reading it. That is precisely what the header of this file warns against -- "an agent that
+      # cannot read is an agent that guesses". The gap was closed in one pass against the live CRD
+      # list rather than one group at a time, and the two groups deliberately left out are written
+      # down in unreadable-groups.yaml beside this file, with the reason, so silence is never the
+      # record.
+      - clickhouse.altinity.com
+      - postgresql.cnpg.io
+      - kyverno.io
+      - policies.kyverno.io
+      - reports.kyverno.io
+      - wgpolicyk8s.io
+      - traefik.io
+      - gateway.networking.x-k8s.io
+      - policy.networking.k8s.io
+      - cilium.io
+      - keda.sh
+      - eventing.keda.sh
+      - http.keda.sh
+      - spire.spiffe.io
+      - tailscale.com
+      - chaos-mesh.org
+      - core.k8sgpt.ai
+      - holmesgpt.dev
+      - externaldns.k8s.io
+      - nodesoftware.estate.io
+      # The Crossplane provider's own API group is deliberately NOT in this list. R36 and
+      # bin/cloud-agnostic-gate: the read floor every agent stands on is the one place a
+      # provider name must never appear, or the floor itself only fits one cloud. The
+      # provider's claims are read through platform/oci, which is the exempt path because it
+      # IS the provisioner. Measured 2026-09-08: with the group listed here the gate reported
+      # `platform/rbac-floor/agent-reader.yaml:142: - oci.oraclecloud.com` and failed both
+      # offline-gate and bdd-suites (acceptance) on this pull request.
     resources: ["*"]
+    verbs: [get, list, watch]
+  # Trivy's reports, named one by one rather than with a wildcard, because one kind in this group
+  # is different in nature from the rest: an ExposedSecretReport carries the matched secret string
+  # itself, so a wildcard here would put secret values behind a read grant, which LAW 21 forbids
+  # anywhere they can be read again. platform/trivy/trivy.yaml:53 sets
+  # `exposedSecretScannerEnabled: false`, so none exist today -- the exclusion is what keeps that
+  # true if the scanner is ever turned on, rather than the grant quietly widening with it.
+  - apiGroups: [aquasecurity.github.io]
+    resources:
+      - vulnerabilityreports
+      - clustervulnerabilityreports
+      - configauditreports
+      - clusterconfigauditreports
+      - infraassessmentreports
+      - clusterinfraassessmentreports
+      - rbacassessmentreports
+      - clusterrbacassessmentreports
+      - clustercompliancereports
+      - sbomreports
+      - clustersbomreports
     verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
