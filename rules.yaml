@@ -676,16 +676,25 @@ rules:
     run:
     - kyverno
     - test
-    - tests/fixtures/reloader
     fixtures:
-      must_fail: tests/fixtures/reloader/operator-owned.yaml
-      must_pass: tests/fixtures/reloader/estate-owned.yaml
+      must_fail: tests/fixtures/reloader-blind
+      must_pass: tests/fixtures/reloader
     cases:
+    - expect: refuse
+      args:
+      - tests/fixtures/reloader-blind
+      note: >-
+        the real policy against an expectation that says the loop was never broken, so kyverno
+        test must fail. Perturbing the expectation rather than the rule's existence is
+        deliberate: an expectation naming a rule kyverno cannot find is scored Pass/Excluded and
+        the patched output is never compared, so deleting the rule proves nothing (2026-09-08).
     - expect: pass
+      args:
+      - tests/fixtures/reloader
       tail_of: true
     ok: 'reloader operator-owned: {tail}'
     ok_fallback: an operator-owned workload has Reloader turned off; an estate-owned one keeps it
-    fail: kyverno test tests/fixtures/reloader
+    fail: kyverno test tests/fixtures/reloader (and tests/fixtures/reloader-blind, which must fail)
   - id: one-scheduler
     label: sched
     statement: >-
