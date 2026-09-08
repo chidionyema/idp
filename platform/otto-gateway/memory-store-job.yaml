@@ -34,12 +34,32 @@
 # as the spec change below (a Job's pod template is immutable too, so Flux could not
 # have applied the embedding variables to -1 even if it had succeeded).
 #
+# -5 ran at 23:48Z on 2026-09-07 and failed four times. Its own pod log, in full:
+#
+#   already up to date
+#   read=1 written=0 already_present=0 empty=0 failed=0
+#   ERROR:__main__:the embedding lane refused b4cecf6a-eeb6-4f82-9ce8-51eb61741974:
+#     embedding call to the estate router failed: URLError
+#
+# The migration half was fine; the backfill stopped on its first embedding refusal,
+# which is what otto/memory/backfill.py is written to do -- a fact written without its
+# vector is skipped as already-present by every later run, so the gap would be
+# permanent and silent. The refusal was real: the `embed` lane was answering 404 at
+# the time. It is not any more. Measured from the router pod on 2026-09-08, the same
+# lane, repeatedly:
+#
+#   09:22:33 - LiteLLM Router: litellm.aembedding(model=gemini/gemini-embedding-001) 200 OK
+#   INFO:     "POST /embeddings HTTP/1.1" 200 OK
+#
+# So the rename to -6 is the re-run against a lane that now answers, and nothing else
+# about this Job changes.
+#
 # If this never runs, nothing breaks: the read path finds no store, returns nothing,
 # and the lane answers exactly as it did before while hindsight keeps every write.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: otto-memory-store-5
+  name: otto-memory-store-6
   namespace: otto-gateway
   labels:
     app.kubernetes.io/name: otto-memory-store
