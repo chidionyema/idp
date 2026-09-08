@@ -165,7 +165,13 @@ spec:
           kubernetes.io/metadata.name: crossplane-system
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: cyrus
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: dagster
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: default
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: demo-sandbox
@@ -181,6 +187,9 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: external-secrets
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: flux-system
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: guacamole
@@ -204,7 +213,19 @@ spec:
           kubernetes.io/metadata.name: infra-crew
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: jit
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: keda
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-node-lease
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-public
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: kyverno
