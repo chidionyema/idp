@@ -10,6 +10,14 @@
 #
 # There is no wildcard and no default: a surface nobody named is BLIND (exit 2), never green.
 waivers:
+  - surface: jit/jit-broker
+    reason: >-
+      The break-glass broker keeps its ledger on one RWO claim, so a second replica is not a
+      second broker -- it is a second writer against a volume only one pod can mount, and it
+      never starts. HA here is the ledger moving off the PVC, not a replica count. Recorded
+      rather than passed: the tool you reach for during an outage does not currently survive
+      one.
+    issue: chidionyema/idp#2492
   - surface: observability/signoz
     reason: >-
       SigNoz stands on one ClickHouse; two replicas against a single database moves the single

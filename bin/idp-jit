@@ -32,6 +32,7 @@ those apart without parsing English.
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import shutil
@@ -45,6 +46,9 @@ IN_CLUSTER = "http://jit-broker.jit.svc.cluster.local:8080"
 # The hostname platform/jit/deployment.yaml gives the broker's tailnet device
 # (`tailscale.com/hostname`). The two must agree or the lookup below finds nothing.
 TAILNET_HOSTNAME = "jit-broker"
+# What the edge puts in front of every path on the public door, and what serve.py strips back
+# off. One value, here and in platform/jit/public-door.yaml; the test grades that they agree.
+PUBLIC_PREFIX = "/jit"
 # Every parameter any grant in platform/jit/grants.yaml declares, so the agent can write
 # --namespace rather than --param namespace=. WJ.15 added the three layers below Kubernetes,
 # and their parameters are here for the same reason.
@@ -80,6 +84,45 @@ def _tailnet_door() -> str | None:
     return None
 
 
+def _estate_zone() -> str | None:
+    """The estate's DNS zone, read from the one place it is written.
+
+    LAW 46: a literal here would name this estate's machine facts in a file, and
+    `bin/estate-zone-gate` refuses exactly that. ESTATE_ZONE first, because an agent on a
+    cloud runner has no checkout of this repository and the environment is all it has; then
+    clusters/*/estate-config.yaml, which is where the value actually lives.
+    """
+    from_env = os.environ.get("ESTATE_ZONE")
+    if from_env:
+        return from_env.strip() or None
+    root = os.environ.get("IDP_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for name in sorted(glob.glob(os.path.join(root, "clusters", "*", "estate-config.yaml"))):
+        try:
+            with open(name) as fh:
+                for line in fh:
+                    key, _, value = line.strip().partition(":")
+                    if key == "ESTATE_ZONE" and value.strip():
+                        return value.strip()
+        except OSError:
+            continue
+    return None
+
+
+def _public_door() -> str | None:
+    """The broker's address from anywhere, over the estate's own front door.
+
+    The shared Gateway listener carries one hostname, `otto.${ESTATE_ZONE}`, and this broker
+    does not get one of its own -- so the route is a path prefix on that host and the broker
+    strips it (platform/jit/public-door.yaml, and Handler.public_prefix in serve.py). Last of
+    the three doors on purpose: in-cluster and tailnet both stay inside the estate, and this
+    one crosses the public internet to reach the same port. What makes crossing it acceptable
+    is that every door behind it takes the agent key, so a stranger who finds the URL gets a
+    401 and learns nothing -- not which grants exist, not whether a request id is real.
+    """
+    zone = _estate_zone()
+    return f"https://otto.{zone}{PUBLIC_PREFIX}" if zone else None
+
+
 def _doors() -> list[str]:
     """Every address the broker might answer on, nearest first.
 
@@ -99,10 +142,17 @@ def _doors() -> list[str]:
     named = os.environ.get("JIT_BROKER_URL")
     if named:
         return [named]
-    return [IN_CLUSTER] + [d for d in (_tailnet_door(),) if d]
+    return [IN_CLUSTER] + [d for d in (_tailnet_door(), _public_door()) if d]
 
 
 def _post(path: str, body: dict, headers: dict | None = None) -> tuple[int, dict]:
+    # Every door the broker answers takes the agent key -- ask, state, grants and identity --
+    # so it is attached here rather than at four call sites, and a caller that named its own
+    # Authorization header still wins. A device with no key sends none and is refused, which
+    # is what a device with no key should be.
+    key = _agent_key()
+    if key and not (headers or {}).get("Authorization"):
+        headers = {"Authorization": f"Bearer {key}", **(headers or {})}
     tried = []
     for door in _doors():
         req = urllib.request.Request(door + path, data=json.dumps(body).encode(),  # noqa: S310 -- an http URL from the environment or the local tailscale daemon

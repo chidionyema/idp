@@ -103,6 +103,12 @@ spec:
             - {name: JIT_GRANTS, value: /etc/jit/grants.yaml}
             - {name: JIT_LEDGER, value: /var/lib/jit/ledger.jsonl}
             - {name: JIT_KILLSWITCH, value: /var/lib/jit/stopped}
+            # What the edge puts in front of every path on the public door, and what the
+            # broker strips back off (platform/jit/public-door.yaml). One value, two files,
+            # and the test grades that they agree: a prefix set here and not routed there is
+            # a door that answers 404, and routed there and not set here is a 404 the other
+            # way round.
+            - {name: JIT_PUBLIC_PREFIX, value: /jit}
             # The four secret values are NOT here. A secret in an env var is printed by every
             # crash dump, `kubectl describe pod`, and any library that logs its environment on
             # start -- which is why kyverno's secrets-not-from-env-vars refuses it. They arrive
