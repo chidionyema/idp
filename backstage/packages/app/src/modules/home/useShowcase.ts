@@ -12,9 +12,11 @@ import {
   Ability,
   Bar,
   OTTO_INVENTORY_FILE,
+  ProgressionRow,
   SHOWCASE_FILE,
   parseAbilities,
   parseBar,
+  parseProgression,
 } from './showcaseDocs';
 import { REFRESH_MS } from './useEstate';
 
@@ -26,6 +28,8 @@ export type LoadedShowcase =
       barError?: string;
       abilities: Ability[];
       abilitiesError?: string;
+      progression: ProgressionRow[];
+      progressionError?: string;
     };
 
 export const useShowcase = () => {
@@ -46,7 +50,14 @@ export const useShowcase = () => {
         base = await discoveryApi.getBaseUrl('proxy');
       } catch (e) {
         const error = String((e as Error)?.message ?? e);
-        return { state: 'ready', barError: error, abilities: [], abilitiesError: error };
+        return {
+          state: 'ready',
+          barError: error,
+          abilities: [],
+          abilitiesError: error,
+          progression: [],
+          progressionError: error,
+        };
       }
       const [bar, otto] = await Promise.allSettled([
         text(base, SHOWCASE_FILE),
@@ -55,6 +66,7 @@ export const useShowcase = () => {
       const why = (r: PromiseRejectedResult) =>
         String((r.reason as Error)?.message ?? r.reason);
       const parsedBar = bar.status === 'fulfilled' ? parseBar(bar.value) : undefined;
+      const ottoText = otto.status === 'fulfilled' ? otto.value : '';
       return {
         state: 'ready',
         bar: parsedBar,
@@ -64,8 +76,10 @@ export const useShowcase = () => {
             : parsedBar
             ? undefined
             : `${SHOWCASE_FILE} carries no bar`,
-        abilities: otto.status === 'fulfilled' ? parseAbilities(otto.value) : [],
+        abilities: otto.status === 'fulfilled' ? parseAbilities(ottoText) : [],
         abilitiesError: otto.status === 'rejected' ? why(otto) : undefined,
+        progression: otto.status === 'fulfilled' ? parseProgression(ottoText) : [],
+        progressionError: otto.status === 'rejected' ? why(otto) : undefined,
       };
     };
     const tick = async () => {
