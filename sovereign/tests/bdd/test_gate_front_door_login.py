@@ -1,6 +1,7 @@
 """Binds features/gates/front-door-login.feature (ADR 0007, crew#269, crew#297). The step parses every
 YAML document under platform/ for real: no user database, no Authelia, oauth2-proxy in front of every route."""
 
+import ast
 import re
 from pathlib import Path
 
@@ -387,6 +388,70 @@ def _oauth2_proxy_in_front(state: dict) -> None:
             es = (p.parent / "external-secret.yaml").read_text()
             assert "webhook-secret" in es or "webhook_secret" in es, (
                 f"{p}: annotated webhook-hmac-signature but external-secret.yaml pulls no signing secret"
+            )
+            continue
+        if auth == "jit-agent-key":
+            # The break-glass broker (WJ.2). An agent on somebody else's cloud runner has no
+            # estate login and no browser, so oauth2-proxy is not a door it can walk through;
+            # and this is not LiteLLM, so there is no config.yaml with a master_key in it. The
+            # credential is the estate's agent key, checked in the broker's own handler.
+            #
+            # The annotation is still only a label, so what is graded is the code behind it:
+            # every path this route carries must be one the handler refuses without that key,
+            # and the handler must actually make the check rather than merely list the paths.
+            # A path added to the route and not to AGENT_DOORS is a door on the public
+            # internet with nothing in front of it, which is the whole failure this branch
+            # exists to make impossible.
+            serve = (PLATFORM / "jit" / "broker" / "serve.py").read_text()
+            tree = ast.parse(serve)
+            doors = set()
+            for node in ast.walk(tree):
+                targets = (
+                    [node.target]
+                    if isinstance(node, ast.AnnAssign)
+                    else getattr(node, "targets", [])
+                )
+                if (
+                    any(
+                        isinstance(t, ast.Name) and t.id == "AGENT_DOORS"
+                        for t in targets
+                    )
+                    and node.value is not None
+                ):
+                    doors = set(ast.literal_eval(node.value))
+            assert doors, (
+                f"{p}: annotated jit-agent-key but serve.py names no AGENT_DOORS"
+            )
+            assert "self.broker.authenticate(" in serve, (
+                f"{p}: annotated jit-agent-key but serve.py never calls broker.authenticate"
+            )
+            prefix = next(
+                (
+                    e["value"]
+                    for d2 in yaml.safe_load_all(
+                        (PLATFORM / "jit" / "deployment.yaml").read_text()
+                    )
+                    if d2 and d2.get("kind") == "Deployment"
+                    for c in d2["spec"]["template"]["spec"]["containers"]
+                    for e in c.get("env") or []
+                    if e.get("name") == "JIT_PUBLIC_PREFIX"
+                ),
+                "",
+            )
+            assert prefix, (
+                f"{p}: annotated jit-agent-key but the broker strips no prefix"
+            )
+            carried = [
+                m.get("path", {}).get("value", "")
+                for r in d["spec"]["rules"]
+                for m in r.get("matches", [])
+            ]
+            assert carried, f"{p}: jit-agent-key route carries no path"
+            behind_the_key = [c[len(prefix) :] for c in carried if c.startswith(prefix)]
+            assert (
+                len(behind_the_key) == len(carried) and set(behind_the_key) <= doors
+            ), (
+                f"{p}: route carries {carried}, which is not {sorted(doors)} under {prefix}"
             )
             continue
         if auth == "public-demo-page":
