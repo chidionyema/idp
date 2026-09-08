@@ -144,8 +144,32 @@ spec:
               spec:
                 template:
                   spec:
+                    # Secrets arrive as files, never env (Kyverno secrets-not-from-env-vars forbids the
+                    # chart's existingSecret -> envFrom). The api needs the router key and the
+                    # in-cluster router URL, both of which hindsight reads from env, so a sh wrapper
+                    # exports them from the mounted files before exec'ing the image's own start-all.sh.
+                    # The router is called in-cluster (http://litellm.llm.svc...), not over the public
+                    # https://llm.mumchimp.com that a fenced pod cannot reach and which crash-looped
+                    # hindsight on "LLM API did not become healthy within 300s".
+                    volumes:
+                      - name: secrets
+                        secret:
+                          secretName: hindsight-env
                     containers:
                       - name: api
+                        envFrom: []
+                        volumeMounts:
+                          - name: secrets
+                            mountPath: /run/secrets/hindsight
+                            readOnly: true
+                        command:
+                          - /bin/sh
+                          - -c
+                          - |
+                            set -eu
+                            export HINDSIGHT_API_LLM_API_KEY="$(cat /run/secrets/hindsight/HINDSIGHT_API_LLM_API_KEY)"
+                            export HINDSIGHT_API_LLM_BASE_URL="http://litellm.llm.svc.cluster.local:4000/v1"
+                            exec /app/start-all.sh
                         startupProbe:
                           httpGet: { path: /health/live, port: 8888 }
                           periodSeconds: 10
