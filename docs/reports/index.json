@@ -11,13 +11,13 @@
     },
     {
       "file": "docs/reports/flux-state.md",
-      "generated_at": "2026-09-08T14:00:15Z",
+      "generated_at": "2026-09-08T17:30:49Z",
       "id": "flux-state",
       "schedule_minutes": 15,
       "source": "the cluster receipt platform/state/cluster-state.yaml writes to the receipts bucket every 15 minutes",
-      "summary": "114 objects: 101 ready, 11 not ready, 0 unknown, 2 suspended",
+      "summary": "114 objects: 48 ready, 64 not ready, 0 unknown, 2 suspended",
       "title": "Flux: what is applied"
     }
   ],
-  "updated_at": "2026-09-08T14:05:34Z"
+  "updated_at": "2026-09-08T17:35:32Z"
 }
