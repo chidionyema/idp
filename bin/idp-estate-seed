@@ -152,7 +152,11 @@ put_raw() { # <entry> <generator>: the whole secret is the value
     say ok "$e" "present and well-formed; kept"; kept=$((kept+1)); unset cur; return
   fi
   unset cur
-  local f; f=$(mktemp); umask 077; gen "$g" > "$f"
+  local f; f=$(mktemp); umask 077; gen "$g" | tr -d '\n' > "$f"
+  # raw entries are whole-value secrets (base64url/hex, never newline-terminated); the generator's
+  # print() adds a trailing \n which tr here strips, else the ExternalSecret writes the \n into a
+  # single-line config value (crew#575: oauth2-proxy crashed reading cookie_secret with an embedded
+  # newline: "toml: basic strings cannot have new lines").
   "$CLOUD" secret put "$e" --file "$f" >/dev/null || { rm -f "$f"; fail "$e" "vault write refused"; }
   rm -f "$f"
   say ok "$e" "minted ($g) and written (raw)"; minted=$((minted+1))
