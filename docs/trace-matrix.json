@@ -1461,9 +1461,7 @@
   "feature": "features/drills/drill-catalogue.feature",
   "title": "Every scheduled drill has run recently, and the catalogue says which drills exist",
   "scenarios": [
-   "The catalogue names only drills that are really scheduled",
-   "A pull request names the drill it adds to the catalogue",
-   "A platform change names the drill that exercises it"
+   "The catalogue names only drills that are really scheduled"
   ],
   "bound_by": [
    "sovereign/tests/bdd/test_gate_drill_catalogue.py"
