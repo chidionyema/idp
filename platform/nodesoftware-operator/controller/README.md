@@ -98,15 +98,19 @@ gofmt -l .                      # formatting (should be empty)
 The container image builds with the multi-stage `Dockerfile`:
 
 ```sh
-docker build -t ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG .
+docker build -t ghcr.io/chidionyema/controller:IMAGE_TAG .
 ```
 
-`IMAGE_TAG` is a placeholder, not a substitution. The Flux row that claimed to substitute it
-from `Secret/ghcr-pull` could never have done so -- that Secret's one key is `.dockerconfigjson`,
-which is not a legal envsubst variable name, and it aborted the row's whole post-build until it
-was removed on 2026-09-08. This image is not built by any workflow yet; when it is, it gets an
-ImageRepository/ImagePolicy pair and a `$imagepolicy`-marked `newTag:` like every other image
-in the estate.
+`IMAGE_TAG` is substituted at Flux postBuild by the kustomize `images:` block in
+`platform/nodesoftware-operator/kustomization.yaml` from the `$imagepolicy` marker in
+`platform/image-automation/controller.yaml` (idp#140 image-automation). The image is published
+as `ghcr.io/chidionyema/controller:main-<run>-<sha>` per the `bin/dockerfiles` dirname
+basename convention; the deployment asks for that exact name.
+
+Historical note (kept from the broken mechanism removed on 2026-09-08 by PR #2416): the Flux row
+that previously claimed to substitute `IMAGE_TAG` from `Secret/ghcr-pull` could never have done
+so -- that Secret's one key is `.dockerconfigjson`, which is not a legal envsubst variable name,
+and it aborted the row's whole post-build. The cyrus-pattern `newTag:` above is what replaced it.
 
 ## What's NOT in this controller yet
 
