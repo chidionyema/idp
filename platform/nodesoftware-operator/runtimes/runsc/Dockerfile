@@ -28,11 +28,12 @@
 
 # debian:bookworm-slim uses dash as /bin/sh, which does not understand
 # `set -o pipefail`. We need pipefail so a failed `apt-get install` aborts the
-# whole RUN even when `apt-get update` succeeded. Pin the SHELL to bash for
-# every RUN in both stages below.
-SHELL ["/bin/bash", "-c"]
+# whole RUN even when `apt-get update` succeeded. SHELL must come after the
+# first FROM (only ARG is valid before FROM in this buildkit), so the directive
+# is repeated per stage below.
 
 FROM debian:bookworm-slim AS linter
+SHELL ["/bin/bash", "-c"]
 
 COPY scripts /tmp/scripts/
 RUN set -euo pipefail \
@@ -46,6 +47,7 @@ RUN set -euo pipefail \
 # We pin the version of the base image so a vulnerability fix doesn't change
 # script behaviour silently.
 FROM debian:bookworm-slim
+SHELL ["/bin/bash", "-c"]
 
 # Runtime dependencies. nsenter comes from util-linux; python3 from base; curl
 # from base. We pin via apt-get update before installing so the layer is
