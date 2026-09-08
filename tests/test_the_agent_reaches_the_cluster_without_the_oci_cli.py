@@ -226,12 +226,59 @@ def test_the_founders_kubeconfig_is_only_built_when_nothing_else_answered():
     assert guard < src.index('"$IDP/bin/idp-cloud" cluster list')
 
 
-def test_break_glass_still_runs_as_the_founder():
+def _run_kube(state, *args):
+    """bin/idp-kube with no kubectl arguments prints the kubeconfig it would have used and
+    exits, so the identity it chose is observable without a cluster. `kubectl` still has to
+    exist on PATH for the `command -v` check, hence the stub."""
+    stub = state / "bin"
+    stub.mkdir(exist_ok=True)
+    fake = stub / "kubectl"
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(0o755)
+    env = dict(os.environ)
+    env["IDP_KUBE_STATE"] = str(state)
+    env["PATH"] = f"{stub}:/usr/bin:/bin"
+    return subprocess.run(
+        [os.path.join(ROOT, "bin/idp-kube"), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+
+def test_break_glass_still_runs_as_the_founder(tmp_path):
     """WJ.8 and R49: the escape hatch stays, and stays loud. An estate whose only way out is
-    editing this file gets it edited at 3am by someone who forgets to edit it back."""
-    src = _kube_source()
-    assert 'if [ "$BREAK" -eq 1 ]; then\n    USE="$KC"' in src
-    assert "BREAK-GLASS  running as the founder" in src
+    editing this file gets it edited at 3am by someone who forgets to edit it back.
+
+    Graded by running it: both kubeconfigs are seeded fresh, so the ordinary call has a
+    perfectly good reader identity to use and the break-glass call must refuse it anyway.
+    """
+    founders = tmp_path / "kubeconfig"
+    founders.write_text("founder\n")
+    reader = tmp_path / "kubeconfig-reader"
+    reader.write_text("reader\n")
+
+    ordinary = _run_kube(tmp_path)
+    assert ordinary.returncode == 0, ordinary.stderr
+    assert str(reader) in ordinary.stdout, ordinary.stdout
+
+    broken = _run_kube(tmp_path, "--break-glass", "the cluster is down")
+    assert broken.returncode == 0, broken.stderr
+    assert str(founders) in broken.stdout, broken.stdout
+    assert str(reader) not in broken.stdout
+
+    # Loud: a banner the operator cannot miss, and a record that outlives the session.
+    assert "BREAK-GLASS" in broken.stderr
+    assert "the cluster is down" in (tmp_path / "break-glass.log").read_text()
+
+
+def test_break_glass_without_a_reason_is_refused(tmp_path):
+    """A hatch that can be opened silently is opened routinely."""
+    (tmp_path / "kubeconfig").write_text("founder\n")
+    refused = _run_kube(tmp_path, "--break-glass")
+    assert refused.returncode == 2
+    assert not (tmp_path / "break-glass.log").exists()
 
 
 def test_the_script_is_valid_shell():
