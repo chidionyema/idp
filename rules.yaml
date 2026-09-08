@@ -952,3 +952,35 @@ rules:
     fail: >-
       a system table the Altinity operator ships an <engine> for also has a sibling <ttl>, which
       ClickHouse refuses at startup with BAD_ARGUMENTS and exit 36
+
+  - id: crd-then-cr
+    label: crd-then-cr
+    fast: true
+    statement: >-
+      A Crossplane Provider and an instance of a kind its package installs never share a Flux
+      Kustomization path; Flux dry-runs the whole path first, so neither the instance nor the
+      Provider ever lands
+    law: "incident 2026-09-08, crossplane-providers"
+    origin: >-
+      platform/crossplane/providers held the Provider that installs oci.upbound.io and a
+      ProviderConfig of that group. Flux reported `no matches for kind "ProviderConfig" in version
+      "oci.upbound.io/v1beta1"`, which reads as a missing CRD; the truth was that the apply was
+      refused whole, so the Provider that would have installed the kind was never installed at
+      all -- `kubectl get providers.pkg.crossplane.io` returned "No resources found" for as long
+      as the row had existed. It never fails once and heals.
+    planes: [ci, session]
+    session_glob: ['platform/**/*.yaml', 'platform/**/*.yml', 'clusters/**/*.yaml']
+    run: [python3, bin/idp-crd-then-cr]
+    cluster: {policy: null, why: "the break is in the repository's Kustomization layout; the objects never reach admission"}
+    fixtures:
+      must_fail: tests/fixtures/crd-then-cr/bad
+      must_pass: tests/fixtures/crd-then-cr/good
+    cases:
+      - {expect: refuse, args: [tests/fixtures/crd-then-cr/bad]}
+      - {expect: pass, args: [tests/fixtures/crd-then-cr/good]}
+      - {expect: pass, live: true, note: "this repository's own Kustomization paths"}
+    ok: "no Flux Kustomization path holds both a Provider and an instance of a kind it installs"
+    fail: >-
+      a Kustomization path holds a Crossplane Provider and an object of a group that Provider
+      installs; the path can never converge, and the error names the instance rather than the
+      ordering

@@ -800,12 +800,24 @@ spec:
       name: crossplane
       namespace: crossplane-system
 ---
-# Decision 0026 step 2, second half: the OCI provider, its runtime config and the ProviderConfig
-# that names OKE Workload Identity. Separate from the row above because Provider is a CRD the
-# chart installs -- this path cannot even be validated until crossplane has reconciled, which is
-# what dependsOn buys. No health check on the Provider: a Provider becomes Healthy only after it
-# has pulled and unpacked its package, which on a cold node is minutes, and a Kustomization that
-# waits on it would hold the whole reconcile. The wall is bin/idp-ci and the drill, not a timeout.
+# Decision 0026 step 2, second half: the OCI provider and its runtime config. Separate from the
+# row above because Provider is a CRD the chart installs -- this path cannot even be validated
+# until crossplane has reconciled, which is what dependsOn buys.
+#
+# The ProviderConfig used to live in this path too, and that was a deadlock, measured on
+# 2026-09-08: `ProviderConfig/default dry-run failed: no matches for kind "ProviderConfig" in
+# version "oci.upbound.io/v1beta1"`. That kind is installed BY the Provider in this same path, and
+# Flux dry-runs a Kustomization's objects in one pass before applying any of them -- so the
+# ProviderConfig failed validation, the whole apply was refused, the Provider was therefore never
+# installed, and the kind it would have installed never appeared. `kubectl get
+# providers.pkg.crossplane.io` returned "No resources found" for as long as the row existed.
+# A resource and the CRD that defines its kind cannot share a Kustomization.
+#
+# wait:true with health checks on both Providers is what the row below then depends on. An earlier
+# comment here refused a health check because a cold unpack takes minutes and "a Kustomization
+# that waits on it would hold the whole reconcile" -- but nothing in this file depends on this
+# row except the ProviderConfig, which genuinely cannot proceed until the unpack is done. The wait
+# holds one leaf, and it holds it for exactly the thing it is waiting for.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -820,13 +832,46 @@ spec:
     name: flux-system
   path: ./platform/crossplane/providers
   prune: true
-  wait: false
+  wait: true
   timeout: 15m
+  healthChecks:
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      name: oracle-provider-family-oci
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      name: provider-oci-objectstorage
   postBuild:
     substituteFrom:
-      # ${ESTATE_OCI_REGION}: the provider reads it twice (resource-principal env, credential
-      # blob). Not optional -- a missing ConfigMap must fail the row rather than hand the
-      # provider the literal string '${ESTATE_OCI_REGION}' as a region.
+      # ${ESTATE_OCI_REGION}: the runtime config hands it to the provider pod as
+      # OCI_RESOURCE_PRINCIPAL_REGION. Not optional -- a missing ConfigMap must fail the row
+      # rather than hand the provider the literal string '${ESTATE_OCI_REGION}' as a region.
+      - kind: ConfigMap
+        name: estate-config
+---
+# Decision 0026 step 2, third part: the ProviderConfig that names OKE Workload Identity, and the
+# two-key credentials blob that holds no credential. It is its own row because its kind arrives
+# with the Provider above; dependsOn plus that row's wait:true is what makes the kind exist before
+# this path is dry-run. Splitting it out is the fix for the deadlock described above.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane-providerconfig
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: crossplane-providers
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/crossplane/providerconfig
+  prune: true
+  wait: true
+  timeout: 5m
+  postBuild:
+    substituteFrom:
+      # ${ESTATE_OCI_REGION}: the credentials blob states which region the tenancy is in.
       - kind: ConfigMap
         name: estate-config
 ---
