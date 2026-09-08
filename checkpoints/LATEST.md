@@ -79,3 +79,25 @@ glass-break under WJ.8: awaiting the founder's own review, no auto-merge, no sel
 observability/signoz HelmRelease Failed + ClickHouse -- idp-96 is on it (#2388, #2413).
 `.github/workflows/estate-bootstrap-preflight.yml`, a backstage template skeleton and
 `bin/idp-vault-put` are staged in the primary checkout by a third session.
+## RESUME HERE — 2026-09-08, fixing the two red pull requests
+
+**What is red and why.** #2456 and #2432 both fail `bdd-suites (tests)` and `bdd` on the same
+pre-existing main breakage, not on anything either of them changed:
+
+    tests/test_a_workload_that_holds_the_estates_own_url_declares_the_hop_to_edge.py:363
+    AssertionError: these containers dial the public internet from inside a fence that renders
+    no allow-internet-egress:
+    assert not ['agent-workforce/laws dials raw.githubusercontent.com
+                (platform/agent-workforce/cronjob.yaml)']
+
+**The fix already exists**, written earlier this session and never pushed: local branch
+`fix/agent-workforce-declares-its-internet-hop`, one commit `4af4b17c`, which adds
+`egress_internet: [443]` to the `agent-workforce` row of `platform/ns-fences/allowances.yaml`
+and the rendered `allow-internet-egress` NetworkPolicy in
+`platform/ns-fences/network/agent-workforce.yaml`.
+
+**Next step:** worktree at `scratchpad/wt-fence`, run that test file, push the branch, open the
+pull request. Then #2456 and #2432 go green on a rerun.
+
+**Do not** switch the checkout's branch: `feat/crossplane-operator` is checked out with a dirty
+tree, and two stashes are live (`feat/crossplane-under-flux`, `fix/langfuse-startup-probe-right-size`).
