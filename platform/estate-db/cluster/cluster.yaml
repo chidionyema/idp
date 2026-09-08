@@ -160,15 +160,33 @@ spec:
         login: true
         passwordSecret:
           name: estate-db-role-research
+      # research_worker / research_grader / research_consumer: the research engine's three
+      # non-login roles (I5 -- workers cannot write the grade columns; only the grader can, and
+      # a consumer can only SELECT). 2026-09-08: these used to be created by the engine's own
+      # db/ddl.sql, but that is a workload granting itself roles it does not hold -- every
+      # hourly run died `permission denied to create role` because the engine connects as the
+      # `research` login, which has no CREATEROLE. The estate's rule is the operator declares
+      # roles and the workload only uses them, so they move here. The engine's grant
+      # statements then reconcile instantly instead of on the impossible "engine creates them
+      # next hour".
+      - name: research_worker
+        ensure: present
+        login: false
+      - name: research_grader
+        ensure: present
+        login: false
+      - name: research_consumer
+        ensure: present
+        login: false
       # research_reader: the read side of the research database, for a consumer of the
       # research engine rather than the engine itself. It logs in, and everything it may do
-      # comes from research_consumer -- a NOLOGIN role the engine's own DDL creates and grants
-      # SELECT to (research-engine db/ddl.sql). So a consumer cannot write the evidence it
-      # reads, and the engine still names no consumer.
+      # comes from research_consumer -- a NOLOGIN role the CNPG managed.roles above declares
+      # and the engine's grants feed (research-engine db/ddl.sql). So a consumer cannot write
+      # the evidence it reads, and the engine still names no consumer.
       #
-      # Ordering: the cluster cannot add the membership until research_consumer exists, and
-      # the engine creates it on its next hourly run. Until then this role reconciles with an
-      # error on that one line and nothing else is affected; it heals itself within the hour.
+      # Membership (inRoles: research_consumer) reconciles as soon as research_consumer
+      # exists, and both are declared here, so there is no ordering stall -- unlike the version
+      # where the engine was expected to mint the role on its own hourly run.
       # lago: the money layer's ledger owner (crew#623). Unlike every role above it, this one
       # replaces no server -- platform/commerce/data/postgres.yaml would have been the estate's
       # seventh Postgres and was deleted before it ever ran, on the founder's ruling of
