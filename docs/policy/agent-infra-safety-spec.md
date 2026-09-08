@@ -8,7 +8,81 @@ memory:
 - `~/.claude/docs/founder/2026-09-07T1528Z-this-is-the-net-super-inprotnsnt-peice-of-78f60e2c.md`
 - `~/.claude/docs/founder/2026-09-07T1532Z-sually-forces-platform-teams-to-constantly-micromanage-their-9cce7f2d.md`
 
-## SUPERSEDED ORDERING — the founder's redirect, 2026-09-07
+## THE ORDERING THAT HOLDS — the founder's correction, 2026-09-08
+
+Record, verbatim and the only source (never paraphrased from memory):
+`~/.claude/docs/founder/2026-09-08T0609Z-you-are-completely-right-to-question-that-and-996c7f35.md`
+
+**This supersedes the 2026-09-07 redirect recorded below. No workstream is dropped.** He read
+back the narrowed plan and rejected the narrowing in his own words:
+
+> You are completely right to question that, and I made a mistake. We absolutely should not drop
+> those workstreams.
+>
+> I pivoted too hard toward the temporary token idea and lost the plot of the "ultra-asymmetric"
+> framework you asked for. If we drop the shadow environments (vcluster) and GitOps, we are just
+> giving the agent direct access to prod via temporary keys. That is not elite; that is just a
+> time-delayed footgun.
+
+That sentence is the correction, and it is worth stating plainly because it is a real hole in what
+was being built: a JIT broker **on its own** does not confine an agent. It shortens how long the
+agent holds production write. It does nothing about the agent holding production write at all for
+the ninety-five percent of work that never needed it.
+
+### The shape: two engines, not one
+
+**Engine 1 — the asymmetric engine, for code and config. This is W2, W3, W4 and W5.**
+
+> For 95% of infrastructure work (changing configs, updating Kyverno policies, rolling out new
+> images), the agent never needs a live token to production.
+>
+> The agent works in the vcluster shadow dimension. It mathematically proves the fix works. It
+> opens a Git Pull Request. You click "Merge" on your phone (or the Greenlane auto-merges it).
+> Flux pulls it into prod.
+>
+> Why we keep this: It prevents configuration drift. Every change is permanently
+> version-controlled, rollback is instant, and the agent's blast radius is zero.
+
+**Engine 2 — the JIT break-glass engine, for live emergencies. This is W0 and W1.**
+
+> What happens if the agent needs to restart a frozen Oracle node, or query a live database, or
+> clear a cache? GitOps cannot do this. If you give the agent a permanent Oracle or Kubernetes
+> Admin key to do this, you lose your security guarantee.
+>
+> The agent hits a wall that requires live execution (e.g., restarting a pod). It pings your
+> phone: "Need pods/delete in kube-system to clear a crash loop. Requesting 10 minutes." You tap
+> "Approve." The system mints a cryptographic token that mathematically dies in exactly 10 minutes.
+
+The two are not alternatives and the choice between them is not a judgement call: **if the change
+can be expressed in git, it goes through Engine 1.** Engine 2 exists for the acts git cannot
+express — restarting something, reading something live, clearing something. Every WJ item below is
+Engine 2, and every one of them stays exactly as written.
+
+### The directive, verbatim
+
+> Do not drop any workstreams. We are building the full W0-W5 zero-trust framework. Proceed with
+> W1 first, but with this ultra-elite architecture:
+>
+> All agents are permanently Read-Only by default.
+>
+> For W1 Break-Glass, do NOT use static keys or manual revocation. Implement Just-In-Time (JIT)
+> short-lived tokens using the native Kubernetes TokenRequest API and Oracle's equivalent.
+>
+> The agent must request a TTL (Time-To-Live) token via my Telegram/phone. When I approve, the
+> system mints a token that mathematically auto-revokes when the TTL expires.
+>
+> Execute W1 immediately under these constraints.
+
+**W1 first, and it is not finished.** He added on the same day: *"this is a later idea but focus on
+the core first."* So Engine 1 is specified here and not started; the WJ items are the core and they
+are what gets built now. Issue #2470 tracks them.
+
+Nothing in the WJ specification below changes under this correction. What changes is that W2-W5
+stop being parked: they are the other engine, and the framework is incomplete without them.
+
+---
+
+## The 2026-09-07 redirect, kept because it is the reasoning that got here
 
 Record, verbatim and the only source (never paraphrased from memory):
 `~/.claude/docs/founder/2026-09-07T1606Z-ok-lets-add-these-also-ign-the-proof-c2f0f9be.md`
@@ -31,10 +105,11 @@ And named what the gap actually is:
 His instruction on scope: **"we drop workstreams W2 through W5. We focus solely on building the
 JIT Token Broker."** Answered "Yes" in the same message.
 
-**Nothing below is deleted.** W2 to W5 are parked, with this line as the path back (LAW 16): they
-describe real gaps that remain real, and if the estate ever grows a platform team they are the
-plan. They are not the founder's plan, and no session starts one without his word. W0 and W1 are
-not parked — they are the JIT system's own foundation and are folded into it below.
+**This paragraph is superseded by the 2026-09-08 correction above and is kept as the reasoning,
+not as the instruction.** It read: W2 to W5 are parked, with this line as the path back (LAW 16),
+and no session starts one without his word. He gave that word on 2026-09-08 — W2 to W5 are Engine
+1 and are back in the framework. What survives from it unchanged is the ordering: W0 and W1 are
+the JIT system's own foundation, they are folded into the WJ items below, and they come first.
 
 ---
 

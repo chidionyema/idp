@@ -17,14 +17,13 @@ images:
   # pull and Flux reports it. image-automation-controller rewrites the newTag line from
   # ImagePolicy flux-system/estate-mcp; the marker is how it finds the line.
   - name: ghcr.io/chidionyema/estate-mcp
-    newTag: main-4661-2164948f0c51d339b4bd8206ab134952670ae1b7 # {"$imagepolicy": "flux-system:estate-mcp:tag"}
+    newTag: main-6325-c2546f127f593eaf8cb553748be8e99eb7365557 # {"$imagepolicy": "flux-system:estate-mcp:tag"}
 configMapGenerator:
   - name: mcp-config
     files:
       - agentgateway.yaml
 generatorOptions:
   disableNameSuffixHash: false
-
 # WAVE 1 OF THE ROLL ONTO THE ENFORCING CNI.
 #
 # 10-calico.conflist sorts before 10-flannel.conflist in /etc/cni/net.d, so Calico wins the CNI
