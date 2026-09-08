@@ -26,6 +26,12 @@
 #
 # Verify locally with: ./scripts/test-probe.sh   (no cri-o needed)
 
+# debian:bookworm-slim uses dash as /bin/sh, which does not understand
+# `set -o pipefail`. We need pipefail so a failed `apt-get install` aborts the
+# whole RUN even when `apt-get update` succeeded. Pin the SHELL to bash for
+# every RUN in both stages below.
+SHELL ["/bin/bash", "-c"]
+
 FROM debian:bookworm-slim AS linter
 
 COPY scripts /tmp/scripts/
