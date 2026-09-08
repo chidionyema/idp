@@ -16,7 +16,10 @@ import subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, "bin", "idp-shadow-verify")
-FIX = os.path.join(ROOT, "tests", "fixtures", "shadow-verify")
+# Contiguous literal on purpose: the estate's rule-coverage gate (LAW 3) grades a fixture only
+# when some repo file names it with the contiguous path tests/fixtures/shadow-verify; a split
+# os.path.join would leave these fixtures 'graded by nothing' and the run red.
+FIX = os.path.join(ROOT, "tests/fixtures/shadow-verify")
 
 
 def _run(name):
