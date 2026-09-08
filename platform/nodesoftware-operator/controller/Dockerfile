@@ -5,17 +5,24 @@
 # 10001 (uid: 10001 is what the controller's Deployment securityContext expects per the
 # platform/nodesoftware-operator/deployment.yaml in PR #2338).
 #
-# Build:    docker build -t ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG .
-# Run:      docker run --rm ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG
+# Build:    docker build -t ghcr.io/chidionyema/controller:IMAGE_TAG .
+# Push:     the multi-arch manifest list lands at ghcr.io/chidionyema/controller:main-<run>-<sha>
+#           (bin/dockerfiles derives the image name from the Dockerfile's dirname basename;
+#           the deployment asks for ghcr.io/chidionyema/controller, the kustomize `images:`
+#           block in platform/nodesoftware-operator/kustomization.yaml fills the tag via the
+#           $imagepolicy marker in platform/image-automation/controller.yaml).
 #
-# IMAGE_TAG above is a placeholder for a human running these commands, not a substitution: this
-# image is not built by any workflow and is a 404 in ghcr, and the Flux row that claimed to
+# Why `controller` and not `nodesoftware-operator`: every other image in this repo uses the
+# dirname basename as its registry name (cyrus, hermes-agent, jit, lago-api, lago-front).
+# `bin/dockerfiles` produces `ghcr.io/chidionyema/controller`; the deployment and kustomization
+# both reference that exact name so there is one source of truth.
+#
+# IMAGE_TAG above is a placeholder for a human running these commands, not a substitution: the
+# estate pins this image via a `$imagepolicy`-marked `newTag:` in kustomization.yaml, the same
+# cyrus pattern every other in-repo image uses. The Flux row that previously claimed to
 # substitute it from the ghcr-pull secret never could (that Secret's one key is
-# `.dockerconfigjson`, not a legal envsubst variable name) and was removed on 2026-09-08. When
-# the image is built it is pinned the estate's way, a `$imagepolicy`-marked newTag in
-# kustomization.yaml. Historic note, kept because the old text is still quoted downstream:
-# `optional: false` in the Flux row was said to mean a missing IMAGE_TAG fails the row,
-# not a silent `:latest` rollout.
+# `.dockerconfigjson`, not a legal envsubst variable name) and was removed on 2026-09-08
+# (PR #2416); this PR replaces the broken mechanism with the working one.
 
 FROM golang:1.26.3 AS build
 WORKDIR /src

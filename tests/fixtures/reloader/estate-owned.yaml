@@ -1,0 +1,21 @@
+# A workload the estate declares itself, with no owner but Kubernetes. Nothing rewrites its config
+# behind it, so Reloader is exactly the right thing and rule 1's injected "true" must survive.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: llm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: litellm }
+  template:
+    metadata:
+      labels: { app: litellm }
+    spec:
+      containers:
+        - name: litellm
+          image: ghcr.io/berriai/litellm:main-stable
+          envFrom:
+            - secretRef:
+                name: litellm-keys

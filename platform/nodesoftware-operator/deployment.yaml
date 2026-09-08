@@ -3,18 +3,20 @@
 # for the controller (the workload is bookkeeping, not data plane), not for the
 # runtime handler pods it schedules (those have their own requests below).
 #
-# NOT APPLIED YET. This file is out of kustomization.yaml's resource list until the controller
-# image exists; see that file's header for the three things that must become true first.
+# The controller's image: tag is filled by the kustomize `images:` block in
+# kustomization.yaml from platform/image-automation/controller.yaml
+# ($imagepolicy: flux-system:controller:tag). The runsc handler image's tag is
+# filled the same way (platform/image-automation/runsc.yaml) on the
+# `runsc-handler-mirror` initContainer below; the controller's source reads
+# that initContainer's image at startup (cmd/main.go:resolveHandlerImage) and
+# uses it as the InstallImage for the handler pods it schedules. No more
+# literal `:IMAGE_TAG` in this file -- cyrus pattern, image-automation owns it.
 #
-# The `IMAGE_TAG` below is a placeholder and nothing substitutes it. The header used to say it
-# was "substituted at Flux postBuild from the IMAGE_TAG field on Secret ghcr-pull ... same
-# mechanism as every other in-repo image reference (cyrus, hermes-agent)". None of that held:
-# ghcr-pull is a kubernetes.io/dockerconfigjson Secret whose one key is `.dockerconfigjson`,
-# which is not a legal envsubst variable name and aborted the whole row's post-build; cyrus and
-# hermes-agent pin their images the estate's actual way, a `newTag:` in kustomization.yaml
-# carrying a `# {"$imagepolicy": ...}` marker that Flux image automation rewrites in git; and
-# envsubst substitutes `${IMAGE_TAG}`, never the bare word IMAGE_TAG, so even a correct source
-# would have left this string in the pod spec for the kubelet to fail to pull.
+# PR #2416 had removed deployment.yaml from kustomization.yaml's resource list ("NOT APPLIED
+# YET") pending a workflow that pushes the image, an ImageRepository/ImagePolicy pair in
+# platform/image-automation, and a $imagepolicy-marked newTag here. All three are now true
+# (PR #2438); this file is back in the resource list and the Flux row's healthCheck + wait
+# in clusters/oke/platform.yaml go with it.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,7 +26,6 @@ metadata:
     app.kubernetes.io/name: nodesoftware-operator
     app.kubernetes.io/part-of: idp
     app.kubernetes.io/component: controller
-    app.kubernetes.io/version: IMAGE_TAG
 spec:
   replicas: 2                              # HA without paying for five
   strategy:
@@ -42,7 +43,6 @@ spec:
         app.kubernetes.io/name: nodesoftware-operator
         app.kubernetes.io/part-of: idp
         app.kubernetes.io/component: controller
-        app.kubernetes.io/version: IMAGE_TAG
     spec:
       serviceAccountName: nodesoftware-operator
       automountServiceAccountToken: true    # controller-runtime needs the token
@@ -56,9 +56,38 @@ spec:
         fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault             # PSS restricted (edge/policies)
+      initContainers:
+        # Mirror container: holds the runsc handler image as a real PodSpec
+        # container image: field so the kustomize `images:` $imagepolicy
+        # marker can rewrite it. The container itself runs noop
+        # (/bin/sh -c true) -- the controller reads its own pod's spec at
+        # startup, finds this initContainer's image, and uses it as the
+        # InstallImage for the handler pods it schedules. The image never
+        # needs to be referenced anywhere else in the cluster; this is the
+        # one place Flux image automation writes the tag to. Renaming or
+        # removing this initContainer would break the controller's
+        # --handler-image resolution; do not.
+        - name: runsc-handler-mirror
+          image: ghcr.io/chidionyema/runsc
+          command: ["/bin/sh", "-c", "true"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            seccompProfile:
+              type: RuntimeDefault
       containers:
         - name: controller
-          image: ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG
+          image: ghcr.io/chidionyema/controller
           imagePullPolicy: IfNotPresent
           args:
             - --leader-elect=true
@@ -66,16 +95,14 @@ spec:
             - --metrics-bind-address=:8080
             - --health-probe-bind-address=:8081
             - --reconcile-period=15s         # see CRD-SPEC.md "pauseDuration"
-            # The runsc handler image ships the install/uninstall/probe scripts
-            # the controller invokes on each target node (per C4: PR #2396).
-            # The controller's hardcoded default is
-            # "ghcr.io/chidionyema/nodesoftware-runsc-handler:IMAGE_TAG", which
-            # the kubelet cannot pull. This override does not fix that today: it
-            # carries the same placeholder, and nothing substitutes it (see the
-            # file header). Both become real tags when the handler image is built
-            # and given an ImagePolicy, not before.
-            - --handler-image=ghcr.io/chidionyema/nodesoftware-runsc-handler:IMAGE_TAG
-            - --handler-namespace=nodesoftware-operator
+            # --handler-image is filled at startup by resolveHandlerImage()
+            # (cmd/main.go) from the runsc-handler-mirror initContainer's
+            # image: field. No flag here on purpose: a flag would freeze
+            # the tag at apply time and break image-automation.
+            # --handler-namespace is also empty by default; the controller's
+            # Reconciler.applyDefaults fills it to the controller's own namespace
+            # (PR #2404), so the kubebuilder scaffold default
+            # 'nodesoftware-operator-system' never reaches a handler pod.
           ports:
             - name: metrics
               containerPort: 8080

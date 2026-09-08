@@ -89,6 +89,9 @@ spec:
           kubernetes.io/metadata.name: dagster
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: demo-sandbox
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: guacamole
     - namespaceSelector:
         matchLabels:
@@ -157,6 +160,12 @@ spec:
   - Ingress
   ingress:
   - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: hermes-agent
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: identity
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: monitoring

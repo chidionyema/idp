@@ -23,6 +23,23 @@ spec:
     remediation: { retries: 3 }
   upgrade:
     remediation: { retries: 3 }
+    # 2026-09-08, and this line comes out the moment ClickHouse is Ready again.
+    # The chart's pre-upgrade hook is signoz-telemetrystore-migrator, whose `ready` init container
+    # blocks until ClickHouse answers. ClickHouse is absent -- the Altinity operator deleted the
+    # StatefulSet during a Recreate and the CREATE that followed was refused by a Kyverno exception
+    # that named the two hand-written StatefulSets and not the one the operator writes (fixed in
+    # 2da48966). So the hook waits for a database that only this upgrade can bring back, the
+    # upgrade times out, and Flux stalled it: `Stalled=True RetriesExceeded, Failed to upgrade
+    # after 4 attempt(s)`, with `pre-upgrade hooks failed: timeout waiting for:
+    # [Job/observability/signoz-telemetrystore-migrator status: 'InProgress']`. Fifteen
+    # Kustomizations queued behind that.
+    # Skipping the hook is safe for exactly this upgrade and no other: the chart version does not
+    # move (0.138.0 to 0.138.0, after a rollback to v56 at the same version), so the migrator has
+    # no schema step to perform -- it would connect, find nothing to do, and exit. At any real
+    # version bump it must run, which is why this is a line with a removal condition on it and not
+    # a setting. Changing this spec is also what clears the stall: Flux resets the failure count
+    # on a spec change, so this one edit both retries the release and lets the retry succeed.
+    disableHooks: true
   valuesFrom:
     - kind: ConfigMap
       name: signoz-values

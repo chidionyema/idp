@@ -121,27 +121,46 @@ today for anything under `platform/oci`.
 
 ## What actually blocks it, measured 2026-09-08
 
-Not architecture. Capacity.
+Not architecture. Not money either, which the first version of this section got wrong.
+
+The founder, on the capacity claim: "why are they at that budget ? sonehing no tright". He was
+right to distrust it. Both nodes report 98 and 99 percent of allocatable CPU **requests**, but
+`kubectl top nodes` reports 52 and 23 percent **used**. A gap that wide is not a full cluster; it is
+a misdeclared one.
 
 ```
 $ kubectl top nodes
-NAME           CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)
-10.0.148.221   3036m        52%      16283Mi         79%
-10.0.159.197   1373m        23%      16107Mi         78%
+10.0.148.221   3036m  52%   16283Mi  79%
+10.0.159.197   1373m  23%   16107Mi  78%
 
-$ kubectl describe nodes | grep -A6 'Allocated resources'
-  cpu     5791m (99%)    memory  20295Mi (99%)
-  cpu     5726m (98%)    memory  15945Mi (77%)
+requested across 142 running pods:   11437m
+actually used, sum of both nodes:     5833m
+reserved and idle:                    5604m  (49% of the cluster)
 ```
 
-Both nodes are at 98 and 99 percent of allocatable CPU requests. A Crossplane control plane is the
-core deployment plus one pod per installed sub-provider; it will not schedule against one percent of
-request headroom, and forcing it there evicts something already load-bearing.
+Three pods explain most of it, all in `observability`:
 
-**So the precondition is a node pool with room, not a decision.** Until that lands, this record is
-the design and nothing is installed. The capacity work is governed by the paid-capacity cap in
-`estate-defaults.yaml`, and it is the same conversation as the ClickHouse ceiling a peer session
-reported on 2026-09-07 (LEAD, unverified here).
+| pod | requests | uses | note |
+|---|---|---|---|
+| `langfuse-web` | 1000m | 9m | 0.9% of its own reservation |
+| `langfuse-worker` | 1000m | 108m | 134 restarts in 27h — crash-looping while holding a full CPU |
+| `chi-signoz-clickhouse-cluster-0-0-0` | 1000m | 1998m | double its reservation; the one that genuinely needs CPU |
+
+The shape of the problem is inverted from the first reading. The workload that actually consumes CPU
+is under-declared and being squeezed; two neighbours that consume almost none hold 2000m between
+them, which is 17 percent of the cluster. The scheduler is full on paper while the machines are half
+idle, so nothing new can be placed — Crossplane included.
+
+**The precondition is right-sizing three requests, not buying a node pool.** That is free. It is
+also the same root cause as the ClickHouse ceiling and the silent OTLP collector a peer session
+reported on 2026-09-07, so it is not new work. Those pods are that session's lane; the measurement
+was handed over rather than acted on here.
+
+This is adjacent to the placement rule that landed in `AGENTS.md` as `bin/idp-fits-a-node`, and
+distinct from it: that rule grades whether a pod *could be placed* on the nodes that exist. It does
+not grade a pod that places fine and then reserves eleven times what it uses. Whether that second
+rule is worth writing is a question for after the three requests are corrected, and it is not
+claimed here.
 
 ## Order of work, when capacity exists
 

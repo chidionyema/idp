@@ -253,9 +253,9 @@ else say "FAIL  incident 2026-08-25 containment through a link: in-worktree=$(st
 # deterministic. Proved both ways in one run: the bad fixtures (unknown vocabulary, an intent that
 # speaks the zone) are refused, the good ones compile, and two runs are byte-identical.
 ic_a=$(mktemp -d); ic_b=$(mktemp -d)
-if ! python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/bad" --out "$ic_a" >/dev/null 2>&1 \
-   && python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/good" --out "$ic_a" >/dev/null 2>&1 \
-   && python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/good" --out "$ic_b" >/dev/null 2>&1 \
+if ! python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/bad" --out "$ic_a" --register "$ic_a/register.md" >/dev/null 2>&1 \
+   && python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/good" --out "$ic_a" --register "$ic_a/register.md" >/dev/null 2>&1 \
+   && python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/good" --out "$ic_b" --register "$ic_b/register.md" >/dev/null 2>&1 \
    && diff -r "$ic_a" "$ic_b" >/dev/null 2>&1; then
   say "ok    intent   intent-compile refuses unknown vocabulary and a spoken estate name, compiles the good intents, byte-deterministic"
 else say "FAIL  intent   intent-compile is not discriminating or not deterministic"; fail=1; fi
