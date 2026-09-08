@@ -984,3 +984,34 @@ rules:
       a Kustomization path holds a Crossplane Provider and an object of a group that Provider
       installs; the path can never converge, and the error names the instance rather than the
       ordering
+
+  - id: store-reach
+    label: store-reach
+    fast: true
+    statement: >-
+      A secret store that authenticates outside the cluster has a fence that lets it get there:
+      egress_internet, and egress_metadata too when its identity is fetched at run time
+    law: "incident 2026-09-08, ClusterSecretStore/estate-vault"
+    origin: >-
+      The external-secrets fence allowed egress to the apiserver, kube-dns, the observability
+      namespace and its own pods. ClusterSecretStore/estate-vault authenticates as
+      InstancePrincipal, so it needed 169.254.169.254 and an HTTPS route to OCI, and had neither.
+      It reported `unable to create client`, reason InvalidProviderConfig -- a message that names
+      no network -- and every ExternalSecret in the estate then failed with `ClusterSecretStore
+      "estate-vault" is not ready`. Twenty-nine Flux rows waited behind one.
+    planes: [ci, session]
+    session_glob: ['platform/ns-fences/allowances.yaml', 'platform/**/store*.yaml']
+    run: [python3, bin/idp-store-can-reach-its-vault]
+    cluster: {policy: null, why: "the store and the fence are both valid objects; nothing admission sees is malformed"}
+    fixtures:
+      must_fail: tests/fixtures/store-reach/bad
+      must_pass: tests/fixtures/store-reach/good
+    cases:
+      - {expect: refuse, args: [tests/fixtures/store-reach/bad]}
+      - {expect: pass, args: [tests/fixtures/store-reach/good]}
+      - {expect: pass, live: true, note: "this estate's own stores and its fence register"}
+    ok: "every store reaching outside the cluster has the egress its provider needs"
+    fail: >-
+      a SecretStore or ClusterSecretStore names a provider outside the cluster that its
+      namespace's fence gives it no route to; the store reports InvalidProviderConfig and every
+      ExternalSecret behind it stops

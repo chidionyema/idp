@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""A secret store that authenticates outside the cluster has a fence that lets it get there.
+
+External Secrets does not fail loudly when the network is the problem. A store whose provider
+cannot be dialled reports this, and nothing else:
+
+    unable to create client            reason: InvalidProviderConfig
+
+That message names a config, so it reads as a bad credential, and the real cause -- default-deny
+egress on the controller's namespace -- is nowhere in it. Every ExternalSecret in the estate then
+fails with `ClusterSecretStore "<name>" is not ready`, which points at the store rather than at
+the fence. On 2026-09-08 that held twenty-nine Flux Kustomizations behind one row for hours.
+
+The rule this grades: if any (Cluster)SecretStore in the tree names a provider that lives outside
+the cluster, then the namespace running the External Secrets controller declares, in
+platform/ns-fences/allowances.yaml, the routes that provider needs.
+
+  * `egress_internet` -- every one of these providers is an HTTPS API on the public internet.
+  * `egress_metadata` -- required as well when the store authenticates by instance or workload
+    identity rather than a stored credential, because the pod fetches its short-lived certificate
+    from the cloud's instance-metadata service at 169.254.169.254, and internet egress cuts
+    link-local out of the world on purpose (see NOT_THE_INTERNET in bin/idp-ns-fence-gen).
+
+A store with `provider: {kubernetes: ...}` or `{fake: ...}` needs neither and is not asked for
+either: a guard that demands a hole nothing uses is how a fence stops meaning anything.
+
+  idp-store-can-reach-its-vault [ROOT]
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+
+import yaml
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
+ALLOWANCES = os.path.join("platform", "ns-fences", "allowances.yaml")
+STORE_KINDS = {"SecretStore", "ClusterSecretStore"}
+
+# Providers that live inside the cluster, or nowhere. Everything else is an HTTPS API reached over
+# the internet, so the list is stated as the exceptions rather than as a catalogue of clouds that
+# would be out of date the first time External Secrets adds one.
+IN_CLUSTER = {"kubernetes", "fake", "webhook"}
+
+# Providers whose credential is fetched from the cloud at run time rather than read from a Secret.
+# The key that turns it on differs by provider; the shape is the same everywhere. An `auth` block
+# is the opposite signal -- it names a Secret the pod already holds -- so its ABSENCE is what says
+# the pod must ask the metadata service who it is.
+IDENTITY_KEYS = (
+    "principalType",       # oracle: InstancePrincipal, WorkloadIdentity
+    "workloadIdentity",    # aws/gcp/azure
+)
+
+
+def docs(path: str) -> list[dict]:
+    try:
+        text = open(path, errors="replace").read()
+    except OSError:
+        return []
+    if not any(k in text for k in STORE_KINDS):
+        return []
+    try:
+        loaded = list(yaml.safe_load_all(text))
+    except yaml.YAMLError:
+        return []
+    return [d for d in loaded if isinstance(d, dict) and d.get("kind") in STORE_KINDS]
+
+
+def stores(root: str) -> list[tuple[str, dict]]:
+    """Every SecretStore and ClusterSecretStore in the tree, with the file it came from."""
+    out: list[tuple[str, dict]] = []
+    base = os.path.join(root, "platform")
+    if not os.path.isdir(base):
+        return out
+    for dirpath, dirnames, names in os.walk(base):
+        dirnames[:] = [d for d in dirnames if d not in {".git", "__pycache__", "compiled"}]
+        for fname in sorted(names):
+            if not fname.endswith((".yaml", ".yml")):
+                continue
+            full = os.path.join(dirpath, fname)
+            for d in docs(full):
+                out.append((os.path.relpath(full, root), d))
+    return out
+
+
+def controller_namespace(root: str) -> str:
+    """The namespace the External Secrets controller runs in, read from the fence register.
+
+    Named by the row that declares its admission webhook, not hardcoded: the webhook is the one
+    thing about that namespace this repository already has to state, and it moves with it.
+    """
+    allow = yaml.safe_load(open(os.path.join(root, ALLOWANCES))) or {}
+    flows = allow.get("flows") or {}
+    for ns in flows:
+        if ns.startswith("external-secrets"):
+            return ns
+    return "external-secrets"
+
+
+def wants(store: dict) -> tuple[bool, bool]:
+    """(needs internet, needs the metadata service) for one store."""
+    provider = (store.get("spec") or {}).get("provider") or {}
+    names = [n for n in provider if n not in IN_CLUSTER]
+    if not names:
+        return (False, False)
+    ambient = False
+    for n in names:
+        cfg = provider.get(n) or {}
+        if not isinstance(cfg, dict):
+            continue
+        if any(k in cfg for k in IDENTITY_KEYS) or not cfg.get("auth"):
+            # human-vault's bitwarden store is the shape this second half exists to spare: it
+            # names an auth.secretRef, so its credential is a Secret the pod already has and it
+            # never touches 169.254.169.254. It needs the internet and nothing more.
+            ambient = True
+    return (True, ambient)
+
+
+def main() -> int:
+    root = sys.argv[1] if len(sys.argv) > 1 else ROOT
+    allow = yaml.safe_load(open(os.path.join(root, ALLOWANCES))) or {}
+    flows = (allow.get("flows") or {}).get(controller_namespace(root)) or {}
+    ns = controller_namespace(root)
+
+    bad: list[str] = []
+    checked = 0
+    for where, store in stores(root):
+        need_net, need_meta = wants(store)
+        if not need_net:
+            continue
+        checked += 1
+        name = (store.get("metadata") or {}).get("name") or "?"
+        if not flows.get("egress_internet"):
+            bad.append(
+                f"{where}: {store['kind']}/{name} reaches a provider outside the cluster, and "
+                f"flows.{ns} declares no egress_internet. The store will report 'unable to "
+                f"create client' with reason InvalidProviderConfig, which names no network."
+            )
+        if need_meta and not flows.get("egress_metadata"):
+            bad.append(
+                f"{where}: {store['kind']}/{name} authenticates with an identity it fetches at "
+                f"run time, and flows.{ns} declares no egress_metadata. The pod cannot reach "
+                f"169.254.169.254, and egress_internet cuts link-local out of the world on "
+                f"purpose, so internet egress alone does not cover it."
+            )
+    if bad:
+        for line in bad:
+            print(f"FAIL {line}")
+        return 1
+    print(f"ok: {checked} store(s) reaching outside the cluster; {ns} declares the routes each needs")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,10 @@
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: example-vault
+spec:
+  provider:
+    oracle:
+      principalType: InstancePrincipal
+      region: example-region-1
+      vault: ocid1.vault.oc1.example
