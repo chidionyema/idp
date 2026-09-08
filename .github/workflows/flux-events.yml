@@ -28,6 +28,22 @@ jobs:
     name: ${{ github.event.action }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      # The dedupe key. A message with the object names, addresses, durations and revisions taken
+      # out is the FIRE; what is left in is the Kustomization, which is only where the fire was
+      # noticed. On 2026-09-08 one broken namespace fence produced 33 open P0 issues and eight
+      # signatures covered 27 of them -- the founder read a board of 33 rows describing one thing.
+      # tests/test_the_alarm_files_one_issue_per_fire.py runs this exact program over those 33
+      # real messages and fails if it stops folding them.
+      SIGNATURE_JQ: >-
+        (.message // "?")
+        | gsub("[0-9a-f]{16,}"; "<digest>")
+        | gsub("https?://[^\" ]+"; "<url>")
+        | gsub("(net/http: )?(context deadline exceeded|TLS handshake timeout|i/o timeout|connection refused|EOF|no route to host)"; "<unreachable>")
+        | gsub("[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+"; "<obj>")
+        | gsub("(<obj> status: \u0027[A-Za-z]+\u0027(, )?)+"; "<objs>")
+        | gsub("[0-9]+"; "N")
+        | .[0:400]
     steps:
       - name: receipt
         id: receipt
@@ -46,6 +62,7 @@ jobs:
             printf 'severity=%s\n' "$(printf '%s' "$PAYLOAD" | jq -r '.severity // "?"')"
             printf 'revision=%s\n' "$(printf '%s' "$PAYLOAD" | jq -r '.metadata.revision // "-"')"
             printf 'message<<EOM\n%s\nEOM\n' "$(printf '%s' "$PAYLOAD" | jq -r '.message // "?"')"
+            printf 'signature=%s\n' "$(printf '%s' "$PAYLOAD" | jq -r "$SIGNATURE_JQ")"
           } >> "$GITHUB_OUTPUT"
 
       # One open issue per object, commented on every repeat: seventeen hours of the same failure
@@ -65,13 +82,20 @@ jobs:
           OBJECT: ${{ steps.receipt.outputs.object }}
           REVISION: ${{ steps.receipt.outputs.revision }}
           MESSAGE: ${{ steps.receipt.outputs.message }}
+          SIGNATURE: ${{ steps.receipt.outputs.signature }}
         run: |
           title="P0: Flux cannot reconcile $OBJECT"
-          body=$(printf '%s\n\nrevision: %s\nrun: %s/%s/actions/runs/%s\n\nThe cluster is not running what main says. Until this closes, every check that reads the live estate is grading an older revision.\n' \
-            "$MESSAGE" "$REVISION" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
-          n=$(gh issue list --state open --search "in:title \"$title\"" --json number,title -q ".[] | select(.title == \"$title\") | .number" | head -1)
+          marker="flux-signature: $(printf '%s' "$SIGNATURE" | sha256sum | cut -c1-16)"
+          body=$(printf '%s\n\nobject: %s\nrevision: %s\nrun: %s/%s/actions/runs/%s\n\n%s\n\nThe cluster is not running what main says. Until this closes, every check that reads the live estate is grading an older revision.\n' \
+            "$MESSAGE" "$OBJECT" "$REVISION" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}" "$marker")
+          # An open issue already carrying this signature is THIS fire, whichever object first hit
+          # it. The marker is matched here rather than in a search query: GitHub does not index a
+          # hex string reliably, and the open P0 list is tens of rows.
+          n=$(gh issue list --state open --label P0 --limit 100 --json number,body \
+                -q "[.[] | select(.body != null and (.body | contains(\"$marker\")))] | .[0].number // empty")
           if [ -n "$n" ]; then
-            gh issue comment "$n" --body "$body"
+            gh issue comment "$n" --body "$(printf 'Same fire, reached %s: %s\n\nrun: %s/%s/actions/runs/%s\n' \
+              "$OBJECT" "$MESSAGE" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")"
           else
             gh label create P0 --color B60205 --description "service down for the founder" --force >/dev/null 2>&1 || true
             gh issue create --title "$title" --label P0 --body "$body"
@@ -96,8 +120,18 @@ jobs:
           OBJECT: ${{ steps.receipt.outputs.object }}
           REVISION: ${{ steps.receipt.outputs.revision }}
           MESSAGE: ${{ steps.receipt.outputs.message }}
+          SIGNATURE: ${{ steps.receipt.outputs.signature }}
         run: |
           title="P0: Flux cannot reconcile $OBJECT"
           n=$(gh issue list --state open --search "in:title \"$title\"" --json number,title -q ".[] | select(.title == \"$title\") | .number" | head -1)
+          # An object folded into another object's issue has no issue of its own. Closing on the
+          # first recovery is deliberate: folded objects share the root cause, and if one is still
+          # burning its next error event finds no open issue carrying the signature and opens a
+          # fresh one. A row that reopens beats a row that sits open and stale (LAW 28).
+          if [ -z "$n" ]; then
+            marker="flux-signature: $(printf '%s' "$SIGNATURE" | sha256sum | cut -c1-16)"
+            n=$(gh issue list --state open --label P0 --limit 100 --json number,body \
+                  -q "[.[] | select(.body != null and (.body | contains(\"$marker\")))] | .[0].number // empty")
+          fi
           [ -n "$n" ] || exit 0
           gh issue close "$n" --comment "$(printf 'Recovered at revision %s: %s\n\nrun: %s/%s/actions/runs/%s\n' "$REVISION" "$MESSAGE" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")"
