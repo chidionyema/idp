@@ -17,6 +17,15 @@ variable "db_backup_retention_days" {
   # constant, so retention is answerable with a value (founder 2026-08-31, "configurable obvs").
 }
 
+# The bucket already exists (created out-of-band 2026-09-08 to get the first DB dumps off the
+# laptop before this file applied), so terraform adopts it rather than re-creating it (a 409
+# BucketAlreadyExists otherwise, the exact failure receipts.tf records). Import id is
+# <namespace>/<bucket>.
+import {
+  to = oci_objectstorage_bucket.db_backups
+  id = "${data.oci_objectstorage_namespace.estate.namespace}/${var.cluster_name}-db-backups"
+}
+
 resource "oci_objectstorage_bucket" "db_backups" {
   # crew#310: the bucket grant lives in the compartment policy CI applies; create that first.
   depends_on     = [oci_identity_policy.operators_compartment]
