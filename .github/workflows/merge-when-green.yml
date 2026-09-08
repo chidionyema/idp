@@ -1,0 +1,137 @@
+# button: Land the finished work
+# founder: Merges every pull request that is green, clean and unheld, so nobody has to be asked.
+
+# The generator that builds the founder's button reads the comment block above this blank line
+# and stops there (bin/idp-portal-buttons).
+#
+# WHY THIS EXISTS. Founder, 2026-09-08: "agents should be responsiblefor their own own, all this
+# chasing is fricion" -- and, when asked whether it was a one-off, "its reocrring onstantly".
+# On that morning ten pull requests across the estate were waiting on him, and not one of them
+# was red. Five were green drafts whose sessions had ended; the rest were BEHIND main and needed
+# a button pressed. Nothing in this repository landed a pull request except deploy-when-green.yml,
+# and that one only ever looks at the flux/image-updates branch.
+#
+# WHY IT MAY MERGE WITHOUT HIM. This is his rule, already written into
+# policy/operating_model.rego on 2026-08-27 after 8 green pull requests sat a median 6.1 hours
+# waiting for a word: "No word, no APPROVE, and a green PR merges." His veto still reads: a
+# `DENY: <word>` comment turns the operating-model check red, and a red check is not merged. So
+# does a `hold`, `do-not-merge` or `wip` label, which is the one-word way for any session or for
+# him to stop exactly one merge.
+#
+# WHY NOT GITHUB'S NATIVE AUTO-MERGE. `allow_auto_merge` is off on this repository, and even when
+# it was on GitHub would only arm it on a pull request currently BLOCKED by a required check --
+# so an already-green one could not be armed at all, which is precisely the population that
+# stalls. crew measured this on 2026-08-23.
+#
+# WHY THE VERDICT IS NOT IN THIS FILE. bin/idp-pr-landable holds it, so it can be graded without
+# a repository and cannot drift from the ruleset: it reads the required contexts from
+# platform/github/ruleset.idp.required-checks.json rather than a list typed into a heredoc. crew
+# typed one, the founder deleted the workflow behind one of the names, and crew's merge bot then
+# refused every pull request for ten days without a single check going red.
+name: merge-when-green
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+  # A backstop rather than the mechanism: GitHub drops scheduled runs under load, so nothing here
+  # depends on this firing. It catches a pull request that went green before this existed, or one
+  # that became mergeable because something else merged.
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+  id-token: write   # traded for the OCI session that reads the App key
+
+concurrency:
+  group: merge-when-green
+  cancel-in-progress: false
+
+jobs:
+  land:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # idp#769: a merge made with GITHUB_TOKEN starts no workflow on main, so main's own ci never
+      # runs on the merge commit and the estate's "main is green" signal goes quiet.
+      - id: app
+        uses: ./.github/actions/github-app-token
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+      - name: land every pull request that is finished
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          # The deploy branch has its own workflow and its own extra gate
+          # (bin/idp-image-only-diff), so this one never touches it.
+          DEPLOY_BRANCH: flux/image-updates
+          # A ceiling, not a target: a run that would land more than this is a signal that
+          # something is wrong upstream, and the next tick takes the rest either way.
+          MAX_PER_RUN: '6'
+        run: |
+          set -euo pipefail
+          gh pr list --base main --state open --limit 50 \
+            --json number,headRefName,isDraft,mergeStateStatus,labels,statusCheckRollup > open.json
+
+          # One pass, one process: the verdict comes from bin/idp-pr-landable's own function, so
+          # the thing the tests grade is the thing that runs here.
+          python3 - <<'PY' > todo.txt
+          import importlib.machinery, importlib.util, json, os
+          # No .py suffix, so importlib finds no loader on its own and the spec would be None.
+          tool = "bin/idp-pr-landable"
+          loader = importlib.machinery.SourceFileLoader("landable", tool)
+          spec = importlib.util.spec_from_file_location("landable", tool, loader=loader)
+          assert spec and spec.loader, "bin/idp-pr-landable is not where this workflow expects it"
+          landable = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(landable)
+          required = landable.required_contexts()
+          deploy = os.environ["DEPLOY_BRANCH"]
+          for pr in json.load(open("open.json")):
+              if pr["headRefName"] == deploy:
+                  print(pr["number"], "DEPLOY", "deploy-when-green owns this branch")
+                  continue
+              print(pr["number"], *landable.verdict(pr, required))
+          PY
+          cat todo.txt
+
+          landed=0
+          while read -r number verdict why; do
+            [ -n "$number" ] || continue
+            case "$verdict" in
+              READY)
+                gh pr ready "$number" \
+                  && echo "ok      merge-when-green  #$number was a green draft; marked ready, it lands next tick" \
+                  || echo "ok      merge-when-green  could not mark #$number ready"
+                ;;
+              UPDATE)
+                gh api --method PUT "repos/$GH_REPO/pulls/$number/update-branch" --input /dev/null >/dev/null \
+                  && echo "ok      merge-when-green  refreshed #$number onto main; it lands next tick" \
+                  || echo "ok      merge-when-green  could not refresh #$number"
+                ;;
+              MERGE)
+                if [ "$landed" -ge "$MAX_PER_RUN" ]; then
+                  echo "ok      merge-when-green  reached the $MAX_PER_RUN ceiling; the next tick takes the rest"
+                  continue
+                fi
+                # It can go stale between the read and this line. gh refuses on its own then, and
+                # the refusal is reported rather than failing the run: the next tick takes it.
+                if gh pr merge "$number" --squash --delete-branch; then
+                  echo "ok      merge-when-green  landed #$number"
+                  landed=$((landed + 1))
+                else
+                  echo "ok      merge-when-green  #$number went stale before the merge; next tick takes it"
+                fi
+                ;;
+              *) echo "ok      merge-when-green  #$number is not landable yet: $why" ;;
+            esac
+          done < todo.txt
+          echo "ok      merge-when-green  landed $landed pull request(s) this tick"
