@@ -66,7 +66,16 @@ def _module(path: str, name: str):
 @pytest.fixture
 def broker(tmp_path):
     """A broker whose only contact with a cluster is a function this test wrote."""
-    mod = _module("platform/jit/broker/broker.py", "broker.broker")
+    # Deliberately NOT registered as `broker.broker`. `_module` writes into sys.modules, and
+    # the real package is importable in the same session (tests/test_the_jit_broker_cannot_be
+    # _talked_into_standing_access.py puts platform/jit on sys.path and imports it). Loading
+    # this file a second time under that name builds a second set of class objects, so a
+    # `Refused` raised by one is not the `Refused` the other's `except` clause names -- and
+    # serve.py's handler then falls through to its 500 branch instead of answering 401. That
+    # is a failure only in a full-suite run, only in one collection order, and it says
+    # nothing about the code under test. Found on #2485, where the two-file run was green and
+    # `bdd-suites (tests)` was not.
+    mod = _module("platform/jit/broker/broker.py", "wj1_broker_read_only_identity")
     calls: list[list[str]] = []
 
     def kube(args, stdin=None):
