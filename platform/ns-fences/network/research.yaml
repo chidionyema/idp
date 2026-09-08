@@ -83,4 +83,13 @@ spec:
   - to:
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: estate-db
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: llm
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: observability
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: searxng
