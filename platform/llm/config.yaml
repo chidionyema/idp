@@ -179,8 +179,10 @@ router_settings:
     # answers 402 is latency, not redundancy.
     # DeepSeek answered 401 from inside the router pod on 2026-09-04 21:5xZ (the key is revoked
     # at the vendor; prospector's byte-identical copy fails the same way), which is why Gemini
-    # sits in this chain: a hop that always refuses is latency, not redundancy.
-    - deepseek: [gemini, minimax]
+    # sits in this chain: a hop that always refuses is latency, not redundancy. That sentence
+    # now applies to Gemini itself, so it moved to the back -- see the measurement on the
+    # gemini block below.
+    - deepseek: [minimax, gemini]
 
     # Measured from inside the router pod 2026-09-04 21:5xZ: MiniMax answers 401 `invalid api
     # key (2049)` on https://api.minimax.io/v1/chat/completions (request id
@@ -190,16 +192,39 @@ router_settings:
     # Those two were each other's only fallback, so a cheap turn walked minimax -> deepseek
     # and died with nothing to answer the founder's Telegram message. Gemini answers, so it
     # goes ahead of the dead pair rather than after it.
-    - minimax: [gemini, deepseek]
+    #
+    # That reading expired. Both accounts named above are funded again and answering, and
+    # Gemini is now the one refusing: it went to the back of this chain on 2026-09-08 on
+    # the measurement recorded on the gemini block below.
+    - minimax: [deepseek, gemini]
 
-    # Gemini heads the neutral chains for the reason recorded on the minimax and deepseek
-    # blocks: on 2026-09-04 it was the only lane of the three that answered. The cheap model
-    # is still the last hop of every chain it does not head, which is what sovereign cp30
-    # grades and the `[routing] cheap` line of AGENTS.md declares; which lane is `cheap` is
-    # the founder's call, not this file's, so it is untouched.
+    # Gemini stopped heading any chain on 2026-09-08. Measured over the two hours to
+    # 10:45Z on both live router pods (24,955 log lines): gemini/gemini-2.5-flash
+    # answered 5 calls and failed 102, every failure RESOURCE_EXHAUSTED with no quotaId
+    # and no retryDelay -- the unbilled shape, not a per-minute ceiling this estate can
+    # stay under. openai/MiniMax-M3 answered 71 and failed 0; deepseek-v4-flash answered
+    # 97 and failed 24, all 24 being one message ("This response_format type is
+    # unavailable now") from a caller that sets a parameter Otto never sends.
+    #
+    # A chain that opens on a lane refusing 95 of every 100 calls spends the router's two
+    # retries and its cooldown before it reaches a lane that can answer. That is the
+    # founder's complaint in one sentence -- "why do we wait for a nodel to finish and
+    # then swtich whih fails all the tine" (2026-09-08) -- and it is the same reason this
+    # file already gives on the deepseek block for demoting a dead hop: "a hop that always
+    # refuses is latency, not redundancy". Gemini goes last everywhere and heads nothing.
+    # It returns to the front the moment the Google account is billed, which crew#920
+    # carries; nothing else about these chains changes.
+    #
+    # The cheap model is still the last hop of every chain it does not head, which is what
+    # sovereign cp30 grades and the `[routing] cheap` line of AGENTS.md declares; which
+    # lane is `cheap` is the founder's call, not this file's, so it is untouched.
+    #
+    # `default` and `fast` are themselves Gemini rows (gemini-2.5-pro and -2.5-flash), so
+    # naming gemini in their own fallback lists was a hop back to the model that had just
+    # failed. Those entries are gone rather than reordered.
     - gemini: [minimax, deepseek]
-    - default: [gemini, minimax, deepseek]
-    - fast: [gemini, minimax, deepseek]
+    - default: [minimax, deepseek]
+    - fast: [minimax, deepseek]
 
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
   # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored

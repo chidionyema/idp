@@ -48,8 +48,9 @@ data:
   # minimax is the only lane with a clean record on the same measurement: 137 of 137 calls
   # to MiniMax-M3 and 9 of 9 to M2.7 returned without an exception. It also restores the
   # family separation the verify lane's note below describes and which the move to deepseek
-  # quietly broke -- judgment on minimax, verify on gemini, so a wrong answer and its check
-  # never come from the same vendor.
+  # quietly broke -- judgment on minimax, the verify lane on another vendor, so a wrong
+  # answer and its check never come from the same one. (Verify sat on gemini when that was
+  # written; it moved to deepseek the same day, on the measurement below.)
   OTTO_ROUTER_LANE_JUDGMENT_MODEL: "minimax"
 
   # `gemini`, not `fast`: otto/router/config.py derives a lane's family from an explicit map
@@ -66,16 +67,37 @@ data:
   # minimax and embed all answer. The key rows in bin/idp-estate-seed allow minimax, gemini,
   # deepseek and embed.
   #
-  # bulk moved deepseek -> gemini on 2026-09-08 for the same Insufficient Balance
-  # measurement as the judgment lane above. verify stays on gemini, a family apart from the
-  # minimax judgment lane, so the answer and its check never come from one vendor.
-  OTTO_ROUTER_LANE_BULK_MODEL: "gemini"
-  OTTO_ROUTER_LANE_VERIFY_MODEL: "gemini"
+  # bulk and verify moved gemini -> deepseek on 2026-09-08. Measured on the live
+  # router over the two hours to 10:45Z (both litellm pods, 24,955 lines):
+  #
+  #   model                      answered   failed
+  #   gemini/gemini-2.5-flash           5      102   <- the `gemini` alias
+  #   openai/MiniMax-M3                71        0
+  #   deepseek-v4-flash                97       24
+  #   gemini/gemini-embedding-001      66        0
+  #
+  # The 102 gemini failures are all RESOURCE_EXHAUSTED with no quotaId and no retryDelay --
+  # the unbilled shape, not a ceiling this estate can stay under. Five answers out of 107 is
+  # not a lane. Leaving verify there is worse than leaving bulk there: otto/verify/
+  # reply_judge.py returns None on any failure, and otto/router/render.py marks every line
+  # of an unjudged reply with the unverified prefix, so a verify lane that cannot answer
+  # stamps a warning on every sentence Otto sends -- which is the founder reading him as
+  # useless, on a reply that was in fact fine.
+  #
+  # deepseek's 24 failures are one message, all 24: "This response_format type is
+  # unavailable now". Nothing under otto/ sets response_format (grep: zero occurrences), so
+  # those calls are another workload's; from Otto's own calls the row is 97 for 97.
+  #
+  # Family separation still holds -- judgment on minimax, verify on deepseek -- so a wrong
+  # answer and its check never come from one vendor. It returns to a Google row the moment
+  # one is billed, and crew#920 carries that.
+  OTTO_ROUTER_LANE_BULK_MODEL: "deepseek"
+  OTTO_ROUTER_LANE_VERIFY_MODEL: "deepseek"
 
   # crew#892 CP3 pinned the explorer lane to the cheap deepseek tail, for the running gateway
   # exactly like its lane siblings so the image default cannot drift from what the estate
-  # governance expects. The pin stays; the value moves for the same measured reason as the
-  # judgment lane above -- the DeepSeek account answered "Insufficient Balance" on every one
-  # of 40 calls on 2026-09-08, so the cheap tail was not cheap, it was absent. It goes back
-  # to deepseek in one line the moment the account has a balance, and crew#920 carries that.
-  OTTO_ROUTER_LANE_EXPLORE_MODEL: "minimax"
+  # governance expects. It was moved to minimax earlier on 2026-09-08, when the DeepSeek
+  # account answered "Insufficient Balance" on every one of 40 calls -- the cheap tail was
+  # not cheap, it was absent. The account is funded again (97 answers in the two hours
+  # measured below), so the pin is restored to what CP3 declared.
+  OTTO_ROUTER_LANE_EXPLORE_MODEL: "deepseek"
