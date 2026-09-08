@@ -1,0 +1,37 @@
+# The both-ways proof of platform/edge/require-auto-reload.yaml, run by `kyverno test`.
+#
+# Phase 2 of the Unification Move: a structural check on a manifest is graded by the tool that
+# already understands the manifest, not by a bespoke script that re-implements half of Kyverno.
+# The expected output is the patched resource itself, so this cannot pass by asserting a sentence
+# about the policy -- it asserts the annotation the admission controller actually writes.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-auto-reload
+policies:
+  - ../../../platform/edge/require-auto-reload.yaml
+resources:
+  - operator-owned.yaml
+  - estate-owned.yaml
+results:
+  # The refusing case: a StatefulSet an operator owns arrives carrying the "true" rule 1 injects,
+  # and leaves with "false" and the reason beside it, so Reloader stops rolling it.
+  - policy: require-auto-reload
+    rule: an-operator-owned-workload-is-its-operators-job
+    kind: StatefulSet
+    resources: [observability/chi-signoz-clickhouse-cluster-0-0]
+    patchedResources: operator-owned.patched.yaml
+    result: pass
+  # The permitting case: a workload the estate declares itself keeps "true". A rule that turned
+  # Reloader off everywhere would pass the case above and be an outage; this is what stops it.
+  - policy: require-auto-reload
+    rule: workload-reloads-on-its-own-config
+    kind: Deployment
+    resources: [llm/litellm]
+    patchedResources: estate-owned.patched.yaml
+    result: pass
+  - policy: require-auto-reload
+    rule: an-operator-owned-workload-is-its-operators-job
+    kind: Deployment
+    resources: [llm/litellm]
+    result: skip

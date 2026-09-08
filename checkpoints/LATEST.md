@@ -76,3 +76,6 @@ budget. Do not raise the budget to make the gate green.
 `.github/workflows/estate-bootstrap-preflight.yml`, a backstage template skeleton and
 `bin/idp-vault-put` are staged in this checkout by another session. PR #2432 (RBAC floor) is
 glass-break under WJ.8: awaiting the founder's own review, no auto-merge, no self-approval.
+observability/signoz HelmRelease Failed + ClickHouse -- idp-96 is on it (#2388, #2413).
+`.github/workflows/estate-bootstrap-preflight.yml`, a backstage template skeleton and
+`bin/idp-vault-put` are staged in the primary checkout by a third session.

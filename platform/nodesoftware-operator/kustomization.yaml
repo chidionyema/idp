@@ -1,13 +1,25 @@
-# Kustomization for the NodeSoftwareOperator row. Two resources: the CRD
-# (must land first, before the controller can reconcile) and the deployment +
-# RBAC (the operator itself). The CRD lands in the same kustomization.yaml
-# because the CRD has no dependencies on anything else in this dir; the
-# controller deployment depends on the CRD existing, which Flux handles
-# automatically (it dry-runs CRs after CRDs land in the same pass, since the
-# row is applied as one unit).
+# Kustomization for the NodeSoftwareOperator row: the CRD (must land first, before any
+# controller can reconcile), the RBAC the controller runs as, and the controller Deployment
+# itself.
 #
-# Order of resources matters here ONLY for readability; the API server applies
-# them in dependency order regardless.
+# The Deployment's `image:` tags are owned by Flux image-automation via two $imagepolicy markers
+# below (cyrus pattern): one for the controller binary (ghcr.io/chidionyema/controller, watched
+# by platform/image-automation/controller.yaml) and one for the runsc handler image
+# (ghcr.io/chidionyema/runsc, watched by platform/image-automation/runsc.yaml), which the
+# controller reads at startup from its own pod's runsc-handler-mirror initContainer
+# (cmd/main.go:resolveHandlerImage). No literal IMAGE_TAG substitution anywhere; the row
+# reconciles a real image the kubelet can pull, with its tag moved by the same mechanism every
+# other in-repo image uses.
+#
+# This row previously lived without deployment.yaml on this list (PR #2416, "the row has never
+# applied once, and gvisor-runtime never has either"): the three conditions that header listed
+# for adding deployment.yaml back -- a workflow that pushes the image, an
+# ImageRepository/ImagePolicy pair in platform/image-automation, and a $imagepolicy-marked
+# newTag here rather than the bare word IMAGE_TAG -- are all true now (PR #2438). The
+# healthCheck + wait on the Flux row in clusters/oke/platform.yaml also go back with it.
+#
+# Order of resources matters here ONLY for readability; the API server applies them in
+# dependency order regardless.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: nodesoftware-operator
@@ -15,3 +27,8 @@ resources:
   - crds/runtimeinstall.yaml
   - rbac.yaml
   - deployment.yaml
+images:
+  - name: ghcr.io/chidionyema/controller
+    newTag: main-5324-778422de981294d58cc591b7395e2490bf7c1e22 # {"$imagepolicy": "flux-system:controller:tag"}
+  - name: ghcr.io/chidionyema/runsc
+    newTag: main-5324-778422de981294d58cc591b7395e2490bf7c1e22 # {"$imagepolicy": "flux-system:runsc:tag"}

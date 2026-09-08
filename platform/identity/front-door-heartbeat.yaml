@@ -7,10 +7,26 @@
 # in GitHub, hourly; the five-minute pulse runs here, where the schedule is ours.
 #
 # Every five minutes: GET the catalogue's public URL and require a 302 whose Location is on
-# the identity domain. That is the whole redirect chain -- DNS, Traefik, oauth2-proxy and the
-# domain -- graded from outside the cluster. The receipt goes to the estate-drill-receipts
-# bucket by instance principal, exactly as chaos/backstage-pod-kill writes its own;
-# bin/idp-door-heartbeat reads it and oke-check FAILs when it is older than 20 minutes or not ok.
+# the identity domain. That grades public DNS, TLS and the certificate for the public name,
+# Traefik's routing, oauth2-proxy, and the identity domain named in the Location header.
+#
+# What it does not grade, and what an earlier version of this comment claimed it did: anything
+# from outside the cluster. That sentence was wrong from the day the pulse moved in here, and
+# it went unchallenged until #2419 measured the path. The catalogue's public name resolves to
+# this estate's own Traefik load-balancer address, and a Service's load-balancer address is
+# programmed into every node -- so this pod's request is handed straight to a traefik pod on
+# the cluster network and never leaves for the load balancer. The proof is in the failure it
+# caused: the pulse was dropped for 40 hours by the namespace fence for `edge`, which is the
+# policy that judges pod-to-pod traffic, and no internet rule was ever involved. Last success
+# 2026-09-06T08:00:21Z; first success after the fence was declared, 2026-09-08T00:05:18Z.
+#
+# So the load-balancer hop, the OCI firewall in front of it, and the public route into the
+# estate are graded by nothing here, and by nothing else at five-minute resolution. The hourly
+# sign-in drill in GitHub Actions is the only check that reaches this estate from outside it.
+#
+# The receipt goes to the estate-drill-receipts bucket by instance principal, exactly as
+# chaos/backstage-pod-kill writes its own; bin/idp-door-heartbeat reads it and oke-check FAILs
+# when it is older than 20 minutes or not ok.
 # Both URLs are substituted from estate-config (LAW 46); nothing here names a zone.
 apiVersion: batch/v1
 kind: CronJob

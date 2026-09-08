@@ -1,9 +1,14 @@
+agent-workforce
+agents
 backstage
+calico-system
 cert-manager
 chaos-mesh
 commerce
+cyrus
 dagster
 default
+demo-sandbox
 edge
 estate-db
 event-bus
@@ -16,6 +21,7 @@ hermes-agent
 hindsight
 identity
 infra-crew
+jit
 keda
 kube-node-lease
 kube-public
@@ -25,11 +31,13 @@ llm
 mcp
 metrics-server
 monitoring
+nodesoftware-operator
 notify
 observability
 observability-agent
 otto-gateway
 otto-golden
+otto-gvisor-sandbox
 otto-staging
 prospector
 reloader
@@ -43,4 +51,6 @@ spire-system
 staging
 tailscale
 temporal
+tigera-operator
+trivy-system
 weave-gitops

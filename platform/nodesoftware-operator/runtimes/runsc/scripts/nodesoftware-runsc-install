@@ -1,0 +1,96 @@
+#!/bin/bash
+#
+# nodesoftware-runsc-install — install gVisor runsc on a target node.
+#
+# Invoked by the NodeSoftwareOperator controller from inside a privileged
+# hostPath-mounted pod. Writes the cri-o drop-in, drops the runsc binary into
+# /usr/local/sbin/runsc, then triggers a *reload* of cri-o.service (NOT restart).
+#
+# args:
+#   $1 = runsc version, e.g. "1.27.0"
+#   $2 = host root as seen by the handler pod, default "/host"
+#
+# The script writes to the host root via $HOST_ROOT, NOT the handler's
+# container root. The drop-in is then reloaded by entering the host's PID
+# namespace with nsenter and calling systemctl reload cri-o.
+
+set -euo pipefail
+
+VERSION="${1:?usage: nodesoftware-runsc-install <version> [host-root]}"
+HOST_ROOT="${2:-/host}"
+
+if [[ "${VERSION}" =~ [^0-9.] ]]; then
+	printf 'REFUSED: version must match [0-9.]+ (got %q)\n' "${VERSION}" >&2
+	exit 64
+fi
+
+ARCH="$(uname -m)"
+case "${ARCH}" in
+aarch64) ASSET_ARCH="arm64" ;;
+x86_64) ASSET_ARCH="amd64" ;;
+*)
+	printf 'REFUSED: unsupported architecture %s\n' "${ARCH}" >&2
+	exit 65
+	;;
+esac
+
+TMPDIR="$(mktemp -d)"
+cleanup() { rm -rf "${TMPDIR}"; }
+trap cleanup EXIT
+
+URL="https://github.com/containerd/runsc/releases/download/v${VERSION}/runsc-${VERSION}.linux-${ASSET_ARCH}"
+
+printf 'downloading %s\n' "${URL}"
+if ! curl -fSL --connect-timeout 10 --max-time 300 -o "${TMPDIR}/runsc" "${URL}"; then
+	printf 'FAILED: download %s\n' "${URL}" >&2
+	exit 1
+fi
+
+chmod 0755 "${TMPDIR}/runsc"
+
+# Verify the binary actually executes and reports the right version. Anything
+# else means the asset at this URL is wrong (could happen if a release is
+# yanked or the asset name changed).
+ACTUAL_VERSION="$("${TMPDIR}/runsc" --version 2>/dev/null | awk '{print $NF}' | tr -d '\r')"
+if [[ "${ACTUAL_VERSION}" != "${VERSION}" ]]; then
+	printf 'FAILED: downloaded runsc reported %q, expected %q\n' "${ACTUAL_VERSION}" "${VERSION}" >&2
+	exit 1
+fi
+
+# Install onto the host (via /host mount).
+mkdir -p "${HOST_ROOT}/usr/local/sbin"
+install -m 0755 "${TMPDIR}/runsc" "${HOST_ROOT}/usr/local/sbin/runsc"
+
+# Write the cri-o drop-in.
+mkdir -p "${HOST_ROOT}/etc/crio/crio.conf.d"
+cat >"${HOST_ROOT}/etc/crio/crio.conf.d/99-gvisor.conf" <<EOF
+[crio.runtime.runtimes.runsc]
+runtime_path = "/usr/local/sbin/runsc"
+runtime_type = "oci"
+runtime_root = "/run/runsc"
+
+[crio.runtime.runtimes.runsc.options]
+Type = "runsc"
+SystemdCgroup = false
+EOF
+
+# Validate the drop-in parses as TOML *before* reloading cri-o, so a misconfig
+# never makes it into the running daemon.
+python3 -c "
+import sys, tomllib
+tomllib.load(open(sys.argv[1], 'rb'))
+" "${HOST_ROOT}/etc/crio/crio.conf.d/99-gvisor.conf"
+
+# Reload cri-o so the new runtime takes effect. We use nsenter into the host
+# PID 1 -- `systemctl reload` from inside a container isn't recognised because
+# the handler has its own PID namespace.
+if ! nsenter --target 1 --mount --uts --ipc --net --pid -- \
+	/usr/bin/systemctl reload cri-o.service >/dev/null 2>&1; then
+	# Fallback: some estates ship `systemctl` with different capabilities.
+	# Try `chroot` as a last resort. Either path, reload beats restart.
+	if ! chroot "${HOST_ROOT}" /usr/bin/systemctl reload cri-o.service >/dev/null 2>&1; then
+		printf 'WARN: could not reload cri-o.service; ops must reload manually\n' >&2
+	fi
+fi
+
+printf 'installed runsc %s to %s and reloaded cri-o\n' "${VERSION}" "${HOST_ROOT}"

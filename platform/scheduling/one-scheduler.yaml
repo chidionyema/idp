@@ -103,7 +103,20 @@ still_outside_dagster:
   fold: 'pending: to be declared as a Dagster schedule'
 - job: platform/identity/front-door-heartbeat.yaml
   kind: Kubernetes CronJob
-  fold: 'pending: to be declared as a Dagster schedule'
+  # Stays a CronJob, and this row says why rather than carrying the boilerplate a fourth year.
+  # Dagster can do the cadence -- ten of its 46 rows already run at */5 or */10. What it cannot
+  # do is run this job: every one of those 46 rows is `runs_on: mac` (36) or `retire` (10), a
+  # shell command executed by subprocess.run inside the estate-scheduler image, and nothing in
+  # scheduler/estate_scheduler/ imports kubernetes. This job is not a command. It is a pod with
+  # a network position (the identity namespace's fence is what lets it reach edge, measured in
+  # #2419) and a machine identity (OCI instance principal, which is the node's, not a secret's).
+  # Folding it means giving Dagster a pod-launching path it has never had.
+  #
+  # And it should not be folded even then. It is the estate's liveness canary at five-minute
+  # resolution; a canary must not depend on the scheduler, or a silent pulse tells you Dagster
+  # is down and says nothing about the door. kubelet running a CronJob is the shortest
+  # dependency chain available and is not a second scheduler, any more than systemd is.
+  fold: 'no: a pod with a network position and a machine identity, and a canary must not depend on the scheduler it grades the estate for'
 - job: platform/llm/spend-breaker-digest.yaml
   kind: Kubernetes CronJob
   fold: 'pending: to be declared as a Dagster schedule'
