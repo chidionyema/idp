@@ -104,14 +104,33 @@ def check(path: str) -> int:
         print(f"gvisor-cell-gate: nothing at {path}")
         return 2
     found = 0
+    # How many manifests landed in the cell namespace, printed whether or not any of them was
+    # bad. Before 2026-09-08 this gate printed nothing at all on a clean run, so pointing it at
+    # platform/ -- 956 manifests, none of them in otto-gvisor-sandbox -- read exactly like
+    # pointing it at a sandbox full of correct pods (LAW 28: an instrument nobody reads is not
+    # an instrument, and a count of zero is the reading that matters here).
+    graded = 0
     for doc in manifests(p):
+        if (doc.get("metadata") or {}).get("namespace") in CELL_NAMESPACES:
+            # Only a manifest that carries a Pod can break this rule, and only that count is
+            # worth printing: platform/ holds 8 manifests in the cell namespace today and all
+            # 8 are the fence #2450 wrote -- 6 NetworkPolicies, a LimitRange and a quota. A
+            # line saying "8 manifests, every one sandboxed" would be true and would mean
+            # nothing. The number that means something is how many pods were graded: zero.
+            graded += sum(1 for _ in _pod_templates(doc))
         bad = violation(doc)
         if bad:
             print(f"{doc['__file']}: {bad}")
             found += 1
     if found:
-        print(f"gvisor-cell-gate: {found} cell-namespace violation(s) refused")
+        print(f"gvisor-cell-gate: {found} cell-namespace violation(s) refused "
+              f"of {graded} pod(s) in {'/'.join(sorted(CELL_NAMESPACES))}")
         return 1
+    where = "/".join(sorted(CELL_NAMESPACES))
+    if graded:
+        print(f"gvisor-cell-gate: {graded} pod(s) declared in {where}, every one sandboxed")
+    else:
+        print(f"gvisor-cell-gate: no pod is declared in {where} at {path}; nothing was graded")
     return 0
 
 

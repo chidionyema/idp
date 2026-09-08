@@ -59,5 +59,7 @@ jobs:
           git add docs/demos/
           if git diff --cached --quiet; then echo 'render unchanged'; exit 0; fi
           git commit -m 'demo-render: machines refreshed the rendered demos'
-          git pull --rebase origin "${GITHUB_REF_NAME}"
+          # A tape that dirties the tree outside docs/demos/ must not wedge the rebase; the
+          # residue is the demo's scratch, never a change anyone wants committed.
+          git -c rebase.autoStash=true pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
