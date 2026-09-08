@@ -2,9 +2,20 @@
 # and langfuse-values.yaml pin storageClass oci-bv for the signoz and
 # signoz-zookeeper StatefulSets; those objects already exist on the cluster, and a StatefulSet's
 # volumeClaimTemplates are immutable, so moving them onto a cluster-named StorageClass is a data
-# migration (crew#66 follow-up), not a values edit. Scoped to exactly those three names: any new
+# migration (crew#66 follow-up), not a values edit. Scoped to exactly those names: any new
 # StatefulSet naming a provider storage class is still refused. Namespace kyverno: admission
 # honours exceptions from nowhere else (platform/kyverno/kyverno.yaml features.policyExceptions).
+# 2026-09-08: chi-signoz-clickhouse-cluster-0-0 is on the list, and it is the one that mattered.
+# The list named the two StatefulSets written by hand and missed the one the Altinity operator
+# writes from the ClickHouseInstallation -- the estate's actual ClickHouse. That stayed invisible
+# for as long as the object was never recreated: it predates this policy, and an UPDATE to an
+# existing StatefulSet does not re-declare volumeClaimTemplates. A resources change to the CHI made
+# the operator switch its strategy from Update to Recreate, it deleted the StatefulSet, and the
+# CREATE that followed was refused -- 'admission webhook "validate.kyverno.svc-fail" denied the
+# request', failed rules ["no-provider-storage-class-in-templates"]. SigNoz's database was then
+# gone rather than degraded, its PersistentVolumeClaim still bound with nothing to attach it to.
+# A guard that refuses correct work is an outage (LAW 38), and this one was armed and silent for
+# as long as nobody restarted the database.
 apiVersion: kyverno.io/v2
 kind: PolicyException
 metadata:
@@ -19,7 +30,7 @@ spec:
       - resources:
           kinds: [StatefulSet]
           namespaces: [observability]
-          names: [signoz, signoz-zookeeper]
+          names: [signoz, signoz-zookeeper, chi-signoz-clickhouse-cluster-0-0]
 ---
 # The third declared hole (crew#66, R43 sweep 2026-08-28), same class of problem as the one above
 # but a plain PersistentVolumeClaim rather than a StatefulSet's volumeClaimTemplates: the seaweedfs
