@@ -21,6 +21,12 @@
 
 FROM debian:bookworm-slim AS linter
 
+# Docker's default shell is `/bin/sh -c`, and on debian that is dash, which has no
+# `pipefail`: measured 2026-09-08 the first RUN below died with `/bin/sh: 1: set: Illegal
+# option -o pipefail` before apt-get ran at all. LAW 55 wants pipefail on every pipe, so the
+# answer is the shell that has it rather than dropping the option. debian-slim ships bash.
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
 COPY scripts /tmp/scripts/
 RUN set -euo pipefail \
     && apt-get update \
@@ -33,6 +39,8 @@ RUN set -euo pipefail \
 # We pin the version of the base image so a vulnerability fix doesn't change
 # script behaviour silently.
 FROM debian:bookworm-slim
+
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
 # Runtime dependencies. nsenter comes from util-linux; python3 from base; curl
 # from base. We pin via apt-get update before installing so the layer is
