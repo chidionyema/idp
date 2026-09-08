@@ -1,0 +1,5 @@
+# The fence the estate had on 2026-09-08: the controller can be called by the apiserver, and can
+# reach nothing at all on its way out.
+flows:
+  external-secrets:
+    ingress_apiserver: [10250]
