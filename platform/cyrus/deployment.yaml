@@ -17,6 +17,15 @@ spec:
       labels:
         app.kubernetes.io/name: cyrus
         app.kubernetes.io/part-of: idp
+      # Reloader is explicitly off for this pod, never merely absent. The cyrus-github
+      # external-secret is a GithubAccessToken generator on a 10m refresh: ESO rewrites the
+      # mounted secret every ten minutes. Cyrus reads the token dynamically through GIT_ASKPASS
+      # (entrypoint.sh), so a rotation needs NO restart. With Reloader on (auto: true was drifted
+      # onto the deployment, 643 revisions / 11 ReplicaSets in 90 min), every mint rolled the pod
+      # and wiped the /repo and /worktrees emptyDir, killing any run longer than the gap. Disabling
+      # it lets a roll happen only on a real image/config change, not on every token mint.
+      annotations:
+        reloader.stakater.com/auto: "false"
     spec:
       serviceAccountName: cyrus
       automountServiceAccountToken: false
