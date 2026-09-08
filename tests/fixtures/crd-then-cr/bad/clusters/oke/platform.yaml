@@ -1,0 +1,15 @@
+# The Provider and a config of the kind it installs, in one Kustomization path. Flux dry-runs the
+# whole path before it applies any of it, so the ProviderConfig fails validation, the apply is
+# refused, and the Provider that would have installed the kind is never installed either.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: xp-providers
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/xp/providers
+  prune: true

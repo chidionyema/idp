@@ -1,0 +1,36 @@
+# Two rows. The Provider installs the kind and its row waits until it is Healthy; the config of
+# that kind is a separate path that depends on it, so by the time Flux dry-runs the config the
+# kind exists.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: xp-providers
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/xp/providers
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      name: example-provider-family-oci
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: xp-providerconfig
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: xp-providers
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/xp/providerconfig
+  prune: true
+  wait: true

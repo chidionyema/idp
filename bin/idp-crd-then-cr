@@ -1,0 +1,256 @@
+#!/usr/bin/env python3
+"""A Flux Kustomization never holds both the definition of a kind and an instance of it.
+
+Flux validates every object in a Kustomization against the API server before it applies any of
+them. So a path holding a CustomResourceDefinition and a custom resource of that kind cannot
+converge on a cluster that does not already have the kind: the instance fails the dry-run, the
+whole apply is refused, and the definition that would have made the instance valid is therefore
+never installed either. The row does not fail once and heal. It fails forever, and the message it
+prints names the instance, so the deadlock reads as a missing CRD rather than as an ordering
+mistake in this repository.
+
+Measured on 2026-09-08, on this estate:
+
+    ProviderConfig/default dry-run failed: no matches for kind "ProviderConfig" in version
+    "oci.upbound.io/v1beta1"
+
+`platform/crossplane/providers` held the Crossplane Provider that installs `oci.upbound.io` and a
+ProviderConfig of that group. `kubectl get providers.pkg.crossplane.io` returned "No resources
+found" -- the Provider had never been installed at all, for as long as the row had existed. The
+fix is two paths and two Kustomizations, the second depending on the first with wait:true.
+
+What counts as a definition here is a Crossplane Provider, and only that. Upbound's naming is the
+contract: a family package `provider-family-<p>` and its sub-providers `provider-<p>-<service>`
+install groups under `<p>.upbound.io`, so a Provider for `oci` in a path makes every
+`*.oci.upbound.io` object in that same path an instance of a kind it installs. A plain
+CustomResourceDefinition beside an instance of its kind is the same deadlock in principle, but see
+defined_here for the one place in this repository where that shape converges and must not be
+failed.
+
+  idp-crd-then-cr [ROOT]
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import sys
+
+import yaml
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
+FLUX_KUSTOMIZATION = "kustomize.toolkit.fluxcd.io"
+CROSSPLANE_PKG = "pkg.crossplane.io"
+
+# ghcr.io/oracle/provider-family-oci:v1.3.0 -> oci
+# ghcr.io/oracle/provider-oci-objectstorage:v1.3.0 -> oci
+PKG_FAMILY = re.compile(r"/provider-family-([a-z0-9]+)(?::|$)")
+PKG_SUB = re.compile(r"/provider-([a-z0-9]+)-[a-z0-9-]+(?::|$)")
+
+# Not walked. A Kustomization with `path: ./` names the whole checkout, and these hold neither
+# manifests Flux applies nor anything a person edits: tests/fixtures is where this gate's own
+# must-fail tree lives, and reading it from the repository root would make the gate fail on
+# itself, forever, in every run.
+SKIP = {".git", ".venv", "node_modules", "vendor", "site", os.path.join("tests", "fixtures")}
+
+
+def pruned(root: str, dirpath: str, dirnames: list[str]) -> None:
+    """Drop the directories nothing applies from, in place, so os.walk never descends them."""
+    keep = []
+    for name in dirnames:
+        rel = os.path.relpath(os.path.join(dirpath, name), root)
+        if name in SKIP or rel in SKIP:
+            continue
+        keep.append(name)
+    dirnames[:] = keep
+
+
+def docs(path: str) -> list[dict]:
+    """Every YAML document in a file, skipping what will not parse as a mapping."""
+    try:
+        text = open(path, errors="replace").read()
+    except OSError:
+        return []
+    out = []
+    try:
+        loaded = list(yaml.safe_load_all(text))
+    except yaml.YAMLError:
+        return []
+    for d in loaded:
+        if isinstance(d, dict) and d.get("kind"):
+            out.append(d)
+    return out
+
+
+def group_of(api_version: str) -> str:
+    """The API group of an apiVersion; the empty string for core (v1)."""
+    return api_version.split("/")[0] if "/" in api_version else ""
+
+
+def kustomization_paths(root: str) -> dict[str, list[str]]:
+    """Every Flux Kustomization's path, as repo-relative path -> the rows that name it."""
+    found: dict[str, list[str]] = {}
+    clusters = os.path.join(root, "clusters")
+    if not os.path.isdir(clusters):
+        return found
+    for dirpath, dirnames, names in os.walk(clusters):
+        pruned(root, dirpath, dirnames)
+        for fname in sorted(names):
+            if not fname.endswith((".yaml", ".yml")):
+                continue
+            for d in docs(os.path.join(dirpath, fname)):
+                if group_of(d.get("apiVersion", "")) != FLUX_KUSTOMIZATION:
+                    continue
+                if d.get("kind") != "Kustomization":
+                    continue
+                spec = d.get("spec") or {}
+                p = spec.get("path")
+                name = ((d.get("metadata") or {}).get("name")) or "?"
+                if not isinstance(p, str):
+                    continue
+                found.setdefault(p.lstrip("./"), []).append(name)
+    return found
+
+
+def objects_under(root: str, rel: str, seen: set[str] | None = None) -> list[tuple[str, dict]]:
+    """Every object in a Kustomization path, with the file it came from.
+
+    `seen` carries the files a caller has already read, so walking overlapping paths -- and one
+    Kustomization with `path: ./` overlaps every other -- parses each file exactly once.
+    """
+    base = os.path.join(root, rel)
+    out: list[tuple[str, dict]] = []
+    if not os.path.isdir(base):
+        return out
+    for dirpath, dirnames, names in os.walk(base):
+        pruned(root, dirpath, dirnames)
+        for fname in sorted(names):
+            if not fname.endswith((".yaml", ".yml")):
+                continue
+            full = os.path.join(dirpath, fname)
+            where = os.path.relpath(full, root)
+            if seen is not None:
+                if where in seen:
+                    continue
+                seen.add(where)
+            # A substring before a YAML parse. Every group this gate can name ends in
+            # `upbound.io`, and every definition it recognises is a `pkg.crossplane.io` Provider,
+            # so a file containing neither string can hold neither half of a collision. Without
+            # this the row parses the whole checkout -- the estate-catalog Kustomization has
+            # `path: ./` -- and takes 26 seconds instead of one.
+            try:
+                head = open(full, errors="replace").read()
+            except OSError:
+                continue
+            if "upbound.io" not in head and CROSSPLANE_PKG not in head:
+                continue
+            for d in docs(full):
+                out.append((where, d))
+    return out
+
+
+def defined_here(objs: list[tuple[str, dict]]) -> list[tuple[str, str]]:
+    """The API groups this path installs, as (group-suffix, the file that installs it).
+
+    Only Crossplane Providers, deliberately. A plain CustomResourceDefinition beside an instance
+    of its own kind is the same deadlock in principle, but this repository has a path where that
+    is fine and load-bearing: clusters/oke holds the Flux CRDs in gotk-components.yaml and every
+    Kustomization row that uses them, and it converges because `flux bootstrap` puts those CRDs on
+    the cluster before that path is ever reconciled. A gate cannot see that from the tree, and one
+    that fails a converging path is a guard that refuses correct work. A Crossplane Provider has
+    no such bootstrap: nothing but the Provider installs its groups, so the collision is total.
+    """
+    out: list[tuple[str, str]] = []
+    for where, d in objs:
+        if d.get("kind") != "Provider":
+            continue
+        if group_of(d.get("apiVersion", "")) != CROSSPLANE_PKG:
+            continue
+        pkg = ((d.get("spec") or {}).get("package")) or ""
+        m = PKG_FAMILY.search(pkg) or PKG_SUB.search(pkg)
+        if m:
+            out.append((f"{m.group(1)}.upbound.io", where))
+    return out
+
+
+def owner_of(rel_file: str, paths: list[str]) -> str | None:
+    """The most specific Kustomization path a file sits under.
+
+    Most specific, not any: a Kustomization with `path: ./` contains every other row's path, and
+    a file inside a nested row belongs to that row alone. Flux only ever dry-runs a file with the
+    objects of the row that actually builds it, so anything wider is not the set that must
+    converge together. This is what keeps the Flux CRDs in clusters/*/flux-system -- installed by
+    the bootstrap row -- from reading as the definition behind every HelmRelease in the estate.
+    """
+    best = None
+    for pth in paths:
+        prefix = "" if pth in ("", ".") else pth.rstrip("/") + "/"
+        if prefix == "" or rel_file.startswith(prefix):
+            if best is None or len(pth) > len(best):
+                best = pth
+    return best
+
+
+def collisions(root: str) -> list[str]:
+    """Every Kustomization path that holds both a definition and an instance of the same kind."""
+    rows = kustomization_paths(root)
+    paths = list(rows)
+    owned: dict[str, list[tuple[str, dict]]] = {p: [] for p in paths}
+    # Keyed by file, and every file read once. A file holds several objects and all of them are in
+    # the set that has to dry-run together, so a per-document guard would drop all but the first
+    # object of every multi-document file -- which is exactly where a Provider and a config of the
+    # kind it installs sit next to each other.
+    by_file: dict[str, list[dict]] = {}
+    read: set[str] = set()
+    for rel in sorted(paths, key=len, reverse=True):
+        for where, d in objects_under(root, rel, read):
+            by_file.setdefault(where, []).append(d)
+    for where, ds in by_file.items():
+        home = owner_of(where, paths)
+        if home is not None:
+            owned[home].extend((where, d) for d in ds)
+
+    bad: list[str] = []
+    for rel in sorted(paths):
+        objs = owned[rel]
+        defs = defined_here(objs)
+        if not defs:
+            continue
+        definers = {where for _, where in defs}
+        for where, d in objs:
+            if where in definers:
+                continue
+            g = group_of(d.get("apiVersion", ""))
+            if not g:
+                continue
+            for dg, dwhere in defs:
+                if not (g == dg or g.endswith("." + dg)):
+                    continue
+                kind = d.get("kind") or "?"
+                name = ((d.get("metadata") or {}).get("name")) or "?"
+                bad.append(
+                    f"{rel or '.'} (Flux Kustomization {'/'.join(sorted(set(rows[rel])))}) holds "
+                    f"{kind}/{name} of group {g} in {where}, and the Provider that installs that "
+                    f"group in {dwhere}. Flux dry-runs the whole path before it applies any of "
+                    f"it, so neither will ever land -- not the instance, and not the Provider "
+                    f"either. Split the instance into its own path and its own Kustomization, "
+                    f"dependsOn the Provider's row with wait: true."
+                )
+                break
+    return bad
+
+
+def main() -> int:
+    root = sys.argv[1] if len(sys.argv) > 1 else ROOT
+    bad = collisions(root)
+    if bad:
+        for line in bad:
+            print(f"FAIL {line}")
+        return 1
+    print("ok: no Flux Kustomization holds both a kind's definition and an instance of it")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

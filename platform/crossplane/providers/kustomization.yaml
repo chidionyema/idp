@@ -3,4 +3,3 @@ kind: Kustomization
 resources:
   - runtime.yaml
   - providers.yaml
-  - providerconfig.yaml
