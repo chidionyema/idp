@@ -39,7 +39,7 @@ COPY scripts /tmp/scripts/
 RUN set -euo pipefail \
     && apt-get update \
     && apt-get install -y --no-install-recommends shellcheck ca-certificates \
-    && shellcheck -s warning /tmp/scripts/nodesoftware-runsc-* \
+    && shellcheck -S warning /tmp/scripts/nodesoftware-runsc-* \
     && echo "scripts: shellcheck clean" \
     && install -m 0755 /tmp/scripts/* /usr/local/bin/
 
