@@ -106,8 +106,11 @@ Branch `feat/estate-autobot-surface`, commits `06066c01` and `bdf71872`.
 - The four vendor WIF wirings (Tailscale, Cloudflare, GitHub App, vendor SaaS). Each is a
   separate decision-and-build turn; the order is 0026 step 3 (Claim emitter) → step 4 (one
   workload migrated).
-- The IAM grant that lets the federated GitHub Actions principal write to the OCI vault.
-  One-line founder action, documented in `docs/operations/estate-bootstrap-cloud.md`.
+- The OCI vault-write grant. The runner never holds an OCI write verb; the broker applies the
+  write through its own compartment-scoped principal with the TTL the founder approved. Proposed
+  as an `oci-vault-write` row in `platform/jit/grants.yaml` (`mode: broker-applies`) — glass-break
+  under WJ.8, founder-only on `/platform/`. See "Proposed grant" below for the YAML shape; this
+  doc does NOT land the row itself, only the dependency it implies.
 
 ## Open items, named
 
@@ -118,3 +121,29 @@ Branch `feat/estate-autobot-surface`, commits `06066c01` and `bdf71872`.
   (`commerce-payment-provider`, `cyrus-linear`, `cyrus-linear-api-token`, `DEEPSEEK_API_KEY`,
   `TELEGRAM_ALERTS_BOT_TOKEN`, `otto-staging-telegram`, etc.). The preflight gate refuses this
   PR for those rows; they are a founder action (drop, rotate, or assign a bootstrapper).
+
+## Proposed grant: oci-vault-write
+
+The cloud-side `live` job in `estate-bootstrap.yml` (mode=estate-seed) needs to write vault
+values. The runner's OIDC identity names the vault key and value; the broker performs the write
+through its own compartment-scoped principal with the TTL the founder approved. Pattern follows
+`oci-scale-node-pool` (`mode: broker-applies`, `max_ttl: 10m`, `rate_per_hour: 2`):
+
+```yaml
+- id: oci-vault-write
+  provider: oci
+  why: The bootstrap workflow writes a vault value during seed and the runner never holds the verb
+  mode: broker-applies
+  operations: [create-secret, update-secret]
+  compartment: estate
+  secrets: [agent_foundry_runner, estate_seed_keys, estate_runbook_secrets]
+  max_ttl: 10m
+  rate_per_hour: 5
+  parameters:
+    secret_name: {type: name, required: true}
+    contents_b64: {type: base64_blob, required: true, encrypted_in_transit: true}
+```
+
+Glass-break (WJ.8). CODEOWNERS on `/platform/` names the founder; no merge bot may land this
+change. The bootstrap doc points at this row; the row does not point back at the bootstrap.
+Same direction as `oci-scale-node-pool`, `dns-point-record`, `github-rerun-failed-checks`.

@@ -66,25 +66,34 @@ not".
    `bin/estate-preflight.d/`. The runbook carries the exact sequence, including
    the OIDC trust assumption and the merge-safe writer.
 
-## One-time setup (founder action)
+## One-time setup: an `oci-vault-write` row in the JIT catalogue
 
 The federated principal `github-actions-estate` already has vault-read (the
-`vault-reads.yml` workflow proves it). To let the bootstrap live job write,
-the founder runs once:
+`vault-reads.yml` workflow proves it). For the bootstrap live job to write,
+the runner never holds an OCI write verb; the broker applies the change
+through its own compartment-scoped principal with the TTL the founder
+approved. Pattern follows `oci-scale-node-pool` (`mode: broker-applies`):
 
-```bash
-oci iam policy create --compartment-id "$ROOT_COMPARTMENT_OCID" \
-  --name "github-actions-estate-vault-writer" \
-  --statements '[
-    "Allow dynamic-group github-actions-estate to manage secret-family in compartment id <ESTATE_COMPARTMENT_OCID>",
-    "Allow dynamic-group github-actions-estate to manage secret-bundles in compartment id <ESTATE_COMPARTMENT_OCID>"
-  ]'
+```yaml
+- id: oci-vault-write
+  provider: oci
+  why: The bootstrap workflow writes a vault value during seed and the runner never holds the verb
+  mode: broker-applies
+  operations: [create-secret, update-secret]
+  compartment: estate
+  secrets: [agent_foundry_runner, estate_seed_keys, estate_runbook_secrets]
+  max_ttl: 10m
+  rate_per_hour: 5
+  parameters:
+    secret_name: {type: name, required: true}
+    contents_b64: {type: base64_blob, required: true, encrypted_in_transit: true}
 ```
 
-After this IAM grant exists, the live job's `bin/idp-estate-seed` succeeds.
-A P1 already on the board for the missing grant is the only reason this is
-not granted on day one -- the preflight path catches the refusal cleanly,
-and the live-vendor-refused job catches the wrong-scope case.
+Glass-break (WJ.8) on `/platform/`. Founder-owned on `grants.yaml`; no merge bot
+may land this change. The bootstrap doc points at this row; the row does not
+point back at the bootstrap. Until the row lands, the live job's
+`bin/idp-estate-seed` cannot complete -- the preflight path catches the
+refusal cleanly, and the live-vendor-refused job catches the wrong-scope case.
 
 ## Why the preflight is file-only enough for CI, but the live run needs the cloud
 
@@ -92,9 +101,9 @@ CI runs `bin/idp-root-trust --check` (the file-only gate, no OCI, no network --
 two kinds of file and nothing else). That is enough to catch "a vault key with
 no bootstrapper" before it lands on main.
 
-The live run needs the OCI tenancy, the vault, and the IAM grant documented
+The live run needs the OCI tenancy, the vault, and the JIT broker row documented
 above. The first two are on the cloud runner via OIDC; the third is the
-founder's one-time setup.
+founder-owned row in `platform/jit/grants.yaml`.
 
 ## Patterns considered, why they did not land
 
