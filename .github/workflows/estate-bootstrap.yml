@@ -1,0 +1,197 @@
+# button: Run the estate bootstrap (cloud-side, OIDC, no laptop)
+# founder: Same identity path as vault-reads.yml (crew#584, gtrevorrow/oci-token-exchange-action@v2):
+#   the GitHub Actions OIDC token trades for an OCI session token, OCI_CLI_AUTH=security_token,
+#   then the bootstrapper runs from the runner. No laptop, no founder SSH, no key in a repo.
+# What this workflow runs, in order:
+#   1. bin/idp-bootstrap-estate --preflight  : every bin/idp-bootstrap-* preflight, in dependency
+#      order, ending with bin/idp-root-trust --check. Read-only against the vault. The operator
+#      watches the run land in the Actions UI; the verdict line is the answer.
+#   2. bin/idp-estate-seed                  : the live OCI half. Mints every estate-born credential
+#      in-process (LAW 21, no paste, no console) and writes through bin/idp-vault-put --merge so
+#      vendor keys that already live in the same entry are kept untouched. Same trust as the
+#      preflight: the runner's OIDC identity, which already has vault-read; the IAM grant for
+#      vault-write is the one-time founder action this workflow documents in docs/operations/.
+#      Scope choice `estate-seed` skips every vendor step -- the OCI half is what cloud-execution
+#      can complete. Vendor halves (tailscale, cloudflare, vendors, github-app) need their own
+#      trust boundary each (browser SSO into a vendor console), so they stay on the laptop runbook
+#      under bin/estate-preflight.d/. This is the honest split, not the stitched-together one.
+# Why two jobs and not one: a preflight that goes red should never silently turn into a live run --
+# the operator looks at the verdict first, decides, and re-dispatches with mode=live. The preflight
+# is free; the live run mints real credentials, so its gate is the preflight exit code, not a wall.
+# Trigger shape mirrors vault-reads.yml:
+#   workflow_dispatch        : the operator (or a Backstage scaffolder action) hits "Run"
+#   workflow_call            : other workflows can call this one with the same inputs
+name: estate-bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "estate-seed (OCI half, cloud-side) or a vendor scope (laptop runbook path)"
+        required: true
+        type: choice
+        options:
+          - estate-seed
+          - tailscale
+          - cloudflare
+          - vendors
+        default: estate-seed
+      reason:
+        description: "One-line reason (drift, fresh bring-up, region copy, key rotation)"
+        required: true
+        type: string
+      mode:
+        description: "preflight (read-only) or live (writes the vault)"
+        required: true
+        type: choice
+        options:
+          - preflight
+          - live
+        default: preflight
+  workflow_call:
+    inputs:
+      scope:
+        required: true
+        type: string
+      reason:
+        required: true
+        type: string
+      mode:
+        required: true
+        type: string
+
+permissions:
+  id-token: write   # the OIDC token this job trades for OCI access (crew#584)
+  contents: read
+
+concurrency:
+  group: estate-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  # The preflight path: read-only against the vault, end state is the same root-trust --check the
+  # operator's laptop run would print. Goes red on a MISS or PARTIAL row in
+  # docs/reference/policy/root-trust.md. A red preflight is also the gate before a live run.
+  preflight:
+    if: ${{ inputs.mode == 'preflight' || inputs.mode == 'live' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: bin/idp-bootstrap-estate --preflight
+        id: preflight
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          SCOPE: ${{ inputs.scope }}
+          REASON: ${{ inputs.reason }}
+        # set +e is intentional: the orchestrator's exit code (0 ok, 1 FAIL, 2 BLIND) is the
+        # verdict, not bash's. bash -e would mask it.
+        run: |
+          set +e
+          case "$SCOPE" in
+            estate-seed) CMD="bin/idp-estate-seed --preflight" ;;
+            tailscale)   CMD="bin/idp-bootstrap-tailscale --preflight" ;;
+            cloudflare)  CMD="bin/idp-bootstrap-cloudflare --preflight" ;;
+            vendors)     CMD="bin/idp-bootstrap-vendors --preflight" ;;
+            *) echo "FAIL    estate-bootstrap: unknown scope '$SCOPE'" >&2; exit 2 ;;
+          esac
+          out=$("$CMD" 2>&1)
+          rc=$?
+          set -e
+          printf '%s\n' "$out"
+          echo "reason=$REASON"
+          echo "scope=$SCOPE"
+          tail -1 <<<"$out" >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+      - name: upload preflight log
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: estate-bootstrap-preflight
+          path: ${{ github.workspace }}/preflight.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The live path: OCI half only. The runner's OIDC identity already has vault-read (vault-reads.yml);
+  # the founder extends that IAM grant to vault-write in the one-time setup documented at
+  # docs/operations/estate-bootstrap-cloud.md. Vendor halves (tailscale, cloudflare, vendors,
+  # github-app) require the operator's SSO into each vendor console and so stay on the laptop
+  # runbook under bin/estate-preflight.d/. Cloud-execution cannot reach across that trust boundary
+  # without a long-lived service principal the founder has not approved -- that decision is its
+  # own scope and is documented in the same place.
+  live:
+    needs: [preflight]
+    if: ${{ inputs.mode == 'live' && inputs.scope == 'estate-seed' && needs.preflight.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: bin/idp-estate-seed
+        id: live
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          REASON: ${{ inputs.reason }}
+        # set +e is intentional: the bootstrapper's exit code is the verdict (0 ok, 1 FAIL, 2 BLIND).
+        run: |
+          set +e
+          out=$(bin/idp-estate-seed 2>&1)
+          rc=$?
+          set -e
+          printf '%s\n' "$out"
+          tail -1 <<<"$out" >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+  # Vendor scopes refuse the live run on purpose: cloud-execution cannot complete a vendor
+  # bootstrap without a long-lived service principal for that vendor. The preflight still runs
+  # above (so the operator sees the verdict), the live job returns a non-zero that points the
+  # operator at the laptop runbook under bin/estate-preflight.d/. No silent skip.
+  live-vendor-refused:
+    needs: [preflight]
+    if: ${{ inputs.mode == 'live' && inputs.scope != 'estate-seed' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: refuse and point the operator at the laptop runbook
+        env:
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          cat <<'EOF' >&2
+          FAIL    estate-bootstrap: live cloud-side for scope '$SCOPE' is not wired.
+          why:    cloud-execution has no trusted identity in the vendor's console
+                  (Tailscale, Cloudflare, GitHub App, vendor SaaS). A long-lived service
+                  principal in each vendor is a founder decision that is not in this scope.
+          fix:    run the laptop runbook under bin/estate-preflight.d/ for this scope, OR
+                  pre-load the vendor key into the vault and re-dispatch scope=estate-seed,
+                  OR grant the federated principal a service identity in the vendor console
+                  and re-run (founder decision).
+          doc:    docs/operations/estate-bootstrap-cloud.md (Vendor halves section)
+          EOF
+          exit 1

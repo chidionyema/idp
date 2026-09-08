@@ -8,7 +8,10 @@ platform/github/ruleset.idp.required-checks.json rather than a list typed here -
 that is added to the ruleset and not to this tool would otherwise be a check nothing waits for.
 
 WHAT IT REFUSES, each a real case rather than a precaution:
-  draft                     the author is still writing it
+  draft                     ONLY when it is otherwise unfinished. A draft that is green, clean
+                            and unheld gets READY instead: the flag is the author's, and the
+                            author is a session that ended (crew, 2026-09-08, five green drafts
+                            sat ten days on it)
   hold / do-not-merge / wip the one-word way for any session or the founder to stop one merge
   BEHIND                    not a refusal: main moved underneath it. Refresh, land next tick --
                             skipping this is how crew's two stalled pull requests became conflicts
@@ -22,7 +25,7 @@ WHAT IT REFUSES, each a real case rather than a precaution:
 
   bin/idp-pr-landable PR.json      (the output of `gh pr view --json isDraft,mergeStateStatus,labels,statusCheckRollup`)
 
-Prints one line: `MERGE|UPDATE|SKIP  <why>`. Exit 0 always -- the verdict is the answer, and a
+Prints one line: `MERGE|READY|UPDATE|SKIP  <why>`. Exit 0 always -- the verdict is the answer, and a
 tool that exits 1 on "not yet" turns a normal wait into a red run.
 """
 
@@ -63,8 +66,6 @@ def verdict(pr, required):
     missing = sorted(required - names)
     state = pr.get("mergeStateStatus")
 
-    if pr.get("isDraft"):
-        return "SKIP", "draft"
     if labels & HOLD:
         return "SKIP", "labelled " + ",".join(sorted(labels & HOLD))
     if state == "BEHIND":
@@ -84,6 +85,13 @@ def verdict(pr, required):
             (c.get("name") or "?") + "=" + (c.get("conclusion") or "none")
             for c in bad[:4]
         )
+    # The draft flag is judged LAST, and only on a pull request that is otherwise finished, so a
+    # draft that is red, held or conflicted is never touched. Five green pull requests sat in crew
+    # for ten days on nothing but this flag, because the sessions that opened them never came back
+    # to clear it. Founder, 2026-09-08: "agents should be responsiblefor their own own, all this
+    # chasing is fricion". A green draft nobody marked ready is marked ready and lands next tick.
+    if pr.get("isDraft"):
+        return "READY", "a green draft nobody marked ready"
     return "MERGE", "green, clean, unblocked"
 
 
