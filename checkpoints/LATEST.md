@@ -1,81 +1,76 @@
-## RESUME HERE — 2026-09-08T00:22:10Z
+# CHECKPOINT — 2026-09-08, crew#920 Otto enterprise readiness
 
-## The fire (LAW 1): the ClickHouse recreate loop
+## RESUME HERE
 
-**Root cause, proven from two angles.** The Altinity operator writes the ClickHouse pod's own IP
-into `observability/chi-signoz-clickhouse-common-usersd` on every reconcile; Stakater Reloader
-(`reportingComponent=reloader-configmaps`) sees the mounted ConfigMap change and rolls the
-StatefulSet; the new pod has a new IP; repeat, roughly every 40 seconds, `restartCount 0`
-throughout because each one is a *new pod*, not a restarted container. Angle 1: the configmap
-byte-churn (1488 -> 1487 bytes, a one-byte IP-string delta). Angle 2: the event chain, read live
-(`UpdateCompleted ConfigMap` -> `Killing pod` -> `Scheduled`, ~13s apart).
+**The estate is blocked on one founder action, pinned to Telegram (message_id 43319).**
 
-**Fix merged.** PR #2426, squashed to `48240d12` at 2026-09-08T00:16:52Z. A third rule in
-`platform/edge/require-auto-reload.yaml` reads `ownerReferences[].kind` off the object and sets
-`reloader.stakater.com/auto: "false"` on any workload a custom resource owns — a derived property,
-not a hand-kept namespace list.
+Flux is deadlocked estate-wide. 0 of 80 Kustomizations Ready: 15 ArtifactFailed, 61
+DependencyNotReady, 4 Progressing. Every artifact fetch fails with
+`dial tcp 10.96.202.29:80: i/o timeout` against `source-controller.flux-system.svc.cluster.local.`
 
-**Measured since:** `ANNOTATION FLIPPED: reloader auto=false on the ClickHouse StatefulSet`.
-Monitor `bz5wh5if7` is watching for the pod to outlive four ~40s cycles.
+### The measurement (two angles, LAW 15)
 
-**Still to do after the loop stops, in this order.** idp-bb measured that the signoz HelmRelease is
-`[Stalled] True RetriesExceeded` since 2026-09-07T22:33:57Z and **will not retry on its own** — it
-needs an explicit reconcile kick. Behind it: langfuse is `DependencyNotReady`, and the whole
-observability Kustomization is `HealthCheckFailed`, lastApplied `a38150d4` vs lastAttempted
-`83c808ec`, ~30 commits behind main. Only after that: a real ClickHouse insert or a
-`signoz-otel-collector` success line. **Nothing yet says SigNoz works.**
+- `helm-controller` pod is on node `10.0.148.221`, the same node as `source-controller`
+  (`10.244.117.185`). 31 of 32 HelmReleases are Ready. Its fetches from that ClusterIP work.
+- `kustomize-controller` pod is on node `10.0.159.197` (`10.244.3.87`). 0 of 80 Kustomizations
+  Ready, every fetch timing out against the same ClusterIP, same port 80.
 
-**Correction carried forward.** The ClickHouse memory ceiling is *not* 3.60 GiB. Git says `4Gi`
-(values.yaml) but the live CHI and pod both declare **5632Mi** — the #2388 rollback never reached
-the cluster, for exactly the stall reason above. So the ceiling is `maximum: 4.95 GiB` and the
-tracker sits 1.15 GiB above real RSS, which is what a process killed every 40s looks like. Hold
-the retention-or-third-node decision (LAW 11, founder's call) until after the loop stops; more RAM
-would be buying capacity for a bug. Confirmed independently here: the receipt's placement row reads
-`memory_request_mi: 5632`.
+Same service, same artifact, only the node differs. Every GitRepository and OCIRepository is
+Ready with a stored artifact, so the sources are fine and the path to them is not.
 
-## The trap worth remembering: `kyverno test` passes an ungraded expectation
+### Cause, and what was eliminated
 
-Writing #2426's refusing case turned this up. The first attempt was the real expectations against a
-copy of the policy with the rule under test **deleted** — and `kyverno test` printed *"3 tests
-passed"*. It scores a result naming a rule it cannot find as `Pass` with reason `Excluded`, so
-`patchedResources` is never compared. A kyverno test can pass while proving only that kyverno
-started. **A refusing case must perturb the EXPECTATION, never the rule's existence.**
-`tests/fixtures/reloader-blind` does it the right way and fails, rc=1, measured.
+Two CNIs hold `10.244.0.0/16` at once: `kube-flannel-ds` 2/2 Running since 2026-08-25, and
+Calico since 38h ago. Seven pods still carry no `cni.projectcalico.org/podIP`:
+`identity/oauth2-proxy`, `estate-db/cnpg-controller`, `observability/superset`, and four
+short-lived `receipt-*` jobs.
 
-## In flight: give bin/idp-fits-a-node a live input (crew#684 rung 3)
+Eliminated: Felix is looping normally with no errors; both flux pods are on Calico; VXLAN is up
+with tunnel addresses on both nodes; `flux-system/allow-egress` permits all same-namespace
+traffic on all ports; no Calico GlobalNetworkPolicies exist; both kube-proxy pods have been
+quiet and healthy since 2026-08-27.
 
-Unstaged in this checkout, moving to a worktree: `platform/state/cluster-state.yaml`,
-`bin/idp-fits-a-node`, `.github/workflows/oke-check.yml`, `rules.yaml`.
+Not measured: that the double CNI is the reason. This session holds `agent-reader` and cannot
+create a pod, exec into one, or restart a controller, so the probe that would settle it could
+not run.
 
-The gate ran in **no CI job and no workflow** — only against its own fixtures — so it graded
-nothing on 2026-09-07 while ClickHouse sat Unschedulable and the aggregate capacity row read fine.
-The receipt now carries compact `placement` rows (per-pod cpu/memory requests, node, phase, owner,
-scheduler reason, QoS class) so the gate has a live input. One algorithm, two input adapters —
-`--receipt` rehydrates the same shapes, never a second copy of the rule. Proved faithful: both
-paths over one snapshot differ only in the ledger path printed in the message text.
+### The staged action
 
-QoS is carried because `platform/scheduling/require-priority-class.yaml`
-(`radio-room-set-is-guaranteed`, Enforce) requires `requests == limits` for the radio-room set, so
-those workloads have no "small reservation, big ceiling" option (idp-bb, measured on #2429).
+```
+kubectl -n kube-system delete daemonset kube-flannel-ds
+kubectl -n identity rollout restart deploy/oauth2-proxy
+kubectl -n estate-db rollout restart deploy/cnpg-controller
+kubectl -n observability rollout restart deploy/superset
+```
 
-**Defect fixed in passing (LAW 8):** the existing `fits-a-node` rule row had two `note:` values in
-flow mappings containing an unquoted comma, so YAML terminated the value and turned the remainder
-into a stray null key — the notes were silently truncated. Both quoted; a scan of all 45 rows found
-no other instance.
+Confirm with `kubectl get kustomization -A | grep -c True`.
 
-## The finding that needs the founder, not a gate
+### What is queued behind it
 
-Wiring the gate makes a real pre-existing state visible: **11–14 workloads fit exactly one node
-against a recorded budget of 2.** With two nodes both near full, almost anything of size fits
-nowhere else — the estate has essentially no failure headroom, which is in tension with the
-availability standard. This is a funding decision (LAW 11), not something to bury by raising the
-budget. Do not raise the budget to make the gate green.
+1. `chi-signoz-clickhouse-cluster-0-0-0` is crash-looping at 31 restarts on the old config.
+   `d0816557` (PR #2535, merged, CI green) fixes it and is waiting on Flux.
+2. `signoz-clickhouse` then gets endpoints, and langfuse's database job stops timing out.
+3. observability catches up from `a38150d4`.
+4. langfuse-web and langfuse-worker drop 1000m -> 500m each (#2429). That returned CPU is what
+   lets the queue on two nodes at 91% and 95% requested finally schedule.
+5. Otto's verify lane leaves gemini (#2518).
 
-## Not mine, do not touch
+## IN FLIGHT
 
-`.github/workflows/estate-bootstrap-preflight.yml`, a backstage template skeleton and
-`bin/idp-vault-put` are staged in this checkout by another session. PR #2432 (RBAC floor) is
-glass-break under WJ.8: awaiting the founder's own review, no auto-merge, no self-approval.
-observability/signoz HelmRelease Failed + ClickHouse -- idp-96 is on it (#2388, #2413).
-`.github/workflows/estate-bootstrap-preflight.yml`, a backstage template skeleton and
-`bin/idp-vault-put` are staged in the primary checkout by a third session.
+Worktree `scratchpad/wt-flux`, branch `fix/flux-control-plane-colocates`: a podAffinity patch in
+`clusters/oke/flux-system/kustomization.yaml` pinning kustomize-controller to
+source-controller's node, so the control plane never again deadlocks on the overlay it is
+responsible for repairing. It takes effect only after Flux is applying again.
+
+## STILL OPEN, crew#920
+
+- Ephemeral/shadow cluster, issue #2471 under umbrella #2470 (vcluster). Not started.
+- JIT break-glass broker proved end to end with one real tap on the founder's phone.
+- Ten scheduled jobs folded onto the one scheduler. Blocked: another session holds that repo.
+- The capability board graded.
+
+## MERGED THIS SESSION
+
+- #2535 -> `d0816557` — ClickHouse system-log TTL inside the engine string, plus the LAW 45 gate
+  `bin/idp-clickhouse-system-log-ttl` and its fixture pair, registered in `rules.yaml`.
+- #2527 — otto-golden rehearsal, CI green.
