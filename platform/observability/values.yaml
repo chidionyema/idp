@@ -47,13 +47,36 @@ clickhouse:
     # from what crew#539 measured. A micro request with a burst limit is the shape crew#584 asks
     # for, and is what the comment above claimed while the file still said 1000m.
     #
-    # This restores the pod. It does NOT fix code 241 -- ClickHouse comes back at the same 4Gi
-    # ceiling it was already refusing every write at, which is where it was before #2378. The
-    # headroom to fix that does not exist on two nodes at 78% and 68% of allocatable memory and
-    # 85% / 92% of CPU, so the levers are retention (signoz-retention.yaml, which deletes data)
-    # or a third node. Both are the founder's call, not this file's.
-    requests: { cpu: 200m, memory: 4Gi }
-    limits: { cpu: 2000m, memory: 4Gi }
+    # 2026-09-08: "retention or a third node" was a false choice, and 4Gi here was a live
+    # landmine. Neither lever was needed and neither was safe. Measured on the running pod once
+    # the recreate loop was dead (#2426, 48240d12), `system.parts` active by size read:
+    #
+    #   system.trace_log             12.67 GiB     signoz_logs.logs_v2       458.11 MiB
+    #   system.zookeeper_log          5.23 GiB     signoz_metrics.samples_v4 151.11 MiB
+    #   system.part_log               1.83 GiB     signoz_traces.index_v3     50.34 MiB
+    #   system.query_log              1.70 GiB
+    #   system.processors_profile_log 1003.87 MiB
+    #
+    # 23.0 GiB of 27.37 GiB on disk was ClickHouse's own debug logging -- fifty times the largest
+    # table SigNoz actually uses. That is what sat on the ceiling: of 96 code-241 refusals in ten
+    # minutes, 94 came from MergePlainMergeTreeTask::executeStep() and MergeTreeBackgroundExecutor
+    # and one from executeQuery. It fed itself -- system logs grow, merging them is refused at the
+    # ceiling, parts never merge (2124 active), more merges queue. The collector was never shut
+    # out, it was in a retry loop: `Exporting failed. Will retry the request after interval`, with
+    # `OvercommitTracker decision: Query was selected to stop by OvercommitTracker` as the refusal.
+    # Truncating those tables took the database from 24.68 GiB to 4.36 GiB on disk and the memory
+    # tracker from 2.73 to 2.06 GiB, deleting no telemetry and buying no node. The TTLs below stop
+    # them coming back; the truncate was the one-off that cleared what had already accumulated.
+    #
+    # The number stays where the cluster actually has it. Git said 4Gi and the live pod has run at
+    # 5632Mi since #2388's rollback never reached it (the observability Kustomization was stalled
+    # behind a failed signoz HelmRelease pre-upgrade hook, itself a casualty of the recreate loop).
+    # With live RSS measured at 4.49 GiB, a reconcile carrying 4Gi would have OOMed the database
+    # the moment the pipeline unstuck. 5632Mi is what is live, so the reconcile is a no-op on
+    # memory and cannot kill it. Lowering it belongs to a measurement taken after the TTLs have
+    # held for a day, not to this commit.
+    requests: { cpu: 200m, memory: 5632Mi }
+    limits: { cpu: 2000m, memory: 5632Mi }
   # crew#483 (2026-08-28, diagnose run 33172481714): once the node agents reached the collector
   # (c03fb77), signoz-otel-collector logged `code: 241 ... (total) memory limit exceeded: would use
   # 3.61 GiB ... current RSS: 1.87 GiB, maximum: 3.60 GiB` on every batch of spans, logs and
@@ -69,6 +92,28 @@ clickhouse:
     mark_cache_size: "536870912"
     index_mark_cache_size: "134217728"
     merges_mutations_memory_usage_to_ram_ratio: "0.3"
+    # 2026-09-08: ClickHouse's own system logs default to no TTL, so on a 20Gi volume they grew to
+    # 23.0 GiB and pushed the server onto its memory ceiling merging them (see the resources block
+    # above for the measurement). These keys render into config.d through the Altinity operator's
+    # slash-nested settings form, one <ttl> per system log table. trace_log is a profiler and the
+    # single worst offender at 12.67 GiB, so it keeps one day; zookeeper_log was inflated by the
+    # recreate loop and keeps one; the rest keep three, which is longer than any incident window
+    # this estate has needed and small enough that merges of them stay off the ceiling. Nothing
+    # here touches a signoz_* table -- telemetry retention is signoz-retention.yaml's job and is
+    # deliberately not changed.
+    trace_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
+    zookeeper_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
+    processors_profile_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
+    query_thread_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
+    query_views_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
+    text_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
+    session_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
+    asynchronous_insert_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
+    blob_storage_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
+    part_log/ttl: "event_date + INTERVAL 3 DAY DELETE"
+    query_log/ttl: "event_date + INTERVAL 3 DAY DELETE"
+    metric_log/ttl: "event_date + INTERVAL 3 DAY DELETE"
+    asynchronous_metric_log/ttl: "event_date + INTERVAL 3 DAY DELETE"
   persistence:
     size: 20Gi
   zookeeper:
