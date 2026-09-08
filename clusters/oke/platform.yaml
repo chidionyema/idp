@@ -775,6 +775,61 @@ spec:
       name: keda-add-ons-http
       namespace: keda
 ---
+# Decision 0026 step 2: Crossplane's control plane. The core chart only -- no provider, no
+# ProviderConfig -- so a chart failure cannot take the providers with it, and so the providers
+# can wait on the CRDs this row installs (pkg.crossplane.io/v1) rather than racing them.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: scheduling
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/crossplane
+  prune: true
+  wait: true
+  timeout: 15m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: crossplane
+      namespace: crossplane-system
+---
+# Decision 0026 step 2, second half: the OCI provider, its runtime config and the ProviderConfig
+# that names OKE Workload Identity. Separate from the row above because Provider is a CRD the
+# chart installs -- this path cannot even be validated until crossplane has reconciled, which is
+# what dependsOn buys. No health check on the Provider: a Provider becomes Healthy only after it
+# has pulled and unpacked its package, which on a cold node is minutes, and a Kustomization that
+# waits on it would hold the whole reconcile. The wall is bin/idp-ci and the drill, not a timeout.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane-providers
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: crossplane
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/crossplane/providers
+  prune: true
+  wait: false
+  timeout: 15m
+  postBuild:
+    substituteFrom:
+      # ${ESTATE_OCI_REGION}: the provider reads it twice (resource-principal env, credential
+      # blob). Not optional -- a missing ConfigMap must fail the row rather than hand the
+      # provider the literal string '${ESTATE_OCI_REGION}' as a region.
+      - kind: ConfigMap
+        name: estate-config
+---
 # crew#516 CP5 slice 1: the science lane's facts counted in the collector's backend, from inside
 # the cluster (platform/science/science-facts.yaml). Reader: bin/idp-science-facts.
 apiVersion: kustomize.toolkit.fluxcd.io/v1

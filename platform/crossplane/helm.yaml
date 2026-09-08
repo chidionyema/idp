@@ -1,0 +1,69 @@
+# Crossplane core: the day-2 control loop of decision 0026. OpenTofu owns the ground the cluster
+# stands on and keeps owning it; Crossplane owns what the cluster asks for afterwards, and the
+# difference between them is drift correction. A bucket OpenTofu created is correct until someone
+# changes it in the console, and nobody finds out until the next plan; a bucket Crossplane owns is
+# put back at the reconcile interval. bin/idp-split-brain is the guard that keeps exactly one of
+# them owning any given object, and it shipped before this did, on purpose.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: crossplane
+  namespace: crossplane-system
+spec:
+  interval: 24h
+  url: https://charts.crossplane.io/stable
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: crossplane
+  namespace: crossplane-system
+spec:
+  interval: 10m
+  timeout: 10m
+  chart:
+    spec:
+      chart: crossplane
+      version: 2.4.0
+      sourceRef:
+        kind: HelmRepository
+        name: crossplane
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3 }
+  values:
+    # One replica. This is a control loop over a handful of objects, not a data path, and the
+    # estate's two nodes are at 89% of allocatable CPU requests; a second replica buys an
+    # availability property nothing here needs and costs a node's remaining headroom.
+    replicas: 1
+    resourcesCrossplane:
+      requests: { cpu: 50m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+    resourcesRBACManager:
+      requests: { cpu: 25m, memory: 128Mi }
+      limits: { cpu: 250m, memory: 256Mi }
+    metrics:
+      enabled: true
+    securityContextCrossplane:
+      runAsNonRoot: true
+      runAsUser: 65532
+      runAsGroup: 65532
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      # The namespace enforces the restricted pod-security profile, which wants these two named
+      # and not merely defaulted; the chart renders this map wholesale, so what is written here is
+      # what lands on the container (verified by helm template against chart 2.4.0).
+      capabilities: { drop: [ALL] }
+      seccompProfile: { type: RuntimeDefault }
+    securityContextRBACManager:
+      runAsNonRoot: true
+      runAsUser: 65532
+      runAsGroup: 65532
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      # The namespace enforces the restricted pod-security profile, which wants these two named
+      # and not merely defaulted; the chart renders this map wholesale, so what is written here is
+      # what lands on the container (verified by helm template against chart 2.4.0).
+      capabilities: { drop: [ALL] }
+      seccompProfile: { type: RuntimeDefault }

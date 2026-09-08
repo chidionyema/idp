@@ -26,6 +26,11 @@ data:
   # recompile: every compiled workload follows, the agents never notice.
   ESTATE_REGISTRY: "ghcr.io/chidionyema"
   ESTATE_STORAGE_PROVIDER: "oci"
+  # decision 0026 step 2: the Crossplane OCI provider needs the region twice -- in the
+  # resource-principal environment (platform/crossplane/providers/runtime.yaml) and in the
+  # ProviderConfig credential blob (providerconfig.yaml). One value, here, substituted by
+  # Flux postBuild. Matches the region in platform/oci/terraform.tfvars.
+  ESTATE_OCI_REGION: "uk-london-1"
   # Founder 2026-09-02: "estate dna is missing email address, basically core company info that
   # can change". The estate's contact address — ACME/cert contact, catalog owner mail, anywhere a
   # surface needs "who runs this" — is referenced as ${ESTATE_EMAIL}, never a literal. Same rule

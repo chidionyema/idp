@@ -1,0 +1,30 @@
+# The family provider is first and the order is not cosmetic. Oracle's own quickstart: "Always
+# install the family provider first ... Installing sub-provider first creates a missing dependency
+# issue, which the crossplane package-manager always resolves by pulling latest family provider
+# image" -- which is to say, install them the other way round and the pinned version in this file
+# stops being the version that runs. Flux applies a Kustomization's objects in one pass, so the
+# ordering that matters is dependency ordering, and the family provider is what the sub-provider
+# depends on. The name oracle-provider-family-oci is required, not chosen: crossplane resolves the
+# package image from (organization)-(provider-name).
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: oracle-provider-family-oci
+spec:
+  package: ghcr.io/oracle/provider-family-oci:v1.3.0
+  runtimeConfigRef:
+    name: oci-workload-identity
+---
+# One sub-provider, deliberately. A Crossplane provider installs the CRDs for everything it can
+# manage, and the OCI family covers most of the console; installing the ones nothing asks for
+# would put hundreds of unused CRDs in the API server and widen what a compromised control plane
+# could reach. Object storage is what decision 0026's step 3 emits, so object storage is what is
+# installed. The next capability adds the next sub-provider, in the pull request that needs it.
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-oci-objectstorage
+spec:
+  package: ghcr.io/oracle/provider-oci-objectstorage:v1.3.0
+  runtimeConfigRef:
+    name: oci-workload-identity
