@@ -11,6 +11,14 @@ Founder doc: ~/.claude/docs/founder/2026-09-01T2155Z-you-caught-me-i-was-being-a
 2026-09-01T2210Z-diamond-standard-jit-estate-compiler.md. Decision record:
 docs/decisions/2026-09-01-diamond-standard-jit-compiler.md.
 
+The `secret` capability (founder 2026-09-08: "we need to standardise, dont like these half baked
+inconsistent solutions ... we need to be enterprise ready yesterday") is why there is no per-workload
+hand-written .tf for a credential any more. One intent names the workload and the key; the compiler
+decides the vault entry, the ExternalSecret, the birth path and the row in the root-trust register,
+so a credential cannot be added without the register learning about it in the same commit. A secret
+VALUE never appears in an intent -- there is no field for one, and a generated credential is born
+inside OpenTofu where no human reads it (LAW 21, R52).
+
 Three refusals, in order:
   1. an intent with vocabulary outside its schema (additionalProperties: false) — "provider",
      "dns_zone", anything — is refused naming the field;
@@ -168,11 +176,114 @@ def compile_storage(i: dict, out: pathlib.Path, src: str, dna: dict[str, str]) -
     return [f"{i['name']}/storage.tf"]
 
 
+REGISTER_OPEN = ("<!-- compiled-intent-rows: written by bin/intent-compile from intents/*.json. "
+                 "Do not edit these rows; edit the intent and re-run. -->")
+REGISTER_SHUT = "<!-- /compiled-intent-rows -->"
+# bin/idp-root-trust accepts a MEETS row whose last cell names a file under bin/, or one of its two
+# in-estate birth paths. A vendor credential is written once by the estate's vendor bootstrapper; a
+# generated one is born by the OpenTofu this compiler emits and no human is ever shown it.
+BIRTH = {
+    "vendor": ("Supplier", "`bin/idp-bootstrap-vendors`"),
+    "generated": ("Operator", "Terraform `oci_vault_secret`, compiled from `{src}`"),
+}
+
+
+def compile_secret(i: dict, out: pathlib.Path, src: str, dna: dict[str, str]) -> list[str]:
+    """A credential's three halves, from one intent: where it is born, how the cluster reads it,
+    and the register row that makes bin/idp-root-trust able to see it."""
+    provider = dna.get("ESTATE_STORAGE_PROVIDER", "")
+    origin = i.get("origin", "vendor")
+    if origin == "generated" and provider != "oci":
+        raise SystemExit(f"BLIND: ESTATE_STORAGE_PROVIDER={provider!r} has no vault backend yet")
+    name, ns = i["name"], i["workload"]
+    keys = sorted(i["keys"], key=lambda k: k["key"])
+    files = ["external-secret.yaml"]
+    # Kyverno refuses a secret in an env var (platform/edge/kyverno-secrets-policy.yaml), so the
+    # compiled Secret exists to be mounted; the consumer reads <KEY>_FILE, the estate's convention.
+    dump(out / name / "external-secret.yaml", {
+        "apiVersion": "external-secrets.io/v1", "kind": "ExternalSecret",
+        "metadata": {"name": name, "namespace": ns,
+                     "labels": {"app.kubernetes.io/name": ns, "app.kubernetes.io/part-of": "idp"}},
+        "spec": {
+            "refreshInterval": "1h",
+            "secretStoreRef": {"kind": "ClusterSecretStore", "name": "estate-vault"},
+            "target": {"name": name, "creationPolicy": "Owner"},
+            "data": [{"secretKey": k["key"], "remoteRef": {"key": name, "property": k["key"]}}
+                     for k in keys],
+        },
+    }, src)
+    if origin == "generated":
+        rot = i.get("rotation_days", 90)
+        tf = [HDR.format(src=src),
+              "# Self-contained module: the founder wires it into an apply he runs (agents never\n"
+              "# deploy, permanent ruling 2026-09-01). The value is minted here and read by nobody:\n"
+              "# no console step, no founder paste, no key in a transcript (R52, LAW 21).\n",
+              'variable "vault_ocid" { type = string }',
+              'variable "key_ocid" { type = string }', ""]
+        for k in keys:
+            slug = k["key"].lower().replace("_", "-")
+            tf += [f'resource "random_password" "{slug}" {{',
+                   "  length  = 48",
+                   "  special = false",
+                   "}", "",
+                   f'resource "oci_vault_secret" "{slug}" {{',
+                   "  compartment_id = var.compartment_ocid",
+                   "  vault_id       = var.vault_ocid",
+                   "  key_id         = var.key_ocid",
+                   f'  secret_name    = "{name}-{slug}"',
+                   "  secret_content {",
+                   '    content_type = "BASE64"',
+                   f"    content      = base64encode(random_password.{slug}.result)",
+                   "  }",
+                   f'  freeform_tags = {{ workload = "{ns}", rotation_days = "{rot}" }}',
+                   "}", ""]
+        tf.insert(4, 'variable "compartment_ocid" { type = string }')
+        path = out / name / "secret.tf"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(tf).replace("\n\n\n", "\n\n"))
+        files.append("secret.tf")
+    dump(out / name / "kustomization.yaml", {
+        "apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization",
+        "namespace": ns, "resources": ["external-secret.yaml"],
+    }, src)
+    return [f"{name}/{f}" for f in sorted(files) + ["kustomization.yaml"]]
+
+
+def register_row(i: dict, src: str) -> str:
+    """The row bin/idp-root-trust grades. Emitting it here is the point: a credential cannot be
+    added to the estate without the register learning about it in the same commit."""
+    origin = i.get("origin", "vendor")
+    owner, birth = BIRTH[origin]
+    consumer = f"platform/compiled/{i['name']}/external-secret.yaml"
+    provider = "vendor" if origin == "vendor" else "estate"
+    how = ("issued by the vendor, written once into the vault by the estate's vendor bootstrapper"
+           if origin == "vendor" else
+           "minted inside OpenTofu and never shown to a person")
+    return (f"| `{i['name']}` | {consumer} | {provider} | {owner} | {how}; "
+            f"rotation {i.get('rotation_days', 90)}d | MEETS | {birth.format(src=src)} |")
+
+
+def write_register(path: pathlib.Path, rows: list[str]) -> None:
+    """Idempotent: the block is replaced whole, rows sorted, so two runs are byte-identical."""
+    block = "\n".join([REGISTER_OPEN] + sorted(rows) + [REGISTER_SHUT])
+    text = path.read_text() if path.is_file() else ""
+    if REGISTER_OPEN in text and REGISTER_SHUT in text:
+        head = text[:text.index(REGISTER_OPEN)]
+        tail = text[text.index(REGISTER_SHUT) + len(REGISTER_SHUT):]
+        text = head + block + tail
+    else:
+        text = (text.rstrip("\n") + "\n\n" + block + "\n") if text else block + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--intents", default=str(HERE / "intents"), help="directory of *.json intents")
     ap.add_argument("--out", default=str(HERE / "platform" / "compiled"))
     ap.add_argument("--dna", default=str(HERE), help="checkout holding clusters/*/estate-config.yaml")
+    ap.add_argument("--register", default=str(HERE / "docs" / "reference" / "policy" / "root-trust.md"),
+                    help="root-trust register the secret rows are written into, between markers")
     a = ap.parse_args()
     dna = load_dna(pathlib.Path(a.dna))
     if not dna.get("ESTATE_ZONE"):
@@ -183,7 +294,7 @@ def main() -> int:
     if not intents:
         print(f"BLIND: no *.json intents in {a.intents}")
         return 2
-    refused, emitted = 0, []
+    refused, emitted, rows = 0, [], []
     for f in intents:
         text = f.read_text()
         i = json.loads(text)
@@ -209,11 +320,18 @@ def main() -> int:
         out = pathlib.Path(a.out)
         if cap == "workload":
             emitted += compile_workload(i, out, f.name)
-        else:
+        elif cap == "storage":
             emitted += compile_storage(i, out, f.name, dna)
+        elif cap == "secret":
+            emitted += compile_secret(i, out, f.name, dna)
+            rows.append(register_row(i, f.name))
+        else:
+            raise SystemExit(f"BLIND: capability {cap!r} has a schema and no emitter")
+    if rows:
+        write_register(pathlib.Path(a.register), rows)
     verdict = "FAIL" if refused else "ok"
     print(f"{verdict}    intent   {len(intents) - refused} intent(s) compiled to {a.out} "
-          f"({len(emitted)} file(s)), {refused} refused")
+          f"({len(emitted)} file(s)), {len(rows)} register row(s), {refused} refused")
     return 1 if refused else 0
 
 
