@@ -166,9 +166,15 @@ vendors:
         # goes ahead of the dead pair rather than after it.
         #
         # That reading expired. Both accounts named above are funded again and answering, and
-        # Gemini is now the one refusing: it went to the back of this chain on 2026-09-08 on
-        # the measurement recorded on the gemini block below.
-        - minimax: [deepseek, gemini]
+        # Gemini is now the one refusing: it left this chain entirely on 2026-09-08, on the
+        # measurement recorded on the gemini block below. It could not simply move to the back
+        # either -- sovereign/tests/bdd/test_cp30.py holds that every chain not headed by the
+        # cheap model ends in it, so a cascade never terminates on a costlier lane than the one
+        # it could have used. A dead lane after that tail would be a hop that costs a retry and
+        # a cooldown and can never answer, which is the founder's "we wait for a nodel to finish
+        # and then swtich whih fails all the tine" (2026-09-08) in its purest form. So the chain
+        # is minimax -> deepseek and stops: two vendors, both answering, no dead hop.
+        - minimax: [deepseek]
   kimi:
     # Moonshot's Kimi (platform.kimi.ai). The vendor documents no key shape (API overview and
     # list-models pages, read 2026-09-02), so the shape only refuses an empty or malformed paste;
