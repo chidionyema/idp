@@ -4,13 +4,23 @@
 # anyone remembering scripts"). Catches "a credential nobody has a bootstrapper for" before it
 # lands on main.
 #
-# The CI gate is bin/idp-root-trust --check: it reads docs/reference/policy/root-trust.md plus
-# every ExternalSecret under platform/ and grades three things, never a proxy:
+# The CI gate is bin/idp-root-trust, the argv rules.yaml declares for this rule -- not the
+# --check mode. Both read docs/reference/policy/root-trust.md plus every ExternalSecret under
+# platform/; the difference is what they call a failure. This gate grades three things, never a
+# proxy:
 #   1. every vault key an ExternalSecret reads has a register row, else FAIL;
 #   2. a MEETS row names a bootstrapper that exists as bin/idp-bootstrap-* (or one of the two
 #      in-estate birth paths, ESO generator or Terraform oci_vault_secret), else FAIL;
 #   3. a MISS or PARTIAL row names a crew ticket, else FAIL (a miss without a ticket is a
 #      documented procedure, the thing the R45-root-trust ruling refuses).
+# --check demands a fourth thing this header never claimed: that no row be MISS at all, ticket or
+# no ticket. Ten are, and their tickets are filed, so between merging on 2026-09-08 and this
+# change the job refused every pull request that touched platform/ -- including ones that fixed
+# nothing to do with credentials. A gate that refuses correct work is an outage (R38), and a rule
+# graded one way in rules.yaml and another in a workflow is the drift the Unification Move
+# eradicated (09ec62cb): rules.yaml line 135 runs `python3 bin/idp-root-trust`, so this does too.
+# Rule 3 is what keeps a miss honest -- it must name a crew ticket or the gate fails anyway.
+#
 # No OCI, no network: it is two kinds of file. Reruns are cheap, so this runs on every PR that
 # could change the answer and on workflow_dispatch for on-demand operator checks.
 #
@@ -35,7 +45,7 @@ permissions:
 
 jobs:
   root-trust:
-    name: bin/idp-root-trust --check
+    name: bin/idp-root-trust
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -52,11 +62,12 @@ jobs:
 
       - name: run the gate
         id: gate
-        # 0 = every row MEETS, 1 = at least one PARTIAL or MISS, 2 = the register file is gone.
-        # All three are answer states; bash -e would mask the verdict we want printed.
+        # 0 = every entry registered, every MEETS row has its bootstrapper and every miss its
+        # ticket; 1 = one of those three is violated; 2 = the register file is gone. All three are
+        # answer states; bash -e would mask the verdict we want printed.
         run: |
           set +e
-          python3 bin/idp-root-trust --check 2>&1 | tee gate.log
+          python3 bin/idp-root-trust 2>&1 | tee gate.log
           GATE_RC=${PIPESTATUS[0]}
           set -e
           echo "gate_rc=$GATE_RC" >> "$GITHUB_OUTPUT"
@@ -75,8 +86,9 @@ jobs:
         if: steps.gate.outputs.gate_rc != '0'
         run: |
           cat <<'EOF' >&2
-          estate-bootstrap-preflight: a row in docs/reference/policy/root-trust.md is MISS or
-          PARTIAL, or the register is missing. Every finding names its vault key and which
+          estate-bootstrap-preflight: a vault key an ExternalSecret reads has no register row in
+          docs/reference/policy/root-trust.md, or a MEETS row names a bootstrapper that does not
+          exist, or a MISS names no crew ticket. Every finding names its vault key and which
           bootstrapper it expects (or that no bootstrapper exists, which is the path that puts a
           customer in a terminal -- R45-root-trust). Read the uploaded gate.log artifact for
           the full list.
