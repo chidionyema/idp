@@ -29,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import yaml
 
 from .broker import Broker, Refused
+from .collector import sink_from_env
 from .telegram import Phone, digest
 
 
@@ -218,6 +219,12 @@ def main() -> None:
         ),
         key=key,
         ledger_path=ledger_path,
+        # WJ.7: the record of who was given write access to this estate does not live on
+        # one node's disk any more. It is still written there first -- that file is what
+        # /healthz verifies the chain of -- and then shipped to the collector every other
+        # workload already reports to. None when OTEL_EXPORTER_OTLP_ENDPOINT is unset,
+        # which is a laptop run, not the deployment (platform/jit/deployment.yaml sets it).
+        ledger_sink=sink_from_env(),
         killswitch=killswitch_reader(
             os.environ.get("JIT_KILLSWITCH", "/var/lib/jit/stopped")
         ),

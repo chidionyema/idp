@@ -109,6 +109,12 @@ spec:
             # as files under this directory instead, one file per key, and the process reads
             # them at start (broker/serve.py, secret()).
             - {name: JIT_SECRETS, value: /etc/jit-secrets}
+            # WJ.7 and LAW 50. The same collector every other workload in this estate
+            # reports to -- there is one, and a second would be the stitching the headline
+            # rule refuses. Unset on a laptop, where the ledger file is the only copy.
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318"}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
           # /healthz verifies the ledger's hash chain, so a broker whose record has been
           # tampered with fails its own probe and stops answering rather than carrying on
           # minting access nobody can any longer account for.

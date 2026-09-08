@@ -46,6 +46,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -127,8 +128,13 @@ class Ledger:
     says which line. Convention is not doing the work; the chain is.
     """
 
-    def __init__(self, path: str, key: bytes):
+    def __init__(self, path: str, key: bytes, sink=None):
         self.path, self.key = path, key
+        # WJ.7: where the record goes to survive this node. broker/collector.py ships each
+        # line to the estate collector; None means the file is the only copy, which is what a
+        # unit test and a laptop run get. The file is written first either way, so a sink that
+        # is down costs delivery, never the record.
+        self.sink = sink
 
     def _tail_hash(self) -> str:
         prev = "0" * 64
@@ -150,6 +156,25 @@ class Ledger:
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         with open(self.path, "a") as fh:
             fh.write(json.dumps(body, sort_keys=True) + "\n")
+            # The record is worthless if the process dies between write and disk, and this is
+            # the one write in the broker where that matters: everything else can be redone,
+            # an account of who was given write access cannot.
+            fh.flush()
+            os.fsync(fh.fileno())
+        if self.sink is not None:
+            # Deliberately after the file, and deliberately swallowing everything: a broker that
+            # refuses a 3am approval because a metrics pipeline is unreachable has turned an
+            # observability outage into an access outage. OTLPSink already returns False rather
+            # than raising for a network fault; this catch is what makes that a property of the
+            # ledger rather than a promise the next sink has to keep. The record is on disk and
+            # fsynced above, so the only thing lost here is delivery.
+            try:
+                self.sink(dict(body))
+            except Exception as boom:  # noqa: BLE001
+                print(
+                    f"warn   jit-ledger: sink refused the record: {boom}",
+                    file=sys.stderr,
+                )
         return body
 
     def verify(self) -> tuple[bool, str]:
@@ -209,10 +234,11 @@ class Broker:
         now: Callable[[], float] = time.time,
         providers: dict[str, Callable[[list[str]], tuple[int, str]]] | None = None,
         agent_key: bytes | None = None,
+        ledger_sink=None,
     ):
         self.catalogue_path = catalogue
         self.key = key
-        self.ledger = Ledger(ledger_path, key)
+        self.ledger = Ledger(ledger_path, key, sink=ledger_sink)
         self.notify = notify or (lambda r, t: None)
         self.kube = kube or _kubectl
         self.killswitch = killswitch or (lambda: None)
