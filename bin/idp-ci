@@ -43,38 +43,6 @@ need python3
 
 MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 
-# 1c. A conditional whose verdict is a pipeline into grep, in a script that sets
-#     `pipefail`. Incident 2026-08-25: the portprobe test read
-#     `port-gate | grep -q '<message>'`, port-gate exited 1 on purpose, pipefail
-#     reported that 1, and the leg failed with the message exactly right -- it
-#     cost a debugging round to attribute. The class is wider than one test: the
-#     same shape decides whether bin/idp-up re-points the tailnet link and
-#     whether bin/langfuse-status calls Langfuse down, and there a failing
-#     left-hand command inverts the answer silently.
-#
-#     A pipeline inside `$( )` is legal: its VALUE is the test, not its status.
-#     So is one whose left side is printf/echo/cat/head, which is the fix shape.
-#     Refusing those would refuse correct work (LAW 38).
-# The `([0-9]+:)?` prefix is not decoration: grep -n stamps a line number on
-# every line, and an anchored pattern without it silently matches nothing on the
-# second pass -- which is a guard that never refuses anything.
-PIPEVERDICT='^([0-9]+:)?[[:space:]]*(if|elif|while)[[:space:]].*\|[[:space:]]*(/usr/bin/)?grep[[:space:]]+-[a-zA-Z]*[qc]'
-pipeverdict_scan() {
-  /usr/bin/grep -q 'pipefail' "$1" || return 1
-  # `$( ... )` spans are removed first: a pipeline in a command substitution is
-  # graded by its output, and the enclosing test is what decides the branch.
-  grep -nE "$PIPEVERDICT" "$1" \
-    | sed 's/\$([^)]*)//g' \
-    | grep -E "$PIPEVERDICT" \
-    | grep -vE '^[0-9]+:[[:space:]]*(if|elif|while)[[:space:]]+(!?[[:space:]]*)?(printf|echo|cat|head)[[:space:]]'
-}
-pv=0
-for f in "$IDP"/bin/*; do
-  [ -f "$f" ] || continue
-  if out=$(pipeverdict_scan "$f"); then say "FAIL  pipeverdict $(basename "$f")"; printf '%s\n' "$out" | sed 's/^/      /'; pv=$((pv+1)); fi
-done
-[ "$pv" -eq 0 ] && say "ok    pipeverdict 0 scripts let a pipeline's exit status stand in for a grep match" || fail=1
-
 # Every rule in rules.yaml that is cheap enough for the fast gate (fast: true), run by the one
 # engine. The registry holds the statement, the argv, the fixture pair and the verdict line; this
 # file no longer repeats any of them (founder 2026-09-07, the Unification Move: "Ruthless
@@ -89,7 +57,7 @@ if [ "$FAST" = 1 ]; then
   timing_summary
   # 1e. crew#679 CP5: the incident register is generated from tests/test_incident_*.py; a new
   # incident test without its committed row is refused here, so the chaos drills never drift.
-  [ "$fail" -eq 0 ] && say "ok    fast-gate: pipeverdict, ruff, and the rules.yaml rules marked fast" || say "FAIL  fast-gate"
+  [ "$fail" -eq 0 ] && say "ok    fast-gate: ruff, and the rules.yaml rules marked fast" || say "FAIL  fast-gate"
   exit "$fail"
 fi
 

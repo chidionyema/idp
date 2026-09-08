@@ -107,6 +107,12 @@ spec:
           kubernetes.io/metadata.name: dagster
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: guacamole
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: healthchecks
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: hindsight
     - namespaceSelector:
         matchLabels:
@@ -117,6 +123,9 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: otto-gateway
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: research
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: temporal

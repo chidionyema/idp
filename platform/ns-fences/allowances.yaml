@@ -140,19 +140,27 @@ flows:
   guacamole:
     # tailscale: the estate Mac's screen is reached over the tailnet through the operator's
     # egress proxy in that namespace (Service founder-mac-vnc).
-    egress: [identity, tailscale]
+    egress: [identity, tailscale, estate-db]
     ingress_from: [edge, monitoring]
   healing:
     egress: [llm]
   healthchecks:
-    egress: [identity]
+    egress: [identity, estate-db]
     ingress_from: [edge]
   hermes-agent:
     # mcp: Otto is the estate's Telegram door, and the agentgateway in the mcp namespace is the
     # one place he reads estate state and now asks HolmesGPT (mcp/plugins/estate_holmes.py).
     # The key for it is already mounted (platform/hermes-agent/mcp-key.yaml, ESTATE_MCP_KEY);
     # hermes-v2 config.yaml names the server. Both directions declared, as everywhere else.
-    egress: [hindsight, observability, mcp]
+    # edge: the estate map this gateway renders (platform/hermes-agent/estate.yaml) probes the
+    # store on ${ESTATE_ZONE} and its API on api.${ESTATE_ZONE}. Both resolve to 193.123.184.22,
+    # which is this estate's own traefik LoadBalancer, and a LoadBalancer address is programmed
+    # into every node -- so the request is delivered to a traefik pod at 10.244.x.x and judged as
+    # pod-to-pod egress, never as internet egress. egress_internet below excludes 10.0.0.0/8 by
+    # design, so the 443 line does not carry it. Same arithmetic that cut the identity namespace's
+    # front-door pulse, where it was measured; here it is the fence being made to match the config
+    # before a pod is rolled onto Calico, not a failure observed in this namespace's logs.
+    egress: [hindsight, observability, mcp, edge]
     # The Tailscale sidecar logs in to controlplane.tailscale.com and relays over DERP on 443,
     # and the gateway calls api.telegram.org and the router's public door on the same port.
     # Without this the sidecar times out on `tailscale up` and the pod never goes Ready
@@ -171,11 +179,29 @@ flows:
     # could not roll at all -- every new pod died on `httpx.ConnectError: All connection attempts
     # failed` inside Prisma's startup health check, while two pods that predated the fence kept
     # serving on a ConfigMap Flux had already pruned.
-    egress: [observability, estate-db]
+    # notify: the spend breaker's hourly digest posts to apprise.notify when a lane's velocity
+    # crosses its band (platform/llm/spend-breaker-digest.yaml:52). A breaker that cannot reach
+    # the notifier is a breaker nobody hears, so the failure mode of leaving this undeclared is
+    # silent overspend, not a visible error.
+    egress: [observability, estate-db, notify]
     # The router's whole job is calling a model vendor's API; declared here so the fence
     # still says yes on the day this cluster runs a CNI that enforces it.
     egress_internet: [443]
-    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta]
+    # research: the hourly research engine sends every lane's prompt through the router
+    # (platform/research-engine/cronjob.yaml:105, LITELLM_BASE_URL).
+    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta, research]
+  research:
+    # The research engine is an hourly CronJob (platform/research-engine/cronjob.yaml, schedule
+    # "23 * * * *"), so it holds no long-lived pod and nothing here was measured from one. Every
+    # hop below is read off the environment the job's own container is given: estate-db is the
+    # ledger it writes (PG=...@estate-rw.estate-db, line 87), llm is the router it prompts
+    # (LITELLM_BASE_URL, line 105), searxng is the search it reads (RESEARCH_SEARXNG_URL,
+    # line 106). A CronJob is the worst shape for a fence gap: each run is a fresh pod, so it
+    # lands on the enforcing CNI the first time it fires after the roll, and it fails on its own
+    # at 23 minutes past some hour with nobody watching.
+    egress: [estate-db, llm, searxng]
+  searxng:
+    ingress_from: [research]
   mcp:
     # robusta: the estate MCP server hosts the ask_holmes tool (mcp/plugins/estate_holmes.py),
     # which is how an agent -- an assistant session, Otto on Telegram -- asks the investigator
@@ -226,15 +252,30 @@ flows:
     egress_internet: [443]
     ingress_from: [edge]
   identity:
-    # oauth2-proxy redeems every login code against the Oracle identity domain, and the front
-    # door's heartbeat (platform/identity/front-door-heartbeat.yaml) asks catalogue.mumchimp.com
-    # for its 302 -- both public names over 443. Measured 2026-09-07: a manual run of the
-    # heartbeat in this namespace returned `curl: (28) Connection timed out after 20001 ms`,
-    # and the CronJob has failed every five minutes since 2026-09-06 08:00, which is when
-    # Calico began enforcing the default-deny that flannel ignored. Same class as backstage
-    # above. That failure is what held oke-check red, and a red oke-check never ran
-    # bin/idp-tailscale-policy apply, so the tailnet grant for Sunshine (#2150, merged
-    # 2026-09-06 23:57) was still not live on 2026-09-07 and "Pair my phone" was dead.
+    # oauth2-proxy redeems every login code against the Oracle identity domain, a public name
+    # over 443. The front door's pulse (platform/identity/front-door-heartbeat.yaml) asks the
+    # catalogue's public address for its 302, and that one is not a public destination at all
+    # from in here, which is why `egress_internet` alone never carried it.
+    #
+    # Measured 2026-09-07: the catalogue's name resolves to 193.123.184.22, which is this
+    # estate's own Traefik LoadBalancer (`svc/traefik -n edge`). A Service's load-balancer
+    # address is programmed into every node, so a pod dialling it is sent straight to a traefik
+    # pod on the cluster network and never leaves for the load balancer. The policy the pulse
+    # is judged against is therefore the one for namespace `edge`, not the internet rule -- and
+    # `allow-internet-egress` excludes 10.0.0.0/8 by design, so it cannot match either.
+    #
+    # Two angles, from one run of the pulse (front-door-heartbeat-29813565-npblb, 20:45:02Z):
+    # the curl to the catalogue timed out at 20 seconds, and in the same container the receipt
+    # upload to OCI object storage over 443 succeeded. Internet egress on 443 works; only this
+    # estate's own address fails. Same one-direction-only class as backstage and otto-gateway
+    # above, and `edge` names identity in its own ingress_from for the return half.
+    #
+    # What is NOT claimed here: that this is why the pulse first went red. Its last success is
+    # 2026-09-06T08:00:21Z and calico-node's pods were created 2026-09-06T20:02:19Z, twelve
+    # hours later, so the fence gap is a second cause and the first one is still unexplained.
+    # An earlier version of this comment asserted the 08:00 break WAS Calico beginning to
+    # enforce; nothing had measured that.
+    egress: [observability, edge]
     egress_internet: [443]
     egress_metadata: true
     ingress_from: [edge, backstage, guacamole, healthchecks, observability]
@@ -274,11 +315,15 @@ flows:
     # Apprise, the estate's publish-once-deliver-everywhere layer. It delivers to Telegram,
     # which is on the public internet. dagster: HolmesGPT's answer is published here.
     egress_internet: [443]
-    ingress_from: [dagster]
+    ingress_from: [dagster, llm]
   event-bus:
     ingress_from: [otto-gateway, commerce]
   estate-db:
-    ingress_from: [backstage, otto-gateway, hindsight, temporal, llm, observability, commerce, dagster]
+    # guacamole, healthchecks: both hold estate-rw in their own Deployment env (platform/
+    # guacamole/env.yaml, platform/healthchecks/env.yaml), not only in the one-shot migration
+    # Jobs -- these are standing daily diallers, and a database neither can reach is a service
+    # that does not start.
+    ingress_from: [backstage, otto-gateway, hindsight, temporal, llm, observability, commerce, dagster, research, guacamole, healthchecks]
   temporal:
     # 2026-09-06: estate-db-copy-temporal-r2 timed out on estate-rw from this namespace once Calico
     # enforced the fence; estate-db named temporal on its ingress side, this side named nothing.
@@ -348,5 +393,8 @@ flows:
     # which is the only reason the estate stayed reachable; the first one rescheduled onto Calico
     # would have been unreachable from the internet with no rule here.
     ingress_public: [8000, 8443]
-    # Prometheus scrapes the traefik metrics listener (9100) from monitoring.
-    ingress_from: [monitoring, otto-gvisor-sandbox, prospector]
+    # Prometheus scrapes the traefik metrics listener (9100) from monitoring. identity is here
+    # for the front door's pulse: it dials the catalogue's public address, which every node
+    # programs to land on a traefik pod rather than leave for the load balancer, so the request
+    # arrives here as ordinary pod-to-pod traffic and a fence that does not name it drops it.
+    ingress_from: [monitoring, otto-gvisor-sandbox, prospector, identity, hermes-agent]

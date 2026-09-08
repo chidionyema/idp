@@ -11,6 +11,12 @@
 # that initContainer's image at startup (cmd/main.go:resolveHandlerImage) and
 # uses it as the InstallImage for the handler pods it schedules. No more
 # literal `:IMAGE_TAG` in this file -- cyrus pattern, image-automation owns it.
+#
+# PR #2416 had removed deployment.yaml from kustomization.yaml's resource list ("NOT APPLIED
+# YET") pending a workflow that pushes the image, an ImageRepository/ImagePolicy pair in
+# platform/image-automation, and a $imagepolicy-marked newTag here. All three are now true
+# (PR #2438); this file is back in the resource list and the Flux row's healthCheck + wait
+# in clusters/oke/platform.yaml go with it.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -93,6 +99,10 @@ spec:
             # (cmd/main.go) from the runsc-handler-mirror initContainer's
             # image: field. No flag here on purpose: a flag would freeze
             # the tag at apply time and break image-automation.
+            # --handler-namespace is also empty by default; the controller's
+            # Reconciler.applyDefaults fills it to the controller's own namespace
+            # (PR #2404), so the kubebuilder scaffold default
+            # 'nodesoftware-operator-system' never reaches a handler pod.
           ports:
             - name: metrics
               containerPort: 8080

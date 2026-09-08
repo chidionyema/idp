@@ -107,6 +107,11 @@ docker build -t ghcr.io/chidionyema/controller:IMAGE_TAG .
 as `ghcr.io/chidionyema/controller:main-<run>-<sha>` per the `bin/dockerfiles` dirname
 basename convention; the deployment asks for that exact name.
 
+Historical note (kept from the broken mechanism removed on 2026-09-08 by PR #2416): the Flux row
+that previously claimed to substitute `IMAGE_TAG` from `Secret/ghcr-pull` could never have done
+so -- that Secret's one key is `.dockerconfigjson`, which is not a legal envsubst variable name,
+and it aborted the row's whole post-build. The cyrus-pattern `newTag:` above is what replaced it.
+
 ## What's NOT in this controller yet
 
 The reconciler wires the state machine to cluster side effects for **Cordon / Drain / Install /

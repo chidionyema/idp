@@ -1,5 +1,15 @@
 # Fixture pairs that exist and are graded by nothing, as of 2026-09-07.
 #
+# Correction, 2026-09-07 21:xxZ: the first version of this file said of the two pipefail-verdict
+# fixtures "grader: none in the tree", and that was false. pipeverdict_scan was alive in bin/idp-ci
+# and scanned bin/* on every fast gate; what 519d59e8 deleted was only the rung that fed it these
+# two files, which is exactly the self-grading the founder called stupid. bin/idp-rule-coverage was
+# right that nothing NAMED the paths -- the `grader:` field beside it was hand-written and stated
+# something nobody had measured, which is the failure this whole file exists to count. The scan is
+# now bin/idp-pipeverdict, a registry row that names both fixtures, so the two entries are gone.
+#
+# Every `grader:` line below has since been checked by opening the tree, not by remembering it.
+#
 # Each of these is a rule someone wrote, built a bad case and a good case for, and either never
 # wired or wired into something since deleted. A gate that does not run produces no output, so
 # none of them ever went red -- the fixtures are the only trace left that the rule was meant to
@@ -25,14 +35,6 @@ ungraded:
 
   - path: tests/fixtures/no-token
     what: a bad.yaml and a good.yaml pair about a workload holding a token
-    grader: "none in the tree"
-
-  - path: tests/fixtures/pipefail-verdict.bad.sh
-    what: a shell script whose verdict survives a failing pipe stage (LAW 55)
-    grader: "none in the tree. shellcheck at warning level does not catch a missing pipefail, which is why the pair was written"
-
-  - path: tests/fixtures/pipefail-verdict.good.sh
-    what: the same script with pipefail set
     grader: "none in the tree"
 
   - path: tests/fixtures/vault-refs

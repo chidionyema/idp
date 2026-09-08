@@ -16,6 +16,13 @@
 # dirname basename as its registry name (cyrus, hermes-agent, jit, lago-api, lago-front).
 # `bin/dockerfiles` produces `ghcr.io/chidionyema/controller`; the deployment and kustomization
 # both reference that exact name so there is one source of truth.
+#
+# IMAGE_TAG above is a placeholder for a human running these commands, not a substitution: the
+# estate pins this image via a `$imagepolicy`-marked `newTag:` in kustomization.yaml, the same
+# cyrus pattern every other in-repo image uses. The Flux row that previously claimed to
+# substitute it from the ghcr-pull secret never could (that Secret's one key is
+# `.dockerconfigjson`, not a legal envsubst variable name) and was removed on 2026-09-08
+# (PR #2416); this PR replaces the broken mechanism with the working one.
 
 FROM golang:1.26.3 AS build
 WORKDIR /src

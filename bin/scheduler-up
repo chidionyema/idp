@@ -20,13 +20,34 @@ log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 # Fail early if schedule.yml does not load: a scheduler with a broken policy
 # file ticks nothing and says nothing.
 "$IDP/.venv/bin/python" -c "import sys; sys.path.insert(0, '$IDP/scheduler'); from estate_scheduler.definitions import defs; print('schedule.yml ok:', len(list(defs.jobs or [])), 'jobs')"
-# crew#140: the second location lives in the crew checkout beside this one. Same rule: a
-# location that does not import is a stated refusal here, never a daemon that ticks half a tree.
+# crew#140: the second location lives in the crew checkout beside this one.
+#
+# 2026-09-07, measured: this used to `exit 1` when that file was absent, and on 2026-09-03 it did.
+# crew/science/scheduler/estate_dagster/facts.py is on crew main and has been since 2026-08-27,
+# but the live crew checkout had not pulled since 2026-08-27 19:11 and stood 194 commits behind,
+# so the file was not on disk. One location out of two took the daemon down, and with it all 37
+# jobs -- the hourly snapshot, the spend brake, the stuck detector -- for 4.8 days, while
+# `launchctl list` reported the LAST exit code and STATE.md's own "live checkout" row is written
+# by the very job that was dead. A guard that refuses correct work is an outage (LAW 38), and
+# refusing 36 healthy jobs over the 37th is the widest form of it.
+#
+# So the two cases are now told apart, because they are not the same fault:
+#   ABSENT      the checkout is stale or missing. Dagster's own behaviour is to serve the
+#               locations it has and mark this one errored, which is strictly better than
+#               serving none. Say so loudly and carry on.
+#   NO IMPORT   the file is there and the code is broken. That is a defect in the tree, it is
+#               the case the original refusal was written for, and it still refuses.
 # Beside the PRIMARY checkout, not beside this one: run from a worktree and "$IDP/.." is a
 # temp directory with no crew in it (crew#516, same class as idp-kyverno-render).
 FACTS="$("$IDP/bin/idp-repo-root" "$IDP")/../crew/science/scheduler"
-[ -f "$FACTS/estate_dagster/facts.py" ] || { log "FAIL      code location estate-facts: $FACTS/estate_dagster/facts.py is not there (crew checkout beside idp)"; exit 1; }
-( cd "$FACTS" && "$IDP/.venv/bin/python" -c "from estate_dagster.facts import defs, SPECS; print('estate-facts ok:', len(SPECS), 'assets')" )
+if [ ! -f "$FACTS/estate_dagster/facts.py" ]; then
+  log "DEGRADED  code location estate-facts: $FACTS/estate_dagster/facts.py is not there"
+  log "DEGRADED  the crew checkout is stale or missing; its 42 assets will not tick"
+  log "DEGRADED  fix: pull the crew checkout beside this one, then re-run this script"
+  log "DEGRADED  starting the remaining code location(s) rather than none of them (LAW 38)"
+else
+  ( cd "$FACTS" && "$IDP/.venv/bin/python" -c "from estate_dagster.facts import defs, SPECS; print('estate-facts ok:', len(SPECS), 'assets')" )
+fi
 
 if ! pgrep -qf "[d]agster-daemon run"; then  # bracket: never match a shell whose own command line names it (crew#85)
   ( cd "$IDP/scheduler" && nohup "$IDP/.venv/bin/dagster-daemon" run -w workspace.yaml > "$IDP/run/dagster-daemon.out" 2>&1 & echo $! > "$IDP/run/dagster-daemon.pid" )
