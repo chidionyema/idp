@@ -38,6 +38,13 @@ exempt:
   flux-system: "the estate's only writer of the cluster. A quota that refuses a Flux controller
     pod locks the cluster out of its own repair path, including the pull request that would
     raise the quota. Fenced by hand, deliberately, or not at all."
+  cyrus: "already carries all four fences beside its own workload, in platform/cyrus/namespace.yaml.
+    A second generated quota and default-deny in the same namespace is not a stronger fence, it is
+    two ceilings where the tighter one silently wins."
+  jit: "already carries all four fences in platform/jit/fence.yaml, and two of its NetworkPolicies
+    are named allow rules this generator cannot express -- the-broker-reaches-the-api-server-and-telegram
+    and the-one-that-may-speak-to-the-broker. Folding it in means rewriting the broker's own fence,
+    which is WJ.8 and the founder's review, not a green check."
 
 # Where a namespace was deliberately tuned by hand before this generator existed, its intent moves
 # here rather than being lost. `hard` is merged into that namespace's quota after the sizing above,
@@ -110,6 +117,13 @@ overrides:
 # Every namespace additionally gets DNS egress to kube-system and OTLP egress to the collector in
 # observability (LAW 50); those two are in the generator, not repeated per namespace here.
 flows:
+  # The sandbox shop is reached at sandbox.${ESTATE_ZONE} through the gateway in edge. That intent
+  # was written in platform/sandbox/vcluster/network-policy.yaml (allow-ingress-from-edge, 8080),
+  # but that kustomization is not reconciled -- measured 2026-09-08, demo-sandbox held 0
+  # NetworkPolicies on the cluster -- so a default-deny arriving from here with nothing carrying
+  # the allow would cut the route. It is declared here, where the fence that denies is written.
+  demo-sandbox:
+    ingress_from: [edge]
   trivy-system:
     # The operator and its scan jobs (scanJobsInSameNamespace: false, so they land here too) pull
     # the vulnerability database from a public registry mirror (mirror.gcr.io); declared here so
@@ -386,7 +400,10 @@ flows:
              # crew#892 CP4: the gVisor sandbox cell's one declared app route is this gateway;
              # it must be named here or the return path is cut (the estate's repeated
              # one-direction-only defect: hindsight was cut from estate-db for exactly this).
-             otto-gvisor-sandbox]
+             otto-gvisor-sandbox,
+             # The sandbox shop's route: demo-sandbox admits edge, so edge must name it
+             # back or the return path is cut -- the same one-direction-only defect.
+             demo-sandbox]
     # The public listeners (traefik containerPorts web 8000 and websecure 8443, behind the OCI
     # load balancer with externalTrafficPolicy Local, so the source address is the client's).
     # The traefik pods still held flannel addresses when Calico started enforcing on 2026-09-06,
