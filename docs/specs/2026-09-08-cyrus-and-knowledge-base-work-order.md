@@ -151,3 +151,25 @@ The register's five ranges are the product range. The catalogue index is regroup
 capability marked `surfaced: none` and useful to business gets a one-page product entry in the
 same shape as the others, or a line in the register saying why not. The investor brief reads
 its "what we have" figures from the register.
+
+## 7. Nothing load-bearing on the laptop
+
+Founder, 2026-09-08 20:20Z: "why should we rely on laptop?" We should not. The cluster is the
+platform; the laptop is a client. The one-scheduler ledger already says so: all six launchd
+templates are marked "pending: to be declared as a Dagster schedule". The lane finishes the fold:
+
+| laptop job | goes to | then |
+|---|---|---|
+| ai.estate.cockpit | FleetView on the portal (order 1) | template deleted |
+| ai.estate.sovereign-worker | already runs in the cluster (commit c2733b99) | template deleted |
+| ai.estate.scheduler | Dagster on the cluster, one schedule per row | template deleted |
+| ai.estate.idp | the Deployment that already serves the portal on the cluster | template deleted |
+| ai.estate.headlamp | the Headlamp release on the cluster behind the gateway | template deleted |
+| ai.estate.kubeapi | a client convenience (kube API tunnel); keep as a client tool, not a job | moved out of launchd/ |
+
+The 32 register rows marked laptop-or-command-only are each given a cluster home (a Deployment,
+a Dagster job, or a portal button) or a `retire` verdict in `capabilities.yaml`.
+
+Done when: `launchd/` holds no `.plist.tmpl`, `platform/scheduling/one-scheduler.yaml` has no
+row of kind "launchd job on the laptop", `bin/idp-one-scheduler` is green, and the register has
+no row whose state says laptop or CLI only without a `retire` verdict.
