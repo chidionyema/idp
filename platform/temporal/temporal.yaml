@@ -83,6 +83,12 @@ spec:
         seccompProfile: { type: RuntimeDefault }
     schema:
       useHelmHooks: false
+      # The temporal and temporal_visibility databases already exist on the estate CloudNativePG
+      # cluster (estate-db), created and owned by the seed, and the temporal role is NOT granted
+      # CREATEDB there (a shared cluster). The temporal chart defaults createDatabase: true, so its
+      # schema hook runs CREATE DATABASE and fails 42501 permission denied, which wedged the 1.6.0
+      # upgrade. Tell it the databases exist and it must only run the migration, not create.
+      createDatabase: false
       containerSecurityContext: *csc
       securityContext: *psc
       resources:
