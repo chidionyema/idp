@@ -25,7 +25,8 @@ const page = `- Entities: **582 ELITE**, **19 GAP**, **13 BLIND** of 614
 const inventory = `### Senses
 
 - **Reads every Telegram message on one hardened door.** LIVE. \`platform/otto-gateway/deployment.yaml:22\`.
-- **Hears voice notes.** IN THE IMAGE.
+- **Hears voice notes.** IN THE IMAGE. \`tools/transcription_tools.py:1\`. Step 3.
+- **Never learns your voiceprint.** BUILT. \`otto/surface/identity.py\`.
 
 ### Judgment and trust
 
@@ -56,6 +57,11 @@ const flux = (name: string, ready: 'True' | 'False') => ({
 const kubernetes = {
   getClusters: jest.fn(async () => [{ name: 'estate', authProvider: 'serviceAccount' }]),
   proxy: jest.fn(async ({ path }: { path: string }) => {
+    // The buyer-sandbox hook (useSandbox.ts) asks for one Kustomization by name and namespace.
+    // A 404 from the cluster is the "absent" path; the page then renders the launch button.
+    if (path.includes('/namespaces/demo-sandbox/kustomizations/demo-sandbox')) {
+      return new Response('not found', { status: 404 });
+    }
     const body = path.includes('kustomizations')
       ? [flux('edge', 'True'), flux('otto', 'False')]
       : [];
@@ -119,7 +125,9 @@ describe('Showcase', () => {
     expect(screen.getByTestId('showcase-abilities').querySelectorAll('article, [data-testid^="ability-"]').length).toBeGreaterThan(0);
     expect(screen.getByTestId('ability-0')).toHaveTextContent('Reads every Telegram message');
     expect(screen.getByTestId('ability-1')).toHaveTextContent('otto/gateway/core.py:109');
-    expect(screen.queryByText(/Hears voice notes/)).not.toBeInTheDocument();
+    // "Hears voice notes" is IN THE IMAGE, so it never lands in the abilities section -- it
+    // belongs on the roadmap section below. The abilities section is the live path only.
+    expect(screen.queryByTestId('ability-2')).not.toBeInTheDocument();
     expect(screen.getByTestId('showcase-otto-sentence')).toHaveTextContent('2 abilities');
   });
   it('says plainly which document could not be read and keeps the other standing', async () => {
@@ -127,5 +135,23 @@ describe('Showcase', () => {
     await waitFor(() => expect(screen.getByTestId('showcase-bar-error')).toBeInTheDocument(), SLOW);
     expect(screen.getByTestId('showcase-bar-error')).toHaveTextContent('404');
     expect(screen.getByTestId('ability-0')).toBeInTheDocument();
+  });
+  it('renders the roadmap section with BUILT and IN THE IMAGE rows and their spec step', async () => {
+    await render();
+    await waitFor(() => expect(screen.getByTestId('showcase-roadmap-tiles')).toBeInTheDocument(), SLOW);
+    const tiles = screen.getByTestId('showcase-roadmap-tiles').querySelectorAll('[data-testid^="roadmap-"]');
+    expect(tiles.length).toBe(2);
+    expect(screen.getByTestId('roadmap-0')).toHaveTextContent('Hears voice notes');
+    expect(screen.getByTestId('roadmap-0')).toHaveTextContent('step 3');
+    expect(screen.getByTestId('roadmap-1')).toHaveTextContent('Never learns your voiceprint');
+    expect(screen.getByTestId('showcase-roadmap-sentence')).toHaveTextContent('1 row is');
+  });
+  it('shows the launch button when no sandbox is running, not a countdown', async () => {
+    await render();
+    await waitFor(() => expect(screen.getByTestId('showcase-sandbox')).toBeInTheDocument(), SLOW);
+    const launch = await screen.findByTestId('showcase-sandbox-launch', {}, SLOW);
+    expect(launch).toHaveAttribute('href', '/create/templates/default/run-demo-sandbox');
+    expect(screen.getByTestId('showcase-sandbox-sentence')).toHaveTextContent(/no sandbox/i);
+    expect(screen.queryByTestId('showcase-sandbox-error')).not.toBeInTheDocument();
   });
 });

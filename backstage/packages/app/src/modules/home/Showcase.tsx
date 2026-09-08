@@ -6,7 +6,7 @@
 // The buyer sandbox button and its countdown are CP2 of the same spec.
 import { useMemo } from 'react';
 import { Entity } from '@backstage/catalog-model';
-import { Text } from '@backstage/ui';
+import { ButtonLink, Text } from '@backstage/ui';
 import { makeStyles } from '@material-ui/core';
 import {
   Chip,
@@ -23,8 +23,17 @@ import {
 import { LayerState, ago, count, layerState, rank, systemOf, verdict } from './estate';
 import { Estate, useEstate } from './useEstate';
 import { useShowcase } from './useShowcase';
-import { abilitiesSentence, barSentence } from './showcaseDocs';
+import { useSandbox } from './useSandbox';
+import {
+  abilitiesSentence,
+  barSentence,
+  formatRemaining,
+  progressionSentence,
+} from './showcaseDocs';
 import { StateDonut, SystemBars, donutSentence } from './visuals';
+
+/** Scaffolder template the demo-sandbox workflow dispatches (CP2). */
+const SANDBOX_TEMPLATE = '/create/templates/default/run-demo-sandbox';
 
 // Rules 8, 9 and 14 of DESIGN-RULES.md: spacing in theme units, related numbers grouped by
 // proximity in one container, no border per number.
@@ -97,8 +106,10 @@ export const Showcase = () => {
   const classes = useStyles();
   const docs = useShowcase();
   const { loaded } = useEstate();
+  const sandbox = useSandbox();
   const now = Date.now();
   const abilities = docs.state === 'ready' ? docs.abilities : [];
+  const progression = docs.state === 'ready' ? docs.progression : [];
   return (
     <EstatePage title={TITLE} lead={LEAD}>
       <Section
@@ -189,6 +200,97 @@ export const Showcase = () => {
             </Tile>
           ))}
         </Tiles>
+      </Section>
+      <Section
+        title="The roadmap"
+        blurb="What is on the door next, and which spec step moves it. Each row carries the receipt the spec names."
+        testId="showcase-roadmap"
+      >
+        {docs.state === 'loading' && (
+          <Waiting testId="showcase-roadmap-loading">Reading the inventory.</Waiting>
+        )}
+        {docs.state === 'ready' && docs.progressionError && (
+          <Unread testId="showcase-roadmap-error" detail={docs.progressionError}>
+            The inventory could not be read, so no roadmap row is claimed.
+          </Unread>
+        )}
+        {docs.state === 'ready' && !docs.progressionError && (
+          <Summary testId="showcase-roadmap-sentence">
+            {progressionSentence(progression)}
+          </Summary>
+        )}
+        <Tiles testId="showcase-roadmap-tiles">
+          {progression.map((row, i) => (
+            <Tile
+              key={`${row.sense}-${i}`}
+              title={row.text}
+              badge={
+                <>
+                  <Chip title={row.status}>{row.status.toLowerCase()}</Chip>
+                  {row.stepNumber !== null && (
+                    <Chip title="Spec step that moves this row to LIVE">
+                      step {row.stepNumber}
+                    </Chip>
+                  )}
+                </>
+              }
+              testId={`roadmap-${i}`}
+            >
+              {row.receipts.length > 0 && (
+                <Text variant="body-small" color="secondary">
+                  Proof:{' '}
+                  {row.receipts.map((r, j) => (
+                    <span key={r}>
+                      {j > 0 ? ', ' : ''}
+                      <Name>{r}</Name>
+                    </span>
+                  ))}
+                </Text>
+              )}
+            </Tile>
+          ))}
+        </Tiles>
+      </Section>
+      <Section
+        title="Buyer sandbox"
+        blurb="A throwaway cluster-in-a-cluster with a demo shop, set to remove itself when the hold runs out. A person launches it; an agent never does."
+        testId="showcase-sandbox"
+      >
+        {sandbox.state === 'loading' && (
+          <Waiting testId="showcase-sandbox-loading">Reading the cluster.</Waiting>
+        )}
+        {sandbox.state === 'absent' && (
+          <>
+            <Summary testId="showcase-sandbox-sentence">
+              No sandbox is running right now. Launch one to see the platform on a real workload, end-to-end.
+            </Summary>
+            <ButtonLink
+              href={SANDBOX_TEMPLATE}
+              variant="primary"
+              size="medium"
+              className="estate-action estate-action-strong"
+              data-testid="showcase-sandbox-launch"
+            >
+              Launch the buyer sandbox
+            </ButtonLink>
+          </>
+        )}
+        {sandbox.state === 'countdown' && (
+          <Summary testId="showcase-sandbox-sentence">
+            A sandbox is live: <Name>{formatRemaining(sandbox.remainingMs)}</Name>{' '}
+            before it removes itself.
+          </Summary>
+        )}
+        {sandbox.state === 'expired' && (
+          <Summary testId="showcase-sandbox-sentence">
+            The sandbox hold ran out. Refresh to see the launch button again.
+          </Summary>
+        )}
+        {sandbox.state === 'error' && (
+          <Unread testId="showcase-sandbox-error" detail={sandbox.error}>
+            The sandbox could not be read, so no countdown is claimed.
+          </Unread>
+        )}
       </Section>
     </EstatePage>
   );

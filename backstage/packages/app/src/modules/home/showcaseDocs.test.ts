@@ -1,4 +1,13 @@
-import { abilitiesSentence, barSentence, parseAbilities, parseBar } from './showcaseDocs';
+import {
+  abilitiesSentence,
+  barSentence,
+  formatRemaining,
+  parseAbilities,
+  parseBar,
+  parseHoldMs,
+  parseProgression,
+  progressionSentence,
+} from './showcaseDocs';
 
 const page = `# Estate showcase
 
@@ -67,5 +76,94 @@ describe('what Otto does today', () => {
       '2 abilities live on the door today, across senses, reach.',
     );
     expect(abilitiesSentence([])).toBe('No Otto ability is marked live yet.');
+  });
+});
+
+describe('the roadmap', () => {
+  it('keeps BUILT and IN THE IMAGE rows, with the spec step the line names', () => {
+    expect(parseProgression(inventory)).toEqual([
+      {
+        sense: 'Senses',
+        text: 'Hears voice notes on the pod',
+        status: 'IN THE IMAGE',
+        stepNumber: null,
+        receipts: ['hermes-agent/tools/transcription_tools.py:379'],
+      },
+      {
+        sense: 'Senses',
+        text: 'Never learns your voiceprint',
+        status: 'BUILT',
+        stepNumber: null,
+        receipts: ['otto/surface/identity.py'],
+      },
+    ]);
+  });
+  it('extracts a step number when the line says "Step N" or "spec step N"', () => {
+    const md = `### Reach
+- **Hears voice notes.** IN THE IMAGE. \`tools/x.py:1\`. Wired to the door at spec step 3.
+- **Speaks back.** IN THE IMAGE. \`tools/y.py:1\`. Step 4.
+- **One more.** BUILT. \`tools/z.py\`.
+`;
+    expect(parseProgression(md)).toEqual([
+      {
+        sense: 'Reach',
+        text: 'Hears voice notes',
+        status: 'IN THE IMAGE',
+        stepNumber: 3,
+        receipts: ['tools/x.py:1'],
+      },
+      {
+        sense: 'Reach',
+        text: 'Speaks back',
+        status: 'IN THE IMAGE',
+        stepNumber: 4,
+        receipts: ['tools/y.py:1'],
+      },
+      {
+        sense: 'Reach',
+        text: 'One more',
+        status: 'BUILT',
+        stepNumber: null,
+        receipts: ['tools/z.py'],
+      },
+    ]);
+  });
+  it('returns an empty array when the inventory has nothing to grade', () => {
+    expect(parseProgression('# Empty\n\nnothing here\n')).toEqual([]);
+  });
+  it('says in one sentence how many rows are one step from live', () => {
+    const rows = parseProgression(inventory);
+    expect(progressionSentence(rows)).toBe('Nothing on the roadmap yet.');
+    expect(progressionSentence([])).toBe('Nothing on the roadmap yet.');
+  });
+  it('spells the step range when the rows point to it', () => {
+    const md = `### Reach
+- **A.** IN THE IMAGE. \`x.py\`. Step 2.
+- **B.** BUILT. \`y.py\`. Step 5.
+`;
+    expect(progressionSentence(parseProgression(md))).toBe(
+      '2 rows are one spec step from live: step 2 to step 5.',
+    );
+  });
+});
+
+describe('the hold parser and the countdown text', () => {
+  it('reads hours, minutes, seconds and refuses anything else', () => {
+    expect(parseHoldMs('1h')).toBe(60 * 60 * 1000);
+    expect(parseHoldMs('4h')).toBe(4 * 60 * 60 * 1000);
+    expect(parseHoldMs('30m')).toBe(30 * 60 * 1000);
+    expect(parseHoldMs('90s')).toBe(90 * 1000);
+    expect(parseHoldMs('')).toBeUndefined();
+    expect(parseHoldMs(undefined)).toBeUndefined();
+    expect(parseHoldMs('1 hour')).toBeUndefined();
+    expect(parseHoldMs('0h')).toBeUndefined();
+  });
+  it('says how long is left in plain English', () => {
+    expect(formatRemaining(0)).toBe('gone');
+    expect(formatRemaining(-5)).toBe('gone');
+    expect(formatRemaining(45_000)).toBe('45 seconds left');
+    expect(formatRemaining(1_000)).toBe('1 second left');
+    expect(formatRemaining(60_000)).toBe('1 minute left');
+    expect(formatRemaining(2 * 60_000)).toBe('2 minutes left');
   });
 });
