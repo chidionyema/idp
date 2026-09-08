@@ -89,14 +89,14 @@ portal on the cluster runs main; none of the rows below is in it.
 
 | branch | ahead of main | last commit | what it carries | verdict |
 |---|---|---|---|---|
-| `backup/2026-09-08/fix/backstage-reaches-github` | 1 | 2026-09-07 | ns-fences: the portal's buttons reach api.github.com again | **land first**; every portal button that calls GitHub is dead without it |
-| `backup/2026-09-08/portal/hide-claude-internals` | 2 | 2026-09-07 | home page buttons unified to one tonal pill (crew#799); Claude internals hidden from the front page | land |
-| `backup/2026-09-08/portal/no-everyday-band` | 1 | 2026-09-07 | the everyday band taken back off the front page | land, after hide-claude-internals (same file) |
+| `backup/2026-09-08/fix/backstage-reaches-github` | 1 | 2026-09-07 | ns-fences: the portal's buttons reach api.github.com again | already on main (rebase empty, 20:35Z); close |
+| `backup/2026-09-08/portal/hide-claude-internals` | 2 | 2026-09-07 | home page buttons unified to one tonal pill (crew#799); Claude internals hidden from the front page | conflicts with main on rebase (20:35Z); resolve by hand, then land |
+| `backup/2026-09-08/portal/no-everyday-band` | 1 | 2026-09-07 | the everyday band taken back off the front page | already on main (rebase empty, 20:35Z); close |
 | worktree `~/dev/code/wt-portal-search` (`feat/portal-one-glance-search`, unpushed, 1 dirty file) | 1 | 2026-09-07 | live "On the cluster" card on each estate component's overview | commit the dirty file, push, land |
 | worktree `.../edea3807.../wt-portal` (`fix/one-button-family`, unpushed, 3 dirty files) | 2 | 2026-09-07 | the tile's Open is a link, and the test asks for one | commit the dirty files, push, land |
-| `feat/portal-modern-home` | 1 | 2026-09-03 | one-click nav and a fixed home, not a drag board | rebase; if the hide-claude-internals branch already covers it, close |
-| `fix/portal-look-crew612` | 4 | 2026-09-03 | visit-tracking test and portal look fixes | rebase; land what still applies |
-| `feat/portal-catalogue-complete` | 3 | 2026-09-02 | local guest Enter so the catalogue overlay is reachable | rebase; land |
+| `feat/portal-modern-home` | 1 | 2026-09-03 | one-click nav and a fixed home, not a drag board | conflicts with main on rebase (20:35Z); resolve by hand or close |
+| `fix/portal-look-crew612` | 4 | 2026-09-03 | visit-tracking test and portal look fixes | conflicts with main on rebase (20:35Z); resolve by hand, land what still applies |
+| `feat/portal-catalogue-complete` | 3 | 2026-09-02 | local guest Enter so the catalogue overlay is reachable | conflicts with main on rebase (20:35Z); resolve by hand, land |
 | `backstage-arm64` | 9 | 2026-09-05 | "wip: salvage uncommitted work" from an arm64 image experiment | close; the image is built by the platform image workflow now |
 | `backstage-container`, `fix/backstage-tag-main-517`, `fix/diagnose-backstage-log` | 8, 3, 1 | Aug 25–29 | stale image and diagnostic branches | close |
 
@@ -179,3 +179,29 @@ a Dagster job, or a portal button) or a `retire` verdict in `capabilities.yaml`.
 Done when: `launchd/` holds no `.plist.tmpl`, `platform/scheduling/one-scheduler.yaml` has no
 row of kind "launchd job on the laptop", `bin/idp-one-scheduler` is green, and the register has
 no row whose state says laptop or CLI only without a `retire` verdict.
+
+## 8. The root cause, and the stage that fixes it: after merge, operational or red
+
+Why things are built and not shipped: the pipeline ends at merge. Pull request, CI green, merge,
+Flux applies. No stage after that asks whether the thing runs, is reachable, is on the
+catalogue, has a product page, or is still alive a week later. Sessions reply `INVENTORY:`
+(merged and green) and end. So "operational" is nobody's stage, and the cockpit could die on
+28 August with nobody told.
+
+The fix is one stage, built from parts that exist:
+
+1. Every row in `docs/marketing/capabilities.yaml` gets a `probe:` command that proves it runs
+   (a rollout status, a URL that must answer 200 behind the gateway, a Dagster run that must
+   have succeeded in the last day). A row without a probe is `UNKNOWN` and shown as such;
+   never green by default (the three-state service rule).
+2. One Dagster job, `capability_probes`, runs every probe hourly, writes
+   `reports/capabilities.json` with `MEASURED_OK | MEASURED_FAIL | UNKNOWN` per row, and pages
+   through the existing Alertmanager route when a row that was OK turns FAIL.
+3. The portal shows the register with those states (the founder's god's view, R38, already
+   renders receipts); FleetView (order 1) reuses the same feed for agent runtimes.
+4. `bin/idp-ci` refuses a pull request that adds a directory with a README or tests without a
+   register row and a probe. This is order 4's gate with the probe made mandatory.
+
+Done when: `reports/capabilities.json` exists on main with a state for all 50 rows, the count of
+`UNKNOWN` is on the portal home, and killing a running capability turns its row FAIL within an
+hour with a page to the founder. This order outranks 4, 5 and 7, which it absorbs.
