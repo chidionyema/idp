@@ -181,8 +181,14 @@ flows:
     # (2026-09-06: 4 restarts, `dial log.tailscale.com:443: i/o timeout`).
     egress_internet: [443]
     ingress_from: [edge]
+  # The `laws` container fetches the estate's own laws over https from the code host
+  # (platform/agent-workforce/cronjob.yaml line 97) and the crew that reads them refuses to
+  # boot without them. Undeclared, that hop was one enforcement wave away from a silent
+  # outage: this namespace renders default-deny and rendered no allow-internet-egress, and
+  # #2439 is what made twelve namespaces' fences real rather than decoration.
   agent-workforce:
     egress: [observability, llm]
+    egress_internet: [443]
   keda:
     egress: [observability]
   llm:

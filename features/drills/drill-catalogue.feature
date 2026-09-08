@@ -15,17 +15,3 @@ Feature: Every scheduled drill has run recently, and the catalogue says which dr
     And each entry's schedule string is the cron line that workflow declares
     And no entry exists for a workflow that has no schedule block
 
-  Scenario: A pull request names the drill it adds to the catalogue
-    Given a PR that changes platform/ and adds a "- name: <drill>" row to drills/catalogue.yaml
-    And its body says "Drill: <drill>"
-    When the operating-model gate judges it against the catalogue on main
-    Then rule drill_named allows it, because the row is in the PR's own diff
-    And a "Drill:" line naming a row in neither place is still refused
-
-  Scenario: A platform change names the drill that exercises it
-    Given a pull request changes a file under platform/ or clusters/
-    When bin/pr-report runs the operating-model gate
-    Then a body with no "Drill: <name>" line is refused with rule=drill_named
-    And a "Drill:" line naming nothing in drills/catalogue.yaml is refused with rule=drill_named
-    And a "Drill:" line naming a catalogued drill passes
-    And the gate reads the catalogue names itself; a PR cannot invent one

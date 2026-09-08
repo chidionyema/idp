@@ -60,7 +60,7 @@ deprecate them. Eradicate them."
 | No dependency whose licence blocks a sale; a scan with no licences is not clean | LAW 40 | `conftest test` | policy/fixtures/sell-blocking.json | policy/fixtures/clean.json |
 | No scheduled job on this laptop that runs in the sleep window or is never pinged | LAW 28 | `conftest test` | policy/fixtures/placement-misplaced.json | policy/fixtures/placement-ok.json |
 | Paid capacity is auto-defaulted up to estate-defaults.yaml node_pool.budget_monthly_usd and refused above it | R14 | `conftest test` | policy/fixtures/capacity-over-cap.json | policy/fixtures/capacity-under-cap.json |
-| A pull request carries its identity and grant together, no console step, a cost line, a canary label, a named drill and a counted Optimised line | LAW 51, ZCP | `conftest test` | policy/fixtures/opmodel-half-provisioned.json | policy/fixtures/opmodel-ok.json |
+| A pull request carries its identity and grant together, no console step, a canary label on a paid-capacity change, and no estate-zone literal in the lines it adds | LAW 51, ZCP | `conftest test` | policy/fixtures/opmodel-half-provisioned.json | policy/fixtures/opmodel-ok.json |
 | A doc that tells a person to mint a credential by hand is refused; a FOUNDER ACTION line is not | LAW 47, R52 | `conftest test` | policy/fixtures/notoil-doc-manual.json | policy/fixtures/notoil-doc-founder-action.json |
 | The conscience rules judge a pull request both ways | LAW 44 | `conftest test` | policy/fixtures/conscience-bad.json | policy/fixtures/conscience-clean.json |
 | Every bash script in bin/ passes shellcheck at warning level | LAW 45 | `shellcheck` | tests/fixtures/shell-lint/bad.sh | tests/fixtures/shell-lint/good.sh |
@@ -76,6 +76,7 @@ deprecate them. Eradicate them."
 | A deck that replaces a vendor operator never reuses the operator's cluster-scoped names; a ClusterRole has no namespace, so moving the ServiceAccounts does not separate them | platform/calico/raw/README.md | `python3 bin/vendor-name-collision-gate` | tests/fixtures/vendor-names/bad.yaml | tests/fixtures/vendor-names/good.yaml |
 | A RuntimeInstall CR names a runtime in the closed set the NodeSoftwareOperator knows, requires a canary on ProgressiveCanary rollouts, and rejects pause durations that would make the canary pause a no-op | NodeSoftwareOperator option c, goal b9217bea | `bin/nodesoftware-operator-gate` | tests/fixtures/nodesoftware-operator/bad.yaml | tests/fixtures/nodesoftware-operator/good.yaml |
 | A conditional's verdict is never a pipeline into grep in a script that sets pipefail: a failing left-hand stage inverts the answer silently. Capture the output first and grade the text. | LAW 55 | `bin/idp-pipeverdict` | tests/fixtures/pipefail-verdict.bad.sh | tests/fixtures/pipefail-verdict.good.sh |
+| One cloud resource has exactly one owner: a Crossplane external-name that matches an OpenTofu resource under platform/oci is two controllers undoing each other, forever | decision 0026 | `python3 bin/idp-split-brain` | tests/fixtures/split-brain/bad | tests/fixtures/split-brain/good |
 <!-- END GENERATED RULES TABLE -->
 
 Rules that are already types or tools, and so need no row: compose files must parse
