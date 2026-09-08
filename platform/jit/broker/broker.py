@@ -241,6 +241,7 @@ class Broker:
         providers: dict[str, Callable[[list[str]], tuple[int, str]]] | None = None,
         agent_key: bytes | None = None,
         ledger_sink=None,
+        executor: Callable[[str, str, dict], dict] | None = None,
     ):
         self.catalogue_path = catalogue
         self.key = key
@@ -252,6 +253,12 @@ class Broker:
         # so a test can read the exact argv the broker would run without a tenancy, a zone or
         # a GitHub App anywhere near it.
         self.providers = dict(PROVIDER_COMMANDS if providers is None else providers)
+        # Decision 0027. Below Kubernetes the broker ships no tooling and holds no cloud
+        # credential (platform/jit/Dockerfile, deployment.yaml), so it cannot run an OCI/DNS/
+        # GitHub act itself. On an approved ask it hands the signed grant and the exact
+        # parameters to this executor -- None is a broker that refuses those layers loudly
+        # rather than pretending it performed them.
+        self.executor = executor
         self.now = now
         self.pending: dict[str, Request] = {}
         self.spent: set[str] = set()
@@ -751,6 +758,16 @@ class Broker:
                     f"grant {grant['id']} is mode {mode!r} on {provider}, and nothing below "
                     f"Kubernetes hands over a credential"
                 )
+            # Decision 0027. Below Kubernetes the broker ships no tooling and holds no cloud
+            # credential, so it does not run the act itself: when an executor is configured it
+            # hands the exact approved grant and parameters there. An executor performs it
+            # under its own (narrow) identity and returns the outcome, which becomes this
+            # request's result.
+            if self.executor is not None:
+                return self.executor(req.id, grant["id"], dict(req.params))
+            # No executor yet -- fall back to the legacy local-provider path (argv-bounds
+            # tests, and a production default whose missing binary stays fail-closed), never
+            # a broker that reports done for a layer it cannot reach.
             runner = self.providers.get(provider)
             if runner is None:
                 raise Refused(
