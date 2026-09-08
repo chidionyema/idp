@@ -4,6 +4,8 @@ This is the buyer's index to every product, feature and bundle the estate ships.
 Every page below follows the same shape: the problem first, what you get, how it
 works, why us, pricing, and how to start.
 
+The full register of everything built, product or not, with who it is useful for: [capabilities.md](./capabilities.md).
+
 ## Products
 
 | Product | What it is | Tier |

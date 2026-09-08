@@ -120,3 +120,34 @@ developed as an offering." Spec, checkpoints, lane plan and DoD commands:
 `docs/specs/2026-09-08-fleetview-backstage-offering.md`. Feature files: `features/fleetview/`.
 Marketing page: `docs/marketing/products/fleetview.md`. This outranks sections 1–3 for lane
 count: CP1 starts today with two lanes; sections 1–3 take the other lanes.
+
+## 5. The register stays audited: a gate, not a person
+
+Founder, 2026-09-08 20:00Z: "we missed so much from the investor pitch because inventory isn't
+audited, we don't know what we have"; "capabilities even if undeveloped or appear trivial, the
+question is: is it useful for business and engineers".
+
+`docs/marketing/capabilities.yaml` is the register (50 rows, five ranges). It was written by a
+sweep, once. The lane makes it a gate:
+
+1. `bin/capability-register-gate` (Python, one file): walk `sovereign/*`, `platform/*`, `mcp`,
+   `forge`, `backstage/plugins/*`, and every sibling repository named in `docs/reference/repos.yaml`
+   (create that file: one row per repository under the dev root, path relative to the dev root,
+   never absolute, LAW 46). A directory with a README or a test file and no register row fails,
+   naming the directory. A register row whose path no longer exists fails. A row with empty
+   `useful_for` older than 30 days fails until it is retired or argued.
+2. `docs/marketing/capabilities.md` is rendered from the yaml by the gate (`--render`), the way
+   `bin/idp-rules render-agents-md` renders AGENTS.md; `--check` in `bin/idp-ci` refuses drift.
+3. A row in `rules.yaml` with fixtures `tests/fixtures/capability-register/{bad,good}`; LAW 32
+   pages for the new bin file.
+
+Done when: `bin/capability-register-gate` is green on main, and adding an empty directory with a
+README under `sovereign/` turns it red in a pull request.
+
+## 6. Tying the threads: the product range
+
+The register's five ranges are the product range. The catalogue index is regrouped by range
+(run agents, govern agents, run the platform, private AI, products on the platform); every
+capability marked `surfaced: none` and useful to business gets a one-page product entry in the
+same shape as the others, or a line in the register saying why not. The investor brief reads
+its "what we have" figures from the register.
