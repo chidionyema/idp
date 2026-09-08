@@ -781,6 +781,26 @@ rules:
     ok: "a shadow state-set carries only shell secrets, never a live value (W2.1)"
     fail: "a live secret value could reach the shadow dimension (W2.1)"
 
+  - id: shadow-verify
+    label: verify
+    statement: >-
+      A change is proven in the shadow dimension only when the workload still converges after it
+      is applied: ready, at its previous replica count, its probes green and its own tests green; a
+      shadow observation silent on any assertion is a fail-closed FAIL, never a pass
+    law: W2.2
+    origin: docs/policy/agent-infra-safety-spec.md
+    planes: [ci]
+    run: [python3, bin/idp-shadow-verify]
+    cluster: {policy: null, why: "the subject is a shadow-run observation, which no admission controller sees"}
+    fixtures: {must_fail: tests/fixtures/shadow-verify/not-ready.json, must_pass: tests/fixtures/shadow-verify/converged.json}
+    cases:
+      - {expect: pass, args: [tests/fixtures/shadow-verify/converged.json]}
+      - {expect: refuse, args: [tests/fixtures/shadow-verify/not-ready.json], note: "not Ready / below replicas"}
+      - {expect: refuse, args: [tests/fixtures/shadow-verify/probe-fails.json], note: "a probe failed"}
+      - {expect: refuse, args: [tests/fixtures/shadow-verify/silent.json], note: "a shadow that says nothing proved nothing"}
+    ok: "a change that converges in the shadow may carry its proof forward (W2.2)"
+    fail: "a change that breaks readiness, replicas, probes or tests in the shadow could land (W2.2)"
+
   - id: limit-raise-only
     label: limit
     statement: >-
