@@ -1,0 +1,8 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: platform-batch
+value: 1000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "nightly platform jobs; finish when the node is calm, yield to the radio room"

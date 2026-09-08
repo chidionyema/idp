@@ -80,7 +80,12 @@ LAYERS = {
     "crossplane-providers": (
         "delivery",
         "Cloud control loop providers",
-        "The provider packages and credentials the cloud control loop uses to talk to Oracle Cloud, kept separate so a provider can be upgraded without touching the loop itself.",
+        "The provider packages the cloud control loop uses to talk to Oracle Cloud, kept separate so a provider can be upgraded without touching the loop itself.",
+    ),
+    "crossplane-providerconfig": (
+        "delivery",
+        "Cloud control loop credentials",
+        "How the cloud control loop signs in to Oracle Cloud, deployed after the providers rather than beside them: the sign-in names a kind that only a provider installs, and the estate checks a whole folder before it applies any of it, so the two together would wait on each other forever.",
     ),
     "flux-webhook": (
         "delivery",

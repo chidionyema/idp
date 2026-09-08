@@ -1,0 +1,20 @@
+# The name reads like a real class and carries a comment pointing at the directory where
+# the real ones live, which is exactly how idp-infrastructure survived review. Admission
+# refuses every pod: "no PriorityClass with name idp-infrastructure was found".
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodesoftware-operator
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: nodesoftware-operator }
+  template:
+    metadata:
+      labels: { app: nodesoftware-operator }
+    spec:
+      priorityClassName: idp-infrastructure # scheduling/priority-classes
+      containers:
+        - name: manager
+          image: ghcr.io/example/nodesoftware-operator:v1
