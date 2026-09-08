@@ -87,7 +87,7 @@ describe('the roadmap', () => {
         text: 'Hears voice notes on the pod',
         status: 'IN THE IMAGE',
         stepNumber: null,
-        receipts: ['hermes-agent/tools/transcription_tools.py:379'],
+        receipts: ['tools/voice_mode.py:1402'],
       },
       {
         sense: 'Senses',
@@ -131,9 +131,12 @@ describe('the roadmap', () => {
   it('returns an empty array when the inventory has nothing to grade', () => {
     expect(parseProgression('# Empty\n\nnothing here\n')).toEqual([]);
   });
-  it('says in one sentence how many rows are one step from live', () => {
+  it('says in one sentence how many rows are on the roadmap when none has a step', () => {
+    // The shared fixture has two BUILT/IN-THE-IMAGE rows, neither pinned to a step.
     const rows = parseProgression(inventory);
-    expect(progressionSentence(rows)).toBe('Nothing on the roadmap yet.');
+    expect(progressionSentence(rows)).toBe(
+      '2 rows on the roadmap, none pinned to a spec step yet.',
+    );
     expect(progressionSentence([])).toBe('Nothing on the roadmap yet.');
   });
   it('spells the step range when the rows point to it', () => {
