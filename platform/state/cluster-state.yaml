@@ -717,6 +717,51 @@ data:
                          "memory_used_pct": None if not u or not mem_al else round(100 * u["memory"] / mem_al),
                          "cpu_requested_pct": None if not cpu_al else round(100 * r["cpu"] / cpu_al),
                          "memory_requested_pct": None if not mem_al else round(100 * r["memory"] / mem_al)})
+    # crew#684 rung 3: the inputs bin/idp-fits-a-node needs, so it has a live case instead of
+    # only fixtures. On 2026-09-07 the capacity rows above read fine -- 10170Mi aggregate free --
+    # while ClickHouse sat Unschedulable, because aggregate free memory is not a place to put a
+    # pod. The gate that asks the placement question ran in no CI job and no workflow, because
+    # it wants nodes.json and pods.json and CI has no cluster to ask. Rather than copy its
+    # algorithm in here -- two copies of one rule is the sprawl we are deleting -- the receipt
+    # carries the compact inputs and the gate keeps the single algorithm, reading either a live
+    # cluster or these rows.
+    placement = {
+        "nodes": [{"name": n["metadata"]["name"],
+                   "cpu_allocatable_m": int(qty((n["status"].get("allocatable") or {}).get("cpu")) * 1000),
+                   "memory_allocatable_mi": int(qty((n["status"].get("allocatable") or {}).get("memory")) / 1048576),
+                   "unschedulable": bool(n["spec"].get("unschedulable"))} for n in nodes],
+        "pods": [],
+    }
+    for p in pods:
+        if p["status"].get("phase") in ("Succeeded", "Failed"):
+            continue
+        cpu_m = mem_mi = 0
+        for c in p["spec"].get("containers", []):
+            rq = (c.get("resources") or {}).get("requests") or {}
+            cpu_m += int(qty(rq.get("cpu")) * 1000)
+            mem_mi += int(qty(rq.get("memory")) / 1048576)
+        # The scheduler's own words when it refused, which is the only honest reason to report.
+        sched = next((c for c in p["status"].get("conditions", [])
+                      if c["type"] == "PodScheduled" and c["status"] == "False"), {})
+        # The owner, because a DaemonSet pod is one per node by definition and is never movable,
+        # and because a pinned ReplicaSet pod has to be named as its Deployment to be actionable.
+        own = (p["metadata"].get("ownerReferences") or [{}])[0]
+        placement["pods"].append({
+            "namespace": p["metadata"]["namespace"], "name": p["metadata"]["name"],
+            "node": p["spec"].get("nodeName") or "", "phase": p["status"].get("phase"),
+            "cpu_request_m": cpu_m, "memory_request_mi": mem_mi,
+            "owner_kind": own.get("kind", ""), "owner_name": own.get("name", ""),
+            # The API server's own QoS verdict. platform/scheduling/require-priority-class.yaml
+            # (radio-room-set-is-guaranteed, Enforce) requires requests == limits on every
+            # container of the radio-room set, so those workloads have no "small reservation,
+            # big ceiling" option: a split demotes the pod to Burstable and the rule refuses it.
+            # Carrying the class here means the next person right-sizing sees that before CI
+            # tells them. (idp-bb, measured on #2429, 2026-09-08.)
+            "qos": p["status"].get("qosClass", ""),
+            "unschedulable_reason": sched.get("reason", ""),
+            "unschedulable": sched.get("message", "")[:300]})
+    placement["pods"].sort(key=lambda r: (r["namespace"], r["name"]))
+
     tot_cpu = sum(c["cpu_allocatable"] for c in capacity) or 0
     tot_mem = sum(c["memory_allocatable_gb"] for c in capacity) or 0
     def pct(key, tot):
@@ -730,8 +775,9 @@ data:
             f" svids={sum(len(r['spiffe_ids']) for r in spiffe['svids'])} spire_agents={len(spiffe['agents'])}"
             f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)} k8sgpt_findings={len(k8sgpt)}"
             f" monitoring_rules={monitoring_rules} alert_watchdog={alert_watchdog}"
-            f" cpu_used_pct={cpu_used_pct} mem_used_pct={mem_used_pct} cpu_req_pct={cpu_req_pct} mem_req_pct={mem_req_pct}")
-    body = {"at": at, "capacity": capacity, "capacity_error": cap_error, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
+            f" cpu_used_pct={cpu_used_pct} mem_used_pct={mem_used_pct} cpu_req_pct={cpu_req_pct} mem_req_pct={mem_req_pct}"
+            f" unschedulable={sum(1 for r in placement['pods'] if r['unschedulable'])}")
+    body = {"at": at, "placement": placement, "capacity": capacity, "capacity_error": cap_error, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
             "flux": flux, "flux_not_ready": flux_not_ready, "secret_stale_consumers": secret_stale, "secrets_error": secrets_error, "policy_exceptions": policy_exceptions, "kyverno_policies": kyverno_policies, "k8sgpt": k8sgpt, "daemonsets": ds, "ds_short": ds_short, "deploy_short": deploy_short, "events_warning": events,
             "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe,
             "services_unlisted": services_unlisted, "services_unlisted_error": unlisted_error,
