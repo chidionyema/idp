@@ -192,6 +192,12 @@ class Broker:
     #: replayed does not.
     AGENT_IDENTITIES_PER_HOUR = 60
 
+    #: Where the cluster publishes its own address and certificate, for exactly this purpose.
+    #: kubeadm writes it and OKE keeps it; `system:public-info-viewer` makes it readable by
+    #: anyone, authenticated or not, because a client needs it *before* it has a credential.
+    CLUSTER_INFO_NS = "kube-public"
+    CLUSTER_INFO_CM = "cluster-info"
+
     def __init__(
         self,
         catalogue: str,
@@ -428,7 +434,56 @@ class Broker:
             "token": out.strip(),
             "expires_in": self.AGENT_TTL_SECONDS,
             "subject": f"system:serviceaccount:{self.AGENT_NS}:{self.AGENT_SA}",
+            **self._cluster_address(),
         }
+
+    def _cluster_address(self) -> dict:
+        """Where the cluster is and the certificate that proves it, read from the cluster.
+
+        A token alone does not let a device reach the API server: it also needs the address
+        and the CA. Until this method the only thing on any device that knew either was the
+        kubeconfig `bin/idp-cloud cluster kubeconfig` mints, which requires the `oci` CLI and
+        the founder's own login -- so handing back a token and nothing else would have left
+        the Mac exactly as load-bearing as before, with an extra door.
+
+        The obvious fix was to write the endpoint into clusters/oke/estate-config.yaml and
+        plumb it here through Flux substitution. That was not needed. Measured 2026-09-08:
+        `kube-public/cluster-info` exists on this cluster and holds both values, and it read
+        clean as `agent-reader`, so the read floor already permits it. This is what that
+        ConfigMap is for -- kubeadm publishes it, and `system:public-info-viewer` makes it
+        world-readable, precisely because a joining client needs the address and the CA
+        before it holds any credential at all. So the estate keeps one copy of a machine
+        fact, in the cluster, and no file names it (LAW 46).
+        """
+        rc, out = self.kube(
+            [
+                "get",
+                "configmap",
+                self.CLUSTER_INFO_CM,
+                "-n",
+                self.CLUSTER_INFO_NS,
+                "-o",
+                "jsonpath={.data.kubeconfig}",
+            ]
+        )
+        if rc != 0:
+            raise Refused(
+                f"the cluster does not publish its own address at "
+                f"{self.CLUSTER_INFO_NS}/{self.CLUSTER_INFO_CM}: {out.strip()[:200]}"
+            )
+        try:
+            cluster = yaml.safe_load(out)["clusters"][0]["cluster"]
+            server, authority = cluster["server"], cluster["certificate-authority-data"]
+        except (yaml.YAMLError, KeyError, IndexError, TypeError) as exc:
+            raise Refused(
+                f"{self.CLUSTER_INFO_NS}/{self.CLUSTER_INFO_CM} is not a kubeconfig: {exc}"
+            ) from None
+        # OKE publishes `server: <host>:6443` with no scheme, and kubectl refuses a server
+        # that has none. Measured 2026-09-08: the value in this cluster's ConfigMap is bare.
+        server = str(server)
+        if not server.startswith(("http://", "https://")):
+            server = "https://" + server
+        return {"server": server, "ca": authority}
 
     # ---------------------------------------------------------------- the ask
 

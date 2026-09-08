@@ -49,6 +49,18 @@ KEY = "the-agent-bootstrap-key"
 # What the fake API server hands back. Held in a name ruff does not read as a credential:
 # comparing a "token" key against a literal is S105, and the fixture is not a secret.
 MINTED = "minted-token"
+#: identity() makes a second call: it reads where the cluster is out of kube-public/cluster-info,
+#: so a device gets the API address and the CA alongside the token and needs no `oci` CLI to find
+#: them. The fake answers both, because a fixture that only knew about `create token` would make
+#: every test here fail on a change that is correct.
+PUBLISHED = """apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: 203.0.113.10:6443
+    certificate-authority-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t
+  name: ""
+"""
 
 
 def _make(tmp_path, agent_key=KEY, rc=0, out=MINTED + "\n", stopped=None):
@@ -57,6 +69,8 @@ def _make(tmp_path, agent_key=KEY, rc=0, out=MINTED + "\n", stopped=None):
 
     def kube(args, stdin=None):
         calls.append(list(args))
+        if args[:2] == ["get", "configmap"]:
+            return 0, PUBLISHED
         return rc, out
 
     broker = mod.Broker(
@@ -78,11 +92,21 @@ def _ledger(tmp_path):
 
 
 def test_the_door_mints_the_read_only_identity_and_nothing_else(tmp_path):
-    """The one command the door is allowed to run, argv for argv."""
+    """The two commands the door is allowed to run, argv for argv: mint the token, and read
+    where the cluster is. Nothing writes, and nothing is named that the agent did not ask for."""
     _, broker, calls = _make(tmp_path)
     answer = broker.identity(KEY)
     assert calls == [
-        ["create", "token", "agent-reader", "-n", "agents", "--duration=3600s"]
+        ["create", "token", "agent-reader", "-n", "agents", "--duration=3600s"],
+        [
+            "get",
+            "configmap",
+            "cluster-info",
+            "-n",
+            "kube-public",
+            "-o",
+            "jsonpath={.data.kubeconfig}",
+        ],
     ], calls
     assert answer["token"] == MINTED
     assert answer["subject"] == "system:serviceaccount:agents:agent-reader"
@@ -136,7 +160,11 @@ def test_the_rate_limit_bounds_a_replayed_key(tmp_path):
         broker.identity(KEY)
     with pytest.raises(mod.Refused):
         broker.identity(KEY)
-    assert len(calls) == broker.AGENT_IDENTITIES_PER_HOUR
+    # Counted on the mint alone. The door also reads kube-public/cluster-info each time, and
+    # a total that folded the two together would silently stop grading the limit the day a
+    # third call is added.
+    minted = [c for c in calls if c[:2] == ["create", "token"]]
+    assert len(minted) == broker.AGENT_IDENTITIES_PER_HOUR
 
 
 def test_the_kill_switch_stops_the_identity_door_too(tmp_path):
