@@ -34,7 +34,13 @@ BASE="${1:-origin/main}"
 # drives a real OTLP collector through four failure modes and was refused as reading files.
 EXECUTES='subprocess|requests\.|httpx|socket\.|urllib\.request|http\.server|http\.client|os\.system|pexpect|docker\.|kubernetes\.client|importlib|spec_from_file'
 
-added=$(cd "$IDP" && git diff --name-only --diff-filter=A "$BASE...HEAD" -- 'tests/*.py' 2>/dev/null)
+# tests/fixtures/ is excluded because a file there is a fixture, not a test. The pairs this
+# repository grades gates with include python files, and one of them is a test that reads a
+# path and nothing else ON PURPOSE -- that is the input the gate under test is supposed to
+# judge. Judging it here refuses the fixture for being the thing it exists to be, which is a
+# guard refusing correct work (LAW 38). Found on chidionyema/idp#2559, where the regression
+# pair for bin/idp-rule-coverage could not be added at all.
+added=$(cd "$IDP" && git diff --name-only --diff-filter=A "$BASE...HEAD" -- 'tests/*.py' ':(exclude)tests/fixtures/*' 2>/dev/null)
 [ -n "$added" ] || { echo "ok    executes  no new test file in this change"; exit 0; }
 
 bad=0
