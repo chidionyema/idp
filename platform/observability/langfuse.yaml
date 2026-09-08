@@ -268,9 +268,11 @@ spec:
           # startupProbe is the fence Kubernetes has for exactly that: liveness does not run until
           # it passes, so boot gets 300 seconds and the steady state does not have to pay a core
           # for it. The chart exposes livenessProbe and readinessProbe knobs but no startupProbe,
-          # so it is patched here. Requests drop with it; limits stay at 1000m so a slow boot can
-          # still burst. Between the two deployments this returns 1600m to the scheduler, which is
-          # 14% of the cluster's allocatable CPU and the single biggest schedulability win on it.
+          # so it is patched here. Request and limit move together to 500m -- crew#539 CP9 forbids
+          # splitting them on this workload -- so 500m is both the reservation and the boot
+          # ceiling: twice the 250m that CrashLooped in idp#820, with six times the window that
+          # actually killed it. Between the two deployments this returns 1000m to the scheduler,
+          # 8.5% of the cluster's allocatable CPU and the single biggest schedulability win on it.
           # Both pods are in platform/state/pinned-workloads.yaml as fitting on no other node
           # (#2413) -- that is a consequence of the 1000m reservation, and it goes with it.
           - target: { kind: Deployment, name: langfuse-web }
@@ -291,9 +293,15 @@ spec:
                           periodSeconds: 10
                           timeoutSeconds: 5
                           failureThreshold: 30
+                        # 500m on both sides, not 250m/1000m: langfuse-web is in the radio-room
+                        # set, and require-priority-class's radio-room-set-is-guaranteed rule
+                        # (crew#539 CP9, Enforce) refuses any container whose cpu request differs
+                        # from its limit -- Guaranteed QoS is what keeps the kubelet evicting this
+                        # last. So the reservation and the ceiling are one number, and the reclaim
+                        # is bounded by what boot needs rather than by the 9m steady state.
                         resources:
-                          requests: { cpu: 250m, memory: 2Gi }
-                          limits: { cpu: 1000m, memory: 2Gi }
+                          requests: { cpu: 500m, memory: 2Gi }
+                          limits: { cpu: 500m, memory: 2Gi }
           - target: { kind: Deployment, name: langfuse-worker }
             patch: |
               apiVersion: apps/v1
@@ -309,9 +317,10 @@ spec:
                           periodSeconds: 10
                           timeoutSeconds: 5
                           failureThreshold: 30
+                        # Guaranteed QoS, same rule as web above.
                         resources:
-                          requests: { cpu: 250m, memory: 1Gi }
-                          limits: { cpu: 1000m, memory: 1Gi }
+                          requests: { cpu: 500m, memory: 1Gi }
+                          limits: { cpu: 500m, memory: 1Gi }
           - target: { kind: Deployment, name: langfuse-redis }
             patch: |
               apiVersion: apps/v1
