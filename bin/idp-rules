@@ -175,6 +175,115 @@ def run_rule(rule: dict) -> int:
     return 0
 
 
+def _budget() -> int:
+    """The declared ceiling on rules that admit they have no live input. rules.yaml owns it."""
+    with open(os.path.join(ROOT, "rules.yaml")) as fh:
+        return int((yaml.safe_load(fh) or {}).get("live_gap_budget", 0))
+
+
+FIXTURE_DIRS = ("tests/fixtures", "policy/fixtures")
+
+
+def grades_something_real(rule: dict) -> str | None:
+    """Which of this rule's cases points at the estate rather than at a checked-in example.
+
+    A case with `live: true` and a glob, a case naming a path outside the fixture directories,
+    or a case with no argument at all (the gate scans the repository under its own steam) all
+    count. A `--selftest` in the run line does not: a self-test grades the gate, not the estate.
+    """
+    selftest = any("--selftest" in str(word) for word in rule["run"])
+    for case in rule["cases"]:
+        if case.get("live") or case.get("glob"):
+            return f"a live case over {case.get('glob', 'the estate')}"
+        args = case.get("args") or []
+        if args and any(not a.startswith(FIXTURE_DIRS) for a in args):
+            return f"a case over {' '.join(a for a in args if not a.startswith(FIXTURE_DIRS))}"
+        if not args and not selftest:
+            return "a bare run over the repository"
+    return None
+
+
+def pointer_is_stale(rule: dict, where: str) -> str | None:
+    """A live_elsewhere claim names FILE:LINE; that line must still invoke this rule's gate.
+
+    Without this the sentence is the same kind of hand-kept record as
+    platform/ns-fences/live-namespaces.txt was (#2446): true when written, silently false the
+    first time anyone moves the step, and unfalsifiable either way.
+    """
+    head = where.split(" ", 1)[0]
+    if ":" not in head:
+        return f"live_elsewhere must start with FILE:LINE, not {head!r}"
+    path, _, lineno = head.rpartition(":")
+    if not lineno.isdigit():
+        return f"live_elsewhere must start with FILE:LINE, not {head!r}"
+    full = os.path.join(ROOT, path)
+    if not os.path.exists(full):
+        return f"live_elsewhere names {path}, which does not exist"
+    with open(full, errors="replace") as fh:
+        lines = fh.read().splitlines()
+    if int(lineno) > len(lines):
+        return f"live_elsewhere names {head}, past the end of a {len(lines)}-line file"
+    token = next((os.path.basename(w) for w in rule["run"] if str(w).startswith("bin/")),
+                 str(rule["run"][0]))
+    if token not in lines[int(lineno) - 1]:
+        return f"{head} no longer runs {token}; it reads: {lines[int(lineno) - 1].strip()[:70]}"
+    return None
+
+
+def cmd_live(rules: list[dict], budget: int) -> int:
+    """Every rule is pointed at the estate, or it says where it is, or it names the gap.
+
+    The founder, 2026-09-07, on the fifth instance in one day: "a thing that runs, returns
+    success, and has never been checked against a real input." cmd_proof below already grades
+    the other half of this -- a rule proved one way only -- and its own docstring names
+    ns-fence-gate being graded against two fixtures for weeks while thirty namespaces sat open.
+    That is this failure, and nothing until now required the fix that follows from it: run_rule
+    runs the cases a rule declares and nothing else, so a rule whose every case names a file
+    under tests/fixtures grades its own example, prints ok, and has never seen the platform.
+
+    Three dispositions, and no fourth. A rule carries a case over the estate. Or it names in
+    live_elsewhere the FILE:LINE that grades it live, and that line is checked to still run it.
+    Or it names in live_gap the open issue for the input it has not got -- and the number of
+    those may only fall, because an escape hatch with no ratchet is how a temporary exception
+    becomes the permanent state (LAW 38: the gap is counted out loud, never passed over).
+    """
+    real, elsewhere, gaps, blind = [], [], [], []
+    for rule in rules:
+        how = grades_something_real(rule)
+        if how:
+            real.append(rule["id"])
+            continue
+        where = rule.get("live_elsewhere")
+        if where:
+            stale = pointer_is_stale(rule, where)
+            (blind if stale else elsewhere).append(f"{rule['id']}: {stale or where}")
+            continue
+        if rule.get("live_gap"):
+            gaps.append(f"{rule['id']}: {rule['live_gap']}")
+            continue
+        blind.append(f"{rule['id']}: every case names a fixture; this rule has never been "
+                     f"pointed at the estate")
+    if blind:
+        say("FAIL", "live", "a rule grades only its own example: give it a case over the "
+                            "estate, or name the FILE:LINE that grades it live, or name the "
+                            "open issue for the input it lacks")
+        for line in blind:
+            print(f"      {line}")
+        return 1
+    if len(gaps) > budget:
+        say("FAIL", "live", f"{len(gaps)} rule(s) declare a live_gap and the budget is {budget}; "
+                            f"this number may only fall")
+        for line in gaps:
+            print(f"      {line}")
+        return 1
+    say("ok", "live", f"{len(real)} rule(s) grade the estate, {len(elsewhere)} name where they "
+                      f"are graded live, {len(gaps)} name the input they lack "
+                      f"(budget {budget})")
+    for line in elsewhere + gaps:
+        print(f"      {line}")
+    return 0
+
+
 def cmd_proof(rules: list[dict]) -> int:
     """Every rule is proved both ways, or it is not a rule.
 
@@ -215,6 +324,13 @@ def cmd_run(args) -> int:
             say("FAIL", "only", f"no rule in rules.yaml has this id: {', '.join(unknown)}")
             return 1
     fail = 0
+    if not only:
+        # cmd_live reads rules.yaml and a handful of lines out of the files it points at, so it
+        # costs milliseconds and belongs in the fast gate too -- the fast gate is the one that
+        # runs before a merge, and a rule that grades only its own example is exactly what must
+        # not reach main.
+        fail |= cmd_live([r for r in load() if args.plane in r.get("planes", ["ci"])],
+                         _budget())
     if not only and not args.fast:
         fail |= cmd_proof([r for r in load() if args.plane in r.get("planes", ["ci"])])
     for rule in load():
