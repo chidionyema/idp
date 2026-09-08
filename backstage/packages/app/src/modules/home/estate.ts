@@ -84,6 +84,12 @@ export type DenyFlow = {
   srcs: string[];
 };
 
+export type SchedulerJob = {
+  name: string;
+  description?: string;
+  schedule?: string;
+};
+
 /** Live state per layer, keyed by Kustomization name. `undefined` means the cluster was not read. */
 export type Live =
   | {
@@ -92,6 +98,7 @@ export type Live =
       readAt: number;
       langfuseHealthy: boolean;
       calicoDenyFlows: DenyFlow[];
+      schedulerJobs: SchedulerJob[];
     }
   | undefined;
 

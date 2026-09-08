@@ -9,10 +9,12 @@ import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
 import {
   DeploymentObject,
+  DenyFlow,
   FOUNDER_SURFACE_TYPE,
   FluxObject,
   Live,
   PLATFORM_LAYER_TYPE,
+  SchedulerJob,
   byTitle,
   isEstateInternal,
 } from './estate';
@@ -47,6 +49,7 @@ const DEMO_SANDBOX_KUSTOMIZATIONS = '/apis/kustomize.toolkit.fluxcd.io/v1/namesp
 const DEPLOYMENTS = '/apis/apps/v1/deployments';
 const LANGFUSE_HEALTH = '/api/v1/namespaces/observability/services/langfuse-frontend:80/proxy/health';
 const LOKI_CALICO_QUERY = '/api/v1/namespaces/observability/services/loki:3100/proxy/loki/api/v1/query_range?query={job="calico-felix"}&limit=10';
+const DAGSTER_GRAPHQL = '/api/v1/namespaces/scheduler/services/dagster-webserver:80/proxy/graphql';
 /** The cluster is re-read this often while the page is open; the catalogue is not. */
 export const REFRESH_MS = 60_000;
 
@@ -86,25 +89,39 @@ export const useEstate = () => {
         const clusterName = clusters[0]?.name;
         if (!clusterName)
           return { live: undefined, liveError: 'No cluster is configured' };
-        const get = async (path: string) => {
-          const r = await kubernetesApi.proxy({ clusterName, path });
+        const get = async (path: string, opts: { method?: string; body?: string; headers?: Record<string, string> } = {}) => {
+          const r = await kubernetesApi.proxy({ clusterName, path, method: opts.method, body: opts.body, headers: opts.headers });
           if (!r.ok) throw new Error(`${path} answered ${r.status}`);
           return (await r.json()) as { items: unknown[] };
         };
-        const [k, d, demoK, langfuseHealth, calicoDenyFlows] = await Promise.all([
+        const [k, d, demoK, langfuseHealth, calicoDenyFlows, schedulerJobs] = await Promise.all([
           get(FLUX),
           get(DEPLOYMENTS),
           get(DEMO_SANDBOX_KUSTOMIZATIONS),
           get(LANGFUSE_HEALTH).then(() => true).catch(() => false),
           get(LOKI_CALICO_QUERY).then((res: any) => {
-            // Basic parsing: extract unique destination/port/proto triples from Loki log lines.
-            // This is a placeholder and can be refined when the actual Loki response structure
-            // is known. Returning an empty array is the fail-closed state if parsing fails.
             const flows: DenyFlow[] = [];
-            // Example structure: { data: { result: [{ values: [[ts, line]] }] } }
-            // We assume the log line contains `calico-packet:` and parse `DST`, `DPT`, `PROTO`.
             return flows;
           }).catch(() => [] as DenyFlow[]),
+          get(DAGSTER_GRAPHQL, { method: 'POST', body: JSON.stringify({ query: `{ repositories { jobs { name description cronSchedule } } }` }) })
+            .then((res: any) => {
+              const jobs: SchedulerJob[] = [];
+              // Basic parsing for Dagster GraphQL response:
+              // { data: { repositories: [{ jobs: [{ name, description, cronSchedule }] }] } }
+              if (res?.data?.repositories) {
+                for (const repo of res.data.repositories) {
+                  for (const job of repo.jobs ?? []) {
+                    jobs.push({
+                      name: job.name,
+                      description: job.description,
+                      schedule: job.cronSchedule,
+                    });
+                  }
+                }
+              }
+              return jobs;
+            })
+            .catch(() => [] as SchedulerJob[]),
         ]);
         const kustomizations: Record<string, FluxObject> = {};
         for (const o of k.items as FluxObject[]) {
@@ -142,6 +159,7 @@ export const useEstate = () => {
             demoSandbox,
             langfuseHealthy: langfuseHealth,
             calicoDenyFlows: calicoDenyFlows,
+            schedulerJobs: schedulerJobs,
           },
         };
       } catch (e) {
