@@ -310,6 +310,13 @@ catalog:
       target: ../../templates/customer-onboarding/template.yaml
       rules:
         - allow: [Template]
+    # Agent Foundry trainer Space: dispatches a workflow on the agent-foundry repo, not this one,
+    # so it is written by hand here and not by bin/idp-portal-buttons (landed from
+    # recovery/portal-bundle, 2026-09-08).
+    - type: file
+      target: ../../templates/agent-foundry-space/template.yaml
+      rules:
+        - allow: [Template]
 
     # The guest identity. Load-bearing, not an example: the guest auth provider
     # resolves user:default/guest through the catalog, so removing this file
