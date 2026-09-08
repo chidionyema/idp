@@ -178,6 +178,20 @@ class Ledger:
 
 
 class Broker:
+    #: The read-only identity every agent in this estate runs as. platform/rbac/agent-reader.yaml
+    #: is the object; naming it here means the broker and bin/idp-kube cannot drift apart on the
+    #: string, which is the whole reason the door exists.
+    AGENT_SA = "agent-reader"
+    AGENT_NS = "agents"
+    #: An hour, matching what bin/idp-kube already asked the API server for. Long enough that a
+    #: session is not re-authenticating between commands, short enough that a copied token is
+    #: worthless by morning.
+    AGENT_TTL_SECONDS = 3600
+    #: Identities are not grants and are never approved, so the only thing bounding them is this.
+    #: A handful of sessions refreshing hourly sits far below it; a leaked bootstrap key being
+    #: replayed does not.
+    AGENT_IDENTITIES_PER_HOUR = 60
+
     def __init__(
         self,
         catalogue: str,
@@ -188,6 +202,7 @@ class Broker:
         killswitch: Callable[[], str | None] | None = None,
         now: Callable[[], float] = time.time,
         providers: dict[str, Callable[[list[str]], tuple[int, str]]] | None = None,
+        agent_key: bytes | None = None,
     ):
         self.catalogue_path = catalogue
         self.key = key
@@ -203,6 +218,9 @@ class Broker:
         self.pending: dict[str, Request] = {}
         self.spent: set[str] = set()
         self.history: list[tuple[float, str]] = []
+        # Empty on a broker that has not been given one, which is a broker that cannot
+        # identify anybody -- `identity()` refuses rather than defaulting open.
+        self.agent_key = agent_key or b""
 
     # ---------------------------------------------------------------- the catalogue
 
@@ -332,6 +350,85 @@ class Broker:
                 f"grant {grant['id']} has been used {used} times in the last hour and its "
                 f"limit is {cap}. Something is looping, or this is not a ten-minute problem"
             )
+
+    # ------------------------------------------------- the agent's own identity
+
+    def _check_identity_rate(self) -> None:
+        cutoff = self.now() - 3600
+        used = sum(1 for at, what in self.history if what == "identity" and at > cutoff)
+        if used >= self.AGENT_IDENTITIES_PER_HOUR:
+            raise Refused(
+                f"{used} identities have been minted in the last hour and the limit is "
+                f"{self.AGENT_IDENTITIES_PER_HOUR}. Either something is looping or this key "
+                f"is being replayed by somebody who is not an agent of this estate"
+            )
+
+    def identity(self, presented: str) -> dict:
+        """Mint the read-only identity an agent runs as, for a caller that proves it is one.
+
+        WJ.1 ends "`bin/idp-kube` stops minting the founder's OCI principal." Until this door
+        existed it could not. Measured 2026-09-08 at bin/idp-kube:84: the downgrade ran
+        `kubectl create token agent-reader -n agents` under $KC, a kubeconfig whose user is an
+        `exec` credential calling `oci generate-token` -- the founder's own OCI principal, on
+        his laptop. The identity every agent runs as was therefore minted, every hour, by an
+        administrator credential that existed on exactly one machine. `auth whoami` answering
+        `agent-reader` was true and hid that: the downgrade was real, the thing performing it
+        was not an agent.
+
+        This is deliberately not a grant and never reaches the founder's phone. agent-reader
+        holds reads and nothing else -- it is the floor every agent already stands on, not an
+        elevation above it -- so there is nothing to approve. What the door changes is which
+        credential a device must hold in order to become an agent: an agent's own, scoped to
+        reads and revocable by itself, instead of the founder's, scoped to the tenancy.
+
+        The bootstrap key is still a secret on a device, and no amount of design removes that
+        -- something has to be the root. The difference worth the code is what that root can
+        do when the device is lost: read this cluster for an hour, rather than administer the
+        tenancy until somebody notices.
+        """
+        stopped = self.killswitch()
+        if stopped:
+            raise Refused(f"the broker is stopped: {stopped}")
+        if not self.agent_key:
+            raise Refused(
+                "this broker holds no agent key, so it cannot identify anyone. "
+                "platform/jit/deployment.yaml is where JIT_AGENT_KEY arrives"
+            )
+        if not hmac.compare_digest(presented or "", self.agent_key.decode()):
+            # No ledger line, and for the reason the Telegram path already gives: this door is
+            # reachable from outside the cluster, so a line per refusal is a way for a stranger
+            # to fill the ledger volume. The ledger records what the broker did, and it did
+            # nothing. compare_digest because a byte-at-a-time comparison leaks the key to
+            # whoever can time it.
+            raise Refused("not an agent of this estate")
+        self._check_identity_rate()
+        rc, out = self.kube(
+            [
+                "create",
+                "token",
+                self.AGENT_SA,
+                "-n",
+                self.AGENT_NS,
+                f"--duration={self.AGENT_TTL_SECONDS}s",
+            ]
+        )
+        if rc != 0:
+            raise Refused(
+                f"the API server would not mint the identity: {out.strip()[:200]}"
+            )
+        self.history.append((self.now(), "identity"))
+        # WJ.7: the issuance is on the record, the token is not. A ledger that holds the
+        # credential it recorded is a second copy of every credential the broker ever made.
+        self.ledger.append(
+            "identity",
+            subject=f"{self.AGENT_NS}:{self.AGENT_SA}",
+            ttl=self.AGENT_TTL_SECONDS,
+        )
+        return {
+            "token": out.strip(),
+            "expires_in": self.AGENT_TTL_SECONDS,
+            "subject": f"system:serviceaccount:{self.AGENT_NS}:{self.AGENT_SA}",
+        }
 
     # ---------------------------------------------------------------- the ask
 
