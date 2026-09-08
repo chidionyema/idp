@@ -183,6 +183,12 @@ flows:
     ingress_from: [edge]
   agent-workforce:
     egress: [observability, llm]
+  # Crossplane's control loop talks to exactly two things: this cluster's API server, which
+  # every fence already allows, and the OCI control plane over https. It serves no traffic,
+  # so nothing may reach in.
+  crossplane-system:
+    egress: [observability]
+    egress_internet: [443]
   keda:
     egress: [observability]
   llm:

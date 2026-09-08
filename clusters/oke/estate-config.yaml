@@ -25,6 +25,11 @@ data:
   # and refuses any intent that speaks a value from this data: block. Change a value here and
   # recompile: every compiled workload follows, the agents never notice.
   ESTATE_REGISTRY: "ghcr.io/chidionyema"
+  # The home region. Always Free resources exist only in it, so this is not a preference --
+  # it is where the estate physically is. Crossplane's OCI provider needs it twice: in
+  # OCI_RESOURCE_PRINCIPAL_REGION on the provider pod, and in the credentials blob that
+  # selects Workload Identity. Same value OpenTofu holds in platform/oci/terraform.tfvars.
+  ESTATE_OCI_REGION: "uk-london-1"
   ESTATE_STORAGE_PROVIDER: "oci"
   # Founder 2026-09-02: "estate dna is missing email address, basically core company info that
   # can change". The estate's contact address — ACME/cert contact, catalog owner mail, anywhere a
