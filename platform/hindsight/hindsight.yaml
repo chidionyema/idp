@@ -48,14 +48,14 @@ spec:
       env:
         # An alias on the estate router (platform/llm/config.yaml), so a lane swap never touches this row.
         HINDSIGHT_API_LLM_PROVIDER: openai
-        # `gemini` (gemini-2.5-flash), not deepseek: DeepSeek answers 401 from inside the router pod
-        # (measured 2026-09-04 21:5xZ) and its row has left the config, so extraction had no model.
-        # This is the estate's memory: memory_units written per day fell 268 (08-30), 154 (09-02),
-        # 14 (09-03), 1 (09-04), counted on estate-db. Extraction is many small calls, so the cheap
-        # gemini lane is the right one, and it does not wait on a key the founder rotates himself.
-        # `gemini`, not the `fast` alias for the same gemini-2.5-flash row: one alias for this
-        # model across the estate, so a lane audit reads one name (founder direction 2026-09-05).
-        HINDSIGHT_API_LLM_MODEL: gemini
+        # `minimax` (MiniMax-M3), not gemini or deepseek. DeepSeek answers 401 from inside the router
+        # pod (measured 2026-09-04 21:5xZ) and its row has left the config. Gemini was the cheap lane
+        # but from 2026-09-08 the router's gemini-2.5-flash lane has been throwing
+        # litellm.RateLimitError (Google quota) on every hindsight verify, so hindsight could not
+        # complete "Verifying connection" and stayed not-ready (crash loop). The router log the same
+        # day: MiniMax-M3 answered 200 with no exception. This is the estate's memory; MiniMax-M3 is
+        # the lane with a clean record, and it does not wait on a key the founder rotates himself.
+        HINDSIGHT_API_LLM_MODEL: minimax
       persistence:
         modelCache: { enabled: true, size: 5Gi }   # the local embedding model survives a restart
       extraVolumes: [{ name: tmp, emptyDir: {} }]  # the only writable path besides the model cache
