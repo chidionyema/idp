@@ -166,7 +166,7 @@ def metadata_egress_doc(ns: str) -> dict:
 SINK = "observability"  # LAW 50: policy_docs grants both halves of the hop to the collector.
 
 
-def policy_docs(ns: str, flows: dict, every: set | None = None) -> list[dict]:
+def policy_docs(ns: str, flows: dict, emitters: set | None = None) -> list[dict]:
     """The floor, then the holes: DNS, the collector, and whatever the input declares."""
     docs = [{
         "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
@@ -251,7 +251,12 @@ def policy_docs(ns: str, flows: dict, every: set | None = None) -> list[dict]:
         # on the enforcing CNI, and the roll onto Calico is half done (measured 2026-09-08:
         # observability 9 pods on Calico, 15 still on flannel). It becomes total when the roll
         # finishes, which is the reason to fix it before rolling the rest rather than after.
-        ingress |= set(every or ()) - {SINK}
+        # emitters, not the fenced set: a namespace exempt from this generator still emits, and
+        # jit is exactly that -- exempt because its fence is hand-written (WJ.8, the founder's own
+        # review), yet its broker ships the JIT ledger to the collector under LAW 50. Admitting
+        # only the namespaces this file fences would have dropped the audit trail at the far side,
+        # silently, because an OTLP exporter says nothing about what it cannot deliver.
+        ingress |= set(emitters or ()) - {SINK}
     ingress = sorted(ingress)
     if ingress:
         docs.append({
@@ -328,6 +333,11 @@ def main() -> int:
     live = {n.strip() for n in open(os.path.join(FENCES, "live-namespaces.txt")) if n.strip()}
     pending = sorted(n for n in every if n not in live)
     every -= set(pending)
+    # The collector admits everything that emits, which is wider than what this file fences: an
+    # exempt namespace carries its own fence but still ships telemetry. Live only -- a namespace
+    # in git and not on the cluster has no pods to admit.
+    emitters = every | (set(exempt) & live)
+
     os.makedirs(NETWORK, exist_ok=True)
 
     for stale_dir in (FENCES, NETWORK):
@@ -341,7 +351,7 @@ def main() -> int:
         over = (allow.get("overrides") or {}).get(ns) or {}
         write(os.path.join(FENCES, f"{ns}.yaml"),
               [limitrange_doc(ns, allow["default_request"], over), quota_doc(ns, cap, over)])
-        write(os.path.join(NETWORK, f"{ns}.yaml"), policy_docs(ns, flows.get(ns) or {}, every))
+        write(os.path.join(NETWORK, f"{ns}.yaml"), policy_docs(ns, flows.get(ns) or {}, emitters))
 
     if pending:
         print("note   idp-ns-fence-gen: not fenced, declared in git but not on the cluster: "
