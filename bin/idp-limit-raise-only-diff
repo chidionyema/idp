@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""Is a change only a memory/CPU *limit* raise on one workload? (spec W3.1)
+
+Docs/policy/agent-infra-safety-spec.md W3.1 is the founder's 3 a.m. case: an OOMKill fires, an
+agent raises the failing pod's memory limit so the same load fits, and the Greenlane auto-merges
+it while he sleeps. A limit raise cannot deny a request that succeeds today -- which is the whole
+reason it is safe to land on its own. This gate proves a change is only exactly that, and nothing
+else. Anything wider waits for the founder.
+
+WHY IT COMPARES TWO YAML TREES AND NOT A GIT HUNK. A git diff of a nested YAML value shows only
+the changed leaf line (e.g. `- memory: 256Mi` / `+ memory: 512Mi`); the enclosing keys
+(`resources`, `limits`, `requests`, which container) live on unchanged context lines outside the
+hunk and are not present in the diff for a reviewer to trust. Guessing ancestry from hunks is how
+a scope check wrongly admits a *request* raise or a second workload -- the exact class of wrong
+check that grants an unapproved production write. So this gate parses the OLD and NEW file
+content and compares the parsed structures. YAML ancestry is decided by the parser, not by diff
+heuristics.
+
+WHAT PASSES, and nothing else:
+  * exactly one workload manifest is compared (caller supplies its two versions);
+  * the only difference between old and new is a set of `resources.limits.memory` and/or
+    `resources.limits.cpu` values that each strictly increase;
+  * nothing under `resources.requests.*` changes (requests are refused: the scheduler counts
+    them, so raising one can evict a neighbour);
+  * no key, container, replica, image, env, name, or other value changed.
+
+The live ResourceQuota fit is a separate check at merge time (W3.3), not parsed here (a quota is a
+living object; the workload file does not carry it).
+
+  bin/idp-limit-raise-only-diff --old FILE --new FILE
+Exit 0 pass, 1 refuse, 2 BLIND (a file could not be read or isn't a Workload).
+"""
+import argparse
+import sys
+
+import yaml
+
+WORKLOAD = ("apps/v1", "apps/v1beta1")  # Deployment/StatefulSet/DaemonSet apiVersion prefix
+_KINDS = {"Deployment", "StatefulSet", "DaemonSet"}
+_LIMIT_KIND = {"memory", "cpu"}
+
+
+def _is_workload(tree) -> bool:
+    if not isinstance(tree, dict):
+        return False
+    return tree.get("kind") in _KINDS
+
+
+def _scalar_leaves(node, path=(), out=None):
+    """Yield (path_tuple, value) for every scalar leaf in a parsed YAML tree."""
+    if out is None:
+        out = []
+    if isinstance(node, dict):
+        for k, v in node.items():
+            _scalar_leaves(v, path + (str(k),), out)
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            _scalar_leaves(v, path + (f"[{i}]",), out)
+    elif node is not None:
+        out.append((path, node))
+    return out
+
+
+def _resources_kind(path) -> str | None:
+    """Return 'limits' | 'requests' | None for a leaf path under a resources block."""
+    if "requests" in path:
+        return "requests"
+    if "limits" in path:
+        return "limits"
+    # not under resources.{limits|requests} -- but only count when a resources block is ancestor
+    if "resources" in path:
+        return "other"
+    return None
+
+
+def grade(old_path, new_path):
+    """Return (True/False/None, why). None == BLIND (unreadable / not a workload)."""
+    try:
+        old_raw = open(old_path, encoding="utf-8").read()
+        new_raw = open(new_path, encoding="utf-8").read()
+    except OSError as e:
+        return None, f"cannot read a file: {e}"
+    try:
+        old = yaml.safe_load("".join(l for l in old_raw.splitlines(keepends=True) if not l.startswith("#")))
+        new = yaml.safe_load("".join(l for l in new_raw.splitlines(keepends=True) if not l.startswith("#")))
+    except yaml.YAMLError as e:
+        return None, f"file is not parseable YAML: {e}"
+    for name, tree in (("old", old), ("new", new)):
+        if not _is_workload(tree):
+            return None, f"{name} file is not a Deployment/StatefulSet/DaemonSet manifest"
+
+    old_leaves = dict(_scalar_leaves(old))
+    new_leaves = dict(_scalar_leaves(new))
+
+    changed = []
+    for path, v in new_leaves.items():
+        if path not in old_leaves:
+            changed.append((path, old_leaves.get(path), v, "added"))
+        elif old_leaves[path] != v:
+            changed.append((path, old_leaves[path], v, "changed"))
+            old_leaves[path] = v  # consumed
+    for path, v in old_leaves.items():
+        if path not in new_leaves:
+            changed.append((path, v, None, "removed"))
+
+    if not changed:
+        return False, "old and new are identical; there is no change to grade"
+
+    # every changed leaf must be a strictly-increased limits.{memory,cpu} value.
+    for path, oldv, newv, how in changed:
+        kind = _resources_kind(path)
+        if how != "changed":
+            return False, f"{'adds' if how=='added' else 'removes'} a value at {'.'.join(path)}; a limit raise only edits an existing limit"
+        if kind == "requests":
+            return False, f"changes a request ({'.'.join(path)} {oldv!r} -> {newv!r}); requests are refused"
+        if kind == "other":
+            return False, f"changes a non-limit value under resources: {'.'.join(path)} {oldv!r} -> {newv!r}"
+        if kind != "limits":
+            return False, f"changes a value outside resources.limits: {'.'.join(path)} {oldv!r} -> {newv!r}"
+        leaf = path[-1]
+        if leaf not in _LIMIT_KIND:
+            return False, f"changes limits.{leaf} ({oldv!r}->{newv!r}); only memory/cpu may be raised"
+        try:
+            up = _amount(newv) > _amount(oldv)
+        except ValueError:
+            return False, f"limits.{leaf} has a non-comparable quantity ({oldv!r} -> {newv!r})"
+        if not up:
+            return False, f"limits.{leaf} does not move up ({oldv} -> {newv})"
+
+    labels = ", ".join(
+        f"limits.{p[-1]} {v}->{n}" for p, v, n, h in changed if h == "changed"
+    )
+    return True, f"raises {len(changed)} limit(s): {labels}, and nothing else"
+
+
+def _amount(text):
+    text = str(text).strip()
+    m = __import__("re").fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]*)", text)
+    if not m:
+        raise ValueError(text)
+    num = float(m.group(1))
+    u = m.group(2)
+    mult = {"": 1.0, "n": 1e-9, "u": 1e-6, "m": 1e-3, "k": 1e3, "Ki": 1e3,
+            "M": 1e6, "Mi": 1e6, "G": 1e9, "Gi": 1e9, "T": 1e12, "Ti": 1e12}
+    return num * mult.get(u, 1.0)
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--old", required=True, help="the workload file before the change")
+    ap.add_argument("--new", required=True, help="the workload file after the change")
+    a = ap.parse_args(argv)
+    ok, why = grade(a.old, a.new)
+    if ok is None:
+        print(f"BLIND   limit  {why}")
+        return 2
+    print(f"{'ok      ' if ok else 'FAIL    '} limit  {why}")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
