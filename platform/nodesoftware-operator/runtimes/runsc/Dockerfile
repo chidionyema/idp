@@ -40,11 +40,16 @@ FROM debian:bookworm-slim AS linter
 # option. debian-slim ships bash; each stage says so before its first RUN.
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
+# --severity, not -s: shellcheck's -s is --shell, so `-s warning` asked it to lint for a
+# shell named "warning" -- `Unknown shell: warning`, exit 4. Measured 2026-09-08: with
+# that flag this stage has never linted anything. It failed before reaching the scripts,
+# and the dash error one stage down hid that it had. The scripts are clean at this
+# severity; the flag was the only thing wrong.
 COPY scripts /tmp/scripts/
 RUN set -euo pipefail \
     && apt-get update \
     && apt-get install -y --no-install-recommends shellcheck ca-certificates \
-    && shellcheck -s warning /tmp/scripts/nodesoftware-runsc-* \
+    && shellcheck --severity=warning /tmp/scripts/nodesoftware-runsc-* \
     && echo "scripts: shellcheck clean" \
     && install -m 0755 /tmp/scripts/* /usr/local/bin/
 
