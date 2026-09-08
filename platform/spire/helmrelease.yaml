@@ -59,6 +59,24 @@ metadata:
   name: spire
   namespace: spire-mgmt
 spec:
+  # The flannel -> Calico cutover, same patch and same reasoning as
+  # platform/chaos/mesh/helmrelease.yaml: the descheduler profile in #2501 never evicts a
+  # DaemonSet pod, so spire-agent and spire-spiffe-csi-driver move by a pod-template
+  # annotation instead. Fixed instant, so it rolls once on merge and never again.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target: { kind: DaemonSet }
+            patch: |
+              apiVersion: apps/v1
+              kind: DaemonSet
+              metadata:
+                name: cni-cutover
+              spec:
+                template:
+                  metadata:
+                    annotations:
+                      platform.idp/cni-cutover: "2026-09-08T09:30:00Z"
   interval: 10m
   timeout: 10m
   dependsOn:
