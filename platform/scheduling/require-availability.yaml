@@ -28,6 +28,66 @@ metadata:
 spec:
   background: true
   rules:
+    # 2026-09-08. The two rules below are workload-scoped, not namespace-scoped, and that is
+    # deliberate. An admission webhook with `failurePolicy: Fail` is not a founder-facing surface
+    # -- it is the thing that decides whether ANY manifest may be applied, so losing it does not
+    # cost one hostname, it freezes the cluster including its own repair. On 2026-09-08 all three
+    # cert-manager pods and all four external-secrets pods were on node 10.0.159.197, that node
+    # stopped answering the API server, and Flux fell to 14 of 80 Kustomizations Ready with no
+    # way to apply anything.
+    #
+    # They cannot be the namespace rule with a label, because both namespaces also hold workloads
+    # that are singletons on purpose -- cert-manager's cainjector, external-secrets'
+    # cert-controller, the bitwarden SDK server. Labelling those namespaces founder-facing would
+    # refuse correct work, which LAW 38 calls an outage. So the scope is the two Deployments that
+    # actually gate admission, by name. bin/idp-availability-gate reads this file and fails any
+    # also_graded row whose `admission_workload` no rule here names, so the list cannot drift
+    # away from what CI grades.
+    - name: fail-closed-admission-webhook-runs-two
+      match:
+        any:
+          - resources:
+              kinds: [Deployment]
+              operations: [CREATE, UPDATE]
+              namespaces: [cert-manager, external-secrets]
+              names: [cert-manager-webhook, external-secrets-webhook]
+      validate:
+        failureAction: Enforce
+        message: >-
+          A fail-closed admission webhook runs at least 2 replicas. At one replica the cluster's
+          ability to apply any manifest at all rests on one node, and the repair for that node is
+          itself a manifest (2026-09-08: 14 of 80 Kustomizations Ready, nothing appliable).
+        pattern:
+          spec:
+            replicas: ">1"
+    - name: fail-closed-admission-webhook-spreads-across-nodes
+      match:
+        any:
+          - resources:
+              kinds: [Deployment]
+              operations: [CREATE, UPDATE]
+              namespaces: [cert-manager, external-secrets]
+              names: [cert-manager-webhook, external-secrets-webhook]
+      validate:
+        failureAction: Enforce
+        message: >-
+          Two admission webhook replicas on one node are one replica, and one node is what failed
+          on 2026-09-08. Needs a required podAntiAffinity or a DoNotSchedule
+          topologySpreadConstraint on kubernetes.io/hostname.
+        anyPattern:
+          - spec:
+              template:
+                spec:
+                  affinity:
+                    podAntiAffinity:
+                      requiredDuringSchedulingIgnoredDuringExecution:
+                        - topologyKey: kubernetes.io/hostname
+          - spec:
+              template:
+                spec:
+                  topologySpreadConstraints:
+                    - topologyKey: kubernetes.io/hostname
+                      whenUnsatisfiable: DoNotSchedule
     - name: founder-facing-runs-two
       match:
         any:

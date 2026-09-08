@@ -44,6 +44,41 @@ The same file's `also_graded` list holds workloads that carry founder traffic wi
 their own (`hermes-agent/hermes-agent-gateway`, a ClusterIP every hermes workload calls). Named by
 a human, graded identically.
 
+## A fail-closed admission webhook is held to this too, by name
+
+An admission webhook with `failurePolicy: Fail` is not a surface anyone opens, so no route names
+it and nothing in the topology would have graded it. It is worse than a surface: it decides
+whether **any** manifest may be applied at all, so losing it does not cost one hostname, it
+freezes the cluster -- including the change that would repair it.
+
+2026-09-08. All three cert-manager pods and all four external-secrets pods were on node
+`10.0.159.197`. That node stopped answering the API server, `webhook.cert-manager.io` and
+`validate.externalsecret.external-secrets.io` timed out on every call, and Flux fell to 14 of 80
+Kustomizations Ready with no way to apply anything. Kyverno was the only one that stayed half up,
+because its two replicas happened to sit on different nodes.
+
+Three things follow, and all three are in the tree:
+
+1. **The gate reads sub-charts.** One chart renders several Deployments and each carries its own
+   `replicaCount`, `podDisruptionBudget` and `affinity`. `bin/idp-availability-gate` read only
+   the top level, so it graded the controller and called the webhook covered. A row in
+   `platform/availability.yaml` may now name a `component`, which is the values key to grade.
+
+2. **Admission is armed by workload, not by namespace.** The namespace label
+   `availability.idp/tier: founder-facing` is the wrong instrument here: both namespaces also
+   hold Deployments that are singletons on purpose -- cert-manager's cainjector,
+   external-secrets' cert-controller, the bitwarden SDK server -- and the label would refuse
+   them, which LAW 38 calls an outage. So a component row names an `admission_workload`, and
+   `platform/scheduling/require-availability.yaml` matches that Deployment by name. The gate
+   fails any component row the policy does not name, so the two cannot drift apart.
+
+3. **The anti-affinity selector never rests on the release name.**
+   `app.kubernetes.io/instance` is the Helm release name, and a required podAntiAffinity whose
+   selector matches nothing is not a constraint -- it is two replicas free to share one node,
+   which is the state being fixed. The selectors use `app.kubernetes.io/name` and
+   `app.kubernetes.io/component`, and a test renders both charts under two different release
+   names to prove the match holds.
+
 ## What is guaranteed, and what is not
 
 Guaranteed, and provable by drilling it: **any one node can be cordoned, drained, replaced or lost

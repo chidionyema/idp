@@ -57,6 +57,45 @@ spec:
         cpu: 200m
         memory: 256Mi
     webhook:
+      # Incident 2026-09-08: all three cert-manager pods were on node 10.0.159.197, that node
+      # stopped answering the API server, and `webhook.cert-manager.io` -- failurePolicy Fail --
+      # timed out on every apply. Flux went to 14 of 80 Kustomizations Ready and could not apply
+      # the repair either, because the repair is a manifest and admission refused it. One replica
+      # of a fail-closed admission webhook is not one surface at risk, it is the whole cluster's
+      # ability to change anything, resting on one node.
+      replicaCount: 2
+      # crew#307, in this same policy file: a required podAntiAffinity on hostname plus the
+      # apps/v1 default strategy is a deadlock, not a spread. 25% of two replicas rounds down to
+      # maxUnavailable 0, so a rollout must place a surge pod on a third node -- and the whole
+      # point of the anti-affinity is that there is no third node. The rollout sits Pending for
+      # ever while the old ReplicaSet keeps answering 200. maxSurge 0 with maxUnavailable 1 is
+      # the shape that rolls: one replica steps down, its node frees, the new one takes it.
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxUnavailable: 1
+          maxSurge: 0
+      podDisruptionBudget:
+        enabled: true
+        # maxUnavailable, never minAvailable equal to the replica count: that shape refuses every
+        # drain for ever, which is what the clickhouse budget did to the 2026-08-28 drain.
+        maxUnavailable: 1
+      # requiredDuringScheduling, not preferred: a preference puts both replicas on one node the
+      # moment the cluster is under pressure, which is exactly the day this matters.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                # name and component, never instance: `app.kubernetes.io/instance` is the Helm
+                # release name, so a selector built on it silently matches nothing the day the
+                # release is installed under another name -- and a required anti-affinity that
+                # matches nothing is not a constraint, it is two replicas on one node again.
+                # These two are unique to the webhook inside namespace cert-manager, which is
+                # the scope a podAntiAffinity selector has by default.
+                matchLabels:
+                  app.kubernetes.io/name: webhook
+                  app.kubernetes.io/component: webhook
+              topologyKey: kubernetes.io/hostname
       resources:
         requests:
           cpu: 10m

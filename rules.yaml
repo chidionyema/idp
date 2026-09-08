@@ -451,7 +451,7 @@ rules:
 
   - id: availability
     label: ha
-    statement: Every surface the founder can open survives losing one node
+    statement: Every surface the founder can open survives losing one node, and so does every fail-closed admission webhook -- losing one of those costs not a hostname but the cluster's ability to apply anything, its own repair included
     law: docs/reference/policy/availability-standard.md
     origin: crew#539
     planes: [ci]
