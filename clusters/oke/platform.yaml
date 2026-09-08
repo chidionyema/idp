@@ -979,9 +979,16 @@ spec:
   wait: true
   timeout: 10m
 ---
-# crew#539 CP6/CP7: the self-healing loops. Descheduler rebalances after every node swap; K8sGPT
-# explains a Pending wave through the estate's own router. After scheduling (it must not evict the
-# radio room), llm (the backend) and secret-store (the router key).
+# crew#539 CP6: the evictor. It rebalances after every node swap and it is the mechanism the
+# flannel -> Calico cutover rides on (#2501). After `scheduling` and nothing else -- that row
+# carries the PriorityClass the evictor reads, so it must not evict the radio room.
+#
+# It used to depend on `llm` and `secret-store` as well, because K8sGPT shared this row and
+# K8sGPT talks to the LiteLLM router. That made the estate's evictor hostage to the estate's
+# LLM, and on 2026-09-08 the bill came in: the descheduler policy that finishes the CNI cutover
+# sat undelivered for the better part of an hour behind `dependency 'flux-system/llm' is not
+# ready` while the router's own lanes were degraded. K8sGPT is now the row below and keeps both
+# dependencies; this row keeps none of them.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -991,8 +998,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
-    - name: llm
-    - name: secret-store
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1005,6 +1010,28 @@ spec:
       kind: HelmRelease
       name: descheduler
       namespace: healing
+---
+# crew#539 CP7: K8sGPT explains a Pending wave through the estate's own router, so it needs the
+# router (`llm`) and the router key (`secret-store`). Split out of the row above on 2026-09-08.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: healing-k8sgpt
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: healing
+    - name: llm
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/healing/k8sgpt
+  prune: true
+  wait: true
+  timeout: 15m
+  healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: k8sgpt-operator
@@ -1020,7 +1047,9 @@ metadata:
 spec:
   interval: 10m
   dependsOn:
-    - name: healing
+    # The analyzer is a K8sGPT object built by the K8sGPT operator, so it follows the row that
+    # installs the operator -- which is healing-k8sgpt since the 2026-09-08 split, not healing.
+    - name: healing-k8sgpt
   sourceRef:
     kind: GitRepository
     name: flux-system
