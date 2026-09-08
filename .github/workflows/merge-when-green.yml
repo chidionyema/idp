@@ -31,14 +31,15 @@
 name: merge-when-green
 
 on:
+  # Two triggers, no cron of its own. `ci` finishing is the moment a pull request can turn green.
+  # `deploy-when-green` is the backstop: it already carries the estate's one declared ten-minute
+  # tick, so riding it catches a pull request that went green before this file existed, or one
+  # that became mergeable because something else merged -- without declaring a second recurring
+  # job outside Dagster (bin/idp-one-scheduler, founder 2026-09-07: "we should only be using
+  # dagster for scheduling").
   workflow_run:
-    workflows: [ci]
+    workflows: [ci, deploy-when-green]
     types: [completed]
-  # A backstop rather than the mechanism: GitHub drops scheduled runs under load, so nothing here
-  # depends on this firing. It catches a pull request that went green before this existed, or one
-  # that became mergeable because something else merged.
-  schedule:
-    - cron: '*/10 * * * *'
   workflow_dispatch:
 
 permissions:
