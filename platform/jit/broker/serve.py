@@ -103,9 +103,27 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # the ledger is the record, not stderr noise
         return
 
+    def _bearer(self) -> str:
+        """The credential out of the Authorization header, or an empty string.
+
+        The key travels in the header rather than the body: it is where a bearer credential
+        belongs, this handler's log_message is silenced, and a body is what gets echoed into
+        an error message by the next person to add a door.
+        """
+        sent = self.headers.get("Authorization") or ""
+        return sent[7:] if sent.startswith("Bearer ") else ""
+
     def do_POST(self) -> None:  # noqa: N802
         try:
             if self.path == "/ask":
+                # 401 before the body is even read, and separately from the ask itself, so a
+                # bad key reads as "I am not who I said" rather than the 400 that means "what
+                # you asked for is not allowed" -- and so an unauthenticated caller learns
+                # nothing about the catalogue, not even whether a grant id exists.
+                try:
+                    self.broker.authenticate(self._bearer())
+                except Refused as exc:
+                    return self._reply(401, {"error": str(exc)})
                 b = self._body()
                 req = self.broker.ask(
                     b["grant"],
@@ -113,19 +131,16 @@ class Handler(BaseHTTPRequestHandler):
                     b.get("why", ""),
                     b.get("ttl", "10m"),
                     b.get("asked_by", "agent"),
+                    attested=True,
                 )
                 self.phone.send_ask(req, self.broker._load_grant(req.grant_id))
                 return self._reply(200, {"request": req.id})
             if self.path == "/identity":
-                # The key travels in the Authorization header rather than the body: it is
-                # where a bearer credential belongs, and this handler's log_message is
-                # silenced, so nothing writes it anywhere. A wrong key is a 401 and not the
-                # 400 every other Refused answers with -- the caller has to be able to tell
-                # "I am not who I said" from "what you asked for is not allowed".
-                sent = self.headers.get("Authorization") or ""
-                presented = sent[7:] if sent.startswith("Bearer ") else ""
+                # A wrong key is a 401 and not the 400 every other Refused answers with --
+                # the caller has to be able to tell "I am not who I said" from "what you
+                # asked for is not allowed".
                 try:
-                    return self._reply(200, self.broker.identity(presented))
+                    return self._reply(200, self.broker.identity(self._bearer()))
                 except Refused as exc:
                     return self._reply(401, {"error": str(exc)})
             if self.path == "/state":
