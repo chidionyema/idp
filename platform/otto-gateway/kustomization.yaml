@@ -18,6 +18,7 @@ resources:
   - edge-manners.yaml
   - availability.yaml
   - registration-reconciler.yaml
+  - router-lanes.yaml
   - answer-probe.yaml
   - memory-store-job.yaml
 images:
