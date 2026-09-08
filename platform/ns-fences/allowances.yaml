@@ -193,9 +193,19 @@ flows:
   # nothing else; the collector hop is the usual one. Not rendered until the namespace is
   # on the cluster (idp-ns-fence-gen defers what live-namespaces.txt does not hold).
   crossplane-system:
+    # Serves an admission webhook, so the control plane calls IN. It is outside the pod
+    # network and outside every namespace selector, so default-deny drops it and only an
+    # ipBlock names it. Omit this and the webhook is unreachable; a fail-closed one then
+    # refuses every write to the cluster (found live 2026-09-08, kyverno, Flux 0/80).
+    ingress_apiserver: [9443]
     egress: [observability]
     egress_internet: [443]
   keda:
+    # Serves an admission webhook, so the control plane calls IN. It is outside the pod
+    # network and outside every namespace selector, so default-deny drops it and only an
+    # ipBlock names it. Omit this and the webhook is unreachable; a fail-closed one then
+    # refuses every write to the cluster (found live 2026-09-08, kyverno, Flux 0/80).
+    ingress_apiserver: [9443]
     egress: [observability]
   llm:
     # estate-db: the router mints budgeted virtual keys and writes every call to a spend ledger
@@ -354,6 +364,11 @@ flows:
   event-bus:
     ingress_from: [otto-gateway, commerce]
   estate-db:
+    # Serves an admission webhook, so the control plane calls IN. It is outside the pod
+    # network and outside every namespace selector, so default-deny drops it and only an
+    # ipBlock names it. Omit this and the webhook is unreachable; a fail-closed one then
+    # refuses every write to the cluster (found live 2026-09-08, kyverno, Flux 0/80).
+    ingress_apiserver: [9443]
     # guacamole, healthchecks: both hold estate-rw in their own Deployment env (platform/
     # guacamole/env.yaml, platform/healthchecks/env.yaml), not only in the one-shot migration
     # Jobs -- these are standing daily diallers, and a database neither can reach is a service
@@ -373,6 +388,11 @@ flows:
     # in particular it never dials prospector, which is the direction the firewall bans.
     egress: [estate-db, event-bus, observability]
   kyverno:
+    # Serves an admission webhook, so the control plane calls IN. It is outside the pod
+    # network and outside every namespace selector, so default-deny drops it and only an
+    # ipBlock names it. Omit this and the webhook is unreachable; a fail-closed one then
+    # refuses every write to the cluster (found live 2026-09-08, kyverno, Flux 0/80).
+    ingress_apiserver: [9443]
     ingress_from: [backstage]
   prospector:
     # The shared storefront. It is a served product, not an east-west caller: the Gateway's data
@@ -436,3 +456,27 @@ flows:
     # programs to land on a traefik pod rather than leave for the load balancer, so the request
     # arrives here as ordinary pod-to-pod traffic and a fence that does not name it drops it.
     ingress_from: [monitoring, otto-gvisor-sandbox, prospector, identity, hermes-agent]
+  cert-manager:
+    # Serves an admission webhook, so the control plane calls IN. It is outside the pod
+    # network and outside every namespace selector, so default-deny drops it and only an
+    # ipBlock names it. Omit this and the webhook is unreachable; a fail-closed one then
+    # refuses every write to the cluster (found live 2026-09-08, kyverno, Flux 0/80).
+    ingress_apiserver: [9402, 10250]
+  chaos-mesh:
+    # Serves an admission webhook, so the control plane calls IN. It is outside the pod
+    # network and outside every namespace selector, so default-deny drops it and only an
+    # ipBlock names it. Omit this and the webhook is unreachable; a fail-closed one then
+    # refuses every write to the cluster (found live 2026-09-08, kyverno, Flux 0/80).
+    ingress_apiserver: [10080, 10081, 10250]
+  external-secrets:
+    # Serves an admission webhook, so the control plane calls IN. It is outside the pod
+    # network and outside every namespace selector, so default-deny drops it and only an
+    # ipBlock names it. Omit this and the webhook is unreachable; a fail-closed one then
+    # refuses every write to the cluster (found live 2026-09-08, kyverno, Flux 0/80).
+    ingress_apiserver: [10250]
+  spire-mgmt:
+    # Serves an admission webhook, so the control plane calls IN. It is outside the pod
+    # network and outside every namespace selector, so default-deny drops it and only an
+    # ipBlock names it. Omit this and the webhook is unreachable; a fail-closed one then
+    # refuses every write to the cluster (found live 2026-09-08, kyverno, Flux 0/80).
+    ingress_apiserver: [9443]

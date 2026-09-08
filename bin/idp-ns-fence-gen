@@ -210,6 +210,25 @@ def policy_docs(ns: str, flows: dict, emitters: set | None = None) -> list[dict]
             "to": [{"ipBlock": {"cidr": APISERVER_CIDR}}],
             "ports": [{"protocol": "TCP", "port": p} for p in APISERVER_PORTS]}]},
     })
+    webhook_ports = flows.get("ingress_apiserver") or []
+    if webhook_ports:
+        # The mirror of allow-apiserver-egress, and the half that was missing. A namespace that
+        # serves an admission webhook is called BY the control plane, which sits outside the pod
+        # network and outside every namespace selector, so default-deny drops it and only an
+        # ipBlock can name it. Found live 2026-09-08: kyverno's fail-closed webhook was
+        # unreachable, so every write to the cluster was refused and Flux sat at 0/80. It had
+        # been latent for eleven days because flannel's FLANNEL-POSTRTG masquerade was rewriting
+        # every Calico packet's source to the node's own address -- 6.74M packets, 652MB -- so
+        # the control plane's calls arrived looking like node traffic that some other rule let
+        # through. Remove flannel and the gap is a total outage; leave it and the fence is a lie.
+        docs.append({
+            "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+            "metadata": {"name": "allow-apiserver-webhook-ingress", "namespace": ns},
+            "spec": {"podSelector": {}, "policyTypes": ["Ingress"], "ingress": [{
+                "from": [{"ipBlock": {"cidr": APISERVER_CIDR}}],
+                "ports": [{"protocol": "TCP", "port": int(x)}
+                          for x in sorted(set(webhook_ports))]}]},
+        })
     egress = list(flows.get("egress") or [])
     if ns != SINK:
         egress.append(SINK)  # LAW 50: every workload emits to the one collector.
