@@ -1015,3 +1015,40 @@ rules:
       a SecretStore or ClusterSecretStore names a provider outside the cluster that its
       namespace's fence gives it no route to; the store reports InvalidProviderConfig and every
       ExternalSecret behind it stops
+
+  - id: catalogue-entity-runtime-service
+    label: cat-runtime-svc
+    statement: >-
+      A package manager may mint its own webhook Service without a catalogue label, and an
+      undeclared door in the same namespace still may not
+    law: "R38 -- a guard that refuses correct work is an outage"
+    origin: >-
+      incident 2026-09-08. require-catalogue-entity runs at Enforce, and it refused the Service
+      Crossplane's package manager creates for each provider revision: `cannot apply provider
+      package service: admission webhook "validate.kyverno.svc-fail" denied the request ...
+      require-catalogue-entity`. No file in this repository renders that Service, so no kustomize
+      label and no Flux postRenderer could ever reach it. Both providers sat at Installed=True,
+      Healthy=False with zero CRDs established, and the crossplane-providerconfig row failed
+      forever with `no matches for kind "ProviderConfig" in version "oci.upbound.io/v1beta1"` --
+      an error that names the config, never the policy that caused it.
+    planes: [ci]
+    requires: [kyverno]
+    run: [kyverno, test]
+    fixtures:
+      must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
+      must_pass: tests/fixtures/catalogue-entity-runtime-service
+    live_elsewhere: "bin/idp-ci -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, require-catalogue-entity among them"
+    cases:
+      - expect: refuse
+        args: [tests/fixtures/catalogue-entity-runtime-service-blind]
+        note: >-
+          the real policy with the exception file left out, so the provider's Service is refused
+          and kyverno reports "Want skip, got fail" -- the outage itself, graded
+      - expect: pass
+        args: [tests/fixtures/catalogue-entity-runtime-service]
+        tail_of: true
+    ok: 'catalogue entity, runtime service: {tail}'
+    ok_fallback: >-
+      the package manager's own Service is excepted by name and an unlabelled door in the same
+      namespace is still refused
+    fail: kyverno test tests/fixtures/catalogue-entity-runtime-service (and its -blind pair, which must fail)

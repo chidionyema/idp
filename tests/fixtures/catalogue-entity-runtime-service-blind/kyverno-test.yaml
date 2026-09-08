@@ -1,0 +1,26 @@
+# The must-fail half: the same policy and the same two Services with the exception file left out.
+# Crossplane's webhook Service then does not reach the cluster, which is the outage of 2026-09-08,
+# and `kyverno test` reports that here as a failure.
+#
+# The perturbation is the exception, not the rule. An expectation naming a rule kyverno cannot
+# find is scored Pass/Excluded and never compared, so deleting the rule would prove nothing
+# (the reloader fixture learned this on 2026-09-08).
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-catalogue-entity-runtime-service-blind
+policies:
+  - ../../../platform/edge/require-catalogue-entity.yaml
+resources:
+  - services.yaml
+results:
+  - policy: require-catalogue-entity
+    rule: service-names-its-entity
+    kind: Service
+    resources: [crossplane-system/oracle-provider-family-oci]
+    result: skip
+  - policy: require-catalogue-entity
+    rule: service-names-its-entity
+    kind: Service
+    resources: [crossplane-system/crossplane-console]
+    result: fail

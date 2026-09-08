@@ -46,3 +46,18 @@ spec:
       - resources:
           kinds: [Service]
           namespaces: [demo-sandbox]
+      # 2026-09-08: Crossplane's package manager mints a webhook Service per provider at runtime --
+      # Service/crossplane-system/oracle-provider-family-oci and .../provider-oci-objectstorage.
+      # No file in this repository renders them, so neither a kustomize label nor a Flux
+      # postRenderer can reach them, and with this rule in Enforce the package manager's
+      # pre-establish hook was refused: "cannot apply provider package service: admission webhook
+      # validate.kyverno.svc-fail denied the request ... require-catalogue-entity". Both providers
+      # then sat at Installed=True, Healthy=False with zero CRDs established, so the
+      # crossplane-providerconfig row could never find kind ProviderConfig in oci.upbound.io/v1beta1.
+      # Named by glob, not by namespace: the estate's one Crossplane door is
+      # Service/crossplane-system/crossplane-webhooks, the chart labels it
+      # backstage.io/kubernetes-id=layer-crossplane, and this exception does not cover it.
+      - resources:
+          kinds: [Service]
+          namespaces: [crossplane-system]
+          names: ["*provider*"]
