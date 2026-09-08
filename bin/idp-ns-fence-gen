@@ -166,7 +166,7 @@ def metadata_egress_doc(ns: str) -> dict:
 SINK = "observability"  # LAW 50: policy_docs grants both halves of the hop to the collector.
 
 
-def policy_docs(ns: str, flows: dict, every: set) -> list[dict]:
+def policy_docs(ns: str, flows: dict, every: set | None = None) -> list[dict]:
     """The floor, then the holes: DNS, the collector, and whatever the input declares."""
     docs = [{
         "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
@@ -251,7 +251,7 @@ def policy_docs(ns: str, flows: dict, every: set) -> list[dict]:
         # on the enforcing CNI, and the roll onto Calico is half done (measured 2026-09-08:
         # observability 9 pods on Calico, 15 still on flannel). It becomes total when the roll
         # finishes, which is the reason to fix it before rolling the rest rather than after.
-        ingress |= every - {SINK}
+        ingress |= set(every or ()) - {SINK}
     ingress = sorted(ingress)
     if ingress:
         docs.append({
