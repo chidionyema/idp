@@ -21,7 +21,7 @@ version: 1
 # The ceiling on rules that admit in live_gap that they have no real input yet. bin/idp-rules
 # refuses a run where more rules than this name a gap, so the number may only fall. An escape
 # hatch with no ratchet is how a temporary exception becomes the permanent state.
-live_gap_budget: 12
+live_gap_budget: 10
 
 rules:
   - id: flux-subst
@@ -541,15 +541,19 @@ rules:
   - id: operating-model-policy
     label: opmodel
     statement: >-
-      A pull request carries its identity and grant together, no console step, a cost line, a
-      canary label, a named drill and a counted Optimised line
+      A pull request carries its identity and grant together, no console step, a canary label on
+      a paid-capacity change, and no estate-zone literal in the lines it adds
     law: LAW 51, ZCP
     origin: crew#286, crew#287, crew#584
     planes: [ci]
     requires: [conftest]
     run: [conftest, test, --parser, json, -p, policy]
     fixtures: {must_fail: policy/fixtures/opmodel-half-provisioned.json, must_pass: policy/fixtures/opmodel-ok.json}
-    live_gap: "chidionyema/idp#2452 -- same as licence-policy, and this is the costly one: the Optimised line, the cost line, the canary label and the named drill are graded against 21 checked-in examples and against no pull request that was ever opened."
+    live_elsewhere: "bin/pr-report:63 -- .githooks/pre-push:33 runs bin/pr-report on every push from this repo, so these rules read a real pull request, not only the fixtures below. The one they cannot read there is founder_denied: the hook runs at push time, before the founder can have commented, and the workflow that re-judged on his word is gone (chidionyema/idp#2452)."
+    # Eight rules that graded the WORDING of a pull request body were deleted on 2026-09-08 on
+    # the founder's 2026-09-04 ruling ("addingzero value, paper work for nothing"), and their
+    # thirteen fixtures with them. What is left reads the world: the files a PR changes, the
+    # lines it adds, its labels, and the founder's own DENY: word.
     cases:
       - {expect: pass, args: [policy/fixtures/opmodel-ok.json]}
       - {expect: refuse, args: [policy/fixtures/opmodel-half-provisioned.json]}
@@ -558,26 +562,7 @@ rules:
       - {expect: pass, args: [policy/fixtures/opmodel-approval-pending.json]}
       - {expect: pass, args: [policy/fixtures/opmodel-approval-other-word.json]}
       - {expect: refuse, args: [policy/fixtures/opmodel-denied.json]}
-      - {expect: refuse, args: [policy/fixtures/opmodel-over-budget.json]}
       - {expect: refuse, args: [policy/fixtures/opmodel-no-canary.json]}
-      - {expect: refuse, args: [policy/fixtures/opmodel-no-drill.json]}
-      - {expect: refuse, args: [policy/fixtures/opmodel-unknown-drill.json]}
-      - {expect: pass, args: [policy/fixtures/opmodel-drill-added-in-pr.json]}
-      - {expect: refuse, args: [policy/fixtures/opmodel-no-optimised.json]}
-      - {expect: refuse, args: [policy/fixtures/opmodel-optimised-sentence.json]}
-      # Seven fixtures under policy/fixtures were built for these rules and named by no case
-      # until 2026-09-07, so the rules they exercise were graded by nothing. The verdicts below
-      # are measured, not intended: architecture_laws is a `warn`, not a `deny`
-      # (policy/operating_model.rego:209,216), and conftest does not fail a run on a warning, so
-      # a body with no laws section passes here. These cases pin that behaviour -- a warn that
-      # silently became a deny, or a deny that stopped firing, fails this rule.
-      - {expect: pass, args: [policy/fixtures/opmodel-no-laws.json], note: "architecture_laws warns, it does not block a merge"}
-      - {expect: pass, args: [policy/fixtures/opmodel-laws-sentence.json], note: "a law line written as a sentence warns, it does not block"}
-      - {expect: refuse, args: [policy/fixtures/opmodel-no-control.json]}
-      - {expect: pass, args: [policy/fixtures/opmodel-control-none.json], note: "`Control: none - <why>` is the written record the rule asks for"}
-      - {expect: refuse, args: [policy/fixtures/opmodel-self-heal-no-breaker.json]}
-      - {expect: pass, args: [policy/fixtures/opmodel-self-heal-breaker.json], note: "a Breaker line with attempts, cool-off and an open state is accepted"}
-      - {expect: pass, args: [policy/fixtures/opmodel-self-heal-alarm.json], note: "`Breaker: n/a` with a reason is accepted: an alarm is not a repair loop"}
     ok: "the operating-model policy allows a complete pull request and refuses each incomplete shape"
     fail: "the operating-model policy did not behave as specified"
 
@@ -606,7 +591,7 @@ rules:
     requires: [conftest]
     run: [conftest, test, --parser, json, -p, policy]
     fixtures: {must_fail: policy/fixtures/conscience-bad.json, must_pass: policy/fixtures/conscience-clean.json}
-    live_gap: "chidionyema/idp#2452 -- same as licence-policy: the producer bin/pr-report exists and no workflow runs it."
+    live_elsewhere: "bin/pr-report:63 -- .githooks/pre-push:33 runs bin/pr-report on every push from this repo, so what survives here is graded against the real pull request and not only against the fixtures below."
     cases:
       - {expect: refuse, args: [policy/fixtures/conscience-bad.json], expect_rules: [no_provider_in_diff, no_floating_tag, new_script_has_a_test, incident_has_a_guard, new_dependency_has_a_ledger_entry]}
       - {expect: pass, args: [policy/fixtures/conscience-clean.json]}

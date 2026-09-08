@@ -8,7 +8,11 @@
 # refused in seconds -- offline-gate/bdd (the tests) 40 of 55 failed jobs, the PR-body gates 9.
 # Mean 8 commits per merged PR, 7.2 min per CI run. This hook runs, in order:
 #   1. bin/idp-push-on-green   refuses a push to a branch whose PR is already green (2.2s measured)
-#   2. bin/pr-report           the PR-body gates CI's operating-model-gate/spec-gate would refuse (7.8s)
+#   2. bin/pr-report           gitleaks over the lines this push adds, the estate-zone literals
+#                              among them, and the five content rules of policy/operating_model.rego.
+#                              It used to run eight PR-body prose gates too, naming two workflows
+#                              deleted on 2026-09-04; those went on refusing pushes for four more
+#                              days and were deleted here on 2026-09-08.
 #   3. bin/idp-kyverno-render  the cluster's own admission policies over the changed platform dirs
 #   4. the shared LAW 32 gate the router would have run
 # A red refuses the push. No test rung: R58 makes this hook lint-only, and the tests are CI's.
