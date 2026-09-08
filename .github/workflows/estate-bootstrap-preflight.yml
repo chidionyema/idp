@@ -1,0 +1,84 @@
+# button: Check the estate can start itself from nothing
+# founder: Reads every password and key the platform needs and refuses the change if any of them has no way to be created without you doing it by hand.
+# Estate bootstrap gate (founder 2026-09-08: "the whole system can just boot up ready without
+# anyone remembering scripts"). Catches "a credential nobody has a bootstrapper for" before it
+# lands on main.
+#
+# The CI gate is bin/idp-root-trust --check: it reads docs/reference/policy/root-trust.md plus
+# every ExternalSecret under platform/ and grades three things, never a proxy:
+#   1. every vault key an ExternalSecret reads has a register row, else FAIL;
+#   2. a MEETS row names a bootstrapper that exists as bin/idp-bootstrap-* (or one of the two
+#      in-estate birth paths, ESO generator or Terraform oci_vault_secret), else FAIL;
+#   3. a MISS or PARTIAL row names a crew ticket, else FAIL (a miss without a ticket is a
+#      documented procedure, the thing the R45-root-trust ruling refuses).
+# No OCI, no network: it is two kinds of file. Reruns are cheap, so this runs on every PR that
+# could change the answer and on workflow_dispatch for on-demand operator checks.
+#
+# The full preflight is bin/idp-bootstrap-estate --preflight on an operator's machine -- that
+# one walks every bootstrapper in dependency order and ends with the same root-trust gate, plus
+# the live-vault checks each bootstrapper's --preflight does. The operator-only path is a
+# scaffolder tile in backstage/templates/estate-bootstrap-preflight/.
+name: estate-bootstrap-preflight
+
+on:
+  pull_request:
+    paths:
+      - 'platform/**'
+      - 'bin/idp-bootstrap-*'
+      - 'bin/idp-root-trust'
+      - 'bin/idp-vault-put'
+      - 'docs/reference/policy/root-trust.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  root-trust:
+    name: bin/idp-root-trust --check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: install runtime deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-yaml
+          pip install --quiet pyyaml
+
+      - name: run the gate
+        id: gate
+        # 0 = every row MEETS, 1 = at least one PARTIAL or MISS, 2 = the register file is gone.
+        # All three are answer states; bash -e would mask the verdict we want printed.
+        run: |
+          set +e
+          python3 bin/idp-root-trust --check 2>&1 | tee gate.log
+          GATE_RC=${PIPESTATUS[0]}
+          set -e
+          echo "gate_rc=$GATE_RC" >> "$GITHUB_OUTPUT"
+          tail -1 gate.log >> "$GITHUB_STEP_SUMMARY"
+
+      - name: upload gate log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: estate-bootstrap-gate
+          path: gate.log
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: fail the PR if the gate is not green
+        if: steps.gate.outputs.gate_rc != '0'
+        run: |
+          cat <<'EOF' >&2
+          estate-bootstrap-preflight: a row in docs/reference/policy/root-trust.md is MISS or
+          PARTIAL, or the register is missing. Every finding names its vault key and which
+          bootstrapper it expects (or that no bootstrapper exists, which is the path that puts a
+          customer in a terminal -- R45-root-trust). Read the uploaded gate.log artifact for
+          the full list.
+          EOF
+          exit 1
