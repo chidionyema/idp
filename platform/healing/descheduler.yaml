@@ -75,7 +75,49 @@ spec:
       runAsNonRoot: true
       runAsUser: 1000
     deschedulerPolicy:
+      # High enough that the cutover below finishes in one run rather than trickling over an hour.
+      # An eviction here is a recreation in place: the pod's requests are freed the moment it
+      # terminates and taken again by its replacement, so a sweep does not need headroom it does
+      # not have (nodes at 98% and 87% of allocatable CPU in requests, kubectl describe node,
+      # 2026-09-08).
+      maxNoOfPodsToEvictPerNode: 50
       profiles:
+        # The flannel -> Calico cutover, and it is a profile rather than a script because the
+        # thing that has to happen is exactly what this operator already does: recreate a pod.
+        # Calico became the CNI that answers CNI ADD at 2026-09-06T20:xx (calico-node 36h old on
+        # 2026-09-08T08:18Z), and every pod created since has come up on it -- measured over the
+        # twenty youngest pods in the cluster, all Calico. A pod older than that boundary is still
+        # on flannel and stays there until something recreates it; 78 were, across 68 controllers.
+        #
+        # PodLifeTime with the boundary as its threshold names that set and no other: nothing
+        # younger than 36h can be pre-Calico. It respects PodDisruptionBudgets (the descheduler
+        # evicts through the eviction API), so a two-replica front door never loses both.
+        #
+        # evictSystemCriticalPods, and not the other profile's priorityThreshold, because twelve
+        # of the 78 sit at or above 1000000 -- traefik, the flux controllers, metrics-server --
+        # and a cutover that skips the front door and the reconcilers is not a cutover. estate-db
+        # is excluded: CloudNativePG restarts its own cluster replica-first with a switchover, and
+        # the annotation on the Cluster is how you ask (platform/estate-db/cluster/cluster.yaml).
+        #
+        # This profile is temporary by construction. When the flannel count reaches zero it evicts
+        # nothing, and it comes out in the pull request that records the zero -- chidionyema/idp#2499.
+        # The receipt is the live count falling, not a test that reads this file back: the estate
+        # deleted 322 of those on 2026-09-04 (519d59e8) and bin/test-executes-gate refuses the 323rd.
+        - name: cni-cutover
+          pluginConfig:
+            - name: DefaultEvictor
+              args:
+                ignorePvcPods: false
+                evictLocalStoragePods: true
+                evictSystemCriticalPods: true
+            - name: PodLifeTime
+              args:
+                maxPodLifeTimeSeconds: 129600
+                namespaces:
+                  exclude: [estate-db]
+          plugins:
+            deschedule:
+              enabled: [PodLifeTime]
         - name: rebalance-after-node-swap
           pluginConfig:
             - name: DefaultEvictor
