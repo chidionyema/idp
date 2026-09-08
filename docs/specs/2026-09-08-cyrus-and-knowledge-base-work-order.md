@@ -205,3 +205,60 @@ The fix is one stage, built from parts that exist:
 Done when: `reports/capabilities.json` exists on main with a state for all 50 rows, the count of
 `UNKNOWN` is on the portal home, and killing a running capability turns its row FAIL within an
 hour with a page to the founder. This order outranks 4, 5 and 7, which it absorbs.
+
+## 9. EXECUTE NOW — DeepSeek owns this, in this order, no spec sheets (founder 2026-09-08 18:44Z)
+
+Founder record: `~/.claude/docs/founder/2026-09-08T1844Z-ou-are-completely-right-to-be-fed-up-d4794a6e.md`.
+Founder, 18:50Z: "let deepseek handle it". Claude Code writes nothing further on this; every step below
+is DeepSeek's, ten agents in parallel, one agent per bullet where the bullets are independent.
+
+### 9.1 Mass commit and push (counted 18:46Z)
+
+| repo | branch | dirty files | unpushed commits |
+|---|---|---|---|
+| hermes-v2 | feat/crew751-cursor-hermes-primary | 223 | 0 |
+| crew | main | 37 | 0 |
+| mumchimp-medusa | main | 20 | 0 |
+| QAlgo | main | 8 | 0 |
+| maestro | main | 0 | 1 |
+| survival-stack | main | 0 | 1 |
+
+Per repo, on a branch `wip/2026-09-08-unpushed-work` (hermes-v2 stays on its feature branch):
+`gitleaks protect --staged` after staging, drop any file it names, commit, `git push origin <branch>`,
+`gh pr create --fill`. maestro and survival-stack: `git push origin main`. Done when the table's
+dirty and unpushed columns read 0 on a fresh count.
+
+### 9.2 Merge the Backstage branches to main
+
+Twelve remote branches and six worktrees (list: `git branch -r --no-merged origin/main | grep -Ei
+'backstage|portal'` and `git worktree list`). One landing branch `portal/land-all-2026-09-08`; merge
+each branch into it oldest first; a conflict is resolved by hand in the same sitting, never rebased
+and parked; the three worktrees with unpushed commits (fix/one-button-family, portal/no-everyday-band,
+feat/portal-one-glance-search) are committed and merged the same way. One pull request; merge-when-green
+lands it; the cluster's portal Deployment is the validation. Rescue and recovery branches whose diff
+is already on main are deleted from origin. Done when the grep lists nothing outside `backup/`.
+
+### 9.3 Kill the laptop dependency
+
+Delete the six templates under `launchd/`, their six rows in `platform/scheduling/one-scheduler.yaml`,
+and the installer's rendering of them; `launchctl bootout gui/$(id -u)/ai.estate.<name>` for each loaded
+one (scheduler, headlamp, kubeapi are loaded at 18:46Z). The cockpit gets a Deployment next to the
+sovereign worker in `platform/temporal/` on the same image; Headlamp is a HelmRelease under
+`platform/`; scheduler and sovereign-worker already run on the cluster; idp and kubeapi are deleted.
+The manifests go through a pull request because Flux owns the cluster and reverts a hand apply; a
+merge is the apply. Done when `launchd/` is empty, `bin/idp-one-scheduler` is green and
+`kubectl -n <ns> get deploy cockpit` is Ready.
+
+### 9.4 Enforce the gate
+
+A row in `rules.yaml`: a pull request that adds a file under `launchd/`, or a new service entrypoint
+(a Dockerfile, a `*/server.py`, a `bin/` file that binds a port) with no manifest under `platform/`
+naming it, is refused. Fixture pair `tests/fixtures/ships-to-cluster/{bad,good}`, gate
+`bin/idp-ships-to-cluster`, `bin/idp-rules render-agents-md`. Done when a test pull request adding
+`launchd/x.plist.tmpl` turns red.
+
+### 9.5 Then the founder leaves Claude Code
+
+Founder, 18:47Z: "we get away from claude code and move over to linear and cyrus". Section 1 (Cyrus
+stops rolling every ten minutes) is the prerequisite and runs in parallel with 9.1–9.4. When Cyrus
+holds a pod for an hour, every open order on this page becomes a Linear issue assigned to Cyrus.
