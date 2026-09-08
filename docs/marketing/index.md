@@ -9,6 +9,7 @@ works, why us, pricing, and how to start.
 | Product | What it is | Tier |
 |---|---|---|
 | [The Platform](./products/platform.md) | The whole IDP, sold as a managed deployment | Strategic |
+| [FleetView](./products/fleetview.md) | One live board for every AI agent you run, with stop/approve/steer from the page | 2 weeks |
 | [Voice Gate](./products/voice-gate.md) | Deterministic prose linter for house voice | Ship now |
 | [Otto Assistant](./products/otto-assistant.md) | A personal agent that lives in your chat | Ship now |
 | [Inventory + Dual-Renderer](./products/inventory-dual-renderer.md) | One source, two renderers, runtime-separated fallback | Ship now |

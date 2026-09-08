@@ -112,3 +112,11 @@ Done when, for each row marked land: the PR is merged, the platform image workfl
 portal, and `kubectl -n backstage rollout status deploy/catalogue` returns, and the founder opens
 the portal home page and sees the change. `git branch -r --no-merged origin/main | grep -Ei 'backstage|portal'`
 then lists nothing outside `backup/`.
+
+## 4. FleetView: the agent-session board becomes a Backstage offering
+
+Founder, 2026-09-08 19:50Z: "needs to be exponentially better and on Backstage, but we need this
+developed as an offering." Spec, checkpoints, lane plan and DoD commands:
+`docs/specs/2026-09-08-fleetview-backstage-offering.md`. Feature files: `features/fleetview/`.
+Marketing page: `docs/marketing/products/fleetview.md`. This outranks sections 1–3 for lane
+count: CP1 starts today with two lanes; sections 1–3 take the other lanes.
