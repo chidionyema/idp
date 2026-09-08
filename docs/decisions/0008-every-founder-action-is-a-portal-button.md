@@ -35,7 +35,7 @@ Twelve places a person's hands are required, with the file that asks for them:
 | signs in to the OCI console as tenancy owner | `bin/idp-oci-bootstrap:44` | link only (external console) |
 | `gh secret set` × 5 for oke-check | `docs/how-to/check-the-cluster-from-github.md:15` | no: GitHub settings UI |
 | fixes Actions billing at a settings URL | `bin/idp-actions-refused:20` | link |
-| types `APPROVE: <word>` on a PR | `bin/pr-report:34`, `.github/workflows/founder-word.yml` | button |
+| types `APPROVE: <word>` on a PR | `bin/pr-report:34` only | button, but nothing acts on it in CI: `.github/workflows/founder-word.yml` called a workflow deleted on 2026-09-04 and failed on every run for four days, so it was deleted on 2026-09-08 (chidionyema/idp#2452). bin/pr-report still reads his word, and the pre-push hook is the only thing that runs bin/pr-report -- at push time, before he can have commented |
 | types `FINISH: KINI` on an issue | `.github/workflows/kini-finish.yml` | button |
 | `gh workflow run vault-seed.yml -f entry=…` | `.github/workflows/vault-seed.yml:4` | button |
 | `gh workflow run oke-check.yml -f mode=… -f playbook=…` | `.github/workflows/oke-check.yml:4` | button |

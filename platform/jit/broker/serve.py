@@ -51,6 +51,22 @@ def secret(name: str) -> str:
         return os.environ[name]
 
 
+def optional_secret(name: str) -> str:
+    """A secret the broker works without, read the same way as one it does not.
+
+    JIT_AGENT_KEY arrives with platform/jit/deployment.yaml's ExternalSecret, and an
+    ExternalSecret is a controller reconciling, not an atomic event: between this image
+    starting and that key landing there is a window. Raising in that window would put the
+    broker in CrashLoopBackOff and take the approval path down with it, to protect a door
+    that simply is not open yet. So an absent key means `identity()` refuses every caller,
+    and every other door keeps working.
+    """
+    try:
+        return secret(name)
+    except (OSError, KeyError):
+        return ""
+
+
 def killswitch_reader(path: str):
     def read() -> str | None:
         try:
@@ -99,6 +115,18 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 self.phone.send_ask(req, self.broker._load_grant(req.grant_id))
                 return self._reply(200, {"request": req.id})
+            if self.path == "/identity":
+                # The key travels in the Authorization header rather than the body: it is
+                # where a bearer credential belongs, and this handler's log_message is
+                # silenced, so nothing writes it anywhere. A wrong key is a 401 and not the
+                # 400 every other Refused answers with -- the caller has to be able to tell
+                # "I am not who I said" from "what you asked for is not allowed".
+                sent = self.headers.get("Authorization") or ""
+                presented = sent[7:] if sent.startswith("Bearer ") else ""
+                try:
+                    return self._reply(200, self.broker.identity(presented))
+                except Refused as exc:
+                    return self._reply(401, {"error": str(exc)})
             if self.path == "/state":
                 req = self.broker.pending.get(self._body().get("request", ""))
                 if req is None:
@@ -193,6 +221,7 @@ def main() -> None:
         killswitch=killswitch_reader(
             os.environ.get("JIT_KILLSWITCH", "/var/lib/jit/stopped")
         ),
+        agent_key=optional_secret("JIT_AGENT_KEY").encode(),
     )
     phone = Phone(secret("TELEGRAM_BOT_TOKEN"), secret("TELEGRAM_CHAT_ID"), broker)
     Handler.broker, Handler.phone = broker, phone
