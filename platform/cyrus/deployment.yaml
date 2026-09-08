@@ -118,6 +118,17 @@ spec:
             # standing between a Linear delivery and its own signature check.
             - name: LINEAR_DIRECT_WEBHOOKS
               value: "true"
+            # Direct mode also turns on a source-IP allowlist (EdgeWorker.js:243, on by
+            # default whenever CYRUS_HOST_EXTERNAL is true). The address it grades is the one
+            # traefik forwards, and behind the OCI load balancer that is the node the
+            # connection landed on, not Linear. Measured 2026-09-08 22:58Z on the running pod,
+            # first delivery ever to reach it:
+            #   [WARN ] [LinearEventTransport] Rejected Linear webhook from unauthorized IP: 10.0.159.197
+            # The HMAC check over the body (LinearEventTransport.js, verifySignature) is the
+            # authentication; the allowlist can only ever refuse a delivery the signature
+            # would accept. Off, by the variable the code reads for it (EdgeWorker.js:244).
+            - name: WEBHOOK_IP_VALIDATION
+              value: "false"
             # CYRUS_CONFIG_PATH was set here and is read by nothing: `cyrus` resolves its
             # config from --cyrus-home, which defaults to ~/.cyrus (dist/src/app.js), and the
             # ConfigMap was mounted at /config where nothing looked for it. The pod started,
