@@ -7,7 +7,8 @@ cheated" / "need evidence" / "and we eed to rview weekly" (crew#562 5458078376).
 Rule: docs/decisions/decision-matrix.yaml is graded by bin/matrix-gate, and the gate refuses every
 cheat a session could reach for: a score without evidence, a sentence as evidence, a weight changed
 without the founder's receipted history entry, a decision outside the tie band, an in-band pick with
-no tie receipt, a candidate that skips a criterion. policy/operating_model.rego rule `matrix_cited`
+no tie receipt, a candidate that skips a criterion. bin/matrix-gate (the PR-body rule `matrix_cited` that also read this file was
+deleted with the rest of the prose gates on 2026-09-08)
 refuses a PR that adds an ADR or a HelmRelease without `Matrix: <slug>`. Rung 4, one test per bug.
 The gate is run as a process on a mutated copy of the real file (MATRIX_FILE); opens no socket."""
 
@@ -138,93 +139,3 @@ def test_a_candidate_that_skips_a_criterion_is_refused(tmp_path):
 def test_slugs_mode_lists_the_scored_decisions():
     r = _gate(MATRIX, "--slugs")
     assert r.returncode == 0 and SLUG in json.loads(r.stdout), r.stdout
-
-
-# --- matrix_cited at the PR ---------------------------------------------------------------------
-
-LAWS = (
-    "\n\n## Architecture laws\n- LAW 1 zero-gravity: n/a: docs only\n- LAW 2 fractal: n/a: no service boundary changes\n"
-    "- LAW 3 nervous system: n/a: no workload changes\n- LAW 4 calibration: n/a: no prediction made\n"
-)
-
-
-def _rules(
-    tmp_path: pathlib.Path, files: list[str], added: str, body: str, matrix=(SLUG,)
-) -> set[str]:
-    payload = {
-        "pr": {
-            "number": 1,
-            "files": files,
-            "added": added,
-            "body": body + LAWS,
-            "labels": [],
-        },
-        "budget_monthly_usd": 50,
-        "drills": ["oke-check", "drill-heartbeat", "login-drill"],
-        "matrix": list(matrix),
-    }
-    p = tmp_path / "pr.json"
-    p.write_text(json.dumps(payload), encoding="utf-8")
-    out = subprocess.run(
-        [
-            "conftest",
-            "test",
-            "--parser",
-            "json",
-            "-p",
-            str(POLICY),
-            "-o",
-            "json",
-            str(p),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout
-    rules = set()
-    for result in json.loads(out):
-        for failure in result.get("failures") or []:
-            rules.add(failure["msg"].split(" | ")[0])
-    return rules
-
-
-ADR = ["docs/decisions/0010-x.md"]
-ADR_ADDED = "+# 0010. Something is the standard\n+\n+- Status: PROPOSED\n"
-
-
-@conftest_only
-def test_an_adr_citing_a_scored_slug_passes(tmp_path):
-    rules = _rules(
-        tmp_path, ADR, ADR_ADDED, f"adds an ADR\n\nNo-Issue: test\nMatrix: {SLUG}"
-    )
-    assert "rule=matrix_cited" not in rules, rules
-
-
-@conftest_only
-def test_a_slug_scored_in_the_same_pr_counts(tmp_path):
-    files = ADR + ["docs/decisions/decision-matrix.yaml"]
-    added = ADR_ADDED + "+  - slug: new-thing\n"
-    rules = _rules(
-        tmp_path,
-        files,
-        added,
-        "adds an ADR\n\nNo-Issue: test\nMatrix: new-thing",
-        matrix=(),
-    )
-    assert "rule=matrix_cited" not in rules, rules
-
-
-@conftest_only
-def test_a_new_helmrelease_on_a_platform_layer_needs_a_matrix_line(tmp_path):
-    files = ["platform/new-tool/helmrelease.yaml"]
-    added = "+apiVersion: helm.toolkit.fluxcd.io/v2\n+kind: HelmRelease\n"
-    assert "rule=matrix_cited" in _rules(
-        tmp_path, files, added, "new chart\n\nNo-Issue: test\nDrill: oke-check"
-    )
-    rules = _rules(
-        tmp_path,
-        files,
-        added,
-        f"new chart\n\nNo-Issue: test\nDrill: oke-check\nMatrix: {SLUG}",
-    )
-    assert "rule=matrix_cited" not in rules, rules
