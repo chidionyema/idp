@@ -135,6 +135,26 @@ NOT_THE_INTERNET = [
 APISERVER_CIDR = "${ESTATE_APISERVER_CIDR}"
 APISERVER_PORTS = (6443, 12250)
 
+# The three addresses an admission webhook can actually see its caller as, measured on the live
+# cluster 2026-09-08 by opening one fence to 0.0.0.0/0 and reading /proc/net/nf_conntrack:
+#   1. the control-plane subnet, because ESTATE_APISERVER_CIDR is only the address the kubernetes
+#      Endpoints object advertises -- OKE runs several apiservers behind it and an outbound call
+#      carries the instance's own address, not the endpoint's. A /32 here matched zero packets.
+#   2. a worker address, when the call lands on the node the webhook pod runs on.
+#   3. a Calico VXLAN tunnel address, when it does not. The call arrives at whichever node the
+#      load balancer picked; if the only replica lives on the other node, the packet crosses the
+#      overlay and is SNATed to the entry node's tunnel address, which is drawn from the pod
+#      pool. This is why a webhook with a replica on every node looked healthy while a
+#      single-replica one timed out: kyverno answered and cert-manager did not, from the same
+#      fence, on the same cluster, at the same minute.
+# Naming only the first two leaves a single-replica webhook unreachable half the time, which
+# reads as a flake and is not one. Substituted by Flux like APISERVER_CIDR above.
+WEBHOOK_CALLER_CIDRS = (
+    "${ESTATE_CP_SUBNET_CIDR}",
+    "${ESTATE_WORKER_CIDR}",
+    "${ESTATE_POD_CIDR}",
+)
+
 
 def internet_egress_doc(ns: str, ports: list) -> dict:
     return {
@@ -225,7 +245,7 @@ def policy_docs(ns: str, flows: dict, emitters: set | None = None) -> list[dict]
             "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
             "metadata": {"name": "allow-apiserver-webhook-ingress", "namespace": ns},
             "spec": {"podSelector": {}, "policyTypes": ["Ingress"], "ingress": [{
-                "from": [{"ipBlock": {"cidr": APISERVER_CIDR}}],
+                "from": [{"ipBlock": {"cidr": c}} for c in WEBHOOK_CALLER_CIDRS],
                 "ports": [{"protocol": "TCP", "port": int(x)}
                           for x in sorted(set(webhook_ports))]}]},
         })

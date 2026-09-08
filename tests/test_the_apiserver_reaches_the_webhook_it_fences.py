@@ -55,8 +55,48 @@ def test_a_declared_webhook_port_becomes_an_apiserver_ingress_allow():
     assert spec["podSelector"] == {}
     rule = spec["ingress"][0]
     # Only an ipBlock can name the control plane: it is outside every namespace selector.
-    assert rule["from"] == [{"ipBlock": {"cidr": gen.APISERVER_CIDR}}]
+    assert rule["from"] == [{"ipBlock": {"cidr": c}} for c in gen.WEBHOOK_CALLER_CIDRS]
     assert rule["ports"] == [{"protocol": "TCP", "port": 9443}]
+
+
+def test_the_rule_names_all_three_addresses_a_webhook_sees_its_caller_as():
+    """The address the kubernetes Endpoints object advertises is one of three, and on 2026-09-08
+    it was the one that matched zero packets. A call can carry the control-plane subnet (OKE runs
+    several apiservers behind the advertised endpoint), a worker address (it landed on the node
+    the replica runs on), or a Calico VXLAN tunnel address from the pod pool (it did not, so the
+    packet crossed the overlay and was SNATed). Naming fewer than three leaves a single-replica
+    webhook unreachable whenever the call lands on the other node -- which reads as a flake."""
+    gen = _gen()
+    assert len(set(gen.WEBHOOK_CALLER_CIDRS)) == 3
+    rule = _policies(
+        gen.policy_docs("kyverno", {"ingress_apiserver": [9443]}),
+        "allow-apiserver-webhook-ingress",
+    )[0]["spec"]["ingress"][0]
+    assert {tuple(b["ipBlock"].items()) for b in rule["from"]} == {
+        (("cidr", c),) for c in gen.WEBHOOK_CALLER_CIDRS
+    }
+
+
+def test_every_caller_cidr_is_a_key_flux_substitutes_and_estate_config_sets():
+    """A literal here would be a machine address in a platform file (LAW 46), and a key that
+    estate-config does not set substitutes to the empty string -- an ipBlock the apiserver can
+    never match, which is the same outage with no error message."""
+    import re
+
+    gen = _gen()
+    declared = dict(
+        re.findall(
+            r"^  (ESTATE_[A-Z_]+):\s*\"([^\"]+)\"",
+            (ROOT / "clusters" / "oke" / "estate-config.yaml").read_text(),
+            re.M,
+        )
+    )
+    for cidr in gen.WEBHOOK_CALLER_CIDRS:
+        m = re.fullmatch(r"\$\{(ESTATE_[A-Z_]+)\}", cidr)
+        assert m, f"{cidr!r} is a literal, not a substituted key"
+        assert declared.get(m.group(1)), (
+            f"{m.group(1)} is not set in estate-config.yaml"
+        )
 
 
 def test_a_namespace_that_declares_no_webhook_gets_no_hole():

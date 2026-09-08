@@ -82,7 +82,11 @@ spec:
   ingress:
   - from:
     - ipBlock:
-        cidr: ${ESTATE_APISERVER_CIDR}
+        cidr: ${ESTATE_CP_SUBNET_CIDR}
+    - ipBlock:
+        cidr: ${ESTATE_WORKER_CIDR}
+    - ipBlock:
+        cidr: ${ESTATE_POD_CIDR}
     ports:
     - protocol: TCP
       port: 9443
