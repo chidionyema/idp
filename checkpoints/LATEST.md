@@ -74,3 +74,35 @@ responsible for repairing. It takes effect only after Flux is applying again.
 - #2535 -> `d0816557` — ClickHouse system-log TTL inside the engine string, plus the LAW 45 gate
   `bin/idp-clickhouse-system-log-ttl` and its fixture pair, registered in `rules.yaml`.
 - #2527 — otto-golden rehearsal, CI green.
+
+## RESUME HERE — 2026-09-08, the estate-wide Flux deadlock
+
+**Fire, root cause, proved twice.** Two defects, both in the namespace fences, both live-measured:
+
+1. *Flannel was still running under Calico.* Its `FLANNEL-POSTRTG` chain masqueraded every
+   `10.244.0.0/16` packet to the node's own address (6,740,000 packets / 652 MB measured), so
+   cross-node Calico traffic matched no `podSelector` and died at Calico's end-of-tier DROP.
+   Fixed live: DaemonSet deleted, chain flushed on both nodes, `10-flannel.conflist` removed,
+   the 7 pods still on flannel addresses recreated. Flannel is in no manifest in this repo — it
+   was an out-of-band OKE addon, so Flux will not re-apply it.
+
+2. *No namespace serving an admission webhook allowed ingress from the control plane.*
+   `allow-apiserver-egress` existed; the mirror never did. Fixed in `bin/idp-ns-fence-gen`
+   (`ingress_apiserver` key) and merged as PR #2549.
+
+**What is left, and it is the last thing standing.** PR #2549's ingress rule names
+`ESTATE_APISERVER_CIDR` (`10.0.0.11/32`) and that address matched **zero packets**. Measured on
+the live cluster by opening one fence to `0.0.0.0/0` and reading `/proc/net/nf_conntrack`: an
+admission webhook sees its caller as one of three addresses — the control-plane subnet
+(`10.0.0.8/29`, OKE runs several apiservers behind the advertised endpoint), a worker address
+(`10.0.144.0/20`), or a Calico VXLAN tunnel address from the pod pool (`10.244.0.0/16`) when the
+call lands on the node the webhook replica is *not* on. That last one is why kyverno (a replica
+per node) answered while cert-manager (one replica) timed out, from the same fence, same cluster,
+same minute.
+
+Branch `fix/the-fence-names-every-address-the-apiserver-arrives-as`: three CIDR keys in
+`clusters/oke/estate-config.yaml`, `WEBHOOK_CALLER_CIDRS` in `bin/idp-ns-fence-gen`, the
+regenerated fences, and a test. All 8 webhook namespaces already carry the fix live.
+
+**Founder action still open: crew#739.** The freeze says nothing is released; 7 of its 8 barred
+workflows are back on. One word on that issue — "stands" or "closed" — and nobody else can give it.
