@@ -395,6 +395,36 @@ class Broker:
                 f"is being replayed by somebody who is not an agent of this estate"
             )
 
+    def authenticate(self, presented: str) -> None:
+        """Prove the caller is an agent of this estate, or refuse.
+
+        Factored out of `identity()` so the `/ask` door can stand behind the same check.
+        Until it did,
+        `asked_by` was a string in the request body and nothing else: anything that could open
+        a socket to port 8080 -- any pod in any namespace the fence let through, a compromised
+        sidecar, a mistyped port-forward -- could put a name on an ask and make the founder's
+        phone buzz with it. The founder still taps every one, so the hole was never standing
+        access; it was provenance, which is worse in one specific way. The whole design rests
+        on him reading an ask and deciding, and a name he cannot trust is a name that makes
+        every future ask worth less than the one before it.
+
+        One key covers every agent, so what this proves is "an agent of this estate", not
+        which one. `asked_by` stays a label, and the ledger now records that it was attested
+        rather than merely asserted. Per-agent keys are WJ.13's problem, not this door's.
+        """
+        if not self.agent_key:
+            raise Refused(
+                "this broker holds no agent key, so it cannot identify anyone. "
+                "platform/jit/deployment.yaml is where JIT_AGENT_KEY arrives"
+            )
+        if not hmac.compare_digest(presented or "", self.agent_key.decode()):
+            # No ledger line, and for the reason the Telegram path already gives: this door is
+            # reachable from outside the cluster, so a line per refusal is a way for a stranger
+            # to fill the ledger volume. The ledger records what the broker did, and it did
+            # nothing. compare_digest because a byte-at-a-time comparison leaks the key to
+            # whoever can time it.
+            raise Refused("not an agent of this estate")
+
     def identity(self, presented: str) -> dict:
         """Mint the read-only identity an agent runs as, for a caller that proves it is one.
 
@@ -421,18 +451,7 @@ class Broker:
         stopped = self.killswitch()
         if stopped:
             raise Refused(f"the broker is stopped: {stopped}")
-        if not self.agent_key:
-            raise Refused(
-                "this broker holds no agent key, so it cannot identify anyone. "
-                "platform/jit/deployment.yaml is where JIT_AGENT_KEY arrives"
-            )
-        if not hmac.compare_digest(presented or "", self.agent_key.decode()):
-            # No ledger line, and for the reason the Telegram path already gives: this door is
-            # reachable from outside the cluster, so a line per refusal is a way for a stranger
-            # to fill the ledger volume. The ledger records what the broker did, and it did
-            # nothing. compare_digest because a byte-at-a-time comparison leaks the key to
-            # whoever can time it.
-            raise Refused("not an agent of this estate")
+        self.authenticate(presented)
         self._check_identity_rate()
         rc, out = self.kube(
             [
@@ -514,8 +533,22 @@ class Broker:
     # ---------------------------------------------------------------- the ask
 
     def ask(
-        self, grant_id: str, params: dict[str, str], why: str, ttl: str, asked_by: str
+        self,
+        grant_id: str,
+        params: dict[str, str],
+        why: str,
+        ttl: str,
+        asked_by: str,
+        attested: bool = False,
     ) -> Request:
+        """`attested` is the door's word that the caller proved the estate's agent key.
+
+        The check itself is at the door and not here on purpose: anything holding a reference
+        to this object is already inside the process that holds the key, so a second check
+        here would defend against nothing and would only make the record less honest by
+        being unfalsifiable. What travels is the verdict, and the ledger keeps it either way
+        -- an in-process caller writes `attested: false`, which is exactly what it is.
+        """
         stopped = self.killswitch()
         if stopped:
             raise Refused(f"the broker is stopped: {stopped}")
@@ -553,6 +586,10 @@ class Broker:
             why=req.why,
             ttl=ttl,
             asked_by=asked_by,
+            # The name is still self-declared -- one key covers every agent -- but a reader of
+            # the ledger can now tell an ask whose caller proved the estate's agent key from
+            # one that merely reached the port, which before this field no reader could.
+            attested=attested,
         )
         self.notify(req, self._sign(req.id, "approve"))
         return req
