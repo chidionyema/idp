@@ -122,6 +122,14 @@ spec:
                 pluginName: postgres12_pgx
                 driverName: postgres12_pgx
                 databaseName: temporal
+                # The two databases are the operator's (platform/estate-db/cluster/databases.yaml),
+                # so the chart's create-default-store init must not run: the temporal role has no
+                # CREATEDB, and temporal-sql-tool aborts instead of skipping. Measured 2026-09-08
+                # 23:10Z, job temporal-schema-1-6-0-40, the first upgrade after the network fire:
+                #   Unable to create SQL database. "ERROR: permission denied to create database (SQLSTATE 42501)"
+                # Every upgrade since 21:47Z died here, and every rollback died on the v30 config
+                # that still names temporal-db.temporal.svc, deleted with the old server.
+                createDatabase: false
                 connectAddr: estate-rw.estate-db.svc.cluster.local:5432
                 connectProtocol: tcp
                 user: temporal
@@ -135,6 +143,7 @@ spec:
                 pluginName: postgres12_pgx
                 driverName: postgres12_pgx
                 databaseName: temporal_visibility
+                createDatabase: false
                 connectAddr: estate-rw.estate-db.svc.cluster.local:5432
                 connectProtocol: tcp
                 user: temporal
