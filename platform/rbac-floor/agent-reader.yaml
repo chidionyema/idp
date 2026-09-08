@@ -139,7 +139,13 @@ rules:
       - holmesgpt.dev
       - externaldns.k8s.io
       - nodesoftware.estate.io
-      - oci.oraclecloud.com
+      # The Crossplane provider's own API group is deliberately NOT in this list. R36 and
+      # bin/cloud-agnostic-gate: the read floor every agent stands on is the one place a
+      # provider name must never appear, or the floor itself only fits one cloud. The
+      # provider's claims are read through platform/oci, which is the exempt path because it
+      # IS the provisioner. Measured 2026-09-08: with the group listed here the gate reported
+      # `platform/rbac-floor/agent-reader.yaml:142: - oci.oraclecloud.com` and failed both
+      # offline-gate and bdd-suites (acceptance) on this pull request.
     resources: ["*"]
     verbs: [get, list, watch]
   # Trivy's reports, named one by one rather than with a wildcard, because one kind in this group
