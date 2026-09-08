@@ -82,7 +82,12 @@ class FakeProvider:
 
 
 def make(
-    tmp_path, cluster=None, stopped: str | None = None, now=None, providers=None
+    tmp_path,
+    cluster=None,
+    stopped: str | None = None,
+    now=None,
+    providers=None,
+    agent_key: bytes = b"",
 ) -> Broker:
     return Broker(
         catalogue=CATALOGUE,
@@ -92,6 +97,7 @@ def make(
         killswitch=lambda: stopped,
         now=now or time.time,
         providers=providers,
+        agent_key=agent_key,
     )
 
 
@@ -769,3 +775,226 @@ def test_a_telegram_refusal_says_what_telegram_said(monkeypatch):
     with pytest.raises(RuntimeError) as caught:
         tg._call("X", "getUpdates", {})
     assert "webhook is active" in str(caught.value)
+
+
+# --- the ask door will not take an ask from a stranger --------------------------------
+#
+# Before this, `/ask` read `asked_by` out of the request body and believed it. Anything that
+# could open a socket to port 8080 -- any pod the fence let through, a sidecar, a stray
+# port-forward -- could put a name on an ask and make the founder's phone buzz with it. He
+# taps every one, so it was never standing access; it was provenance, and provenance is the
+# whole design. He is being asked to read a name and decide, and a name nothing attests is a
+# name that makes the next ask worth less than the last.
+
+AGENT_KEY = b"the-agent-bootstrap-key"
+
+
+def _idp_jit():
+    """bin/idp-jit as a module. It has no .py suffix, so the loader has to be named:
+    spec_from_file_location returns None for an extensionless file."""
+    import importlib.machinery
+    import importlib.util
+
+    spec = importlib.util.spec_from_loader(
+        "idp_jit_ask",
+        importlib.machinery.SourceFileLoader(
+            "idp_jit_ask", str(ROOT / "bin" / "idp-jit")
+        ),
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _ask_over_http(httpd, key: str | None, grant="restart-workload"):
+    host, port = httpd.server_address[0], httpd.server_address[1]
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    headers = {"Content-Type": "application/json"}
+    if key is not None:
+        headers["Authorization"] = f"Bearer {key}"
+    conn.request(
+        "POST",
+        "/ask",
+        json.dumps(
+            {
+                "grant": grant,
+                "params": {"namespace": NS, "pod": "p"},
+                "why": "the pod is wedged and a restart is the whole fix",
+                "ttl": "5m",
+                "asked_by": "someone-elses-name",
+            }
+        ),
+        headers,
+    )
+    res = conn.getresponse()
+    body = json.loads(res.read() or b"{}")
+    code = res.status
+    conn.close()
+    return code, body
+
+
+class SilentPhone:
+    """The founder's phone, counting buzzes. What the door must not do is reach this at all
+    for a caller that proved nothing."""
+
+    def __init__(self):
+        self.sent = []
+
+    def send_ask(self, req, grant):
+        self.sent.append(req.id)
+
+
+def test_an_ask_carrying_no_key_never_reaches_the_founders_phone(tmp_path):
+    broker = make(tmp_path, agent_key=AGENT_KEY)
+    phone = SilentPhone()
+    httpd = _door(broker, phone)
+    try:
+        code, body = _ask_over_http(httpd, None)
+    finally:
+        httpd.shutdown()
+    assert code == 401, body
+    assert phone.sent == [], "an unauthenticated ask must not buzz his phone"
+    assert broker.pending == {}, "and must not leave a request behind either"
+
+
+def test_an_ask_carrying_the_wrong_key_is_refused(tmp_path):
+    broker = make(tmp_path, agent_key=AGENT_KEY)
+    phone = SilentPhone()
+    httpd = _door(broker, phone)
+    try:
+        code, body = _ask_over_http(httpd, "not-the-key")
+    finally:
+        httpd.shutdown()
+    assert code == 401, body
+    assert phone.sent == []
+
+
+def test_a_broker_holding_no_agent_key_takes_an_ask_from_nobody(tmp_path):
+    """Fail closed, and the same way `identity()` already does. The key arrives by
+    ExternalSecret, so there is a window at start where it is absent; taking asks from
+    anybody during that window is the one behaviour the window must not have."""
+    broker = make(tmp_path, agent_key=b"")
+    phone = SilentPhone()
+    httpd = _door(broker, phone)
+    try:
+        code, _ = _ask_over_http(httpd, "")
+        empty_header, _ = _ask_over_http(httpd, None)
+    finally:
+        httpd.shutdown()
+    assert code == 401, (
+        "an empty configured key must never compare equal to an empty header"
+    )
+    assert empty_header == 401
+    assert phone.sent == []
+
+
+def test_a_refused_ask_writes_no_ledger_line(tmp_path):
+    """Same reasoning the Telegram path already carries: this door is reachable from outside
+    the cluster, so one line per refusal is a way for a stranger to fill the ledger volume.
+    The ledger records what the broker did, and it did nothing."""
+    broker = make(tmp_path, agent_key=AGENT_KEY)
+    httpd = _door(broker, SilentPhone())
+    try:
+        _ask_over_http(httpd, "not-the-key")
+    finally:
+        httpd.shutdown()
+    ledger = tmp_path / "ledger.jsonl"
+    lines = ledger.read_text().splitlines() if ledger.exists() else []
+    assert lines == [], f"a refused ask left {len(lines)} line(s) on the ledger"
+
+
+def test_an_ask_carrying_the_key_goes_through_and_is_recorded_as_attested(tmp_path):
+    broker = make(tmp_path, agent_key=AGENT_KEY)
+    phone = SilentPhone()
+    httpd = _door(broker, phone)
+    try:
+        code, body = _ask_over_http(httpd, AGENT_KEY.decode())
+    finally:
+        httpd.shutdown()
+    assert code == 200, body
+    assert phone.sent == [body["request"]]
+    line = json.loads((tmp_path / "ledger.jsonl").read_text().splitlines()[0])
+    assert line["event"] == "asked"
+    assert line["attested"] is True, (
+        "the name on an ask is still self-declared -- one key covers every agent -- so the "
+        "ledger has to say whether anything attested the caller at all"
+    )
+
+
+def test_an_in_process_ask_is_recorded_as_unattested(tmp_path):
+    """The flag is the door's word, not a decoration. A caller that did not come through the
+    door says so, or the field means nothing wherever it appears."""
+    broker = make(tmp_path, agent_key=AGENT_KEY)
+    broker.ask("restart-workload", {"namespace": NS, "pod": "p"}, "why", "5m", "a")
+    line = json.loads((tmp_path / "ledger.jsonl").read_text().splitlines()[0])
+    assert line["attested"] is False
+
+
+def test_the_client_sends_the_same_key_it_identifies_with(tmp_path, monkeypatch):
+    """bin/idp-jit's ask path, over a real socket. Without the header the broker refuses and
+    the founder is never woken -- so a client that does not send it is a client that cannot
+    ask for anything."""
+    broker = make(tmp_path, agent_key=AGENT_KEY)
+    phone = SilentPhone()
+    httpd = _door(broker, phone)
+    host, port = httpd.server_address[0], httpd.server_address[1]
+    mod = _idp_jit()
+    monkeypatch.setenv("JIT_BROKER_URL", f"http://{host}:{port}")
+    monkeypatch.setenv("JIT_AGENT_KEY", AGENT_KEY.decode())
+    monkeypatch.setenv("JIT_AGENT", "the-session-that-asked")
+    try:
+        rc = mod.main(
+            [
+                "ask",
+                "--grant",
+                "restart-workload",
+                "--namespace",
+                NS,
+                "--pod",
+                "p",
+                "--why",
+                "the pod is wedged and a restart is the whole fix",
+                "--ttl",
+                "5m",
+                "--wait",
+                "0",
+            ]
+        )
+    finally:
+        httpd.shutdown()
+    # The founder never taps, so the ask times out unanswered. What is being graded is that
+    # it reached him at all: an unauthenticated client is refused before this point.
+    assert rc == mod.CODES["timeout"], rc
+    assert len(phone.sent) == 1
+    line = json.loads((tmp_path / "ledger.jsonl").read_text().splitlines()[0])
+    assert line["asked_by"] == "the-session-that-asked"
+    assert line["attested"] is True
+
+
+def test_a_client_holding_no_key_refuses_before_it_dials(tmp_path, monkeypatch):
+    broker = make(tmp_path, agent_key=AGENT_KEY)
+    phone = SilentPhone()
+    httpd = _door(broker, phone)
+    host, port = httpd.server_address[0], httpd.server_address[1]
+    mod = _idp_jit()
+    monkeypatch.setenv("JIT_BROKER_URL", f"http://{host}:{port}")
+    monkeypatch.delenv("JIT_AGENT_KEY", raising=False)
+    monkeypatch.setenv("IDP_KUBE_STATE", str(tmp_path / "no-key-here"))
+    try:
+        rc = mod.main(
+            [
+                "ask",
+                "--grant",
+                "restart-workload",
+                "--namespace",
+                NS,
+                "--pod",
+                "p",
+                "--why",
+                "the pod is wedged and a restart is the whole fix",
+            ]
+        )
+    finally:
+        httpd.shutdown()
+    assert rc == mod.CODES["refused"]
+    assert phone.sent == []
