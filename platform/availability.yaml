@@ -64,6 +64,17 @@ waivers:
       second one does not serve, it waits. What a lost webhook costs is latency, not delivery,
       because the GitRepository still polls every minute underneath it.
     issue: chidionyema/idp#544
+  - surface: kyverno/kyverno#admissionController
+    reason: >-
+      The third fail-closed admission webhook in the estate, and the only one that stayed half
+      up on 2026-09-08 -- because the scheduler had happened to put its two replicas on
+      different nodes, not because anything required it. The chart's default podAntiAffinity is
+      preferred, and its PodDisruptionBudget is auto-enabled at minAvailable 1; neither is a
+      decision made here. Making the constraint required forces a rollout of the component that
+      gates all admission, and on two nodes the default maxSurge 1 / maxUnavailable 0 surge pod
+      cannot schedule, so the rollout stalls -- safely, but doing that during an admission
+      outage is the wrong order. Graded and named rather than quietly left out.
+    issue: chidionyema/idp#2558
   - surface: demo-sandbox/demo-shop-x-demo-x-demo-sandbox
     reason: >-
       The shop is a Service vCluster mirrors onto the host at runtime from the seeded
@@ -95,9 +106,52 @@ front_doors:
 # ## also_graded
 # Workloads that carry founder traffic without an HTTPRoute of their own (a ClusterIP other
 # services call). Named by a human, graded exactly like a routed surface.
+#
+# `component` is optional and names a values key inside a HelmRelease, for a chart that renders
+# more than one Deployment. Without it the gate reads the top-level `replicaCount`,
+# `podDisruptionBudget` and `affinity`, which is the controller's numbers, not the webhook's.
+#
+# A `component` row also carries `admission_workload`, the namespace/name the cluster must enforce
+# by itself. A whole-namespace row is armed by labelling the namespace `founder-facing`; a
+# component row cannot be, because the same namespace holds workloads that are singletons on
+# purpose and the label would refuse them (LAW 38). So the component names its Deployment, and
+# the gate fails the row unless a rule in platform/scheduling/require-availability.yaml matches
+# it -- the same "CI and the cluster cannot drift" check, keyed on the workload.
 also_graded:
   - surface: hermes-agent/hermes-agent-gateway
     path: platform/hermes-agent
     reason: >-
       The agent gateway every hermes workload calls: no route reaches it, so nothing in the
       topology would have graded it.
+
+  # The two rows below are the 2026-09-08 incident written as a standard. An admission webhook
+  # with failurePolicy Fail is not a surface the founder opens -- it is the thing that decides
+  # whether ANY manifest may be applied, so losing it does not cost one hostname, it freezes the
+  # whole cluster, the repair included. Both of these sat at replicas 1 with no budget and no
+  # anti-affinity; both landed on node 10.0.159.197; that node stopped answering the API server
+  # and Flux fell to 14 of 80 Kustomizations Ready with no way to apply its own fix. Kyverno's
+  # admission controller was already 2 replicas with a required anti-affinity, and degraded to
+  # roughly half its calls instead of all of them -- which is the whole argument, measured.
+  - surface: cert-manager/cert-manager
+    component: webhook
+    path: platform/edge
+    admission_workload: cert-manager/cert-manager-webhook
+    reason: >-
+      webhook.cert-manager.io, failurePolicy Fail: every Certificate, Issuer and ClusterIssuer
+      in the estate is admitted through it, and a timeout here failed the `edge` Kustomization
+      that 60-odd others depend on.
+  - surface: kyverno/kyverno
+    component: admissionController
+    path: platform/kyverno
+    admission_workload: kyverno/kyverno-admission-controller
+    reason: >-
+      kyverno-svc, mutate/fail and validate/fail, failurePolicy Fail: every Deployment, CronJob
+      and Namespace in the estate is admitted through it. Waived above, not passing.
+  - surface: external-secrets/external-secrets
+    component: webhook
+    path: platform/secrets
+    admission_workload: external-secrets/external-secrets-webhook
+    reason: >-
+      validate.externalsecret.external-secrets.io, failurePolicy Fail: every ExternalSecret is
+      admitted through it, so a timeout takes out `jit` and `rbac-identity` and with them the
+      break-glass broker's own credentials.
