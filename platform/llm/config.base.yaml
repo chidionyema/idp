@@ -35,6 +35,20 @@ router_settings:
   num_retries: 2
   allowed_fails: 3
   cooldown_time: 60
+  # What makes the `tpm` on the Gemini lanes an actual ceiling rather than a decoration.
+  # Without these two keys LiteLLM reads tpm and never enforces it: the pre-call filter that
+  # drops a deployment already over its per-minute budget is what `enable_pre_call_checks`
+  # turns on, and usage-based-routing-v2 is the strategy that keeps the counters. They are set
+  # here and not in llm/config.base.yaml because the laptop compose has no shared cache and no
+  # measured quota incident; the fire was in the cluster (2026-09-08 router pod logs).
+  #
+  # Every model group in this file has exactly one deployment, so this strategy changes no
+  # routing decision. All it adds is the refusal: over budget, walk the fallback chain now,
+  # instead of spending a round trip to be told 429 and then waiting out Google's retryDelay
+  # (measured that day at 9s, 46s, 48s, 55s and 57s -- the pause a person reads as the thing
+  # hanging before it switches).
+  routing_strategy: usage-based-routing-v2
+  enable_pre_call_checks: true
   # One memory for the two router pods (founder 2026-09-03): cooldowns, rate counts and spend
   # windows live in the shared cache, so what one pod learns the other honours. The password
   # is exported by the pod from the litellm-cache mount (litellm.yaml), never typed here.

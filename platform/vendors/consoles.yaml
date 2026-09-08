@@ -212,11 +212,26 @@ vendors:
       - { entry: litellm-upstream, ns: llm, field: GEMINI_API_KEY, bw: GEMINI_API_KEY }
     router:
       lanes: |
+        # The ceiling is Google's, measured, not chosen here. On 2026-09-08 the router pod's
+        # 429 bodies carried quotaId `GenerateContentPaidTierInputTokensPerModelPerMinute`,
+        # quotaValue "1000000", quotaDimensions {model: gemini-2.5-flash, location: global}, and
+        # retryDelay values of 9s, 46s, 48s, 55s and 57s. So the limit is one million INPUT
+        # TOKENS a minute per model -- not requests -- and when it is passed Google makes the
+        # caller wait about a minute. That wait is what a person on Telegram experiences as the
+        # thing hanging and then switching.
+        #
+        # Three lanes name the same Google model (gemini, fast, vision), and Google counts them
+        # in one bucket, so the million is split across the three rather than repeated on each:
+        # 500k + 300k + 150k = 950k, with 50k of headroom for the retry LiteLLM is allowed. With
+        # `enable_pre_call_checks` and usage-based-routing-v2 in router_settings, the router now
+        # walks the fallback chain BEFORE the call leaves the estate instead of spending a round
+        # trip to be refused and then waiting out Google's retryDelay.
         - model_name: gemini
           litellm_params:
             model: gemini/gemini-2.5-flash
             api_key: os.environ/GEMINI_API_KEY
             timeout: 300
+            tpm: 500000
 
         # The two neutral lane names. They used to be declared on the anthropic row, which is
         # gone, and a caller must be able to ask for a capable model or a cheap one without
@@ -224,12 +239,20 @@ vendors:
         # They sit on Gemini because that account is bought direct and verified in the
         # 2026-09-04 09:48Z apply run; the fallback chains below take them off Google the
         # moment it refuses. Model ids from https://ai.google.dev/gemini-api/docs/models.
+        # gemini-2.5-pro was retired under this lane on or before 2026-09-08. Measured from the
+        # router pod that day: 8 of 8 calls to it answered 404, and the body is Google's own
+        # instruction -- "This model models/gemini-2.5-pro is no longer available to new users.
+        # Please update your code to use models/gemini-3.1-pro-preview". Every one of those 404s
+        # then walked the chain to `gemini`, so the neutral lane cost a guaranteed dead round
+        # trip on every single call. The replacement id is the vendor's, not this file's guess.
         - model_name: default
           litellm_params:
-            model: gemini/gemini-2.5-pro
+            model: gemini/gemini-3.1-pro-preview
             api_key: os.environ/GEMINI_API_KEY
             timeout: 300
             max_tokens: 8192
+            # Its own model, so its own per-minute bucket (see the note on the `gemini` lane).
+            tpm: 1000000
           model_info:
             max_input_tokens: 1048576
 
@@ -239,6 +262,7 @@ vendors:
             api_key: os.environ/GEMINI_API_KEY
             timeout: 300
             max_tokens: 8192
+            tpm: 300000
           model_info:
             max_input_tokens: 1048576
       cluster_lanes: |
@@ -264,6 +288,7 @@ vendors:
             model: gemini/gemini-2.5-flash
             api_key: os.environ/GEMINI_API_KEY
             timeout: 300
+            tpm: 150000
 
         # Founder 2026-08-30, verbatim: "we test with MiniMax see what the image quality is like, then
         # we use Gemini for the ones that will ship to production". So there are two image lanes, and
