@@ -98,10 +98,14 @@ gofmt -l .                      # formatting (should be empty)
 The container image builds with the multi-stage `Dockerfile`:
 
 ```sh
-docker build -t ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG .
+docker build -t ghcr.io/chidionyema/controller:IMAGE_TAG .
 ```
 
-`IMAGE_TAG` is substituted at Flux postBuild from `Secret/ghcr-pull` (idp#140 image-automation).
+`IMAGE_TAG` is substituted at Flux postBuild by the kustomize `images:` block in
+`platform/nodesoftware-operator/kustomization.yaml` from the `$imagepolicy` marker in
+`platform/image-automation/controller.yaml` (idp#140 image-automation). The image is published
+as `ghcr.io/chidionyema/controller:main-<run>-<sha>` per the `bin/dockerfiles` dirname
+basename convention; the deployment asks for that exact name.
 
 ## What's NOT in this controller yet
 

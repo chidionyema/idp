@@ -1,4 +1,4 @@
-# nodesoftware-runsc-handler — handler image for the runsc runtime.
+# nodesoftware-runsc-handler scripts — handler image for the runsc runtime.
 #
 # Carries the install / uninstall / probe scripts that the
 # NodeSoftwareOperator controller invokes on a target node when converging a
@@ -14,8 +14,15 @@
 # slim debian runtime. Pin to specific versions so the cri-o drop-in and the
 # reload path do not drift.
 #
-# Build:  docker buildx build --platform linux/arm64 -t nodesoftware-runsc-handler:dev .
-# Push:   docker push ghcr.io/chidionyema/nodesoftware-runsc-handler:<tag>
+# Build:  docker buildx build --platform linux/arm64 -t ghcr.io/chidionyema/runsc:dev .
+# Push:   bin/dockerfiles publishes the multi-arch manifest list as
+#         ghcr.io/chidionyema/runsc:main-<run>-<sha> (image name = dirname basename of the
+#         Dockerfile). The NodeSoftwareOperator controller reads this tag from its own pod's
+#         runsc-handler-mirror initContainer at startup (cmd/main.go:resolveHandlerImage),
+#         so the same kustomize `images:` $imagepolicy marker that owns the controller
+#         binary's tag (platform/image-automation/runsc.yaml) owns this tag too. A literal
+#         IMAGE_TAG substitution has no place in this file; the controller's deployment.yaml
+#         carries the marker.
 #
 # Verify locally with: ./scripts/test-probe.sh   (no cri-o needed)
 

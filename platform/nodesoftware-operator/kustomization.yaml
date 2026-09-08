@@ -1,13 +1,21 @@
-# Kustomization for the NodeSoftwareOperator row. Two resources: the CRD
-# (must land first, before the controller can reconcile) and the deployment +
-# RBAC (the operator itself). The CRD lands in the same kustomization.yaml
-# because the CRD has no dependencies on anything else in this dir; the
-# controller deployment depends on the CRD existing, which Flux handles
-# automatically (it dry-runs CRs after CRDs land in the same pass, since the
-# row is applied as one unit).
+# Kustomization for the NodeSoftwareOperator row. Three resources: the CRD
+# (must land first, before the controller can reconcile), the RBAC, and the
+# deployment + Service + ServiceMonitor. The CRD lands in the same
+# kustomization.yaml because it has no dependencies on anything else in this
+# dir; the controller deployment depends on the CRD existing, which Flux
+# handles automatically (it dry-runs CRs after CRDs land in the same pass,
+# since the row is applied as one unit).
 #
 # Order of resources matters here ONLY for readability; the API server applies
 # them in dependency order regardless.
+#
+# Image-automation: two $imagepolicy markers below move the controller binary's
+# tag AND the runsc handler image's tag (the runsc handler image lives on the
+# controller's initContainer `runsc-handler-mirror`; the controller reads it
+# at startup and uses it as the InstallImage for the handler pods it
+# schedules). Both rows live in platform/image-automation/{controller,runsc}.yaml.
+# Without these markers the controller deployment asks for an image with no
+# tag and kubelet ImagePullBackOffs the pod.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: nodesoftware-operator
@@ -15,3 +23,8 @@ resources:
   - crds/runtimeinstall.yaml
   - rbac.yaml
   - deployment.yaml
+images:
+  - name: ghcr.io/chidionyema/controller
+    newTag: main-5324-778422de981294d58cc591b7395e2490bf7c1e22 # {"$imagepolicy": "flux-system:controller:tag"}
+  - name: ghcr.io/chidionyema/runsc
+    newTag: main-5324-778422de981294d58cc591b7395e2490bf7c1e22 # {"$imagepolicy": "flux-system:runsc:tag"}

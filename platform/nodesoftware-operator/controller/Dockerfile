@@ -5,12 +5,17 @@
 # 10001 (uid: 10001 is what the controller's Deployment securityContext expects per the
 # platform/nodesoftware-operator/deployment.yaml in PR #2338).
 #
-# Build:    docker build -t ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG .
-# Run:      docker run --rm ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG
+# Build:    docker build -t ghcr.io/chidionyema/controller:IMAGE_TAG .
+# Push:     the multi-arch manifest list lands at ghcr.io/chidionyema/controller:main-<run>-<sha>
+#           (bin/dockerfiles derives the image name from the Dockerfile's dirname basename;
+#           the deployment asks for ghcr.io/chidionyema/controller, the kustomize `images:`
+#           block in platform/nodesoftware-operator/kustomization.yaml fills the tag via the
+#           $imagepolicy marker in platform/image-automation/controller.yaml).
 #
-# The IMAGE_TAG placeholder is substituted at Flux postBuild from the ghcr-pull secret (idp#140
-# image-automation). `optional: false` in the Flux row means a missing IMAGE_TAG fails the row,
-# not a silent `:latest` rollout.
+# Why `controller` and not `nodesoftware-operator`: every other image in this repo uses the
+# dirname basename as its registry name (cyrus, hermes-agent, jit, lago-api, lago-front).
+# `bin/dockerfiles` produces `ghcr.io/chidionyema/controller`; the deployment and kustomization
+# both reference that exact name so there is one source of truth.
 
 FROM golang:1.26.3 AS build
 WORKDIR /src

@@ -11,3 +11,5 @@ resources:
   - lago-front.yaml
   - cyrus.yaml
   - jit.yaml
+  - controller.yaml
+  - runsc.yaml

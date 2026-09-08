@@ -24,13 +24,18 @@
 #
 # Build:
 #   docker buildx build --platform linux/arm64 \
-#     -t ghcr.io/chidionyema/nodesoftware-runsc-handler:dev .
+#     -t ghcr.io/chidionyema/runsc:dev .
 #
 # The matching NODE-side handler image ref lives at:
-#   ghcr.io/chidionyema/nodesoftware-runsc-handler:IMAGE_TAG
-# IMAGE_TAG is substituted by Flux postBuild via Secret ghcr-pull.
-# The deployment.yaml (in this directory's parent) overrides via
-# `--handler-image=...` if pinning by tag isn't precise enough.
+#   ghcr.io/chidionyema/runsc:<tag>
+# The image is published as ghcr.io/chidionyema/runsc:main-<run>-<sha> by bin/dockerfiles
+# (image name = dirname basename of the Dockerfile). Flux image-automation wires the tag into
+# the controller deployment.yaml's runsc-handler-mirror initContainer via the kustomize
+# `images:` $imagepolicy marker in platform/nodesoftware-operator/kustomization.yaml
+# (platform/image-automation/runsc.yaml is the source of the tag); the controller reads the
+# initContainer's image at startup (cmd/main.go:resolveHandlerImage) and uses it as the
+# InstallImage for the handler pods it schedules. No literal IMAGE_TAG substitution: cyrus
+# pattern, image-automation owns it.
 #
 # Test:
 #   ./scripts/test-handler.sh

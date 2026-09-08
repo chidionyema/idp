@@ -1546,13 +1546,6 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
-      # IMAGE_TAG (idp#140 / image-automation): the ghcr-pull Secret carries the
-      # pinned digest of the controller image, written by the image-automation
-      # flow. Not optional: a missing tag must fail the row rather than deploy
-      # `:latest`, which the lockdown's image policy already refuses.
-      - kind: Secret
-        name: ghcr-pull
-        optional: false
   wait: true
   timeout: 10m
   healthChecks:
