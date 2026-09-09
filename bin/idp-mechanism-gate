@@ -23,7 +23,8 @@ outside it. So this gate reads both. The tree half runs everywhere and needs no 
 settings half runs where a token exists and is a fail-closed UNKNOWN when it cannot read,
 never a pass.
 
-  idp-mechanism-gate [ROOT]          the tree half: every `uses:` resolves
+  idp-mechanism-gate [ROOT]          the tree half: every `uses:` resolves, and every file
+                                     in .github/workflows/ is actually a workflow
   idp-mechanism-gate --live [ROOT]   and the settings half: every workflow is enabled
 
 # Standard: docs/STANDARDS.md "CI" -- one gate per class of break, proved both ways.
@@ -52,6 +53,10 @@ SAME_REPO_USES = re.compile(
 )
 
 WORKFLOWS = os.path.join(".github", "workflows")
+# The registry of deliberately-off workflows is documentation, not a workflow. It lived in
+# .github/workflows/ until 2026-09-09, where GitHub tried to run it on every event and it
+# failed to parse every time: 438 of 673 failed runs on 2026-09-09, 433 of 754 on 2026-09-08.
+REGISTRY = os.path.join(".github", "disabled.yaml")
 
 
 def workflow_files(root: str) -> list[str]:
@@ -97,9 +102,38 @@ def unresolved_calls(root: str) -> list[str]:
     return breaks
 
 
+def not_a_workflow(root: str) -> list[str]:
+    """Files sitting in .github/workflows/ that GitHub will try to run and cannot.
+
+    GitHub runs every YAML file in that directory on every event it matches. A file with no
+    `on:` trigger and no `jobs:` is not a workflow, so the run fails at startup with no job and
+    no log -- the same silent shape as the three incidents above, except this one is loud in the
+    failure count and invisible in the check list. .github/disabled.yaml was such a file: 438 of
+    673 failed runs on 2026-09-09 and 433 of 754 on 2026-09-08 were that one registry.
+    """
+    breaks = []
+    for path in workflow_files(root):
+        try:
+            doc = yaml.safe_load(open(path, encoding="utf-8"))
+        except yaml.YAMLError as exc:
+            breaks.append(f"{os.path.relpath(path, root)} is in {WORKFLOWS} and does not parse: {exc.__class__.__name__}")
+            continue
+        if not isinstance(doc, dict):
+            breaks.append(f"{os.path.relpath(path, root)} is in {WORKFLOWS} and is not a mapping")
+            continue
+        # PyYAML reads a bare `on:` key as the boolean True (YAML 1.1), so accept both spellings.
+        if ("on" not in doc and True not in doc) or "jobs" not in doc:
+            breaks.append(
+                f"{os.path.relpath(path, root)} is in {WORKFLOWS} but has no `on:` and `jobs:`, "
+                "so GitHub starts a run for it on every event and every one of them fails; move "
+                "it out of that directory"
+            )
+    return breaks
+
+
 def allowed_off(root: str) -> dict[str, str]:
     """Workflows deliberately switched off, path -> the reason, from the tree."""
-    path = os.path.join(root, WORKFLOWS, "disabled.yaml")
+    path = os.path.join(root, REGISTRY)
     if not os.path.isfile(path):
         return {}
     doc = yaml.safe_load(open(path)) or {}
@@ -141,7 +175,7 @@ def switched_off(root: str) -> tuple[list[str], list[str]]:
             continue
         breaks.append(
             f"{path} is {state} in GitHub's settings, and no line in "
-            f"{WORKFLOWS}/disabled.yaml says why"
+            f"{REGISTRY} says why"
         )
     return breaks, []
 
@@ -155,7 +189,7 @@ def main(argv: list[str]) -> int:
         else os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     )
 
-    breaks = unresolved_calls(root)
+    breaks = unresolved_calls(root) + not_a_workflow(root)
     blind: list[str] = []
     if live:
         off, blind = switched_off(root)
@@ -175,7 +209,7 @@ def main(argv: list[str]) -> int:
             "BLIND   mechanism-gate: the settings half could not be read; that is not a pass"
         )
         return 2
-    scope = "every `uses:` resolves" + (
+    scope = "every `uses:` resolves, every file there is a workflow" + (
         " and every workflow is enabled" if live else ""
     )
     print(f"ok      mechanism-gate  {scope}")
