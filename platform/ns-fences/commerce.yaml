@@ -22,5 +22,5 @@ spec:
     requests.cpu: 1500m
     requests.memory: 6Gi
     pods: '20'
-    requests.storage: 2Gi
+    requests.storage: 20Gi
     services.loadbalancers: '0'
