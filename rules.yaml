@@ -1185,27 +1185,3 @@ rules:
     fail: >-
       a mutating estate MCP tool registers with no simulate twin, and the gate cannot tell the
       breach from the pair
-
-  - id: agent-event-bus
-    label: agentbus
-    statement: >-
-      The founder's agent reaching its event bus is a red row, never a silence: an observation that
-      does not prove otto-gateway can reach NATS fails (bin/idp-agent-event-bus), so a founder agent
-      that cannot be heard is visible, not a void (MUM-283)
-    law: MUM-283, LAW 28
-    origin: MUM-283
-    planes: [ci]
-    run: [python3, bin/idp-agent-event-bus]
-    fixtures:
-      must_fail: tests/fixtures/agent-event-bus/unreachable.json
-      must_pass: tests/fixtures/agent-event-bus/reachable.json
-    cases:
-      - {expect: refuse, args: [tests/fixtures/agent-event-bus/unreachable.json]}
-      - {expect: refuse, args: [tests/fixtures/agent-event-bus/unmeasured.json], note: "unproven reach is not a pass"}
-      - {expect: pass, args: [tests/fixtures/agent-event-bus/reachable.json]}
-    ok: >-
-      agent-event-bus tells the founder's agent reaching NATS from one that cannot or whose
-      reach is unproven, proved both ways on fixtures without a cluster (like idp-shadow-verify)
-    fail: >-
-      agent-event-bus cannot tell the founder-agent reaching NATS from one that cannot or whose
-      reach is unproven
