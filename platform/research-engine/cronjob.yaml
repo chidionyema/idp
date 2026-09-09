@@ -106,6 +106,16 @@ spec:
                   lane=${line%%:*}
                   subject=${line#*: }
                   echo "research-engine running lane ${lane} on subject ${i} of ${n}"
+                  # Tiktoken's estimator (costs.py) needs a writable cache dir: the image bakes the
+                  # encoding files under /app/tiktoken_cache but the root fs is readOnlyRootFilesystem,
+                  # and tiktoken writes a lazy-download .tmp file there -> [Errno 30] Read-only file
+                  # system (measured 2026-09-09, right after the earlier tracebacks cleared). Copy the
+                  # baked files into the writable /state volume and point the cache there; any encoding
+                  # the bake missed (cl100k_base) then downloads from the internet the research fence
+                  # now allows. This is why TIKTOKEN_CACHE_DIR is set here, not as an image ENV.
+                  mkdir -p /state/tiktoken
+                  cp -f /app/tiktoken_cache/* /state/tiktoken/ 2>/dev/null || true
+                  export TIKTOKEN_CACHE_DIR=/state/tiktoken
                   exec python -m engine.cli run --profile "$lane" --subject "$subject" --out /state
               env:
                 # Nothing here is a secret and nothing here is a default in the image: the
