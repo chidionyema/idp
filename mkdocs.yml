@@ -139,6 +139,7 @@ nav:
       - Estate session recorder: tutorials/demo/estate-session-recorder.md
       - Estate state grader: tutorials/demo/estate-state-grader.md
       - Estate request router: tutorials/demo/estate-request-router.md
+      - Estate drift reconciler: tutorials/demo/estate-drift-reconciler.md
       - Estate diagram: tutorials/demo/estate-diagram.md
       - Spend breaker: tutorials/demo/spend-breaker.md
       - Notifications: tutorials/demo/notify.md
@@ -262,6 +263,7 @@ nav:
       - Estate session recorder: how-to/onboarding/estate-session-recorder.md
       - Estate state grader: how-to/onboarding/estate-state-grader.md
       - Estate request router: how-to/onboarding/estate-request-router.md
+      - Estate drift reconciler: how-to/onboarding/estate-drift-reconciler.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
