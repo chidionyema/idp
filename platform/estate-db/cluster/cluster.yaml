@@ -48,7 +48,13 @@ spec:
   # CNPG validates imageName strictly: a long `main-<run>-<sha>` mutable tag is refused as an
   # 'invalid version tag' (admission webhook). Pin the immutable sha digest instead — this is the
   # estate's shared data store, so an immutable, rollback-safe reference is the right call anyway.
-  imageName: ghcr.io/chidionyema/postgres-partman@sha256:360fb19a69492251f7621910f1f6b93970c8aba574cf90dafc55de547c7a5254
+  # CNPG validates imageName strictly: it refuses a long main-<run>-<sha> tag (invalid version
+  # tag), refuses a pure @sha256 digest (can't detect upgrades), and refuses 'latest' (can't detect
+  # upgrades). It needs a short version-led tag it can order. The image is published (and now also
+  # tagged) `ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman` — version-led like the
+  # old 18.1-standard-bookworm, so CNPG accepts it and can detect a future image upgrade. This is
+  # the estate's shared data store; the versioned tag keeps upgrade detection intact.
+  imageName: ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman
   primaryUpdateStrategy: unsupervised
   priorityClassName: infrastructure-critical
   inheritedMetadata:
