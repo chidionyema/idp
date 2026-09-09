@@ -137,6 +137,7 @@ nav:
       - Estate digest worker: tutorials/demo/estate-digest-worker.md
       - Estate digest keeper: tutorials/demo/estate-digest-keeper.md
       - Estate session recorder: tutorials/demo/estate-session-recorder.md
+      - Estate state grader: tutorials/demo/estate-state-grader.md
       - Estate diagram: tutorials/demo/estate-diagram.md
       - Spend breaker: tutorials/demo/spend-breaker.md
       - Notifications: tutorials/demo/notify.md
@@ -258,6 +259,7 @@ nav:
       - Estate digest worker: how-to/onboarding/estate-digest-worker.md
       - Estate digest keeper: how-to/onboarding/estate-digest-keeper.md
       - Estate session recorder: how-to/onboarding/estate-session-recorder.md
+      - Estate state grader: how-to/onboarding/estate-state-grader.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md

@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""estate-state-grader — slot 2 of the local ops tier (crew#929).
+
+Grades every row of an estate snapshot (the crew/STATE.md markdown table) into a clean ledger:
+GREEN / RED / NOT RUN with a one-line reason, and a row-level roll-up. Deterministic rubric,
+model-free — it reads documented state, never guesses a PASS over an unmeasured row (LAW 2).
+
+    bin/estate-state-grader [path/to/STATE.md]        (default: the sibling crew/STATE.md, or STDIN with -)
+
+Output: one graded line per row plus a short roll-up of the RED/NOT-RUN rows that need a human.
+Exit 0. Root/state file overridable via ESTATE_STATE_FILE to keep no path literal in the script.
+"""
+import os
+import re
+import sys
+
+
+def grade_row(state, why):
+    """The rubric, returned as (VERDICT, note). GREEN only on an explicit pass signal."""
+    s = (state or "").upper()
+    if "RED" in s or "FAIL" in s:
+        return ("RED", "row reports RED/FAIL")
+    if "GREEN" in s or "MEASURED_OK" in s or s == "OK":
+        return ("GREEN", "row reports pass")
+    if "NOT RUN" in s or "UNKNOWN" in s or not s.strip() or s.startswith("STALE"):
+        return ("NOT RUN", "not measured this cycle" if not s.strip() else s)
+    # a count or '925 merged' style detail under a parent, no explicit verdict
+    if re.fullmatch(r"[\d.,k]+( merged| commits| live| repos)?", s.strip()) or s.isdigit():
+        return ("INFO", s.strip())
+    return ("UNKNOWN", s.strip())
+
+
+def default_state_file():
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repo root = checkout
+    sibling = os.path.join(os.path.dirname(here), "crew", "STATE.md")
+    return os.getenv("ESTATE_STATE_FILE", sibling if os.path.exists(sibling) else "")
+
+
+def main(argv):
+    if len(argv) > 1 and argv[1] not in ("-", ""):
+        state_file = argv[1]
+    else:
+        state_file = default_state_file()
+    if state_file and os.path.exists(state_file):
+        lines = open(state_file, encoding="utf-8")
+    else:
+        lines = sys.stdin
+    grading, counts = [], {"GREEN": 0, "RED": 0, "NOT RUN": 0, "INFO": 0, "UNKNOWN": 0}
+    parent = None
+    header = r"\| what \| state \| measured"
+    for raw in lines:
+        line = raw.rstrip("\n")
+        if not line.startswith("|") or re.search(header, line) or re.search(r"\|\s*[-:]+\s*\|", line):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 2:
+            continue
+        what, state = cells[0], cells[1]
+        why = cells[2] if len(cells) > 2 else ""
+        # only rows that carry a state verdict OR a NOT RUN marker grade; skip sub-row noise
+        if not what or what in ("what",):
+            continue
+        verdict, note = grade_row(state, why)
+        counts[verdict] += 1
+        is_sub = what.startswith("&nbsp;") or what.startswith("\xa0") or what.startswith("  ")
+        name = re.sub(r"&nbsp;|\xa0| ", "", what) or parent or "(row)"
+        if not is_sub:
+            parent = name or None
+        grading.append((name, verdict, note or ""))
+    print(f"estate-state-grader: {counts['GREEN']} GREEN, {counts['RED']} RED, "
+          f"{counts['NOT RUN']} NOT RUN, {counts['INFO']} INFO, {counts['UNKNOWN']} UNKNOWN "
+          f"rows in {'/'.join(state_file.split('/')[-2:]) or 'stdin'}")
+    print("rows needing a human (RED / NOT RUN / UNKNOWN):")
+    for name, verdict, note in grading:
+        if verdict in ("RED", "NOT RUN", "UNKNOWN"):
+            print(f"  [{verdict:<7}] {name}: {note}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
