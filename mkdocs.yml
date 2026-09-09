@@ -140,6 +140,7 @@ nav:
       - Estate state grader: tutorials/demo/estate-state-grader.md
       - Estate request router: tutorials/demo/estate-request-router.md
       - Estate drift reconciler: tutorials/demo/estate-drift-reconciler.md
+      - Estate cleaner: tutorials/demo/estate-cleaner.md
       - Estate diagram: tutorials/demo/estate-diagram.md
       - Spend breaker: tutorials/demo/spend-breaker.md
       - Notifications: tutorials/demo/notify.md
@@ -264,6 +265,7 @@ nav:
       - Estate state grader: how-to/onboarding/estate-state-grader.md
       - Estate request router: how-to/onboarding/estate-request-router.md
       - Estate drift reconciler: how-to/onboarding/estate-drift-reconciler.md
+      - Estate cleaner: how-to/onboarding/estate-cleaner.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
