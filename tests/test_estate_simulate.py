@@ -291,3 +291,34 @@ def test_the_converge_grader_reports_a_broken_shadow_observation_as_unsafe():
         assert "not Ready" in out["detail"]
     finally:
         os.environ.pop("ESTATE_MCP_SHADOW_OBSERVATION", None)
+
+
+def test_the_network_grader_is_unknown_without_a_calico_feed():
+    """No deny feed supplied -> network is UNKNOWN, never SAFE; the door reasons over the estate's
+    own flow evidence or it reasons over nothing."""
+    os.environ.pop("ESTATE_MCP_CALICO_FEED", None)
+    g = sim._live_graders("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n")
+    assert g["network"]()["verdict"] == "UNKNOWN"
+
+
+def test_the_network_grader_relays_the_real_calico_feed_verdict():
+    """With a real deny feed the grader answers exactly what bin/idp-calico-deny-log answers for
+    that feed -- it relays the estate's own network verdict, it does not invent one."""
+    here = (
+        Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "calico-denyflow"
+    )
+    os.environ["ESTATE_MCP_CALICO_FEED"] = str(here / "feed-no-evidence.log")
+    try:
+        g = sim._live_graders("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n")
+        assert g["network"]()["verdict"] in (
+            "UNSAFE",
+            "UNKNOWN",
+        )  # not SAFE on an empty feed
+    finally:
+        os.environ.pop("ESTATE_MCP_CALICO_FEED", None)
+
+
+def test_the_placement_grader_is_unknown_without_a_receipt():
+    os.environ.pop("ESTATE_MCP_PLACEMENT_RECEIPT", None)
+    g = sim._live_graders("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n")
+    assert g["placement"]()["verdict"] == "UNKNOWN"
