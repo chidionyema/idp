@@ -1284,6 +1284,73 @@ YAML
 # one patch puts it back; the flannel.1 links and their routes stay, inert, for subnets holding no
 # pod. Two guards run first: calico-node must be Ready on every node, and every pod address must
 # fall inside a Calico IPPool, so a pod that actually depends on flannel stops this before it acts.
+# gateway-one-node: the 2026-09-09 band-aid, founder-approved at 16:12Z. Cross-node pod traffic
+# has been severed since flannel re-rolled at 10:34Z, and parking flanneld did not restore it.
+# The gateway runs one pod per node while the router has one ready backend, so every request that
+# entered through the far gateway pod crossed the dead link and hung: measured over fifteen
+# minutes, 25 answers and no failure through the pod beside the router, and 8 gateway timeouts
+# plus 17 abandoned requests and no answer at all through the pod on the other node.
+#
+# The Service is externalTrafficPolicy Local, so a node with no gateway pod fails its load
+# balancer health check and stops receiving traffic at all. Cordon the far node, move the gateway
+# and DNS pods off it, and nothing crosses the link. The gateway's hostname spread constraint is
+# maxSkew 1 DoNotSchedule, so its second replica stays Pending while the node is cordoned -- that
+# is the intended state, not a fault, and it is why this playbook does NOT uncordon at the end.
+# Reverse it with node-uncordon once the link is repaired.
+#
+# The node is never named as a literal (R46): the good node is the one holding the ready router
+# backend, and the far node is the other one.
+pb_gateway_one_node() {
+  local good bad n out pod
+  good=$($K get pods -n llm -o jsonpath='{range .items[*]}{.metadata.name}/{.spec.nodeName}/{range .status.containerStatuses[*]}{.ready}{end}{"\n"}{end}' 2>/dev/null \
+    | grep -E '^litellm-[0-9a-f]' | grep '/true$' | cut -d/ -f2 | head -1)
+  [ -n "$good" ] || { echo "FAIL  gateway-one-node: no ready litellm backend, nothing to converge on"; FAILED="$FAILED guard-backend"; return 1; }
+  echo "ok    guard-backend the ready router backend is on $good"
+
+  bad=""
+  for n in $($K get nodes -o jsonpath='{.items[*].metadata.name}'); do
+    [ "$n" = "$good" ] || bad="$bad $n"
+  done
+  bad=${bad# }
+  [ -n "$bad" ] || { echo "FAIL  gateway-one-node: only one node exists, nothing to move off"; FAILED="$FAILED guard-nodes"; return 1; }
+  case "$bad" in *\ *) echo "FAIL  gateway-one-node: $(echo "$bad" | wc -w) other nodes ($bad); this band-aid is written for two"
+    FAILED="$FAILED guard-two-nodes"; return 1 ;; esac
+  echo "ok    guard-nodes the far node is $bad"
+
+  out=$($K get svc -n edge traefik -o jsonpath='{.spec.externalTrafficPolicy}' 2>/dev/null)
+  [ "$out" = Local ] || { echo "FAIL  gateway-one-node: gateway Service externalTrafficPolicy is ${out:-unset}, not Local; a node with no gateway pod would still forward across the dead link"
+    FAILED="$FAILED guard-etp"; return 1; }
+  echo "ok    guard-etp the gateway Service is externalTrafficPolicy Local"
+
+  step cordon $K cordon "$bad"
+
+  for pod in $($K get pods -n edge -l app.kubernetes.io/name=traefik -o jsonpath='{range .items[?(@.spec.nodeName=="'"$bad"'")]}{.metadata.name}{"\n"}{end}' 2>/dev/null); do
+    step "gateway-move-$pod" $K -n edge delete pod "$pod" --wait=false
+  done
+
+  # coredns goes one pod at a time: both replicas deleted together is a cluster with no DNS
+  for pod in $($K get pods -n kube-system -l k8s-app=kube-dns -o jsonpath='{range .items[?(@.spec.nodeName=="'"$bad"'")]}{.metadata.name}{"\n"}{end}' 2>/dev/null); do
+    step "dns-move-$pod" $K -n kube-system delete pod "$pod"
+    step "dns-ready-after-$pod" $K -n kube-system rollout status deploy/coredns --timeout=180s
+  done
+
+  step gateway-settle $K -n edge wait --for=condition=Ready pod -l app.kubernetes.io/name=traefik --timeout=180s
+
+  echo "--- nothing of the ingress path may remain on $bad"
+  out=$($K get pods -A -o jsonpath='{range .items[?(@.spec.nodeName=="'"$bad"'")]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' 2>/dev/null \
+    | grep -E '^(edge/traefik-|kube-system/coredns-)' || true)
+  if [ -n "$out" ]; then
+    echo "FAIL  ingress-clear still on $bad: $(echo "$out" | tr '\n' ' ')"; FAILED="$FAILED ingress-clear"
+  else
+    echo "ok    ingress-clear no gateway and no DNS pod remains on $bad"
+  fi
+
+  show gateway $K get pods -n edge -o wide
+  show coredns $K get pods -n kube-system -l k8s-app=kube-dns -o wide
+  show router $K get pods -n llm -o wide
+  show nodes $K get nodes
+}
+
 pb_flannel_off() {
   local nodes n i=0 targets ip out
   $K get ds -n kube-system calico-node >/dev/null 2>&1 || { echo "FAIL  flannel-off: no calico-node DaemonSet"; FAILED="$FAILED guard-calico"; return 1; }
@@ -1454,7 +1521,7 @@ pb_tigera_reset() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences cni-resync flannel-off"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences cni-resync flannel-off gateway-one-node"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-parity) pb_otto_parity ;;
@@ -1481,6 +1548,7 @@ case "${1:-}" in
   tigera-reset) pb_tigera_reset ;;
   cni-resync) pb_cni_resync ;;
   flannel-off) pb_flannel_off ;;
+  gateway-one-node) pb_gateway_one_node ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
 [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }

@@ -55,6 +55,7 @@ spec:
         - ns-fences
         - cni-resync
         - flannel-off
+        - gateway-one-node
         default: diagnose
   steps:
   - id: dispatch
