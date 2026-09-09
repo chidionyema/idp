@@ -1,2 +1,0 @@
-{"annotations":{"audit.kyverno.io/policy-status":"would-deny", "audit.kyverno.io/policy-name":"expected-rule"}, "objectRef": {"name": "expected-resource"}}
-{"annotations":{"audit.kyverno.io/policy-status":"would-deny", "audit.kyverno.io/policy-name":"unintended-rule"}, "objectRef": {"name": "unintended-resource"}}
