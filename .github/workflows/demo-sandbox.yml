@@ -1,5 +1,6 @@
 # button: Launch the buyer sandbox
 # founder: Starts a throwaway cluster-in-a-cluster with a demo shop at sandbox.<zone> for one hour or four; it removes itself when the hold runs out, and Ending it early works the same way.
+# result: Open the sandbox (live about two minutes after the run starts) | component:default/front-door-demo-shop
 
 # The buyer sandbox's one button (crew#805 tier 3; founder 2026-09-05: "need this demoed in the
 # sandbox and need the sandbox accessible"). Nothing here holds a cluster credential: this job

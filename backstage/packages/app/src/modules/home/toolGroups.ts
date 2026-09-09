@@ -98,11 +98,27 @@ const links = (e: Entity): Link[] =>
     .filter(l => typeof l.url === 'string' && l.url.trim() !== '')
     .map(l => ({ url: l.url, title: (l.title ?? '').trim() || 'Open' }));
 
-/** The tile's button: the first catalogue link, titled 'Open' when the catalogue gave it no title. */
-export const openLink = (e: Entity): Link | undefined => links(e)[0];
+/** A link into a source forge. It is where the tool is built, never where it runs. */
+const SOURCE_FORGE = /^https?:\/\/(www\.)?(github\.com|gitlab\.com|bitbucket\.org)\//i;
+const isSource = (l: Link): boolean => SOURCE_FORGE.test(l.url);
 
-/** Every catalogue link after the first, for the small print under the button. */
-export const moreLinks = (e: Entity): Link[] => links(e).slice(1);
+/**
+ * The tile's button: the first catalogue link that opens the running tool, titled 'Open' when
+ * the catalogue gave it no title. A source repository is never the button (founder 2026-09-09:
+ * "tools linking to github repos, what is that for, rather than the tools actually
+ * operational"): a tool whose only link is its repo has no Open button, says so, and keeps the
+ * repo in the small print.
+ */
+export const openLink = (e: Entity): Link | undefined => split(e).open;
+
+/** Every catalogue link that is not the button, for the small print under it. */
+export const moreLinks = (e: Entity): Link[] => split(e).more;
+
+const split = (e: Entity): { open?: Link; more: Link[] } => {
+  const all = links(e);
+  const i = all.findIndex(l => !isSource(l));
+  return { open: i >= 0 ? all[i] : undefined, more: all.filter((_, k) => k !== i) };
+};
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 

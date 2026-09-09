@@ -125,6 +125,22 @@ describe('a tile opens on its first catalogue link', () => {
 
   it('calls the button Open when the catalogue gave the link no title', () => {
     expect(openLink(door('x', { links: [{ url: 'https://x.example' }] }))?.title).toBe('Open');
+  });
+
+  it('never makes a source repository the Open button (founder 2026-09-09)', () => {
+    const repoOnly = door('r', {
+      links: [{ title: 'Source', url: 'https://github.com/acme/r' }],
+    });
+    expect(openLink(repoOnly)).toBeUndefined();
+    expect(moreLinks(repoOnly)).toEqual([{ title: 'Source', url: 'https://github.com/acme/r' }]);
+    const repoFirst = door('s', {
+      links: [
+        { title: 'Source', url: 'https://github.com/acme/s' },
+        { title: 'Open s', url: 'https://s.example/' },
+      ],
+    });
+    expect(openLink(repoFirst)).toEqual({ title: 'Open s', url: 'https://s.example/' });
+    expect(moreLinks(repoFirst)).toEqual([{ title: 'Source', url: 'https://github.com/acme/s' }]);
     expect(openLink(door('y', { links: [{ url: 'https://y.example', title: '  ' }] }))?.title).toBe(
       'Open',
     );
