@@ -27,6 +27,14 @@ import yaml
 # put both the module dir (a local `python modal_app.py`) and the remote layout on the path.
 # REMOTE is this file's own deployment constant, not a hardcoded lease in another file.
 ORAS_VERSION = "1.2.0"
+# llama.cpp is baked in at a pinned release and called directly by train.py. unsloth's own
+# save_pretrained_gguf clones and builds llama.cpp at run time and asks the terminal for
+# permission to apt-get its dependencies first; on a headless container that prompt reads EOF
+# and the export dies after the GPU has already been paid for. Run 34401515600 (2026-09-09)
+# trained, passed both gates -- agreement 0.9773, abstain 0.175 -- and then lost the model to
+# "RuntimeError: Unsloth: GGUF conversion failed: EOF when reading a line".
+LLAMA_CPP_TAG = "b10883"
+LLAMA_CPP_DIR = "/opt/llama.cpp"
 REMOTE = "/root/forge"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -41,7 +49,18 @@ image = (
     .pip_install("unsloth", "langfuse<3", "pyyaml", "datasets")
     .run_commands(
         f"curl -sSL https://github.com/oras-project/oras/releases/download/v{ORAS_VERSION}/oras_{ORAS_VERSION}_linux_amd64.tar.gz"
-        " | tar -zx -C /usr/local/bin oras"
+        " | tar -zx -C /usr/local/bin oras",
+        f"git clone --depth 1 --branch {LLAMA_CPP_TAG} https://github.com/ggml-org/llama.cpp {LLAMA_CPP_DIR}",
+        # Only the quantiser is built, and with curl off: nothing here fetches a model, so the
+        # rest of llama.cpp is minutes of build time for a binary no run opens. The converter is
+        # the checked-out convert_hf_to_gguf.py, which needs no build at all.
+        f"cmake -S {LLAMA_CPP_DIR} -B {LLAMA_CPP_DIR}/build -DCMAKE_BUILD_TYPE=Release"
+        " -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF"
+        " -DLLAMA_BUILD_SERVER=OFF",
+        f"cmake --build {LLAMA_CPP_DIR}/build --target llama-quantize -j 4",
+        # The converter's own requirements pin torch and transformers; installing them would
+        # move the versions unsloth trained against. It runs on the image's existing torch,
+        # numpy and transformers, and finds gguf through the checkout's own gguf-py.
     )
     .add_local_dir(os.path.dirname(os.path.abspath(__file__)), remote_path=REMOTE)
 )
@@ -67,7 +86,7 @@ def run_forge(
     task_file: str = "task.yaml",
     gpu: str = GPU,
 ) -> dict:
-    env = {**os.environ, "DATASET_NAME": task}
+    env = {**os.environ, "DATASET_NAME": task, "LLAMA_CPP_DIR": LLAMA_CPP_DIR}
     if data:  # a client file, the default road; Langfuse export is the optional one
         pathlib.Path(REMOTE, "dataset.jsonl").write_bytes(data)
     else:

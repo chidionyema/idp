@@ -9,12 +9,56 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess  # noqa: S404  llama.cpp's own converter and quantiser, argv lists only
+import sys
 
 import torch
 import yaml
 from datasets import load_dataset
 
 from common import grade, label_probs
+
+# Where forge/modal_app.py bakes llama.cpp into the image; a laptop run points it elsewhere.
+LLAMA_CPP_DIR = os.environ.get("LLAMA_CPP_DIR", "/opt/llama.cpp")
+
+
+def export_gguf(model, tokenizer, out: str) -> None:
+    """Merged 16-bit weights, then llama.cpp's converter and quantiser, called directly.
+
+    Not `model.save_pretrained_gguf(...)`: that clones and builds llama.cpp during the run and
+    asks the terminal to approve an apt-get first. On a headless GPU container the prompt reads
+    EOF and the export raises, which is how run 34401515600 (2026-09-09) finished training,
+    passed both gates at agreement 0.9773 and abstain 0.175, and still published nothing --
+    "RuntimeError: Unsloth: GGUF conversion failed: EOF when reading a line".
+    """
+    merged = os.path.join(out, "merged")
+    model.save_pretrained_merged(merged, tokenizer, save_method="merged_16bit")
+    f16 = os.path.join(out, "model-f16.gguf")
+    subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            os.path.join(LLAMA_CPP_DIR, "convert_hf_to_gguf.py"),
+            merged,
+            "--outfile",
+            f16,
+            "--outtype",
+            "f16",
+        ],
+        check=True,
+    )
+    subprocess.run(  # noqa: S603
+        [
+            os.path.join(LLAMA_CPP_DIR, "build", "bin", "llama-quantize"),
+            f16,
+            os.path.join(out, "model.gguf"),
+            "Q4_K_M",
+        ],
+        check=True,
+    )
+    # The f16 intermediate is ~3 GB and the merged weights the same again; neither is part of
+    # the artifact, and both would otherwise ride into the oras push.
+    os.remove(f16)
+    shutil.rmtree(merged, ignore_errors=True)
 
 
 def main() -> None:
@@ -141,9 +185,7 @@ def main() -> None:
     if refusal:
         raise SystemExit(f"Refusal: {refusal}")
 
-    model.save_pretrained_gguf(args.out, tokenizer, quantization_method="q4_k_m")
-    gguf = next(n for n in os.listdir(args.out) if n.endswith(".gguf"))
-    os.replace(os.path.join(args.out, gguf), os.path.join(args.out, "model.gguf"))
+    export_gguf(model, tokenizer, args.out)
     tokenizer.save_pretrained(args.out)  # tokenizer.json, read by the Runtime
     # the adapter alone, a few MB: re-export at another quantisation, merge with other tasks'
     # adapters, or serve per client without a second copy of the base (adopt note 2026-09-06)
