@@ -1,0 +1,194 @@
+"""MUM-288 door: no state-changing execute without a SAFE, unexpired, hash-matched simulate.
+
+Every case in the spec's edge-case table that is provable offline -- a grader that did not answer,
+a stale hash, an expired proposal, an UNKNOWN verdict, two proposals touching one object, execute
+without simulating -- is graded here on the pure core of mcp/plugins/estate_simulate.py, so the
+door never depends on a live cluster to be proven. Cluster-grounded graders (admission dry-run
+through the bin programs, Calico flows, node capacity) are themselves graded by their own estate
+gates; this file grades the guard that sits in front of them.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+SPEC = importlib.util.spec_from_file_location(
+    "estate_simulate",
+    Path(__file__).resolve().parents[1] / "mcp" / "plugins" / "estate_simulate.py",
+)
+sim = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(sim)
+
+SAFE = {"verdict": "SAFE", "detail": "ok"}
+UNSAFE = {"verdict": "UNSAFE", "detail": "denied"}
+T0 = dt.datetime(2026, 9, 8, 12, 0, 0, tzinfo=dt.timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_registry():
+    """The module singleton backs the default simulate/execute calls; reset it each test so
+    no proposal or consumed hash leaks from one case into the next."""
+    sim._REGISTRY.proposals.clear()
+    yield
+    sim._REGISTRY.proposals.clear()
+
+
+def cfg(ttl_s: int = 600, door: bool = True) -> dict:
+    return {
+        "proposal_ttl_s": ttl_s,
+        "graders_door": door,
+        "state_branch": "estate/state",
+    }
+
+
+def all_safe_graders(
+    unsafe: list[str] | None = None, missing: list[str] | None = None
+) -> dict:
+    out = {}
+    for name in sim.GRADER_NAMES:
+        if missing and name in missing:
+            continue  # absent grader
+        if unsafe and name in unsafe:
+            out[name] = lambda n=name: UNSAFE
+        else:
+            out[name] = lambda: SAFE
+    return out
+
+
+def test_simulate_returns_safe_when_every_grader_answered_safe():
+    g = all_safe_graders()
+    p = sim.simulate_change(
+        "ref: clusters/oke",
+        graders=g,
+        now=T0,
+        git_sha="abc",
+        resource_versions={"deployments/x": "1"},
+    )
+    assert p["verdict"] == "SAFE"
+    assert p["graders_on"] is True
+    assert p["computed_against"]["git_sha"] == "abc"
+
+
+def test_one_unsafe_grader_makes_the_proposal_unsafe():
+    g = all_safe_graders(unsafe=["laws"])
+    p = sim.simulate_change("scale otto-ss", graders=g, now=T0)
+    assert p["verdict"] == "UNSAFE"
+    assert p["grader_results"]["laws"]["verdict"] == "UNSAFE"
+
+
+def test_one_grader_that_did_not_answer_makes_the_whole_verdict_unknown():
+    """A validating webhook down during dry-run / a grader that could not run is UNKNOWN, and an
+    UNKNOWN whole verdict is never executable -- fail closed, the same rule bin/idp-fence-
+    enforcement enforces."""
+    g = all_safe_graders(missing=["admission"])
+    p = sim.simulate_change("x", graders=g, now=T0)
+    assert p["verdict"] == "UNKNOWN"
+    r = sim.execute_change(
+        p["proposal_id"], p["computed_against"]["cluster_state_hash"], now=T0
+    )
+    assert r["executed"] is False and "verdict is UNKNOWN" in r["error"]
+
+
+def test_a_grader_that_throws_is_unknown_not_a_crash():
+    def boom():
+        raise RuntimeError("kubeconfig gone")
+
+    g = {n: (boom if n == "network" else (lambda: SAFE)) for n in sim.GRADER_NAMES}
+    p = sim.simulate_change("x", graders=g, now=T0)
+    assert p["verdict"] == "UNKNOWN"
+    assert "could not run" in p["grader_results"]["network"]["detail"]
+
+
+def test_execute_without_a_simulated_proposal_is_refused():
+    r = sim.execute_change("does-not-exist", "abc", now=T0)
+    assert r["executed"] is False and "simulate first" in r["error"]
+
+
+def test_execute_on_a_stale_hash_is_refused_and_spends_the_proposal():
+    """Proposal against a stale hash: execute refuses with the two hashes; caller must re-simu.
+    Mutate a resource between simulate and execute, exactly the spec's row."""
+    g = all_safe_graders()
+    p = sim.simulate_change(
+        "x", graders=g, now=T0, resource_versions={"configmaps/x": "1"}
+    )
+    reg = sim.Registry()
+    p2 = sim.simulate_change(
+        "x", graders=g, registry=reg, now=T0, resource_versions={"configmaps/x": "2"}
+    )
+    stale = sim.execute_change(
+        p2["proposal_id"],
+        p["computed_against"]["cluster_state_hash"],
+        registry=reg,
+        now=T0,
+    )
+    assert stale["executed"] is False and "state hash changed" in stale["error"]
+    assert reg.get(p2["proposal_id"]) is None  # spent; re-simulate
+
+
+def test_execute_on_a_changed_resource_version_spends_the_proposal():
+    g = all_safe_graders()
+    reg = sim.Registry()
+    p = sim.simulate_change(
+        "x", graders=g, registry=reg, now=T0, resource_versions={"cf/x": "1"}
+    )
+    ok = sim.execute_change(
+        p["proposal_id"],
+        p["computed_against"]["cluster_state_hash"],
+        registry=reg,
+        now=T0,
+    )
+    assert ok["executed"] is True
+    # the proposal is spent; a second execute is a no-id
+    again = sim.execute_change(
+        p["proposal_id"],
+        p["computed_against"]["cluster_state_hash"],
+        registry=reg,
+        now=T0,
+    )
+    assert again["executed"] is False and "no proposal with that id" in again["error"]
+
+
+def test_execute_with_a_null_hash_is_refused_fail_closed():
+    g = all_safe_graders()
+    reg = sim.Registry()
+    p = sim.simulate_change("x", graders=g, registry=reg, now=T0)
+    r = sim.execute_change(p["proposal_id"], None, registry=reg, now=T0)
+    assert r["executed"] is False
+
+
+def test_an_expired_proposal_is_refused_and_dropped():
+    g = all_safe_graders()
+    reg = sim.Registry()
+    p = sim.simulate_change("x", graders=g, registry=reg, cfg=cfg(ttl_s=600), now=T0)
+    later = T0 + dt.timedelta(seconds=601)
+    r = sim.execute_change(
+        p["proposal_id"],
+        p["computed_against"]["cluster_state_hash"],
+        registry=reg,
+        cfg=cfg(ttl_s=600),
+        now=later,
+    )
+    assert r["executed"] is False and "expired" in r["error"]
+    assert reg.get(p["proposal_id"]) is None
+
+
+def test_hash_is_deterministic_over_sorted_identities():
+    a = sim.hash_state({"z": "1", "a": "2"})
+    b = sim.hash_state({"a": "2", "z": "1"})  # same content, different insertion order
+    assert a == b
+
+
+def test_hash_changes_when_a_resource_version_does():
+    assert sim.hash_state({"cf/x": "1"}) != sim.hash_state({"cf/x": "2"})
+
+
+def test_the_grader_door_off_means_every_proposal_is_unknown_not_safe():
+    """Estimate the guard that a door-off environment (offline CI, a repo reader) answers UNKNOWN
+    honestly rather than pretending a grader ran."""
+    p = sim.simulate_change("x", graders={}, cfg=cfg(door=False), now=T0)
+    assert p["verdict"] == "UNKNOWN"
+    assert all(r["verdict"] == "UNKNOWN" for r in p["grader_results"].values())

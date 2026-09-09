@@ -1163,3 +1163,25 @@ rules:
     fail: >-
       a workload names a PriorityClass that neither this tree declares nor Kubernetes ships;
       admission refuses every pod it asks for and the Deployment reports FailedCreate
+
+  - id: simulate-twin
+    label: simulategrade
+    statement: >-
+      A state-changing estate MCP tool (an @mcp.tool() named execute_* or exec_*) is refused
+      unless the same module registers a simulate twin to propose its change first (MUM-288, ADR 0006)
+    law: MUM-288, ADR 0006
+    origin: MUM-288
+    planes: [ci]
+    run: [python3, bin/idp-simulate-gate]
+    session_glob: ['mcp/plugins/*.py']
+    fixtures:
+      must_fail: tests/fixtures/simulate-grade/bad
+      must_pass: tests/fixtures/simulate-grade/good
+    cases:
+      - {expect: refuse, args: [tests/fixtures/simulate-grade/bad]}
+      - {expect: pass, args: [tests/fixtures/simulate-grade/good]}
+      - {expect: pass, live: true, note: "the genuine estate MCP server's simulate/execute door pairs"}
+    ok: "every mutating estate MCP tool in mcp/plugins ships a simulate twin; the gate is proved both ways"
+    fail: >-
+      a mutating estate MCP tool registers with no simulate twin, and the gate cannot tell the
+      breach from the pair
