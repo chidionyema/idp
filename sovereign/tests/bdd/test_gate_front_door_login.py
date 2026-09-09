@@ -376,6 +376,12 @@ def _oauth2_proxy_in_front(state: dict) -> None:
                 # The alias, kept only until the Linear webhook registration is moved to
                 # /linear-webhook, so the two changes are never in flight at once.
                 {"type": "Exact", "value": "/webhook"},
+                # The OAuth consent redirect (MUM-291). Linear sends the founder's browser here
+                # with a one-time code; the code buys nothing without the client secret, which
+                # only the pod holds, so the secret is the authentication here as the HMAC is on
+                # the webhook paths. The proof below: a route that opens /callback must ship an
+                # ExternalSecret pulling client_secret, or the door is a redirect to nowhere.
+                {"type": "Exact", "value": "/callback"},
             )
             paths = [
                 m.get("path", {})
@@ -386,6 +392,10 @@ def _oauth2_proxy_in_front(state: dict) -> None:
                 f"{p}: webhook-hmac-signature route exposes {paths}"
             )
             es = (p.parent / "external-secret.yaml").read_text()
+            if {"type": "Exact", "value": "/callback"} in paths:
+                assert "client_secret" in es, (
+                    f"{p}: route opens /callback but external-secret.yaml pulls no client_secret"
+                )
             assert "webhook-secret" in es or "webhook_secret" in es, (
                 f"{p}: annotated webhook-hmac-signature but external-secret.yaml pulls no signing secret"
             )

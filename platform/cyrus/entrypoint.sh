@@ -27,6 +27,11 @@ export_file GITHUB_TOKEN "$GH_TOKEN_PATH"
 export_file LINEAR_API_TOKEN "$WEBHOOK_DIR/linear-api-token"
 export_file LINEAR_WEBHOOK_SECRET "$WEBHOOK_DIR/linear-webhook-secret"
 export_file GITHUB_WEBHOOK_SECRET "$WEBHOOK_DIR/github-webhook-secret"
+# The Linear OAuth client (external-secret.yaml, 3). Both are read by `cyrus self-auth` to mint
+# the access token and by EdgeWorker to refresh it; absent, the pod stays on the GitHub door.
+OAUTH_DIR=${CYRUS_LINEAR_OAUTH_DIR:-/secrets/linear-oauth}
+export_file LINEAR_CLIENT_ID "$OAUTH_DIR/client-id"
+export_file LINEAR_CLIENT_SECRET "$OAUTH_DIR/client-secret"
 
 # git authenticates through an askpass file rather than a URL or a command line: a token
 # in argv is readable by anything that can run `ps` (LAW 10). The helper cats the file on
@@ -94,9 +99,47 @@ link_config() {
 	# A copy, not a symlink: cyrus migrates its own config on boot and writes it back, and a
 	# symlink into the read-only ConfigMap made that an EROFS exit (README, wall 6). Refreshed
 	# every start, so git stays the source of truth.
+	# What the previous boot held: the OAuth token `cyrus self-auth` saved, or the one cyrus
+	# refreshed and wrote back. The home volume is a claim, so the old copy is still here; it is
+	# read before the copy overwrites it and joined back after, so a consent is given once.
+	local kept='{}'
+	if [ -r "$HOME/.cyrus/config.json" ]; then
+		kept=$(jq -c '[.linearWorkspaces // {} | to_entries[] | select(.value.linearToken != null)] | from_entries' \
+			"$HOME/.cyrus/config.json" 2>/dev/null || echo '{}')
+	fi
 	cp "$CONFIG_SRC" "$HOME/.cyrus/config.json"
 	chmod 0600 "$HOME/.cyrus/config.json"
-	join_linear_token "$HOME/.cyrus/config.json"
+	if [ "$kept" != '{}' ]; then
+		local tmp
+		tmp=$(mktemp "$HOME/.cyrus/config.XXXXXX")
+		jq --argjson kept "$kept" '.linearWorkspaces = ((.linearWorkspaces // {}) + $kept)' \
+			"$HOME/.cyrus/config.json" >"$tmp"
+		mv "$tmp" "$HOME/.cyrus/config.json"
+		chmod 0600 "$HOME/.cyrus/config.json"
+		echo "cyrus-entrypoint: kept the OAuth token(s) for $(jq -r '.linearWorkspaces | length' "$HOME/.cyrus/config.json") workspace(s)"
+	else
+		join_linear_token "$HOME/.cyrus/config.json"
+	fi
+}
+
+# No OAuth token yet and a client to mint one with: `cyrus self-auth` listens on the serving
+# port for the consent redirect (https://<CYRUS_BASE_URL>/callback), exchanges the code with
+# the client secret and saves the token into config.json. It prints the consent URL to the
+# pod log; the founder opens it once. Bounded: after the window the pod comes up on the GitHub
+# door as before, and the next restart opens the window again.
+SELF_AUTH_WINDOW=${CYRUS_SELF_AUTH_WINDOW:-30m}
+mint_linear_token() {
+	local config=$1
+	[ -n "${LINEAR_CLIENT_ID:-}" ] && [ -n "${LINEAR_CLIENT_SECRET:-}" ] || return 0
+	if [ "$(jq -r '[.linearWorkspaces // {} | .[] | select(.linearToken != null)] | length' "$config")" != "0" ]; then
+		return 0
+	fi
+	echo "cyrus-entrypoint: no Linear OAuth token yet; waiting up to $SELF_AUTH_WINDOW for the founder's consent"
+	if timeout "$SELF_AUTH_WINDOW" cyrus self-auth; then
+		echo "cyrus-entrypoint: Linear OAuth token saved"
+	else
+		echo "cyrus-entrypoint: no consent within $SELF_AUTH_WINDOW; starting on the GitHub door" >&2
+	fi
 }
 
 # The only road cyrus offers for a Linear token is config.linearWorkspaces[<id>].linearToken
@@ -129,6 +172,7 @@ clone)
 	;;
 *)
 	link_config
+	mint_linear_token "$HOME/.cyrus/config.json"
 	exec cyrus "$@"
 	;;
 esac
