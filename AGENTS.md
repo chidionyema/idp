@@ -87,6 +87,7 @@ deprecate them. Eradicate them."
 | A secret store that authenticates outside the cluster has a fence that lets it get there: egress_internet, and egress_metadata too when its identity is fetched at run time | incident 2026-09-08, ClusterSecretStore/estate-vault | `python3 bin/idp-store-can-reach-its-vault` | tests/fixtures/store-reach/bad | tests/fixtures/store-reach/good |
 | A package manager may mint its own webhook Service without a catalogue label, and an undeclared door in the same namespace still may not | R38 -- a guard that refuses correct work is an outage | `kyverno` | tests/fixtures/catalogue-entity-runtime-service-blind | tests/fixtures/catalogue-entity-runtime-service |
 | Every priorityClassName a workload names is a PriorityClass this tree declares or one of the two Kubernetes ships; a class that exists nowhere is refused at admission, not at apply | incident 2026-09-08, nodesoftware-operator | `python3 bin/idp-priority-class-exists` | tests/fixtures/priority-class-exists/bad | tests/fixtures/priority-class-exists/good |
+| A state-changing estate MCP tool (an @mcp.tool() named execute_* or exec_*) is refused unless the same module registers a simulate twin to propose its change first (MUM-288, ADR 0006) | MUM-288, ADR 0006 | `python3 bin/idp-simulate-gate` | tests/fixtures/simulate-grade/bad | tests/fixtures/simulate-grade/good |
 <!-- END GENERATED RULES TABLE -->
 
 Rules that are already types or tools, and so need no row: compose files must parse
