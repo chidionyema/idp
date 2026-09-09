@@ -81,31 +81,47 @@ jobs:
           BRANCH: flux/image-updates
         run: |
           set -euo pipefail
-          n=$(gh pr list --head "$BRANCH" --base main --state open --json number -q '.[0].number')
-          if [ -z "$n" ]; then echo "ok      deploy-when-green  no deploy waiting"; exit 0; fi
+          # try_land <pr>: merge #pr only when the landable verdict is MERGE. The verdict now
+          # carries the W3.3 fail-closed guard (bin/idp-pr-landable since #2751): a PR labelled
+          # type:auto-remediation is MERGE only when a real green shadow-verify / proof-of-convergence
+          # check sits in its rollup; a label without proof is SKIP. So calling this for an
+          # auto-remediation PR is safe -- nothing merges unless a real shadow run proved it.
+          try_land() {
+            local pr="$1" why
+            gh pr view "$pr" --json isDraft,mergeStateStatus,labels,statusCheckRollup > pr.json
+            verdict=$(bin/idp-pr-landable pr.json)
+            echo "$verdict"
+            case "$verdict" in
+              UPDATE*)
+                gh api --method PUT "repos/$GH_REPO/pulls/$pr/update-branch" --input /dev/null \
+                  && echo "ok      deploy-when-green  refreshed #$pr onto main; it lands next tick"
+                ;;
+              MERGE*)
+                if gh pr merge "$pr" --squash; then
+                  echo "ok      deploy-when-green  landed #$pr; flux applies it"
+                else
+                  echo "ok      deploy-when-green  #$pr went stale before the merge; next tick takes it"
+                fi
+                ;;
+              *) echo "ok      deploy-when-green  #$pr is not landable yet" ;;
+            esac
+          }
 
-          # The gate that makes this safe. Anything but automation-owned tag lines waits for him.
-          if ! bin/idp-image-only-diff --pr "$n"; then
-            echo "ok      deploy-when-green  #$n is not a plain image bump; it waits for the founder"
-            exit 0
+          # Row 1 (unchanged): the automation-owned image tag bump on flux/image-updates.
+          n=$(gh pr list --head "$BRANCH" --base main --state open --json number -q '.[0].number')
+          if [ -n "$n" ]; then
+            if bin/idp-image-only-diff --pr "$n"; then
+              try_land "$n"
+            else
+              echo "ok      deploy-when-green  #$n is not a plain image bump; it waits for the founder"
+            fi
           fi
 
-          gh pr view "$n" --json isDraft,mergeStateStatus,labels,statusCheckRollup > pr.json
-          verdict=$(bin/idp-pr-landable pr.json)
-          echo "$verdict"
-          case "$verdict" in
-            UPDATE*)
-              gh api --method PUT "repos/$GH_REPO/pulls/$n/update-branch" --input /dev/null \
-                && echo "ok      deploy-when-green  refreshed #$n onto main; it lands next tick"
-              ;;
-            MERGE*)
-              # It can go stale between the read and this line. gh refuses on its own then, and the
-              # refusal is reported rather than failing the run: the next tick takes it.
-              if gh pr merge "$n" --squash; then
-                echo "ok      deploy-when-green  landed #$n; the cluster now points at the new build"
-              else
-                echo "ok      deploy-when-green  #$n went stale before the merge; next tick takes it"
-              fi
-              ;;
-            *) echo "ok      deploy-when-green  #$n is not landable yet" ;;
-          esac
+          # Row 2 (W3.3): an admitted auto-remediation PR whose proof the #2751 guard already
+          # forced to real (MERGE only iff a green shadow-verify check is present). No proof, no
+          # auto-merge; anything else still waits for the founder through the same gate.
+          rem=$(gh pr list --base main --state open --label "type: auto-remediation" \
+                  --json number -q '.[].number')
+          for r in ${rem:-}; do try_land "$r"; done
+
+          test -n "$n$rem" || echo "ok      deploy-when-green  nothing to land on this tick"
