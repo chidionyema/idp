@@ -747,6 +747,12 @@ metadata:
     - title: "How it works, and the one-time sign-in"
       url: "https://catalogue.${ESTATE_ZONE}/docs/default/component/founder-gods-view/founder/mac-remote-desk/"
       icon: docs
+    - title: "Download Jump Desktop Connect for the Mac (the installer)"
+      url: "https://jumpdesktop.com/downloads/connect/JumpDesktopConnect.dmg"
+      icon: cloud
+    - title: "Jump Desktop for iPhone (App Store)"
+      url: "https://apps.apple.com/us/app/jump-desktop-rdp-vnc-fluid/id364876095"
+      icon: dashboard
 spec:
   type: founder-surface
   lifecycle: production

@@ -194,7 +194,11 @@ def test_alertmanager_config_comes_from_the_vault_and_routes_telegram_then_robus
 def founder_surface_urls():
     text = (IDP / "backstage/founder/catalog-info.yaml").read_text()
     urls = re.findall(r'url: "(https?://[^"]+)"', text)
-    return sorted({u for u in urls if not u.startswith("https://github.com/")})
+    # A vendor's download or store page is a door out of the estate, not a surface of ours; the
+    # blackbox probe grades what we run (founder 2026-09-09: the Jump installer "should be downloaded
+    # from Backstage", so those links live on the surface and are excluded here).
+    out = ("https://github.com/", "https://jumpdesktop.com/", "https://apps.apple.com/")
+    return sorted({u for u in urls if not u.startswith(out)})
 
 
 def test_probe_targets_are_exactly_the_founder_surfaces_and_the_module_accepts_401_and_405():

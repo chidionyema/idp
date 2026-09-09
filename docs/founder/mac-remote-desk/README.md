@@ -59,6 +59,15 @@ Tailscale, crew#561) does not depend on Jump at all.
 
 ## Founder, one sitting
 
+Everything below starts from the Backstage surface **My Mac, from my phone** (catalogue home →
+Founder). Its buttons are the whole kit: this page, the Mac installer download, and the iPhone app.
+Nothing is fetched by hand and nothing needs a terminal; a person who has never seen the estate
+follows the buttons top to bottom.
+
+0. On the Mac, press **Download Jump Desktop Connect for the Mac** on that surface, open the
+   downloaded `JumpDesktopConnect.dmg`, double-click **Install Jump Desktop Connect**, and give the
+   Mac password when the installer asks. That is the only password step; it is the Mac's, not ours.
+
 What is left for your hands (a vendor sign-in and two macOS privacy grants cannot be done by a
 pipeline; everything else above is done by a session):
 
