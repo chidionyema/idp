@@ -25,6 +25,13 @@ WHAT IT REFUSES, each a real case rather than a precaution:
 
   bin/idp-pr-landable PR.json      (the output of `gh pr view --json isDraft,mergeStateStatus,labels,statusCheckRollup`)
 
+Since the W3.3 low-risk lane (docs/policy/agent-infra-safety-spec.md W3.3), an admitted
+auto-remediation pull request refuses to merge without a green shadow proof: a PR bearing the
+`type: auto-remediation` label is only MERGE when the checks rollup actually contains a
+SUCCESSful 'shadow-verify' / convergence check -- i.e. a real shadow run proved the change on
+this head. A label alone, or a label on a PR with no such green check, is SKIP, never MERGE: an
+unproven remediation never rides the normal green path.
+
 Prints one line: `MERGE|READY|UPDATE|SKIP  <why>`. Exit 0 always -- the verdict is the answer, and a
 tool that exits 1 on "not yet" turns a normal wait into a red run.
 """
@@ -85,6 +92,20 @@ def verdict(pr, required):
             (c.get("name") or "?") + "=" + (c.get("conclusion") or "none")
             for c in bad[:4]
         )
+    # The W3.3 low-risk lane: an admitted auto-remediation PR merges only on a real shadow proof.
+    # A label is not a proof -- a PR claiming type:auto-remediation but with no green shadow-verify
+    # / convergence check in its rollup must NOT auto-merge, or an unproven change would ride the
+    # ordinary green path straight into the cluster. Fail closed: no green shadow check, no merge.
+    if "type:auto-remediation" in labels:
+        shadow_ok = any(
+            (c.get("name") or "").strip().lower() in ("shadow-verify", "proof-of-convergence")
+            and c.get("conclusion") == "SUCCESS"
+            for c in done
+        )
+        if not shadow_ok:
+            return "SKIP", \
+                "labelled type:auto-remediation but has no green shadow-verify/proof-of-convergence " \
+                "check; a label is not a proof (W3.3)"
     # The draft flag is judged LAST, and only on a pull request that is otherwise finished, so a
     # draft that is red, held or conflicted is never touched. Five green pull requests sat in crew
     # for ten days on nothing but this flag, because the sessions that opened them never came back
