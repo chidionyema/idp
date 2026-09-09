@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Does a change converge inside the shadow dimension? (spec W2.2)
+
+The shadow dimension proves a pull request before it meets the gate: a change is applied inside an
+ephemeral vcluster under production-inherited state, and the only thing that returns is whether the
+workload still converges -- ready, at its replica count, probes green, its own tests green. A change
+that breaks any of those in the shadow must never reach the real cluster. This is W2.2
+(docs/policy/agent-infra-safety-spec.md): `idp-shadow verify` asserts 'the workload reaches Ready,
+it meets its previous replica count, its probes pass, and its own tests run if it has any'.
+
+WHAT THE OBSERVATION IS. The shadow-verify run (which lives on a real vcluster) produces a JSON
+observation of the workload's post-apply state. This tool grades that observation fail-closed. It
+needs no cluster to be correct, so it is graded entirely by fixtures. The live vcluster + applying
+the diff + collecting/reading the JSON is a separate executor (W2.2's live half); this is the
+assertion contract nothing may skip.
+
+EVERY assertion has a fail-closed default: a value the observation does not name is a FAIL, never a
+pass -- a shadow that is silent about readiness has proved nothing.
+
+  bin/idp-shadow-verify OBSERVATION.json     exit 0 when every assertion holds, else 1, 2=unreadable
+"""
+import json
+import sys
+
+ASSERTIONS = {
+    # (json key, description). observedGeneration etc. compared to required.
+}
+
+
+def _num(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def grade(obs):
+    """Return (True/False, [reasons]). Empty reasons == convergence."""
+    reasons = []
+    kind = obs.get("kind")
+    if kind not in ("Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob"):
+        return False, [f"observation names an unverified kind: {kind!r}"]
+    name = obs.get("metadata", {}).get("name")
+
+    # 1. the workload reaches Ready.
+    ready = obs.get("ready")
+    if ready is True:
+        pass
+    elif ready is False:
+        reasons.append("workload is not Ready after the change")
+    else:
+        reasons.append("observation is silent about readiness; a shadow that does not say Ready is not proved")
+
+    # 2. it meets its expected replica count.
+    if kind in ("Deployment", "StatefulSet", "DaemonSet"):
+        req = _num(obs.get("requiredReplicas"))
+        avail = _num(obs.get("availableReplicas"))
+        readyc = _num(obs.get("readyReplicas"))
+        if req is None:
+            reasons.append("observation does not name requiredReplicas")
+        if avail is None:
+            reasons.append("observation does not name availableReplicas")
+        if req is not None and avail is not None and avail < req:
+            reasons.append(f"available replicas {avail} below required {req}")
+        if req is not None and readyc is not None and readyc < req and avail == req:
+            reasons.append(f"ready replicas {readyc} below required {req}")
+    else:
+        # Job/CronJob: converged means it completed (or its owning job did).
+        if obs.get("succeeded") is not True and obs.get("phase") != "Succeeded":
+            reasons.append("job did not complete")
+
+    # 3. probes pass -- readiness/liveness named per container, or a single readiness probe.
+    probes = obs.get("probes")
+    if probes is None:
+        reasons.append("observation is silent about probes")
+    elif isinstance(probes, list):
+        for p in probes:
+            if p.get("outcome") != "pass":
+                reasons.append(f"probe {p.get('name','?')} did not pass")
+    elif isinstance(probes, dict):
+        for cname, outcome in probes.items():
+            if outcome != "pass":
+                reasons.append(f"probe for {cname} did not pass")
+
+    # 4. its own tests run, if it has any.
+    tests = obs.get("tests")
+    if tests is not None:
+        if not isinstance(tests, list):
+            reasons.append("tests is not a list")
+        for t in tests or []:
+            if not t.get("passed"):
+                reasons.append(f"test {t.get('name','?')} did not pass")
+    return (not reasons), reasons
+
+
+def main(argv):
+    if len(argv) != 1:
+        print("usage: idp-shadow-verify OBSERVATION.json", file=sys.stderr)
+        return 2
+    try:
+        obs = json.load(open(argv[0], encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        print(f"BLIND   shadow-verify  cannot read {argv[0]}: {e}")
+        return 2
+    ok, reasons = grade(obs)
+    wl = (obs.get("metadata") or {}).get("name") or "?"
+    ns = (obs.get("metadata") or {}).get("namespace") or "?"
+    if ok:
+        print(f"ok      shadow-verify  {ns}/{wl} converged: ready, at replicas, probes + tests green")
+        return 0
+    # print each reason so a failing shadow-verify names what broke (the empirical rule's quote)
+    print(f"FAIL    shadow-verify  {ns}/{wl}")
+    for r in reasons:
+        print(f"        - {r}")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
