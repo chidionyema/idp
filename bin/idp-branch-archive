@@ -41,7 +41,12 @@ AGE_DAYS = 14
 
 
 def git(*args: str) -> str:
-    return subprocess.run(["git", *args], check=True, text=True, capture_output=True).stdout
+    # The remote's reason travels on stderr; the second apply run (34308053868) died on a
+    # CalledProcessError that named the 100 refspecs and not one word of why they were refused.
+    r = subprocess.run(["git", *args], text=True, capture_output=True)
+    if r.returncode:
+        sys.exit(f"git {args[0]} failed ({r.returncode}): {r.stderr.strip()}")
+    return r.stdout
 
 
 def open_pull_request_heads(repo: str) -> set[str]:
