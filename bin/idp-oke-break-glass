@@ -1384,11 +1384,17 @@ for want in order:
                and all(c.get("ready") for c in (p["status"].get("containerStatuses") or []))]
     on_bad = [p for p in pods if backs(p) and p["spec"].get("nodeName") == bad
               and p["status"].get("phase") == "Running"]
-    if on_good:
-        print(f"# skip {want}: already has {len(on_good)} ready backend(s) on {good}")
-        continue
     if not on_bad:
-        print(f"# skip {want}: nothing of it on {bad} either")
+        print(f"# skip {want}: nothing of it on {bad}")
+        continue
+    if on_good:
+        # A stranded pod is still an endpoint of the Service, so the gateway keeps sending it
+        # traffic that goes nowhere. mumchimp.com came back at two requests in three for exactly
+        # this reason after the API was rescued: one storefront replica served, the other was a
+        # black hole. Removing it needs no room -- it is not being brought back, it is being
+        # taken out of rotation, and the Deployment reschedules it if and when there is space.
+        for q in on_bad:
+            print(f'EVICT {q["metadata"]["namespace"]} {q["metadata"]["name"]} {want} blackhole-endpoint')
         continue
     p = on_bad[0]
     c, m = req(p)
@@ -1417,7 +1423,7 @@ PYPLAN
   echo "--- the plan"
   cat "$TMP/plan.txt"
 
-  out=$(grep -cE '^(YIELD|MOVE) ' "$TMP/plan.txt" || true)
+  out=$(grep -cE '^(YIELD|MOVE|EVICT) ' "$TMP/plan.txt" || true)
   if [ "${out:-0}" -eq 0 ]; then
     echo "ok    routed-backend-rescue nothing both stranded and affordable; the lines above say why"
     return 0
@@ -1433,6 +1439,12 @@ PYPLAN
     echo "--- rescuing $svc ($c $m) from $bad"
     step "rescue-$pod" $K -n "$ns" delete pod "$pod" --wait=false
   done < <(grep '^MOVE ' "$TMP/plan.txt" || true)
+
+  # a black-hole endpoint costs nothing to remove and is never left in rotation
+  while read -r _ ns pod svc _; do
+    echo "--- taking $svc out of rotation on $bad: $pod answers nothing the gateway can reach"
+    step "evict-$pod" $K -n "$ns" delete pod "$pod" --wait=false
+  done < <(grep '^EVICT ' "$TMP/plan.txt" || true)
 
   step "rescue-settle" sleep 45
   show rescued $K get pods -A -o wide --field-selector spec.nodeName="$good"

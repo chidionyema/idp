@@ -138,3 +138,30 @@ def test_yields_happen_before_the_rescue():
 def test_a_yield_prints_the_way_back():
     """Reversible, and the receipt says how."""
     assert "restore with: kubectl -n $ns scale deploy/$name --replicas=" in body()
+
+
+def test_a_stranded_peer_is_evicted_not_skipped():
+    """Half a service is still a broken service.
+
+    After the first rescue run mumchimp.com answered two requests in three. The API had moved,
+    but one storefront replica was still on the cordoned node and still an endpoint of the
+    Service, so the gateway kept sending it traffic that went nowhere. The first version skipped
+    a service that had any ready backend on the good node, which left exactly that black hole in
+    rotation. Removing it costs no room: the pod is not being brought back, it is being taken out
+    of the endpoint list.
+    """
+    b = body()
+    assert "EVICT" in b, "no eviction path for a stranded peer"
+    assert "already has" not in b, (
+        "a service with a good peer is still skipped wholesale"
+    )
+    assert "blackhole-endpoint" in b
+
+
+def test_eviction_needs_no_room():
+    """The room check must not gate an eviction, or the black hole survives a full node."""
+    b = body()
+    branch = b[b.index("if on_good:") : b.index("blackhole-endpoint")]
+    assert "free_c" not in branch and "free_m" not in branch, (
+        "eviction is gated on capacity it does not need"
+    )
