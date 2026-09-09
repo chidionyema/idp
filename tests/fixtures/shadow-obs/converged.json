@@ -1,0 +1,1 @@
+{"kind":"Deployment","metadata":{"name":"wm-x","namespace":"default"},"ready":true,"requiredReplicas":1,"availableReplicas":1,"readyReplicas":1,"probes":{"readiness":"pass"},"tests":[]}

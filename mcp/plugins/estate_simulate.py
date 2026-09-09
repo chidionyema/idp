@@ -413,4 +413,39 @@ def _live_graders(source):
             "detail": f"laws folded {len(outcomes)} rule outcome(s)",
         }
 
-    return {"admission": admission, "laws": laws}
+    def converge():
+        """Grade 'does the change actually converge if applied?' from the shadow dimension's own
+        observation (MUM-288 converge row, W2.1/W2.2). The observation is a JSON file the shadow
+        vcluster executor produced after applying the change -- it never exists on the MCP server's
+        say-so. When none is supplied the change has not been proved to run anywhere real, so the
+        verdict is UNKNOWN, never SAFE: a change whose convergence is unproven is not executable
+        through this door."""
+        raw_path = os.environ.get("ESTATE_MCP_SHADOW_OBSERVATION", "")
+        if not raw_path:
+            return {
+                "verdict": "UNKNOWN",
+                "detail": "no shadow observation supplied; convergence unproven",
+            }
+        verify = base / "bin" / "idp-shadow-verify"
+        if not verify.is_file():
+            return {"verdict": "UNKNOWN", "detail": "bin/idp-shadow-verify not present"}
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(verify), raw_path],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except Exception as exc:  # noqa: BLE001 - a grader that could not run is UNKNOWN
+            return {"verdict": "UNKNOWN", "detail": f"converge could not run: {exc}"}
+        detail = (proc.stderr or "").strip()[-400:] or proc.stdout.strip()[-400:]
+        if proc.returncode == 0:
+            return {"verdict": "SAFE", "detail": detail or "shadow converged"}
+        if proc.returncode == 1:
+            return {"verdict": "UNSAFE", "detail": detail or "shadow did not converge"}
+        return {
+            "verdict": "UNKNOWN",
+            "detail": detail or "shadow observation unreadable",
+        }
+
+    return {"admission": admission, "laws": laws, "converge": converge}
