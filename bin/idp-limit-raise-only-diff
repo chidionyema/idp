@@ -31,7 +31,10 @@ living object; the workload file does not carry it).
 Exit 0 pass, 1 refuse, 2 BLIND (a file could not be read or isn't a Workload).
 """
 import argparse
+import os
+import subprocess
 import sys
+import tempfile
 
 import yaml
 
@@ -145,12 +148,71 @@ def _amount(text):
     return num * mult.get(u, 1.0)
 
 
+def _resolve_pr_blobs(base_ref, path):
+    """Return (old_yaml, new_yaml) for the single changed workload `path` in the cwd checkout.
+
+    This gate compares two FULL YAML trees, never a hunk -- a nested limit value's ancestry cannot
+    be trusted from a diff hunk (the whole reason this gate exists). So its --pr form asks git for
+    the file at the PR's base ref and at the working head, and grades those blobs exactly as
+    --old/--new grades two local files. A runner without the base blob cannot fake it (LAW 28).
+    """
+    old = subprocess.run(["git", "show", f"{base_ref}:{path}"],
+                         capture_output=True, text=True)
+    if old.returncode != 0:
+        raise RuntimeError(f"cannot resolve {base_ref}:{path} -- shallow/absent (git show rc "
+                           f"{old.returncode}); fetch {base_ref} or it cannot be graded")
+    try:
+        new = open(path, encoding="utf-8").read()
+    except OSError as e:
+        raise RuntimeError(f"cannot read head file {path}: {e}") from e
+    return old.stdout, new
+
+
+def _tmp(text):
+    """Write YAML to a temp file and return its path."""
+    fd, name = tempfile.mkstemp(suffix=".yaml")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return name
+
+
 def main(argv):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--old", required=True, help="the workload file before the change")
-    ap.add_argument("--new", required=True, help="the workload file after the change")
+    ap.add_argument("--old", help="the workload file before the change")
+    ap.add_argument("--new", help="the workload file after the change")
+    ap.add_argument("--pr", help="grade a pull request's single workload change by number")
+    ap.add_argument("--base", default="origin/main", help="the base ref for the --pr old blob")
     a = ap.parse_args(argv)
-    ok, why = grade(a.old, a.new)
+
+    if a.pr:
+        files = subprocess.run(["gh", "pr", "diff", a.pr, "--name-only"],
+                               capture_output=True, text=True, timeout=120)
+        if files.returncode != 0:
+            print(f"BLIND   limit  cannot read the files of #{a.pr}: {(files.stderr or '').strip()[:120]}")
+            return 2
+        changed = [f for f in files.stdout.splitlines()
+                   if f.endswith((".yaml", ".yml")) and "kustomization" not in f.lower()]
+        if len(changed) != 1:
+            print(f"BLIND   limit  change touches {len(changed)} workload files, not exactly one: {changed}")
+            return 2
+        path = changed[0]
+        try:
+            old_c, new_c = _resolve_pr_blobs(a.base, path)
+        except RuntimeError as e:
+            print(f"BLIND   limit  {e}")
+            return 2
+        oldf = _tmp(old_c); newf = _tmp(new_c)
+        try:
+            ok, why = grade(oldf, newf)
+        finally:
+            for f in (oldf, newf):
+                try: os.unlink(f)
+                except OSError: pass
+    else:
+        if not a.old or not a.new:
+            print("usage: idp-limit-raise-only-diff --old OLD --new NEW | --pr N", file=sys.stderr)
+            return 2
+        ok, why = grade(a.old, a.new)
     if ok is None:
         print(f"BLIND   limit  {why}")
         return 2
