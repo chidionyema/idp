@@ -73,7 +73,17 @@ data:
             {
                 "model": model,
                 "messages": [{"role": "user", "content": "Reply with the word ready."}],
-                "max_tokens": 8,
+                # 2026-09-09: this was 8, and against a reasoning model 8 is unusable. MiniMax-M3
+                # -- the model the judgment lane points at -- spends its budget on reasoning
+                # tokens before it emits a single content token, so the probe reported
+                # `lane=judgment model=minimax latency_ms=281 empty completion` for hours while
+                # the lane was healthy. Measured through this same router, same prompt, same key:
+                #   max_tokens=8    928ms  finish=length  content='\n\n'
+                #   max_tokens=64  1322ms  finish=stop    content="\n\n\U0001f31f\n\nIs there something..."
+                #   max_tokens=512 1145ms finish=stop    content='\n\nAlive'
+                # A probe that cannot pass against the model it grades is not a probe. 512 costs
+                # a fraction of a cent a run and is what a real answer costs anyway.
+                "max_tokens": 512,
                 "temperature": 0,
                 # Names this call in the trace store so it is separable from the founder's real
                 # conversations in the Boardroom dashboard rather than inflating them.
@@ -103,10 +113,22 @@ data:
             return False, (time.monotonic() - started) * 1000.0, type(e).__name__
         latency_ms = (time.monotonic() - started) * 1000.0
         choices = payload.get("choices") or []
-        content = (choices[0].get("message", {}).get("content") or "").strip() if choices else ""
+        message = choices[0].get("message", {}) if choices else {}
+        content = (message.get("content") or "").strip()
+        finish = choices[0].get("finish_reason") if choices else None
+        if not content and finish == "length":
+            # Not silence: the budget ran out before any content token. On a reasoning model that
+            # means the ceiling above is too low for the lane, and saying "empty completion" here
+            # sends the next session hunting a vendor outage that is not happening.
+            reasoning = (message.get("reasoning_content") or "").strip()
+            return False, latency_ms, (
+                "budget exhausted before any content token (finish=length, %d reasoning chars); "
+                "raise max_tokens for this lane" % len(reasoning)
+            )
         if not content:
-            # 200 with nothing in it is silence, which is exactly what the founder reported.
-            return False, latency_ms, "empty completion"
+            # 200 with nothing in it and the model saying it finished is silence, which is
+            # exactly what the founder reported.
+            return False, latency_ms, "empty completion (finish=%s)" % finish
         return True, latency_ms, "%d chars" % len(content)
 
     def _gauge(name, value, lane, at_nano):
