@@ -167,11 +167,9 @@ spec:
             - name: CYRUS_BASE_URL
               value: "https://cyrus.${ESTATE_ZONE}"
             # The estate router's lane key for this consumer (bin/idp-estate-seed ROUTER_PLAN row
-            # `cyrus`). OpenCode reads it as {env:LITELLM_API_KEY} in the provider block of
-            # configmap.yaml; no vendor key ever reaches this pod (LAW 34).
-            - name: LITELLM_API_KEY
-              valueFrom:
-                secretKeyRef: { name: cyrus-router, key: LITELLM_API_KEY }
+            # `cyrus`) is a mounted file at /secrets/router (secrets-not-from-env-vars); the
+            # entrypoint exports it as LITELLM_API_KEY and OpenCode reads {env:LITELLM_API_KEY}
+            # in the provider block of configmap.yaml. No vendor key reaches this pod (LAW 34).
             - name: LITELLM_BASE_URL
               value: http://litellm.llm.svc:4000/v1
           volumeMounts:
@@ -188,6 +186,9 @@ spec:
               readOnly: true
             - name: github-secret
               mountPath: /secrets/github
+              readOnly: true
+            - name: router-secret
+              mountPath: /secrets/router
               readOnly: true
             - name: webhook-secret
               mountPath: /secrets/webhook
@@ -247,6 +248,9 @@ spec:
         - name: github-secret
           secret:
             secretName: cyrus-github
+        - name: router-secret
+          secret:
+            secretName: cyrus-router
         - name: webhook-secret
           secret:
             secretName: cyrus-webhook
