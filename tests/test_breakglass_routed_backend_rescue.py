@@ -12,6 +12,9 @@ than left to pod priority, which had observability/langfuse-web at infrastructur
 the shop at zero with no class at all.
 """
 
+import json
+import sys
+import tempfile
 import re
 import subprocess
 from pathlib import Path
@@ -233,34 +236,184 @@ def test_rank_is_never_read_as_a_sacrifice_list():
     )
 
 
+def plan(pods, order_yaml=None, svcs=()):
+    """Run the playbook's own plan generator over crafted cluster state and return its lines.
+
+    The plan block is lifted out of the script and run as itself, so what is graded is the code
+    that runs in the break-glass job, not a paraphrase of it in a test."""
+    src = SCRIPT.read_text()
+    a = src.index("<<'PYPLAN'") + len("<<'PYPLAN'")
+    b = src.rindex("PYPLAN")
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "plan.py").write_text(src[a:b])
+        (d / "pods.json").write_text(json.dumps({"items": pods}))
+        (d / "svcs.json").write_text(json.dumps({"items": list(svcs)}))
+        (d / "good.json").write_text(
+            json.dumps(
+                {"status": {"allocatable": {"cpu": "5808m", "memory": "20445Mi"}}}
+            )
+        )
+        (d / "order.yaml").write_text(
+            order_yaml
+            or (ROOT / "platform" / "ingress-recovery-order.yaml").read_text()
+        )
+        out = subprocess.run(
+            [
+                sys.executable,
+                str(d / "plan.py"),
+                str(d / "order.yaml"),
+                str(d / "pods.json"),
+                str(d / "svcs.json"),
+                str(d / "good.json"),
+                "bad-node",
+                "good-node",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    return out.stdout.splitlines()
+
+
+def _svc(ns, name):
+    """A Service selecting `app: <name>`; the plan reads a routed backend's pods through it."""
+    return {
+        "metadata": {"namespace": ns, "name": name},
+        "spec": {"selector": {"app": name}},
+    }
+
+
+def _pod(ns, name, node, cpu="10m", mem="32Mi", phase="Running", ready=True, app=None):
+    return {
+        "metadata": {"namespace": ns, "name": name, "labels": {"app": app or name}},
+        "spec": {
+            "nodeName": node,
+            "containers": [{"resources": {"requests": {"cpu": cpu, "memory": mem}}}],
+        },
+        "status": {"phase": phase, "containerStatuses": [{"ready": ready}]},
+    }
+
+
 def test_a_workload_is_not_matched_by_bare_prefix():
-    # `external-secrets` prefixes `external-secrets-cert-controller` and `external-secrets-webhook`
-    src = _plan_source()
-    assert "def owned_by" in src
-    ns = {}
-    exec(src[src.index("def owned_by") :].split("\ndef yield_sources")[0], ns)
-    owned = ns["owned_by"]
-    pod = lambda n: {"metadata": {"namespace": "external-secrets", "name": n}}
-    assert owned(
-        pod("external-secrets-74866d8fb8-nxd88"), "external-secrets", "external-secrets"
+    # `external-secrets` prefixes `external-secrets-cert-controller` and `external-secrets-webhook`.
+    # Matched by bare prefix, the plan believed the secrets controller had a healthy peer on the
+    # serving node when it had none at all, and emitted an eviction where a rescue was needed.
+    lines = plan(
+        [
+            _pod("external-secrets", "external-secrets-74866d8fb8-nxd88", "bad-node"),
+            _pod(
+                "external-secrets",
+                "external-secrets-cert-controller-84498f9656-v44ts",
+                "good-node",
+            ),
+            _pod(
+                "external-secrets",
+                "external-secrets-webhook-656ffd67c9-dzx26",
+                "good-node",
+            ),
+        ]
     )
-    assert not owned(
-        pod("external-secrets-webhook-656ffd67c9-kfhns"),
-        "external-secrets",
-        "external-secrets",
+    moved = [ln for ln in lines if ln.startswith("MOVE ") and "nxd88" in ln]
+    assert moved, (
+        f"the only secrets controller is on the dead node and must be moved: {lines}"
     )
-    assert not owned(
-        pod("external-secrets-cert-controller-84498f9656-v44ts"),
-        "external-secrets",
-        "external-secrets",
+    assert not [ln for ln in lines if ln.startswith("EVICT ") and "nxd88" in ln], (
+        "a cert-controller is not a peer of the controller"
     )
-    assert owned(
-        pod("external-secrets-webhook-656ffd67c9-kfhns"),
-        "external-secrets",
-        "external-secrets-webhook",
+
+
+def test_a_statefulset_ordinal_is_still_the_same_workload():
+    lines = plan(
+        [_pod("observability", "signoz-0", "bad-node")],
+        order_yaml="order:\n  - observability/signoz\ninternal:\n  - observability/signoz\n",
     )
-    assert owned(pod("signoz-0"), "external-secrets", "signoz"), (
-        "a StatefulSet ordinal is generated too"
+    assert any(ln.startswith("MOVE ") and "signoz-0" in ln for ln in lines), lines
+
+
+def test_a_pending_pod_on_no_node_gets_room_made_for_it():
+    # the storefront API after hermes-agent-gateway preempted it: Pending, on no node at all
+    api = _pod(
+        "prospector",
+        "prospector-store-api-ccc7689f-84vlb",
+        None,
+        cpu="100m",
+        mem="256Mi",
+        phase="Pending",
+        ready=False,
+        app="prospector-store-api",
+    )
+    api["spec"]["nodeName"] = None
+    filler = _pod(
+        "hermes-agent",
+        "hermes-agent-gateway-746b6dbbb5-x45b5",
+        "good-node",
+        cpu="100m",
+        mem="20000Mi",
+    )
+    superset = _pod(
+        "observability",
+        "superset-6d765f966d-z8b9w",
+        "good-node",
+        cpu="25m",
+        mem="1024Mi",
+        app="superset",
+    )
+    lines = plan(
+        [api, filler, superset],
+        svcs=[
+            _svc("prospector", "prospector-store-api"),
+            _svc("observability", "superset"),
+        ],
+    )
+    assert any(ln.startswith("YIELD observability superset") for ln in lines), lines
+    assert any(ln.startswith("ROOM prospector prospector-store-api") for ln in lines), (
+        lines
+    )
+
+
+def test_the_storefront_is_never_yielded_to_seat_its_own_api():
+    # the rank-based version proposed exactly this against the live cluster on 2026-09-09
+    api = _pod(
+        "prospector",
+        "prospector-store-api-ccc7689f-84vlb",
+        None,
+        cpu="100m",
+        mem="256Mi",
+        phase="Pending",
+        ready=False,
+        app="prospector-store-api",
+    )
+    api["spec"]["nodeName"] = None
+    web = _pod(
+        "prospector",
+        "prospector-store-web-575559b877-fttml",
+        "good-node",
+        cpu="100m",
+        mem="256Mi",
+        app="prospector-store-web",
+    )
+    filler = _pod(
+        "hermes-agent",
+        "hermes-agent-gateway-746b6dbbb5-x45b5",
+        "good-node",
+        cpu="100m",
+        mem="20100Mi",
+    )
+    lines = plan(
+        [api, web, filler],
+        svcs=[
+            _svc("prospector", "prospector-store-api"),
+            _svc("prospector", "prospector-store-web"),
+        ],
+    )
+    assert any(
+        ln.startswith("# STRANDED prospector/prospector-store-api") for ln in lines
+    ), (
+        f"with nothing sheddable the answer is to say so, not to take the shop down: {lines}"
+    )
+    assert not [ln for ln in lines if ln.startswith("YIELD prospector")], (
+        f"the shop is not room; it is the point: {lines}"
     )
 
 
