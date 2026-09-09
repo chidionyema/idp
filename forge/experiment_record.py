@@ -158,9 +158,15 @@ def render(task: dict, run: dict, rows: list[dict] | None, context: dict) -> str
     elif kind == "export":
         code = run.get("exit_code")
         where = "" if code is None else f" (exit {code})"
+        rehearsal = (
+            " It was a dry run, which would not have pushed one either way."
+            if run.get("dry_run")
+            else ""
+        )
         outcome = (
             f"PASSED both pre-registered gates, then the run failed after them{where}: "
-            "the GPU was billed, the numbers below are real, and no artifact was published."
+            "the GPU was billed, the numbers below are real, and no artifact was "
+            f"published.{rehearsal}"
         )
     elif verdict == "refused":
         outcome = f"REFUSED: {ev.get('refusal') or 'reason not recorded'}. No model left the Forge."
