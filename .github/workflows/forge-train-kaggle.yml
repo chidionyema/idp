@@ -3,8 +3,8 @@
 # a free Kaggle P100/T4 (30 GPU-hours/week) behind the SAME record loop. Spec:
 # docs/specs/2026-09-09-forge-kaggle-second-launcher.md; docs/specs/
 # 2026-09-06-model-forge-edge-runtime.md line 63-64/256 (LAW 34 second launcher).
-# Button: Train a model in the Forge on a free Kaggle GPU.
-# Founder: fires forge/kaggle_app.py which pushes forge/kaggle/notebook.ipynb to Kaggle, polls it
+# button: Train a model in the Forge on a free Kaggle GPU.
+# founder: Fires forge/kaggle_app.py which pushes forge/kaggle/notebook.ipynb to Kaggle, polls it
 # to completion, pulls the real eval.json back, and files the run through the UNCHANGED
 # forge/experiment_record.py as an experiment record on a pull request. A run with no record did
 # not happen. Never fabricates eval: only a real kernel output is recorded.
