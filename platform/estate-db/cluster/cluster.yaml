@@ -38,7 +38,14 @@ spec:
   # ships pgvector -- it is in the image's own build definition (postgres-containers,
   # docker-bake.hcl: extensions = pgaudit, pgvector, pg-failover-slots) -- and pg_trgm is a
   # core contrib module present in every flavour.
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
+  #
+  # Now the estate's own build of that image (platform/estate-db/postgres-partman), which adds
+  # ONE extension the standard image lacks: pg_partman, required by lago/commerce's DB migration
+  # (CREATE EXTENSION pg_partman; without it lago-migrate-db fails 'extension is not available'
+  # and commerce can never install). The custom image apt-get-upgrades the base so it passes the
+  # build-multiarch Trivy gate (the CNPG base carries libssl3/libgnutls30 criticals). Keep the
+  # base line as the `main-` tag the pipeline publishes so image updates flow the estate way.
+  imageName: ghcr.io/chidionyema/postgres-partman:main-6836-da83cf5004c8be0cdbca51d43b559fc349bb94a1
   primaryUpdateStrategy: unsupervised
   priorityClassName: infrastructure-critical
   inheritedMetadata:
