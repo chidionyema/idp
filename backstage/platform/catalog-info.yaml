@@ -514,46 +514,6 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: layer-cyrus
-  title: 'Agent orchestration'
-  description: 'The runtime that proves every engine works and publishes what it saw to the central collector.'
-  annotations:
-    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=cyrus'
-    estate/flux-kustomization: 'cyrus'
-    estate/path: './platform/cyrus'
-    estate/cluster: 'oke'
-  tags: [platform, agents]
-  links:
-    - url: https://signoz.${ESTATE_ZONE}
-      title: 'Live logs and metrics'
-spec:
-  type: platform-layer
-  lifecycle: production
-  owner: group:default/platform
-  system: agents
-  providesApis:
-    - api:default/cyrus-api
-  dependsOn:
-    - component:default/layer-scheduling
-    - component:default/layer-secret-store
----
-apiVersion: backstage.io/v1alpha1
-kind: API
-metadata:
-  name: cyrus-api
-  description: 'Agent orchestration: the HTTP interface, answering at cyrus.${ESTATE_ZONE}.'
-spec:
-  type: openapi
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/agents
-  definition: |
-    # Not published. cyrus answers at cyrus.${ESTATE_ZONE}; this entity
-    # exists so the catalogue records that the interface is reachable and who owns it.
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
   name: layer-dagster
   title: 'The estate clock'
   description: 'Runs the estate''s schedules from the cluster, off the Mac; every run and its logs on one screen.'
