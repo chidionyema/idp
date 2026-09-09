@@ -1,0 +1,44 @@
+# Estate task, spec section 5 tenant 1: route an incoming issue or ticket to a lane.
+# Data: forge/datasets/ticket-lane-triage.jsonl, built from crew ticket history with lane labels
+# (388 tickets that carry exactly one lane:* label). Spec: docs/specs/2026-09-06-model-forge-edge-runtime.md.
+task: ticket-lane-triage
+base: unsloth/Qwen2.5-1.5B-Instruct
+kind: classify
+hypothesis: >
+  A LoRA on Qwen2.5-1.5B reads a ticket's title and the top of its body and names the lane the board
+  actually files it under, at 90% agreement with the label a person put on it, abstaining on at most
+  a third of tickets; Linear then stops leaving 171 issues with no lane and no priority for the
+  founder to sort by hand.
+plain_english: >
+  A small model reads a new ticket and says which lane it belongs in. When it is not sure it says
+  nothing and the ticket waits for a person, which is what happens today anyway.
+prompt_template: |
+  Route this ticket to a lane: 0 platform, 1 process, 2 observability, 3 agents, 4 science, 5 money, 6 security.
+  {input}
+  Lane:
+labels:
+  "0": platform
+  "1": process
+  "2": observability
+  "3": agents
+  "4": science
+  "5": money
+  "6": security
+# Seven lanes, so a uniform guess is 0.14. 0.55 is a wide margin, not a coin flip.
+abstain_below: 0.55
+# Lower than the two-label flake task and honestly so: seven lanes, 388 examples, and the labels
+# are one person's filing, not an outcome the world measured. A run under these numbers is refused
+# and the answer is more labelled tickets, not a lower bar.
+min_agreement: 0.90
+max_abstain: 0.35
+kv_cache_prefix: true
+schema: null
+compute:
+  gpu: T4
+  timeout_s: 3600
+  budget_usd: 1.00
+lora:
+  r: 16
+  alpha: 32
+  epochs: 3
+  lr: 2e-4
