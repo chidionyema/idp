@@ -58,6 +58,17 @@ yield:
   # shape: suspend the schedule, delete the active runs, and print the way back.
   - agent-workforce/agent-workforce
 
+  # 2026-09-09, the same outage, one message later. Founder, verbatim: "energenccy, cyrus is the
+  # wrong tool for us" and "we arenodel agnostic". Cyrus asks for exactly what the storefront API
+  # asks for -- 100m CPU and 256Mi -- and sits at priority 1000 on the only working node, so the
+  # shop was queued behind an agent runner the founder had just called the wrong tool.
+  #
+  # It is also the wrong tool on the estate's own measurement (record 2026-09-09T0548Z): its image
+  # installs only cyrus-ai, and the opencode, codex, cursor and gemini engines its config offers
+  # name binaries that are not in the image. A runner that reaches one vendor is a lane, not the
+  # estate's default. Shedding it costs no capability that was ever proved to exist.
+  - cyrus/cyrus
+
 # Not every casualty of a severed link is a public surface.
 #
 # external-secrets sat on the cordoned node while bitwarden-sdk-server, the thing it calls for
