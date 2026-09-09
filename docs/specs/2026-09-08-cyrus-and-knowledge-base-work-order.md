@@ -262,3 +262,141 @@ naming it, is refused. Fixture pair `tests/fixtures/ships-to-cluster/{bad,good}`
 Founder, 18:47Z: "we get away from claude code and move over to linear and cyrus". Section 1 (Cyrus
 stops rolling every ten minutes) is the prerequisite and runs in parallel with 9.1–9.4. When Cyrus
 holds a pod for an hour, every open order on this page becomes a Linear issue assigned to Cyrus.
+
+## 10. Handed to DeepSeek 2026-09-09 08:50Z: the fence outage, Otto's board hand, the Kaggle root
+
+Founder, 2026-09-09 (record `~/.claude/docs/founder/2026-09-09T0841Z-this-is-for-u-holmesgpt-investigated-alertmanagerclusterfailedtosendalerts-alertmanagerfailedtosendalerts-055798b6.md`
+and the reply after it): the frontier seat does not fight fires; DeepSeek is lead engineer. The findings
+below are measured, the fixes are DeepSeek's, in this order.
+
+### 10.1 Every namespace that dials the public internet says so, and a gate keeps it that way
+
+Measured 2026-09-09T08:43Z: `alertmanager-kps-0` logs `dial tcp 149.154.166.110:443: connect: connection
+timed out` on every Telegram page; blackbox in `monitoring`, k8sgpt in `healing` and the artifact pull in
+`mcp` fail the same way, while `external-secrets` reached Bitwarden at 08:37Z ("no secret found for
+project ... cyrus-linear-client-id"). So the cluster's egress is fine; the fence is the cause. In
+`platform/ns-fences/allowances.yaml` only `robusta` declares `egress_internet: [443]`; `monitoring`,
+`healing` and `mcp` do not, and Calico has enforced since the calico-node pods started 2026-09-08T22:38Z
+(HolmesGPT's "cluster-wide outbound HTTPS broken since 19:30 UTC" is the same event, misattributed to
+OCI). Fix: `egress_internet: [443]` on `monitoring` (Alertmanager to Telegram, blackbox probes), `healing`
+(k8sgpt backend) and `mcp` (the `flux pull artifact` init containers), one pull request. The class of
+mistake, so it never recurs (LAW 45): a `rules.yaml` row, gate `bin/idp-egress-declared`, that reads
+every manifest under `platform/<ns>/` for a public hostname or an `https://` literal outside the estate
+zone and refuses the namespace when `allowances.yaml` grants it no `egress_internet`; fixtures
+`tests/fixtures/egress-declared/{bad,good}`. Done when `AlertmanagerFailedToSendAlerts` clears in the
+Alertmanager UI and a Telegram page from the cluster lands.
+Door (from the UI): Backstage, Investigate page, the alert list shows no `FailedToSendAlerts`; the
+founder's Telegram receives the next P1 page.
+
+### 10.2 Otto files tickets
+
+Measured 2026-09-09: asked "Otto add a ticket to crew board", the door answered "No crew-board tool,
+API, credential, or local file is available in this session". Otto carries `GITHUB_TOKEN` and the
+`github` skill only (`platform/otto-gateway/agent-env.yaml`, hermes-v2 `skills/`). The board is Linear
+(MUM team, Cyrus assignable). Fix: a `linear` skill in hermes-v2 that creates an issue in the MUM team
+with the founder's sentence as title, the transcript excerpt as body and a `Door (from the UI):` line,
+credential a Linear API key born in the human vault (`otto-linear`, one entry, phone door as for
+`cyrus-linear-client-id`), mounted as a file per the Kyverno rule. Spec: `docs/specs/otto-door-hands-and-senses.md`
+crew#768 CP2. Done when the sentence "Otto, ticket this" in Telegram answers with a `MUM-` link that opens.
+Door (from the UI): Telegram, the sentence "Otto, ticket this"; the reply is the Linear link.
+
+### 10.3 The Kaggle root arrives through the phone, never a script
+
+`bin/idp-set-root kaggle` and the `KAGGLE_USERNAME`/`KAGGLE_KEY` repository secrets in
+`.github/workflows/forge-train-kaggle.yml` ask the founder to run a terminal command (LAW 54 breach,
+founder 2026-09-09: never again). Fix: the workflow reads `kaggle-username` and `kaggle-key` from
+Bitwarden Secrets Manager the way `vault-bootstrap.yml` already does (`bin/idp-cloud secret get
+bitwarden-machine`, pinned `bws`, project id from `clusters/oke/estate-config.yaml`), masked into
+`GITHUB_ENV`; the `kaggle)` case is deleted from `bin/idp-set-root`; `forge/kaggle_app.py` names the two
+vault entries in its refusal; the spec lines 62 and 97 of
+`docs/specs/2026-09-09-forge-kaggle-second-launcher.md` follow. Done when a dispatched
+`forge-train-kaggle` run reads the pair and reaches the trainer step.
+Door (from the UI): Bitwarden Secrets Manager on the phone, two entries; then the Backstage button
+"Train a model in the Forge on a free Kaggle GPU".
+
+### 10.4 The catalogue names every front door the cluster serves
+
+`bin/idp-catalogue-drift` failed apply-mode run 34318699115 with `cyrus.mumchimp.com` and
+`sandbox.mumchimp.com` unregistered, because `bin/catalog-platform` (lines 618-628) only emits the
+observability links. Fix: for every host `http_hostnames(src)` returns, emit a first link
+`Open <name>` at `https://<host>`; regenerate, `bin/catalog-platform --check` green. Done when the
+drift row reads `0 unregistered`.
+Door (from the UI): Backstage, the layer's page, the "Open" link at the top opens the running surface.
+
+## 11. Handed to DeepSeek 2026-09-09 09:55Z: the planning seat leaves Claude Code for good
+
+Founder, 2026-09-09: "any harness needs to be future proof and enable all models" (record
+`~/.claude/docs/founder/2026-09-09T0548Z-any-harness-is-future-proof-and-enables-all-models.md`);
+"now focus on geeting us off this stupid harnes for good"; "deepseek is lead enginerr".
+
+**Decision.** The estate's one agent harness is OpenCode on the estate router. It is already
+installed (1.18.20), already the Cyrus engine (PR #2738), already configured at
+`~/.config/opencode/opencode.json` with provider `estate` (`https://llm.<zone>/v1`) and every
+router alias (minimax, deepseek, claude, gemini, groq, openrouter, vision). Claude Code is
+retired as a seat: its laws move into one OpenCode plugin, its subscription becomes one router
+alias among many. pi stays only as a fallback engine for Cyrus; it gains no new extensions.
+Rejected: keeping Claude Code with the read-shunt (still one vendor's harness); writing a new
+harness (LAW 43); porting to pi (single-maintainer tool, no plugin API for permissions).
+
+**11.1 One plugin carries the laws.** `~/.claude/scripts/` is the estate's hook library and
+already speaks one protocol: JSON on stdin, exit 2 or a `permissionDecision: deny` JSON on stdout
+means refused (`hook-run.py`). Build `~/.claude/scripts/opencode/estate-laws.ts` (checked in
+under `claude-estate`, symlinked into `~/.config/opencode/plugin/`) that maps OpenCode's plugin
+hooks onto the same scripts through `hook-run.py`, so no guard is rewritten:
+
+| OpenCode hook | runs (through `python3 $HOME/.claude/scripts/hook-run.py <script>`) |
+|---|---|
+| `tool.execute.before` | scope-guard, config-syntax-guard, dupe-work-fence, pr-cap-guard, rule-guard, ticket-gate, credential-guard, merge-divergence-hook, read-shunt, opa-hook (a refusal throws; OpenCode shows the reason) |
+| `tool.execute.after` | research-capture, slow_commands.py --post |
+| `chat.message` | directive-capture, founder-doc-capture |
+| `experimental.chat.system.transform` | laws-link-guard, canonical-root-guard: prepend `~/AGENTS.md` and the project `AGENTS.md`; `instructions` in opencode.json already carries `{env:HOME}/AGENTS.md` |
+| session idle event (`event` hook, `session.idle`) | opa-hook, secret-scrub, dod-guard, prompt-ledger, close-guard, founder-deliver, blocker-guard, credential-guard, session-recorder --hook, estate-checkpoint, session_emit.py --hook |
+| plugin load | sync-guard, peer-loop-fence, memory-loop, session-recorder --restore-hook |
+
+The payload the plugin writes to stdin is the Claude Code shape (`tool_name`, `tool_input`,
+`session_id`, `cwd`, `hook_event_name`) with OpenCode's tool names mapped: `bash`→`Bash`,
+`read`→`Read`, `edit`→`Edit`, `write`→`Write`, `glob`→`Glob`, `grep`→`Grep`. That mapping is
+one dict in the plugin and the only harness-specific code in the estate.
+
+**11.2 Proof both ways, in CI.** `tests/test_opencode_estate_laws.py` in `claude-estate` starts
+`opencode run` headless against the router with `OPENCODE_CONFIG` pointing at a fixture config,
+and grades: a bare `kubectl get pods` is refused with rule-guard's text; a `git add -A` is
+refused; a 400-line file read comes back as a read-shunt digest; a normal `ls` runs. Fixtures
+`tests/fixtures/opencode-laws/{bad,good}.jsonl`. A guard that refuses `ls` is an outage (LAW 38)
+and fails the test.
+
+**11.3 Model routing is the router's, not the harness's.** Default model in opencode.json stays
+`estate/deepseek` for the planning seat (founder: DeepSeek is lead engineer). `estate/claude` is
+the Anthropic Max subscription behind LiteLLM's `claude` alias; no `anthropic` provider block in
+opencode.json, ever (R34). `bin/idp-harness-gate` (new, one row in `rules.yaml`, fixtures
+`tests/fixtures/harness/{bad,good}.json`) refuses an opencode.json that names a provider other
+than `estate`, or a model alias the router's `llm/config.yaml` does not declare.
+
+**11.4 Retire the Claude Code seat.** After 11.2 is green: delete the `hooks` block from
+`~/.claude/settings.json` (the scripts stay; they are the library), remove Claude Code from
+`~/.claude/scripts/rebuild/PREREQUISITES.md` and `drills/dependencies.json`, add OpenCode; the
+ONE SESSION rule in `~/.claude/CLAUDE.md` is reworded to "one planning seat, OpenCode". The
+`session-recorder`, `dod-guard` and `founder-deliver` ledgers keep their paths so history reads
+continuously across the switch.
+
+**Door (from the UI):** Backstage → Catalog → `harness` component (new
+`backstage/platform/catalog-info.yaml` entry emitted by `bin/catalog-platform` from
+`~/.config/opencode/opencode.json`) → link **Open the planning seat** → the OpenCode web UI
+(`opencode web`, published at `code.<zone>` behind the gateway's OIDC per OUR SSO POLICY). The
+founder types a task there; the same laws answer him as in this session; the model picker lists
+the router's aliases only. Progress door: Linear issue MUM-297 "Harness exit" (DeepSeek creates
+it; Cyrus picks it up from the label).
+
+**Done, in commands.**
+```
+opencode run -m estate/deepseek "run: kubectl get pods -A"        # → refused, rule-guard text, exits non-zero
+opencode run -m estate/deepseek "read bin/catalog-gen"            # → read-shunt digest, not the file
+pytest ~/.claude/tests/test_opencode_estate_laws.py               # → green
+python3 bin/idp-harness-gate ~/.config/opencode/opencode.json    # → OK
+jq '.hooks' ~/.claude/settings.json                              # → null
+curl -sI https://code.<zone>/ | head -1                          # → 302 to the OIDC gateway, never 200 anonymous
+```
+
+**Optimised:** naive 14 steps (one adapter per guard) → 5 steps: one plugin, one payload
+mapper, one test file, one gate row, one settings edit. Bottleneck is 11.2's headless run
+against the live router; batch all four grades into one `opencode run` session. No console step.
