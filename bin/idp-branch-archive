@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Turn every finished or abandoned branch into a tag, then delete the branch. Nothing is lost.
+
+Founder, 2026-09-09: "if branches have been merged into main then they should be deleted, we need
+better cleanup mechanism without risk of losing work and all this constant admin and stress".
+
+Measured that night: the repository carried 189 branches beside main. GitHub's own
+delete-branch-on-merge was already on, so none of them was a merged pull request's head; 184
+carried patches that were never on main, 5 were patch-for-patch already on main, and 4 had an
+open pull request. The clutter is abandoned work, and deleting abandoned work by hand is the
+stress the founder named: every sweep before this one moved tips to `backup/<date>/` branches,
+which is a branch list that only grows.
+
+The mechanism: a branch that is finished (every patch on main), named as a backup, or untouched
+for `--age-days` with no open pull request becomes a tag `archive/<branch>` at its tip and the
+branch is deleted. A tag keeps every commit reachable, so nothing is lost and the branch list
+only holds live work. Restore is one command:
+
+    git push origin refs/tags/archive/<branch>:refs/heads/<branch>
+
+Protected: main, and `flux/*`, which Flux image automation writes and reads as a mailbox.
+Never touched: a branch with an open pull request. Idempotent: a second run over the same
+remote plans nothing. Dry run by default; `--apply` pushes the tags in one push and deletes the
+branches in one push (LAW 55: a summary, never a log). Runs on the estate's clock through
+.github/workflows/branch-archive.yml; the repo slug comes from GITHUB_REPOSITORY or `gh`, never
+from this file (LAW 46).
+"""
+from __future__ import annotations
+
+import argparse
+import collections
+import os
+import subprocess
+import sys
+import time
+
+PROTECTED = frozenset({"main", "HEAD"})
+PROTECTED_PREFIXES = ("flux/",)
+ARCHIVE_BY_NAME = ("backup/", "rescue/")
+AGE_DAYS = 14
+
+
+def git(*args: str) -> str:
+    return subprocess.run(["git", *args], check=True, text=True, capture_output=True).stdout
+
+
+def open_pull_request_heads(repo: str) -> set[str]:
+    out = subprocess.run(
+        ["gh", "api", "--paginate", f"repos/{repo}/pulls?state=open&per_page=100", "--jq", ".[].head.ref"],
+        check=True, text=True, capture_output=True,
+    ).stdout
+    return set(out.split())
+
+
+def repo_slug() -> str:
+    slug = os.environ.get("GITHUB_REPOSITORY")
+    if slug:
+        return slug
+    return subprocess.run(
+        ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+        check=True, text=True, capture_output=True,
+    ).stdout.strip()
+
+
+def plan(remote: str, age_days: int, now: float) -> tuple[list[tuple[str, str, str, str]], collections.Counter]:
+    git("fetch", "--quiet", "--prune", remote, f"+refs/heads/*:refs/remotes/{remote}/*", "+refs/tags/*:refs/tags/*")
+    heads = git("for-each-ref", "--format=%(refname:short) %(objectname) %(committerdate:unix)",
+                f"refs/remotes/{remote}/").splitlines()
+    tags = {t for t in git("tag", "--list", "archive/*").split()}
+    open_heads = open_pull_request_heads(repo_slug())
+    kept: collections.Counter = collections.Counter()
+    out: list[tuple[str, str, str, str]] = []
+    for line in heads:
+        ref, sha, ts = line.split()
+        branch = ref[len(remote) + 1:]
+        if branch in PROTECTED or branch.startswith(PROTECTED_PREFIXES):
+            kept["protected"] += 1
+            continue
+        if branch in open_heads:
+            kept["open pull request"] += 1
+            continue
+        if branch.startswith(ARCHIVE_BY_NAME):
+            reason = "named as a backup"
+        else:
+            unmerged = sum(1 for c in git("cherry", f"{remote}/main", ref).splitlines() if c.startswith("+"))
+            age = int((now - int(ts)) // 86400)
+            if unmerged == 0:
+                reason = "every patch is on main"
+            elif age >= age_days:
+                reason = f"{unmerged} patch(es) not on main, untouched {age} days"
+            else:
+                kept[f"live, touched under {age_days} days ago"] += 1
+                continue
+        tag = f"archive/{branch}"
+        if tag in tags and git("rev-parse", f"{tag}^{{commit}}").strip() != sha:
+            tag = f"archive/{branch}@{sha[:7]}"
+        out.append((branch, sha, reason, tag))
+    return out, kept
+
+
+def apply(remote: str, rows: list[tuple[str, str, str, str]]) -> None:
+    existing = set(git("tag", "--list", "archive/*").split())
+    refspecs = [f"{sha}:refs/tags/{tag}" for _b, sha, _r, tag in rows if tag not in existing]
+    if refspecs:
+        git("push", "--quiet", remote, *refspecs)
+    git("push", "--quiet", remote, "--delete", *[b for b, *_ in rows])
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--apply", action="store_true", help="push the tags and delete the branches; default is a dry run")
+    ap.add_argument("--age-days", type=int, default=AGE_DAYS, help=f"a branch untouched this long with no open pull request is archived (default {AGE_DAYS})")
+    ap.add_argument("--remote", default="origin")
+    a = ap.parse_args(argv)
+    rows, kept = plan(a.remote, a.age_days, time.time())
+    by_reason = collections.Counter(r.split(",")[0] if "patch(es)" not in r else "unmerged and untouched" for _b, _s, r, _t in rows)
+    verb = "archived" if a.apply else "would archive"
+    lines = [f"branch-archive  {verb} {len(rows)} branch(es); kept {sum(kept.values())}"]
+    lines += [f"  {verb}: {n} {why}" for why, n in sorted(by_reason.items())]
+    lines += [f"  kept: {n} {why}" for why, n in sorted(kept.items())]
+    for b, sha, reason, tag in rows:
+        lines.append(f"  {b} -> {tag} ({sha[:7]}; {reason})")
+    if rows:
+        lines.append("  restore any of them: git push origin refs/tags/archive/<branch>:refs/heads/<branch>")
+    text = "\n".join(lines)
+    print(text)
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a", encoding="utf-8") as f:
+            f.write("```\n" + text + "\n```\n")
+    if a.apply and rows:
+        apply(a.remote, rows)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

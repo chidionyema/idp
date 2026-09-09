@@ -406,3 +406,14 @@ drills:
       From the node's identity a POST to the apprise service at /notify/founder-telegram
       returns 200 and the message reaches the founder's phone, so the publish-once alert
       channel is graded end to end, never by its manifests applying cleanly.
+
+  - name: branch-archive
+    owner: idp
+    workflow: branch-archive.yml
+    schedule: "41 3 * * 1"
+    max_age_hours: 170
+    proves: >-
+      Every branch that is finished (each patch on main), named backup/* or rescue/*, or
+      untouched for fourteen days with no open pull request has become a tag archive/<branch>
+      and left the branch list, so the list holds only live work and nothing is ever lost
+      (founder 2026-09-09: "better cleanup mechanism without risk of losing work").

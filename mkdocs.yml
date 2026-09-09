@@ -122,6 +122,7 @@ nav:
       - Security policy: tutorials/demo/security-policy.md
       - EU AI Act: tutorials/demo/ai-act.md
       - LAW 32 gate: tutorials/demo/law32.md
+      - Branch archive: tutorials/demo/branch-archive.md
       - Actions pinned: tutorials/demo/actions-pinned.md
       - Scheduling immunity: tutorials/demo/scheduling-immunity.md
       - Front-door login drill: tutorials/demo/idp-login-drill.md
@@ -208,6 +209,7 @@ nav:
       - Security policy: how-to/onboarding/security-policy.md
       - EU AI Act: how-to/onboarding/ai-act.md
       - LAW 32 gate: how-to/onboarding/law32.md
+      - Branch archive: how-to/onboarding/branch-archive.md
       - Actions pinned: how-to/onboarding/actions-pinned.md
       - Front-door login drill: how-to/onboarding/idp-login-drill.md
       - Portability drill: how-to/onboarding/idp-portability-drill.md

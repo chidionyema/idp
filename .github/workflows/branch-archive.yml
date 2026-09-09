@@ -1,0 +1,53 @@
+# button: Archive stale branches
+# founder: Every branch that is finished, or untouched for two weeks with no pull request, becomes a tag and leaves the branch list. Nothing is lost: the tag holds the tip and one command brings the branch back.
+#
+# Founder, 2026-09-09: "if branches have been merged into main then they should be deleted, we
+# need better cleanup mechanism without risk of losing work and all this constant admin and
+# stress". GitHub's delete-branch-on-merge already removes a merged pull request's head; this
+# is the mechanism for everything else, so no person ever sweeps branches by hand again.
+#
+# bin/idp-branch-archive holds the policy and the receipt. Weekly on the estate's clock
+# (drills/catalogue.yaml, dispatched by platform/drills/drill-dispatcher.yaml when GitHub's cron
+# does not fire); a hand dispatch with mode=preview prints the plan on the run summary and
+# changes nothing. Empty mode applies, exactly as the clock does (catalog-render precedent).
+#
+# The token is the workflow's own GITHUB_TOKEN with contents: write -- no credential is minted
+# or stored for this (R52). It pushes tags and deletes branches; it cannot touch a protected
+# branch, and never tries: main and flux/* are excluded in the script.
+name: branch-archive
+on:
+  schedule:
+    - cron: '41 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "preview (the plan on the run summary, nothing changes) or apply; empty applies, as the clock does"
+        required: false
+        default: ''
+        type: string
+permissions:
+  contents: write
+  pull-requests: read
+concurrency:
+  group: branch-archive
+  cancel-in-progress: false
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: archive finished and abandoned branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          git config user.name "estate-bot"
+          git config user.email "estate-bot@users.noreply.github.com"
+          if [ "$MODE" = preview ]; then
+            python3 bin/idp-branch-archive
+          else
+            python3 bin/idp-branch-archive --apply
+          fi
