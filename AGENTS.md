@@ -88,6 +88,7 @@ deprecate them. Eradicate them."
 | A package manager may mint its own webhook Service without a catalogue label, and an undeclared door in the same namespace still may not | R38 -- a guard that refuses correct work is an outage | `kyverno` | tests/fixtures/catalogue-entity-runtime-service-blind | tests/fixtures/catalogue-entity-runtime-service |
 | Every priorityClassName a workload names is a PriorityClass this tree declares or one of the two Kubernetes ships; a class that exists nowhere is refused at admission, not at apply | incident 2026-09-08, nodesoftware-operator | `python3 bin/idp-priority-class-exists` | tests/fixtures/priority-class-exists/bad | tests/fixtures/priority-class-exists/good |
 | A state-changing estate MCP tool (an @mcp.tool() named execute_* or exec_*) is refused unless the same module registers a simulate twin to propose its change first (MUM-288, ADR 0006) | MUM-288, ADR 0006 | `python3 bin/idp-simulate-gate` | tests/fixtures/simulate-grade/bad | tests/fixtures/simulate-grade/good |
+| The founder's agent reaching its event bus is a red row, never a silence: an observation that does not prove otto-gateway can reach NATS fails (bin/idp-agent-event-bus), so a founder agent that cannot be heard is visible, not a void (MUM-283) | MUM-283, LAW 28 | `python3 bin/idp-agent-event-bus` | tests/fixtures/agent-event-bus/unreachable.json | tests/fixtures/agent-event-bus/reachable.json |
 <!-- END GENERATED RULES TABLE -->
 
 Rules that are already types or tools, and so need no row: compose files must parse
