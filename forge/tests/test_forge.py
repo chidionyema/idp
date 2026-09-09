@@ -333,3 +333,95 @@ def test_modal_spend_gate_refuses_at_or_over_cap_and_allows_below():
             shutil.rmtree(d2, ignore_errors=True)
     finally:
         shutil.rmtree(d, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("record", "kind"),
+    [
+        # the pre-launch cost/spend gate: modal_app returns before train.py runs
+        (
+            {
+                "seconds": 0,
+                "usd": 0.0,
+                "eval": {"verdict": "refused", "refusal": "over budget"},
+            },
+            "budget",
+        ),
+        # train.py graded the held-out split and raised SystemExit
+        (
+            {
+                "seconds": 900,
+                "usd": 0.15,
+                "eval": {
+                    "held_out": 160,
+                    "agreement": 0.80,
+                    "abstain_rate": 0.05,
+                    "verdict": "refused",
+                    "refusal": "held-out agreement 0.8000 below 0.95",
+                },
+            },
+            "gate",
+        ),
+        # run 34401515600: both gates met, the GGUF export died afterwards
+        (
+            {
+                "seconds": 978,
+                "usd": 0.1603,
+                "exit_code": 1,
+                "eval": {
+                    "held_out": 160,
+                    "agreement": 0.9772727272727273,
+                    "abstain_rate": 0.175,
+                    "verdict": "passed",
+                    "refusal": None,
+                },
+            },
+            "export",
+        ),
+    ],
+)
+def test_experiment_record_names_which_of_the_three_refusals_it_was(record, kind):
+    """2026-09-09 regression guard, run 34401515600.
+
+    `verdict: refused` covers three different events and the record described all three as
+    the first: a run that met both gates and then lost the model to the GGUF export was
+    filed as "stopped before it started, because it could have cost more than its budget".
+    The kind is read back from the record's own shape and lands in the front matter, so a
+    reader (and this test) grades a parsed field, not a sentence.
+    """
+    import experiment_record as er
+
+    task = yaml.safe_load((Path(__file__).parents[1] / "task.yaml").read_text())
+    run = {
+        "task": task["task"],
+        "dry_run": False,
+        "max_steps": -1,
+        "gpu": "T4",
+        "trace": None,
+        "artifact": None,
+        "verdict": "refused",
+        "dataset": {"rows": 799, "train": 639, "eval": 160, "sha256": "cd" * 32},
+        **record,
+    }
+    ctx = {
+        "stamp": "20260909T2048Z",
+        "sha": "deadbeef",
+        "run_url": None,
+        "langfuse_host": None,
+        "task_path": "forge/task.yaml",
+        "data_path": None,
+    }
+    front = yaml.safe_load(er.render(task, run, None, ctx).split("---")[1])
+    assert er.refusal_kind(run, run["eval"]) == kind
+    assert front["refusal_kind"] == kind
+    assert front["exit_code"] == record.get("exit_code")
+    assert front["verdict"] == "refused"
+    assert front["agreement"] == run["eval"].get("agreement")
+
+
+def test_a_run_that_was_not_refused_has_no_refusal_kind():
+    import experiment_record as er
+
+    shipped = {"verdict": "shipped", "seconds": 900, "eval": {"verdict": "passed"}}
+    assert er.refusal_kind(shipped, shipped["eval"]) is None
+    assert er.refusal_kind({"verdict": "dry-run"}, {}) is None

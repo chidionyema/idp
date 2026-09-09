@@ -106,6 +106,9 @@ def run_forge(
         "dry_run": dry_run,
         "max_steps": max_steps,
         "gpu": gpu,
+        # what train.py exited with: a refusal after the gates (the GGUF export, the oras
+        # push) leaves eval.json saying `passed` and is only visible here
+        "exit_code": proc.returncode,
         "seconds": round(time.time() - started),
         "usd": usd_for(gpu, time.time() - started),
         "trace": None,
@@ -187,6 +190,7 @@ def main(
             "dry_run": dry_run,
             "max_steps": max_steps,
             "gpu": plan["gpu"],
+            "exit_code": None,  # train.py never ran
             "seconds": 0,
             "usd": 0.0,
             "budget_usd": plan["budget_usd"],

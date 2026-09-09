@@ -3,6 +3,8 @@ experiment: 20260909T0137Z-ci-flake-triage
 task: ci-flake-triage
 base: unsloth/Qwen2.5-1.5B-Instruct
 verdict: refused
+refusal_kind: export
+exit_code: 1
 dry_run: true
 held_out: 160
 agreement: 0.9847328244274809
@@ -21,12 +23,12 @@ run_url: https://github.com/chidionyema/idp/actions/runs/34298732378
 
 # Forge experiment 20260909T0137Z: ci-flake-triage
 
-REFUSED: None. No model left the Forge.
+PASSED both pre-registered gates, then the run failed after them (exit 1): the GPU was billed, the numbers below are real, and no artifact was published. It was a dry run, which would not have pushed one either way.
 
 ## In plain English
 
 A small model reads the end of a failed GitHub check's log and says whether the check merely stumbled (the same code passed on a rerun) or something really broke. When it is not sure it says nothing and a person takes over.
- The run was stopped before it started, because it could have cost more than its budget.
+ It got 98% of the ones it answered right and declined to answer 18% of them, which clears the bar we set beforehand -- but the run then failed while packaging the model up, so there is nothing to use yet.
 
 ## 1. Hypothesis
 
@@ -96,6 +98,8 @@ second gate.
 | min_agreement met | True |
 | max_abstain met | True |
 | verdict | refused |
+| which refusal | export |
+| process exit code | 1 |
 | refusal |  |
 
 160 held-out rows resolve agreement to about ±1.9% (95%, normal approximation), so a reading within that band of 95% is not a settled pass or fail; label more rows before trusting it.

@@ -22,8 +22,26 @@ sentence with `plain_english:`), then seven sections for engineers:
 6. **Provenance**: trace, artifact reference, dataset hash, commit, run.
 7. **Reproduce**: the three commands, with this run's arguments.
 
+**The three refusals, and why the record names which one.** `verdict: refused` covers three
+different events, and they are not interchangeable to anyone reading a result. `refusal_kind:
+budget` is the pre-launch cost or spend gate: nothing was billed and no model was trained.
+`refusal_kind: gate` is the held-out grading: the model was trained, missed `min_agreement` or
+`max_abstain`, and was thrown away on purpose. `refusal_kind: export` is everything after the
+gates -- the GGUF conversion or the registry push -- so the GPU was billed, the numbers in the
+record are real measurements, and the model was still not published. Until 2026-09-09 the renderer
+described all three as the first, which put a false sentence into the record for run 34401515600
+(both gates met, GGUF export died, filed as "stopped before it started, because it could have cost
+more than its budget"). `refusal_kind` and `exit_code` are read back from the shape
+`forge/modal_app.py` leaves and are graded by `forge/tests/test_forge.py`.
+
+**Corrections.** A record is never quietly rewritten. A record corrected after the fact is
+regenerated from the run's own archived `forge-run.json` under `runs/<github run id>.json`, at its
+original stamp (`--stamp`), so anyone can re-run the renderer over the same input and get the same
+file byte for byte; the commit that replaces it says what was wrong. The first correction is run
+34401515600, 2026-09-09.
+
 **What a task may try.** Anything. `kind`, `base`, model size and GPU are the task file's choice;
-the Forge refuses a run before launch on one ground only, the `compute.budget_usd` in the task
+before launch the Forge refuses on one ground only, the `compute.budget_usd` in the task
 file against the worst case the GPU and `timeout_s` could bill (`forge/common.py` `cost_gate`,
 founder 2026-09-06). Every record carries the actual `usd` next to the budget.
 
