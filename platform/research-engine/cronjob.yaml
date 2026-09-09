@@ -71,11 +71,12 @@ spec:
               # Pinned to the commit that built it, so the image the cluster runs can be read
               # in the repository it came from. Built by the research-engine repository's own
               # image workflow on a GitHub runner, never on the founder's Mac (LAW 31).
-              # 2026-09-08: sha-80040fd was amd64-only, but the OKE node the job schedules on is
-              # arm64, so every hourly run died ErrImagePull -> DeadlineExceeded. The image
-              # workflow now builds multi-arch (linux/amd64,linux/arm64); e7a7369 is the merge
-              # on feat/cp1-skeleton whose index carries both.
-              image: ghcr.io/chidionyema/research-engine:sha-e7a7369cfa7f543db6eb50d68778a02130e17e99
+              # 2026-09-08: sha-80040fd was amd64-only but the OKE node is arm64, so the job
+              # never pulled; the workflow now builds multi-arch and e7a7369 carried both arches.
+              # 2026-09-09: 56a4d1a adds the DDL change that stops the engine self-minting its
+              # roles (they are the CNPG operator's now, platform/estate-db); the image index
+              # still carries linux-amd64 + linux-arm64.
+              image: ghcr.io/chidionyema/research-engine:sha-56a4d1ab0b20cad13c74864d8157bd565795a21a
               command: ["/bin/sh", "-c"]
               args:
                 - |
