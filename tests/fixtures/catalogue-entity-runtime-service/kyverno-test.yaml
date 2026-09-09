@@ -1,0 +1,30 @@
+# The both-ways proof that platform/edge/catalogue-entity-exception.yaml lets a package manager
+# mint its own webhook Service without letting an undeclared door into the same namespace.
+#
+# require-catalogue-entity runs at Enforce, so a rule that is right in principle and wrong at one
+# name is an outage, not a warning (R38). On 2026-09-08 it refused the Service Crossplane creates
+# for each provider, and the whole cloud control loop installed zero CRDs as a result.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-catalogue-entity-runtime-service
+policies:
+  - ../../../platform/edge/require-catalogue-entity.yaml
+resources:
+  - services.yaml
+exceptions:
+  - ../../../platform/edge/catalogue-entity-exception.yaml
+results:
+  # The permitting case: the package manager's own Service reaches the cluster.
+  - policy: require-catalogue-entity
+    rule: service-names-its-entity
+    kind: Service
+    resources: [crossplane-system/oracle-provider-family-oci]
+    result: skip
+  # The refusing case: a Service in the same namespace that names no entity is still refused. An
+  # exception written as a namespace would pass the case above and fail this one.
+  - policy: require-catalogue-entity
+    rule: service-names-its-entity
+    kind: Service
+    resources: [crossplane-system/crossplane-console]
+    result: fail
