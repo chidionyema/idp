@@ -133,6 +133,7 @@ nav:
       - Estate security scan: tutorials/demo/estate-security-scan.md
       - Estate security rollout: tutorials/demo/estate-security-rollout.md
       - Spec gate: tutorials/demo/spec-gate.md
+      - Estate digest worker: tutorials/demo/estate-digest-worker.md
       - Estate diagram: tutorials/demo/estate-diagram.md
       - Spend breaker: tutorials/demo/spend-breaker.md
       - Notifications: tutorials/demo/notify.md
@@ -251,6 +252,7 @@ nav:
       - Incident register: how-to/onboarding/incident-register.md
       - Estate clocks: how-to/onboarding/estate-clocks.md
       - Human secret door: how-to/onboarding/human-vault.md
+      - Estate digest worker: how-to/onboarding/estate-digest-worker.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
