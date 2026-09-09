@@ -53,6 +53,7 @@ spec:
         - router-spend
         - registries-conf
         - ns-fences
+        - cni-resync
         default: diagnose
   steps:
   - id: dispatch

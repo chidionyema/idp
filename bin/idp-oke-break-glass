@@ -1265,6 +1265,35 @@ YAML
   done
 }
 
+# cni-resync (2026-09-09, incident: OKE re-rolled kube-flannel on both nodes at 10:34Z; from then on
+# a pod on one node reached a pod on the other only some of the time, both CoreDNS replicas sat on
+# .221 while the router sat on .197, and every second router call died at Traefik's 30s timeout).
+# Calico is the dataplane (pods carry Calico IPAM addresses; flannel's leases are unused), so the
+# repair is Calico re-programming its VXLAN routes on EVERY node, not one. The session identity
+# (agents:agent-reader) cannot touch kube-system by design (WJ.5), so this is the door.
+# Receipt: one TCP probe pinned to each node against the router, its cache and each CoreDNS pod
+# on the OTHER node, and an nslookup pinned to each node. A probe that cannot reach is a FAIL.
+pb_cni_resync() {
+  local nodes n i=0 targets ip
+  $K get ds -n kube-system calico-node >/dev/null 2>&1 || { echo "FAIL  cni-resync: no calico-node DaemonSet in kube-system"; FAILED="$FAILED guard-ds"; return 1; }
+  step "calico-restart" $K -n kube-system rollout restart ds calico-node
+  step "calico-rolled" $K -n kube-system rollout status ds calico-node --timeout=240s
+  nodes=$($K get nodes -o jsonpath='{.items[*].metadata.name}')
+  for n in $nodes; do
+    i=$((i+1)); targets=""
+    for ip in $($K get pods -A -o jsonpath='{range .items[?(@.spec.nodeName!="'"$n"'")]}{.metadata.namespace}/{.metadata.labels.app}/{.status.podIP}{"\n"}{end}' 2>/dev/null | grep -E '^(llm/litellm/|llm/litellm-cache/|llm/redis/)' | cut -d/ -f3); do
+      [ -n "$ip" ] && targets="$targets $ip:4000 $ip:6379"
+    done
+    for ip in $($K get pods -n kube-system -l k8s-app=kube-dns -o jsonpath='{range .items[?(@.spec.nodeName!="'"$n"'")]}{.status.podIP}{"\n"}{end}' 2>/dev/null); do
+      targets="$targets $ip:53"
+    done
+    echo "--- node $n -> other node: ${targets:-nothing on the other node}"
+    [ -n "$targets" ] && tcp_probe "cni-probe-$i" "$n" kube-system "$targets"
+    dns_probe "cni-dns-$i" "$n" kubernetes.default.svc.cluster.local
+  done
+  show calico-node $K get pods -n kube-system -l k8s-app=calico-node -o wide
+}
+
 # tigera-reset: roll back a wedged tigera-operator flannel->calico cutover WITHOUT losing the
 # datapath, and without helm-uninstall (founder 2026-09-06, and the estate warning in
 # platform/calico/README.md: never release a wedged CNI through helm). Two reasons helm is the
@@ -1341,7 +1370,7 @@ pb_tigera_reset() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences cni-resync"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-parity) pb_otto_parity ;;
@@ -1366,6 +1395,7 @@ case "${1:-}" in
   registries-conf) pb_registries_conf ;;
   ns-fences) pb_ns_fences ;;
   tigera-reset) pb_tigera_reset ;;
+  cni-resync) pb_cni_resync ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
 [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }
