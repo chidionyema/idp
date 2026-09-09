@@ -21,6 +21,9 @@ from collections import Counter
 import yaml
 
 MIN_EXAMPLES = 500  # forge/common.py; the split refuses under it
+THIN_SUPPORT = (
+    30  # forge/common.py; under this many held-out rows a per-label reading is noise
+)
 
 # forge/modal_app.py writes `verdict: refused` for three different events, and until
 # 2026-09-09 this file described all three as the first one -- so run 34401515600, which
@@ -99,6 +102,103 @@ def table(pairs: list[tuple[str, object]]) -> str:
     return "\n".join(out)
 
 
+def envelope_sections(task: dict, ev: dict) -> str:
+    """What it can do, what it cannot do reliably, where the edge is and how to move it.
+
+    Empty for a run whose eval.json predates the envelope (2026-09-09); a record never
+    invents a section it has no measurement for.
+    """
+    env = ev.get("envelope")
+    if not env:
+        return ""
+    per = env["per_label"]
+    names = task["labels"]
+    can = (
+        f"Of {ev.get('held_out')} held-out rows it had never seen, it answered "
+        f"**{env['answered']}** and declined **{env['declined']}**. Of the ones it answered "
+        f"it was right **{env['correct']}** times and wrong **{env['wrong']}**. That is the "
+        "duty it can take: the declined rows still cost a person or a frontier call."
+    )
+    base = ev.get("baseline") or {}
+    learned = []
+    if ev.get("lift_over_untrained") is not None:
+        learned.append(
+            f"the same model before a single gradient step scored "
+            f"{base.get('agreement', 0):.1%} on these rows, so training moved it "
+            f"{ev['lift_over_untrained']:+.1%}"
+        )
+    if ev.get("majority") and ev.get("lift_over_majority") is not None:
+        learned.append(
+            f"answering `{ev['majority']['label']}` every time would score "
+            f"{ev['majority']['agreement']:.1%}, so it is {ev['lift_over_majority']:+.1%} "
+            "over guessing"
+        )
+    per_label = table(
+        [
+            (
+                f"`{lab}` = {names.get(lab, lab)}",
+                f"{r['support']} rows, answered {r['answered']}, right {r['correct']}, "
+                + (
+                    "caught {:.0%}".format(r["recall_answered"])
+                    if r["recall_answered"] is not None
+                    else "never answered"
+                )
+                + (" -- too few rows to judge" if r["thin"] else ""),
+            )
+            for lab, r in sorted(per.items())
+        ]
+    )
+    cannot = [
+        f"`{lab}` = {names.get(lab, lab)}: {r['support']} held-out rows is under "
+        f"{THIN_SUPPORT}, so this run says nothing settled about it"
+        for lab, r in sorted(per.items())
+        if r["thin"]
+    ] + [
+        f"`{lab}` = {names.get(lab, lab)}: caught {r['recall_answered']:.0%} of the time, "
+        "so more than half of them get the wrong answer"
+        for lab, r in sorted(per.items())
+        if not r["thin"]
+        and r["recall_answered"] is not None
+        and r["recall_answered"] < 0.5
+    ]
+    curve = ev.get("frontier") or []
+    curve_table = "\n".join(
+        ["| abstain_below | answers | of held-out | agreement |", "|---|---|---|---|"]
+        + [
+            f"| {p['abstain_below']}{' (this run)' if abs(p['abstain_below'] - task['abstain_below']) < 1e-9 else ''} "
+            f"| {p['answered']} | {p['coverage']:.0%} | {p['agreement']:.1%} |"
+            for p in curve
+        ]
+    )
+    moves = "\n".join(f"- {m}" for m in ev.get("next_move", []))
+    return f"""
+
+## 5a. What it can do
+
+{can}
+
+{" and ".join(learned).capitalize() + "." if learned else ""}
+
+{per_label}
+
+## 5b. What it cannot do reliably
+
+{chr(10).join("- " + c for c in cannot) if cannot else "- Nothing this run's held-out rows can single out."}
+
+## 5c. Where the edge is, and how to move it
+
+The task file abstains under a {task["abstain_below"]} margin. That is one point on a curve,
+and the curve is the edge: every row of it is the same model, re-read at a different
+confidence bar. Lower bars answer more and are wrong more.
+
+{curve_table}
+
+Which lever moves it forward, read off the numbers above:
+
+{moves}
+"""
+
+
 def render(task: dict, run: dict, rows: list[dict] | None, context: dict) -> str:
     ev = run.get("eval", {})
     ds = run.get("dataset") or {}
@@ -124,6 +224,10 @@ def render(task: dict, run: dict, rows: list[dict] | None, context: dict) -> str
         "max_abstain": task["max_abstain"],
         "dataset_sha256": ds.get("sha256"),
         "dataset_rows": ds.get("rows"),
+        "lift_over_untrained": ev.get("lift_over_untrained"),
+        "lift_over_majority": ev.get("lift_over_majority"),
+        "answered": (ev.get("envelope") or {}).get("answered"),
+        "wrong": (ev.get("envelope") or {}).get("wrong"),
         "usd": run.get("usd"),
         "budget_usd": run.get("budget_usd"),
         "trace": run.get("trace"),
@@ -328,6 +432,7 @@ second gate.
     }
 
 {resolution}
+{envelope_sections(task, ev)}
 
 ## 6. Provenance
 

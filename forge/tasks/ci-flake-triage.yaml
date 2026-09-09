@@ -21,6 +21,10 @@ labels:
   "1": flake
 abstain_below: 0.80
 min_agreement: 0.95
+# a model that cannot beat always-answering the commonest label learned nothing
+min_lift_over_majority: 0.05
+# a label caught less than half the time is a label the model is not useful on
+min_recall_per_label: 0.5
 max_abstain: 0.20
 kv_cache_prefix: true
 schema: null
