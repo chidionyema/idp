@@ -66,7 +66,41 @@ def test_parks_rather_than_deletes():
 
 def test_proves_the_cross_node_hop_from_each_node():
     b = body()
-    assert "spec.nodeName!=" in b, "targets must be pods on the OTHER node"
+    # selection moved from a jsonpath filter to a python pass over the pod list when the label
+    # filter was found to silently select nothing; the property graded is unchanged
+    assert 'spec.get("nodeName") == node' in b, "targets must be pods on the OTHER node"
     assert "tcp_probe " in b
     assert "dns_probe " in b
     assert "rollout restart ds calico-node" in b
+
+
+def test_a_node_with_no_target_fails_closed():
+    """No target is not a pass.
+
+    The first version selected probe targets by two app labels plus kube-dns. Once the ingress
+    band-aid had moved everything onto one node, the far node matched nothing, printed
+    "nothing on the other node" and skipped the probe entirely -- so the playbook reported a
+    clean run having never tested the direction that was severed. Absence of evidence was being
+    read as evidence.
+    """
+    b = body()
+    assert "nothing on the other node" not in b, (
+        "an empty target list still reads as a pass"
+    )
+    assert "flanoff-targets" in b, (
+        "no fail-closed branch for a node with no cross-node target"
+    )
+    assert 'FAILED="$FAILED flanoff-targets' in b, (
+        "the empty-target branch does not record a failure"
+    )
+
+
+def test_targets_are_not_a_hardcoded_app_list():
+    """Any addressable pod on the other node proves the hop; two named apps do not."""
+    b = body()
+    assert "llm/litellm-cache/" not in b, (
+        "target selection is still pinned to specific app labels"
+    )
+    assert "hostIP" in b, (
+        "hostNetwork pods are not excluded, so a probe could pass without crossing the overlay"
+    )

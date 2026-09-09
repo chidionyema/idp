@@ -1334,7 +1334,24 @@ pb_gateway_one_node() {
     step "dns-ready-after-$pod" $K -n kube-system rollout status deploy/coredns --timeout=180s
   done
 
-  step gateway-settle $K -n edge wait --for=condition=Ready pod -l app.kubernetes.io/name=traefik --timeout=180s
+  # NOT `wait --for=condition=Ready pod -l ...`: that waits for EVERY matching pod, and this
+  # playbook deliberately leaves the second replica Pending (maxSkew 1, DoNotSchedule, one node
+  # cordoned). Run 34376826143 failed on exactly that, calling the intended state a fault. What
+  # has to be true is narrower: a gateway pod is Ready on the node that holds the router.
+  out=""
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    out=$($K get pods -n edge -l app.kubernetes.io/name=traefik \
+      -o jsonpath='{range .items[?(@.spec.nodeName=="'"$good"'")]}{range .status.containerStatuses[*]}{.ready}{end}{"\n"}{end}' 2>/dev/null | grep -c '^true$' || true)
+    [ "${out:-0}" -ge 1 ] && break
+    sleep 10
+  done
+  if [ "${out:-0}" -ge 1 ]; then
+    echo "ok    gateway-settle ${out} gateway pod(s) Ready on $good"
+  else
+    echo "FAIL  gateway-settle no gateway pod became Ready on $good within 120s"; FAILED="$FAILED gateway-settle"
+  fi
+  out=$($K get pods -n edge -l app.kubernetes.io/name=traefik -o jsonpath='{range .items[?(@.status.phase=="Pending")]}{.metadata.name}{" "}{end}' 2>/dev/null)
+  [ -n "$out" ] && echo "ok    gateway-pending-expected ${out}is Pending by design while $bad is cordoned; node-uncordon restores the spread"
 
   echo "--- nothing of the ingress path may remain on $bad"
   out=$($K get pods -A -o jsonpath='{range .items[?(@.spec.nodeName=="'"$bad"'")]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' 2>/dev/null \
@@ -1408,15 +1425,40 @@ print("every pod address is Calico IPAM")
 
   nodes=$($K get nodes -o jsonpath='{.items[*].metadata.name}')
   for n in $nodes; do
-    i=$((i+1)); targets=""
-    for ip in $($K get pods -A -o jsonpath='{range .items[?(@.spec.nodeName!="'"$n"'")]}{.metadata.namespace}/{.metadata.labels.app}/{.status.podIP}{"\n"}{end}' 2>/dev/null | grep -E '^(llm/litellm/|llm/litellm-cache/)' | cut -d/ -f3); do
-      [ -n "$ip" ] && targets="$targets $ip:4000 $ip:6379"
-    done
-    for ip in $($K get pods -n kube-system -l k8s-app=kube-dns -o jsonpath='{range .items[?(@.spec.nodeName!="'"$n"'")]}{.status.podIP}{"\n"}{end}' 2>/dev/null); do
-      targets="$targets $ip:53"
-    done
-    echo "--- node $n -> the other node: ${targets:-nothing on the other node}"
-    [ -n "$targets" ] && tcp_probe "flanoff-probe-$i" "$n" kube-system "$targets"
+    i=$((i+1))
+    # Targets used to be two hardcoded app labels (llm/litellm, llm/litellm-cache) plus kube-dns.
+    # When those all sat on one node, the far node found nothing, printed "nothing on the other
+    # node" and probed nothing -- the playbook then passed without ever testing the direction that
+    # was broken. A silent pass on the failing direction is worse than no probe. So: any running
+    # pod on the other node with its own address (podIP != hostIP, i.e. not hostNetwork) and a
+    # declared container port is a legitimate cross-node target, and finding none is a FAIL.
+    targets=$($K get pods -A -o json 2>/dev/null | python3 -c '
+import json, sys
+node = sys.argv[1]
+out = []
+for pod in json.load(sys.stdin).get("items", []):
+    spec, st = pod.get("spec", {}), pod.get("status", {})
+    if spec.get("nodeName") == node or st.get("phase") != "Running":
+        continue
+    ip = st.get("podIP")
+    if not ip or ip == st.get("hostIP"):
+        continue
+    for c in spec.get("containers", []):
+        for port in c.get("ports", []) or []:
+            n = port.get("containerPort")
+            if n and str(port.get("protocol", "TCP")).upper() == "TCP":
+                out.append("%s:%d" % (ip, n))
+                break
+        break
+print(" ".join(out[:6]))
+' "$n")
+    if [ -z "$targets" ]; then
+      echo "FAIL  flanoff-targets-$i node $n found no addressable pod on any other node; the cross-node hop was never tested"
+      FAILED="$FAILED flanoff-targets-$i"
+    else
+      echo "--- node $n -> the other node: $targets"
+      tcp_probe "flanoff-probe-$i" "$n" kube-system "$targets"
+    fi
     dns_probe "flanoff-dns-$i" "$n" kubernetes.default.svc.cluster.local
   done
   show flannel-ds $K get ds -n kube-system kube-flannel-ds -o wide

@@ -94,3 +94,42 @@ def test_does_not_uncordon():
     assert "uncordon" not in b.replace("node-uncordon", ""), (
         "uncordoning re-schedules the gateway onto the severed node and restores the outage"
     )
+
+
+def test_settle_does_not_wait_on_every_replica():
+    """The second gateway replica is Pending on purpose.
+
+    topologySpreadConstraints on the gateway are maxSkew 1 with DoNotSchedule, so cordoning one
+    of two nodes leaves the second replica unschedulable. `kubectl wait --for=condition=Ready
+    pod -l <label>` waits for EVERY pod that matches, so it waits for that one too and times
+    out. Break-glass run 34376826143 did exactly that: the move worked, ten real completions
+    came back 200, and the run still printed
+    `FAIL gateway-settle rc=1 error: timed out waiting for the condition on pods/traefik-...`.
+    A playbook that reports its own successful outcome as a failure teaches the next reader to
+    ignore its verdict, so the settle check reads the good node only.
+    """
+    b = body()
+    assert (
+        "wait --for=condition=Ready pod -l app.kubernetes.io/name=traefik" not in b
+    ), (
+        "gateway-settle waits on every traefik pod, including the replica this playbook "
+        "intentionally leaves Pending"
+    )
+    assert "gateway-settle" in b
+
+
+def test_settle_asserts_a_ready_gateway_on_the_good_node():
+    """Narrower, and still fail-closed: the node serving traffic must carry a Ready gateway."""
+    b = body()
+    settle = b[b.index("gateway-settle") - 600 :]
+    assert '@.spec.nodeName=="\'"$good"\'"' in settle, (
+        "the settle check does not select by the good node"
+    )
+    assert "FAIL  gateway-settle" in settle, "gateway-settle has no failing branch"
+
+
+def test_pending_replica_is_named_not_hidden():
+    """Silence would be the other failure: the Pending pod is real and the reader is told why."""
+    b = body()
+    assert "gateway-pending-expected" in b
+    assert "node-uncordon" in b, "nothing tells the reader how the spread is restored"
