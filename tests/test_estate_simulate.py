@@ -192,3 +192,12 @@ def test_the_grader_door_off_means_every_proposal_is_unknown_not_safe():
     p = sim.simulate_change("x", graders={}, cfg=cfg(door=False), now=T0)
     assert p["verdict"] == "UNKNOWN"
     assert all(r["verdict"] == "UNKNOWN" for r in p["grader_results"].values())
+
+
+def test_the_live_admission_grader_is_fail_closed_without_a_readable_inline_manifest():
+    """The MCP tool's live admission grader only dry-runs an inline manifest; a git-ref source
+    (or nothing) is UNKNOWN, never SAFE -- a real proposal is not provable against admission
+    when there is nothing for the chain to see."""
+    g = sim._live_graders("ref: clusters/oke (no inline manifest)")
+    out = g["admission"]()
+    assert out["verdict"] == "UNKNOWN" and "inline manifest" in out["detail"]
