@@ -5,10 +5,10 @@
 # version 1.0.0 on it, one canary node at a time, with a 15-minute pause between
 # canary verification and the rest of the rollout.
 #
-# Suspended: this CR is shipped dark until the operator source lands and the
-# controller image is in ghcr. `metadata.annotations.estate.estate.io/suspend: "true"`
-# is the operator's switch: while it is true, the controller's reconcile loop
-# leaves the CR alone. The empirical-proof commit flips this annotation.
+# Live: the operator source has landed and the controller image is in ghcr, so
+# the switch `metadata.annotations.estate.estate.io/suspend` is now "false" for
+# this canary. While true the controller's reconcile loop left the CR alone;
+# the empirical-proof commit flips it and quotes the real `uname -r` probe.
 #
 # The verification spec probes `uname -r` on the probe pod; the success
 # condition is the regex that catches a gvisor kernel suffix. The PR body for
@@ -27,10 +27,12 @@ metadata:
   name: runsc-canary
   namespace: nodesoftware-operator
   annotations:
-    # The CR is dark until the operator's image exists. Same shape as every
-    # suspended Flux row (clusters/oke/platform.yaml: otto-gateway,
-    # temporal). The empirical-proof commit flips this to "false".
-    estate.estate.io/suspend: "true"
+    # Live: the operator image is in ghcr (main-6356 runsc handler, main-6325
+    # controller) and the controller is Running. Canary node 10.0.148.221
+    # carries sandbox.estate.io/gvisor=true. This is the empirical-proof
+    # commit the design reserved: unsuspend so the operator installs runsc
+    # and the probe quotes a real `uname -r` on the canary.
+    estate.estate.io/suspend: "false"
     estate.estate.io/policy-summary: >-
       Asks the NodeSoftwareOperator to install runsc on one canary node
       (label sandbox.estate.io/gvisor=true). Canary of 1, pause 15m. The
