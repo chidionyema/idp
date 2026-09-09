@@ -71,12 +71,11 @@ spec:
               # Pinned to the commit that built it, so the image the cluster runs can be read
               # in the repository it came from. Built by the research-engine repository's own
               # image workflow on a GitHub runner, never on the founder's Mac (LAW 31).
-              # 2026-09-08: sha-80040fd was amd64-only but the OKE node is arm64, so the job
-              # never pulled; the workflow now builds multi-arch and e7a7369 carried both arches.
-              # 2026-09-09: 56a4d1a adds the DDL change that stops the engine self-minting its
-              # roles (they are the CNPG operator's now, platform/estate-db); the image index
-              # still carries linux-amd64 + linux-arm64.
-              image: ghcr.io/chidionyema/research-engine:sha-56a4d1ab0b20cad13c74864d8157bd565795a21a
+              # 2026-09-09: 56a4d1a made the engine stop self-minting its roles; d99469e ships
+              # the profiles/ directory, which is what the subjects in the questions ConfigMap
+              # ask for -- without it every run died "no such lane: <subject> (have: none)".
+              # Index carries linux-amd64 + linux-arm64.
+              image: ghcr.io/chidionyema/research-engine:sha-d99469e002c3a931f42785f39c11e936fff71f10
               command: ["/bin/sh", "-c"]
               args:
                 - |
