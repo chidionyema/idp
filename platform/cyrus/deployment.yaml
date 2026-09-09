@@ -9,6 +9,9 @@ metadata:
     app.kubernetes.io/part-of: idp
 spec:
   replicas: 1
+  # The home volume is a ReadWriteOnce block volume (below): a rolling update would hold the
+  # old pod on it while the new one waits forever for the same claim.
+  strategy: { type: Recreate }
   selector:
     matchLabels:
       app.kubernetes.io/name: cyrus
@@ -174,6 +177,9 @@ spec:
             - name: webhook-secret
               mountPath: /secrets/webhook
               readOnly: true
+            - name: linear-oauth
+              mountPath: /secrets/linear-oauth
+              readOnly: true
             - name: worktrees
               mountPath: /worktrees
             - name: repos
@@ -187,12 +193,17 @@ spec:
           # /status, not /health: cyrus serves no /health. EdgeWorker registers GET /status
           # and GET /version and the shared server registers the webhook and OAuth routes;
           # nothing answers /health, so both probes were 404 from the first second.
+          # A socket, not GET /status: while the entrypoint runs `cyrus self-auth` the same port
+          # is served by a one-route server that answers only /callback, and a 404 on /status
+          # there would have the kubelet kill the pod and the Service drop the endpoint the
+          # consent redirect has to reach. Both phases listen on 3456; the socket is the probe
+          # they share.
           livenessProbe:
-            httpGet: { path: /status, port: 3456 }
+            tcpSocket: { port: 3456 }
             initialDelaySeconds: 30
             periodSeconds: 30
           readinessProbe:
-            httpGet: { path: /status, port: 3456 }
+            tcpSocket: { port: 3456 }
             initialDelaySeconds: 10
             periodSeconds: 10
           resources:
@@ -232,10 +243,26 @@ spec:
         # write to are explicit volumes rather than a writable image.
         - name: tmp
           emptyDir: {}
+        # ~/.cyrus/config.json is where `cyrus self-auth` saves the Linear OAuth token and where
+        # cyrus writes each refreshed one back (EdgeWorker.js:5215). On an emptyDir every restart
+        # threw the token away and asked the founder to consent again; a claim keeps it, and the
+        # entrypoint carries linearWorkspaces across the fresh copy of the git config.
         - name: home
-          emptyDir: {}
+          persistentVolumeClaim: { claimName: cyrus-home }
+        # optional: the pod comes up on the GitHub transport before the Bitwarden item exists.
+        - name: linear-oauth
+          secret: { secretName: cyrus-linear-oauth, optional: true }
         - name: npm-cache
           emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cyrus-home
+  namespace: cyrus
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 1Gi } }
 ---
 apiVersion: v1
 kind: ServiceAccount

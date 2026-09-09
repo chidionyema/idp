@@ -33,6 +33,9 @@ spec:
         # The deprecated alias, kept until the Linear webhook registration is moved to
         # /linear-webhook, so the two changes are never in flight at the same moment.
         - path: { type: Exact, value: /webhook }
+        # Linear redirects the founder's consent here with a one-time code; the code is worthless
+        # without the client secret the pod alone holds, so the route carries no extra check.
+        - path: { type: Exact, value: /callback }
       backendRefs:
         - name: cyrus
           port: 3456
