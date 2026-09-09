@@ -55,3 +55,27 @@ gated) rather than re-explored each time.
 - Pricing (forge/common.py `GPU_USD_PER_HOUR`): T4, L4 = $0.80/hr; L40S = $1.95/hr.
 - Files: `forge/modal_app.py`, `forge/common.py`, `bin/idp-set-root`, `platform/vendors/consoles.yaml`,
   `.github/workflows/forge-train.yml`.
+
+## Why vLLM is the right engine if we ever self-host (PagedAttention / KV cache paging)
+
+A self-hosted serving lane, if stood up, should use vLLM — because of how it solves KV-cache
+memory waste, which is what makes a multi-lane fleet on one GPU viable:
+- The old way pre-allocated one giant contiguous VRAM block per user at max context, wasting
+  ~60-80% of GPU memory (space reserved for 2k tokens when a call uses 10).
+- vLLM borrows OS virtual-memory paging (PagedAttention): the KV cache is broken into small pages
+  mapped dynamically, cutting waste to under ~4%, and continuous batching interleaves many agents'
+  token streams onto the same GPU cores.
+- Net: a single L4/L40S can carry the whole small+moE+heavy tiered fleet without renting many
+  machines; scales to zero when idle.
+
+## A model on THIS MacBook (local inference alternative — founder note 2026-09-09)
+
+Cloud/Modal is not the only host. This MacBook is an Intel i7-8850H with a Radeon Pro 560X
+(**4 GB VRAM only**) and 16 GB RAM — NOT Apple Silicon, so no unified-memory advantage:
+- It can run a small model locally (e.g. a ~1-3B Q4 via llama.cpp/Ollama on CPU) for trivial Tier-1
+  work with zero cloud cost and full privacy.
+- It CANNOT run a 14B (needs ~10 GB VRAM / >16 GB free RAM; 4 GB VRAM and a 16 GB machine don't fit
+  it, and CPU-only a 14B is single-digit tok/s on an i7). Same OS/managed cap would hold.
+- If a Mac-native model is wanted, it needs the machine to become Apple Silicon (M-series, 32GB+)
+  — a CapEx decision, out of scope of the current paid-GPU path. Until then: local small model for
+  Tier-1 trivia at most; heavy tiers stay on managed lanes or a future Modal/self-host serving lane.
