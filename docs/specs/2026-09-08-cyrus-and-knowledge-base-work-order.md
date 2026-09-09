@@ -400,3 +400,72 @@ curl -sI https://code.<zone>/ | head -1                          # → 302 to th
 **Optimised:** naive 14 steps (one adapter per guard) → 5 steps: one plugin, one payload
 mapper, one test file, one gate row, one settings edit. Bottleneck is 11.2's headless run
 against the live router; batch all four grades into one `opencode run` session. No console step.
+
+## 12. Handed to DeepSeek 2026-09-09 10:20Z: the free-token pipeline, and the fixed fee earns its keep
+
+Founder, 2026-09-09, verbatim: "we pay fixed fee for minimax, we need to get usage out of it, else
+is underutilised. Gemini flash is free so prone to running out. if we are going to use free tokens
+we may as well harvest all the options available and design a process for this. we are expanding so
+need to be cost conscious and extract every iota of freebies. that's why we are investing in our
+open source model pipeline and we need to invest in a free tokens pipeline and ensure we are using
+all options available."
+
+**Measured today (router key, 1261-line digest prompt).** The key reaches sixteen aliases and not
+one free open-source lane: no groq alias exists, `openrouter` rejects every model name, `ollama`
+is declared in `llm/config.yaml` but not served, `kimi` answers 429. `gemini` (2.5 flash free tier)
+is the only zero-cost lane that answers. MiniMax-M3 spends every token reasoning on a structured
+prompt and returns 2 chars; MiniMax-M2.7 on the same fixed-fee account answers in 30 s.
+
+**Decision.** LiteLLM is the pipeline; nothing new is written (LAW 43). The router already has
+per-deployment `rpm`/`tpm`, `max_budget`, cooldowns and ordered `fallbacks`. Every model alias the
+estate uses becomes a *tier list* the router walks: free lanes first, the fixed-fee MiniMax lanes
+second (already paid for: their marginal cost is zero and idle capacity is waste), metered lanes
+last and only for the aliases that name them (`claude`, `default`). Rejected: a home-made quota
+tracker (LiteLLM's cooldown on 429 is that tracker); a single "cheap" alias (one lane runs out and
+the estate goes dark, as it did on 2026-09-04 with deepseek).
+
+**12.1 Inventory the free lanes, as rows.** `platform/vendors/free-lanes.yaml`: one row per
+provider with `provider`, `models`, `free_quota` (rpm, tpd or monthly tokens, from the provider's
+published page, dated), `key_env`, `root_status` (`present` when the ExternalSecret exists, else
+`needs-founder-signup`). Seed rows: Groq free tier, OpenRouter `:free` models, Google AI Studio
+(gemini flash), Cerebras free tier, Mistral free tier (La Plateforme), Cloudflare Workers AI free
+allowance, GitHub Models free tier, NVIDIA NIM free credits, SambaNova free tier, Hugging Face
+inference free tier, Ollama on the Mac (local, free, already declared). `bin/idp-free-lanes`
+grades the file against `llm/config.yaml`: every `present` row is a deployment in the router with
+`rpm`/`tpm` set to the published quota, every `needs-founder-signup` row is one FOUNDER ACTION
+line with his numbered steps (founder-blocker `--steps`), never a console instruction in prose.
+Row in `rules.yaml`, fixtures `tests/fixtures/free-lanes/{bad,good}`.
+
+**12.2 Tiered routing in the router.** In `llm/config.yaml`: each estate alias (`cheap`, `worker`,
+`vision`, `embed`, `default`) lists its deployments in tier order, free lanes with `rpm`/`tpm` from
+12.1 so LiteLLM cools a lane down before the provider does; `routing_strategy: usage-based-routing-v2`
+inside a tier; `fallbacks` from the free tier to `minimax_m27` and `minimax` (fixed fee), then to
+metered. `read-shunt`, `sb`, Cyrus and Otto all call `worker` or `cheap`, never a provider alias
+directly. The router key for sessions is allowed the tier aliases only. `minimax_m27` carries
+`reasoning_effort: none` as a default param; `minimax` (M3) is never first for a structured prompt
+(measured above).
+
+**12.3 The freebies are counted, or they are not harvested (LAW 28).** Langfuse already has every
+call. A Dagster job `free_token_harvest` (the one scheduler) runs daily: per lane, tokens served,
+429s, cooldown minutes, and the fixed-fee lanes' utilisation against the plan's allowance. It writes
+`docs/reports/free-tokens/<date>.md` and posts one line to Telegram: `free tokens: N served, M% of
+requests, fixed-fee MiniMax at P% of allowance, lanes cooled: ...`. Any `present` lane at 0 tokens
+for 7 days, or the MiniMax allowance under 50% used, is a row the job names.
+
+**Door (from the UI):** Backstage → Catalog → `llm-router` component → link **Free-token harvest**
+→ the Langfuse dashboard "Lanes" (tokens per lane, 429s, cost = 0 lanes highlighted) and the latest
+`docs/reports/free-tokens/` page in TechDocs. The founder's sign-ups arrive as FOUNDER ACTION
+Telegram messages with steps; he never opens a console unprompted.
+
+**Done, in commands.**
+```
+python3 bin/idp-free-lanes                                  # → OK, N lanes present, M awaiting the founder's root
+curl -s $LITELLM_BASE_URL/models -H "Authorization: Bearer $K" | jq -r '.data[].id' | grep -c -E '^(worker|cheap)$'   # → 2
+printf ... | python3 ~/.claude/scripts/read-shunt.py       # → shunted, model in the free tier or minimax_m27
+dagster job list | grep free_token_harvest                  # → present, described
+ls docs/reports/free-tokens/ | tail -1                      # → today's report
+```
+
+**Optimised:** naive 11 provider integrations → 3 steps: one inventory file the gate reads, one
+router config that walks tiers, one Dagster job that counts. Bottleneck is the founder's sign-ups;
+they are batched into one Telegram message with numbered steps per provider, sent once.
