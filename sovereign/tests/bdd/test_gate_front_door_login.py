@@ -393,8 +393,21 @@ def _oauth2_proxy_in_front(state: dict) -> None:
             )
             es = (p.parent / "external-secret.yaml").read_text()
             if {"type": "Exact", "value": "/callback"} in paths:
-                assert "client_secret" in es, (
-                    f"{p}: route opens /callback but external-secret.yaml pulls no client_secret"
+                # Graded on the parsed ExternalSecrets, not the file's prose: some data entry
+                # must pull a client secret, whatever the vault spells it (client_secret as a
+                # JSON property, or a plain cyrus-linear-client-secret entry since MUM-291).
+                pulled = [
+                    (
+                        e.get("secretKey", "") + " " + str(e.get("remoteRef", {}))
+                    ).replace("-", "_")
+                    for doc in yaml.safe_load_all(
+                        (p.parent / "external-secret.yaml").read_text()
+                    )
+                    if doc and doc.get("kind") == "ExternalSecret"
+                    for e in doc.get("spec", {}).get("data", [])
+                ]
+                assert any("client_secret" in x for x in pulled), (
+                    f"{p}: route opens /callback but no ExternalSecret data entry pulls a client secret"
                 )
             assert "webhook-secret" in es or "webhook_secret" in es, (
                 f"{p}: annotated webhook-hmac-signature but external-secret.yaml pulls no signing secret"
