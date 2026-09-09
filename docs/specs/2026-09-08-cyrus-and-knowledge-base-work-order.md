@@ -262,3 +262,63 @@ naming it, is refused. Fixture pair `tests/fixtures/ships-to-cluster/{bad,good}`
 Founder, 18:47Z: "we get away from claude code and move over to linear and cyrus". Section 1 (Cyrus
 stops rolling every ten minutes) is the prerequisite and runs in parallel with 9.1–9.4. When Cyrus
 holds a pod for an hour, every open order on this page becomes a Linear issue assigned to Cyrus.
+
+## 10. Handed to DeepSeek 2026-09-09 08:50Z: the fence outage, Otto's board hand, the Kaggle root
+
+Founder, 2026-09-09 (record `~/.claude/docs/founder/2026-09-09T0841Z-this-is-for-u-holmesgpt-investigated-alertmanagerclusterfailedtosendalerts-alertmanagerfailedtosendalerts-055798b6.md`
+and the reply after it): the frontier seat does not fight fires; DeepSeek is lead engineer. The findings
+below are measured, the fixes are DeepSeek's, in this order.
+
+### 10.1 Every namespace that dials the public internet says so, and a gate keeps it that way
+
+Measured 2026-09-09T08:43Z: `alertmanager-kps-0` logs `dial tcp 149.154.166.110:443: connect: connection
+timed out` on every Telegram page; blackbox in `monitoring`, k8sgpt in `healing` and the artifact pull in
+`mcp` fail the same way, while `external-secrets` reached Bitwarden at 08:37Z ("no secret found for
+project ... cyrus-linear-client-id"). So the cluster's egress is fine; the fence is the cause. In
+`platform/ns-fences/allowances.yaml` only `robusta` declares `egress_internet: [443]`; `monitoring`,
+`healing` and `mcp` do not, and Calico has enforced since the calico-node pods started 2026-09-08T22:38Z
+(HolmesGPT's "cluster-wide outbound HTTPS broken since 19:30 UTC" is the same event, misattributed to
+OCI). Fix: `egress_internet: [443]` on `monitoring` (Alertmanager to Telegram, blackbox probes), `healing`
+(k8sgpt backend) and `mcp` (the `flux pull artifact` init containers), one pull request. The class of
+mistake, so it never recurs (LAW 45): a `rules.yaml` row, gate `bin/idp-egress-declared`, that reads
+every manifest under `platform/<ns>/` for a public hostname or an `https://` literal outside the estate
+zone and refuses the namespace when `allowances.yaml` grants it no `egress_internet`; fixtures
+`tests/fixtures/egress-declared/{bad,good}`. Done when `AlertmanagerFailedToSendAlerts` clears in the
+Alertmanager UI and a Telegram page from the cluster lands.
+Door (from the UI): Backstage, Investigate page, the alert list shows no `FailedToSendAlerts`; the
+founder's Telegram receives the next P1 page.
+
+### 10.2 Otto files tickets
+
+Measured 2026-09-09: asked "Otto add a ticket to crew board", the door answered "No crew-board tool,
+API, credential, or local file is available in this session". Otto carries `GITHUB_TOKEN` and the
+`github` skill only (`platform/otto-gateway/agent-env.yaml`, hermes-v2 `skills/`). The board is Linear
+(MUM team, Cyrus assignable). Fix: a `linear` skill in hermes-v2 that creates an issue in the MUM team
+with the founder's sentence as title, the transcript excerpt as body and a `Door (from the UI):` line,
+credential a Linear API key born in the human vault (`otto-linear`, one entry, phone door as for
+`cyrus-linear-client-id`), mounted as a file per the Kyverno rule. Spec: `docs/specs/otto-door-hands-and-senses.md`
+crew#768 CP2. Done when the sentence "Otto, ticket this" in Telegram answers with a `MUM-` link that opens.
+Door (from the UI): Telegram, the sentence "Otto, ticket this"; the reply is the Linear link.
+
+### 10.3 The Kaggle root arrives through the phone, never a script
+
+`bin/idp-set-root kaggle` and the `KAGGLE_USERNAME`/`KAGGLE_KEY` repository secrets in
+`.github/workflows/forge-train-kaggle.yml` ask the founder to run a terminal command (LAW 54 breach,
+founder 2026-09-09: never again). Fix: the workflow reads `kaggle-username` and `kaggle-key` from
+Bitwarden Secrets Manager the way `vault-bootstrap.yml` already does (`bin/idp-cloud secret get
+bitwarden-machine`, pinned `bws`, project id from `clusters/oke/estate-config.yaml`), masked into
+`GITHUB_ENV`; the `kaggle)` case is deleted from `bin/idp-set-root`; `forge/kaggle_app.py` names the two
+vault entries in its refusal; the spec lines 62 and 97 of
+`docs/specs/2026-09-09-forge-kaggle-second-launcher.md` follow. Done when a dispatched
+`forge-train-kaggle` run reads the pair and reaches the trainer step.
+Door (from the UI): Bitwarden Secrets Manager on the phone, two entries; then the Backstage button
+"Train a model in the Forge on a free Kaggle GPU".
+
+### 10.4 The catalogue names every front door the cluster serves
+
+`bin/idp-catalogue-drift` failed apply-mode run 34318699115 with `cyrus.mumchimp.com` and
+`sandbox.mumchimp.com` unregistered, because `bin/catalog-platform` (lines 618-628) only emits the
+observability links. Fix: for every host `http_hostnames(src)` returns, emit a first link
+`Open <name>` at `https://<host>`; regenerate, `bin/catalog-platform --check` green. Done when the
+drift row reads `0 unregistered`.
+Door (from the UI): Backstage, the layer's page, the "Open" link at the top opens the running surface.
