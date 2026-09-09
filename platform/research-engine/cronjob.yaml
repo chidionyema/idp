@@ -71,10 +71,12 @@ spec:
               # Pinned to the commit that built it, so the image the cluster runs can be read
               # in the repository it came from. Built by the research-engine repository's own
               # image workflow on a GitHub runner, never on the founder's Mac (LAW 31).
-              # 2026-09-09: d99469e shipped the lanes (profiles/); ea2d561 stops injecting a
-              # VERBOSE env var that gpt-researcher 0.14.4 cannot type (KeyError: 'VERBOSE' on
-              # Config init), which is what left every question not_found. Index amd64+arm64.
-              image: ghcr.io/chidionyema/research-engine:sha-ea2d561ddc762c8e86a742f0db5ba72d481832e6
+              # 2026-09-09: ea2d561 fixed the VERBOSE env; 3e3527b bakes the tiktoken o200k_base
+              # cache into the image. Without that bake, gpt-researcher's per-response cost
+              # estimate tried to download the encoding file from OpenAI's public blob on every
+              # run, which this namespace has no internet egress to -> ConnectTimeout -> None ->
+              # no question answered. Index amd64+arm64.
+              image: ghcr.io/chidionyema/research-engine:sha-3e3527b7acd49787469e79ff67a808d89cad9a18
               command: ["/bin/sh", "-c"]
               args:
                 - |
