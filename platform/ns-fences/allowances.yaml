@@ -230,7 +230,7 @@ flows:
     egress_internet: [443]
     # research: the hourly research engine sends every lane's prompt through the router
     # (platform/research-engine/cronjob.yaml:105, LITELLM_BASE_URL).
-    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta, research]
+    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta, research, cyrus]
   research:
     # The research engine is an hourly CronJob (platform/research-engine/cronjob.yaml, schedule
     # "23 * * * *"), so it holds no long-lived pod and nothing here was measured from one. Every

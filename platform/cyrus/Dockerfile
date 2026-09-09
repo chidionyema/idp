@@ -37,6 +37,13 @@ RUN npm install -g npm@11
 ARG CYRUS_VERSION=latest
 RUN npm install -g "cyrus-ai@${CYRUS_VERSION}"
 
+# OpenCode is the default engine (founder 2026-09-09: "any harness needs to be future proof and
+# enable all models"). It speaks to the estate router as one OpenAI-compatible provider, so every
+# alias platform/llm/config.yaml declares is a model an issue can pick; Claude stays a label, not
+# the harness. Pinned: opencode-ai ships its platform binary as an optional dependency per arch.
+ARG OPENCODE_VERSION=1.18.30
+RUN npm install -g "opencode-ai@${OPENCODE_VERSION}"
+
 # cyrus-ai depends on the `cloudflared` npm package, which downloads a Go binary at install
 # time so cyrus can open its own tunnel for webhooks. This estate has one ingress door, the
 # gateway, and a second one is not a thing we are willing to have present, let alone running.

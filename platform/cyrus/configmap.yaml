@@ -1,6 +1,9 @@
 # Cyrus configuration (crew#834). Mounted as a ConfigMap, watched by Cyrus.
-# Engines: claude, codex, cursor, gemini, opencode. Claude on Max subscription;
-# OpenCode points at the estate router.
+# Engines: claude, codex, cursor, gemini, opencode. OpenCode is the default runner (founder
+# 2026-09-09: "any harness needs to be future proof and enable all models"): it reaches the estate
+# router in-cluster as one OpenAI-compatible provider named `litellm`, so every alias
+# platform/llm/config.yaml declares is a model an issue can pick. Door (from the UI): a Linear
+# label `opencode/litellm/<alias>` picks the model, `claude` (Max subscription) picks the engine.
 # linearWorkspaceId is the Linear organisation id (not a secret; `{ organization { id } }`
 # with the vault's key answers it). cyrus-core requireLinearWorkspaceId() refuses to start
 # with an active repository that lacks it (README, wall 7). The token that goes with it is
@@ -23,6 +26,30 @@ metadata:
 data:
   config.json: |
     {
+      "defaultRunner": "opencode",
+      "opencodeDefaultModel": "litellm/default",
+      "opencode": {
+        "stateScope": "repository",
+        "config": {
+          "provider": {
+            "litellm": {
+              "npm": "@ai-sdk/openai-compatible",
+              "name": "Estate router (LiteLLM)",
+              "options": {
+                "baseURL": "http://litellm.llm.svc:4000/v1",
+                "apiKey": "{env:LITELLM_API_KEY}"
+              },
+              "models": {
+                "default": { "name": "default (gemini-2.5-pro)" },
+                "fast": { "name": "fast (gemini-2.5-flash)" },
+                "gemini": { "name": "gemini (gemini-2.5-flash)" },
+                "minimax": { "name": "minimax (MiniMax-M3)" },
+                "minimax_m27": { "name": "minimax_m27 (MiniMax-M2.7)" }
+              }
+            }
+          }
+        }
+      },
       "promptDefaults": {
         "debugger": { "allowedTools": "readOnly" },
         "builder": { "allowedTools": "safe" }
@@ -62,10 +89,7 @@ data:
             },
             "opencode": {
               "labels": ["opencode"],
-              "engine": "opencode",
-              "env": {
-                "OPENAI_API_KEY": "os.environ/OPENAI_API_KEY"
-              }
+              "engine": "opencode"
             }
           }
         },

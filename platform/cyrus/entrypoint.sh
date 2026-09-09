@@ -24,6 +24,8 @@ export_file() {
 }
 
 export_file GITHUB_TOKEN "$GH_TOKEN_PATH"
+# The estate router lane key: OpenCode reads it as {env:LITELLM_API_KEY} (platform/cyrus/configmap.yaml).
+export_file LITELLM_API_KEY "${CYRUS_ROUTER_KEY_PATH:-/secrets/router/LITELLM_API_KEY}"
 export_file LINEAR_API_TOKEN "$WEBHOOK_DIR/linear-api-token"
 export_file LINEAR_WEBHOOK_SECRET "$WEBHOOK_DIR/linear-webhook-secret"
 export_file GITHUB_WEBHOOK_SECRET "$WEBHOOK_DIR/github-webhook-secret"
