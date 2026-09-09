@@ -1021,8 +1021,25 @@ spec:
     name: flux-system
   path: ./platform/scheduling
   prune: true
-  wait: true
+  # Never wait on the balloon. platform/scheduling/balloon.yaml is a Deployment whose pods are
+  # DESIGNED to sit Pending after a preemption (that Pending pod is the autoscaler's signal), so
+  # `wait: true` here turned every preemption into a row stuck "Reconciliation in progress" for up
+  # to the 10m timeout -- measured 2026-09-09: runs of 4m31s and 8m56s -- and every row that
+  # dependsOn scheduling (cyrus, chaos-mesh, healing, ...) kept landing in that window and reading
+  # "dependency 'flux-system/scheduling' is not ready" for the better part of an hour. What those
+  # rows actually need from here is the three admission policies, so those are the health checks.
+  wait: false
   timeout: 10m
+  healthChecks:
+    - apiVersion: kyverno.io/v1
+      kind: ClusterPolicy
+      name: capacity-affinity
+    - apiVersion: kyverno.io/v1
+      kind: ClusterPolicy
+      name: require-availability
+    - apiVersion: kyverno.io/v1
+      kind: ClusterPolicy
+      name: require-priority-class
 ---
 # crew#539 CP6: the evictor. It rebalances after every node swap and it is the mechanism the
 # flannel -> Calico cutover rides on (#2501). After `scheduling` and nothing else -- that row
