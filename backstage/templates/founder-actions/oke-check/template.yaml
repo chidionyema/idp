@@ -56,6 +56,7 @@ spec:
         - cni-resync
         - flannel-off
         - gateway-one-node
+        - routed-backend-rescue
         default: diagnose
   steps:
   - id: dispatch

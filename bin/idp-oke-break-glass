@@ -1300,6 +1300,144 @@ YAML
 #
 # The node is never named as a literal (R46): the good node is the one holding the ready router
 # backend, and the far node is the other one.
+# routed-backend-rescue: after gateway-one-node has pinned the ingress path to one node, every
+# routed backend still sitting on the cordoned node is unreachable from outside -- the gateway is
+# not there and externalTrafficPolicy Local means the load balancer stopped using that node. On
+# 2026-09-09 that was mumchimp.com: prospector-store-web had a replica on the serving node, but
+# prospector-store-api had its only replica on the severed one, so the shop returned nothing at
+# all rather than half the time. Deleting such a pod reschedules it onto the node that can serve.
+#
+# It cannot be a sweep. Thirty one workloads were stranded needing 3022m CPU against 108m free, so
+# the order matters, and the cluster's own answer was wrong: langfuse-web was infrastructure-critical
+# and the shop had no priority class at all. platform/ingress-recovery-order.yaml holds the order a
+# person decided; this reads it, moves what fits, and names what did not.
+pb_routed_backend_rescue() {
+  local good bad n order out TMP
+  TMP=$(mktemp -d); trap 'rm -rf "$TMP"' RETURN
+  order="$IDP/platform/ingress-recovery-order.yaml"
+  [ -f "$order" ] || { echo "FAIL  routed-backend-rescue: no $order, nothing says what comes back first"; FAILED="$FAILED guard-order"; return 1; }
+
+  bad=$($K get nodes -o jsonpath='{range .items[?(@.spec.unschedulable==true)]}{.metadata.name}{"\n"}{end}' | head -1)
+  [ -n "$bad" ] || { echo "ok    routed-backend-rescue: no cordoned node, nothing is stranded by this band-aid"; return 0; }
+  good=""
+  for n in $($K get nodes -o jsonpath='{.items[*].metadata.name}'); do [ "$n" = "$bad" ] || good=$n; done
+  [ -n "$good" ] || { echo "FAIL  routed-backend-rescue: every node is cordoned"; FAILED="$FAILED guard-good"; return 1; }
+  echo "ok    guard-nodes stranded on $bad, rescuing onto $good"
+
+  $K get pods -A -o json > "$TMP/pods.json" 2>/dev/null || { echo "FAIL  routed-backend-rescue: cannot read pods"; FAILED="$FAILED guard-read"; return 1; }
+  $K get svc -A -o json > "$TMP/svcs.json" 2>/dev/null || true
+  $K get node "$good" -o json > "$TMP/good.json" 2>/dev/null || true
+
+  # the plan is computed once, printed, and only then executed: a rescue that half-runs and then
+  # discovers it has no room has spent the room on the wrong thing
+  python3 - "$order" "$TMP/pods.json" "$TMP/svcs.json" "$TMP/good.json" "$bad" "$good" > "$TMP/plan.txt" <<'PYPLAN'
+import json, re, sys
+order_file, pods_file, svcs_file, good_file, bad, good = sys.argv[1:7]
+order, yields, section = [], [], None
+for line in open(order_file):
+    head = line.split("#")[0].rstrip()
+    if re.match(r"^order:\s*$", head): section = order; continue
+    if re.match(r"^yield:\s*$", head): section = yields; continue
+    m = re.match(r"^\s*-\s*(\S+/\S+)\s*$", head)
+    if m and section is not None: section.append(m.group(1))
+pods = json.load(open(pods_file))["items"]
+svcs = json.load(open(svcs_file)).get("items", [])
+node = json.load(open(good_file))
+
+def cpu(v):
+    if not v: return 0
+    return int(v[:-1]) if str(v).endswith("m") else int(float(v) * 1000)
+def mem(v):
+    if not v: return 0
+    v = str(v)
+    for suf, mult in (("Gi", 1024), ("Mi", 1), ("Ki", 1 / 1024)):
+        if v.endswith(suf): return int(float(v[:-2]) * mult)
+    return int(int(v) / 1048576)
+def req(p):
+    c = sum(cpu(((x.get("resources") or {}).get("requests") or {}).get("cpu")) for x in p["spec"]["containers"])
+    m = sum(mem(((x.get("resources") or {}).get("requests") or {}).get("memory")) for x in p["spec"]["containers"])
+    return c, m
+
+alloc = node.get("status", {}).get("allocatable", {})
+free_c = cpu(alloc.get("cpu")) - sum(req(p)[0] for p in pods
+    if p["spec"].get("nodeName") == good and p["status"].get("phase") in ("Running", "Pending"))
+free_m = mem(alloc.get("memory")) - sum(req(p)[1] for p in pods
+    if p["spec"].get("nodeName") == good and p["status"].get("phase") in ("Running", "Pending"))
+print(f"# room on {good}: {free_c}m cpu {free_m}Mi memory")
+
+sel = {}
+for s in svcs:
+    key = s["metadata"]["namespace"] + "/" + s["metadata"]["name"]
+    sel[key] = (s["metadata"]["namespace"], (s["spec"].get("selector") or {}))
+
+for want in order:
+    ns_sel = sel.get(want)
+    if not ns_sel or not ns_sel[1]:
+        print(f"# skip {want}: no such Service, or it selects nothing")
+        continue
+    ns, labels = ns_sel
+    def backs(p):
+        L = p["metadata"].get("labels") or {}
+        return p["metadata"]["namespace"] == ns and all(L.get(k) == v for k, v in labels.items())
+    on_good = [p for p in pods if backs(p) and p["spec"].get("nodeName") == good
+               and p["status"].get("phase") == "Running"
+               and all(c.get("ready") for c in (p["status"].get("containerStatuses") or []))]
+    on_bad = [p for p in pods if backs(p) and p["spec"].get("nodeName") == bad
+              and p["status"].get("phase") == "Running"]
+    if on_good:
+        print(f"# skip {want}: already has {len(on_good)} ready backend(s) on {good}")
+        continue
+    if not on_bad:
+        print(f"# skip {want}: nothing of it on {bad} either")
+        continue
+    p = on_bad[0]
+    c, m = req(p)
+    if c > free_c or m > free_m:
+        # room is taken from the declared yield list, in its order, and only as far as needed
+        for y in list(yields):
+            if c <= free_c and m <= free_m: break
+            yns, yname = y.split("/", 1)
+            held = [q for q in pods if q["spec"].get("nodeName") == good
+                    and q["metadata"]["namespace"] == yns
+                    and q["metadata"]["name"].startswith(yname)
+                    and q["status"].get("phase") in ("Running", "Pending")]
+            if not held:
+                continue
+            yc = sum(req(q)[0] for q in held); ym = sum(req(q)[1] for q in held)
+            free_c += yc; free_m += ym
+            yields.remove(y)
+            print(f"YIELD {yns} {yname} {len(held)} {yc}m {ym}Mi")
+        if c > free_c or m > free_m:
+            print(f"# STRANDED {want}: needs {c}m/{m}Mi, only {free_c}m/{free_m}Mi left after every yield")
+            continue
+    free_c -= c; free_m -= m
+    print(f'MOVE {p["metadata"]["namespace"]} {p["metadata"]["name"]} {want} {c}m {m}Mi')
+print(f"# room after the plan: {free_c}m cpu {free_m}Mi memory")
+PYPLAN
+  echo "--- the plan"
+  cat "$TMP/plan.txt"
+
+  out=$(grep -cE '^(YIELD|MOVE) ' "$TMP/plan.txt" || true)
+  if [ "${out:-0}" -eq 0 ]; then
+    echo "ok    routed-backend-rescue nothing both stranded and affordable; the lines above say why"
+    return 0
+  fi
+
+  # yields first: the room has to exist before the rescued pod is scheduled
+  while read -r _ ns name n c m; do
+    echo "--- $ns/$name yields $c $m ($n pod(s)); restore with: kubectl -n $ns scale deploy/$name --replicas=<n>"
+    step "yield-$name" $K -n "$ns" scale deploy/"$name" --replicas=0
+  done < <(grep '^YIELD ' "$TMP/plan.txt" || true)
+
+  while read -r _ ns pod svc c m; do
+    echo "--- rescuing $svc ($c $m) from $bad"
+    step "rescue-$pod" $K -n "$ns" delete pod "$pod" --wait=false
+  done < <(grep '^MOVE ' "$TMP/plan.txt" || true)
+
+  step "rescue-settle" sleep 45
+  show rescued $K get pods -A -o wide --field-selector spec.nodeName="$good"
+}
+
 pb_gateway_one_node() {
   local good bad n out pod
   good=$($K get pods -n llm -o jsonpath='{range .items[*]}{.metadata.name}/{.spec.nodeName}/{range .status.containerStatuses[*]}{.ready}{end}{"\n"}{end}' 2>/dev/null \
@@ -1563,7 +1701,7 @@ pb_tigera_reset() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences cni-resync flannel-off gateway-one-node"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences cni-resync flannel-off gateway-one-node routed-backend-rescue"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-parity) pb_otto_parity ;;
@@ -1591,6 +1729,7 @@ case "${1:-}" in
   cni-resync) pb_cni_resync ;;
   flannel-off) pb_flannel_off ;;
   gateway-one-node) pb_gateway_one_node ;;
+  routed-backend-rescue) pb_routed_backend_rescue ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
 [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }

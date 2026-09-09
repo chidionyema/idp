@@ -1,0 +1,44 @@
+# Which public surfaces come back first when there is not enough room for all of them.
+#
+# 2026-09-09: the cross-node link was severed and the ingress path was pinned to one node. Thirty
+# one workloads were stranded on the other side needing 3022m CPU and 10014Mi of memory; the node
+# still serving had 108m and about 1027Mi. Everything could not come back, so something had to
+# choose -- and the only ordering the cluster held was pod priority, which said
+# observability/langfuse-web was `infrastructure-critical` at 1000000 and prospector, the shop
+# being sold, was 0 with no class at all. Left to that, the estate restores its trace viewer and
+# leaves the storefront down.
+#
+# This file is that decision, written down where it can be argued with. bin/idp-oke-break-glass
+# reads it (playbook: routed-backend-rescue) and rescues stranded routed backends in this order
+# while room lasts, then names what did not fit.
+#
+# A service here is <namespace>/<Service name> and must be the backend of an HTTPRoute.
+order:
+  - prospector/prospector-store-api    # the storefront's API; the web pods render nothing without it
+  - prospector/prospector-store-web    # the storefront itself
+  - identity/oauth2-proxy              # sign-in; without it every other surface is shut
+  - llm/litellm                        # the router every agent thinks through
+  - backstage/catalogue                # the portal the founder opens
+  - jit/jit-broker                     # the only door to cluster writes
+  - otto-gateway/otto-gateway
+  - otto-golden/otto-golden
+  - mcp/agentgateway
+  - healthchecks/healthchecks
+  - weave-gitops/weave-gitops
+  - observability/signoz
+  - observability/langfuse-web
+  - observability/superset
+
+# What gives up its room when something above cannot fit.
+#
+# The serving node had 32m of CPU free and the storefront API asks for 100m, so the shop could not
+# come back at all while every other workload kept what it held. The largest holder was
+# observability/langfuse-worker at 1000m -- a trace processor whose own web front end was stranded
+# and unreachable at the same moment, so it was processing traces nobody could read.
+#
+# These are scaled to zero, in this order, only when an entry above them will not otherwise fit,
+# and only as far as needed. Nothing here serves a customer. Restoring is one command per line and
+# the playbook prints it.
+yield:
+  - observability/langfuse-worker      # trace processing; its own UI was stranded at the time
+  - monitoring/prometheus-kps          # metrics retained on disk, resumes on scale-up
