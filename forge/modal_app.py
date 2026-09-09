@@ -19,11 +19,20 @@ import time
 import modal
 import yaml
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import compute_plan, cost_gate, usd_for  # noqa: E402
-
+# Modal stages the entrypoint script at the image ROOT (/root/modal_app.py) while
+# add_local_dir copies forge/ to /root/forge, so `common` and friends live one level down
+# from the executed module -- never importable from the module dir alone. A 2026-09-06 run died
+# on exactly this: `ModuleNotFoundError: No module named 'common'` at /root/modal_app.py, the
+# runner then spun to the 90-minute ceiling, and no experiment record was ever filed. The fix:
+# put both the module dir (a local `python modal_app.py`) and the remote layout on the path.
+# REMOTE is this file's own deployment constant, not a hardcoded lease in another file.
 ORAS_VERSION = "1.2.0"
 REMOTE = "/root/forge"
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(REMOTE)
+from common import compute_plan, cost_gate, usd_for  # noqa: E402
+
 GPU = "T4"  # the decorator default; main() rebinds gpu and timeout from the task's compute block
 
 image = (

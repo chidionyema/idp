@@ -212,3 +212,70 @@ def test_experiment_record_front_matter_parses_to_the_run():
         "splits": {"train": 3},
     }
     assert er.half_width(0.95, 100) == pytest.approx(0.0427, abs=1e-3)
+
+
+def test_modal_app_imports_common_after_module_reads_both_dirs():
+    """2026-09-06 regression guard.
+
+    Modal stages the forge entrypoint at the image ROOT (/root/modal_app.py) while
+    add_local_dir copies forge/ to /root/forge, so the original file -- importing `common`
+    from the module dir alone -- died on `ModuleNotFoundError: No module named 'common'`
+    and no run record was ever filed (the 90-min CI slot was consumed spinning). The file
+    must append BOTH its own module dir and its REMOTE layout to sys.path before importing
+    common. Graded on the AST (parsed structure, R76), not on prose.
+    """
+    import ast
+
+    path = Path(Path(__file__).resolve().parents[1], "modal_app.py")
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+
+    remote_lineno = None
+    appends = []  # lineno of each sys.path.append call in the body
+    inserts = []  # lineno of each sys.path.insert call in the body (module dir registration)
+    common_lineno = None
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == "REMOTE" for t in node.targets
+        ):
+            remote_lineno = node.lineno
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "common"
+            and any(a.name == "compute_plan" for a in node.names)
+        ):
+            common_lineno = node.lineno
+
+    def _sys_path_mutations(body):
+        for node in body:
+            node = (
+                node.value if isinstance(node, ast.Expr) else node
+            )  # unwrap Expr(Call)
+            if not isinstance(node, ast.Call):
+                continue
+            f = node.func
+            if not isinstance(f, ast.Attribute) or f.attr not in ("append", "insert"):
+                continue
+            # callee is sys.path.<attr>; walk the value chain for the leading Name("sys")
+            head = f.value
+            while isinstance(head, ast.Attribute):
+                head = head.value
+            if isinstance(head, ast.Name) and head.id == "sys":
+                yield node  # a real sys.path mutation
+
+    for node in _sys_path_mutations(tree.body):
+        f = node.func
+        if f.attr == "append":
+            appends.append(node.lineno)
+        elif f.attr == "insert":
+            inserts.append(node.lineno)
+
+    assert remote_lineno is not None, "modal_app.py must bind a REMOTE dir constant"
+    assert common_lineno is not None, "modal_app.py must import from common"
+    assert inserts, "modal_app.py must register its own module dir on sys.path"
+    assert appends, (
+        "modal_app.py must append its REMOTE dir to sys.path (2026-09-06 re-break)"
+    )
+    assert common_lineno > max(appends + inserts), (
+        "the common import must run after the module dir and REMOTE are both on sys.path"
+    )
