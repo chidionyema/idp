@@ -25,9 +25,20 @@ def load() -> dict:
 
 
 def validate(row: dict) -> tuple[bool, str]:
+    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+    try:
+        import jsonschema  # ships beside check-jsonschema in the estate's test image
+    except ImportError:
+        jsonschema = None
+    if jsonschema is not None:
+        try:
+            jsonschema.validate(row, schema)
+            return True, ""
+        except jsonschema.ValidationError as exc:
+            return False, str(exc)
     if not CLI:
         raise RuntimeError(
-            "check-jsonschema is required to grade the estate agent contract"
+            "neither jsonschema nor check-jsonschema is available to grade the contract"
         )
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
         json.dump(row, fh)
