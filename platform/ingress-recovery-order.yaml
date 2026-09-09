@@ -47,6 +47,17 @@ yield:
   - observability/langfuse-worker      # trace processing; its own UI was stranded at the time
   - monitoring/prometheus-kps          # metrics retained on disk, resumes on scale-up
 
+  # 2026-09-09, the second outage of the same day. The storefront API asked for 100m CPU on a node
+  # with 3m free, and the thing holding the room was `agent-workforce`: a scheduled job asking
+  # 225m and 768Mi that had FAILED on every one of its last three 15-minute runs and started
+  # again each time. Two dead runs and one running one, none of them doing any work -- crew#673
+  # had by then waited 15,419 minutes for a plan -- while the shop served no catalogue.
+  #
+  # Batch work yields to revenue work. A job that is failing yields to a shop that is down. This
+  # entry is a CronJob rather than a Deployment, which is why the executor below learned a third
+  # shape: suspend the schedule, delete the active runs, and print the way back.
+  - agent-workforce/agent-workforce
+
 # Not every casualty of a severed link is a public surface.
 #
 # external-secrets sat on the cordoned node while bitwarden-sdk-server, the thing it calls for

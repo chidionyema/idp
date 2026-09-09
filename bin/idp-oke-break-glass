@@ -1503,10 +1503,31 @@ PYPLAN
   while read -r _ ns name n c m; do
     # a yielded workload is a Deployment or a StatefulSet; observability/signoz is the latter, and
     # `scale deploy` on it fails with "not found", which would leave the room unclaimed
-    kind=deploy
-    $K -n "$ns" get deploy "$name" >/dev/null 2>&1 || kind=statefulset
-    echo "--- $ns/$name yields $c $m ($n pod(s)); restore with: kubectl -n $ns scale $kind/$name --replicas=<n>"
-    step "yield-$name" $K -n "$ns" scale "$kind/$name" --replicas=0
+    # Three shapes hold a pod on a node and each yields differently. `scale` is the answer for a
+    # Deployment and a StatefulSet (observability/signoz is the latter, and `scale deploy` on it
+    # fails "not found", which would leave the room unclaimed). A CronJob answers to neither: it
+    # has no replicas, and its pods belong to Jobs it creates on a timer, so scaling reaches
+    # nothing and the next tick puts the pod straight back. It yields by having its schedule
+    # suspended and its active runs deleted -- 2026-09-09, when a batch job failing every fifteen
+    # minutes held the storefront API off the only working node.
+    if $K -n "$ns" get deploy "$name" >/dev/null 2>&1; then
+      echo "--- $ns/$name yields $c $m ($n pod(s)); restore with: kubectl -n $ns scale deploy/$name --replicas=<n>"
+      step "yield-$name" $K -n "$ns" scale "deploy/$name" --replicas=0
+    elif $K -n "$ns" get statefulset "$name" >/dev/null 2>&1; then
+      echo "--- $ns/$name yields $c $m ($n pod(s)); restore with: kubectl -n $ns scale statefulset/$name --replicas=<n>"
+      step "yield-$name" $K -n "$ns" scale "statefulset/$name" --replicas=0
+    elif $K -n "$ns" get cronjob "$name" >/dev/null 2>&1; then
+      echo "--- $ns/$name yields $c $m ($n pod(s)); restore with: kubectl -n $ns patch cronjob/$name -p '{\"spec\":{\"suspend\":false}}'"
+      step "yield-$name-suspend" $K -n "$ns" patch cronjob "$name" -p '{"spec":{"suspend":true}}'
+      # only this CronJob's own runs: a Job it created is named <cronjob>-<timestamp>, and a
+      # namespace may hold other jobs that nothing here asked to shed.
+      for j in $($K -n "$ns" get jobs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null | grep -E "^$name-[0-9]+$" || true); do
+        step "yield-$name-job-$j" $K -n "$ns" delete job "$j" --wait=false
+      done
+    else
+      echo "FAIL  yield-$name $ns/$name is neither a Deployment, a StatefulSet nor a CronJob; the room was not freed"
+      FAILED="$FAILED yield-$name"
+    fi
   done < <(grep '^YIELD ' "$TMP/plan.txt" || true)
 
   while read -r _ ns pod svc c m; do
@@ -1543,6 +1564,58 @@ PYPLAN
       echo "FAIL  seated-$svc nothing ready for $ns on $good after the rescue"; FAILED="$FAILED seated-$svc"
     fi
   done < <(grep -E '^(ROOM|MOVE) ' "$TMP/plan.txt" || true)
+}
+
+pb_store_generation_state() {
+  # THE SHOP HAS INVENTORY AND NO NEW LISTINGS, AND THAT IS ON PURPOSE.
+  #
+  # Founder, 2026-09-09: "the site does have inventory but no new listing for a month" and, when
+  # asked to resume it: "we cant turn it on yet, we need to earn the token first ... it runs
+  # constantly." Generation is a continuous spender. It is off because the money is not there
+  # yet, not because anything failed.
+  #
+  # This playbook therefore READS and never clears. An earlier draft of it disarmed the pause
+  # automatically, which would have switched on the estate's largest running cost to fix what
+  # looked like a fault and was a decision.
+  #
+  # What it is for: the decision has no surface. prospector-scheduler announces it on every tick
+  # to nobody --
+  #
+  #   CRITICAL Generation suppressed: generation paused:
+  #            /data/store/scheduler/PAUSE_GENERATION present (the drain still runs)
+  #   WARNING  ALERT [critical] Generation DEAD: 4 consecutive barren ticks
+  #   WARNING  Telegram alert NOT sent: TELEGRAM_BOT_TOKEN and TELEGRAM_HOME_CHANNEL unset
+  #
+  # -- and prospector/ops/console_api.py, which implements pause.arm and pause.disarm with an
+  # actor, a reason and a receipt, is not deployed: the namespace runs store-api and store-web
+  # and nothing else. So a deliberate, indefinite, revenue-shaped decision is legible only to
+  # someone with a shell on a pod, and reads from outside as a month-long outage. That is the
+  # defect this closes: not the pause, the silence around it.
+  #
+  # Turning generation back on is a spend decision and belongs to the founder in his own words.
+  # When it comes, the audited path is the product's own:
+  #   kubectl -n prospector exec <scheduler> -c scheduler -- \
+  #     python -m prospector.ops.pause disarm generation --actor <name>
+  local pod out
+  pod=$($K get pods -n prospector -o name 2>/dev/null | grep scheduler | head -1 | cut -d/ -f2)
+  [ -n "$pod" ] || { echo "FAIL  store-generation-state: no scheduler pod in prospector"; FAILED="$FAILED guard-pod"; return 1; }
+  echo "ok    guard-pod the scheduler is $pod"
+
+  echo "--- the three pause scopes, with whoever armed them and why"
+  out=$($K exec -n prospector "$pod" -c scheduler -- python -m prospector.ops.pause show 2>&1) || true
+  echo "$out"
+  case "$out" in
+    *'"scope": "generation"'*) echo "ok    pause-show the scheduler reported its pause state" ;;
+    *) echo "FAIL  store-generation-state: the scheduler could not report its pause state"
+       FAILED="$FAILED pause-show"; return 1 ;;
+  esac
+
+  # The pause is one reason nothing is listed. The other is that the generation chain has no
+  # brain -- the same tick logs "Heartbeat: 0 alive, 21 down" and "Failed ollama_raw_call", and
+  # the model keys arrive over the external-secrets path the node partition severed. Both are
+  # named here so that clearing one is never mistaken for clearing both.
+  echo "--- the brains, as the scheduler last measured them"
+  show heartbeat $K logs -n prospector "$pod" -c scheduler --tail=200
 }
 
 pb_gateway_one_node() {
@@ -1808,7 +1881,7 @@ pb_tigera_reset() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences cni-resync flannel-off gateway-one-node routed-backend-rescue"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences cni-resync flannel-off gateway-one-node routed-backend-rescue store-generation-state"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-parity) pb_otto_parity ;;

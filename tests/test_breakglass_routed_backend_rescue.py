@@ -161,12 +161,42 @@ def test_yields_happen_before_the_rescue():
     )
 
 
-def test_a_yield_prints_the_way_back():
-    """Reversible, and the receipt says how."""
-    assert "restore with: kubectl -n $ns scale $kind/$name --replicas=" in body()
-    assert "kind=deploy" in body(), (
-        "observability/signoz is a StatefulSet; scale deploy would miss it"
+def test_a_yield_prints_the_way_back_for_all_three_shapes():
+    """Reversible, and the receipt says how -- for each shape that can hold a pod on a node.
+
+    A Deployment and a StatefulSet come back with `scale --replicas`; observability/signoz is the
+    StatefulSet, and `scale deploy` on it fails "not found". A CronJob has no replicas at all, so
+    it comes back by having its suspend flag cleared. A yield with no way back is not a yield.
+    """
+    b = body()
+    for kind, back in (
+        ("deploy", "scale deploy/$name --replicas="),
+        ("statefulset", "scale statefulset/$name --replicas="),
+        ("cronjob", "patch cronjob/$name"),
+    ):
+        assert f'get {kind} "$name"' in b, f"a {kind} cannot be yielded"
+        assert back in b, f"a yielded {kind} has no printed way back"
+
+
+def test_a_cronjob_yields_by_suspending_not_scaling():
+    """2026-09-09: a batch job failing every 15 minutes held the storefront API off the only
+    working node. `scale` reaches nothing on a CronJob and the next tick puts the pod straight
+    back, so the schedule must be suspended and the active runs deleted."""
+    b = body()
+    assert '"spec":{"suspend":true}' in b, "the schedule is not suspended"
+    assert "delete job" in b, "the run already on the node is not removed"
+    i = b.index('"spec":{"suspend":true}')
+    assert i < b.index("delete job"), (
+        "the schedule must be suspended before its runs are deleted, or the timer replaces them"
     )
+
+
+def test_a_shape_that_cannot_yield_is_a_failure_not_a_silent_pass():
+    """A yield line whose workload is none of the three shapes freed no room. Reporting that as
+    done is how a rescue passes while the surface stays dark."""
+    b = body()
+    i = b.index("is neither a Deployment, a StatefulSet nor a CronJob")
+    assert "FAIL" in b[i - 200 : i], "an unyieldable workload does not fail the run"
 
 
 def test_a_stranded_peer_is_evicted_not_skipped():
