@@ -1,0 +1,2 @@
+this is not json but has WOULD_DENY rule=bad-rule, resource=bad-resource
+{"annotations":{"audit.kyverno.io/policy-status":"would-deny", "audit.kyverno.io/policy-name":"unintended-rule"}, "objectRef": {"name": "unintended-resource"}}

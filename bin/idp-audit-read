@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""
+Reads a newline-delimited stream of Kyverno audit events (JSON or text) and decides if
+zero unintended WOULD_DENY flags occurred across a full churn cycle.
+
+If zero unintended flags occurred, it prints "ok" and exits 0, suggesting the policy
+could be flipped to Enforce. This tool explicitly does NOT perform the flip-PR or
+modify any policy file; that is a glass-break operation and out of scope.
+
+If any unintended flag occurred, it prints "FAIL" and names them, then exits with a
+non-zero status.
+
+An empty or absent feed is considered a FAIL (fail-closed principle per LAW 28 and
+the calico-deny-log precedent), never a clean bill.
+
+Usage:
+  idp-audit-read [--file <path>] [--allowlist <file>]
+  idp-audit-read [--allowlist <file>] < stdin
+
+Arguments:
+  --file <path>        Path to the audit log file. If not provided, reads from stdin.
+  --allowlist <file>   Path to a file containing a newline-separated list of expected
+                       Kyverno rule names or resource names that are allowed to be
+                       flagged as WOULD_DENY.
+"""
+
+import argparse
+import json
+import os
+import sys
+
+def parse_audit_event(line):
+    """
+    Parses a single line from the audit stream, attempting to extract relevant
+    information for Kyverno WOULD_DENY events.
+    Returns a dictionary with 'rule_name', 'resource_name', 'action', 'message'
+    if a WOULD_DENY event is found, otherwise None.
+    """
+    try:
+        event = json.loads(line)
+        # Kyverno audit events typically have 'audit.kyverno.io/policy-result': 'fail'
+        # and 'audit.kyverno.io/policy-status': 'would-deny' or similar.
+        # This parsing is highly dependent on the exact audit log format.
+        # For this exercise, we'll assume a simplified JSON structure or text.
+        # If it's a real Kyverno audit event, it might look like:
+        # {"kind":"Audit","apiVersion":"audit.k8s.io/v1","metadata":{...},"status":"Success",
+        # "stage":"Request","annotations":{"audit.kyverno.io/policy-result":"fail",
+        # "audit.kyverno.io/policy-status":"would-deny", ...}, "objectRef": { "name": "...", "kind": "..."}}
+
+        # Simplified parsing for the problem description.
+        # We look for "WOULD_DENY" and try to extract a rule and resource name.
+        if isinstance(event, dict):
+            annotations = event.get('annotations', {})
+            if annotations.get('audit.kyverno.io/policy-status') == 'would-deny':
+                rule_name = annotations.get('audit.kyverno.io/policy-name', 'unknown-rule')
+                resource_name = event.get('objectRef', {}).get('name', 'unknown-resource')
+                return {
+                    'rule_name': rule_name,
+                    'resource_name': resource_name,
+                    'action': 'WOULD_DENY',
+                    'message': f"Policy '{rule_name}' would deny resource '{resource_name}'"
+                }
+        elif isinstance(line, str) and "WOULD_DENY" in line:
+            # Basic text parsing for non-JSON lines containing "WOULD_DENY"
+            # This is a very weak heuristic and should be replaced with robust parsing
+            # if the input is not strictly JSON.
+            rule_start = line.find("rule=")
+            rule_end = line.find(",", rule_start)
+            rule_name = line[rule_start + 5:rule_end] if rule_start != -1 and rule_end != -1 else "unknown-rule-text"
+
+            resource_start = line.find("resource=")
+            resource_end = line.find(",", resource_start)
+            resource_name = line[resource_start + 9:resource_end] if resource_start != -1 and resource_end != -1 else "unknown-resource-text"
+
+            return {
+                'rule_name': rule_name,
+                'resource_name': resource_name,
+                'action': 'WOULD_DENY',
+                'message': line.strip()
+            }
+
+    except json.JSONDecodeError:
+        # Handle non-JSON lines or partial JSON lines
+        if "WOULD_DENY" in line:
+            rule_start = line.find("rule=")
+            rule_end = line.find(",", rule_start)
+            rule_name = line[rule_start + 5:rule_end] if rule_start != -1 and rule_end != -1 else "unknown-rule-text"
+
+            resource_start = line.find("resource=")
+            resource_end = line.find(",", resource_start)
+            resource_name = line[resource_start + 9:resource_end] if resource_start != -1 and resource_end != -1 else "unknown-resource-text"
+
+            return {
+                'rule_name': rule_name,
+                'resource_name': resource_name,
+                'action': 'WOULD_DENY',
+                'message': line.strip()
+            }
+        pass # Ignore lines that are neither JSON with WOULD_DENY nor text with WOULD_DENY
+    except Exception as e:
+        # Catch any other unexpected parsing errors
+        sys.stderr.write(f"Error parsing line: {line.strip()} - {e}\\n")
+    return None
+
+def main():
+    parser = argparse.ArgumentParser(description="Audit-to-Enforce promoter.")
+    parser.add_argument("--file", type=str, help="Path to the audit log file (or stdin if not provided).")
+    parser.add_argument("--allowlist", type=str, help="Path to a newline-separated allowlist file of expected rule/resource names.")
+    args = parser.parse_args()
+
+    allowlist_entries = set()
+    if args.allowlist:
+        try:
+            with open(args.allowlist, 'r') as f:
+                for line in f:
+                    allowlist_entries.add(line.strip())
+        except FileNotFoundError:
+            sys.stderr.write(f"ERROR: Allowlist file not found: {args.allowlist}\\n")
+            sys.exit(1)
+
+    unintended_flags = []
+    feed_found = False
+
+    if args.file:
+        try:
+            with open(args.file, 'r') as f:
+                for line in f:
+                    feed_found = True
+                    event = parse_audit_event(line)
+                    if event and event['action'] == 'WOULD_DENY':
+                        # Check if the rule_name or resource_name is in the allowlist
+                        if event['rule_name'] not in allowlist_entries and \
+                           event['resource_name'] not in allowlist_entries:
+                            unintended_flags.append(event)
+        except FileNotFoundError:
+            sys.stderr.write(f"FAIL: Audit log file not found: {args.file}\\n")
+            sys.exit(1)
+    else:
+        # Read from stdin
+        for line in sys.stdin:
+            feed_found = True
+            event = parse_audit_event(line)
+            if event and event['action'] == 'WOULD_DENY':
+                if event['rule_name'] not in allowlist_entries and \
+                   event['resource_name'] not in allowlist_entries:
+                    unintended_flags.append(event)
+
+    if not feed_found:
+        sys.stderr.write("FAIL: Empty or absent audit feed. Cannot promote to Enforce.\\n")
+        sys.exit(1)
+
+    if unintended_flags:
+        sys.stdout.write("FAIL: Unintended WOULD_DENY flags found:\\n")
+        for flag in unintended_flags:
+            sys.stdout.write(f"- {flag['message']}\\n")
+        sys.exit(1)
+    else:
+        sys.stdout.write("ok\\n")
+        sys.exit(0)
+
+if __name__ == "__main__":
+    main()
