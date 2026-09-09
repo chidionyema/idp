@@ -126,6 +126,23 @@ T
     ask SEED_MODAL_TOKEN_ID "the token id, starts ak-"
     ask SEED_MODAL_TOKEN_SECRET "the token secret, starts as-"
     DISPATCH=(forge-train.yml -f dry_run=true) ;;
+  kaggle)
+    # The Forge's free-GPU lane (forge/kaggle_app.py). Same one-root shape as modal: Kaggle's own
+    # API issues the token on a human page (Settings -> API -> Create New Token) and no create-key
+    # API exists, so the founder makes it once here and the forge-train-kaggle workflow reads the two
+    # repository secrets below. Never leaves the value in a downloaded kaggle.json on a laptop or in
+    # a prompt: it is captured straight into `gh secret set` and the file is never written (R52,
+    # LAW 54 -- this is the whole founder part, one run, then never again).
+    echo "kaggle: one token pair, once. The token page is opening."
+    open_page "https://www.kaggle.com/settings/account"
+    echo "        1. On the opened page, press API -> Create New Token. Kaggle downloads kaggle.json."
+    echo "        2. Open that file. It holds two lines: { \"username\": \"...\", \"key\": \"...\" }."
+    echo "        3. Paste the username value when asked below, then the key value. Do NOT paste the whole file."
+    ask KAGGLE_USERNAME "the username value (no quotes)"
+    ask KAGGLE_KEY "the key value (no quotes)"
+    # Ignition: a plain forge-train-kaggle run (Kaggle free tier, no spend -- the cost gate blocks a
+    # paid ask before any GPU) proves the pair end-to-end. This workflow takes no dry_run input.
+    DISPATCH=(forge-train-kaggle.yml) ;;
   *)
     vendors | grep -x -- "$P" >/dev/null || { echo "FAIL    unknown provider $P"; sed -n 3,4p "$0"; exit 2; }
     page=$(field "$P" page); name=$(field "$P" secret)
