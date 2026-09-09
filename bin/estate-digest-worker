@@ -19,7 +19,10 @@ _on_exit() {
 }
 trap _on_exit EXIT
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-CREW="${ESTATE_CREW:-$HOME/dev/code/crew}"
+# LAW 46: no file names where the checkout/home/machine lives. The crew checkout is the sibling
+# of the idp checkout, so it is derived from $IDP's parent, never from a $HOME literal. Callers
+# with the estate somewhere else set ESTATE_CREW explicitly.
+CREW="${ESTATE_CREW:-$(dirname "$IDP")/crew}"
 MODEL="${ESTATE_DIGEST_MODEL:-qwen2.5-coder:7b}"
 OLLAMA="${ESTATE_OLLAMA:-http://localhost:11434}"
 STATE="${ESTATE_STATE_FILE:-$CREW/STATE.md}"
@@ -84,7 +87,11 @@ try:
 except Exception as e:
     print('PARSE_ERR', str(e))")
 
-if [ -z "$DIGEST" ] || printf '%s' "$DIGEST" | grep -q "PARSE_ERR"; then
+# LAW 55: a pipeline exit status must never stand in for a grep match. Capture the match into a
+# variable (no-match is expected, so it must not fail the script under pipefail), then gate on it.
+PARSE_ERR=''
+printf '%s\n' "$DIGEST" | grep -q 'PARSE_ERR' && PARSE_ERR=1 || true
+if [ -z "$DIGEST" ] || [ -n "$PARSE_ERR" ]; then
 	echo "FAIL digest-worker model did not answer in $((end - start))s"
 	exit 1
 fi
