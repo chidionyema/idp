@@ -16,6 +16,7 @@ nav:
   - Documentation policy: reference/policy/documentation.md
   - Test strategy, no prose pinning: reference/policy/test-strategy.md
   - Temporary grants, how an agent gets write access: reference/policy/temporary-grants.md
+  - My Mac, from my phone (Jump Desktop): founder/mac-remote-desk/README.md
   - Tailscale egress proxy exception: reference/policy/tailscale-egress-exception.md
   - Tailscale pod-security level: reference/policy/tailscale-pod-security.md
   - Tailscale images come from GitHub registry: reference/policy/tailscale-ghcr-images.md

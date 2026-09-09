@@ -733,20 +733,20 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: founder-pair-phone
-  title: "Pair my phone (see and drive the estate Mac)"
-  description: "Pair your phone with the estate Mac once, then see and drive its desktop with one tap."
+  title: "My Mac, from my phone"
+  description: "Jump Desktop on the phone: tap the Mac's icon and its desktop is there, sized for the phone. No PIN, no pairing, nothing to keep alive. The Sunshine PIN page this replaces never once worked (founder, 2026-09-09, fifth report)."
   annotations:
     estate/group: "Fix something"
     # Founder 2026-09-07: "why should i be looking for essntial tools at all".
     # Reaching his own Mac is an everyday door, so it sits first in its group and
     # on the front page band, not buried among fifty tiles.
     estate/tier: daily
-    idp/updated-by: "backstage/packages/app/src/modules/home/PairPhone.tsx ships with the portal image; the Mac side is the Sunshine service on the estate Mac (platform/hermes-agent/mac-run.tpl row)"
+    idp/updated-by: "docs/founder/mac-remote-desk/README.md; Jump Desktop Connect on the estate Mac (the Brewfile beside it)"
   tags: [founder]
   links:
-    - title: "Open"
-      url: "https://catalogue.${ESTATE_ZONE}/pair"
-      icon: dashboard
+    - title: "How it works, and the one-time sign-in"
+      url: "https://catalogue.${ESTATE_ZONE}/docs/default/component/founder-gods-view/founder/mac-remote-desk/"
+      icon: docs
 spec:
   type: founder-surface
   lifecycle: production

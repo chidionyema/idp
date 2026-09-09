@@ -42,5 +42,7 @@ spec:
         hold: ${{ parameters.hold }}
   output:
     links:
+    - title: Open the sandbox (live about two minutes after the run starts)
+      entityRef: component:default/front-door-demo-shop
     - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/demo-sandbox.yml

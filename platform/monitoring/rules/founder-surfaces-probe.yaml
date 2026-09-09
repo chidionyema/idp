@@ -27,11 +27,11 @@ spec:
         - https://catalogue.${ESTATE_ZONE}/catalog?filters%5Bkind%5D=component&filters%5Btype%5D=founder-surface
         - https://catalogue.${ESTATE_ZONE}/docs/default/component/founder-gods-view/FOUNDER/
         - https://catalogue.${ESTATE_ZONE}/docs/default/component/founder-gods-view/explanation/architecture/model-stack/
+        - https://catalogue.${ESTATE_ZONE}/docs/default/component/founder-gods-view/founder/mac-remote-desk/
         - https://catalogue.${ESTATE_ZONE}/estate
-        - https://catalogue.${ESTATE_ZONE}/ops
-        - https://catalogue.${ESTATE_ZONE}/pair
-        - https://catalogue.${ESTATE_ZONE}/reports
         - https://catalogue.${ESTATE_ZONE}/investigate
+        - https://catalogue.${ESTATE_ZONE}/ops
+        - https://catalogue.${ESTATE_ZONE}/reports
         - https://catalogue.${ESTATE_ZONE}/screen/
         - https://catalogue.${ESTATE_ZONE}/screen/#dagster
         - https://catalogue.${ESTATE_ZONE}/screen/#ollama

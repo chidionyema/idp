@@ -44,20 +44,32 @@ def _founder_lines(text, wf):
     """The button's words are the workflow's `# button:` title and `# founder:` sentence, written
     for the person who presses it. The engineers' comment block below them never reaches the
     portal (founder, 2026-08-31: "dev speak should never cross boundaries"). A workflow without
-    both lines gets no button and this generator fails naming it."""
+    both lines gets no button and this generator fails naming it.
+
+    `# result: <title> | <target>` lines (any number) say where the run's result lives, so the
+    task page ends on the thing itself and not on "dispatched" (founder 2026-09-09, the sandbox
+    button: "that's all I see"). A target of the form kind:namespace/name is a catalogue entity;
+    anything else is a URL. An entity carries its zone-resolved link, so no hostname is typed here
+    (LAW 46)."""
     title = sentence = None
+    results = []
     for line in text.splitlines():
         if line.startswith("# button:"):
             title = line[len("# button:") :].strip()
         elif line.startswith("# founder:"):
             sentence = line[len("# founder:") :].strip()
+        elif line.startswith("# result:"):
+            t, _, target = line[len("# result:") :].partition("|")
+            if not (t.strip() and target.strip()):
+                raise SystemExit(f"FAIL    portal-buttons: {wf}: `# result:` wants `<title> | <target>`: {line!r}")
+            results.append((t.strip(), target.strip()))
         elif not line.startswith("#"):
             break
     if not (title and sentence):
         raise SystemExit(
             f"FAIL    portal-buttons: {wf} has no `# button: <plain title>` and `# founder: <one plain sentence>` header lines; the portal shows nothing else"
         )
-    return title, sentence
+    return title, sentence, results
 
 
 def dispatchable():
@@ -68,11 +80,11 @@ def dispatchable():
         if not isinstance(on, dict) or "workflow_dispatch" not in on:
             continue
         inputs = (on.get("workflow_dispatch") or {}).get("inputs") or {}
-        title, sentence = _founder_lines(text, path.name)
-        yield path.name, title, sentence, inputs
+        title, sentence, results = _founder_lines(text, path.name)
+        yield path.name, title, sentence, inputs, results
 
 
-def template_for(wf, name, description, inputs):
+def template_for(wf, name, description, inputs, results=()):
     properties, required = {}, []
     for key, spec in inputs.items():
         spec = spec or {}
@@ -122,6 +134,14 @@ def template_for(wf, name, description, inputs):
             ],
             "output": {
                 "links": [
+                    (
+                        {"title": t, "entityRef": target}
+                        if ":" in target and "/" in target and "://" not in target
+                        else {"title": t, "url": target}
+                    )
+                    for t, target in results
+                ]
+                + [
                     {
                         "title": "Past runs",
                         "url": f"https://github.com/chidionyema/idp/actions/workflows/{wf}",
@@ -132,9 +152,9 @@ def template_for(wf, name, description, inputs):
     }
 
 
-def render(wf, name, description, inputs):
+def render(wf, name, description, inputs, results=()):
     return HEADER.format(wf=wf) + yaml.safe_dump(
-        template_for(wf, name, description, inputs), sort_keys=False, width=100
+        template_for(wf, name, description, inputs, results), sort_keys=False, width=100
     )
 
 
@@ -144,9 +164,9 @@ def render(wf, name, description, inputs):
 def main(argv):
     check = "--check" in argv
     wanted = {}
-    for wf, name, description, inputs in dispatchable():
+    for wf, name, description, inputs, results in dispatchable():
         wanted[OUT / pathlib.Path(wf).stem / "template.yaml"] = render(
-            wf, name, description, inputs
+            wf, name, description, inputs, results
         )
     if not wanted:
         print(
