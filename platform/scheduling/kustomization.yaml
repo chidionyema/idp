@@ -11,3 +11,4 @@ resources:
   - require-priority-class.yaml
   - require-availability.yaml
   - capacity-affinity.yaml
+  - revenue-priority.yaml

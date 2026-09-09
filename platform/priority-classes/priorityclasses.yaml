@@ -35,3 +35,23 @@ value: 1000
 globalDefault: false
 preemptionPolicy: PreemptLowerPriority
 description: "crew#584: nightly platform jobs; finish when the node is calm, yield to the radio room"
+---
+# Revenue (2026-09-09). The cross-node link was severed, the ingress path was pinned to one node,
+# and the node that could serve had 32m of CPU free. Something had to be evicted for the storefront
+# API's 100m, and the cluster's own answer was that nothing should be: observability/langfuse-worker
+# held 1000m as infrastructure-critical, and prospector -- the product being sold -- ran at priority
+# 0 with no class at all, below the nightly platform-batch jobs. mumchimp.com returned 000 to three
+# requests in three while a trace processor whose own web front end was unreachable kept its seat.
+#
+# The radio-room rule still holds for routing and for the visibility you repair by: traefik and the
+# gateways stay infrastructure-critical, and system-cluster-critical is untouched above this. What
+# changes is that the thing a customer pays for is no longer the first thing the scheduler drops.
+# It preempts, so a full node makes room for it rather than leaving the shop down.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: revenue-critical
+value: 1500000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "2026-09-09: what a customer pays for outranks what we watch it with"

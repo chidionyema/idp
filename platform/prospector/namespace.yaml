@@ -5,4 +5,8 @@ metadata:
     # Never garbage-collected by Flux: a namespace moved between Kustomization rows or
     # dropped from git stays, with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
     kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    # 2026-09-09: this is the product that takes money, so it is seated before the things that
+    # watch it. platform/scheduling/revenue-priority.yaml reads this label.
+    estate.mumchimp.com/tier: revenue
   name: prospector
