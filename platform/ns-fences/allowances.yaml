@@ -263,6 +263,8 @@ flows:
     # admitted monitoring since the fence was written -- but this side never said so, and a
     # half-declaration is a deny on the wire.
     egress: [guacamole, robusta, edge]
+    # kubelet: the kube-prometheus-stack kubelet ServiceMonitor scrapes every node's :10250.
+    egress_kubelet: true
     # dagster: the scheduler reads Alertmanager's firing alerts to decide there is
     # anything worth investigating at all.
     ingress_from: [observability, edge, dagster, robusta]
@@ -275,6 +277,10 @@ flows:
     ingress_from: [edge, monitoring]
   observability-agent:
     egress: [observability]
+  metrics-server:
+    # The whole job of this namespace is scraping every worker's kubelet; without this row it
+    # answered readiness with 500 for as long as it had been fenced (2026-09-09).
+    egress_kubelet: true
   tailscale:
     # The operator's egress proxies are the only way anything in the cluster reaches the
     # founder's Mac. Both doors on to it are declared on the other side too.

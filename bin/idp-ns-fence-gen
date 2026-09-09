@@ -183,6 +183,26 @@ def metadata_egress_doc(ns: str) -> dict:
     }
 
 
+# The kubelet's own listener, on every worker: metrics-server scrapes it for the usage feed
+# behind `kubectl top` and the descheduler, and kube-prometheus-stack's kubelet ServiceMonitor
+# scrapes the same port for cAdvisor. Node addresses sit outside the pod network and outside
+# every namespace selector, so only an ipBlock over the worker subnet can name them. Found live
+# 2026-09-09: metrics-server answered its readiness probe with 500, "Failed to scrape node,
+# timeout to access kubelet <node>:10250", for as long as it had been fenced -- so the cluster's
+# actual utilisation was unreadable while its requests sat at 99% CPU.
+KUBELET_PORT = 10250
+
+
+def kubelet_egress_doc(ns: str) -> dict:
+    return {
+        "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+        "metadata": {"name": "allow-kubelet-egress", "namespace": ns},
+        "spec": {"podSelector": {}, "policyTypes": ["Egress"], "egress": [{
+            "to": [{"ipBlock": {"cidr": "${ESTATE_WORKER_CIDR}"}}],
+            "ports": [{"protocol": "TCP", "port": KUBELET_PORT}]}]},
+    }
+
+
 SINK = "observability"  # LAW 50: policy_docs grants both halves of the hop to the collector.
 
 
@@ -265,6 +285,8 @@ def policy_docs(ns: str, flows: dict, emitters: set | None = None) -> list[dict]
         docs.append(internet_egress_doc(ns, internet))
     if flows.get("egress_metadata"):
         docs.append(metadata_egress_doc(ns))
+    if flows.get("egress_kubelet"):
+        docs.append(kubelet_egress_doc(ns))
     public = flows.get("ingress_public") or []
     if public:
         # Only the Gateway's data plane declares this: the load balancer hands it the client's own
