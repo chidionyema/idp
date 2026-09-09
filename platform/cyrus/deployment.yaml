@@ -166,6 +166,14 @@ spec:
             # estate-config; a literal hostname here would be a hardcoded machine name (LAW 46).
             - name: CYRUS_BASE_URL
               value: "https://cyrus.${ESTATE_ZONE}"
+            # The estate router's lane key for this consumer (bin/idp-estate-seed ROUTER_PLAN row
+            # `cyrus`). OpenCode reads it as {env:LITELLM_API_KEY} in the provider block of
+            # configmap.yaml; no vendor key ever reaches this pod (LAW 34).
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: cyrus-router, key: LITELLM_API_KEY }
+            - name: LITELLM_BASE_URL
+              value: http://litellm.llm.svc:4000/v1
           volumeMounts:
             # The ConfigMap mounts at its own read-only path and the entrypoint links it
             # into ~/.cyrus. The obvious shape -- a subPath mount straight at

@@ -224,3 +224,22 @@ nothing else had to move.
 
 This is the same class as wall 3: a manifest that reads as though a credential is configured,
 and a running process that reads a different name. The only reliable test is the boot log.
+
+## 10. One engine per vendor key, and the harness was Anthropic's
+
+Founder, 2026-09-09: "we need opencode or something that allows all models to work, moving away
+from anthropic harness same time" and "any harness needs to be future proof and enable all models".
+Until then the image installed only `cyrus-ai`; the `opencode` label named a binary that was not
+in the image and an `OPENAI_API_KEY` nothing provided, and with no engine configured Cyrus fell
+back to `claude`, so every issue ran on one vendor's harness.
+
+Now `platform/cyrus/Dockerfile` installs OpenCode beside Cyrus, `configmap.yaml` makes it the
+`defaultRunner`, and its one provider is the estate router (`litellm.llm.svc:4000`, in-cluster,
+through `allow-llm-egress` here and `flows.llm.ingress_from` in the fence generator). Every alias
+`platform/llm/config.yaml` declares is a model an issue can pick; the lane key is the
+`cyrus` row of `bin/idp-estate-seed` ROUTER_PLAN, landing as the `cyrus-router` secret. No vendor
+key reaches the pod (LAW 34). Claude on the Max subscription stays a label.
+
+Door (from the UI): in Linear, assign the issue to Cyrus and it runs on the router's `default`
+lane. Add a label `opencode/litellm/minimax` (or any alias) to pick the model, or `claude`,
+`codex`, `gemini`, `cursor` to pick another engine. Nothing to install, no terminal.
