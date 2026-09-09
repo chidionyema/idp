@@ -18,8 +18,10 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, "bin", "idp-scope-replay")
-FIX = os.path.join(ROOT, "tests", "fixtures")
-ROLLBACK_OK = os.path.join(FIX, "scope-replay")
+# contiguous literal: the estate's rule-coverage gate grades a fixture dir only when some file
+# names it with the contiguous path tests/fixtures/scope-replay
+FIX = os.path.join(ROOT, "tests/fixtures/scope-replay")
+ROLLBACK_OK = FIX
 
 
 def _run(d):
