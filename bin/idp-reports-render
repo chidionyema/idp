@@ -217,6 +217,63 @@ def first_time_success(args: argparse.Namespace) -> int:
     return 0
 
 
+def forge_spend(args: argparse.Namespace) -> int:
+    """Modal/compute spend report (founder 2026-09-09): the real cumulative usd logged in the
+    forge's experiment records, so spend is visible and the hard cap (forge/common.py
+    modal_spend_gate) is not an invisible tripwire. Reads the git-tracked ledger
+    forge/experiments/<stamp>-<task>.md front matter; a dir that cannot be read is BLIND, never a
+    clean zero."""
+    out_dir = pathlib.Path(args.out_dir)
+    meta = {"id": "forge-spend", "title": "Forge compute spend (Modal + free lanes)",
+            "file": "docs/reports/forge-spend.md", "schedule_minutes": 1440,
+            "source": "forge/experiments/*.md front matter (usd: per completed run)"}
+    ledger = pathlib.Path(args.ledger)
+    rows: list[dict] = []
+    blind = None
+    try:
+        for f in sorted(ledger.glob("*T*-*.md")):
+            text = f.read_text(encoding="utf-8")
+            usd = _front_usd(text)
+            if usd is not None:
+                rows.append({"file": f.name, "usd": usd})
+    except Exception as exc:
+        if not ledger.is_dir():
+            blind = f"forge/experiments/ is not a readable dir ({type(exc).__name__})"
+    total = round(sum(r["usd"] for r in rows), 4)
+    cap = float(args.cap)
+    meta["generated_at"] = now_iso()
+    if blind:
+        meta.update({"blind": True, "summary": f"BLIND: {blind}"})
+        write(out_dir, meta, f"# Forge compute spend\n\nGenerated {meta['generated_at']}.\n\n**{blind}** — spend is unknown, so the hard cap cannot be proved.\n")
+        return 0
+    at_or_over = total >= cap
+    meta["summary"] = (f"${total:.4f} cumulative (cap ${cap:.2f}); "
+                       + ("AT/OVER CAP - runs refuse" if at_or_over else "under cap - runs allowed"))
+    lines = ["# Forge compute spend", "",
+             f"Generated {meta['generated_at']}. Cumulative spend across recorded Forge runs "
+             f"({len(rows)} spend-bearing record(s)).", "",
+             f"**Cumulative Modal/compute spend: **${total:.4f}** against a ${cap:.2f} cap.**", ""]
+    lines.append("**" + ("This total is at or over the cap: new runs are refused (fail closed), so no card can be reached." if at_or_over else "Under the cap: runs may dispatch.") + "**")
+    if rows:
+        lines += ["", "| record | usd |", "|---|---|"]
+        lines += [f"| {cell(r['file'])} | ${r['usd']:.4f} |" for r in rows]
+    lines += ["", "The cap lives in forge/common.py (modal_spend_gate, DEFAULT_MONTHLY_CAP_USD) and is enforced "
+                  "before a Modal GPU bills; Kaggle's free lane adds no usd."]
+    write(out_dir, meta, "\n".join(lines))
+    return 0
+
+
+def _front_usd(text: str) -> float | None:
+    """usd from front matter; None when absent/not numeric. A real run logs a number."""
+    m = re.search(r"^usd:\s*([0-9]+(?:\.[0-9]+)?)\s*$", text, re.M)
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -229,6 +286,11 @@ def main(argv: list[str]) -> int:
     b.add_argument("--days", type=int, default=14)
     b.add_argument("--out-dir", required=True)
     b.set_defaults(fn=first_time_success)
+    fs = sub.add_parser("forge-spend", help="cumulative Forge compute spend vs the fail-closed cap")
+    fs.add_argument("--ledger", default="forge/experiments", help="dir of forge experiment records")
+    fs.add_argument("--cap", default="5", help="monthly cap USD as enforced by modal_spend_gate")
+    fs.add_argument("--out-dir", required=True)
+    fs.set_defaults(fn=forge_spend)
     args = ap.parse_args(argv)
     return args.fn(args)
 

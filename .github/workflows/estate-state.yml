@@ -176,10 +176,11 @@ jobs:
             --prs "$RUNNER_TEMP/prs.json" --incidents "$RUNNER_TEMP/incidents.json" \
             --decision-commits "$RUNNER_TEMP/decisions.json" --changes "$RUNNER_TEMP/changes.json" \
             --main-sha "idp=$GITHUB_SHA" --out "$RUNNER_TEMP/out/estate-state.json" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: render the Flux report for the portal's Reports page (crew#684, founder 2026-09-01)
+      - name: render the Flux + Forge-spend reports for the portal's Reports page (crew#684, founder 2026-09-01 + 2026-09-09 spend control)
         run: |
           set -euo pipefail
           bin/idp-reports-render flux-state --cluster-receipt "$RUNNER_TEMP/cluster.txt" --out-dir "$RUNNER_TEMP/reports" | tee -a "$GITHUB_STEP_SUMMARY"
+          bin/idp-reports-render forge-spend --ledger forge/experiments --cap 5 --out-dir "$RUNNER_TEMP/reports" | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: estate-reports-flux
