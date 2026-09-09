@@ -322,3 +322,81 @@ observability links. Fix: for every host `http_hostnames(src)` returns, emit a f
 `Open <name>` at `https://<host>`; regenerate, `bin/catalog-platform --check` green. Done when the
 drift row reads `0 unregistered`.
 Door (from the UI): Backstage, the layer's page, the "Open" link at the top opens the running surface.
+
+## 11. Handed to DeepSeek 2026-09-09 09:55Z: the planning seat leaves Claude Code for good
+
+Founder, 2026-09-09: "any harness needs to be future proof and enable all models" (record
+`~/.claude/docs/founder/2026-09-09T0548Z-any-harness-is-future-proof-and-enables-all-models.md`);
+"now focus on geeting us off this stupid harnes for good"; "deepseek is lead enginerr".
+
+**Decision.** The estate's one agent harness is OpenCode on the estate router. It is already
+installed (1.18.20), already the Cyrus engine (PR #2738), already configured at
+`~/.config/opencode/opencode.json` with provider `estate` (`https://llm.<zone>/v1`) and every
+router alias (minimax, deepseek, claude, gemini, groq, openrouter, vision). Claude Code is
+retired as a seat: its laws move into one OpenCode plugin, its subscription becomes one router
+alias among many. pi stays only as a fallback engine for Cyrus; it gains no new extensions.
+Rejected: keeping Claude Code with the read-shunt (still one vendor's harness); writing a new
+harness (LAW 43); porting to pi (single-maintainer tool, no plugin API for permissions).
+
+**11.1 One plugin carries the laws.** `~/.claude/scripts/` is the estate's hook library and
+already speaks one protocol: JSON on stdin, exit 2 or a `permissionDecision: deny` JSON on stdout
+means refused (`hook-run.py`). Build `~/.claude/scripts/opencode/estate-laws.ts` (checked in
+under `claude-estate`, symlinked into `~/.config/opencode/plugin/`) that maps OpenCode's plugin
+hooks onto the same scripts through `hook-run.py`, so no guard is rewritten:
+
+| OpenCode hook | runs (through `python3 $HOME/.claude/scripts/hook-run.py <script>`) |
+|---|---|
+| `tool.execute.before` | scope-guard, config-syntax-guard, dupe-work-fence, pr-cap-guard, rule-guard, ticket-gate, credential-guard, merge-divergence-hook, read-shunt, opa-hook (a refusal throws; OpenCode shows the reason) |
+| `tool.execute.after` | research-capture, slow_commands.py --post |
+| `chat.message` | directive-capture, founder-doc-capture |
+| `experimental.chat.system.transform` | laws-link-guard, canonical-root-guard: prepend `~/AGENTS.md` and the project `AGENTS.md`; `instructions` in opencode.json already carries `{env:HOME}/AGENTS.md` |
+| session idle event (`event` hook, `session.idle`) | opa-hook, secret-scrub, dod-guard, prompt-ledger, close-guard, founder-deliver, blocker-guard, credential-guard, session-recorder --hook, estate-checkpoint, session_emit.py --hook |
+| plugin load | sync-guard, peer-loop-fence, memory-loop, session-recorder --restore-hook |
+
+The payload the plugin writes to stdin is the Claude Code shape (`tool_name`, `tool_input`,
+`session_id`, `cwd`, `hook_event_name`) with OpenCode's tool names mapped: `bash`→`Bash`,
+`read`→`Read`, `edit`→`Edit`, `write`→`Write`, `glob`→`Glob`, `grep`→`Grep`. That mapping is
+one dict in the plugin and the only harness-specific code in the estate.
+
+**11.2 Proof both ways, in CI.** `tests/test_opencode_estate_laws.py` in `claude-estate` starts
+`opencode run` headless against the router with `OPENCODE_CONFIG` pointing at a fixture config,
+and grades: a bare `kubectl get pods` is refused with rule-guard's text; a `git add -A` is
+refused; a 400-line file read comes back as a read-shunt digest; a normal `ls` runs. Fixtures
+`tests/fixtures/opencode-laws/{bad,good}.jsonl`. A guard that refuses `ls` is an outage (LAW 38)
+and fails the test.
+
+**11.3 Model routing is the router's, not the harness's.** Default model in opencode.json stays
+`estate/deepseek` for the planning seat (founder: DeepSeek is lead engineer). `estate/claude` is
+the Anthropic Max subscription behind LiteLLM's `claude` alias; no `anthropic` provider block in
+opencode.json, ever (R34). `bin/idp-harness-gate` (new, one row in `rules.yaml`, fixtures
+`tests/fixtures/harness/{bad,good}.json`) refuses an opencode.json that names a provider other
+than `estate`, or a model alias the router's `llm/config.yaml` does not declare.
+
+**11.4 Retire the Claude Code seat.** After 11.2 is green: delete the `hooks` block from
+`~/.claude/settings.json` (the scripts stay; they are the library), remove Claude Code from
+`~/.claude/scripts/rebuild/PREREQUISITES.md` and `drills/dependencies.json`, add OpenCode; the
+ONE SESSION rule in `~/.claude/CLAUDE.md` is reworded to "one planning seat, OpenCode". The
+`session-recorder`, `dod-guard` and `founder-deliver` ledgers keep their paths so history reads
+continuously across the switch.
+
+**Door (from the UI):** Backstage → Catalog → `harness` component (new
+`backstage/platform/catalog-info.yaml` entry emitted by `bin/catalog-platform` from
+`~/.config/opencode/opencode.json`) → link **Open the planning seat** → the OpenCode web UI
+(`opencode web`, published at `code.<zone>` behind the gateway's OIDC per OUR SSO POLICY). The
+founder types a task there; the same laws answer him as in this session; the model picker lists
+the router's aliases only. Progress door: Linear issue MUM-297 "Harness exit" (DeepSeek creates
+it; Cyrus picks it up from the label).
+
+**Done, in commands.**
+```
+opencode run -m estate/deepseek "run: kubectl get pods -A"        # → refused, rule-guard text, exits non-zero
+opencode run -m estate/deepseek "read bin/catalog-gen"            # → read-shunt digest, not the file
+pytest ~/.claude/tests/test_opencode_estate_laws.py               # → green
+python3 bin/idp-harness-gate ~/.config/opencode/opencode.json    # → OK
+jq '.hooks' ~/.claude/settings.json                              # → null
+curl -sI https://code.<zone>/ | head -1                          # → 302 to the OIDC gateway, never 200 anonymous
+```
+
+**Optimised:** naive 14 steps (one adapter per guard) → 5 steps: one plugin, one payload
+mapper, one test file, one gate row, one settings edit. Bottleneck is 11.2's headless run
+against the live router; batch all four grades into one `opencode run` session. No console step.
