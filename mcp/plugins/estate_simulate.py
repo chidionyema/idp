@@ -448,4 +448,97 @@ def _live_graders(source):
             "detail": detail or "shadow observation unreadable",
         }
 
-    return {"admission": admission, "laws": laws, "converge": converge}
+    def _prefix(proc) -> tuple[str | None, str]:
+        """The grader bins print a leading ok/FAIL/BLIND token; the verdict must come from that
+        token, never from the exit code -- idp-fits-a-node returns 0 on BLIND too, so an exit-code
+        reader would fold a blind read into a pass (the silent failure the estate's rules forbid)."""
+        first_line = (proc.stdout or proc.stderr or "").strip().splitlines()
+        first = first_line[0].strip() if first_line else ""
+        parts = first.split(maxsplit=1)
+        verdict_mark = (
+            parts[0] if parts and parts[0] in ("ok", "FAIL", "BLIND") else None
+        )
+        return verdict_mark, first
+
+    def network():
+        """Grade 'can it reach what it needs and nothing else' (MUM-288 network row) from the Calico
+        deny-feed the collector already carries (bin/idp-calico-deny-log): denial evidence is read
+        for a real answer; an empty feed is FAIL (no evidence is not a clean bill); no feed supplied
+        is UNKNOWN -- never SAFE."""
+        raw = os.environ.get("ESTATE_MCP_CALICO_FEED", "")
+        if not raw:
+            return {
+                "verdict": "UNKNOWN",
+                "detail": "no Calico deny feed supplied; network ungraded",
+            }
+        deny = base / "bin" / "idp-calico-deny-log"
+        if not deny.is_file():
+            return {
+                "verdict": "UNKNOWN",
+                "detail": "bin/idp-calico-deny-log not present",
+            }
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(deny), raw],
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+        except Exception as exc:  # noqa: BLE001 - a grader that could not run is UNKNOWN
+            return {"verdict": "UNKNOWN", "detail": f"network could not run: {exc}"}
+        verdict_mark, first = _prefix(proc)
+        if verdict_mark == "ok":
+            return {"verdict": "SAFE", "detail": first or "deny feed read clean"}
+        if verdict_mark == "FAIL":
+            return {"verdict": "UNSAFE", "detail": first or "deny feed shows a break"}
+        return {
+            "verdict": "UNKNOWN",
+            "detail": first or "network grader did not answer",
+        }
+
+    def placement():
+        """Grade 'will a node take it' (MUM-288 placement row) from a cluster snapshot receipt via
+        bin/idp-fits-a-node. With no receipt the door does not read the live cluster (no standing
+        write); the verdict is UNKNOWN -- never SAFE on a BLIND read, which idp-fits-a-node prints
+        as BLIND even though it exits 0."""
+        raw = os.environ.get("ESTATE_MCP_PLACEMENT_RECEIPT", "")
+        if not raw:
+            return {
+                "verdict": "UNKNOWN",
+                "detail": "no placement receipt supplied; placement ungraded",
+            }
+        fits = base / "bin" / "idp-fits-a-node"
+        if not fits.is_file():
+            return {"verdict": "UNKNOWN", "detail": "bin/idp-fits-a-node not present"}
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(fits), "--receipt", raw],
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+        except Exception as exc:  # noqa: BLE001 - a grader that could not run is UNKNOWN
+            return {"verdict": "UNKNOWN", "detail": f"placement could not run: {exc}"}
+        verdict_mark, first = _prefix(proc)
+        if verdict_mark == "ok":
+            return {
+                "verdict": "SAFE",
+                "detail": first or "every workload could be placed again",
+            }
+        if verdict_mark == "FAIL":
+            return {
+                "verdict": "UNSAFE",
+                "detail": first or "a workload fits no other node",
+            }
+        return {
+            "verdict": "UNKNOWN",
+            "detail": first or "placement grader did not answer",
+        }
+
+    return {
+        "admission": admission,
+        "laws": laws,
+        "converge": converge,
+        "network": network,
+        "placement": placement,
+    }
