@@ -98,7 +98,10 @@ spec:
                   # so changing what a lane asks is a change in the engine's repository and
                   # changing what it asks about is a change here.
                   n=$(grep -c . /questions/subjects)
-                  i=$(( ($(date -u +%H) % n) + 1 ))
+                  # Rotate by the hour from the integer epoch (no octal trap): dash's $(( ))
+                  # reads "08"/"09" as invalid octal, so a day/hour string failed the whole
+                  # run on the hours that start with 0 (measured 2026-09-09, UTC 08/09).
+                  i=$(( ( ($(date -u +%s) / 3600) % n ) + 1 ))
                   line=$(sed -n "${i}p" /questions/subjects)
                   lane=${line%%:*}
                   subject=${line#*: }
