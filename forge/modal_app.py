@@ -31,7 +31,7 @@ REMOTE = "/root/forge"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(REMOTE)
-from common import compute_plan, cost_gate, usd_for  # noqa: E402
+from common import compute_plan, cost_gate, modal_spend_gate, usd_for  # noqa: E402
 
 GPU = "T4"  # the decorator default; main() rebinds gpu and timeout from the task's compute block
 
@@ -153,8 +153,15 @@ def main(
         )
     )
     plan = compute_plan(task_yaml)
-    refusal = cost_gate(task_yaml)
-    if refusal:  # the one pre-launch gate: nothing is billed, the record still says why
+    refusal = cost_gate(task_yaml)  # per-run worst-case budget
+    # Aggregate fail-closed guard (real spend control, founder 2026-09-09): refuse BEFORE any
+    # GPU bills once the committed forge/experiments/ ledger total is at/over the cap, so a card
+    # cannot be reached on the free-credit plan. The ledger is the git-tracked dir on the branch
+    # the workflow dispatches from (main sees every merged record).
+    ledger = pathlib.Path(os.path.dirname(os.path.abspath(__file__)), "experiments")
+    agg_refusal = modal_spend_gate(ledger) if ledger.is_dir() else None
+    refusal = refusal or agg_refusal
+    if refusal:  # the pre-launch gates: nothing is billed, the record still says why
         result = {
             "task": task,
             "task_file": task_file,

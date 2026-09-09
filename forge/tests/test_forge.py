@@ -279,3 +279,57 @@ def test_modal_app_imports_common_after_module_reads_both_dirs():
     assert common_lineno > max(appends + inserts), (
         "the common import must run after the module dir and REMOTE are both on sys.path"
     )
+
+
+# ---- Forge spend control (founder 2026-09-09: track + refuse so no card is reached) ----
+import tempfile
+
+
+def _write_record(dir_, name, usd):
+    d = Path(dir_)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_text(
+        f"---\nexperiment: {name}\ntask: t\nverdict: shipped\nusd: {usd}\n---\n# body\n",
+        encoding="utf-8",
+    )
+
+
+def test_total_spend_sums_recorded_ledger():
+    import shutil
+
+    from common import spend_from_ledger, total_spend
+
+    d = Path(tempfile.mkdtemp())
+    try:
+        _write_record(d, "20260909T0000Z-a.md", 0.1632)
+        _write_record(d, "20260910T0000Z-b.md", 0.84)
+        _write_record(d, "0001-plan.md", None)  # no usd -> not a run
+        rows = spend_from_ledger(d)
+        assert {r["file"]: r["usd"] for r in rows} == {
+            "20260909T0000Z-a.md": 0.1632,
+            "20260910T0000Z-b.md": 0.84,
+        }, rows
+        assert total_spend(d) == pytest.approx(0.1632 + 0.84)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_modal_spend_gate_refuses_at_or_over_cap_and_allows_below():
+    import shutil
+
+    from common import modal_spend_gate
+
+    d = Path(tempfile.mkdtemp())
+    try:
+        _write_record(d, "20260909T0000Z-a.md", 7.0)  # over the $5 cap
+        refusal = modal_spend_gate(d, cap_usd=5.00)
+        assert refusal is not None and "cap" in refusal.lower(), refusal
+        # below cap -> allowed
+        d2 = Path(tempfile.mkdtemp())
+        try:
+            _write_record(d2, "20260909T0000Z-a.md", 0.16)
+            assert modal_spend_gate(d2, cap_usd=5.00) is None
+        finally:
+            shutil.rmtree(d2, ignore_errors=True)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
