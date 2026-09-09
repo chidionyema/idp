@@ -1,17 +1,20 @@
 // Buyer first (founder 2026-09-02: catalogue, health, docs, login first; the content pane
 // scrolls, the nav stays). Backstage's own Sidebar is the chrome (LAW 43). Each door is a
 // SidebarItem, not a SidebarGroup of one and not a submenu: a group made hover expand into a
-// second click (founder 2026-09-03: "outdated interactions"). The buyer's five doors sit
-// above a divider, the operator's five below it, and every door is one click. Find is
+// second click (founder 2026-09-03: "outdated interactions"). The buyer's seven doors sit
+// above a divider, the operator's eight below it, and every door is one click. Founder,
+// 2026-09-09: "/estate, /ops, /tools, /reports, /investigate, /showcase and /pair. need
+// menu links" -- every published page is a door; a page reachable only by typing its path
+// is not deployed to the person who cannot see it. Find is
 // Backstage's own search modal (Cmd/Ctrl+K). Every page the nav does not list is still
 // published at its path and still graded by bin/idp-login-drill.
 //
 // On a phone (founder, 2026-09-01: "I am the one using it and I don't like it") the menu
 // slides in from the left behind a menu button in the top-left corner. Backstage's Sidebar
-// folds itself into a bottom bar under 600px, ten tabs wide, and the founder read that as
+// folds itself into a bottom bar under 600px, one tab per door, and the founder read that as
 // "there is no menu". The phone menu is Material UI's own Drawer, temporary variant: it is
 // the component every phone menu on the web is built from, it closes on tap, on Escape and
-// on the backdrop, and it is the same ten doors in the same order.
+// on the backdrop, and it is the same doors in the same order.
 //
 // Icons are Remix, the icon set Backstage's own IconElement prefers (Material icons are
 // deprecated there); remixIcon.tsx wraps them into the shape SidebarItem wants.
@@ -49,12 +52,17 @@ import {
   RiBookOpenLine,
   RiCalendarLine,
   RiCloseLine,
+  RiCompass3Line,
+  RiFileChartLine,
   RiMenuLine,
   RiNodeTree,
   RiPulseLine,
+  RiSearchEyeLine,
   RiSearchLine,
   RiServerLine,
+  RiSlideshow3Line,
   RiStackLine,
+  RiTeamLine,
   RiToolsLine,
   RiUserLine,
 } from '@remixicon/react';
@@ -75,6 +83,11 @@ const TimelineIcon = remix(RiPulseLine);
 const SearchIcon = remix(RiSearchLine);
 const MenuBookIcon = remix(RiBookOpenLine);
 const AccountCircleIcon = remix(RiUserLine);
+const EstateIcon = remix(RiCompass3Line);
+const ShowcaseIcon = remix(RiSlideshow3Line);
+const ReportsIcon = remix(RiFileChartLine);
+const InvestigateIcon = remix(RiSearchEyeLine);
+const PairIcon = remix(RiTeamLine);
 
 // The Map door (founder 2026-09-07, on an empty graph): the catalog graph draws outward from
 // roots it is given and nothing at all when it is given none, and this link carried none -- the
@@ -94,19 +107,24 @@ export const MAP_TO = `/catalog-graph?${MAP_ROOTS.map(
 
 export const NAV = [
   { title: 'Home', to: '/', icon: TodayIcon },
+  { title: 'Estate', to: '/estate', icon: EstateIcon },
   { title: 'Catalogue', to: '/catalog', icon: LayersIcon },
   { title: 'Health', to: '/ops', icon: TimelineIcon },
+  { title: 'Showcase', to: '/showcase', icon: ShowcaseIcon },
   { title: 'Docs', to: '/docs', icon: MenuBookIcon },
   { title: 'You', to: '/settings', icon: AccountCircleIcon },
+  { title: 'Reports', to: '/reports', icon: ReportsIcon },
+  { title: 'Investigate', to: '/investigate', icon: InvestigateIcon },
+  { title: 'Pair', to: '/pair', icon: PairIcon },
+  { title: 'Tools', to: '/tools', icon: BuildIcon },
   { title: 'Create', to: '/create', icon: AddCircleOutlineIcon },
   { title: 'Map', to: MAP_TO, icon: AccountTreeIcon },
   { title: 'Kubernetes', to: '/catalog?filters%5Bkind%5D=Component', icon: DnsIcon },
-  { title: 'Tools', to: '/tools', icon: BuildIcon },
   { title: 'Find', to: '/search', icon: SearchIcon },
 ] as const;
 
 /** The first doors a visitor sees; the rest sit below the divider. */
-export const BUYER_COUNT = 5;
+export const BUYER_COUNT = 7;
 
 // The words a person reads on the phone menu. bin/idp-login-drill grades the phone view on
 // these words, never on a selector (R53).
@@ -170,7 +188,7 @@ const FindShortcut = () => {
   return null;
 };
 
-// The phone nav: a menu button, and the ten doors in a drawer that slides in from the left.
+// The phone nav: a menu button, and the doors in a drawer that slides in from the left.
 const PhoneNav = () => {
   const classes = usePhoneStyles();
   const [open, setOpen] = useState(false);
@@ -270,7 +288,7 @@ export const EstateNav = NavContentBlueprint.make({
     // A named, capitalised function: the hooks below are legal only inside a component, and
     // the lint rule recognises a component by its name, not by the slot it is handed to.
     component: function EstateNavContent({ navItems }) {
-      // Every plugin's nav item is taken so nothing renders twice; the ten above are the nav.
+      // Every plugin's nav item is taken so nothing renders twice; NAV above is the nav.
       navItems.withComponent(() => null);
       const theme = useTheme();
       // Backstage's own breakpoint for its bottom bar is 'xs' (under 600px); the phone menu
