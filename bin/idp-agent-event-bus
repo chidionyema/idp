@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""bin/idp-agent-event-bus — is the founder's agent reaching its event bus? (MUM-283)
+
+MUM-283 ("no founder prompt goes void") needs an instrument: when the founder's agent
+(`otto-gateway`, the process that holds the founder's Telegram) cannot reach its event bus
+(NATS at nats.event-bus.svc:4222), the founder is effectively talking to nobody -- every prompt
+and every scheduled delivery to him goes void. Before this file the estate had no instrument for
+that edge: `otto-parity` proves gateway-up, the Mac, memory, the model lane, the workspace, a
+ServiceAccount and the estate MCP, but NOT that otto-gateway can reach NATS. Measured
+2026-09-09: otto-gateway was crash-looping on a NATS connect timeout (nats.aio.client
+TimeoutError) for hours and no instrument red -- a human found it by reading pod logs. LAW 28:
+an instrument nobody reads is not an instrument, and this is the missing one.
+
+This program grades a REACHABILITY OBSERVATION -- a small JSON an executor writes after probing
+the live edge (`kubectl exec` a TCP connect, or a collector flow) -- fail-closed:
+
+    {
+      "founder_agent": {"pod": "otto-gateway-...", "namespace": "otto-gateway", "node": "10.0.159.197"},
+      "event_bus":     {"pod": "nats-0", "namespace": "event-bus", "node": "10.0.148.221"},
+      "reachable": true|false|null,      // null/absent == the probe did not run or did not answer
+      "probe": "2026-09-09T21:15:00Z"    // optional, for the row's age
+    }
+
+Verdict (never inferred from a missing field):
+  --reachable true  -> ok    (the agent reached the bus it is declared to need)
+  --reachable false -> FAIL  (the agent cannot reach the bus; named in the detail)
+  --reachable null/absent, or the JSON/SRO unreadable -> FAIL (no evidence of reach is NOT a
+     pass; the agent being unproven-reachable is the void this instrument exists to red)
+
+Usage:
+    ESTATE_AGENT_OBSERVATION=obs.json bin/idp-agent-event-bus   (or pass the path as the arg)
+Exit 0 ok, 1 FAIL, 2 BLIND (unusable input). Fixture-graded in tests, exactly like
+bin/idp-shadow-verify -- no cluster needed to be correct.
+"""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def grade(obs: dict) -> tuple[bool, list[str]]:
+    """Return (ok, reasons) over one observation. Empty reasons == the agent reaches the bus."""
+    reasons: list[str] = []
+    ra = (obs.get("event_bus") or {}).get("reachable", obs.get("reachable"))
+    agent_pod = (obs.get("founder_agent") or {}).get("pod") or "?"
+    if ra is True:
+        return True, []
+    if ra is False:
+        reasons.append(
+            f"the founder agent {agent_pod} measured UNABLE to reach the event bus (NATS)"
+        )
+    else:
+        reasons.append(
+            f"the founder agent {agent_pod} reach to the event bus is UNPROVEN (probe absent or "
+            f"did not answer); no reach is not a pass for the founder's channel"
+        )
+    return False, reasons
+
+
+def main(argv: list[str]) -> int:
+    path = argv[0] if argv else (sys.stdin.read().strip() if not sys.stdin.isatty() else "")
+    if not path:
+        print("BLIND   agent-event-bus  no observation path or stdin given", file=sys.stderr)
+        return 2
+    try:
+        raw = Path(path).read_text(encoding="utf-8") if not path.startswith("{") else path
+        obs = json.loads(raw)
+    except (OSError, ValueError) as exc:
+        print(f"BLIND   agent-event-bus  cannot read observation {path}: {exc}", file=sys.stderr)
+        return 2
+    ok, reasons = grade(obs)
+    if ok:
+        print("ok      agent-event-bus  the founder agent reaches its event bus (NATS)")
+        return 0
+    ap = (obs.get("founder_agent") or {}).get("pod") or "?"
+    print(f"FAIL    agent-event-bus  {ap}")
+    for r in reasons:
+        print(f"        - {r}")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
