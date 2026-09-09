@@ -11,7 +11,12 @@ spec:
   replicas: 1
   # The home volume is a ReadWriteOnce block volume (below): a rolling update would hold the
   # old pod on it while the new one waits forever for the same claim.
-  strategy: { type: Recreate }
+  # `rollingUpdate: null` is load-bearing: the live object was born RollingUpdate and the API
+  # server defaulted maxSurge/maxUnavailable onto it. Server-side apply keeps a field the
+  # manifest is silent on, and a Recreate strategy with rollingUpdate set is Invalid, so Flux's
+  # dry-run refused every apply after the switch (kustomization cyrus, ReconciliationFailed,
+  # 2026-09-09). Naming the field null is how server-side apply is told to remove it.
+  strategy: { type: Recreate, rollingUpdate: null }
   selector:
     matchLabels:
       app.kubernetes.io/name: cyrus
@@ -31,6 +36,8 @@ spec:
         reloader.stakater.com/auto: "false"
     spec:
       serviceAccountName: cyrus
+      # crew#539: every platform workload names a class so the scheduler can rank it under pressure.
+      priorityClassName: platform-batch
       automountServiceAccountToken: false
       imagePullSecrets:
         - name: ghcr-pull
