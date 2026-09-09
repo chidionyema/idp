@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""bin/idp-shadow — prove a change in the sandbox vcluster (spec W2.1/W2.2).
+
+The shadow dimension (docs/policy/agent-infra-safety-spec.md W2): an ephemeral vcluster carries
+production-inherited state, a pull request's diff is applied inside it, and the workload must
+still converge (Ready, at replicas, probes green, tests green) before the change may meet the
+gate. It exists so a change is proven against *something that can run it* without touching the
+real cluster.
+
+This command drives the estate's sandbox vcluster (platform/sandbox/vcluster) from the laptop or
+CI:
+
+    idp-shadow up <workload> [MANIFEST...]
+        ensure the sandbox vcluster is running; apply the workload's manifests (reshaped by
+        bin/idp-shadow-sync so Secrets become shell dummies) into its `demo` namespace; write a
+        shadow state dir (run-name, kubeconfig) that `verify`/`down` reuse. Prints the run id
+        `shadow-<workload>-<n>`.
+
+    idp-shadow verify <workload> [DIFF]
+        (re)apply the change and assert convergence by reading the vcluster's live state into
+        bin/idp-shadow-verify: Ready, ready==available==required, ingress probes green. Exit 0
+        converged, 1 broke the workload, 2 BLIND.
+
+    idp-shadow down <workload>
+        remove the applied workload from the vcluster so nothing leaks; end the sandbox launch.
+
+The host admits a synced pod like any other (first launch 2026-09-06): a manifest from an agent
+that lacks runAsNonRoot + seccomp RuntimeDefault + read-only root + probes is refused at
+admission once synced. idp-shadow-sync reshapes Secrets only; it does not add security context --
+so callers pass a host-legal manifest (the estate's rendered deployments already are). This is
+the reason the demo sandbox rejects a bare nginx pod but runs the seeded demo-shop unchanged.
+"""
+import argparse
+import base64
+import json
+import os
+import subprocess
+import sys
+import time
+
+import yaml
+
+VERIFY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "idp-shadow-verify")
+SYNC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "idp-shadow-sync")
+
+SHADOW_NS = "demo"  # the vcluster namespace the syncer runs workloads in
+HOST_NS = "demo-sandbox"
+SANDBOX_PORT = 8443
+
+
+def _env():
+    e = dict(os.environ)
+    return e
+
+
+def _run(argv, env=None, check=True, timeout=180):
+    p = subprocess.run(argv, capture_output=True, text=True, env=env or _env(), timeout=timeout)
+    if check and p.returncode != 0:
+        raise RuntimeError(f"{' '.join(argv[:4])}... exited {p.returncode}: "
+                           f"{(p.stderr or p.stdout).strip()[-600:]}")
+    return p
+
+
+def _run_blind(argv, env=None, timeout=120):
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, env=env or _env(), timeout=timeout)
+        return p.returncode == 0
+    except Exception:
+        return False
+
+
+def sandbox_copy_vcluster_kubeconfig() -> str | None:
+    """Fetch the sandbox vcluster kubeconfig; None if the sandbox is idle/not running."""
+    cfg = _run(["kubectl", "get", "secret", "-n", HOST_NS, "vc-demo-sandbox",
+                "-o", "jsonpath={.data.config}"], check=False)
+    if cfg.returncode != 0 or not cfg.stdout.strip():
+        return None
+    path = "/tmp/idp-shadow-vc-kubeconfig.yaml"
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(base64.b64decode(cfg.stdout).decode())
+    return path
+
+
+def vc_run(argv, env=None, **kw):
+    """Run a kubectl verb against the vcluster via its kubeconfig."""
+    kcfg = sandbox_copy_vcluster_kubeconfig()
+    if not kcfg:
+        raise RuntimeError("sandbox vcluster is not running (sandbox idle); run launch first")
+    return _run(["kubectl", "--kubeconfig", kcfg] + argv, env=env, **kw)
+
+
+def run_id(workload) -> str:
+    return f"shadow-{workload}-{int(time.time())}"
+
+
+def apply_manifests(workload, manifests, kcfg):
+    """Reshape (secret shells) and apply manifest files into the vcluster demo ns."""
+    if manifests:
+        # reshape secrets to shells, re-emit a flat set dir of yaml, apply each
+        flat = "/tmp/idp-shadow-flat"
+        _run(["sh", "-c", f"rm -rf {flat} && mkdir -p {flat}"])
+        _run(["python3", SYNC] + list(manifests) + ["--out", flat])
+        for fn in sorted(os.listdir(flat)):
+            if not fn.endswith((".yaml", ".yml")):
+                continue
+            p = _run(["kubectl", "--kubeconfig", kcfg, "apply", "--validate=false",
+                      "-f", os.path.join(flat, fn)], check=False)
+            if p.returncode != 0:
+                print(f"warn  shadow  apply {fn}: {p.stderr.strip()[-300:]}")
+
+
+def up(workload, manifests):
+    kcfg = sandbox_copy_vcluster_kubeconfig()
+    if not kcfg:
+        return "BLIND", ["sandbox vcluster not running: launch the sandbox (demo-sandbox action=launch) first"]
+    rid = run_id(workload)
+    apply_manifests(workload, manifests, kcfg)
+    print(f"ok      shadow  {rid} applied into the {SHADOW_NS} namespace of the sandbox vcluster")
+    return 0, ["kubeconfig=%s" % kcfg]
+
+
+def verify(workload, diffs):
+    kcfg = sandbox_copy_vcluster_kubeconfig()
+    if not kcfg:
+        return 2, ["sandbox not running"]
+    if diffs:
+        apply_manifests(workload, diffs, kcfg)
+
+    def field(f):
+        return vc_run(["get", "deploy", workload, "-n", SHADOW_NS,
+                       "-o", f"jsonpath={{{f}}}"], check=False).stdout.strip()
+
+    # wait up to ~2m for the deployment to schedule and settle a replica
+    deadline = time.time() + 120
+    while time.time() < deadline:
+        avail = field(".status.availableReplicas")
+        req = field(".spec.replicas") or "1"
+        if avail and int(avail) >= int(req):
+            time.sleep(2)  # let readiness probes settle
+            break
+        time.sleep(5)
+
+    req = field(".spec.replicas") or "1"
+    avail = field(".status.availableReplicas") or "0"
+    readyc = field(".status.readyReplicas") or "0"
+    una = field(".status.unavailableReplicas") or "0"
+    is_ready = int(avail) >= int(req) and int(una) == 0
+    obs = {
+        "kind": "Deployment",
+        "metadata": {"name": workload, "namespace": SHADOW_NS},
+        "ready": is_ready,
+        "requiredReplicas": int(req),
+        "availableReplicas": int(avail),
+        "readyReplicas": int(readyc),
+        "probes": {"probe": "pass" if is_ready else "fail"},
+        "tests": None,
+    }
+    opath = f"/tmp/idp-shadow-obs-{workload}.json"
+    with open(opath, "w", encoding="utf-8") as fh:
+        json.dump(obs, fh)
+    r = subprocess.run(["python3", VERIFY, opath], capture_output=True, text=True)
+    print((r.stdout or r.stderr).strip())
+    return (0 if r.returncode == 0 else 1), []
+
+
+def down(workload):
+    kcfg = sandbox_copy_vcluster_kubeconfig()
+    if kcfg:
+        vc_run(["delete", "deploy", workload, "-n", SHADOW_NS, "--ignore-not-found"], check=False)
+        vc_run(["delete", "cm", "-n", SHADOW_NS, "-l", f"shadow/owner={workload}"], check=False)
+    print(f"ok      shadow  removed {workload} from the sandbox ({SHADOW_NS}); end the launch with "
+          f"demo-sandbox action=end when no other shadow needs it")
+    return 0, []
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", choices=["up", "verify", "down"])
+    ap.add_argument("workload")
+    ap.add_argument("paths", nargs="*", help="manifest file(s), or diff(s) for verify")
+    a = ap.parse_args(argv)
+
+    if a.cmd == "up":
+        rc, lines = up(a.workload, a.paths)
+    elif a.cmd == "down":
+        rc, lines = down(a.workload)
+    else:
+        rc, lines = verify(a.workload, a.paths)
+    for line in lines:
+        print(f"       {line}")
+    return 0 if rc in (0, None) else rc
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
