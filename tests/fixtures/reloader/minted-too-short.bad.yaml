@@ -1,0 +1,20 @@
+# A word is not a sentence: an opt-out that explains nothing is silence with a key on it. Refused.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: minted-too-short
+  namespace: cyrus
+  annotations:
+    idp.platform/reload-on-mint: reloads
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: minted-too-short
+    creationPolicy: Owner
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: GithubAccessToken
+          name: minted-too-short

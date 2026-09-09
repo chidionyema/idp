@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Re-shape a workload's production manifests into a shadow-dimension-safe set (spec W2.1).
+
+The shadow dimension is a vcluster that carries *production's state* so a change is proven against
+it without touching the live cluster. W2.1 (agent-infra-safety-spec.md): 'clones down what the
+workload actually needs to converge: its rendered manifests as Flux applies them, its namespace's
+ResourceQuota and LimitRange, its NetworkPolicy, and the CRDs it depends on. Secrets are never
+copied -- dummies of the same shape and key names, so a Deployment mounts and starts (LAW 21).'
+
+This is the deterministic half: given source YAML documents, emit the shadow-safe set. Spinning
+the vcluster and binding the Kube API into it is the live seam a real `shadow-verify` run (W2.2)
+drives against a cluster; this tool needs none, so it is graded by fixtures (LAW 3).
+
+WHAT IT DOES:
+  * passes every non-Secret doc through unchanged;
+  * for every `Secret`, keeps the manifest (kind, metadata, keys' names) but replaces every value
+    with a same-shape dummy and stamps `shadow.estate/shell: "true"` so nothing mistakes it for a
+    live value -- a Secret in the shadow is a shell that exists so a Deployment mounts and starts,
+    never a copy.
+
+  bin/idp-shadow-sync IN.yaml... --out DIR    write one .yaml per doc to DIR
+  bin/idp-shadow-sync --check DIR             exit 0 when every Secret in DIR is a shell
+"""
+import argparse
+import base64
+import os
+import sys
+
+import yaml
+
+
+def _is_secret(doc) -> bool:
+    return isinstance(doc, dict) and doc.get("kind") == "Secret"
+
+
+def _dummy(key: str) -> str:
+    return ("shadow-" + key.lower().replace("_", "-") + "-placeholder")
+
+
+def _is_shell(doc) -> bool:
+    if not _is_secret(doc):
+        return False
+    ann = (doc.get("metadata") or {}).get("annotations") or {}
+    return ann.get("shadow.estate/shell") == "true"
+
+
+def transform(doc):
+    """Return (new_doc, was_a_secret_shell)."""
+    if not _is_secret(doc):
+        return doc, False
+    out = dict(doc)
+    data = out.get("data")
+    if isinstance(data, dict):
+        out["data"] = {
+            k: base64.b64encode(_dummy(k).encode()).decode() for k in data
+        }
+    string_data = out.get("stringData")
+    if isinstance(string_data, dict):
+        out["stringData"] = {k: _dummy(k) for k in string_data}
+    out.setdefault("metadata", {})
+    out["metadata"].setdefault("annotations", {})["shadow.estate/shell"] = "true"
+    return out, True
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("inputs", nargs="*", help="source YAML files (Deployment, Secret, ...)")
+    ap.add_argument("--check", metavar="DIR", help="verify every Secret in DIR is a shell")
+    ap.add_argument("--out", metavar="DIR", help="write reshaped docs here (one .yaml each)")
+    a = ap.parse_args(argv)
+
+    if a.check:
+        bad, shells = [], 0
+        for name in sorted(os.listdir(a.check)):
+            if not name.endswith((".yaml", ".yml")):
+                continue
+            with open(os.path.join(a.check, name), encoding="utf-8") as fh:
+                text = fh.read()
+            for d in (yaml.safe_load_all(text) or []):
+                if not isinstance(d, dict) or d.get("kind") != "Secret":
+                    continue
+                if _is_shell(d):
+                    shells += 1
+                else:
+                    bad.append(f"{name}: non-shell Secret ({(d.get('metadata') or {}).get('name')})")
+        if bad:
+            print("FAIL    shadow  " + "; ".join(bad))
+            return 1
+        print(f"ok      shadow  {shells} Secret(s) in {a.check} are shells, none verbatim")
+        return 0
+
+    if not a.inputs or not a.out:
+        print("usage: idp-shadow-sync IN.yaml... --out DIR   (or --check DIR)", file=sys.stderr)
+        return 2
+
+    os.makedirs(a.out, exist_ok=True)
+    written = shells = 0
+    for n, p in enumerate(a.inputs):
+        try:
+            text = open(p, encoding="utf-8").read()
+        except OSError as e:
+            print(f"BLIND   shadow  cannot read {p}: {e}", file=sys.stderr)
+            return 2
+        for doc in (yaml.safe_load_all(text) or []):
+            if doc is None:
+                continue
+            nd, shelled = transform(doc)
+            name = (nd.get("metadata") or {}).get("name") or f"doc-{n}"
+            kind = str(nd.get("kind", "object")).lower()
+            fn = os.path.join(a.out, f"{kind}-{name}.yaml")
+            with open(fn, "w", encoding="utf-8") as fh:
+                fh.write(yaml.safe_dump(nd, sort_keys=False))
+            written += 1
+            shells += 1 if shelled else 0
+    print(f"ok      shadow  reshaped {written} doc(s) into {a.out} ({shells} secret shell(s))")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,22 @@
+# The consumer reads the mounted file per call; the produced Secret tells Reloader to leave it alone.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: minted-ignored
+  namespace: cyrus
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: minted-ignored
+    creationPolicy: Owner
+    template:
+      metadata:
+        annotations:
+          reloader.stakater.com/ignore: "true"
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: GithubAccessToken
+          name: minted-ignored

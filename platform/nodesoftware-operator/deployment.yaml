@@ -48,7 +48,11 @@ spec:
       automountServiceAccountToken: true    # controller-runtime needs the token
       imagePullSecrets:
         - name: ghcr-pull
-      priorityClassName: idp-infrastructure # scheduling/priority-classes (R76)
+      # platform-batch, not infrastructure-critical: that class is the radio-room set
+      # (traefik, langfuse, the gateways, cluster-state), enforced by name in
+      # platform/scheduling/require-priority-class.yaml. This controller ranks above
+      # default and yields to them. See platform/priority-classes/priorityclasses.yaml.
+      priorityClassName: platform-batch
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -91,18 +95,20 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - --leader-elect=true
-            - --leader-election-namespace=nodesoftware-operator
-            - --metrics-bind-address=:8080
-            - --health-probe-bind-address=:8081
-            - --reconcile-period=15s         # see CRD-SPEC.md "pauseDuration"
-            # --handler-image is filled at startup by resolveHandlerImage()
-            # (cmd/main.go) from the runsc-handler-mirror initContainer's
-            # image: field. No flag here on purpose: a flag would freeze
-            # the tag at apply time and break image-automation.
-            # --handler-namespace is also empty by default; the controller's
-            # Reconciler.applyDefaults fills it to the controller's own namespace
-            # (PR #2404), so the kubebuilder scaffold default
-            # 'nodesoftware-operator-system' never reaches a handler pod.
+            # The controller (controller/cmd/main.go) registers only: metrics-addr, health-addr,
+            # leader-elect, handler-image, handler-image-source, handler-namespace (Go flag exits on
+            # the first unknown flag, so the older kubebuilder names below were crashing the pod by
+            # printing usage). metrics-bind-address -> metrics-addr, health-probe-bind-address ->
+            # health-addr; leader-election-namespace and reconcile-period have no flag (pauseDuration
+            # is read off the RuntimeInstall CR, never the CLI).
+            - --metrics-addr=:8080
+            - --health-addr=:8081
+            # --handler-image-source and --handler-image are left to their defaults: resolveHandlerImage()
+            # (cmd/main.go) fills the image from the runsc-handler-mirror initContainer's image: field,
+            # so a literal here would freeze the tag and break image-automation.
+            # --handler-namespace is also left default; Reconciler.applyDefaults fills it to the
+            # controller's own namespace (PR #2404), so the scaffold default never reaches a handler
+            # pod.
           ports:
             - name: metrics
               containerPort: 8080

@@ -320,6 +320,48 @@ rules:
       - get
       - list
       - watch
+  # 2026-09-08 22:25Z: both calico-node pods were restarted and neither came back. The tunnel IP
+  # allocator (calico-node's own init step) reads and releases the IPAM handle for its tunnel
+  # address and died on `cannot get resource "ipamhandles"`; the pods that had run since 09-06
+  # only lived because nothing had restarted them. #2457 closed one missing rule for felix; this
+  # block is the whole difference between the vendor's v3.32.2 calico-node ClusterRole
+  # (manifests/calico-vxlan.yaml) and this one, so no third restart finds a fourth gap.
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - ipamhandles
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - delete
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - ipamblocks
+      - blockaffinities
+    verbs:
+      - create
+      - update
+      - delete
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - ipamconfigs
+      - ipamconfigurations
+    verbs:
+      - get
+      - create
+  - apiGroups: ["projectcalico.org", "crd.projectcalico.org"]
+    resources:
+      - bgppeers
+    verbs:
+      - create
+      - update
+  # calico-node reads its own DaemonSet to learn the cluster's settings.
+  - apiGroups: ["apps"]
+    resources:
+      - daemonsets
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

@@ -52,6 +52,9 @@ kind: ExternalSecret
 metadata:
   name: hermes-agent-env
   namespace: hermes-agent
+  annotations:
+    idp.platform/reload-on-mint: >-
+      the gateway reads the mounted env file at boot, so the roll every 45m is how a fresh installation token reaches it before its 60m expiry
 spec:
   # 45m keeps every mint inside the token's 60-minute life (vendor page, generator/github: "Github
   # tokens expire after 60 minutes ... choose a refreshInterval that is below this number").

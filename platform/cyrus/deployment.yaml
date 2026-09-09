@@ -17,6 +17,15 @@ spec:
       labels:
         app.kubernetes.io/name: cyrus
         app.kubernetes.io/part-of: idp
+      # Reloader is explicitly off for this pod, never merely absent. The cyrus-github
+      # external-secret is a GithubAccessToken generator on a 10m refresh: ESO rewrites the
+      # mounted secret every ten minutes. Cyrus reads the token dynamically through GIT_ASKPASS
+      # (entrypoint.sh), so a rotation needs NO restart. With Reloader on (auto: true was drifted
+      # onto the deployment, 643 revisions / 11 ReplicaSets in 90 min), every mint rolled the pod
+      # and wiped the /repo and /worktrees emptyDir, killing any run longer than the gap. Disabling
+      # it lets a roll happen only on a real image/config change, not on every token mint.
+      annotations:
+        reloader.stakater.com/auto: "false"
     spec:
       serviceAccountName: cyrus
       automountServiceAccountToken: false
@@ -118,6 +127,17 @@ spec:
             # standing between a Linear delivery and its own signature check.
             - name: LINEAR_DIRECT_WEBHOOKS
               value: "true"
+            # Direct mode also turns on a source-IP allowlist (EdgeWorker.js:243, on by
+            # default whenever CYRUS_HOST_EXTERNAL is true). The address it grades is the one
+            # traefik forwards, and behind the OCI load balancer that is the node the
+            # connection landed on, not Linear. Measured 2026-09-08 22:58Z on the running pod,
+            # first delivery ever to reach it:
+            #   [WARN ] [LinearEventTransport] Rejected Linear webhook from unauthorized IP: 10.0.159.197
+            # The HMAC check over the body (LinearEventTransport.js, verifySignature) is the
+            # authentication; the allowlist can only ever refuse a delivery the signature
+            # would accept. Off, by the variable the code reads for it (EdgeWorker.js:244).
+            - name: WEBHOOK_IP_VALIDATION
+              value: "false"
             # CYRUS_CONFIG_PATH was set here and is read by nothing: `cyrus` resolves its
             # config from --cyrus-home, which defaults to ~/.cyrus (dist/src/app.js), and the
             # ConfigMap was mounted at /config where nothing looked for it. The pod started,

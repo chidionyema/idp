@@ -675,7 +675,9 @@ rules:
   - id: reloader-operator-owned
     label: reloader
     statement: Reloader is off on a workload a custom resource owns; that operator owns its config
-      rollout, and Reloader on top of an operator is a loop, not a control
+      rollout, and Reloader on top of an operator is a loop, not a control. A Secret re-minted on
+      a timer says what Reloader does with it (ignore, or a sentence why the roll is wanted);
+      a silent one is refused
     law: crew#684 rung 2
     origin: incident 2026-09-08, SigNoz ClickHouse recreated every ~40s
     planes:
@@ -741,6 +743,84 @@ rules:
       - {expect: pass, args: [tests/fixtures/glass-break/good.json]}
     ok: "the broker and its floor cannot land on a green check alone (WJ.8)"
     fail: "a change to the broker could be auto-merged or self-approved (WJ.8)"
+
+  - id: convergence-proof
+    label: proof
+    statement: >-
+      An infrastructure pull request reaches the merge gate with a Proof-of-Convergence; a body
+      with no such block, or whose proof's run is not a green run on its own head commit, is
+      refused -- a missing or unparseable proof is a fail-closed FAIL, never a pass
+    law: W2.3
+    origin: docs/policy/agent-infra-safety-spec.md
+    planes: [ci]
+    run: [python3, bin/idp-convergence-proof]
+    cluster: {policy: null, why: "the subject sits in a pull request body and the proof refers to a shadow run no admission controller can see"}
+    fixtures: {must_fail: tests/fixtures/convergence/no-proof.md, must_pass: tests/fixtures/convergence/proved.md}
+    cases:
+      - {expect: refuse, args: [tests/fixtures/convergence/no-proof.md, HEAD]}
+      - {expect: pass, args: [tests/fixtures/convergence/proved.md, HEAD], env: {CONVERGENCE_RUN_GREEN: "1", CONVERGENCE_RUN_HEAD: HEAD}}
+      - {expect: refuse, args: [tests/fixtures/convergence/proved.md, HEAD], env: {CONVERGENCE_RUN_GREEN: "1", CONVERGENCE_RUN_HEAD: OTHER}}
+    ok: "a change that was never proved in the shadow dimension cannot reach the Greenlane (W2.3)"
+    fail: "a change without a green Proof-of-Convergence on its own head could be auto-merged (W2.3)"
+
+  - id: shadow-sync
+    label: shadow
+    statement: >-
+      A Secret cloned into the shadow dimension is a same-shape shell or it is refused; a live
+      value must never survive re-shaping -- a non-shell Secret in a shadow state-set is a fail
+      (secrets are never copied into a vcluster, only keyed dummies so a Deployment mounts)
+    law: W2.1
+    origin: docs/policy/agent-infra-safety-spec.md
+    planes: [ci]
+    run: [python3, bin/idp-shadow-sync]
+    cluster: {policy: null, why: "the subject is the manifest set carried into a shadow vcluster, which no admission controller sees"}
+    fixtures: {must_fail: tests/fixtures/shadow-sync/verbatim, must_pass: tests/fixtures/shadow-sync/shelled}
+    cases:
+      - {expect: refuse, args: [--check, tests/fixtures/shadow-sync/verbatim], note: "a verbatim secret is not a shell"}
+      - {expect: pass, args: [--check, tests/fixtures/shadow-sync/shelled]}
+    ok: "a shadow state-set carries only shell secrets, never a live value (W2.1)"
+    fail: "a live secret value could reach the shadow dimension (W2.1)"
+
+  - id: limit-raise-only
+    label: limit
+    statement: >-
+      A change to a workload passes the low-risk lane only when its sole difference is a strict
+      increase of a resources.limits.memory/cpu value on one workload; a request change (which
+      the scheduler counts), a lower limit, or any other edit is refused -- YAML ancestry is read
+      from the full parsed old and new files, never guessed from a git hunk
+    law: W3.1
+    origin: docs/policy/agent-infra-safety-spec.md
+    planes: [ci]
+    run: [python3, bin/idp-limit-raise-only-diff]
+    cluster: {policy: null, why: "the subject is a pull request diff, which no admission controller sees"}
+    fixtures: {must_fail: tests/fixtures/limit-raise/request, must_pass: tests/fixtures/limit-raise/good}
+    cases:
+      - {expect: pass, args: [--old, tests/fixtures/limit-raise/good/old/w.yaml, --new, tests/fixtures/limit-raise/good/new/w.yaml]}
+      - {expect: refuse, args: [--old, tests/fixtures/limit-raise/request/old/w.yaml, --new, tests/fixtures/limit-raise/request/new/w.yaml], note: "a request raise is not a limit raise"}
+      - {expect: refuse, args: [--old, tests/fixtures/limit-raise/lower/old/w.yaml, --new, tests/fixtures/limit-raise/lower/new/w.yaml], note: "a lower limit is not a raise"}
+      - {expect: refuse, args: [--old, tests/fixtures/limit-raise/config/old/w.yaml, --new, tests/fixtures/limit-raise/config/new/w.yaml], note: "a config/image edit is not a limit raise"}
+    ok: "a change that is exactly a limit raise on one workload can use the low-risk lane (W3.1)"
+    fail: "a request raise, lower limit, or wider edit could pass the low-risk lane (W3.1)"
+
+  - id: rollback-only
+    label: rollback
+    statement: >-
+      A pull request rolls one workload back only when every changed line is a newTag: whose value
+      that same file has already carried on origin/main; a tag never on main is a forward deploy
+      and waits, and a change that edits anything but a tag is refused -- the prior footprint is
+      proved from history, never assumed from age
+    law: W3.2
+    origin: docs/policy/agent-infra-safety-spec.md
+    planes: [ci]
+    run: [python3, bin/idp-rollback-only-diff]
+    cluster: {policy: null, why: "the subject is a pull request diff, which no admission controller sees"}
+    fixtures: {must_fail: tests/fixtures/rollback/forward-new-tag.diff, must_pass: tests/fixtures/rollback/rollback-known-good.diff}
+    cases:
+      - {expect: pass, args: [--diff, tests/fixtures/rollback/rollback-known-good.diff, --carried, tests/fixtures/rollback/carried.txt]}
+      - {expect: refuse, args: [--diff, tests/fixtures/rollback/forward-new-tag.diff, --carried, tests/fixtures/rollback/carried.txt], note: "a tag never carried on main is a forward deploy"}
+      - {expect: refuse, args: [--diff, tests/fixtures/rollback/not-only-tag.diff, --carried, tests/fixtures/rollback/carried.txt], note: "a change that is not only a tag"}
+    ok: "a rollback to a tag this release already ran on main can use the low-risk lane (W3.2)"
+    fail: "a forward tag or a wider edit could pass the rollback lane (W3.2)"
 
   - id: sovereign-command
     label: command
@@ -1037,7 +1117,7 @@ rules:
     fixtures:
       must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
       must_pass: tests/fixtures/catalogue-entity-runtime-service
-    live_elsewhere: "bin/idp-ci -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, require-catalogue-entity among them"
+    live_elsewhere: "bin/idp-ci:477 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them"
     cases:
       - expect: refuse
         args: [tests/fixtures/catalogue-entity-runtime-service-blind]
@@ -1052,3 +1132,34 @@ rules:
       the package manager's own Service is excepted by name and an unlabelled door in the same
       namespace is still refused
     fail: kyverno test tests/fixtures/catalogue-entity-runtime-service (and its -blind pair, which must fail)
+  - id: priority-class-exists
+    label: priority-class-exists
+    fast: true
+    statement: >-
+      Every priorityClassName a workload names is a PriorityClass this tree declares or one of
+      the two Kubernetes ships; a class that exists nowhere is refused at admission, not at apply
+    law: "incident 2026-09-08, nodesoftware-operator"
+    origin: >-
+      platform/nodesoftware-operator/deployment.yaml named priorityClassName idp-infrastructure.
+      No such class is declared in this tree and none exists in the cluster, so the apiserver
+      refused every pod the ReplicaSet asked for -- `pods "nodesoftware-operator-6d87fb9cbd-" is
+      forbidden: no PriorityClass with name idp-infrastructure was found`. The Deployment sat at
+      ReplicaFailure/FailedCreate and its Flux row went HealthCheckFailed. The name survived
+      review because the line carried a comment pointing at the directory where the real classes
+      live, which makes a wrong name look checked, and because the failure names a scheduling
+      concept, so it reads like capacity rather than a typo.
+    planes: [ci, session]
+    session_glob: ['platform/**/*.yaml', 'platform/**/*.yml', 'clusters/**/*.yaml', 'apps/**/*.yaml']
+    run: [python3, bin/idp-priority-class-exists]
+    cluster: {policy: null, why: "the apiserver already refuses the pod; the cost is that it refuses it after the manifest has merged and reconciled"}
+    fixtures:
+      must_fail: tests/fixtures/priority-class-exists/bad
+      must_pass: tests/fixtures/priority-class-exists/good
+    cases:
+      - {expect: refuse, args: [tests/fixtures/priority-class-exists/bad]}
+      - {expect: pass, args: [tests/fixtures/priority-class-exists/good]}
+      - {expect: pass, live: true, note: "this repository's own workloads and priority classes"}
+    ok: "every priorityClassName in the tree resolves to a class that exists"
+    fail: >-
+      a workload names a PriorityClass that neither this tree declares nor Kubernetes ships;
+      admission refuses every pod it asks for and the Deployment reports FailedCreate

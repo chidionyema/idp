@@ -39,7 +39,11 @@ spec:
                 labels:
                   backstage.io/kubernetes-id: founder-temporal
   interval: 10m
-  timeout: 15m
+  # The 1.6.0 schema migration (temporal + temporal_visibility on the estate Postgres) ran
+  # longer than the old 15m default, so Helm's upgrade waiter timed out mid-migration and rolled
+  # back before the job could complete — every attempt re-triggered it. 45m lets a cold migration
+  # finish; interval stays 10m for quick post-migration convergence (crew#713, 2026-09-08).
+  timeout: 45m
   chart:
     spec:
       chart: temporal
@@ -83,6 +87,12 @@ spec:
         seccompProfile: { type: RuntimeDefault }
     schema:
       useHelmHooks: false
+      # The temporal and temporal_visibility databases already exist on the estate CloudNativePG
+      # cluster (estate-db), created and owned by the seed, and the temporal role is NOT granted
+      # CREATEDB there (a shared cluster). The temporal chart defaults createDatabase: true, so its
+      # schema hook runs CREATE DATABASE and fails 42501 permission denied, which wedged the 1.6.0
+      # upgrade. Tell it the databases exist and it must only run the migration, not create.
+      createDatabase: false
       containerSecurityContext: *csc
       securityContext: *psc
       resources:
@@ -112,6 +122,14 @@ spec:
                 pluginName: postgres12_pgx
                 driverName: postgres12_pgx
                 databaseName: temporal
+                # The two databases are the operator's (platform/estate-db/cluster/databases.yaml),
+                # so the chart's create-default-store init must not run: the temporal role has no
+                # CREATEDB, and temporal-sql-tool aborts instead of skipping. Measured 2026-09-08
+                # 23:10Z, job temporal-schema-1-6-0-40, the first upgrade after the network fire:
+                #   Unable to create SQL database. "ERROR: permission denied to create database (SQLSTATE 42501)"
+                # Every upgrade since 21:47Z died here, and every rollback died on the v30 config
+                # that still names temporal-db.temporal.svc, deleted with the old server.
+                createDatabase: false
                 connectAddr: estate-rw.estate-db.svc.cluster.local:5432
                 connectProtocol: tcp
                 user: temporal
@@ -125,6 +143,7 @@ spec:
                 pluginName: postgres12_pgx
                 driverName: postgres12_pgx
                 databaseName: temporal_visibility
+                createDatabase: false
                 connectAddr: estate-rw.estate-db.svc.cluster.local:5432
                 connectProtocol: tcp
                 user: temporal

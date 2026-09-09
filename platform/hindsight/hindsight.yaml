@@ -35,6 +35,12 @@ spec:
     remediation: { retries: 3 }
   upgrade:
     remediation: { retries: 3 }
+    # A deployment this chart leaves in a Failed state (its own probe recycles a slow/bad start)
+    # is "stalled" to Helm's upgrade waiter, so a normal upgrade aborts and rolls back without
+    # ever applying the corrected values or postRenderer (2026-09-08: hindsight stayed on the old
+    # gemini+envFrom render through two correct PRs). force: true makes Helm replace the stuck
+    # deployment instead of waiting on it, so the current health-correct values land.
+    force: true
   values:
     existingSecret: hindsight-env   # platform/hindsight/external-secret.yaml
     postgresql:
@@ -48,14 +54,20 @@ spec:
       env:
         # An alias on the estate router (platform/llm/config.yaml), so a lane swap never touches this row.
         HINDSIGHT_API_LLM_PROVIDER: openai
-        # `gemini` (gemini-2.5-flash), not deepseek: DeepSeek answers 401 from inside the router pod
-        # (measured 2026-09-04 21:5xZ) and its row has left the config, so extraction had no model.
-        # This is the estate's memory: memory_units written per day fell 268 (08-30), 154 (09-02),
-        # 14 (09-03), 1 (09-04), counted on estate-db. Extraction is many small calls, so the cheap
-        # gemini lane is the right one, and it does not wait on a key the founder rotates himself.
-        # `gemini`, not the `fast` alias for the same gemini-2.5-flash row: one alias for this
-        # model across the estate, so a lane audit reads one name (founder direction 2026-09-05).
-        HINDSIGHT_API_LLM_MODEL: gemini
+        # `minimax` (MiniMax-M3), not gemini or deepseek. DeepSeek answers 401 from inside the router
+        # pod (measured 2026-09-04 21:5xZ) and its row has left the config. Gemini was the cheap lane
+        # but from 2026-09-08 the router's gemini-2.5-flash lane has been throwing
+        # litellm.RateLimitError (Google quota) on every hindsight verify, so hindsight could not
+        # complete "Verifying connection" and stayed not-ready (crash loop). The router log the same
+        # day: MiniMax-M3 answered 200 with no exception. This is the estate's memory; MiniMax-M3 is
+        # the lane with a clean record, and it does not wait on a key the founder rotates himself.
+        HINDSIGHT_API_LLM_MODEL: minimax
+        # Never call huggingface.co at boot. The namespace fence only allows egress to
+        # estate-db, llm and observability, so the hub call sits in SYN_SENT forever and
+        # the startup probe fails (observed 2026-09-08 inside the pod: 3.174.141.51:443).
+        # The embedding and reranker models are already on the image; offline is correct.
+        HF_HUB_OFFLINE: "1"
+        TRANSFORMERS_OFFLINE: "1"
       persistence:
         modelCache: { enabled: true, size: 5Gi }   # the local embedding model survives a restart
       extraVolumes: [{ name: tmp, emptyDir: {} }]  # the only writable path besides the model cache
@@ -144,8 +156,32 @@ spec:
               spec:
                 template:
                   spec:
+                    # Secrets arrive as files, never env (Kyverno secrets-not-from-env-vars forbids the
+                    # chart's existingSecret -> envFrom). The api needs the router key and the
+                    # in-cluster router URL, both of which hindsight reads from env, so a sh wrapper
+                    # exports them from the mounted files before exec'ing the image's own start-all.sh.
+                    # The router is called in-cluster (http://litellm.llm.svc...), not over the public
+                    # https://llm.mumchimp.com that a fenced pod cannot reach and which crash-looped
+                    # hindsight on "LLM API did not become healthy within 300s".
+                    volumes:
+                      - name: secrets
+                        secret:
+                          secretName: hindsight-env
                     containers:
                       - name: api
+                        envFrom: []
+                        volumeMounts:
+                          - name: secrets
+                            mountPath: /run/secrets/hindsight
+                            readOnly: true
+                        command:
+                          - /bin/sh
+                          - -c
+                          - |
+                            set -eu
+                            export HINDSIGHT_API_LLM_API_KEY="$(cat /run/secrets/hindsight/HINDSIGHT_API_LLM_API_KEY)"
+                            export HINDSIGHT_API_LLM_BASE_URL="http://litellm.llm.svc.cluster.local:4000/v1"
+                            exec /app/start-all.sh
                         startupProbe:
                           httpGet: { path: /health/live, port: 8888 }
                           periodSeconds: 10

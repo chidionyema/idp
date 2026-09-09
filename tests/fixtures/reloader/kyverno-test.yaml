@@ -13,6 +13,11 @@ policies:
 resources:
   - operator-owned.yaml
   - estate-owned.yaml
+  - minted-silent.bad.yaml
+  - minted-too-short.bad.yaml
+  - minted-ignored.yaml
+  - minted-declared.yaml
+  - minted-once.yaml
 results:
   # The refusing case: a StatefulSet an operator owns arrives carrying the "true" rule 1 injects,
   # and leaves with "false" and the reason beside it, so Reloader stops rolling it.
@@ -34,4 +39,21 @@ results:
     rule: an-operator-owned-workload-is-its-operators-job
     kind: Deployment
     resources: [llm/litellm]
+    result: skip
+  # Rung 3, both ways: a timer-minted Secret that says nothing about Reloader is refused, one that
+  # says either sentence is admitted, and one minted once is not the rule's business.
+  - policy: require-auto-reload
+    rule: a-timer-minted-secret-says-what-reloader-does-with-it
+    kind: ExternalSecret
+    resources: [cyrus/minted-silent, cyrus/minted-too-short]
+    result: fail
+  - policy: require-auto-reload
+    rule: a-timer-minted-secret-says-what-reloader-does-with-it
+    kind: ExternalSecret
+    resources: [cyrus/minted-ignored, cyrus/minted-declared]
+    result: pass
+  - policy: require-auto-reload
+    rule: a-timer-minted-secret-says-what-reloader-does-with-it
+    kind: ExternalSecret
+    resources: [cyrus/minted-once]
     result: skip

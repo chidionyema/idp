@@ -4,11 +4,14 @@ This is the buyer's index to every product, feature and bundle the estate ships.
 Every page below follows the same shape: the problem first, what you get, how it
 works, why us, pricing, and how to start.
 
+The full register of everything built, product or not, with who it is useful for: [capabilities.md](./capabilities.md).
+
 ## Products
 
 | Product | What it is | Tier |
 |---|---|---|
 | [The Platform](./products/platform.md) | The whole IDP, sold as a managed deployment | Strategic |
+| [FleetView](./products/fleetview.md) | One live board for every AI agent you run, with stop/approve/steer from the page | 2 weeks |
 | [Voice Gate](./products/voice-gate.md) | Deterministic prose linter for house voice | Ship now |
 | [Otto Assistant](./products/otto-assistant.md) | A personal agent that lives in your chat | Ship now |
 | [Inventory + Dual-Renderer](./products/inventory-dual-renderer.md) | One source, two renderers, runtime-separated fallback | Ship now |
