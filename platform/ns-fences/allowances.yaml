@@ -241,6 +241,12 @@ flows:
     # lands on the enforcing CNI the first time it fires after the roll, and it fails on its own
     # at 23 minutes past some hour with nobody watching.
     egress: [estate-db, llm, searxng]
+    # Gpt-researcher, inside this namespace, does not just ask SearXNG for URLs -- it then
+    # fetches and crawls those source pages itself to write cited claims. Without internet
+    # egress every crawl of a returned source failed "Network is unreachable" and the write-up
+    # had no sources to cite. This mirrors searxng's egress_internet (#2767): internet-only 443,
+    # private/cloud ranges excluded.
+    egress_internet: [443]
   searxng:
     ingress_from: [research]
     # The search backend the research engine reads (RESEARCH_SEARXNG_URL). Until this line
