@@ -42,20 +42,25 @@ app:
     # A joke widget and world clocks. Off. The page is not a rearrangeable dashboard.
     - home-page-widget:home/random-joke: false
     - home-page-widget:home/world-clock: false
-    # The toolkit is the same ten doors as the menu, in the same order
+    # The toolkit is the same doors as the menu, in the same order
     # (packages/app/src/modules/nav/EstateNav.tsx); a test holds the two lists equal.
     - home-page-widget:home/toolkit:
         config:
           tools:
             - { url: /, label: Home, icon: dashboard }
+            - { url: /estate, label: Estate, icon: 'kind:domain' }
             - { url: /catalog, label: Catalogue, icon: catalog }
             - { url: /ops, label: Health, icon: warning }
+            - { url: /showcase, label: Showcase, icon: 'kind:system' }
             - { url: /docs, label: Docs, icon: docs }
             - { url: /settings, label: You, icon: user }
+            - { url: /reports, label: Reports, icon: 'kind:api' }
+            - { url: /investigate, label: Investigate, icon: search }
+            - { url: /pair, label: Pair, icon: 'kind:group' }
+            - { url: /tools, label: Tools, icon: 'kind:component' }
             - { url: /create, label: Create, icon: scaffolder }
             - { url: /catalog-graph, label: Map, icon: 'kind:system' }
             - { url: '/catalog?filters%5Bkind%5D=Component', label: Kubernetes, icon: 'kind:resource' }
-            - { url: /tools, label: Tools, icon: 'kind:component' }
             - { url: /search, label: Find, icon: search }
 
 

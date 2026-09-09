@@ -1,4 +1,4 @@
-// The ten doors as Backstage UI cards, not the home plugin's 64-pixel stamps.
+// The doors as Backstage UI cards, not the home plugin's 64-pixel stamps.
 import { Card, CardBody, CardHeader, Flex, Grid, Text } from '@backstage/ui';
 import { NAV } from '../nav/EstateNav';
 import { DOOR_WHY } from './doorCopy';
