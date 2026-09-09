@@ -79,3 +79,8 @@ Cloud/Modal is not the only host. This MacBook is an Intel i7-8850H with a Radeo
 - If a Mac-native model is wanted, it needs the machine to become Apple Silicon (M-series, 32GB+)
   — a CapEx decision, out of scope of the current paid-GPU path. Until then: local small model for
   Tier-1 trivia at most; heavy tiers stay on managed lanes or a future Modal/self-host serving lane.
+
+- **Quantization makes 14B-on-24GB viable** (AWQ/INT4): a 14B is ~14GB full precision, ~8GB at
+  INT4/AWQ — on a 24GB L4 that leaves ~16GB for the 5-lane KV caches. This is the concrete reason
+  the tiered fleet fits one L4. (Lighter than L4 won't hold a 14B; 8-bit needs ~16GB.) For the L4
+  (forge/common.py $0.80/hr), a 4-bit 14B with 4-8k contexts carries the 5 concurrent lanes.
