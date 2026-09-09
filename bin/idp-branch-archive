@@ -98,12 +98,18 @@ def plan(remote: str, age_days: int, now: float) -> tuple[list[tuple[str, str, s
     return out, kept
 
 
+BATCH = 100  # first apply run (34303712950): one push of 860 refspecs was refused; 33 tags landed, no branch was deleted
+
+
 def apply(remote: str, rows: list[tuple[str, str, str, str]]) -> None:
     existing = set(git("tag", "--list", "archive/*").split())
     refspecs = [f"{sha}:refs/tags/{tag}" for _b, sha, _r, tag in rows if tag not in existing]
-    if refspecs:
-        git("push", "--quiet", remote, *refspecs)
-    git("push", "--quiet", remote, "--delete", *[b for b, *_ in rows])
+    for i in range(0, len(refspecs), BATCH):
+        git("push", "--quiet", remote, *refspecs[i:i + BATCH])
+    # Every tag exists on the remote before the first branch goes: a failure above leaves branches.
+    branches = [b for b, *_ in rows]
+    for i in range(0, len(branches), BATCH):
+        git("push", "--quiet", remote, "--delete", *branches[i:i + BATCH])
 
 
 def main(argv: list[str]) -> int:
