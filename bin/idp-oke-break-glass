@@ -1273,6 +1273,90 @@ YAML
 # (agents:agent-reader) cannot touch kube-system by design (WJ.5), so this is the door.
 # Receipt: one TCP probe pinned to each node against the router, its cache and each CoreDNS pod
 # on the OTHER node, and an nslookup pinned to each node. A probe that cannot reach is a FAIL.
+# flannel-off: incident 2026-09-09. Two dataplanes ran on one cluster -- Oracle's kube-flannel-ds
+# add-on beside calico-node -- and both speak VXLAN on port 4789. When flannel re-rolled at 10:34Z
+# with new VTEP MACs it took the cross-node path with it: a router replica on one node died with
+# `redis.exceptions.TimeoutError` reaching its cache on the other, and half of every request that
+# entered through the gateway pod on the far node hung until the gateway gave up at 30s. Restarting
+# calico-node alone did not fix it (run 34353905638) because flanneld still held the port.
+#
+# Nothing is deleted. The DaemonSet is given a nodeSelector no node carries, so flanneld stops and
+# one patch puts it back; the flannel.1 links and their routes stay, inert, for subnets holding no
+# pod. Two guards run first: calico-node must be Ready on every node, and every pod address must
+# fall inside a Calico IPPool, so a pod that actually depends on flannel stops this before it acts.
+pb_flannel_off() {
+  local nodes n i=0 targets ip out
+  $K get ds -n kube-system calico-node >/dev/null 2>&1 || { echo "FAIL  flannel-off: no calico-node DaemonSet"; FAILED="$FAILED guard-calico"; return 1; }
+  out=$($K get ds -n kube-system calico-node -o jsonpath='{.status.desiredNumberScheduled}/{.status.numberReady}')
+  case "$out" in
+    */0|0/*) echo "FAIL  flannel-off: calico-node is $out desired/ready"; FAILED="$FAILED guard-calico-ready"; return 1 ;;
+    *) [ "${out%/*}" = "${out#*/}" ] || { echo "FAIL  flannel-off: calico-node is $out desired/ready"; FAILED="$FAILED guard-calico-ready"; return 1; } ;;
+  esac
+  echo "ok    guard-calico calico-node ready on every node ($out)"
+
+  # every pod address must be inside a Calico pool, or something still rides flannel
+  if ! $K get ippools.crd.projectcalico.org >/dev/null 2>&1; then
+    echo "FAIL  flannel-off: no Calico IPPool CRD, cannot prove the pods are Calico's"
+    FAILED="$FAILED guard-pools"; return 1
+  fi
+  out=$($K get ippools.crd.projectcalico.org -o jsonpath='{range .items[*]}{.spec.cidr}{"\n"}{end}' 2>/dev/null)
+  if ! $K get pods -A -o jsonpath='{range .items[*]}{.status.podIP} {.metadata.namespace}/{.metadata.name} {.spec.hostNetwork}{"\n"}{end}' 2>/dev/null \
+      | POOLS="$out" python3 -c '
+import os, sys, ipaddress
+pools = [ipaddress.ip_network(c.strip()) for c in os.environ["POOLS"].split() if c.strip()]
+bad = []
+for ln in sys.stdin:
+    f = ln.split()
+    if len(f) < 2 or f[0] in ("", "<none>"):
+        continue
+    if len(f) > 2 and f[2] == "true":
+        continue
+    try:
+        a = ipaddress.ip_address(f[0])
+    except ValueError:
+        continue
+    if not any(a in p for p in pools):
+        bad.append(f[1] + " " + f[0])
+print("pools:", " ".join(str(p) for p in pools))
+if bad:
+    print("outside every Calico pool:", "; ".join(bad[:10]))
+    sys.exit(1)
+print("every pod address is Calico IPAM")
+'; then
+    echo "FAIL  flannel-off: a pod holds an address no Calico pool owns; flanneld is load-bearing here"
+    FAILED="$FAILED guard-ipam"; return 1
+  fi
+  echo "ok    guard-ipam every pod address belongs to a Calico pool"
+
+  if ! $K get ds -n kube-system kube-flannel-ds >/dev/null 2>&1; then
+    echo "ok    flannel-absent no kube-flannel-ds in kube-system, nothing to stop"
+  else
+    step "flannel-parked" $K -n kube-system patch ds kube-flannel-ds --type=merge \
+      -p '{"spec":{"template":{"spec":{"nodeSelector":{"estate.mumchimp.com/flannel":"parked-2026-09-09"}}}}}'
+    step "flannel-drained" $K -n kube-system rollout status ds kube-flannel-ds --timeout=180s
+  fi
+
+  step "calico-restart" $K -n kube-system rollout restart ds calico-node
+  step "calico-rolled" $K -n kube-system rollout status ds calico-node --timeout=300s
+
+  nodes=$($K get nodes -o jsonpath='{.items[*].metadata.name}')
+  for n in $nodes; do
+    i=$((i+1)); targets=""
+    for ip in $($K get pods -A -o jsonpath='{range .items[?(@.spec.nodeName!="'"$n"'")]}{.metadata.namespace}/{.metadata.labels.app}/{.status.podIP}{"\n"}{end}' 2>/dev/null | grep -E '^(llm/litellm/|llm/litellm-cache/)' | cut -d/ -f3); do
+      [ -n "$ip" ] && targets="$targets $ip:4000 $ip:6379"
+    done
+    for ip in $($K get pods -n kube-system -l k8s-app=kube-dns -o jsonpath='{range .items[?(@.spec.nodeName!="'"$n"'")]}{.status.podIP}{"\n"}{end}' 2>/dev/null); do
+      targets="$targets $ip:53"
+    done
+    echo "--- node $n -> the other node: ${targets:-nothing on the other node}"
+    [ -n "$targets" ] && tcp_probe "flanoff-probe-$i" "$n" kube-system "$targets"
+    dns_probe "flanoff-dns-$i" "$n" kubernetes.default.svc.cluster.local
+  done
+  show flannel-ds $K get ds -n kube-system kube-flannel-ds -o wide
+  show calico-node $K get pods -n kube-system -l k8s-app=calico-node -o wide
+  show router $K get pods -n llm -o wide
+}
+
 pb_cni_resync() {
   local nodes n i=0 targets ip
   $K get ds -n kube-system calico-node >/dev/null 2>&1 || { echo "FAIL  cni-resync: no calico-node DaemonSet in kube-system"; FAILED="$FAILED guard-ds"; return 1; }
@@ -1370,7 +1454,7 @@ pb_tigera_reset() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences cni-resync"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences cni-resync flannel-off"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-parity) pb_otto_parity ;;
@@ -1396,6 +1480,7 @@ case "${1:-}" in
   ns-fences) pb_ns_fences ;;
   tigera-reset) pb_tigera_reset ;;
   cni-resync) pb_cni_resync ;;
+  flannel-off) pb_flannel_off ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
 [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }

@@ -54,6 +54,7 @@ spec:
         - registries-conf
         - ns-fences
         - cni-resync
+        - flannel-off
         default: diagnose
   steps:
   - id: dispatch
