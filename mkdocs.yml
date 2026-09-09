@@ -99,6 +99,7 @@ nav:
       - Estate compiler: tutorials/demo/intent.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
+      - Linear board mirror: tutorials/demo/idp-linear-mirror.md
       - Estate next: tutorials/demo/estate-next.md
       - Messaging: tutorials/demo/messaging.md
       - Prose-pin gate: tutorials/demo/test-prose-gate.md
@@ -183,6 +184,7 @@ nav:
       - Estate clock recording: onboarding/dagster.md
       - Dashboards recording: onboarding/superset.md
       - Trace matrix: how-to/onboarding/trace-matrix.md
+      - Linear board mirror: how-to/onboarding/idp-linear-mirror.md
       - Namespace fences: how-to/onboarding/ns-fence-gate.md
       - Portal: how-to/onboarding/idp.md
       - Estate compiler: how-to/onboarding/intent.md
