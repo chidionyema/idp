@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import common  # noqa: E402
 from common import compute_plan, cost_gate, grade, label_probs, split, usd_for  # noqa: E402
 
 
@@ -425,3 +426,76 @@ def test_a_run_that_was_not_refused_has_no_refusal_kind():
     shipped = {"verdict": "shipped", "seconds": 900, "eval": {"verdict": "passed"}}
     assert er.refusal_kind(shipped, shipped["eval"]) is None
     assert er.refusal_kind({"verdict": "dry-run"}, {}) is None
+
+
+def _rows(spec):
+    """(expected, predicted, margin) rows from a compact spec of (expected, predicted, margin, n)."""
+    return [(e, p, m) for e, p, m, n in spec for _ in range(n)]
+
+
+def test_envelope_names_the_label_the_single_agreement_number_hides():
+    """A model blind to the rare label still scores 96% agreement.
+
+    140 'real' rows answered and right, 4 'flake' rows answered and called 'real'. Agreement
+    counts answered rows only, so it reads 97%+ while recall on `1` is zero: the model would
+    never once catch a flake, which is the entire reason the task exists.
+    """
+    rows = _rows([("0", "0", 0.9, 140), ("1", "0", 0.9, 4), ("1", "1", 0.1, 16)])
+    env = common.envelope(rows, 0.8)
+    assert env["answered"] == 144
+    assert env["wrong"] == 4
+    assert env["per_label"]["1"]["recall_answered"] == 0.0
+    assert env["per_label"]["1"]["support"] == 20
+    assert env["per_label"]["1"]["thin"] is True
+    assert env["per_label"]["0"]["recall_answered"] == 1.0
+    assert env["confusion"]["1"]["0"] == 4
+    assert common.grade(rows, 0.8)["agreement"] == pytest.approx(140 / 144)
+
+
+def test_majority_agreement_is_the_floor_a_trained_model_has_to_clear():
+    rows = _rows([("0", "1", 0.9, 88), ("1", "1", 0.9, 12)])
+    assert common.majority_agreement(rows) == {"label": "0", "agreement": 0.88}
+    assert common.majority_agreement([]) == {"label": None, "agreement": 0.0}
+
+
+def test_frontier_trades_coverage_against_agreement_monotonically_in_coverage():
+    rows = _rows([("0", "0", 0.95, 50), ("0", "1", 0.3, 10), ("1", "1", 0.05, 40)])
+    curve = common.frontier(rows)
+    covs = [p["coverage"] for p in curve]
+    assert covs == sorted(covs, reverse=True), covs
+    assert curve[0]["coverage"] == 1.0 and curve[0]["answered"] == 100
+    top = next(p for p in curve if p["abstain_below"] == 0.9)
+    assert top["answered"] == 50 and top["agreement"] == 1.0
+
+
+def test_next_move_names_the_lever_the_numbers_indicate():
+    task = {"abstain_below": 0.8, "min_agreement": 0.95}
+    # training bought nothing: the untrained control scored the same
+    flat = common.envelope(_rows([("0", "0", 0.9, 60), ("1", "1", 0.9, 40)]), 0.8)
+    flat["agreement_answered"] = 0.90
+    moves = common.next_move(flat, common.frontier([]), task, {"agreement": 0.90})
+    assert any("training bought nothing" in m for m in moves)
+    # a label with too few held-out rows
+    thin = common.envelope(_rows([("0", "0", 0.9, 140), ("1", "1", 0.9, 5)]), 0.8)
+    thin["agreement_answered"] = 1.0
+    assert any(
+        "`1`" in m and "under 30" in m
+        for m in common.next_move(thin, [], task, {"agreement": 0.5})
+    )
+    # the threshold is leaving free coverage on the table
+    rows = _rows([("0", "0", 0.5, 60), ("0", "0", 0.95, 40)])
+    env = common.envelope(rows, 0.8)
+    env["agreement_answered"] = 1.0
+    assert any(
+        "conservatively" in m
+        for m in common.next_move(env, common.frontier(rows), task, {"agreement": 0.5})
+    )
+
+
+def test_a_record_without_an_envelope_renders_without_inventing_one():
+    """Runs before 2026-09-09 have no envelope in eval.json; the record omits the sections
+    rather than filling them with defaults."""
+    import experiment_record as er
+
+    task = yaml.safe_load((Path(__file__).parents[1] / "task.yaml").read_text())
+    assert er.envelope_sections(task, {"held_out": 160, "agreement": 0.9}) == ""

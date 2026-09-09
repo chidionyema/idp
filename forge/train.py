@@ -16,7 +16,7 @@ import torch
 import yaml
 from datasets import load_dataset
 
-from common import grade, label_probs
+from common import envelope, frontier, grade, label_probs, majority_agreement, next_move
 
 # Where forge/modal_app.py bakes llama.cpp into the image; a laptop run points it elsewhere.
 LLAMA_CPP_DIR = os.environ.get("LLAMA_CPP_DIR", "/opt/llama.cpp")
@@ -59,6 +59,26 @@ def export_gguf(model, tokenizer, out: str) -> None:
     # the artifact, and both would otherwise ride into the oras push.
     os.remove(f16)
     shutil.rmtree(merged, ignore_errors=True)
+
+
+def predict(
+    model, tokenizer, eval_ds, template, label_ids
+) -> list[tuple[str, str, float]]:
+    """(expected, predicted, margin) for every held-out row, the same arithmetic the Runtime
+    uses: softmax over the label tokens only. Called twice -- before training and after -- so
+    the record can say what training bought instead of asserting that it bought something."""
+    rows = []
+    for row in eval_ds:
+        inputs = tokenizer(
+            [template.replace("{input}", row["input"])], return_tensors="pt"
+        ).to("cuda")
+        with torch.no_grad():
+            logits = model(**inputs).logits[0, -1]
+        top, _, margin = label_probs(
+            {lab: float(logits[tid]) for lab, tid in label_ids.items()}
+        )
+        rows.append((row["output"], top, margin))
+    return rows
 
 
 def main() -> None:
@@ -138,31 +158,59 @@ def main() -> None:
             report_to="none",
         ),
     )
-    trainer.train()
-
-    # Held-out eval, the same arithmetic the Runtime uses: softmax over the label tokens only.
-    FastLanguageModel.for_inference(model)
     label_ids = {
         lab: tokenizer.encode(lab, add_special_tokens=False)[0]
         for lab in task["labels"]
     }
-    rows = []
-    for row in eval_ds:
-        inputs = tokenizer(
-            [template.replace("{input}", row["input"])], return_tensors="pt"
-        ).to("cuda")
-        with torch.no_grad():
-            logits = model(**inputs).logits[0, -1]
-        top, _, margin = label_probs(
-            {lab: float(logits[tid]) for lab, tid in label_ids.items()}
-        )
-        rows.append((row["output"], top, margin))
+    # The control, before a single gradient step. A LoRA is zero-initialised, so the model
+    # here answers exactly as the untrained base does; without this reading nothing in the
+    # record can distinguish a model that learned the task from one that guessed well.
+    FastLanguageModel.for_inference(model)
+    base_rows = predict(model, tokenizer, eval_ds, template, label_ids)
+    FastLanguageModel.for_training(model)
+
+    trainer.train()
+
+    FastLanguageModel.for_inference(model)
+    rows = predict(model, tokenizer, eval_ds, template, label_ids)
     result = grade(rows, task["abstain_below"])
+    # What it can do, what it cannot do reliably, where the edge is, and which lever moves it
+    result["envelope"] = envelope(rows, task["abstain_below"])
+    result["envelope"]["agreement_answered"] = result["agreement"]
+    result["frontier"] = frontier(rows)
+    result["majority"] = majority_agreement(rows)
+    baseline = grade(base_rows, task["abstain_below"])
+    baseline["envelope"] = envelope(base_rows, task["abstain_below"])
+    result["baseline"] = baseline
+    result["lift_over_untrained"] = result["agreement"] - baseline["agreement"]
+    result["lift_over_majority"] = result["agreement"] - result["majority"]["agreement"]
+    result["next_move"] = next_move(
+        result["envelope"], result["frontier"], task, baseline
+    )
     refusal = None
     if result["agreement"] < task["min_agreement"]:
         refusal = f"held-out agreement {result['agreement']:.4f} below {task['min_agreement']}"
     elif result["abstain_rate"] > task["max_abstain"]:
         refusal = f"held-out abstain rate {result['abstain_rate']:.4f} above {task['max_abstain']}"
+    elif task.get("min_lift_over_majority") is not None and (
+        result["lift_over_majority"] < task["min_lift_over_majority"]
+    ):
+        refusal = (
+            f"lift over always answering `{result['majority']['label']}` "
+            f"{result['lift_over_majority']:.4f} below {task['min_lift_over_majority']}"
+        )
+    elif task.get("min_recall_per_label") is not None and (
+        thin := [
+            lab
+            for lab, r in sorted(result["envelope"]["per_label"].items())
+            if r["recall_answered"] is not None
+            and r["recall_answered"] < task["min_recall_per_label"]
+        ]
+    ):
+        refusal = (
+            f"labels {thin} are caught below {task['min_recall_per_label']} of the time; "
+            "a model blind to a label is not useful on it"
+        )
     result["verdict"] = "refused" if refusal else "passed"
     result["refusal"] = refusal
     with open(args.data, "rb") as f:
