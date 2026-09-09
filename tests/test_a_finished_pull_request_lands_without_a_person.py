@@ -131,3 +131,30 @@ def test_every_verdict_the_tool_can_return_is_handled_by_the_bot():
     assert returned - handled - {"SKIP"} == set(), (
         f"{returned - handled} has no case in the bot"
     )
+
+
+def test_admitted_remediation_with_a_green_shadow_proof_lands():
+    """A PR the lane admits (type:auto-remediation) may auto-merge when a real shadow-verify check
+    on that head is green (W3.3): the proof is the shadow run, not the label."""
+    pr = pull_request(
+        labels=[{"name": "type:auto-remediation"}],
+        statusCheckRollup=[
+            check("ci"),
+            check("shadow-verify", "SUCCESS"),
+        ],
+    )
+    assert verdict(pr) == "MERGE"
+
+
+def test_remediation_without_a_green_shadow_proof_never_lands():
+    """A label is not a proof. A PR claiming risk-few (type:auto-remediation) but with no green
+    shadow-verify/convergence check must not auto-merge (W3.3): fail closed, never ride the plain
+    green path into the cluster."""
+    for broken in (
+        # a PR with no shadow-verify check at all
+        {"statusCheckRollup": [check("ci")]},
+        # a PR whose shadow-verify failed
+        {"statusCheckRollup": [check("ci"), check("shadow-verify", "FAILURE")]},
+    ):
+        bl = dict(labels=[{"name": "type:auto-remediation"}], **broken)
+        assert verdict(pull_request(**bl)) == "SKIP", f"should SKIP: {bl}"
