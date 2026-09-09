@@ -270,7 +270,7 @@ def register_mcp_tools(datasette, mcp):
         proposal answers but is never executable."""
         return simulate_change(
             source,
-            graders=_live_graders() if config().get("graders_door") else {},
+            graders=_live_graders(source) if config().get("graders_door") else {},
         )
 
     @mcp.tool()
@@ -286,10 +286,63 @@ def register_mcp_tools(datasette, mcp):
         )
 
 
-def _live_graders() -> dict:
-    """The real graders when the estate MCP server runs with the door on and the bin programs and
-    an agent-reader kubeconfig exist. Kept here and empty by default so this module has no dead
-    subprocess logic in offline CI; wiring the concrete admission/laws graders onto the existing
-    bin programs is the estate MCP deployment's job and is landed with it (spec 'Done').
+def _live_graders(source):
+    """The real graders when the estate MCP server runs with the door on.
+
+    `admission` is a live fact about the real cluster: it shells to `bin/idp-admission-dryrun`,
+    which runs `kubectl apply --dry-run=server` so Kyverno's ClusterPolicies and every validating
+    webhook answer for real and nothing persists (the spec's admission row, KEP-576). A program
+    that has no temp manifest or cannot reach the chain is BLIND and surfaces here as UNKNOWN --
+    never SAFE. The other five graders (laws, blast, network, placement, converge) are real estate
+    programs wired under their own live doors; while any is UNKNOWN the whole verdict is UNKNOWN,
+    not SAFE -- the estate already grades that way.
     """
-    return {}
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    base = Path(__file__).resolve().parents[2]
+    grader = base / "bin" / "idp-admission-dryrun"
+
+    def admission():
+        if not grader.is_file():
+            return {
+                "verdict": "UNKNOWN",
+                "detail": "bin/idp-admission-dryrun not present",
+            }
+        # The live door grades an inline manifest. A git-ref source has no file to dry-run here;
+        # that needs the Flux diff seam and stays UNKNOWN (fail closed).
+        raw = source if isinstance(source, str) else None
+        if not raw or "apiVersion:" not in raw or "kind:" not in raw:
+            return {
+                "verdict": "UNKNOWN",
+                "detail": "admission needs an inline manifest source",
+            }
+        tmp = None
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
+                fh.write(raw)
+                tmp = fh.name
+            proc = subprocess.run(
+                [sys.executable, str(grader), tmp],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except Exception as exc:  # noqa: BLE001 - a grader that could not run is UNKNOWN
+            return {"verdict": "UNKNOWN", "detail": f"admission could not run: {exc}"}
+        finally:
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+        detail = (proc.stderr or "").strip()[-400:] or proc.stdout.strip()[-400:]
+        if proc.returncode == 0:
+            return {"verdict": "SAFE", "detail": detail or "admission accepts"}
+        if proc.returncode == 1:
+            return {"verdict": "UNSAFE", "detail": detail or "admission refuses"}
+        return {"verdict": "UNKNOWN", "detail": detail or "admission chain unreachable"}
+
+    return {"admission": admission}
