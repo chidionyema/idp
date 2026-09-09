@@ -1,0 +1,10 @@
+{
+  "kind": "Deployment",
+  "metadata": { "name": "worker", "namespace": "demo", "head": "abc123def" },
+  "ready": false,
+  "requiredReplicas": 2,
+  "availableReplicas": 1,
+  "readyReplicas": 1,
+  "probes": { "worker": "fail" },
+  "tests": null
+}
