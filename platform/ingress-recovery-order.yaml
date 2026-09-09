@@ -25,9 +25,6 @@ order:
   - mcp/agentgateway
   - healthchecks/healthchecks
   - weave-gitops/weave-gitops
-  - observability/signoz
-  - observability/langfuse-web
-  - observability/superset
 
 # What gives up its room when something above cannot fit.
 #
@@ -40,5 +37,31 @@ order:
 # and only as far as needed. Nothing here serves a customer. Restoring is one command per line and
 # the playbook prints it.
 yield:
+  # 2026-09-09: these three left the recovery order above and became sheddable. During the
+  # partition the storefront API -- 256Mi, priority 0 -- could not be seated while Superset held
+  # 1024Mi and ClickHouse held 4096Mi to draw graphs of the outage. What we watch the estate with
+  # yields to what the estate is for. They come back with `kubectl scale --replicas=1` once the
+  # link is repaired; the plan prints that command for each one as it yields it.
+  - observability/superset
+  - observability/langfuse-web
   - observability/langfuse-worker      # trace processing; its own UI was stranded at the time
   - monitoring/prometheus-kps          # metrics retained on disk, resumes on scale-up
+
+# Not every casualty of a severed link is a public surface.
+#
+# external-secrets sat on the cordoned node while bitwarden-sdk-server, the thing it calls for
+# every value, sat on the serving one. Every secret in the estate stopped resolving: the Stripe
+# key the shop takes money with, the seed pushes, all of it, with nothing on any hostname to show
+# for it. A controller like that is a routed backend in every way that matters except that no
+# HTTPRoute names it, so it needs its own list.
+#
+# These are matched by Deployment name, not by Service, and treated exactly like the surfaces
+# above: rescued in this order while room lasts, evicted from the cordoned node when a healthy
+# peer already runs on the serving one.
+internal:
+  - external-secrets/external-secrets            # every secret in the estate resolves through it
+  - external-secrets/external-secrets-webhook    # admission for the same
+  - flux-system/source-controller                # nothing reconciles without it
+  - flux-system/kustomize-controller
+  - flux-system/helm-controller
+  - kube-system/calico-kube-controllers          # the dataplane's own control loop

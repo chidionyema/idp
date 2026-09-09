@@ -12,6 +12,7 @@ than left to pod priority, which had observability/langfuse-web at infrastructur
 the shop at zero with no class at all.
 """
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -34,6 +35,23 @@ def body() -> str:
                 return text[start : i + 1]
         i += 1
     raise AssertionError("pb_routed_backend_rescue never closes")
+
+
+def sections():
+    """The three lists in platform/ingress-recovery-order.yaml, parsed the way the playbook parses
+    them: comments stripped, `- ns/name` rows only. Grepping the file text grades its prose."""
+    out, cur = {"order": [], "yield": [], "internal": []}, None
+    for line in (
+        (ROOT / "platform" / "ingress-recovery-order.yaml").read_text().splitlines()
+    ):
+        head = line.split("#")[0].rstrip()
+        if re.match(r"^(order|yield|internal):\s*$", head):
+            cur = out[head[:-1]]
+            continue
+        m = re.match(r"^\s*-\s*(\S+/\S+)\s*$", head)
+        if m and cur is not None:
+            cur.append(m.group(1))
+    return out
 
 
 def test_listed_and_dispatchable():
@@ -85,16 +103,21 @@ def test_the_order_is_a_file_not_a_guess():
 
 
 def test_order_puts_revenue_before_observability():
-    """The whole point: the cluster's own priorities had this backwards."""
-    text = ORDER.read_text()
-    order_block = text.split("order:")[1].split("yield:")[0]
-    entries = [
-        ln.split("#")[0].strip().lstrip("- ").strip() for ln in order_block.splitlines()
-    ]
-    entries = [e for e in entries if "/" in e]
-    assert entries[0].startswith("prospector/"), "the shop is not first"
-    for obs in ("observability/langfuse-web", "observability/superset"):
-        assert entries.index(obs) > entries.index("prospector/prospector-store-api")
+    # 2026-09-09: these were ranked below the shop and still took its room, so they left the
+    # recovery order altogether and became sheddable. What we watch the estate with yields to
+    # what the estate is for.
+    s = sections()
+    assert s["order"][0] == "prospector/prospector-store-api"
+    for dashboard in (
+        "observability/superset",
+        "observability/langfuse-web",
+        "observability/signoz",
+    ):
+        assert dashboard not in s["order"], (
+            f"{dashboard} is what we watch with, not what pays"
+        )
+    assert "observability/superset" in s["yield"]
+    assert "observability/langfuse-web" in s["yield"]
 
 
 def test_nothing_customer_facing_yields():
@@ -137,25 +160,22 @@ def test_yields_happen_before_the_rescue():
 
 def test_a_yield_prints_the_way_back():
     """Reversible, and the receipt says how."""
-    assert "restore with: kubectl -n $ns scale deploy/$name --replicas=" in body()
+    assert "restore with: kubectl -n $ns scale $kind/$name --replicas=" in body()
+    assert "kind=deploy" in body(), (
+        "observability/signoz is a StatefulSet; scale deploy would miss it"
+    )
 
 
 def test_a_stranded_peer_is_evicted_not_skipped():
-    """Half a service is still a broken service.
-
-    After the first rescue run mumchimp.com answered two requests in three. The API had moved,
-    but one storefront replica was still on the cordoned node and still an endpoint of the
-    Service, so the gateway kept sending it traffic that went nowhere. The first version skipped
-    a service that had any ready backend on the good node, which left exactly that black hole in
-    rotation. Removing it costs no room: the pod is not being brought back, it is being taken out
-    of the endpoint list.
-    """
-    b = body()
-    assert "EVICT" in b, "no eviction path for a stranded peer"
-    assert "already has" not in b, (
-        "a service with a good peer is still skipped wholesale"
+    # A stranded pod is still an endpoint, so the gateway keeps sending it traffic that goes
+    # nowhere. mumchimp.com came back at two requests in three for exactly this: one storefront
+    # replica served, the other was a black hole.
+    src = body()
+    branch = src[src.index("if on_good:") : src.index("blackhole-endpoint")]
+    assert "EVICT" in branch
+    assert "free_c" not in branch and "free_m" not in branch, (
+        "taking a pod out of rotation needs no room; it is not being brought back"
     )
-    assert "blackhole-endpoint" in b
 
 
 def test_eviction_needs_no_room():
@@ -164,4 +184,100 @@ def test_eviction_needs_no_room():
     branch = b[b.index("if on_good:") : b.index("blackhole-endpoint")]
     assert "free_c" not in branch and "free_m" not in branch, (
         "eviction is gated on capacity it does not need"
+    )
+
+
+# --- 2026-09-09, the second time the shop went dark -------------------------------------------
+# The storefront API was preempted by hermes-agent-gateway (infrastructure-critical, 1088Mi) and
+# its replacement sat Pending on no node at all. The rescue walked past it: every question it
+# asked was "what is stranded on the cordoned node", and this pod was stranded on nothing.
+
+
+def _plan_source():
+    b = body()
+    return b[b.index("PYPLAN") : b.rindex("PYPLAN")]
+
+
+def test_a_pending_pod_on_no_node_is_rescued_by_making_room():
+    src = _plan_source()
+    assert 'not p["spec"].get("nodeName")' in src, (
+        "a Pending pod belongs to no node; the plan must look for that"
+    )
+    assert "ROOM " in src, "making room is its own directive: nothing needs moving"
+
+
+def test_room_is_an_action_the_executor_counts():
+    # the guard that decides whether the playbook does anything at all
+    assert "^(YIELD|MOVE|EVICT|ROOM) " in body(), (
+        "a plan of only ROOM lines must not be read as an empty plan"
+    )
+
+
+def test_rank_is_never_read_as_a_sacrifice_list():
+    # Run against the live cluster, the rank-based version proposed scaling prospector-store-web
+    # to zero to seat prospector-store-api, and external-secrets to zero for a Langfuse dashboard.
+    src = _plan_source()
+    fn = src[
+        src.index("def yield_sources") : src.index("def owned_by")
+        if "def owned_by" in src
+        and src.index("def owned_by") > src.index("def yield_sources")
+        else len(src)
+    ]
+    fn = src[src.index("def yield_sources") :].split("\ndef ")[0]
+    assert "return list(yields)" in fn
+    body_lines = [
+        l for l in fn.splitlines() if l.strip() and not l.strip().startswith("#")
+    ]
+    assert not any("order" in l for l in body_lines), (
+        "room may only come from the declared yield list, never from the recovery rank"
+    )
+
+
+def test_a_workload_is_not_matched_by_bare_prefix():
+    # `external-secrets` prefixes `external-secrets-cert-controller` and `external-secrets-webhook`
+    src = _plan_source()
+    assert "def owned_by" in src
+    ns = {}
+    exec(src[src.index("def owned_by") :].split("\ndef yield_sources")[0], ns)
+    owned = ns["owned_by"]
+    pod = lambda n: {"metadata": {"namespace": "external-secrets", "name": n}}
+    assert owned(
+        pod("external-secrets-74866d8fb8-nxd88"), "external-secrets", "external-secrets"
+    )
+    assert not owned(
+        pod("external-secrets-webhook-656ffd67c9-kfhns"),
+        "external-secrets",
+        "external-secrets",
+    )
+    assert not owned(
+        pod("external-secrets-cert-controller-84498f9656-v44ts"),
+        "external-secrets",
+        "external-secrets",
+    )
+    assert owned(
+        pod("external-secrets-webhook-656ffd67c9-kfhns"),
+        "external-secrets",
+        "external-secrets-webhook",
+    )
+    assert owned(pod("signoz-0"), "external-secrets", "signoz"), (
+        "a StatefulSet ordinal is generated too"
+    )
+
+
+def test_internal_controllers_are_a_list_of_their_own():
+    # external-secrets sat on the cordoned node while the server it calls for every value sat on
+    # the serving one: every secret in the estate stopped resolving, with nothing on any hostname
+    # to show for it. No HTTPRoute names it, so the Service-driven order could never see it.
+    assert "internal" in body()
+    assert "external-secrets/external-secrets" in sections()["internal"]
+
+
+def test_clickhouse_is_never_yielded():
+    # owned by a ClickHouseInstallation; scaling its StatefulSet is undone by the operator
+    assert not [y for y in sections()["yield"] if "clickhouse" in y.lower()]
+
+
+def test_the_rescue_says_which_surface_came_back():
+    assert "seated-" in body(), (
+        "a rescue that does not name the surface it restored is a receipt for nothing"
     )

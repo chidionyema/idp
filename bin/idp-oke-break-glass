@@ -1312,7 +1312,7 @@ YAML
 # and the shop had no priority class at all. platform/ingress-recovery-order.yaml holds the order a
 # person decided; this reads it, moves what fits, and names what did not.
 pb_routed_backend_rescue() {
-  local good bad n order out TMP
+  local good bad n order out kind TMP
   TMP=$(mktemp -d); trap 'rm -rf "$TMP"' RETURN
   order="$IDP/platform/ingress-recovery-order.yaml"
   [ -f "$order" ] || { echo "FAIL  routed-backend-rescue: no $order, nothing says what comes back first"; FAILED="$FAILED guard-order"; return 1; }
@@ -1333,11 +1333,12 @@ pb_routed_backend_rescue() {
   python3 - "$order" "$TMP/pods.json" "$TMP/svcs.json" "$TMP/good.json" "$bad" "$good" > "$TMP/plan.txt" <<'PYPLAN'
 import json, re, sys
 order_file, pods_file, svcs_file, good_file, bad, good = sys.argv[1:7]
-order, yields, section = [], [], None
+order, yields, internal, section = [], [], [], None
 for line in open(order_file):
     head = line.split("#")[0].rstrip()
     if re.match(r"^order:\s*$", head): section = order; continue
     if re.match(r"^yield:\s*$", head): section = yields; continue
+    if re.match(r"^internal:\s*$", head): section = internal; continue
     m = re.match(r"^\s*-\s*(\S+/\S+)\s*$", head)
     if m and section is not None: section.append(m.group(1))
 pods = json.load(open(pods_file))["items"]
@@ -1370,22 +1371,95 @@ for s in svcs:
     key = s["metadata"]["namespace"] + "/" + s["metadata"]["name"]
     sel[key] = (s["metadata"]["namespace"], (s["spec"].get("selector") or {}))
 
-for want in order:
-    ns_sel = sel.get(want)
-    if not ns_sel or not ns_sel[1]:
-        print(f"# skip {want}: no such Service, or it selects nothing")
-        continue
-    ns, labels = ns_sel
-    def backs(p):
-        L = p["metadata"].get("labels") or {}
-        return p["metadata"]["namespace"] == ns and all(L.get(k) == v for k, v in labels.items())
+def owned_by(p, ns, name):
+    # A pod belongs to the workload `name` when what follows the name is the generated part and
+    # nothing else: a ReplicaSet hash plus a pod suffix, or a StatefulSet ordinal. Plain
+    # startswith() is wrong here and quietly so -- `external-secrets` prefixes
+    # `external-secrets-cert-controller` and `external-secrets-webhook`, so the plan believed the
+    # secrets controller had a healthy peer on the serving node when it had none at all, and
+    # emitted an eviction where a rescue was needed.
+    if p["metadata"]["namespace"] != ns: return False
+    n = p["metadata"]["name"]
+    if not n.startswith(name + "-"): return False
+    rest = n[len(name) + 1:]
+    return rest.count("-") == 1 or rest.isdigit()
+
+def yield_sources(want):
+    # Room comes from the declared yield list and from nowhere else.
+    #
+    # This function briefly also returned everything ranked below `want`, on the reasoning that a
+    # rank which cannot take room back is not a rank. Run against the live cluster on 2026-09-09
+    # that plan proposed scaling `prospector-store-web` to zero -- the storefront itself -- to make
+    # room for the storefront's API, and scaling `external-secrets` to zero for a Langfuse
+    # dashboard that came out stranded anyway. The rank is the order things are brought BACK in.
+    # Reading it as an order things may be killed in turns a rescue into the outage.
+    #
+    # What a surface may cost is therefore only ever what this estate has written down, in
+    # advance, as sheddable. The scheduler protects a seated pod from later arrivals; that is a
+    # priority class's job (platform/priority-classes), not this playbook's.
+    return list(yields)
+
+def take_room(y):
+    yns, yname = y.split("/", 1)
+    held = [q for q in pods if q["spec"].get("nodeName") == good
+            and owned_by(q, yns, yname)
+            and q["status"].get("phase") == "Running"]
+    if not held:
+        return None
+    yc = sum(req(q)[0] for q in held); ym = sum(req(q)[1] for q in held)
+    if y in yields:
+        yields.remove(y)
+    print(f"YIELD {yns} {yname} {len(held)} {yc}m {ym}Mi")
+    return yc, ym
+
+# internal controllers are matched by Deployment name; no HTTPRoute names them, and several run
+# with no Service at all, but a severed link breaks them exactly the same way
+for want in order + internal:
+    by_name = want in internal
+    if by_name:
+        ns, prefix = want.split("/", 1)
+        def backs(p, ns=ns, prefix=prefix):
+            return owned_by(p, ns, prefix)
+    else:
+        ns_sel = sel.get(want)
+        if not ns_sel or not ns_sel[1]:
+            print(f"# skip {want}: no such Service, or it selects nothing")
+            continue
+        ns, labels = ns_sel
+        def backs(p, ns=ns, labels=labels):
+            L = p["metadata"].get("labels") or {}
+            return p["metadata"]["namespace"] == ns and all(L.get(k) == v for k, v in labels.items())
     on_good = [p for p in pods if backs(p) and p["spec"].get("nodeName") == good
                and p["status"].get("phase") == "Running"
                and all(c.get("ready") for c in (p["status"].get("containerStatuses") or []))]
     on_bad = [p for p in pods if backs(p) and p["spec"].get("nodeName") == bad
               and p["status"].get("phase") == "Running"]
+    # A surface can be dark without a single pod on the cordoned node. When the scheduler
+    # preempts its pod and cannot seat the replacement, the pod sits Pending on no node at all,
+    # and a rescue that only ever asks "what is stranded on the bad node" walks straight past it.
+    # That is how the storefront API went dark a second time on 2026-09-09: hermes-agent-gateway,
+    # rated infrastructure-critical, took its 1088Mi, and the shop's own API -- priority 0 --
+    # had nowhere to land. Nothing needs moving here; room needs making.
+    unseated = [p for p in pods if backs(p) and not p["spec"].get("nodeName")
+                and p["status"].get("phase") == "Pending"]
     if not on_bad:
-        print(f"# skip {want}: nothing of it on {bad}")
+        if on_good or not unseated:
+            print(f"# skip {want}: nothing of it on {bad}")
+            continue
+        c, m = req(unseated[0])
+        if c <= free_c and m <= free_m:
+            print(f"# skip {want}: {unseated[0]['metadata']['name']} is Pending but {good} already has room for it")
+            continue
+        made_c, made_m = free_c, free_m
+        for y in yield_sources(want):
+            if c <= made_c and m <= made_m: break
+            got = take_room(y)
+            if got: made_c += got[0]; made_m += got[1]
+        if c > made_c or m > made_m:
+            print(f"# STRANDED {want}: {c}m/{m}Mi unseatable, only {made_c}m/{made_m}Mi after every yield")
+            continue
+        free_c, free_m = made_c - c, made_m - m
+        print(f'ROOM {ns} {unseated[0]["metadata"]["name"]} {want} {c}m {m}Mi')
         continue
     if on_good:
         # A stranded pod is still an endpoint of the Service, so the gateway keeps sending it
@@ -1399,20 +1473,16 @@ for want in order:
     p = on_bad[0]
     c, m = req(p)
     if c > free_c or m > free_m:
-        # room is taken from the declared yield list, in its order, and only as far as needed
-        for y in list(yields):
+        # Room comes from the declared yield list first, then from routed services ranked BELOW
+        # this one. Without the second source the rescue eats its own room: on 2026-09-09 the
+        # storefront API was seated, six lower-ranked surfaces were rescued after it, and when
+        # the API's pod was later replaced there was no longer anywhere to put it -- the shop
+        # went back to serving a page with no catalogue. A rank that cannot take room back is
+        # not a rank, it is a wish.
+        for y in yield_sources(want):
             if c <= free_c and m <= free_m: break
-            yns, yname = y.split("/", 1)
-            held = [q for q in pods if q["spec"].get("nodeName") == good
-                    and q["metadata"]["namespace"] == yns
-                    and q["metadata"]["name"].startswith(yname)
-                    and q["status"].get("phase") in ("Running", "Pending")]
-            if not held:
-                continue
-            yc = sum(req(q)[0] for q in held); ym = sum(req(q)[1] for q in held)
-            free_c += yc; free_m += ym
-            yields.remove(y)
-            print(f"YIELD {yns} {yname} {len(held)} {yc}m {ym}Mi")
+            got = take_room(y)
+            if got: free_c += got[0]; free_m += got[1]
         if c > free_c or m > free_m:
             print(f"# STRANDED {want}: needs {c}m/{m}Mi, only {free_c}m/{free_m}Mi left after every yield")
             continue
@@ -1423,7 +1493,7 @@ PYPLAN
   echo "--- the plan"
   cat "$TMP/plan.txt"
 
-  out=$(grep -cE '^(YIELD|MOVE|EVICT) ' "$TMP/plan.txt" || true)
+  out=$(grep -cE '^(YIELD|MOVE|EVICT|ROOM) ' "$TMP/plan.txt" || true)
   if [ "${out:-0}" -eq 0 ]; then
     echo "ok    routed-backend-rescue nothing both stranded and affordable; the lines above say why"
     return 0
@@ -1431,14 +1501,25 @@ PYPLAN
 
   # yields first: the room has to exist before the rescued pod is scheduled
   while read -r _ ns name n c m; do
-    echo "--- $ns/$name yields $c $m ($n pod(s)); restore with: kubectl -n $ns scale deploy/$name --replicas=<n>"
-    step "yield-$name" $K -n "$ns" scale deploy/"$name" --replicas=0
+    # a yielded workload is a Deployment or a StatefulSet; observability/signoz is the latter, and
+    # `scale deploy` on it fails with "not found", which would leave the room unclaimed
+    kind=deploy
+    $K -n "$ns" get deploy "$name" >/dev/null 2>&1 || kind=statefulset
+    echo "--- $ns/$name yields $c $m ($n pod(s)); restore with: kubectl -n $ns scale $kind/$name --replicas=<n>"
+    step "yield-$name" $K -n "$ns" scale "$kind/$name" --replicas=0
   done < <(grep '^YIELD ' "$TMP/plan.txt" || true)
 
   while read -r _ ns pod svc c m; do
     echo "--- rescuing $svc ($c $m) from $bad"
     step "rescue-$pod" $K -n "$ns" delete pod "$pod" --wait=false
   done < <(grep '^MOVE ' "$TMP/plan.txt" || true)
+
+  # a ROOM line needs no pod action: the yields above already freed what the scheduler was short
+  # of, and the Pending pod is seated by the scheduler itself on its next pass. Naming it here is
+  # what makes the settle check below mean something rather than a blind sleep.
+  while read -r _ ns pod svc c m; do
+    echo "--- $svc has no serving pod; $pod was unseatable at $c $m and now has room on $good"
+  done < <(grep '^ROOM ' "$TMP/plan.txt" || true)
 
   # a black-hole endpoint costs nothing to remove and is never left in rotation
   while read -r _ ns pod svc _; do
@@ -1448,6 +1529,20 @@ PYPLAN
 
   step "rescue-settle" sleep 45
   show rescued $K get pods -A -o wide --field-selector spec.nodeName="$good"
+
+  # Every surface the plan claimed to rescue is graded by name. Run 34381468088 was recorded FAILED
+  # while the rescue had in fact worked, and a reader could not tell the two apart from the log;
+  # a rescue that does not say which surface came back is a receipt for nothing.
+  while read -r verb ns pod svc _; do
+    case "$verb" in ROOM|MOVE) ;; *) continue ;; esac
+    out=$($K get pods -n "$ns" -o jsonpath='{range .items[?(@.spec.nodeName=="'"$good"'")]}{.metadata.name}{" "}{range .status.containerStatuses[*]}{.ready}{end}{"\n"}{end}' 2>/dev/null \
+      | grep -c 'true$' || true)
+    if [ "${out:-0}" -ge 1 ]; then
+      echo "ok    seated-$svc ${out} ready pod(s) for $ns on $good"
+    else
+      echo "FAIL  seated-$svc nothing ready for $ns on $good after the rescue"; FAILED="$FAILED seated-$svc"
+    fi
+  done < <(grep -E '^(ROOM|MOVE) ' "$TMP/plan.txt" || true)
 }
 
 pb_gateway_one_node() {
