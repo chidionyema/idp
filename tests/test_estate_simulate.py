@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import importlib.util
+import os
 from pathlib import Path
 
 import pytest
@@ -201,3 +202,43 @@ def test_the_live_admission_grader_is_fail_closed_without_a_readable_inline_mani
     g = sim._live_graders("ref: clusters/oke (no inline manifest)")
     out = g["admission"]()
     assert out["verdict"] == "UNKNOWN" and "inline manifest" in out["detail"]
+
+
+def test_grade_rules_folds_all_ok_to_safe():
+    assert sim.grade_rules({"a": "ok", "b": "ok"}) == "SAFE"
+
+
+def test_grade_rules_any_fail_to_unsafe():
+    assert sim.grade_rules({"a": "ok", "b": "FAIL"}) == "UNSAFE"
+
+
+def test_grade_rules_a_blind_rule_is_unknown_not_safe():
+    """A repo law that could not grade (BLIND) is never folded into a pass -- same rule as
+    bin/idp-fence-enforcement and the gate that grades the whole verdict."""
+    assert sim.grade_rules({"a": "ok", "b": "BLIND"}) == "UNKNOWN"
+
+
+def test_grade_rules_empty_or_garbage_is_unknown():
+    assert sim.grade_rules({}) == "UNKNOWN"
+    assert sim.grade_rules({"a": "ok", "b": "not-a-verdict"}) == "UNKNOWN"
+
+
+def test_the_laws_grader_is_unknown_when_its_door_is_off():
+    """laws only reports a repository law verdict when ESTATE_MCP_GRADE_LAWS_DOOR is on; otherwise
+    UNKNOWN, never a fabricated pass -- offline CI and a repo reader get no silent all-clear."""
+    os.environ.pop("ESTATE_MCP_GRADE_LAWS_DOOR", None)
+    live = sim.config()
+    assert live.get("grade_laws_door") in (False, None)
+    g = sim._live_graders("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n")
+    out = g["laws"]()
+    assert out["verdict"] == "UNKNOWN"
+
+
+def test_the_laws_door_flips_on_when_explicitly_enabled():
+    """The laws door is a real, intentional opt-in: setting ESTATE_MCP_GRADE_LAWS_DOOR=1 turns the
+    config key on (the grader then shells to bin/idp-rules; gating it here keeps the suite offline)."""
+    os.environ["ESTATE_MCP_GRADE_LAWS_DOOR"] = "1"
+    try:
+        assert sim.config()["grade_laws_door"] is True
+    finally:
+        os.environ.pop("ESTATE_MCP_GRADE_LAWS_DOOR", None)

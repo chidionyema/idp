@@ -53,8 +53,35 @@ def config() -> dict:
     return {
         "proposal_ttl_s": int(os.environ.get("ESTATE_MCP_PROPOSAL_TTL_S", "600")),
         "graders_door": os.environ.get("ESTATE_MCP_SIMULATE_GRADERS", "") == "1",
+        "grade_laws_door": os.environ.get("ESTATE_MCP_GRADE_LAWS_DOOR", "") == "1",
         "state_branch": os.environ.get("ESTATE_MCP_STATE_BRANCH", "estate/state"),
     }
+
+
+def grade_rules(rule_outcomes: dict[str, str]) -> str:
+    """Fold the repository's per-rule law verdicts into one grader verdict.
+
+    MUM-288 world-model row: "Does it pass the repository's laws?" -- the `laws` grader answers
+    it by folding each rule that ran into the same fail-closed lattice the door already uses:
+    SAFE iff every rule answered ok; UNSAFE if any FAIL; otherwise (a rule that could not run, or
+    whose verdict was BLIND) UNKNOWN -- never SAFE on a rule that did not answer.
+
+    `rule_outcomes` maps a rule id to its line's leading token: "ok", "FAIL", or "BLIND". Unknown
+    tokens and absent rules fold to UNKNOWN.
+    """
+    if not rule_outcomes:
+        return "UNKNOWN"
+    for token in rule_outcomes.values():
+        if not isinstance(token, str):
+            return "UNKNOWN"
+        first = token.strip().split()[0] if token.strip() else ""
+        if first == "FAIL":
+            return "UNSAFE"
+    for token in rule_outcomes.values():
+        first = token.strip().split()[0] if token.strip() else ""
+        if first != "ok":
+            return "UNKNOWN"
+    return "SAFE"
 
 
 class Registry:
@@ -304,6 +331,7 @@ def _live_graders(source):
 
     base = Path(__file__).resolve().parents[2]
     grader = base / "bin" / "idp-admission-dryrun"
+    cfg = config()
 
     def admission():
         if not grader.is_file():
@@ -345,4 +373,44 @@ def _live_graders(source):
             return {"verdict": "UNSAFE", "detail": detail or "admission refuses"}
         return {"verdict": "UNKNOWN", "detail": detail or "admission chain unreachable"}
 
-    return {"admission": admission}
+    def laws():
+        """Grade 'does the repository pass its own laws' by folding bin/idp-rules per-rule verdicts
+        with grade_rules. Honest door: it only shells when ESTATE_MCP_GRADE_LAWS_DOOR is on and the
+        run line is reachable; otherwise UNKNOWN, never a fabricated pass. A run that fails to launch
+        (no rules engine) is UNKNOWN."""
+        if not cfg.get("grade_laws_door"):
+            return {
+                "verdict": "UNKNOWN",
+                "detail": "laws door is off; no repository law verdict without it",
+            }
+        rules_bin = base / "bin" / "idp-rules"
+        if not rules_bin.is_file():
+            return {"verdict": "UNKNOWN", "detail": "bin/idp-rules not present"}
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(rules_bin), "run", "--plane", "ci"],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        except Exception as exc:  # noqa: BLE001 - a grader that could not run is UNKNOWN
+            return {"verdict": "UNKNOWN", "detail": f"laws could not run: {exc}"}
+        # Each 'ok    <rule> ...' / 'FAIL   <rule> ...' / 'BLIND  <rule> ...' line names a rule
+        # outcome. Fold only those lines; never treat BLIND (a rule that could not grade) as a pass.
+        outcomes: dict[str, str] = {}
+        for line in proc.stdout.splitlines():
+            parts = line.split(maxsplit=2)
+            if len(parts) >= 2 and parts[0] in ("ok", "FAIL", "BLIND"):
+                outcomes[parts[1]] = parts[0]
+        verdict = grade_rules(outcomes)
+        if not outcomes:
+            return {
+                "verdict": "UNKNOWN",
+                "detail": "laws engine produced no per-rule verdicts to fold",
+            }
+        return {
+            "verdict": verdict,
+            "detail": f"laws folded {len(outcomes)} rule outcome(s)",
+        }
+
+    return {"admission": admission, "laws": laws}
