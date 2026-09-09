@@ -87,8 +87,16 @@ const ToolTile = ({ entity }: { entity: Entity }) => {
       {open ? (
         <>
           <div className="estate-tile-actions">
+            {/* target="_top": a tool's URL is a gateway path on the portal's own origin
+                (catalogue.<zone>/screen/, /pair, ...). ButtonLink is a react-aria Link
+                under the app's RouterProvider, which client-navigates any same-origin
+                href with no target -- straight into the SPA's 404. A target other than
+                _self makes it a full navigation, so the gateway answers. Founder,
+                2026-09-09: "share mac screen and pin match moonlight options return
+                404 in tools". */}
             <ButtonLink
               href={open.url}
+              target="_top"
               variant="secondary"
               size="small"
               className="estate-action"

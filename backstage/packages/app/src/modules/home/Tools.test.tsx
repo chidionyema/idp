@@ -144,6 +144,9 @@ describe('Tools', () => {
     const open = await screen.findByRole('link', { name: /^Open Signal/ });
     expect(open).toHaveAttribute('href', 'https://signal.example');
     expect(open).toHaveClass('estate-action');
+    // A full navigation, never a client-side one: tool URLs are gateway paths on the
+    // portal's origin, and the router would answer them with the portal's 404.
+    expect(open).toHaveAttribute('target', '_top');
     const t = tile('Signal');
     expect(t).toHaveTextContent('What Signal is for.');
     expect(within(t).getByText(/^Also:/)).toHaveTextContent(
