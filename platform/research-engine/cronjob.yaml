@@ -71,11 +71,10 @@ spec:
               # Pinned to the commit that built it, so the image the cluster runs can be read
               # in the repository it came from. Built by the research-engine repository's own
               # image workflow on a GitHub runner, never on the founder's Mac (LAW 31).
-              # 2026-09-09: 56a4d1a made the engine stop self-minting its roles; d99469e ships
-              # the profiles/ directory, which is what the subjects in the questions ConfigMap
-              # ask for -- without it every run died "no such lane: <subject> (have: none)".
-              # Index carries linux-amd64 + linux-arm64.
-              image: ghcr.io/chidionyema/research-engine:sha-d99469e002c3a931f42785f39c11e936fff71f10
+              # 2026-09-09: d99469e shipped the lanes (profiles/); ea2d561 stops injecting a
+              # VERBOSE env var that gpt-researcher 0.14.4 cannot type (KeyError: 'VERBOSE' on
+              # Config init), which is what left every question not_found. Index amd64+arm64.
+              image: ghcr.io/chidionyema/research-engine:sha-ea2d561ddc762c8e86a742f0db5ba72d481832e6
               command: ["/bin/sh", "-c"]
               args:
                 - |
