@@ -22,6 +22,36 @@ import yaml
 
 MIN_EXAMPLES = 500  # forge/common.py; the split refuses under it
 
+# forge/modal_app.py writes `verdict: refused` for three different events, and until
+# 2026-09-09 this file described all three as the first one -- so run 34401515600, which
+# met both gates and then lost the model to the GGUF export, was filed as "stopped before
+# it started, because it could have cost more than its budget". A record that misreports
+# its own run is worse than no record. Each kind is read back from the shape modal_app
+# leaves, which is distinct for all three.
+REFUSAL_KINDS = ("budget", "gate", "export", "unknown")
+
+
+def refusal_kind(run: dict, ev: dict) -> str | None:
+    """Which refusal this was, from the record's own fields. None when nothing was refused.
+
+    budget -- the pre-launch cost or spend gate returned before train.py ran: no eval
+              numbers exist and no GPU seconds were billed (modal_app.py, the `refusal`
+              branch, writes seconds 0 and usd 0.0).
+    gate   -- train.py graded the held-out split, missed min_agreement or max_abstain and
+              raised SystemExit, so eval.json carries the refusal string it wrote.
+    export -- eval.json says `passed` with no refusal and the process still exited
+              non-zero: everything after the gates (GGUF export, oras push) failed.
+    """
+    if run.get("verdict") != "refused":
+        return None
+    if ev.get("agreement") is None and not run.get("seconds"):
+        return "budget"
+    if ev.get("refusal"):
+        return "gate"
+    if ev.get("verdict") == "passed":
+        return "export"
+    return "unknown"
+
 
 def git_sha() -> str:
     if os.environ.get("GITHUB_SHA"):
@@ -75,6 +105,7 @@ def render(task: dict, run: dict, rows: list[dict] | None, context: dict) -> str
     summary = data_summary(rows)
     stamp = context["stamp"]
     verdict = run.get("verdict", "unknown")
+    kind = refusal_kind(run, ev)
     agreement = ev.get("agreement")
     abstain = ev.get("abstain_rate")
     held = ev.get("held_out", 0)
@@ -83,6 +114,8 @@ def render(task: dict, run: dict, rows: list[dict] | None, context: dict) -> str
         "task": task["task"],
         "base": task["base"],
         "verdict": verdict,
+        "refusal_kind": kind,
+        "exit_code": run.get("exit_code"),
         "dry_run": bool(run.get("dry_run")),
         "held_out": held,
         "agreement": agreement,
@@ -112,8 +145,25 @@ def render(task: dict, run: dict, rows: list[dict] | None, context: dict) -> str
         outcome = f"PASSED both gates; model pushed as `{run['artifact']}`."
     elif verdict == "dry-run":
         outcome = "Dry run: gates graded, nothing pushed."
+    elif kind == "budget":
+        outcome = (
+            f"REFUSED before the GPU started: {ev.get('refusal')}. "
+            "Nothing was billed and no model was trained."
+        )
+    elif kind == "gate":
+        outcome = (
+            f"REFUSED by the pre-registered gates: {ev.get('refusal')}. "
+            "No model left the Forge."
+        )
+    elif kind == "export":
+        code = run.get("exit_code")
+        where = "" if code is None else f" (exit {code})"
+        outcome = (
+            f"PASSED both pre-registered gates, then the run failed after them{where}: "
+            "the GPU was billed, the numbers below are real, and no artifact was published."
+        )
     elif verdict == "refused":
-        outcome = f"REFUSED: {ev.get('refusal')}. No model left the Forge."
+        outcome = f"REFUSED: {ev.get('refusal') or 'reason not recorded'}. No model left the Forge."
     else:
         outcome = f"Verdict `{verdict}`."
     plain = task.get("plain_english") or (
@@ -128,8 +178,14 @@ def render(task: dict, run: dict, rows: list[dict] | None, context: dict) -> str
         )
     elif verdict == "dry-run":
         plain += " This was a rehearsal: it was graded but nothing was published."
-    elif verdict == "refused":
+    elif kind == "budget":
         plain += " The run was stopped before it started, because it could have cost more than its budget."
+    elif kind == "export" and agreement is not None:
+        plain += (
+            f" It got {agreement:.0%} of the ones it answered right and declined to answer "
+            f"{abstain:.0%} of them, which clears the bar we set beforehand -- but the run then "
+            "failed while packaging the model up, so there is nothing to use yet."
+        )
     elif agreement is not None:
         plain += (
             f" It got {agreement:.0%} right and declined {abstain:.0%}, which does not clear the bar, "
@@ -258,6 +314,8 @@ second gate.
                     None if abstain is None else abstain <= task["max_abstain"],
                 ),
                 ("verdict", verdict),
+                ("which refusal", kind),
+                ("process exit code", run.get("exit_code")),
                 ("refusal", ev.get("refusal")),
             ]
         )
@@ -292,6 +350,11 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--run", required=True)
     ap.add_argument("--data", default=None)
     ap.add_argument("--out", default="forge/experiments")
+    ap.add_argument(
+        "--stamp",
+        default=None,
+        help="UTC stamp to file under; a re-render of an old run keeps its own name",
+    )
     args = ap.parse_args(argv)
     task = yaml.safe_load(pathlib.Path(args.task).read_text(encoding="utf-8"))
     run = json.loads(pathlib.Path(args.run).read_text(encoding="utf-8"))
@@ -303,7 +366,7 @@ def main(argv: list[str]) -> int:
             if line.strip()
         ]
     context = {
-        "stamp": time.strftime("%Y%m%dT%H%MZ", time.gmtime()),
+        "stamp": args.stamp or time.strftime("%Y%m%dT%H%MZ", time.gmtime()),
         "sha": git_sha(),
         "run_url": run_url(),
         "langfuse_host": langfuse_host(),
