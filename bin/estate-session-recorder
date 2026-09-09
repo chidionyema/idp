@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""estate-session-recorder — slot 5 of the local ops tier (crew#929).
+
+Given a block of claimed work (the tail of a session), emit the durable INVENTORY capsule
+(Built / Verified / Not-proven / Evidence) but ONLY keep claims that carry command-run proof.
+The knowledge-base backstop (R30): a session ends with a record of what it built and how —
+never a claim with no probe (LAW 2).
+
+    bin/estate-session-recorder <work.md>     # grade a claimed-work block in a file
+    ... | bin/estate-session-recorder          # read the block from stdin
+
+Root: by default the repo this script lives in (the idp checkout). Point ESTATE_SESSION_REPO at the
+checkout the claims name (the crew repo, a product repo) before grading its sessions.
+
+Deterministic doc-work: a "Built X" claim is kept only when X names a path that exists under the
+root; a Verified / Evidence claim is kept only when it names a concrete probe (URL / sha /
+path:line / real binary command). Everything else is reported NOT-PROVEN so a reader sees exactly
+what was not evidenced. No model, no fabrication. Exit 0 after printing; the capsule is the record.
+"""
+import os
+import re
+import sys
+
+# python-strict clones ROOT for tests; ESTATE_SESSION_REPO lets another checkout be graded.
+ROOT = os.getenv("ESTATE_SESSION_REPO", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _on_disk(root, f):
+    f = f.strip().strip("`").lstrip("./")
+    return bool(f) and not f.startswith(("http", "git ", "kubectl", "gh ", "brew", "curl ")) and (
+        os.path.exists(os.path.join(root, f)) or os.path.exists(os.path.join(root, "docs", f)))
+
+
+def _real_probe(item):
+    words = item.split()
+    for w in words:
+        if re.search(r"^[0-9a-f]{7,40}$|^https?://|\w[\w./-]+:\d+$", w):
+            return True
+        if re.search(r"\w[\w./-]+\.(md|py|sh|yaml|yml|go|ts|tsx)$", w) and os.path.exists(w):
+            return True
+    return len(words) >= 2 and any(t in item for t in ("bin/", "kubectl ", "gh ", "git ", "pytest ", "make "))
+
+
+def _claim(line, kind):
+    m = re.search(r"\*?\*?" + kind + r"\*?\*?:\s?(.*)", line)
+    return m
+
+
+def main(argv):
+    src = sys.stdin
+    if len(argv) > 1 and argv[1] != "-":
+        src = open(argv[1], encoding="utf-8")
+    built, verified, dropped = [], [], []
+    for raw in src:
+        line = re.sub(r"^\s*[-*+]\s+", "", raw.rstrip("\n"))
+        m = _claim(line, "Built")
+        if m:
+            for name in re.split(r"[;,]\s+", m.group(1)):
+                name = name.strip().strip("*`")
+                if not name:
+                    continue
+                (built if _on_disk(ROOT, name) else dropped).append(("built", name))
+            continue
+        m = _claim(line, "Verified")
+        if m:
+            for item in re.split(r"[;,]\s+", m.group(1)):
+                item = item.strip().strip("*`")
+                if not item:
+                    continue
+                (verified if _real_probe(item) else dropped).append(("verified", item))
+            continue
+        m = _claim(line, "Evidence")
+        if m:
+            ev = m.group(1).strip().strip("`*")
+            (verified if _real_probe(ev) else dropped).append(("evidence", ev))
+    print("BUILT:" + ("; ".join(n for _, n in built) if built else " (none proved on disk)"))
+    print("VERIFIED:" + ("; ".join(x for _, x in verified) if verified else " (no concrete probe cited)"))
+    print("NOT-PROVEN:" + ("; ".join(f"{k}:{v}" for k, v in dropped) if dropped else " none — every claim carries a probe"))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
