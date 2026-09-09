@@ -242,3 +242,52 @@ def test_the_laws_door_flips_on_when_explicitly_enabled():
         assert sim.config()["grade_laws_door"] is True
     finally:
         os.environ.pop("ESTATE_MCP_GRADE_LAWS_DOOR", None)
+
+
+def test_the_converge_grader_is_unknown_without_a_shadow_observation():
+    """A change that has not been proved to converge in the shadow dimension is UNKNOWN through the
+    world-model door -- never SAFE. The observation is supplied by the shadow executor, not by the
+    MCP server's say-so."""
+    os.environ.pop("ESTATE_MCP_SHADOW_OBSERVATION", None)
+    g = sim._live_graders("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n")
+    out = g["converge"]()
+    assert out["verdict"] == "UNKNOWN" and "no shadow observation" in out["detail"]
+
+
+def test_the_converge_grader_reads_a_converged_shadow_observation():
+    """When the shadow executor has really proved the workload converged, converge answers SAFE via
+    the estate's own bin/idp-shadow-verify (a real fixture, no fabricate)."""
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "tests"
+        / "fixtures"
+        / "shadow-obs"
+        / "converged.json"
+    )
+    os.environ["ESTATE_MCP_SHADOW_OBSERVATION"] = str(path)
+    try:
+        g = sim._live_graders("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n")
+        out = g["converge"]()
+        assert out["verdict"] == "SAFE"
+    finally:
+        os.environ.pop("ESTATE_MCP_SHADOW_OBSERVATION", None)
+
+
+def test_the_converge_grader_reports_a_broken_shadow_observation_as_unsafe():
+    """A shadow observation that did not converge is UNSAFE, and the detail names what broke
+    (the empirical rule's quote)."""
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "tests"
+        / "fixtures"
+        / "shadow-obs"
+        / "broken.json"
+    )
+    os.environ["ESTATE_MCP_SHADOW_OBSERVATION"] = str(path)
+    try:
+        g = sim._live_graders("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n")
+        out = g["converge"]()
+        assert out["verdict"] == "UNSAFE"
+        assert "not Ready" in out["detail"]
+    finally:
+        os.environ.pop("ESTATE_MCP_SHADOW_OBSERVATION", None)
