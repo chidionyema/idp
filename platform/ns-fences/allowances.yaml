@@ -96,10 +96,15 @@ overrides:
     # platform/commerce actually declares instead: 775m across Lago's eight components plus 50m
     # for the Valkey queue, 2816Mi plus 128Mi, and eleven pods with the migrate Job among them.
     # The headroom above that is one rolling update, not room to grow into.
+    #
+    # requests.storage 2Gi refused lago's own 10Gi data volume (lago-storage-data PVC -> the Helm
+    # install failed 'exceeded quota: ns-ceiling, requested requests.storage=10Gi', 2026-09-08) --
+    # a fence refusing correct work. Raise to fit lago's money/billing data store + the Valkey
+    # volume + one migrated copy, with headroom; a real billing volume is not 2Gi.
     hard:
       requests.cpu: "1500m"
       requests.memory: 6Gi
-      requests.storage: 2Gi
+      requests.storage: 20Gi
       pods: "20"
       services.loadbalancers: "0"   # the money layer is reached through the shared Gateway or not at all
 
