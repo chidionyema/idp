@@ -26,6 +26,7 @@ import yaml
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 GATE = os.path.join(ROOT, "bin", "idp-mechanism-gate")
 WORKFLOWS = os.path.join(ROOT, ".github", "workflows")
+REGISTRY = os.path.join(ROOT, ".github", "disabled.yaml")
 
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -99,7 +100,7 @@ def test_this_repositorys_own_workflows_all_resolve():
 
 def test_every_workflow_named_in_disabled_yaml_is_a_file_that_exists():
     """An excuse for a workflow that no longer exists is an excuse that hides the next one."""
-    doc = yaml.safe_load(open(os.path.join(WORKFLOWS, "disabled.yaml"))) or {}
+    doc = yaml.safe_load(open(REGISTRY)) or {}
     for path, why in (doc.get("disabled") or {}).items():
         assert os.path.isfile(os.path.join(ROOT, path)), (
             f"{path} is excused but not in the tree"

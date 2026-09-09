@@ -1,0 +1,4 @@
+# A registry of prose, not a workflow: no `on:`, no `jobs:`. GitHub starts a run for it on
+# every event and every one fails at startup.
+disabled:
+  .github/workflows/callee.yml: parked while the drill it grades is being rewritten upstream
