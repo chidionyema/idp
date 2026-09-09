@@ -45,7 +45,10 @@ spec:
   # and commerce can never install). The custom image apt-get-upgrades the base so it passes the
   # build-multiarch Trivy gate (the CNPG base carries libssl3/libgnutls30 criticals). Keep the
   # base line as the `main-` tag the pipeline publishes so image updates flow the estate way.
-  imageName: ghcr.io/chidionyema/postgres-partman:main-6836-da83cf5004c8be0cdbca51d43b559fc349bb94a1
+  # CNPG validates imageName strictly: a long `main-<run>-<sha>` mutable tag is refused as an
+  # 'invalid version tag' (admission webhook). Pin the immutable sha digest instead — this is the
+  # estate's shared data store, so an immutable, rollback-safe reference is the right call anyway.
+  imageName: ghcr.io/chidionyema/postgres-partman@sha256:360fb19a69492251f7621910f1f6b93970c8aba574cf90dafc55de547c7a5254
   primaryUpdateStrategy: unsupervised
   priorityClassName: infrastructure-critical
   inheritedMetadata:
