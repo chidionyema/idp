@@ -243,6 +243,13 @@ flows:
     egress: [estate-db, llm, searxng]
   searxng:
     ingress_from: [research]
+    # The search backend the research engine reads (RESEARCH_SEARXNG_URL). Until this line
+    # existed searxng rendered no allow-internet-egress, so every one of its engines (bing,
+    # brave, duckduckgo, ...) timed out and gpt-researcher got no source to cite -- the
+    # research lane asked and answered nothing (measured 2026-09-09: all engines suspended
+    # timeout, results=0). egress_internet gives it the internet-only 443 policy agent-workforce
+    # and mcp use (never the private/cloud ranges), so SearXNG can reach its keyless engines.
+    egress_internet: [443]
   mcp:
     # robusta: the estate MCP server hosts the ask_holmes tool (mcp/plugins/estate_holmes.py),
     # which is how an agent -- an assistant session, Otto on Telegram -- asks the investigator
