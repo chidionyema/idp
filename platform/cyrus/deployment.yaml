@@ -9,14 +9,14 @@ metadata:
     app.kubernetes.io/part-of: idp
 spec:
   replicas: 1
-  # The home volume is a ReadWriteOnce block volume (below): a rolling update would hold the
-  # old pod on it while the new one waits forever for the same claim.
-  # `rollingUpdate: null` is load-bearing: the live object was born RollingUpdate and the API
-  # server defaulted maxSurge/maxUnavailable onto it. Server-side apply keeps a field the
-  # manifest is silent on, and a Recreate strategy with rollingUpdate set is Invalid, so Flux's
-  # dry-run refused every apply after the switch (kustomization cyrus, ReconciliationFailed,
-  # 2026-09-09). Naming the field null is how server-side apply is told to remove it.
-  strategy: { type: Recreate, rollingUpdate: null }
+  # RollingUpdate with maxSurge 0 and maxUnavailable 1 is Recreate for one replica: the old pod
+  # goes before the new one comes. Recreate itself cannot land here: the live object carries a
+  # rollingUpdate block server-side apply never drops (kustomize strips the `null` that would),
+  # and Recreate plus rollingUpdate is Invalid on every dry-run (2026-09-09, #2714 and #2719).
+  # This shape also satisfies require-availability's a-rollout-can-always-free-a-node.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 0, maxUnavailable: 1 }
   selector:
     matchLabels:
       app.kubernetes.io/name: cyrus
