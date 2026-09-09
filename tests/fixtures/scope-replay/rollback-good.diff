@@ -1,0 +1,10 @@
+diff --git a/platform/edge/worker/image-update.yaml b/platform/edge/worker/image-update.yaml
+index c866c8d..d2dab45 100644
+--- a/platform/edge/worker/image-update.yaml
++++ b/platform/edge/worker/image-update.yaml
+@@ -8,7 +8,7 @@ spec:
+   image:
+     repository: ghcr.io/chidionyema/worker
+     policy:
+-      newTag: worker:3
++      newTag: worker:2
