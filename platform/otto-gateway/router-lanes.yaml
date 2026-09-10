@@ -121,3 +121,24 @@ data:
   # not cheap, it was absent. The account is funded again (97 answers in the two hours
   # measured below), so the pin is restored to what CP3 declared.
   OTTO_ROUTER_LANE_EXPLORE_MODEL: "deepseek"
+
+  # The lane a `/think` message reaches, and the only lane that had no row here.
+  # otto/router/config.py's _DEFAULT_LANE_MODELS then supplied its own default,
+  # `kimi` -- a name that belongs to the ESTATE router (llm/config.base.yaml maps
+  # it to the console-owned moonshot/kimi-k3) and not to the brain Otto actually
+  # calls. Measured 2026-09-10 from inside the gateway container:
+  #
+  #   ROUTER_BASE http://127.0.0.1:4010/v1
+  #   KIMI_FAIL HTTP 400 {"error":{"message":"/chat/completions: Invalid model
+  #     name passed in model=kimi. Call `/v1/models` to view available models"}}
+  #
+  # So every `/think` turn spent the router's retries and ended needs_human, and
+  # the founder read "I could not reach the model, so I have not answered."
+  #
+  # `minimax` and not `home-estate` or `home-direct`: only the three chain heads
+  # in three-homes.yaml carry a fallback list, and minimax's is the deepest --
+  # home-floor-4, home-floor-2, home-estate, home-floor-5, home-floor-3,
+  # home-direct. The hard-question lane is the last one that should die on one
+  # vendor. It is a different vendor from judgment (gemini), so a hard answer and
+  # the lane that judged the easy ones do not fail together.
+  OTTO_ROUTER_LANE_DEEP_MODEL: "minimax"

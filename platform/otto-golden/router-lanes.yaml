@@ -31,3 +31,5 @@ data:
   OTTO_ROUTER_LANE_BULK_MODEL: "deepseek"
   OTTO_ROUTER_LANE_VERIFY_MODEL: "deepseek"
   OTTO_ROUTER_LANE_EXPLORE_MODEL: "deepseek"
+  # The `/think` lane. See the door's copy for the HTTP 400 that made it a row.
+  OTTO_ROUTER_LANE_DEEP_MODEL: "minimax"

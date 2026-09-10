@@ -97,6 +97,11 @@ LAYERS = {
         "Push-to-deploy door",
         "The door GitHub knocks on the moment a change is merged, so the estate reconciles at once instead of waiting out the one-minute poll; the knock is refused unless it carries the shared token.",
     ),
+    "concierge": (
+        "products",
+        "Concierge's mailbox",
+        "A namespace that holds one thing: the Twilio token the Mums concierge needs to prove a phone call really came from Twilio. Nothing runs here -- the concierge itself lives on a Mac -- but the token rides the estate's human door, and a delivered secret needs somewhere to land.",
+    ),
     "demo-sandbox": (
         "products",
         "Buyer sandbox",
