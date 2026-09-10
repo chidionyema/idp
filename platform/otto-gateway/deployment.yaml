@@ -154,7 +154,17 @@ spec:
               # The same key under the second name that reads it: the memory engine's
               # embedding provider (hermes-v2 otto/memory/embeddings_litellm.py). One
               # credential and one router, not a second door to a vendor.
-              OTTO_MEMORY_EMBEDDING_API_KEY=$LITELLM_API_KEY
+              # ...but NOT the same FORM of it. The line above now holds the sidecar's master
+              # key, and OTTO_MEMORY_EMBEDDING_URL points at the estate router in llm/, which
+              # has a database and wants the virtual key itself. Handing it the derived key
+              # authenticates nothing. Measured 2026-09-10 in otto-gateway-8684f564f5-r2gtd,
+              # both forms against litellm.llm.svc.cluster.local:4000/v1/embeddings:
+              #   raw     -> HTTP 429 (rate-limited upstream: the key was accepted)
+              #   derived -> HTTP 401 "Invalid proxy server token passed"
+              # So embeddings read the mounted file directly. Two doors, one credential, and
+              # each door gets the form it can verify -- the sidecar compares a master key in
+              # process, the estate router looks a virtual key up in Postgres.
+              OTTO_MEMORY_EMBEDDING_API_KEY=$OTTO_ROUTER_KEY
               export OTTO_MEMORY_EMBEDDING_API_KEY
               # The fact store the answering lane now reads memory from, instead of
               # waiting on hindsight's cross-encoder for 31.87s per question
@@ -361,7 +371,7 @@ spec:
             - { name: ALL_PROXY, value: "http://127.0.0.1:1055" }
             - { name: HTTP_PROXY, value: "http://127.0.0.1:1055" }
             - { name: HTTPS_PROXY, value: "http://127.0.0.1:1055" }
-            - { name: NO_PROXY, value: "127.0.0.1,localhost,api.minimax.io,api.groq.com,generativelanguage.googleapis.com,openrouter.ai,.svc,.svc.cluster.local,.cluster.local,10.0.0.0/8" }
+            - { name: NO_PROXY, value: "127.0.0.1,localhost,api.minimax.io,api.groq.com,generativelanguage.googleapis.com,openrouter.ai,api.cerebras.ai,integrate.api.nvidia.com,.svc,.svc.cluster.local,.cluster.local,10.0.0.0/8" }
           # 2026-09-10: 512Mi was not a tight fit, it was the wrong order of magnitude, and
           # it kept Otto on one home for a day. The lifeboat never reached its first request
           # -- `exitCode 137 OOMKilled` at 26 seconds (started 09:49:25Z, killed 09:49:51Z),
@@ -430,6 +440,8 @@ spec:
             - { name: brain-floor, mountPath: /run/secrets/otto-brain/floor, readOnly: true }
             - { name: brain-floor-2, mountPath: /run/secrets/otto-brain/floor2, readOnly: true }
             - { name: brain-floor-3, mountPath: /run/secrets/otto-brain/floor3, readOnly: true }
+            - { name: brain-floor-4, mountPath: /run/secrets/otto-brain/floor4, readOnly: true }
+            - { name: brain-floor-5, mountPath: /run/secrets/otto-brain/floor5, readOnly: true }
             - { name: router, mountPath: /run/secrets/otto-brain/router, readOnly: true }
             - { name: tmp, mountPath: /tmp }
 
@@ -525,6 +537,15 @@ spec:
           secret: { secretName: human-gemini, optional: true }
         - name: brain-floor-3
           secret: { secretName: human-openrouter, optional: true }
+        # Two more vendors under those, and the reason is the meter, not the size. Groq,
+        # Gemini and OpenRouter all count requests; Cerebras counts tokens and NVIDIA counts
+        # per model, so a day that empties the three above does not empty these two. Both are
+        # `optional: true` like every floor above them: a key the founder has not dropped into
+        # Bitwarden yet costs this pod nothing but that one lane.
+        - name: brain-floor-4
+          secret: { secretName: human-cerebras, optional: true }
+        - name: brain-floor-5
+          secret: { secretName: human-nvidia, optional: true }
         - name: tailscale-authkey
           secret: { secretName: otto-gateway-tailscale, optional: true }
         # Step 5: the fork's env dir, one file per credential name. The MCP key is optional so a

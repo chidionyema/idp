@@ -190,13 +190,80 @@ data:
           timeout: 25
           num_retries: 0
 
+      # ---- two more vendors, and their meters run in different units -----------------
+      # Founder, 2026-09-10: "otto shold neevr be out ofoptins tht ehatthe nati iosall
+      # aboit". Three floor lanes is not a matrix, and worse, all three are metered the
+      # same way -- Groq counts REQUESTS (1000/day, read from its own headers on this key),
+      # OpenRouter counts requests, Gemini counts requests. A day of many short turns
+      # empties all three at once.
+      #
+      # Cerebras counts TOKENS instead (1,000,000/day, the vendor's published figure), and
+      # NVIDIA counts per MODEL rather than per account. Neither number is measured here --
+      # the only thing measured is whether the lane answers, and the first probe after this
+      # lands corrects the model id the way the Groq row above was corrected. What IS true
+      # by construction is the shape: a lane whose meter runs in a different unit from the
+      # lane above it does not empty on the same afternoon. That is the property being
+      # bought, not the size of either number.
+      #
+      # Both are OpenAI-compatible, so both are lanes and not adapters, and both take the
+      # direct road out of the pod -- api.cerebras.ai and integrate.api.nvidia.com join
+      # NO_PROXY on the sidecar in deployment.yaml for the same reason api.groq.com did.
+      # Their keys arrive through the founder's Bitwarden door
+      # (platform/vendors/consoles.yaml -> platform/human-vault-bridge), never through a
+      # repository secret and never through a session.
+      - model_name: home-floor-4
+        litellm_params:
+          model: openai/llama-3.3-70b
+          api_base: https://api.cerebras.ai/v1
+          api_key: os.environ/CEREBRAS_API_KEY
+          timeout: 20
+          num_retries: 0
+
+      - model_name: home-floor-5
+        litellm_params:
+          model: openai/meta/llama-3.3-70b-instruct
+          api_base: https://integrate.api.nvidia.com/v1
+          api_key: os.environ/NVIDIA_API_KEY
+          timeout: 25
+          num_retries: 0
+
     router_settings:
       # The whole point of the file. Every lane Otto can ask for walks the three homes in
       # order and stops at the first that answers.
+      # The first hop never lands on the vendor that just died. Every chain below used to
+      # open with home-direct, which is MiniMax on a direct line -- the same account as the
+      # `minimax` lane it was rescuing. So when MiniMax's balance reached zero on 2026-09-10
+      # the lane and its own first fallback failed together and the ladder was a rung shorter
+      # than it read. Measured in otto-gateway-8684f564f5-r2gtd that afternoon, one run:
+      #     minimax      200  7s   served by openai/gpt-oss-120b   <- Groq, two hops down
+      #     home-direct  402  0s   "The Token Plan usage limit has been reached"
+      #     home-floor   200  2s   home-floor-2 429   home-floor-3 200  8s
+      # It still answered, because Groq sits behind the dead hop. It answered a hop later
+      # than it needed to, and on the day Groq is also spent that wasted hop is the outage.
+      #
+      # So each chain now opens on a DIFFERENT vendor from its own, and each ends on its own
+      # vendor's other door -- worth trying last, worthless first:
+      #     minimax  is MiniMax  -> Groq, Gemini, OpenRouter, then MiniMax's direct line
+      #     deepseek is DeepSeek -> Groq, Gemini, MiniMax, OpenRouter
+      #     gemini   is Gemini   -> Groq, MiniMax, OpenRouter, then Gemini's own free tier
+      # Four vendors is what this file can reach today. It is not enough and it is not a
+      # matrix: docs/explanation/otto-survival-matrix.md names twenty lanes. Measured from
+      # this pod on 2026-09-10, FOUR are alive: Groq, Gemini, OpenRouter and DeepSeek --
+      # deepseek answered 200 in 1s. (A comment in this tree said "DeepSeek 401 since
+      # 2026-09-04". That was a revoked key, replaced since; the founder caught the claim
+      # being repeated as if it were a measurement. It was not one. Probe, then write.)
+      # ONE is wired and dead: MiniMax, out of balance. THREE are ruled out: SiliconFlow and
+      # ModelScope want a Chinese government-ID check, and the MacBook Ollama home the founder
+      # killed. That leaves TWELVE usable and unwired. Two of the twelve were counted as
+      # needing no credential and do not survive contact: GitHub Models answered
+      # 410 "github_models_retirement_brownout" from this pod on 2026-09-10 and is retired,
+      # and Workers AI's binding is only a credential INSIDE a Worker -- from here it needs an
+      # account-scoped token like any other vendor. The remaining twelve each need one key,
+      # and platform/vendors/consoles.yaml is where each one's road is declared.
       fallbacks:
-        - minimax:  [home-direct, home-floor, home-floor-2, home-floor-3]
-        - deepseek: [home-direct, home-floor, home-floor-2, home-floor-3]
-        - gemini:   [home-direct, home-floor, home-floor-2, home-floor-3]
+        - minimax:  [home-floor, home-floor-4, home-floor-2, home-floor-5, home-floor-3, home-direct]
+        - deepseek: [home-floor-4, home-floor, home-floor-2, home-direct, home-floor-5, home-floor-3]
+        - gemini:   [home-floor, home-floor-5, home-direct, home-floor-4, home-floor-3, home-floor-2]
         # A spent lane is PARKED, not re-asked. Without this the chain still works but it
       # works stupidly: the day Groq's thousandth request is spent, every single turn pays
       # a round trip to Groq to be told 429 again before it reaches Gemini. allowed_fails

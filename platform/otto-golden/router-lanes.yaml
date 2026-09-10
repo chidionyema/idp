@@ -27,7 +27,7 @@ metadata:
     app.kubernetes.io/name: otto-golden
     app.kubernetes.io/part-of: idp
 data:
-  OTTO_ROUTER_LANE_JUDGMENT_MODEL: "minimax"
+  OTTO_ROUTER_LANE_JUDGMENT_MODEL: "gemini"
   OTTO_ROUTER_LANE_BULK_MODEL: "deepseek"
   OTTO_ROUTER_LANE_VERIFY_MODEL: "deepseek"
   OTTO_ROUTER_LANE_EXPLORE_MODEL: "deepseek"

@@ -418,6 +418,54 @@ vendors:
     # and the chain tails land in the follow-up the moment bin/idp-bootstrap-vendors has written
     # the field -- one edit, no new mechanism.
 
+  cerebras:
+    # The largest daily allowance in the matrix by volume: Cerebras advertises 1,000,000 free
+    # tokens a day, against Groq's 1,000 REQUESTS a day. Those two units do not compare, and
+    # that is exactly why both are wanted -- a day of long turns exhausts Groq's request count
+    # while barely touching a token budget, and a day of many short turns does the reverse.
+    # Two lanes whose meters run in different units do not empty together.
+    #
+    # OpenAI-compatible at https://api.cerebras.ai/v1, so it is a LiteLLM lane and not an
+    # adapter. The number above is the vendor's published figure, not a measurement; what this
+    # registry MEASURES is the `verify` call below, which is the only claim it makes.
+    #
+    # R52: Cerebras publishes no create-key API (cloud.cerebras.ai is the only road), so the
+    # API key IS the root. The founder makes it once and drops it into Bitwarden Secrets
+    # Manager under the name CEREBRAS_API_KEY; the bridge does the rest, and no session, no
+    # repository and no log ever sees the value.
+    kind: secret
+    secret: SEED_CEREBRAS_API_KEY
+    page: https://cloud.cerebras.ai/platform/apikeys
+    shape: "csk-[A-Za-z0-9._-]{20,}"
+    verify: { method: GET, url: https://api.cerebras.ai/v1/models, headers: { Authorization: "Bearer {key}" } }
+    rotation: assisted  # Cerebras publishes no create-key API
+    store_default: human-vault
+    targets:
+      - { entry: litellm-upstream, ns: llm, field: CEREBRAS_API_KEY, bw: CEREBRAS_API_KEY }
+      # Otto's own copy. No `entry:` for the same reason the groq row gives: there is no
+      # cluster Secret in that namespace to seed Bitwarden FROM, so the bridge reads outward.
+      - { ns: otto-gateway, field: CEREBRAS_API_KEY, bw: CEREBRAS_API_KEY }
+
+  nvidia:
+    # NVIDIA's own NIM endpoints, OpenAI-compatible at https://integrate.api.nvidia.com/v1.
+    # Its allowance is counted PER MODEL rather than per account, which is a different shape
+    # from every other row here: three models on one key are three separate meters, so this
+    # single credential is worth more than one lane. Again the vendor's published shape, not a
+    # measurement -- the `verify` below is the only thing this file measures.
+    #
+    # R52: build.nvidia.com is the only road to the key, so the API key IS the root. One key,
+    # dropped into Bitwarden as NVIDIA_API_KEY, and code does everything after it.
+    kind: secret
+    secret: SEED_NVIDIA_API_KEY
+    page: https://build.nvidia.com/settings/api-keys
+    shape: "nvapi-[A-Za-z0-9._-]{20,}"
+    verify: { method: GET, url: https://integrate.api.nvidia.com/v1/models, headers: { Authorization: "Bearer {key}" } }
+    rotation: assisted  # NVIDIA publishes no create-key API reachable without a console session
+    store_default: human-vault
+    targets:
+      - { entry: litellm-upstream, ns: llm, field: NVIDIA_API_KEY, bw: NVIDIA_API_KEY }
+      - { ns: otto-gateway, field: NVIDIA_API_KEY, bw: NVIDIA_API_KEY }
+
   # Cloudflare Workers AI is NOT a row, and the reason is a second value. Its OpenAI-compatible
   # endpoint is /accounts/{account_id}/ai/v1, so a lane needs the account id as well as a token,
   # and no file in this estate holds a Cloudflare account id (grepped 2026-09-08: the external-dns
