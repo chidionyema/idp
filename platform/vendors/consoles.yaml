@@ -131,6 +131,28 @@ vendors:
             # Telegram outage).
             max_input_tokens: 512000
 
+        # The constrained-decoding variant of the primary lane (MUM-289).
+        # Identical billing and rate limits, but the proxy returns strict JSON
+        # only — the 400 cases callers hit parsing free-form prose from a model
+        # that should have been structured are avoided here. Consumers opt in
+        # by routing to `minimax_json` rather than `minimax`; the unconstrained
+        # lane is unchanged.
+        - model_name: minimax_json
+          litellm_params:
+            model: openai/MiniMax-M3
+            api_base: https://api.minimax.io/v1
+            api_key: os.environ/MINIMAX_API_KEY
+            timeout: 300
+            max_tokens: 8192
+            input_cost_per_token: 0.0000003
+            output_cost_per_token: 0.0000012
+            # Forces the model into JSON-only output. LiteLLM forwards
+            # response_format to OpenAI-compatible providers, and MiniMax is one
+            # (api_base above), so this is the contract the proxy enforces.
+            response_format: { type: json_schema, json_schema: { name: estate_json, schema: { type: object, additionalProperties: true } } }
+          model_info:
+            max_input_tokens: 512000
+
         # The failover tier: same account and adapter, different model. It is a failover, never
         # a routing choice — see prospector config.yaml on `minimax_m27`.
         - model_name: minimax_m27
