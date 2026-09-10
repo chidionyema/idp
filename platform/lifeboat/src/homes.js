@@ -35,12 +35,16 @@ export const HOMES = ["cluster", "cloudflare-edge", "founder-macbook"];
 export const LANES = [
   {
     name: "groq",
+    // Measured on 2026-09-10 by reading the vendor's own x-ratelimit-limit-requests header,
+    // not by trusting a pricing page.
+    budget: { requests: 1000, window: "day" },
     secret: "GROQ_API_KEY",
     url: "https://api.groq.com/openai/v1/chat/completions",
     model: "openai/gpt-oss-120b",
   },
   {
     name: "gemini",
+    budget: { requests: 1500, window: "day" },   // published free tier, flash-lite
     secret: "GEMINI_API_KEY",
     url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
     // -lite and not plain flash: asked for a tool call on 2026-09-10, gemini-2.5-flash
@@ -66,6 +70,7 @@ export const LANES = [
   },
   {
     name: "openrouter",
+    budget: { requests: 50, window: "day" },     // published free tier, no credit balance
     secret: "OPENROUTER_API_KEY",
     url: "https://openrouter.ai/api/v1/chat/completions",
     // Last, and never counted on. Of four free models asked in one run on 2026-09-10, one
@@ -74,6 +79,101 @@ export const LANES = [
     model: "nvidia/nemotron-3.5-lightning:free",
   },
 ];
+
+// ---------------------------------------------------------------------------------------
+// HEADROOM, NOT A CHAIN.
+//
+// A fallback chain walks lane 1, lane 2, lane 3 and stops at the first that answers. Which
+// means lane 1 takes every single request while it is healthy, and the ladder is only ever as
+// tall as lane 1 is empty. Groq's measured 1,000 a day drains by the afternoon, and from then
+// until midnight UTC the estate runs a rung shorter -- while Gemini's 1,500 sat untouched all
+// day and expires unspent at its own reset. Two lanes with 1,000 each are not 2,000 requests
+// under a chain. They are 1,000, then a worse model.
+//
+// So the chooser spends the lane with the most headroom RELATIVE TO ITS OWN REFILL WINDOW.
+// Not the most requests left -- the largest fraction of its own budget -- because a lane with
+// 50 a day at 90% full deserves its turn against a lane with 1,500 at 20%. Under load every
+// lane drains together and they all reset together, which is what "12,750 free requests a
+// day" has to mean if the number is to be worth writing down.
+//
+// TWO HONEST LIMITS, stated because a silent estimate is worse than a known one:
+//
+// 1. This counter lives in the isolate. Cloudflare may run several, and each keeps its own
+//    tally, so the count is a floor on what has been spent, never the truth. It is corrected
+//    the moment a vendor tells us the truth -- x-ratelimit-remaining-requests is believed over
+//    anything counted here -- and a 429 zeroes the lane outright until its window rolls. The
+//    alternative was a Durable Object or a KV write per request, which buys exactness at the
+//    price of a second thing that can be down. A lifeboat does not get a dependency.
+// 2. workers-ai is not reordered. It is metered in neurons, not requests, and this code has
+//    measured no neuron figure, so it keeps its declared rank rather than being sorted on an
+//    invented number. It is also the one lane that cannot be partitioned away from the code
+//    calling it, which is exactly why it earns a fixed place rather than a computed one.
+export const WINDOW_MS = { minute: 60_000, day: 86_400_000, month: 2_592_000_000 };
+
+// name -> { remaining, resetAt }. Exported so the tests can drive it and /health can show it.
+export const LANE_STATE = new Map();
+
+// Every lane full again. Only the tests call this: a real isolate forgets by dying.
+export function resetLanes() { LANE_STATE.clear(); }
+
+function windowEnd(lane, now) {
+  return now + (WINDOW_MS[lane.budget.window] ?? WINDOW_MS.day);
+}
+
+// 1 means untouched, 0 means spent. A lane past its reset is full again by definition.
+export function headroom(lane, now = Date.now()) {
+  if (!lane.budget) return null;
+  const s = LANE_STATE.get(lane.name);
+  if (!s || now >= s.resetAt) return 1;
+  return Math.max(0, s.remaining) / lane.budget.requests;
+}
+
+// One request's worth, or the vendor's own count when it sends one.
+export function spend(lane, now = Date.now(), headers = null) {
+  if (!lane.budget) return;
+  let s = LANE_STATE.get(lane.name);
+  if (!s || now >= s.resetAt) {
+    s = { remaining: lane.budget.requests, resetAt: windowEnd(lane, now) };
+  }
+  s.remaining -= 1;
+  const told = headers?.get?.("x-ratelimit-remaining-requests");
+  if (told !== null && told !== undefined && told !== "" && Number.isFinite(Number(told))) {
+    s.remaining = Number(told);   // the vendor is the authority, always
+  }
+  LANE_STATE.set(lane.name, s);
+}
+
+// A refusal is not a slow lane, it is a spent one: stop offering it until its window rolls.
+export function exhaust(lane, now = Date.now(), headers = null) {
+  if (!lane.budget) return;
+  const retry = Number(headers?.get?.("retry-after"));
+  const resetAt = Number.isFinite(retry) && retry > 0
+    ? now + retry * 1000
+    : windowEnd(lane, now);
+  LANE_STATE.set(lane.name, { remaining: 0, resetAt });
+}
+
+// Headroom is compared in tenths, not exactly. On exact fractions one request through a
+// 1,000/day lane (99.9% left) puts it behind an untouched 50/day lane, and the next request
+// puts it back, so the estate alternates between its best model and its worst on every turn
+// while both are nearly full. That is not load balancing, it is a coin toss with extra steps.
+// A band means the declared quality order holds until a lane has genuinely fallen about a
+// tenth of its own budget behind a peer, and only then does the turn move.
+function band(h) { return Math.ceil(h * 10); }
+
+// The metered lanes are sorted by headroom and put back into the slots the metered lanes
+// already occupied, so an unmetered lane never moves. Ties keep the declared order, which is
+// the quality order: headroom decides between equals, it does not overrule a better model.
+export function chooseOrder(now = Date.now(), lanes = LANES) {
+  const slots = [];
+  lanes.forEach((l, i) => { if (l.budget) slots.push(i); });
+  const metered = slots.map((i) => lanes[i]);
+  metered.sort((a, b) => (band(headroom(b, now)) - band(headroom(a, now))) ||
+                         (lanes.indexOf(a) - lanes.indexOf(b)));
+  const out = lanes.slice();
+  slots.forEach((slot, k) => { out[slot] = metered[k]; });
+  return out;
+}
 
 // A lane gets this long before the next one is tried. Deliberately mean: a lane that stalls
 // spends the NEXT lane's turn, and every measurement above is under a second bar one. The
@@ -151,17 +251,23 @@ export async function tryLane(lane, env, body, fetchImpl = fetch) {
     }),
     signal: AbortSignal.timeout(LANE_TIMEOUT_MS),
   });
-  // 429 spent, 404 slug churned, 5xx vendor down: every one of them means the same thing here.
+  // 429 spent, 404 slug churned, 5xx vendor down: every one of them means "try the next lane".
+  // They do not all mean the same thing to the ledger, though -- a 429 is the vendor saying the
+  // window is gone, and believing it is the difference between skipping a dead lane for an hour
+  // and rediscovering it is dead on every single request.
+  if (res.status === 429) { exhaust(lane, Date.now(), res.headers); return null; }
   if (!res.ok) return null;
+  spend(lane, Date.now(), res.headers);
   const out = await res.json();
   if (!out?.choices?.length) return null;
   return out;
 }
 
-// Walk the lanes until one answers. Returns { out, lane } or { tried } with nobody home.
+// Walk the lanes until one answers, most headroom first. Returns { out, lane } or { tried }
+// with nobody home.
 export async function think(env, body, fetchImpl = fetch) {
   const tried = [];
-  for (const lane of LANES) {
+  for (const lane of chooseOrder(Date.now())) {
     try {
       const out = await tryLane(lane, env, body, fetchImpl);
       if (out) return { out, lane: lane.name, tried };

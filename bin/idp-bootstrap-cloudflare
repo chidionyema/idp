@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Root trust for Cloudflare, one command, no hands (crew#66 founder 2026-08-28; docs/reference/policy/root-trust.md; crew#578).
-#   bin/idp-bootstrap-cloudflare              mint the DNS token and the R2 credential, write vault entries cloudflare-api-token + prospector-engine-env.R2_*
+#   bin/idp-bootstrap-cloudflare              mint the DNS, Workers and R2 credentials, write vault entries cloudflare-api-token + cloudflare-workers-token + prospector-engine-env.R2_*
 #   bin/idp-bootstrap-cloudflare --preflight  prove the vault, the browser driver and the dashboard reachability, write nothing
 #   bin/idp-bootstrap-cloudflare --rotate     mint anew even though the vault entries already verify
 # R52 (founder 2026-08-29): with CLOUDFLARE_ROOT_TOKEN in the environment (oke-check apply reads repository
@@ -80,9 +80,11 @@ if [ "$MODE" = mint ]; then
   dns=$("$IDP/bin/idp-cloud" secret get cloudflare-api-token 2>/dev/null || true)
   eng=$("$IDP/bin/idp-cloud" secret get prospector-engine-env 2>/dev/null || true)
   r2id=$(jq -r '.R2_ACCESS_KEY_ID // empty' <<<"${eng:-{\}}" 2>/dev/null || true)
-  if [ -n "$dns" ] && verify "$dns" && [ -n "$r2id" ]; then
-    say ok cloudflare "DNS token verifies and an R2 key id is present; kept (--rotate to mint anew)"; unset dns eng; exit 0
+  wrk=$("$IDP/bin/idp-cloud" secret get cloudflare-workers-token 2>/dev/null || true)
+  if [ -n "$dns" ] && verify "$dns" && [ -n "$r2id" ] && [ -n "$wrk" ] && verify "$wrk"; then
+    say ok cloudflare "DNS, R2 and Workers credentials all verify; kept (--rotate to mint anew)"; unset dns eng wrk; exit 0
   fi
+  unset wrk
   unset dns eng
 fi
 if [ "$MODE" = --preflight ]; then
@@ -151,6 +153,14 @@ groups=$(cf "$ROOT" GET /user/tokens/permission_groups)
 gid() { jq -r --arg n "$1" --arg s "$2" '.result[] | select(.name==$n and (.scopes|index($s))) | .id' <<<"$groups" | head -1; }
 DNS_GID=$(gid "DNS Write" com.cloudflare.api.account.zone); [ -n "$DNS_GID" ] || fail perms "no permission group 'DNS Write' (zone)"
 R2_GID=$(gid "Workers R2 Storage Write" com.cloudflare.api.account); [ -n "$R2_GID" ] || fail perms "no permission group 'Workers R2 Storage Write' (account)"
+# Otto's home 2 is a Worker, so the estate mints its own Workers credential rather than telling a
+# person to open a dashboard (R52: one root per provider, code mints the rest). Three groups, and
+# the deploy needs all three: Scripts Write uploads the script, Routes Write attaches it to a
+# hostname on the estate zone, and AI Write is what makes env.AI answer -- the binding IS the
+# credential at run time, but the token that uploads a script carrying that binding must hold it.
+WS_GID=$(gid "Workers Scripts Write" com.cloudflare.api.account); [ -n "$WS_GID" ] || fail perms "no permission group 'Workers Scripts Write' (account)"
+WR_GID=$(gid "Workers Routes Write" com.cloudflare.api.account.zone); [ -n "$WR_GID" ] || fail perms "no permission group 'Workers Routes Write' (zone)"
+WAI_GID=$(gid "Workers AI Write" com.cloudflare.api.account)   # newer than the others; optional
 zone=$(cf "$ROOT" GET "/zones?name=$ZONE" | jq -r '.result[0] // empty'); [ -n "$zone" ] || fail zone "$ZONE is not a zone of this account"
 ZONE_ID=$(jq -r .id <<<"$zone"); ACCOUNT_ID=$(jq -r .account.id <<<"$zone")
 mint() { # <name> <policies-json> -> token JSON {id,value}
@@ -158,24 +168,33 @@ mint() { # <name> <policies-json> -> token JSON {id,value}
 }
 dnspol=$(jq -nc --arg g "$DNS_GID" --arg z "$ZONE_ID" '[{effect:"allow", resources:{("com.cloudflare.api.account.zone."+$z):"*"}, permission_groups:[{id:$g}]}]')
 r2pol=$(jq -nc --arg g "$R2_GID" --arg a "$ACCOUNT_ID" '[{effect:"allow", resources:{("com.cloudflare.api.account."+$a):"*"}, permission_groups:[{id:$g}]}]')
+wrkpol=$(jq -nc --arg s "$WS_GID" --arg r "$WR_GID" --arg ai "$WAI_GID" --arg a "$ACCOUNT_ID" --arg z "$ZONE_ID" \
+  '[{effect:"allow", resources:{("com.cloudflare.api.account."+$a):"*"},
+     permission_groups:([{id:$s}] + (if $ai == "" then [] else [{id:$ai}] end))},
+    {effect:"allow", resources:{("com.cloudflare.api.account.zone."+$z):"*"}, permission_groups:[{id:$r}]}]')
 dnstok=$(mint "estate-dns $ZONE" "$dnspol") || fail mint "DNS token not created"
 r2tok=$(mint "estate-r2 $BUCKET" "$r2pol") || fail mint "R2 token not created"
+wrktok=$(mint "estate-workers $ZONE" "$wrkpol") || fail mint "Workers token not created"
+WRK=$(jq -r .value <<<"$wrktok"); unset wrktok
 DNS=$(jq -r .value <<<"$dnstok"); R2_ID=$(jq -r .id <<<"$r2tok"); R2_VAL=$(jq -r .value <<<"$r2tok"); unset dnstok r2tok
 R2_SECRET=$(printf '%s' "$R2_VAL" | python3 -c 'import sys,hashlib; print(hashlib.sha256(sys.stdin.read().encode()).hexdigest())'); unset R2_VAL
-say ok mint "DNS token (zone $ZONE) and R2 token (account) minted by the API"
+say ok mint "DNS (zone $ZONE), R2 (account) and Workers (account+zone) tokens minted by the API"
 
 # 5. prove both before the vault (LAW 15): DNS token verifies and lists the zone; R2 token can see or create the bucket
 verify "$DNS" || fail verify "DNS token does not verify"
 cf "$DNS" GET "/zones/$ZONE_ID/dns_records?per_page=1" | jq -e .success >/dev/null || fail verify "DNS token cannot read $ZONE records"
 bk=$(cf "$ROOT" GET "/accounts/$ACCOUNT_ID/r2/buckets/$BUCKET" | jq -r '.success')
 [ "$bk" = true ] || cf "$ROOT" POST "/accounts/$ACCOUNT_ID/r2/buckets" "$(jq -nc --arg n "$BUCKET" '{name:$n}')" | jq -e .success >/dev/null || fail r2 "bucket $BUCKET neither exists nor could be created"
-say ok verify "DNS token reads $ZONE; bucket $BUCKET present"
+verify "$WRK" || fail verify "Workers token does not verify"
+cf "$WRK" GET "/accounts/$ACCOUNT_ID/workers/scripts" | jq -e .success >/dev/null || fail verify "Workers token cannot list the account's scripts, so it cannot deploy one"
+say ok verify "DNS token reads $ZONE; bucket $BUCKET present; Workers token lists scripts"
 
 # 6. vault, in-process, key names only
 printf '%s' "$DNS" > "$P/dns"; "$IDP/bin/idp-cloud" secret put cloudflare-api-token --file "$P/dns" >/dev/null || fail vault "cloudflare-api-token write refused"
+printf '%s' "$WRK" > "$P/wrk"; "$IDP/bin/idp-cloud" secret put cloudflare-workers-token --file "$P/wrk" >/dev/null || fail vault "cloudflare-workers-token write refused"
 printf 'V_ID=%s\nV_SECRET=%s\nV_ACCOUNT=%s\nV_BUCKET=%s\n' "$R2_ID" "$R2_SECRET" "$ACCOUNT_ID" "$BUCKET" > "$P/env"
 ESTATE_ENV_FILE="$P/env" "$IDP/bin/idp-vault-put" --merge prospector-engine-env R2_ACCESS_KEY_ID=V_ID R2_SECRET_ACCESS_KEY=V_SECRET R2_ACCOUNT_ID=V_ACCOUNT R2_BUCKET=V_BUCKET >/dev/null || fail vault "prospector-engine-env R2_* write refused"
-unset DNS R2_SECRET
+unset DNS R2_SECRET WRK
 # 7. a driver-born root dies with this process; the standing root (road a) is kept
 if [ -n "$NAME" ]; then
   rid=$(cf "$ROOT" GET /user/tokens | jq -r --arg n "$NAME" '.result[] | select(.name==$n) | .id' | head -1)
@@ -183,4 +202,4 @@ if [ -n "$NAME" ]; then
   revoked="root token revoked"
 else revoked="standing root kept"; fi
 unset ROOT
-say ok cloudflare "cloudflare-api-token + prospector-engine-env.R2_* written; $revoked; ExternalSecrets refresh within 1h"
+say ok cloudflare "cloudflare-api-token + cloudflare-workers-token + prospector-engine-env.R2_* written; $revoked; ExternalSecrets refresh within 1h"

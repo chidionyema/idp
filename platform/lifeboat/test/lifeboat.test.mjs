@@ -4,11 +4,17 @@
 //
 // No network. Every outbound call is a stub, so the suite is honest on a plane and cannot
 // go red because Groq is having a bad afternoon.
-import { test } from "node:test";
+import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import worker, { handleTelegram } from "../src/index.js";
-import { HOMES, LANES, keyMatches, think, tryLane } from "../src/homes.js";
+import {
+  HOMES, LANES, chooseOrder, exhaust, headroom, keyMatches, resetLanes, spend, think, tryLane,
+} from "../src/homes.js";
+
+// The lane ledger is module state, so without this one test's 429 sets the running order for
+// every test after it -- which is correct behaviour and useless test isolation.
+beforeEach(() => resetLanes());
 
 const SECRET = "webhook-secret-value";
 const KEY = "lifeboat-bearer-value";
@@ -303,4 +309,57 @@ test("think reports which lanes it tried when none of them answered", async () =
   const { tried, out } = await think(env({ AI: undefined }), { messages: [{ role: "user", content: "x" }] }, async () => dead());
   assert.equal(out, undefined);
   assert.equal(tried.length, LANES.length);
+});
+
+
+// --- the chooser --------------------------------------------------------------------------
+
+test("with every lane untouched the declared quality order is what runs", () => {
+  assert.deepEqual(chooseOrder(Date.now()).map((l) => l.name),
+                   ["groq", "gemini", "workers-ai", "openrouter"]);
+});
+
+test("a 429 takes a lane out of the running until its window rolls, it does not just skip it once", async () => {
+  const { fetchImpl } = recorder({ "api.groq.com": dead(429) });
+  await tryLane(LANES[0], env(), { messages: [] }, fetchImpl);
+  assert.equal(headroom(LANES[0]), 0);
+  assert.equal(chooseOrder(Date.now())[0].name, "gemini");
+  // and it comes back on its own once the day has rolled, with nothing to reset it by hand
+  assert.equal(chooseOrder(Date.now() + 86_400_001)[0].name, "groq");
+});
+
+test("the lane with the most headroom relative to its OWN budget takes the turn", () => {
+  // groq is down to 100 of its 1,000 and gemini to 150 of its 1,500 -- a tenth each. The
+  // untouched lane is openrouter, which has 50 requests left in total, half of what groq has.
+  // It goes first anyway, and that is the whole idea: absolute headroom would keep draining
+  // the big lane until it was empty and leave the small one to expire unspent.
+  spend(LANES[0], Date.now(), { get: () => "100" });
+  spend(LANES[1], Date.now(), { get: () => "150" });
+  const order = chooseOrder(Date.now()).map((l) => l.name);
+  assert.equal(order[0], "openrouter");
+  assert.ok(order.indexOf("openrouter") < order.indexOf("groq"));
+});
+
+test("one request through a big lane does not hand the turn to a small one", () => {
+  spend(LANES[0]);   // 999 of 1,000 left
+  assert.equal(chooseOrder(Date.now())[0].name, "groq");
+});
+
+test("the vendor's own count is believed over anything counted here", () => {
+  spend(LANES[0], Date.now(), { get: (h) => (h === "x-ratelimit-remaining-requests" ? "7" : null) });
+  assert.equal(headroom(LANES[0]), 7 / 1000);
+});
+
+test("the unmetered in-process lane keeps its declared rank however the others are sorted", () => {
+  exhaust(LANES[0]);
+  exhaust(LANES[1]);
+  assert.equal(chooseOrder(Date.now()).findIndex((l) => l.name === "workers-ai"), 2);
+});
+
+test("a spent lane is skipped and a live one answers, without the spent lane being fetched", async () => {
+  exhaust(LANES[0]);
+  const { calls, fetchImpl } = recorder({ "generativelanguage.googleapis.com": ok("from gemini") });
+  const { lane } = await think(env({ AI: undefined }), { messages: [] }, fetchImpl);
+  assert.equal(lane, "gemini");
+  assert.ok(!calls.some((c) => c.url.includes("groq")));
 });

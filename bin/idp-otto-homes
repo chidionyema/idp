@@ -182,17 +182,22 @@ def deploy() -> int:
     if not shutil.which("npx"):
         sys.exit("npx not found; wrangler is run through it")
 
-    token = os.environ.get("CLOUDFLARE_API_TOKEN") or vault_get("cloudflare-api-token",
-                                                                "CLOUDFLARE_API_TOKEN")
-    if not token:
-        sys.exit("FOUNDER ACTION: the vault holds no cloudflare-api-token. "
-                 "Run bin/idp-bootstrap-cloudflare first.")
+    # Two credentials, because they are two jobs. The DNS token reads the zone, which is how the
+    # account id is derived; the Workers token uploads the script and attaches the route. Both are
+    # minted by bin/idp-bootstrap-cloudflare from the one root (R52) -- neither is ever made in a
+    # dashboard, so there is no console step to put in a runbook.
+    reader = os.environ.get("CLOUDFLARE_API_TOKEN") or vault_get("cloudflare-api-token",
+                                                                 "CLOUDFLARE_API_TOKEN")
+    if not reader:
+        sys.exit("the vault holds no cloudflare-api-token; run bin/idp-bootstrap-cloudflare "
+                 "(Backstage -> Run the estate bootstrap -> scope cloudflare)")
+    token = vault_get("cloudflare-workers-token", "CLOUDFLARE_API_TOKEN") or reader
 
     # The account id is DERIVED, never written down -- the same read bin/idp-bootstrap-cloudflare
     # does at line 155. This is what retires the note at platform/vendors/consoles.yaml:387,
     # which refuses a Workers lane on the grounds that no file in the estate holds an account id.
     req = urllib.request.Request(f"https://api.cloudflare.com/client/v4/zones?name={z}",
-                                 headers={"authorization": f"Bearer {token}"})
+                                 headers={"authorization": f"Bearer {reader}"})
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             result = (json.load(resp).get("result") or [{}])[0]
@@ -200,10 +205,8 @@ def deploy() -> int:
     except (urllib.error.URLError, OSError, ValueError, KeyError):
         account = ""
     if not account:
-        sys.exit(f"FOUNDER ACTION: the cloudflare token cannot read zone {z}, so the account id\n"
-                 "  cannot be derived. It needs Zone:Read on that zone, plus Workers Scripts:Edit\n"
-                 "  to deploy. Mint at https://dash.cloudflare.com/profile/api-tokens and store\n"
-                 "  it with bin/idp-vault-put.")
+        sys.exit(f"cloudflare-api-token cannot read zone {z}, so the account id cannot be derived; "
+                 "re-mint with bin/idp-bootstrap-cloudflare --rotate")
 
     os.environ["CLOUDFLARE_API_TOKEN"] = token
     os.environ["CLOUDFLARE_ACCOUNT_ID"] = account

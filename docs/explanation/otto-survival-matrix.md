@@ -135,8 +135,14 @@ the estate's three-state vocabulary. This is its real output from 2026-09-10.
 
 ### What is honestly not done
 
-- Home 2 is not deployed. The estate's Cloudflare token verifies and the account id derives
-  from it (`bin/idp-bootstrap-cloudflare:155`), but Workers deploy permission is unconfirmed.
+- Home 2's credential exists in code but not yet in the vault. The first deploy attempt failed
+  with Cloudflare error 10000, *Authentication error* — measured, not assumed: the estate's DNS
+  token reads the zone (the account id derived cleanly) and cannot upload a script, which is
+  correct scoping, not a defect. So `bin/idp-bootstrap-cloudflare` now mints a second token from
+  the same standing root — Workers Scripts Write and Workers AI Write on the account, Workers
+  Routes Write on the zone — and proves it can list the account's scripts before the vault write.
+  Running that mint is one button: **Backstage → Run the estate bootstrap → scope `cloudflare`,
+  mode `live`**. Until it has run, home 2 stays `MEASURED_FAIL` and the matrix is two homes wide.
 - The headroom-aware chooser is designed here and not yet written. The code as it stands still
   walks a chain.
 - NIM, Cerebras, Mistral, Cohere and the Hugging Face router are researched, not minted. They
