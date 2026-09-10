@@ -32,9 +32,11 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -46,16 +48,35 @@ LIFEBOAT = IDP / "platform/lifeboat"
 
 OK, FAIL, UNKNOWN = "MEASURED_OK", "MEASURED_FAIL", "UNKNOWN"
 
-# Every secret home 2 needs: the worker's env name, the vault entry, the field inside it.
-# A lane whose key is absent is skipped by src/homes.js rather than failing, so a missing one
-# is a shorter ladder and never a broken deploy.
+# Every secret home 2 needs: the worker's env name, then the places the estate's vault might
+# hold it, best first. A lane whose key is absent is skipped by src/homes.js rather than
+# failing, so a missing one is a shorter ladder and never a broken deploy.
+#
+# The first draft of this table named otto-gateway-channels, human-groq, human-gemini and
+# human-openrouter. Every one of those is a KUBERNETES SECRET, not a vault entry -- the names
+# an ExternalSecret writes inside the cluster, read straight off platform/otto-gateway and
+# platform/human-vault-bridge as if the two namespaces were one. Measured 2026-09-10 against
+# the live vault: all four are NotFound, so a deploy would have printed SKIP six times and
+# shipped a lifeboat with no bot token and no model at all -- afloat, and unable to answer.
+#
+# What the vault actually holds, and where each row's first choice comes from:
+#   otto-staging-telegram   token, webhook_secret   the door otto-gateway itself reads
+#                                                   (platform/otto-gateway/external-secret.yaml:49)
+#   litellm-upstream        GROQ/GEMINI/OPENROUTER  the three free lanes, the same values the
+#                                                   estate router spends
+# The human-* rows stay ahead of them as second addresses: when the founder's Bitwarden keys
+# are mirrored into the vault under those names, home 2 picks them up with no edit here. A
+# name that does not exist costs one NotFound, and the ladder walks on.
 SECRETS = [
-    ("LIFEBOAT_KEY", "otto-lifeboat", "LIFEBOAT_KEY"),
-    ("TELEGRAM_BOT_TOKEN", "otto-gateway-channels", "OTTO_TELEGRAM_BOT_TOKEN"),
-    ("TELEGRAM_WEBHOOK_SECRET", "otto-gateway-channels", "OTTO_TELEGRAM_WEBHOOK_SECRET"),
-    ("GROQ_API_KEY", "human-groq", "GROQ_API_KEY"),
-    ("GEMINI_API_KEY", "human-gemini", "GEMINI_API_KEY"),
-    ("OPENROUTER_API_KEY", "human-openrouter", "OPENROUTER_API_KEY"),
+    ("LIFEBOAT_KEY", [("otto-lifeboat", "LIFEBOAT_KEY")]),
+    ("TELEGRAM_BOT_TOKEN", [("otto-staging-telegram", "token")]),
+    ("TELEGRAM_WEBHOOK_SECRET", [("otto-staging-telegram", "webhook_secret")]),
+    ("GROQ_API_KEY", [("human-groq", "GROQ_API_KEY"),
+                      ("litellm-upstream", "GROQ_API_KEY")]),
+    ("GEMINI_API_KEY", [("human-gemini", "GEMINI_API_KEY"),
+                        ("litellm-upstream", "GEMINI_API_KEY")]),
+    ("OPENROUTER_API_KEY", [("human-openrouter", "OPENROUTER_API_KEY"),
+                            ("litellm-upstream", "OPENROUTER_API_KEY")]),
 ]
 
 
@@ -171,6 +192,49 @@ def vault_get(entry: str, field: str = "") -> str:
         return raw  # a non-JSON entry is the bare value, not a missing key
 
 
+def vault_first(candidates: list[tuple[str, str]]) -> str:
+    """The first of several vault addresses that answers. A name the vault does not hold costs
+    one NotFound and the ladder walks on, so a row may list where a value will live next to
+    where it lives today without a deploy ever depending on which of the two exists."""
+    for entry, field in candidates:
+        value = vault_get(entry, field)
+        if value:
+            return value
+    return ""
+
+
+def lifeboat_key() -> str:
+    """Home 2's own door key, read from the vault or MINTED HERE on the first deploy.
+
+    R52: one root per provider, set once, and code mints the rest -- there is no console step
+    and no founder chore for this one, because nothing outside the estate issues it. It is 64
+    hex characters from the operating system's cryptographic source, written to the vault as
+    the JSON entry `otto-lifeboat`, and never printed, logged or passed as an argument (LAW 21).
+
+    This is not a nicety. platform/lifeboat/src/index.js gates every /v1 route on keyMatches(),
+    which returns false when the expected value is empty -- fail-closed by design. A lifeboat
+    deployed without this key answers /health with "afloat" and refuses every actual turn, which
+    is the worst of the three states: it looks alive on the status board and cannot think.
+    """
+    key = vault_get("otto-lifeboat", "LIFEBOAT_KEY")
+    if key:
+        return key
+    key = secrets.token_hex(32)
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+        os.chmod(fh.name, 0o600)
+        json.dump({"LIFEBOAT_KEY": key}, fh)
+        path = fh.name
+    try:
+        out = subprocess.run([str(IDP / "bin/idp-cloud"), "secret", "put", "otto-lifeboat",
+                              "--file", path], capture_output=True, text=True, timeout=300)
+    finally:
+        os.unlink(path)
+    if out.returncode != 0:
+        sys.exit(f"could not mint otto-lifeboat in the vault: {out.stderr.strip()[-400:]}")
+    print("  minted otto-lifeboat/LIFEBOAT_KEY in the estate vault (64 hex characters)")
+    return key
+
+
 def wrangler(args: list[str], stdin: str | None = None) -> None:
     subprocess.run(["npx", "--yes", "wrangler@latest", *args], cwd=LIFEBOAT,
                    input=stdin, text=True, check=True,
@@ -217,13 +281,14 @@ def deploy() -> int:
 
     # Home 2's secrets, piped on stdin so no value is ever an argument, an environment
     # variable or a line in this session's scrollback (LAW 21).
-    for name, entry, field in SECRETS:
-        value = vault_get(entry, field)
+    for name, candidates in SECRETS:
+        value = lifeboat_key() if name == "LIFEBOAT_KEY" else vault_first(candidates)
         if value:
             wrangler(["secret", "put", name], stdin=value)
             print(f"  set {name}")
         else:
-            print(f"  SKIP {name} (no {field} in vault entry {entry})")
+            where = ", ".join(f"{e}/{f}" for e, f in candidates)
+            print(f"  SKIP {name} (the vault holds none of: {where})")
 
     # Home 1's address, so the edge knows where to send a turn it should not be answering
     # itself. otto-origin is a second name for the same cluster ingress; it exists so that
