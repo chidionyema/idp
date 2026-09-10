@@ -1,0 +1,10 @@
+name: bad
+on: [workflow_dispatch]
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: check placement
+        run: |
+          set -euo pipefail
+          bin/idp-fits-a-node || true

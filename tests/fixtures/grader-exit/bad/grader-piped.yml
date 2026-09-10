@@ -1,0 +1,22 @@
+# Refused: the verdict is piped away with no guard at all.
+#
+# The step reads as a gate -- it runs bin/idp-root-trust -- but 'set -u' without pipefail leaves
+# the step's status at tee's, which is 0. Measured 2026-09-10 on bash 5.2:
+#
+#   set -u;            false | tee out   -> exit 0   the verdict is DISCARDED
+#   set -uo pipefail;  false | tee out   -> exit 1   propagates
+#   set -eu;           false | tee out   -> exit 0   propagates
+#
+# An earlier version of this fixture used 'set -uo pipefail', which DOES propagate, so the fixture
+# asserted a bug that did not exist and the gate passed a genuinely bad shape while refusing good
+# ones. Fix: add 'pipefail' or '-e' to the set line.
+name: bad
+on: [workflow_dispatch]
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: grade the estate
+        run: |
+          set -u
+          bin/idp-root-trust | tee -a "$GITHUB_STEP_SUMMARY"
