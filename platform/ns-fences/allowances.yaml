@@ -411,6 +411,17 @@ flows:
     # which is on the public internet. dagster: HolmesGPT's answer is published here.
     egress_internet: [443]
     ingress_from: [dagster, llm]
+  concierge:
+    # A holding namespace with nothing in it. It exists so the Twilio Auth Token has somewhere to
+    # land: the vendor row declares store_default human-vault and bin/idp-vendor-render writes the
+    # ExternalSecret into this namespace, which means the namespace must exist before the secret
+    # can sync. The workload is Mac-hosted (mums-concierge/docs/DEPLOYMENT.md) and is not here.
+    #
+    # No egress and no ingress are declared, because no pod runs here and none should. If a pod
+    # ever appears in this namespace it is by accident, and the default-deny the generator writes
+    # is the correct answer to that -- it will be unable to reach anything, which is exactly what
+    # a namespace holding a credential and running nothing should do.
+    ingress_from: []
   event-bus:
     ingress_from: [otto-gateway, commerce]
   estate-db:

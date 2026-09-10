@@ -1,0 +1,21 @@
+# The concierge's namespace. It exists for one reason: the Twilio Auth Token rides the human
+# door (platform/vendors/consoles.yaml, the `twilio` vendor row), and an ExternalSecret has to
+# name somewhere to land. Nothing runs here yet.
+#
+# Where the concierge itself runs is a separate question with a measured answer, and it is NOT
+# here: docs/DEPLOYMENT.md in mums-concierge pins Homebrew, a Python 3.12 venv, ffmpeg, Chromium
+# and torch 2.2.2 / speechbrain 0.5.15 in a fixed order, because no torch wheel exists for 3.13+
+# and a newer speechbrain calls `torch.amp.custom_fwd`, which torch 2.2.2 does not have. The
+# browser operator needs her own Chrome profile on her own machine. So the concierge is a
+# Mac-hosted product, and this namespace holds the credential it is delivered, not the workload.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    # Never garbage-collected by Flux: a namespace moved between Kustomization rows or dropped
+    # from git stays, with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: concierge
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    availability.idp/tier: tenant
