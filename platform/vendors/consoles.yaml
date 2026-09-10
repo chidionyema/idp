@@ -73,6 +73,43 @@ vendors:
             max_tokens: 8192
           model_info:
             max_input_tokens: 131072
+      cluster_lanes: |
+        # THE LANE EVERY EMBEDDING CALL ASKS FIRST, as of 2026-09-10. It sits on this row and
+        # not on the gemini row that used to carry it because a lane belongs to the vendor whose
+        # key it spends -- the rule the cohere row states and
+        # tests/test_every_vendor_key_the_router_holds_has_a_lane.py grades.
+        #
+        # It was the fallback until today, and the order was the whole defect. In front of it
+        # stood gemini/gemini-embedding-001, whose id Google has retired -- a live probe answers
+        # HTTP 404, `models/gemini-embedding-001 is not found for API version v1beta` -- on an
+        # account whose prepay is depleted, so it also answers 429. The router's own log walked
+        # the chain from that refusal to this lane's 200 OK in about six seconds. Every caller
+        # bounded under six seconds therefore got nothing at all:
+        #
+        #   litellm.aembedding(model=gemini/gemini-embedding-001) Exception
+        #     litellm.RateLimitError: GeminiException - {"code": 429, "status": "RESOURCE_EXHAUSTED"}
+        #
+        # Three casualties, one dead hop. otto-gateway stored every fact with no vector
+        # (EmbeddingUnavailableError on _store_fact) so Otto stopped remembering conversations.
+        # The memory backfill (otto-memory-store-6, Error 20h) died at otto/memory/backfill.py:102
+        # with `urllib.error.URLError: <urlopen error timed out>`. And hindsight-api's FastAPI
+        # lifespan blocks on this lane at boot, so it never bound 8888 and never passed its
+        # startup probe: 168 restarts in 18h, each container dying at 329s of a 600s budget with
+        # two 120s timeouts inside it.
+        #
+        # Putting the lane that answers in front is not a workaround for the fallback -- it is
+        # what a fallback is for. Same 1536 width as every other hop, so a vector written by any
+        # of the three stays comparable and the store needs no migration. The key is already in
+        # the estate: this registry seeds it into estate-vault/litellm-upstream and the human
+        # door re-reads it as OPENROUTER_API_KEY, mounted and exported by basename.
+        - model_name: embed
+          litellm_params:
+            model: openrouter/openai/text-embedding-3-small
+            api_key: os.environ/OPENROUTER_API_KEY
+            dimensions: 1536
+            timeout: 120
+          model_info:
+            mode: embedding
   deepseek:
     kind: secret
     secret: SEED_DEEPSEEK_API_KEY
@@ -339,53 +376,28 @@ vendors:
           model_info:
             max_input_tokens: 1048576
       cluster_lanes: |
-        # The research worker ranks what it scraped with an embedding model, and the router is
-        # the only door to a model (LAW 34, crew#659 CP3). It read that model through OpenRouter
-        # until 2026-09-04, when the founder ruled the estate buys model capacity direct and
-        # never through a reseller; Google sells this one direct on the key the lanes above
-        # already use. `dimensions: 1536` keeps the vector width the OpenRouter row produced, so
-        # a store sized for it needs no migration -- but the two models are different spaces, and
-        # anything embedded before today has to be embedded again to be comparable. Model id from
-        # https://ai.google.dev/gemini-api/docs/embeddings (read 2026-09-04).
-        - model_name: embed
+        # Google's embedding lane, and AS OF 2026-09-10 NO LONGER THE ONE ASKED FIRST. It was,
+        # from 2026-09-04 (the founder's rule that the estate buys model capacity direct and
+        # never through a reseller) until today, when the cost of leaving a dead lane in front
+        # stopped being visible in a log and started being visible in Otto:
+        #
+        #   otto.memory.embeddings.EmbeddingUnavailableError: embedding call to the estate
+        #     router failed: TimeoutError          (otto-gateway pod, _store_fact, live)
+        #
+        # Read the fallback comment below for the measurement: the id is retired (404) and the
+        # account is out of prepay (429), so this hop refuses every time and the router needs
+        # about six seconds to walk past it. Otto's embedding client is bounded well under that,
+        # so it timed out on every call and every fact Otto wrote went into the store with no
+        # vector at all -- stored true, retained true, embedding absent. Semantic recall then
+        # found nothing, which is the founder's "conversation history, something not right".
+        #
+        # It stays in the chain rather than being deleted: the id and the credit both come back,
+        # and a hop that is second costs nothing when it refuses. It goes first again when a
+        # live probe says it answers, and not before.
+        - model_name: embed-fallback
           litellm_params:
             model: gemini/gemini-embedding-001
             api_key: os.environ/GEMINI_API_KEY
-            dimensions: 1536
-            timeout: 120
-          model_info:
-            mode: embedding
-
-        # The embed lane's first fallback, added 2026-09-10. `embed` was the one group in the
-        # fallback list with no chain at all, so Google's refusal travelled straight to every
-        # caller. Measured from the router's own log that day, repeatedly:
-        #
-        #   litellm.aembedding(model=gemini/gemini-embedding-001) Exception
-        #     litellm.RateLimitError: GeminiException - {"code": 429, "status": "RESOURCE_EXHAUSTED"}
-        #   No fallback model group found for original model_group=embed
-        #   POST /embeddings HTTP/1.1" 429 Too Many Requests
-        #
-        # One lane, two casualties. The memory backfill (otto-memory-store-6, Error 20h) ends
-        # at otto/memory/backfill.py:102 with `urllib.error.URLError: <urlopen error timed
-        # out>`. And hindsight-api's FastAPI lifespan blocks on this same lane at boot, and a
-        # lifespan that blocks never binds 8888, so its startup probe never passed: 168
-        # restarts in 18h, each container dying at 329s of a 600s budget with two 120s timeouts
-        # inside it.
-        #
-        # A live probe found the deeper fault behind both: HTTP 404, `models/
-        # gemini-embedding-001 is not found for API version v1beta`. Google has retired the id,
-        # so the primary lane cannot answer at all and the chain below is doing real work, not
-        # standing by.
-        #
-        # OpenRouter is first because the estate already holds its key -- this registry seeds it
-        # into estate-vault/litellm-upstream and the human door re-reads it as
-        # OPENROUTER_API_KEY, mounted and exported by basename. It serves the same model at the
-        # same 1536 width, so a vector written by either hop stays comparable and no store
-        # migration is needed.
-        - model_name: embed-fallback
-          litellm_params:
-            model: openrouter/openai/text-embedding-3-small
-            api_key: os.environ/OPENROUTER_API_KEY
             dimensions: 1536
             timeout: 120
           model_info:
@@ -463,8 +475,15 @@ vendors:
         #   FAIL vendor-render llm/config.yaml: fallback names no lane serves:
         #     ['embed', 'embed-cohere', 'embed-fallback']
         #
-        # OpenRouter first because its key is already in the estate; Cohere second because it is
-        # the better model and its key rides the human door.
+        # The order changed on 2026-09-10 and this list did not, which is the point of naming
+        # lanes rather than models: `embed` is now OpenRouter (the openrouter row), and
+        # `embed-fallback` is the Google id that used to be `embed` and now refuses in second
+        # place, where refusing is free. Cohere is still last.
+        #
+        # Every hop declares dimensions: 1536, the width otto_facts.embedding is created at.
+        # tests/test_the_embed_chain_agrees_on_one_width.py refuses a chain whose hops disagree:
+        # a hop of another width does not degrade recall, it writes a vector the store cannot
+        # compare to anything it already holds, and it does that silently.
         - embed: [embed-fallback, embed-cohere]
   groq:
     # The free floor (founder 2026-09-08, the cost mandate). Every lane the router served until
@@ -690,13 +709,20 @@ vendors:
       # spends. A router that mounts COHERE_API_KEY and serves no row on it is what
       # tests/test_every_vendor_key_the_router_holds_has_a_lane.py refuses, and it did.
       cluster_lanes: |
-        # The embed lane's second fallback: Cohere embed-english-v3.0, the better of the two
-        # models on this chain. It reads the key this row carries into the router through the
-        # human door, mounted at /run/secrets/human/cohere.
+        # The embed lane's last fallback. It reads the key this row carries into the router
+        # through the human door, mounted at /run/secrets/human/cohere.
+        #
+        # embed-v4.0, and not the embed-english-v3.0 this row carried when it was written this
+        # morning. The v3 models emit 1024 floats and accept no width parameter; the other two
+        # hops of this chain emit 1536, which is the width otto_facts.embedding is created at.
+        # So on the one day both lanes above refuse, this hop would have written a vector the
+        # store cannot compare to anything it already holds -- not a worse answer, no answer --
+        # and nothing would have said so. v4 takes an output width and 1536 is one it accepts.
         - model_name: embed-cohere
           litellm_params:
-            model: cohere/embed-english-v3.0
+            model: cohere/embed-v4.0
             api_key: os.environ/COHERE_API_KEY
+            dimensions: 1536
             timeout: 120
           model_info:
             mode: embedding

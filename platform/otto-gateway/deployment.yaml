@@ -271,15 +271,31 @@ spec:
             # Postgres full-text search over the same rows is the lexical arm of the
             # hybrid and is a tested mode, not a failure -- but only half the recall
             # quality. `embed` is a lane on the estate router, never a vendor model id
-            # (LAW 34); platform/llm/config.yaml resolves it to gemini-embedding-001 at
-            # 1536 dimensions, which is the width otto_facts.embedding is created at, so
-            # the column and the model cannot drift apart.
+            # (LAW 34); platform/llm/config.yaml resolves it to a 1536-wide model, which is
+            # the width otto_facts.embedding is created at, so the column and the model
+            # cannot drift apart. Every hop of the chain declares that same width, and
+            # tests/test_the_embed_chain_agrees_on_one_width.py grades it against this value.
             - { name: OTTO_MEMORY_EMBEDDING_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
             - { name: OTTO_MEMORY_EMBEDDING_MODEL, value: "embed" }
             - { name: OTTO_MEMORY_EMBEDDING_DIM, value: "1536" }
-            # Bounded on the answering path like every other call here. An embedding that
-            # overruns costs no one their answer: retrieval falls back to the lexical arm.
-            - { name: OTTO_MEMORY_EMBEDDING_TIMEOUT_S, value: "1.5" }
+            # Was 1.5 until 2026-09-10, on the argument that "an embedding that overruns costs
+            # no one their answer: retrieval falls back to the lexical arm". True of RECALL,
+            # and false of the WRITE, which is the half that was actually timing out:
+            #
+            #   otto.memory.embeddings.EmbeddingUnavailableError: embedding call to the
+            #     estate router failed: TimeoutError    (pipeline.py:247, _store_fact)
+            #
+            # A recall that overruns loses one answer's context. A store that overruns writes
+            # the fact with no vector and keeps going -- stored true, retained true, embedding
+            # absent -- so the loss is permanent, silent, and only shows up later as Otto not
+            # remembering. The founder found it before any instrument did.
+            #
+            # 10 seconds is a ceiling, not a target. The lane in front now answers in well
+            # under one (it was second behind a dead hop; see the openrouter row in
+            # platform/vendors/consoles.yaml), and the walk past two refusing hops to the last
+            # one in the chain was measured at about six. This value has to sit above that
+            # walk or the fallback chain exists only on paper.
+            - { name: OTTO_MEMORY_EMBEDDING_TIMEOUT_S, value: "10" }
             # LAW 50. The entrypoint refuses to start without this, so a door that cannot be
             # seen never opens rather than running dark.
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
