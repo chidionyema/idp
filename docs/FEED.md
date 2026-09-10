@@ -13,3 +13,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📍 State: https://github.com/chidionyema/idp/pull/2901 | origin/main at 04475d85
 📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
 
+
+## 2026-09-10T12:15:11Z · session a941270d · lane wt-edge
+🔴 Blocked: nothing
+🟡 Active: PR #2898 (Otto's door key) refreshed onto main and pushed — 09afa170; watching its CI, then it merges and Otto answers again
+🟢 Done: found WHY Otto is silent, empirically not synthetically — otto-brain sidecar derives master key as sk-sha256(LITELLM_API_KEY)[:40] while the door presents the raw router key, so litellm falls through to virtual-key lookup, has no DB, and answers every /v1/chat/completions with 400 "No connected db." Liveliness stays 200 the whole time. Fix already existed on PR #2898 but was 10 commits behind the main that repaired 3 KeyError:'wait' tests, so it could never go green. Merged main in, 17 passed 3 skipped locally, pushed. Also built home 2: platform/lifeboat Cloudflare Worker (door + brain, 20/20 behaviour tests, no network touched) and bin/idp-otto-homes (grades 3 homes MEASURED_OK/FAIL/UNKNOWN)
+⚪ Pending: bin/idp-otto-homes is 248 lines of shell and the estate shell standard refuses a new shell file over 100 lines — rewriting it in Python before it commits
+🔧 TOUCHES: platform/lifeboat/ (new), bin/idp-otto-homes (new), docs/explanation/otto-survival-matrix.md, mkdocs.yml on feat/otto-door-at-the-edge; platform/otto-gateway/* on fix/otto-door-presents-a-key-the-lifeboat-can-read
+🔀 OVERLAP: otto-gateway is touched by several sessions; my two branches are separate and neither is merged yet
+📎 FACTS: homes graded 2026-09-10 — 1 cluster otto/healthz MEASURED_OK 200; 2 cloudflare lifeboat-llm MEASURED_FAIL (not deployed); 3 macbook tailnet:11434 MEASURED_OK 200. Groq free ceiling measured from its own header: 1000 req/day, 8000 tok/min
+📍 State: https://github.com/chidionyema/idp/pull/2898
+
