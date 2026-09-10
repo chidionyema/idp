@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          env:
+            - name: API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: not-defined-anywhere
+                  key: token
