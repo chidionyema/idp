@@ -38,13 +38,13 @@ empty at the same moment — the arrangement that maximises the time before *any
 If all three homes could reach the same things, this would be three copies of a list. The
 cells marked **only here** are what make it a matrix.
 
-| | Home 1 · Cluster<br><small>OKE → Traefik → otto-gateway</small> | Home 2 · Cloudflare<br><small>Worker on the global edge</small> | Home 3 · MacBook<br><small>over the tailnet (WireGuard)</small> |
+| | Home 1 · Cluster<br><small>OKE → Traefik → otto-gateway</small> | Home 2 · Cloudflare<br><small>Worker on the global edge</small> | Home 3 · Groq<br><small>a second vendor on a second cloud</small> |
 |---|---|---|---|
 | **The 14 cloud lanes** | reachable | reachable | reachable |
 | **Workers AI**<br><small>@cf/llama-3.3-70b</small> | — | **only here** — in-process, no network, no account id, no key: the binding *is* the credential | — |
-| **Local Ollama**<br><small>qwen2.5-coder:7b</small> | over the tailnet | — no tailnet from the edge | **the floor** — on the metal, no quota and no refill clock |
+| **Llama 3.3 70B**<br><small>free tier, no card</small> | reachable | reachable | **the floor** — free, so it cannot run out of credit, only out of a day |
 | **Memory, tools, estate**<br><small>the real Otto</small> | **only here** — conversation history, the catalogue, every tool | — degraded, and says so | — degraded, and says so |
-| **Telegram can reach it**<br><small>the door</small> | while our DNS and load balancer live | **always** — anycast, up when our cluster is a hole in the ground | only with a public door the founder opens |
+| **Telegram can reach it**<br><small>the door</small> | while our DNS and load balancer live | **always** — anycast, up when our cluster is a hole in the ground | — home 3 is a lane behind a door, never a door itself |
 
 Read down a column for what one home can do alone. Read across a row for how many homes
 survive losing any one thing. No row is empty in fewer than two columns.
@@ -75,13 +75,21 @@ a header confirms it.
 | **Aion Labs · LLM7 · OVH** | 15 / 10 / 2 rpm | per minute | to mint | Published. Too small to carry load; each is one more thing that also has to be down. |
 | **SiliconFlow · ModelScope** | 1,000 rpm / 2,000 req/day | daily | **identity check** | Both require government-ID verification against a Chinese account. Held out of the design deliberately. |
 | **Kaggle GPU** | 30 GPU-hours | weekly | to mint | Already specced as a training launcher (`docs/specs/2026-09-09-forge-kaggle-second-launcher.md`). As an inference lane it needs a tunnel — the one genuinely new build here. |
-| **Ollama on the MacBook**<br><small>on the metal, over the tailnet</small> | **no ceiling** | **never — no clock** | none at all | **measured** — answering now: HTTP 200 in 0.044s on loopback, 200 over the tailnet by address. Slow to generate; impossible to exhaust. |
+| ~~**Ollama on the MacBook**~~<br><small>retired 2026-09-10</small> | ~~no ceiling~~ | ~~never~~ | none at all | **measured, and struck out.** The founder killed it: *"no i killed ollama because machine is slow"*, *"dont rely on macbook"*. The laptop is an Intel i7-8850H with no GPU — Ollama reports `library=cpu`, 4.7 GiB free. It answered 16 output tokens in 24–46s, returned `unexpected EOF` on a realistic 1.4k-token prompt, and llama3.2:3b returned nothing at all in 240s. A home that cannot answer inside Otto's own 120s client ceiling is not a lifeboat. |
 
 !!! warning "The trap that reports home 3 dead while home 3 is answering"
-    The Mac answers `HTTP 200` when addressed by its tailnet IP and `HTTP 403` when addressed
-    by its MagicDNS name — Ollama refuses a `Host` header it does not recognise. A probe
-    written against the name grades a working home as down. `bin/idp-otto-homes` reads
-    `TailscaleIPs` from `tailscale status --json` for exactly this reason.
+    This has now caught two different home 3s, which is why it has its own box.
+
+    The MacBook answered `HTTP 200` on its tailnet IP and `HTTP 403` on its MagicDNS name —
+    Ollama refusing a `Host` header it did not recognise. Groq, its replacement, answers
+    `HTTP 403` with the body `error code: 1010` to Python's default `User-Agent` and `HTTP 200`
+    to the identical request one second later carrying a plain agent string: Cloudflare's
+    browser-fingerprint rejection, sitting in front of the vendor. Both times the home was
+    answering and the probe said it was dead.
+
+    So `bin/idp-otto-homes` names itself in every request it makes. The general rule: a probe
+    that grades a home reaches it the way the home is actually reached, and a `403` is read as
+    a question about the probe before it is read as an answer about the home.
 
 ## The arithmetic
 
@@ -92,13 +100,24 @@ vendor adds to that total. These figures count only lanes needing no identity ch
 |---|---|
 | **Free requests a day** | **12,750** — NIM 10,000 · Gemini 1,500 · Groq 1,000 · GitHub 200 · OpenRouter 50 |
 | **Independent vendors** | **16** — every one has to be down at once before the cloud tier is gone |
-| **Homes that must all die** | **3** — Oracle's cloud, Cloudflare's global network, and a laptop on a desk |
-| **Floor beneath all of it** | **∞** — Ollama on the metal: no quota, no refill window, nothing to exhaust |
+| **Homes that must all die** | **3** — Oracle's cloud, Cloudflare's global network, and Groq's |
+| **Floor beneath all of it** | **a day, not an infinity** — see below |
 
-The floor is the whole argument. Twelve thousand requests a day is a large number, but it is a
-number, and a number can be reached. The lane at the bottom of the ladder has no number, so the
-ladder has no last rung. Otto degrades — slower, no memory, no tools — but there is no state in
-which he is silent.
+**The floor changed on 2026-09-10, and this is the honest version of the argument.** It used
+to end: the bottom rung is a laptop with no quota and no refill clock, so the ladder has no last
+rung and there is no state in which Otto is silent. That was true and it is not true any more.
+The founder retired the laptop because it could not answer inside Otto's own timeout, and a rung
+nobody can stand on is not a rung.
+
+What is left is arithmetic instead of an infinity: twelve thousand seven hundred and fifty free
+requests a day, spread over sixteen vendors that refill on three different clocks — daily,
+monthly, and per-account. Otto is silent only on a day that exhausts every one of them, and his
+measured demand has never come close. That is a strong claim. It is a weaker claim than the one
+this page used to make, and the difference is worth naming rather than quietly editing away.
+
+Getting a real floor back is the open question. The candidates are a GPU nobody bills for —
+Kaggle's 30 hours a week, Hugging Face's Inference Providers — and both need a tunnel before
+they are an inference lane rather than a training launcher.
 
 ## The door
 
@@ -115,9 +134,9 @@ and that home fans out to the others.
 2. **The edge forwards to the cluster first, every time.** Home 1 is the only home that
    remembers the conversation and holds the tools, so a degraded answer is never preferred
    while home 1 can be had. It gets 8 seconds to say hello.
-3. **Then the MacBook, if it has a public door.** It runs the real Otto and costs no vendor
-   quota at all. Opening that door exposes the founder's laptop, so it stays shut until he
-   says otherwise.
+3. **Then home 3's lane, from wherever the turn is being handled.** Groq is a lane, not a
+   door: nothing outside ever calls it directly, so there is no third hostname to expose and
+   nothing on the founder's desk to open up.
 4. **Otherwise the edge answers, and says that it is the edge.** Every degraded reply opens by
    naming the home and the lane. An assistant that silently degrades teaches its owner to trust
    a quality it is no longer delivering — and the degradation is itself the outage alert.
@@ -131,22 +150,26 @@ the estate's three-state vocabulary. This is its real output from 2026-09-10.
 |---|---|---|
 | 1 · Cluster | `otto.${ESTATE_ZONE}/healthz` | `MEASURED_OK` HTTP 200 — full Otto: memory, tools, the estate |
 | 2 · Cloudflare | `lifeboat-llm.${ESTATE_ZONE}/health` | `MEASURED_FAIL` no answer — written and tested, 20 of 20 behaviour tests green with no network touched, but not deployed |
-| 3 · MacBook | tailnet address `:11434` | `MEASURED_OK` HTTP 200 — Ollama is up and serving models |
+| 3 · Groq | `api.groq.com/openai/v1/models` | `MEASURED_OK` HTTP 200 — the free tier answers on the key the estate holds |
 
 ### What is honestly not done
 
-- Home 2's credential exists in code but not yet in the vault. The first deploy attempt failed
-  with Cloudflare error 10000, *Authentication error* — measured, not assumed: the estate's DNS
-  token reads the zone (the account id derived cleanly) and cannot upload a script, which is
-  correct scoping, not a defect. So `bin/idp-bootstrap-cloudflare` now mints a second token from
-  the same standing root — Workers Scripts Write and Workers AI Write on the account, Workers
-  Routes Write on the zone — and proves it can list the account's scripts before the vault write.
-  Running that mint is one button: **Backstage → Run the estate bootstrap → scope `cloudflare`,
-  mode `live`**. Until it has run, home 2 stays `MEASURED_FAIL` and the matrix is two homes wide.
+- Home 2 is the whole of the gap, and until it is deployed the matrix is two homes wide. Three
+  things kept it out of the water and all three are now fixed: the estate's one vault reader
+  resolved the vault only from local OpenTofu state, so every bootstrap on a runner reported the
+  vault unreachable while it was perfectly reachable; the lifeboat's secret table named
+  *Kubernetes* Secret names rather than vault entries, so a deploy would have shipped a lifeboat
+  with no bot token and no model behind it; and `LIFEBOAT_KEY`, which `src/index.js` fails closed
+  on, existed nowhere at all. Deploying is now one button: **Backstage → Founder actions → Put
+  Otto's lifeboat back in the water**, which mints the Cloudflare tokens from the standing root,
+  uploads the worker, and ends on the three homes' verdicts rather than on "the job was green".
 - The headroom-aware chooser is designed here and not yet written. The code as it stands still
   walks a chain.
-- NIM, Cerebras, Mistral, Cohere and the Hugging Face router are researched, not minted. They
-  are the difference between 2,750 and 12,750 requests a day.
+- NIM, Cerebras, Mistral and the Hugging Face router are researched, not minted. They are the
+  difference between 2,750 and 12,750 requests a day. Cohere is no longer among them: it joined
+  on 2026-09-10 as the second hop of the `embed` chain.
+- There is no infinite floor any more, and Kaggle and Hugging Face are the two candidates for
+  getting one back. Neither is wired.
 - Otto's actual daily demand has never been measured, so the headroom above it is unknown.
   Only the capacity is known.
 - Moving Telegram's webhook to the edge repoints the founder's live assistant. That is his to
