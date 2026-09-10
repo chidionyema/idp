@@ -388,6 +388,10 @@ spec:
             limits: { cpu: 100m, memory: 128Mi }
           securityContext:
             allowPrivilegeEscalation: false
+            # tailscaled writes only its state (TS_STATE_DIR=/data) and its socket (/tmp), and
+            # both are emptyDir mounts this pod already carries -- so nothing needs a writable
+            # image layer. KSV-0014 / require-ro-rootfs.
+            readOnlyRootFilesystem: true
             capabilities: { drop: [ALL] }
           readinessProbe:
             exec: { command: ["tailscale", "--socket=/tmp/tailscaled.sock", "status", "--json"] }
