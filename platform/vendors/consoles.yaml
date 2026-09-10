@@ -356,6 +356,52 @@ vendors:
           model_info:
             mode: embedding
 
+        # The embed lane's first fallback, added 2026-09-10. `embed` was the one group in the
+        # fallback list with no chain at all, so Google's refusal travelled straight to every
+        # caller. Measured from the router's own log that day, repeatedly:
+        #
+        #   litellm.aembedding(model=gemini/gemini-embedding-001) Exception
+        #     litellm.RateLimitError: GeminiException - {"code": 429, "status": "RESOURCE_EXHAUSTED"}
+        #   No fallback model group found for original model_group=embed
+        #   POST /embeddings HTTP/1.1" 429 Too Many Requests
+        #
+        # One lane, two casualties. The memory backfill (otto-memory-store-6, Error 20h) ends
+        # at otto/memory/backfill.py:102 with `urllib.error.URLError: <urlopen error timed
+        # out>`. And hindsight-api's FastAPI lifespan blocks on this same lane at boot, and a
+        # lifespan that blocks never binds 8888, so its startup probe never passed: 168
+        # restarts in 18h, each container dying at 329s of a 600s budget with two 120s timeouts
+        # inside it.
+        #
+        # A live probe found the deeper fault behind both: HTTP 404, `models/
+        # gemini-embedding-001 is not found for API version v1beta`. Google has retired the id,
+        # so the primary lane cannot answer at all and the chain below is doing real work, not
+        # standing by.
+        #
+        # OpenRouter is first because the estate already holds its key -- this registry seeds it
+        # into estate-vault/litellm-upstream and the human door re-reads it as
+        # OPENROUTER_API_KEY, mounted and exported by basename. It serves the same model at the
+        # same 1536 width, so a vector written by either hop stays comparable and no store
+        # migration is needed.
+        - model_name: embed-fallback
+          litellm_params:
+            model: openrouter/openai/text-embedding-3-small
+            api_key: os.environ/OPENROUTER_API_KEY
+            dimensions: 1536
+            timeout: 120
+          model_info:
+            mode: embedding
+
+        # The embed lane's second fallback: Cohere embed-english-v3.0, the better of the two
+        # models on this chain. It reads the key the cohere vendor row above carries into the
+        # router through the human door, mounted at /run/secrets/human/cohere.
+        - model_name: embed-cohere
+          litellm_params:
+            model: cohere/embed-english-v3.0
+            api_key: os.environ/COHERE_API_KEY
+            timeout: 120
+          model_info:
+            mode: embedding
+
         - model_name: vision
           litellm_params:
             model: gemini/gemini-2.5-flash
@@ -413,6 +459,24 @@ vendors:
         - gemini: [minimax, groq]
         - default: [gemini, minimax, groq]
         - fast: [gemini, minimax, groq]
+      cluster_fallbacks: |
+        # The lane that had no chain at all until 2026-09-10, and the only one that needed it.
+        # Every other group failed over; `embed` did not, so a Google 429 travelled straight out
+        # to the caller and killed two services (the embed rows in cluster_lanes above carry the
+        # full measurement).
+        #
+        # This lives in cluster_fallbacks and NOT in fallbacks, and that is load-bearing rather
+        # than tidy. `embed` is a cluster lane: the OCI container's own render (llm/config.yaml)
+        # has no cluster-lanes marker and therefore carries no embed lane at all, so a chain
+        # naming `embed` in the plain block renders into both configs and fails the one that
+        # legitimately lacks the lane. The renderer catches exactly that, and did:
+        #
+        #   FAIL vendor-render llm/config.yaml: fallback names no lane serves:
+        #     ['embed', 'embed-cohere', 'embed-fallback']
+        #
+        # OpenRouter first because its key is already in the estate; Cohere second because it is
+        # the better model and its key rides the human door.
+        - embed: [embed-fallback, embed-cohere]
   groq:
     # The free floor (founder 2026-09-08, the cost mandate). Every lane the router served until
     # today bills per token, so 100% of every turn was paid: the chains ended in `deepseek`, an
@@ -607,6 +671,30 @@ vendors:
   # row that was deleted. It becomes a row when the account id has a home, not before. Its token
   # is also a separate credential from the DNS one either way: that token is scoped Zone:DNS:Edit
   # and cannot call Workers AI (R52, one credential is one job).
+
+  # Added 2026-09-10, with the embed chain above. Cohere embed-english-v3.0 is the better of
+  # the two embedding models the estate can reach, and it is the second hop on that chain.
+  #
+  # store_default is human-vault and that is the whole reason this row works: the founder holds
+  # this key in Bitwarden Secrets Manager, so nothing is pasted into a portal, nothing is seeded
+  # and no terminal is opened. The generated human-cohere ExternalSecret reads COHERE_API_KEY by
+  # name; a name the vault does not hold fails that one Secret alone and says so, which is also
+  # how the estate finds out whether the key is really there without printing a value. The router
+  # mounts it at /run/secrets/human/cohere, and its own command exports every mounted file by
+  # basename, which is what `os.environ/COHERE_API_KEY` in the lane resolves to.
+  #
+  # R52: Cohere publishes no create-key API (dashboard.cohere.com/api-keys is the only road,
+  # read 2026-09-10), so the API key IS the root. He makes it once and the estate does the rest.
+  cohere:
+    kind: secret
+    secret: SEED_COHERE_API_KEY
+    page: https://dashboard.cohere.com/api-keys
+    shape: "[A-Za-z0-9]{40}"
+    verify: { method: GET, url: https://api.cohere.com/v1/models, headers: { Authorization: "Bearer {key}" } }
+    rotation: assisted  # Cohere publishes no create-key API (read 2026-09-10)
+    store_default: human-vault
+    targets:
+      - { entry: litellm-upstream, ns: llm, field: COHERE_API_KEY, bw: COHERE_API_KEY }
 
   exa:
     kind: secret
