@@ -287,6 +287,21 @@ def execute_change(
 
 @hookimpl
 def register_mcp_tools(datasette, mcp):
+    # The MCP tool names must stay `simulate_change` and `execute_change`. The module-level
+    # functions of the same names would be shadowed by the inner `@mcp.tool()` defs below at
+    # call-time (Python's enclosing-scope lookup), so the live-cluster reproduction called the
+    # inner def with `graders=...`, which only accepts `source`, and returned "Error executing
+    # tool" silently. Going through `import sys` + `sys.modules[__name__]` avoids Python's
+    # compile-time local-name detection (any `def <name>` makes `<name>` local throughout this
+    # function; aliasing by `<name> = <name>` then hits UnboundLocalError). We pull the original
+    # targets through the module's namespace, which is constant, and bind them to fresh names
+    # the inner defs can call.
+    import sys as _door_sys
+
+    _door_module = _door_sys.modules[__name__]
+    _door_simulate = _door_module.simulate_change
+    _door_execute = _door_module.execute_change
+
     @mcp.tool()
     async def simulate_change(source: str) -> dict:
         """Propose a state change before any state-changing tool may run it (MUM-288, ADR 0006).
@@ -295,7 +310,7 @@ def register_mcp_tools(datasette, mcp):
         verdict is SAFE only when every grader answered SAFE; any grader that could not run makes
         it UNKNOWN and execute refuses. A SAFE/UNSAFE proposal is stored under its id; an UNKNOWN
         proposal answers but is never executable."""
-        return simulate_change(
+        return _door_simulate(
             source,
             graders=_live_graders(source) if config().get("graders_door") else {},
         )
@@ -307,7 +322,7 @@ def register_mcp_tools(datasette, mcp):
         against. The hash is the sha256 over the sorted resourceVersion of every object in the
         touched namespaces plus the git sha of clusters/. On success names the state branch the
         Flux/JIT write lands on; the write itself is the broker's grant, not this tool."""
-        return execute_change(
+        return _door_execute(
             proposal_id,
             cluster_state_hash,
         )
