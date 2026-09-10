@@ -76,6 +76,11 @@ jobs:
     if: ${{ inputs.mode == 'preflight' || inputs.mode == 'live' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The three states, kept as three (crew#656): 0 ok, 1 FAIL, 2 BLIND. A job's result is only
+    # pass or fail, which collapses BLIND into FAIL and lets "could not measure" block work that
+    # is measurable. The verdict travels as an output so a downstream job can decide for itself.
+    outputs:
+      rc: ${{ steps.preflight.outputs.rc }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -119,6 +124,7 @@ jobs:
           printf '%s\n' "$out"
           echo "reason=$REASON"
           echo "scope=$SCOPE"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
           tail -1 <<<"$out" >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
       - name: upload preflight log
@@ -182,9 +188,19 @@ jobs:
   # with a whole cluster apply to run.
   live-cloudflare:
     needs: [preflight]
-    if: ${{ inputs.mode == 'live' && inputs.scope == 'cloudflare' }}
+    # BLIND is not a failure. The preflight's vault check runs as whatever OCI profile the token
+    # exchange left behind and reports BLIND when it cannot see one -- which says nothing about
+    # whether this job's own exchange will work, because this job does its own. FAIL still stops
+    # it, and the bootstrapper below re-checks the vault itself and exits BLIND on its own if it
+    # really cannot reach it. Nothing is minted on an unmeasured vault either way.
+    if: ${{ always() && inputs.mode == 'live' && inputs.scope == 'cloudflare' && needs.preflight.outputs.rc != '1' && needs.preflight.result != 'cancelled' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The three states, kept as three (crew#656): 0 ok, 1 FAIL, 2 BLIND. A job's result is only
+    # pass or fail, which collapses BLIND into FAIL and lets "could not measure" block work that
+    # is measurable. The verdict travels as an output so a downstream job can decide for itself.
+    outputs:
+      rc: ${{ steps.preflight.outputs.rc }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
