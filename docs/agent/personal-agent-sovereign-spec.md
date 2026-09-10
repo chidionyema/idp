@@ -732,3 +732,72 @@ change, not a deploy.
 48. **"What if someone else answers my phone and says yes?"** — voice confirmation on a call is
     gated by the biometric check; on WhatsApp, a typed or numeric-tagged confirmation is preferred.
     **Owner: Concierge + VoiceprintGate.**
+
+---
+
+## v1.8 amendment — Visibility: narration, and the Action Cam with a fence
+
+### The insight that is right
+
+A user who cannot see work happening assumes the worst: that the phone froze, that she did something
+wrong, that she is being scammed. Silence is the failure mode, not latency.
+
+### 1. Live-call narration — BUILT, default on
+
+While a browser job runs during a call, the agent says what it is doing, like a helpful grandchild on
+the sofa:
+
+> "I am opening the Sainsbury's website now, Mummy... just waiting for it to come up."
+> "Right, I can see the search box. I am typing 'plantain'."
+> "They have the large ones for £1.20. I am adding it to your basket now."
+
+Rules: at most one line every few seconds, never invented, and never a claim of progress that has not
+happened. Narration says what is *being attempted*, not what has succeeded — success is only ever
+claimed after the order is accepted (v1.4 handshake).
+
+### 2. The Action Cam — BUILT, default OFF
+
+Playwright can record the browser session; ffmpeg can speed it up and compress for WhatsApp. The
+capability exists. It is **off by default** for three reasons the founder should weigh:
+
+**(a) It would show her card details.** Playwright records the viewport, and checkout involves a card
+number and possibly a CVV. A sped-up MP4 of that, kept permanently in a WhatsApp thread, in a design
+whose stated hope is that she forwards it to friends, is a serious disclosure. This is the opposite of
+the privacy guarantee in v1.6. This is the strongest objection and it is not a matter of taste.
+
+**(b) It may reduce trust rather than build it.** A screenshot works because it is one thing to look
+at: *this is what I bought, this is the price*. Fifteen seconds of a webpage moving at 4x, on a small
+phone, for someone who finds technology stressful, is closer to evidence of chaos. The demystification
+argument assumes she can follow a sped-up screen; there is no evidence she can.
+
+**(c) It delays the receipt.** Record, close, transcode, upload, send — while she waits for the thing
+she was actually promised. The receipt matters more than the replay.
+
+If it is enabled, these must hold:
+
+- **Checkout is never recorded.** Recording stops before any payment page is opened, so card digits
+  cannot be captured. If that cannot be guaranteed for a given vendor, the video is not sent.
+- **Off by default.** `CONCIERGE_ACTION_CAM=1` opts in.
+- **Bounded.** A maximum length, and a maximum file size, so a stuck page does not produce a
+  minute-long video and a large bill.
+- **Deleted after sending** unless retention is explicitly configured.
+- **Never the sole proof.** The screenshot receipt is still sent.
+
+### Issues-for-Nunn — v1.8 batch
+
+49. **"What if it films my card?"** — the load-bearing objection. **Owner: browser_operator.**
+    Recording must stop before payment, and a video that would contain a payment page must be
+    discarded rather than sent.
+50. **"What if I cannot follow the fast video?"** — **Owner: product.** Prefer the still receipt;
+    the video is an addition, never a replacement.
+51. **"Why is it quiet again?"** — narration must cover the whole wait, not just the start.
+    **Owner: bridge.**
+52. **"What if it says it is doing something it is not?"** — narration describes attempts, never
+    success. **Owner: bridge.**
+
+### Recorded as a decision
+
+The Action Cam is built and fenced, default off. The founder may enable it; the recommendation in
+this spec is to ship the *narration and the still receipt* first, watch whether she actually asks for
+more, and enable the video only if she does. Adding capability is cheap; withdrawing a promise about
+her card details is not.
