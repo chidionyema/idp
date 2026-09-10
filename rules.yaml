@@ -43,6 +43,35 @@ rules:
     ok: "no manifest hands Flux a shell expansion; the gate is proved both ways"
     fail: "a manifest hands Flux a shell expansion, or the gate is not discriminating"
 
+  - id: flux-wait-brake
+    fast: true   # one parse of clusters/, cheap enough for the 60-second fast gate
+    label: flux-wait-brake
+    statement: >-
+      A Flux Kustomization never sets both wait: true and healthChecks; wait wins, the checks the
+      author wrote are discarded, and the row then waits on every object in its path -- so one
+      optional Job going Failed holds every change to that path out of the cluster
+    law: "incident 2026-09-10, otto-gateway held out by Job/otto-memory-store-6"
+    origin: >-
+      The otto-gateway row named one health check, Deployment/otto-gateway, and set wait: true
+      above it. The Deployment was healthy. A one-shot backfill in the same path timed out
+      reaching the LLM router, went Failed, and the row reported "failed early due to stalled
+      resources" and stopped applying -- including the change that repairs the router path the
+      backfill could not reach. The Job's own manifest says "If this never runs, nothing breaks".
+      41 of the estate's 82 Kustomizations carried the same dead healthChecks list.
+    planes: [ci, session]
+    session_glob: ['clusters/**/*.yaml']
+    run: [python3, bin/idp-flux-wait-brake]
+    cluster: {policy: null, why: "the break is in the Kustomization spec in git; admission never sees a row's own readiness policy"}
+    fixtures: {must_fail: tests/fixtures/flux-wait-brake/bad.yaml, must_pass: tests/fixtures/flux-wait-brake/good.yaml}
+    cases:
+      - {expect: refuse, args: [tests/fixtures/flux-wait-brake/bad.yaml]}
+      - {expect: pass, args: [tests/fixtures/flux-wait-brake/good.yaml]}
+      - {expect: pass, live: true, note: "this estate's own cluster rows"}
+    ok: "no Kustomization declares healthChecks that wait would throw away"
+    fail: >-
+      a Kustomization sets wait: true beside a healthChecks list, so the list is dead text and the
+      row is braked by every object in its path
+
   - id: cloud-agnostic
     label: agnostic
     statement: No provider-specific annotation or Service outside the compute provisioner

@@ -141,6 +141,7 @@ nav:
       - Estate request router: tutorials/demo/estate-request-router.md
       - Estate drift reconciler: tutorials/demo/estate-drift-reconciler.md
       - Estate cleaner: tutorials/demo/estate-cleaner.md
+      - Flux wait brake: tutorials/demo/idp-flux-wait-brake.md
       - Otto's three homes: tutorials/demo/otto-three-homes.md
       - Estate diagram: tutorials/demo/estate-diagram.md
       - Spend breaker: tutorials/demo/spend-breaker.md
@@ -267,6 +268,7 @@ nav:
       - Estate request router: how-to/onboarding/estate-request-router.md
       - Estate drift reconciler: how-to/onboarding/estate-drift-reconciler.md
       - Estate cleaner: how-to/onboarding/estate-cleaner.md
+      - Flux wait brake: how-to/onboarding/idp-flux-wait-brake.md
       - Otto's three homes: how-to/onboarding/otto-three-homes.md
   - Runbooks:
       - What these are: runbooks/index.md

@@ -90,7 +90,6 @@ spec:
       # that mints the portal's GitHub token (platform/backstage/overlays/oke/github-token.yaml).
       - kind: Secret
         name: github-app
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -115,7 +114,6 @@ spec:
     name: flux-system
   path: ./platform/chaos/mesh
   prune: true
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -172,7 +170,6 @@ spec:
       # shipping telemetry to the literal '${OTLP_ENDPOINT}'.
       - kind: ConfigMap
         name: estate-config
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -217,7 +214,6 @@ spec:
       # ESTATE_ZONE for langfuse.<zone> (platform/observability/httproute.yaml), like every other row.
       - kind: ConfigMap
         name: estate-config
-  wait: true
   timeout: 20m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -246,7 +242,6 @@ spec:
   dependsOn:
     - name: edge
     - name: secret-store
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -283,7 +278,6 @@ spec:
     # Postgres for the estate) -- it must report Ready first or the data would be pruned
     # ahead of being moved.
     - name: estate-db-migrate
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -312,7 +306,6 @@ spec:
   prune: true
   dependsOn:
     - name: scheduling
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -337,7 +330,6 @@ spec:
   prune: true
   dependsOn:
     - name: secret-store
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -365,7 +357,6 @@ spec:
     # Postgres for the estate) -- it must report Ready first or the data would be pruned
     # ahead of being moved.
     - name: estate-db-migrate
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -406,7 +397,6 @@ spec:
     - name: secret-store
     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
     - name: alerts-github
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -449,7 +439,6 @@ spec:
     - name: secret-store
     - name: edge
     - name: otto-golden-secret
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -517,7 +506,6 @@ spec:
     # guard is spent, and while it stood it was a permanent brake -- estate-db-migrate has
     # been Ready=False for 13 hours on its own dependency, so every otto-gateway change
     # since then, including the bulk-lane fix in #1678, could not reach the cluster.
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -566,7 +554,6 @@ spec:
     - name: secret-store
     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
     - name: alerts-github
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -649,7 +636,6 @@ spec:
     # Postgres for the estate) -- it must report Ready first or the data would be pruned
     # ahead of being moved.
     - name: estate-db-migrate
-  wait: true
   timeout: 15m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -708,7 +694,6 @@ spec:
     name: flux-system
   path: ./platform/temporal
   prune: true
-  wait: true
   timeout: 20m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -736,7 +721,6 @@ spec:
     name: flux-system
   path: ./platform/spire
   prune: true
-  wait: true
   timeout: 15m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -763,7 +747,6 @@ spec:
     name: flux-system
   path: ./platform/keda
   prune: true
-  wait: true
   timeout: 15m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -792,7 +775,6 @@ spec:
     name: flux-system
   path: ./platform/crossplane
   prune: true
-  wait: true
   timeout: 15m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -832,7 +814,6 @@ spec:
     name: flux-system
   path: ./platform/crossplane/providers
   prune: true
-  wait: true
   timeout: 15m
   healthChecks:
     - apiVersion: pkg.crossplane.io/v1
@@ -917,7 +898,6 @@ spec:
     name: flux-system
   path: ./platform/hindsight
   prune: true
-  wait: true
   timeout: 15m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -950,7 +930,6 @@ spec:
     # Postgres for the estate) -- it must report Ready first or the data would be pruned
     # ahead of being moved.
     - name: estate-db-migrate
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -977,7 +956,6 @@ spec:
   prune: true
   dependsOn:
     - name: secret-store
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -1065,7 +1043,6 @@ spec:
     name: flux-system
   path: ./platform/healing
   prune: true
-  wait: true
   timeout: 15m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -1091,7 +1068,6 @@ spec:
     name: flux-system
   path: ./platform/healing/k8sgpt
   prune: true
-  wait: true
   timeout: 15m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -1117,7 +1093,6 @@ spec:
     name: flux-system
   path: ./platform/healing/analyzer
   prune: true
-  wait: true
   timeout: 10m  # test_incident_backstage_17h_unreported: a row with healthChecks must stall, never wait forever
   # the object alone counts as Current; the analyzer the operator builds from it is the health
   # (run 33233870612: 29h green with no analyzer). Name = the K8sGPT object's name.
@@ -1142,7 +1117,6 @@ spec:
     name: flux-system
   path: ./platform/robusta
   prune: true
-  wait: true
   timeout: 15m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -1184,7 +1158,6 @@ spec:
     name: flux-system
   path: ./platform/monitoring
   prune: true
-  wait: true
   timeout: 20m
   postBuild:
     substituteFrom:
@@ -1267,7 +1240,6 @@ spec:
   prune: true
   dependsOn:
     - name: secret-store
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -1315,7 +1287,6 @@ spec:
   dependsOn:
     - name: scheduling
     - name: secret-store
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -1342,7 +1313,6 @@ spec:
   dependsOn:
     - name: identity
     - name: edge
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -1370,7 +1340,6 @@ spec:
     name: flux-system
   path: ./platform/searxng
   prune: true
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -1425,7 +1394,6 @@ spec:
     name: flux-system
   path: ./platform/estate-db/operator
   prune: true
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -1450,7 +1418,6 @@ spec:
     name: flux-system
   path: ./platform/estate-db/cluster
   prune: true
-  wait: true
   timeout: 15m
   healthChecks:
     - apiVersion: postgresql.cnpg.io/v1
@@ -1715,7 +1682,6 @@ spec:
   # image automation and a `$imagepolicy` marker in kustomization.yaml (cyrus, hermes-agent
   # and ten more already use it). A pull secret is referenced by name in a pod spec, never
   # substituted as text.
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -1787,7 +1753,6 @@ spec:
     name: flux-system
   path: ./platform/trivy
   prune: true
-  wait: true
   timeout: 15m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
