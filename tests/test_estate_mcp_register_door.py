@@ -1,14 +1,20 @@
-"""Regression: the MCP-tool wrapper `simulate_change(source)` must dispatch through the
-module-level function, not recurse into its own local definition (which only accepts `source`
-and would refuse `graders=` with TypeError). Live reproduction on the running estate-mcp pod:
+"""Regression: the MCP-tool wrappers for `simulate_change` and `execute_change` must dispatch
+through the module-level functions, not recurse into local @mcp.tool() defs of the same name
+(which only accept the tool's public argument set and would reject `graders=`).
 
-    POST /-/mcp tools/call {"name":"simulate_change","arguments":{"source":"hello"}}
-    -> {"isError": true, "content":[{"text":"Error executing tool simulate_change"}]}
-    -> inner def simulate_change() got an unexpected keyword argument 'graders'
+Live reproduction on the running estate-mcp pod, on a build that still inlines the wrapper:
+    POST /-/mcp tools/call {\"name\": \"simulate_change\", \"arguments\": {\"source\": \"hello\"}}
+      -> {\"isError\": true, \"content\": [{\"text\": \"Error executing tool simulate_change\"}]}
+      -> exec inside the pod with the broken build:
+         TypeError: register_mcp_tools.<locals>.simulate_change()
+         got an unexpected keyword argument 'graders'
 
-The fix at `mcp/plugins/estate_simulate.py` binds the module-level targets to non-shadowing
-local names (via `sys.modules[__name__]`) and the inner `@mcp.tool()` defs call those, keeping
-the MCP tool name intact while forwarding the door's grader argument.
+Live reproduction after the first fix (sys.modules[__name__] alias): the pod would not even
+start because pluggy loads plugins by filename, so `__name__ == 'estate_simulate.py'` and
+`sys.modules['estate_simulate.py']` does not exist.
+
+This test guards the closed-over by-function wrapper that uses @wraps to keep the registered
+tool name `simulate_change` while the inner function carries a different name.
 """
 
 import asyncio
@@ -24,22 +30,20 @@ PLUGIN_FILE = (
 
 
 class _FakeMCP:
-    """Minimal stand-in for the FastMCP the estate-mcp server passes in. Records the wrappers.
+    """Minimal stand-in for the FastMCP the estate-mcp server passes in.
 
-    The real FastMCP @mcp.tool() decorator, given `async def simulate_change(source: str)`,
-    registers the inner function AS A LOCAL NAME of `register_mcp_tools` -- that is exactly the
-    shadowing condition this test guards against. The fake honours the same contract.
+    Real FastMCP exposes `@mcp.tool()` as a decorator and registers by tool name. This fake
+    matches the registration path (`add_tool` with explicit `name=`) since the production
+    registration uses `mcp.add_tool(wrapper, name="simulate_change")` after the closed-over
+    wrapper shadowing fix.
     """
 
     def __init__(self):
         self.tools: dict[str, object] = {}
 
-    def tool(self, **_kw):
-        def deco(fn):
-            self.tools[fn.__name__] = fn
-            return fn
-
-        return deco
+    def add_tool(self, fn, *, name: str):
+        self.tools[name] = fn
+        return fn
 
 
 class _FakeDatasette:  # datasette-mcp's hookimpl contract
@@ -50,19 +54,22 @@ class _FakeDatasette:  # datasette-mcp's hookimpl contract
 def estate_simulate_module():
     """Load the plugin module from its on-disk path via importlib.util.spec_from_file_location.
 
-    This is the same wiring the production datasette-mcp server does (`register_plugin(...)`
-    loads plugins by file path). Using `importlib` here is also what bin/test-executes-gate
-    counts as 'this test runs something' -- a test that merely inspects file text cannot catch
-    a behaviour defect, and was the defect class wiped on 2026-09-04 (519d59e8).
+    This is the same wiring the production datasette-mcp server does (`--plugins-dir` loads
+    plugins by file path through pluggy). Using `importlib` here is also what
+    bin/test-executes-gate counts as 'this test runs something' -- a test that merely inspects
+    file text cannot catch a behaviour defect, and was the defect class wiped on 2026-09-04 (519d59e8).
+
+    The plugin's `__name__` after a pluggy load is the bare filename `estate_simulate.py`,
+    which is intentionally NOT a Python module name; this fixture loads under a real module
+    name so any `sys.modules[<name>]` access by the suite path is fine. The assertion below
+    verifies that `register_mcp_tools` does NOT rely on `sys.modules[__name__]`, which would
+    crash at startup.
     """
     spec = importlib.util.spec_from_file_location(
         "estate_simulate_under_test", PLUGIN_FILE
     )
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
-    # The plugin's `register_mcp_tools` reads `sys.modules[__name__]`, so the dynamic module
-    # has to be in the import registry before exec_module. importlib.util.exec_module does
-    # NOT insert automatically.
     sys.modules[module.__name__] = module
     spec.loader.exec_module(module)
     return module
@@ -75,12 +82,26 @@ def fake_mcp_datasette():
     return mcp, register
 
 
+def test_register_does_not_touch_sys_modules_by_filename(estate_simulate_module):
+    """register_mcp_tools must work even when sys.modules does not carry the plugin under the
+    bare filename. Pluggy loads plugins by filename; `sys.modules['estate_simulate.py']` does
+    not exist on the production path. A name miss at registration crashes the pod on startup
+    (regression: estate-mcp CrashLoopBackOff after the first sys.modules-based fix).
+    """
+    # Make sure the filename is missing from sys.modules (it never is from a real pluggy load).
+    assert "estate_simulate.py" not in sys.modules
+    # Calling register_mcp_tools must complete without raising a KeyError on sys.modules lookups.
+    estate_simulate_module.register_mcp_tools(_FakeDatasette(), _FakeMCP())
+
+
 def test_simulate_change_wrapper_calls_module_level_not_self(
     estate_simulate_module, fake_mcp_datasette
 ):
-    """The MCP wrapper simulate_change must call the module-level simulate_change; a recursion
-    into itself with `graders=` raises TypeError. With the fix in place, no TypeError is raised
-    and the wrapper returns a real proposal (verdict UNKNOWN here because no graders are wired).
+    """The MCP wrapper for simulate_change must call the module-level simulate_change and not
+    recurse into itself. The wrapper is exposed under the registered tool name `simulate_change`,
+    but the inner function is named differently (so it does not shadow the target). With the
+    fix in place, calling the wrapper returns the module-level proposal; with the recursion
+    bug (a closed-over name of the same shape calling itself), TypeError.
     """
     mcp, register = fake_mcp_datasette
     estate_simulate_module.register_mcp_tools(register, mcp)
@@ -102,8 +123,8 @@ def test_simulate_change_wrapper_calls_module_level_not_self(
 def test_execute_change_wrapper_calls_module_level_not_self(
     estate_simulate_module, fake_mcp_datasette
 ):
-    """The MCP wrapper execute_change must call the module-level execute_change; a recursion into
-    itself would call execute_change() with no arguments and TypeError before refusal messages.
+    """The MCP wrapper for execute_change must call the module-level execute_change and not
+    recurse into itself.
     """
     mcp, register = fake_mcp_datasette
     estate_simulate_module.register_mcp_tools(register, mcp)
@@ -117,3 +138,19 @@ def test_execute_change_wrapper_calls_module_level_not_self(
     assert result["executed"] is False
     # The refusal reason comes from the module-level execute_change, not a recursion traceback.
     assert isinstance(result.get("error"), str)
+
+
+def test_simulate_change_wrapper_inherits_docstring(
+    estate_simulate_module, fake_mcp_datasette
+):
+    """The closed-over wrapper's `__doc__` carries through (via functools.wraps) so the MCP
+    tools/list description still names the door. Without this, tools/list description becomes
+    a one-liner or None, and an agent calling simulate_change without first reading tools/list
+    has no way to find out what the door accepts.
+    """
+    mcp, register = fake_mcp_datasette
+    estate_simulate_module.register_mcp_tools(register, mcp)
+    wrapper = mcp.tools["simulate_change"]
+    assert isinstance(getattr(wrapper, "__doc__", None), str)
+    assert "simulate-before-execute door" in (wrapper.__doc__ or "")
+    assert "MUM-288" in (wrapper.__doc__ or ""), "docstring lost the spec reference"
