@@ -192,7 +192,9 @@ def step_captures_and_consults_rc(run: str) -> bool:
             continue
         if "rc=" in stripped and "$?" in stripped:
             continue  # the capture itself, not a consult
-        if re.search(r"\$\{?rc\}?", stripped) and re.search(r"\[|test |!=|-ne|-eq|== ", stripped):
+        if re.search(r"\$\{?rc\}?", stripped) and re.search(
+            r"\[|test |!=|-ne|-eq|== ", stripped
+        ):
             return True
     return False
 
@@ -243,8 +245,14 @@ def grade_step(file_label: str, step: dict, raw_window: str) -> list[str]:
     if step_pipes_verdict(run) and not consulted:
         problems.append("verdict piped into tee/cat without `pipefail`")
     if step_runs_with_no_e(run) and not consulted:
-        problems.append("runs under `set -o` (no -e); the grader's exit cannot fail the run")
-    if step_has_orphan_true(run) and not consulted and not step_has_optional_marker(run, name, raw_window):
+        problems.append(
+            "runs under `set -o` (no -e); the grader's exit cannot fail the run"
+        )
+    if (
+        step_has_orphan_true(run)
+        and not consulted
+        and not step_has_optional_marker(run, name, raw_window)
+    ):
         problems.append("`|| true` on the grader with no `# optional: <reason>` marker")
     if not problems:
         return []
@@ -266,7 +274,7 @@ def _windows_for_steps(path: pathlib.Path) -> list[str]:
     pattern = re.compile(r"^\s*-\s*name:\s|^\s*-\s*run:\s", re.M)
     for m in pattern.finditer(text):
         start = max(0, m.start() - COMMENT_LOOKBACK_CHARS)
-        windows.append(text[start:m.start()])
+        windows.append(text[start : m.start()])
     return windows
 
 
@@ -333,7 +341,11 @@ def main(argv: list[str]) -> int:
         files = [target]
     else:
         files = sorted(target.rglob("*.yml")) + sorted(target.rglob("*.yaml"))
-    files = [f for f in files if not any(p in f.parts for p in ("node_modules", ".crew", ".git"))]
+    files = [
+        f
+        for f in files
+        if not any(p in f.parts for p in ("node_modules", ".crew", ".git"))
+    ]
     total = 0
     all_problems: list[str] = []
     for f in files:
@@ -341,11 +353,15 @@ def main(argv: list[str]) -> int:
         all_problems.extend(grade_workflow(f))
     bad = len(all_problems)
     if bad:
-        print(f"FAIL idp-grader-exit-gate: {bad} grading step(s) across {total} file(s) cannot fail their run:")
+        print(
+            f"FAIL idp-grader-exit-gate: {bad} grading step(s) across {total} file(s) cannot fail their run:"
+        )
         for line in all_problems:
             print(f"  - {line}")
         return 1
-    print(f"ok   idp-grader-exit-gate: {total} workflow file(s) -- every grading step can fail the run")
+    print(
+        f"ok   idp-grader-exit-gate: {total} workflow file(s) -- every grading step can fail the run"
+    )
     return 0
 
 

@@ -85,7 +85,9 @@ class TestTheGateAcceptsTheGoodFixture:
     def test_an_optional_leg_may_swallow_its_exit_when_it_says_so(self):
         """`|| true` with the marker is a different statement from `|| true` by accident."""
         text = (FIXTURES / "good" / "good.yml").read_text()
-        assert OPTIONAL.search(text), "the good fixture must exercise the optional marker"
+        assert OPTIONAL.search(text), (
+            "the good fixture must exercise the optional marker"
+        )
         assert run_gate(FIXTURES / "good" / "good.yml").returncode == 0
 
 
