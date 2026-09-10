@@ -70,3 +70,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔧 TOUCHES: platform/lifeboat/src/homes.js, platform/lifeboat/test/lifeboat.test.mjs, bin/idp-bootstrap-cloudflare, .github/workflows/estate-bootstrap.yml
 🔀 OVERLAP: none
 
+
+## 2026-09-10T12:56:21Z · session a941270d · lane otto-matrix
+🟢 Done: PR #2898 merged — Otto's door now presents the key its sidecar reads; two otto-gateway pods rolled 3/3. PR #2911 has the edge lane chooser, 27 tests green: it spends whichever free lane has most of ITS OWN daily budget left, so Groq no longer drains by lunch while Gemini's 1,500 expires unspent.
+🟡 Active: PR #2914 — external-dns has been crashlooping five days: the edge fence had no internet egress, so `Get https://api.cloudflare.com/client/v4/zones: i/o timeout` then a liveness kill, forever. Every hostname still resolves (records predate the fence, upsert-only never deletes) so it looked quiet; what was lost is every NEW hostname. Fix is `egress_internet: [443]` on the edge allowance row, regenerated.
+🔴 Blocked: home 2 cannot deploy. There is no SEED_CLOUDFLARE_ROOT_TOKEN repo secret and the vault's cloudflare-api-token is DNS-only — measured 9109 on /user/tokens and zero accounts visible. Under R52 one root token, set once by the founder, mints everything else in code.
+⚪ Pending: six researched free lanes unminted (NVIDIA NIM 10k/day, Cerebras 1M tok/day, GitHub Models, Mistral, Cohere, HF router); Telegram webhook move waits on the founder's own words; commerce/lago-* six pods CrashLoopBackOff; otto-memory-store-6 four Errors 17h.
+📍 State: the class behind #2914 is its third instance — a controller that talks outside the cluster, fenced as though it only talked to neighbours (estate-vault, 2026-09-08, was the same). Generalising bin/idp-store-can-reach-its-vault is the follow-up.
+🔧 TOUCHES: platform/ns-fences/allowances.yaml, platform/ns-fences/network/edge.yaml, platform/lifeboat/src/homes.js, .github/workflows/estate-bootstrap.yml
+🔀 OVERLAP: none
+📎 FACTS: PR #2914, PR #2911, PR #2898 merged; run 34478690947 live-cloudflare failed BLIND on the missing root secret
+
