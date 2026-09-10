@@ -1,0 +1,86 @@
+# button: Put Otto's lifeboat back in the water
+# founder: Rebuilds Otto's second home on Cloudflare's edge and reports whether it can answer, so that a turn still lands when the cluster is gone.
+# No `# result:` line, and that is deliberate: a result target is a catalogue entity or a
+# URL, the lifeboat has no catalogue entity yet, and a URL here would type the estate's DNS
+# zone as a literal (LAW 46, bin/estate-zone-gate). The run summary carries the three homes'
+# verdicts instead, on the page the button already links.
+# Founder, 2026-09-09: "otto must have 3 homes", and 2026-09-10 naming them: "three homes,
+# cloudflare, macbook". Home 2 is the Cloudflare edge -- platform/lifeboat -- and until today it
+# had no door a person could press, which meant it had no way of ever being deployed: it needs a
+# Cloudflare Workers token and the estate vault, and neither is on the founder's laptop.
+#
+# Two steps, in this order and for a reason. bin/idp-bootstrap-cloudflare mints the Workers token
+# and the DNS reader from the one root (R52, SEED_CLOUDFLARE_ROOT_TOKEN) and writes them to the
+# vault; bin/idp-otto-homes deploy reads them back out, derives the account id from the zone, uploads
+# the worker and pipes each of home 2's secrets in on stdin. Neither value is ever an argument or an
+# environment variable in this file (LAW 21).
+#
+# The last step is the proof, not a health check on this workflow's own success: it asks the three
+# homes their one question each and writes the verdicts to the run summary, so the founder reads
+# which homes could take a turn rather than "the job was green" (THE EMPIRICAL PROOF RULE).
+name: otto-lifeboat
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Why (one line, kept in the run record)
+        required: false
+        default: home 2 back in the water
+permissions:
+  id-token: write
+  contents: read
+concurrency:
+  group: otto-lifeboat
+  cancel-in-progress: false
+jobs:
+  lifeboat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt PyYAML
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: Mint the Cloudflare tokens from the one root (R52)
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          [ -n "$CLOUDFLARE_ROOT_TOKEN" ] || {
+            echo "BLIND   cloudflare: no SEED_CLOUDFLARE_ROOT_TOKEN repository secret; one token with 'User API Tokens: Edit', set once, is the root (R52)"
+            exit 2
+          }
+          bin/idp-bootstrap-cloudflare --rotate
+      - name: Deploy home 2
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: bin/idp-otto-homes deploy
+      - name: Which homes could take a turn
+        if: always()
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: |
+          set +e
+          out=$(bin/idp-otto-homes 2>&1)
+          set -e
+          printf '%s\n' "$out"
+          { echo '```'; printf '%s\n' "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
