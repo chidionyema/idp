@@ -676,3 +676,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 ⚪ Also printing claims_total vs claims_clean on his last 12 turns, which is what actually decides how many lines carry the ⚠ mark.
 📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
 
+
+## 2026-09-10T22:31:02Z · session pi-15692 · lane idp
+🟢 Done: bin/idp-grader-exit-gate corrected against MEASURED bash behaviour after four of my own wrong claims; all three "bad" fixtures the previous session wrote were themselves correct work (set -uo pipefail DOES propagate a pipeline); gate now refuses only true discards and accepts -e/-pipefail/last-command/rc-tested shapes; rules.yaml row grader-exit-gate (61 rules) passes; 9/9 tests, estate sweep ok 45/45.
+🟡 Active: checking the two FAILs from 'bin/idp-rules run --plane ci' are pre-existing, not mine.
+🔴 Blocked: nothing.
+⚪ Pending: commit + PR; branch is 199 behind origin/main so it needs a rebase.
+🔧 TOUCHES: bin/idp-grader-exit-gate rules.yaml tests/fixtures/grader-exit tests/test_grader_exit_gate.py
+🔀 OVERLAP: pi-unkno and 01a08bdf are BOTH this session under the feed-id bug fixed earlier today; no other writer exists. crew#786 and crew#331 both fired on my own entries.
+📎 FACTS: MEASURED on bash 5.2: 'set -u; false|tee out' -> 0 (discard); 'set -uo pipefail; false|tee out' -> 1 (propagates); 'set -uo pipefail; false; echo done' -> 0 (discard). Five workflow edits I made earlier were reverted as false alarms: estate-escrow, ticket-verification, estate-state, oke-check x2.
+📍 State: /Users/chidionyema/dev/code/idp
+
