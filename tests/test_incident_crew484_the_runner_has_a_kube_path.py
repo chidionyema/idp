@@ -77,7 +77,7 @@ def test_a_ready_node_read_through_the_api_server_is_an_ok_row(tmp_path: Path) -
     _token(tmp_path)
     r = _run(tmp_path, b)
     assert "ok      kube         1/1 node(s) Ready through the API server" in r.stdout, r.stdout + r.stderr
-    assert r.returncode == 0 and "9/9 rows green" in r.stdout
+    assert r.returncode == 0 and "10/10 rows green" in r.stdout
     args = (tmp_path / "kc-args").read_text()
     assert "--token-version 2.0.0" in args and "--cluster-id ocid1.cluster.fake.abc" in args   # the exec plugin, not a static token
     assert not (tmp_path / "kc").exists(), "the kubeconfig outlived the run"
