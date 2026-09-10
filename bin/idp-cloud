@@ -103,6 +103,37 @@ oci_compartment() {
   sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml"
 }
 
+# Resolve the estate vault the same three ways, in the same order, everywhere it is needed.
+#
+# The third road is why this function exists. `tofu output -raw vault_id` reads a LOCAL state
+# directory, so it answers on a laptop that has run the provisioner and nowhere else. On a
+# GitHub runner there is no state, tofu prints nothing, and the caller then ran
+# `oci vault secret list --vault-id ""`, which fails with no output at all -- which the
+# python that parses it reported as
+#
+#   FAIL    vault   not reachable as DEFAULT (idp-cloud secret list exited 1)
+#           cause   json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+#
+# on run 34482582980 (2026-09-10 13:28Z), and that BLIND is what stopped the Cloudflare
+# bootstrapper minting the Workers token Otto's second home needs. The vault is not a local
+# fact: the compartment knows it. So ask the compartment, exactly as `vault list` already
+# does, and keep it unambiguous -- one ACTIVE vault is the answer, none or several is a
+# refusal that names what it saw rather than a broken JSON parse three frames away.
+oci_vault_id() {
+  if [ -n "${ESTATE_VAULT_OCID:-}" ]; then printf '%s' "$ESTATE_VAULT_OCID"; return 0; fi
+  local MAIN V ids n
+  MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+  V=$(cd "$MAIN/platform/oci" 2>/dev/null && tofu output -raw vault_id 2>/dev/null) || V=""
+  if [ -n "$V" ]; then printf '%s' "$V"; return 0; fi
+  local C; C=$(oci_compartment) || return 2
+  ids=$(oci kms management vault list --compartment-id "$C" --all \
+          --query "data[?\"lifecycle-state\"=='ACTIVE'].id" --output json 2>/dev/null \
+        | jq -r '.[]?' 2>/dev/null) || ids=""
+  n=$(printf '%s\n' "$ids" | grep -c . || true)
+  [ "$n" = 1 ] || { echo "BLIND   vault   the compartment has $n ACTIVE vaults, so which one holds the estate's secrets is not a question this can answer; set ESTATE_VAULT_OCID or pass --vault" >&2; return 2; }
+  printf '%s' "$ids"
+}
+
 case "$prim" in
   object)
     case "$verb" in
@@ -259,7 +290,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
               settle_secret "$payload"
               printf '%s' updated
             else
-              V=${ESTATE_VAULT_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_id)}
+              V=$(oci_vault_id) || exit 2
               K=${ESTATE_VAULT_KEY_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_key_id)}
               oci vault secret create-base64 --compartment-id "$C" --vault-id "$V" --key-id "$K" --secret-name "$NAME" --secret-content-content "$payload" >/dev/null
               settle_secret "$payload"
@@ -356,7 +387,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             if [ -n "$VAULT" ]; then
               V=$VAULT
             else
-              V=${ESTATE_VAULT_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_id)}
+              V=$(oci_vault_id) || exit 2
             fi
             oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].\"secret-name\"" --raw-output | python3 -c 'import json,sys; [print(n) for n in sorted(json.load(sys.stdin))]'
             ;;
