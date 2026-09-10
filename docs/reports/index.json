@@ -2,25 +2,25 @@
   "reports": [
     {
       "file": "docs/reports/first-time-success.md",
-      "generated_at": "2026-09-10T07:25:12Z",
+      "generated_at": "2026-09-07T07:25:57Z",
       "id": "first-time-success",
       "schedule_minutes": 1440,
-      "source": "GitHub pull requests and workflow runs since 2026-08-27, read through gh api",
-      "summary": "pull requests green on the first push 45/136 (33%); runs on main first-attempt 1187/1612 (74%)",
+      "source": "GitHub pull requests and workflow runs since 2026-08-24, read through gh api",
+      "summary": "pull requests green on the first push 51/153 (33%); runs on main first-attempt 1696/1969 (86%)",
       "title": "Delivery: right first time"
     },
     {
       "file": "docs/reports/flux-state.md",
-      "generated_at": "2026-09-10T07:15:44Z",
+      "generated_at": "2026-09-10T07:45:44Z",
       "id": "flux-state",
       "schedule_minutes": 15,
       "source": "the cluster receipt platform/state/cluster-state.yaml writes to the receipts bucket every 15 minutes",
-      "summary": "114 objects: 86 ready, 26 not ready, 0 unknown, 2 suspended",
+      "summary": "114 objects: 89 ready, 23 not ready, 0 unknown, 2 suspended",
       "title": "Flux: what is applied"
     },
     {
       "file": "docs/reports/forge-spend.md",
-      "generated_at": "2026-09-10T07:20:39Z",
+      "generated_at": "2026-09-10T07:50:47Z",
       "id": "forge-spend",
       "schedule_minutes": 1440,
       "source": "forge/experiments/*.md front matter (usd: per completed run)",
@@ -28,5 +28,5 @@
       "title": "Forge compute spend (Modal + free lanes)"
     }
   ],
-  "updated_at": "2026-09-10T07:27:35Z"
+  "updated_at": "2026-09-10T07:51:01Z"
 }
