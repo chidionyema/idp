@@ -8,6 +8,29 @@ memory:
 - `~/.claude/docs/founder/2026-09-07T1528Z-this-is-the-net-super-inprotnsnt-peice-of-78f60e2c.md`
 - `~/.claude/docs/founder/2026-09-07T1532Z-sually-forces-platform-teams-to-constantly-micromanage-their-9cce7f2d.md`
 
+---
+
+## Executive shape: two engines
+
+The whole framework is two engines, and the choice between them is not a judgement call.
+
+- **Engine 1 — the asymmetric engine (W2, W3, W4, W5).** For everything that can be expressed in
+  git. The agent works in a throwaway copy of production, proves the change works, opens a pull
+  request, the founder taps Merge (or the Greenlane auto-merges it), and Flux applies it. Blast
+  radius zero, rollback instant, no drift. **If a change can be expressed in git, it goes through
+  Engine 1.**
+- **Engine 2 — the JIT break-glass engine (W0, W1, WJ.1–WJ.15).** For the acts git cannot express
+  — restarting a frozen node, reading live state, clearing a cache. The agent asks on the founder's
+  phone, he taps Approve, a short-lived token is minted, and it mathematically auto-revokes when
+  the TTL passes. Nothing holds standing write on production — ever.
+
+The rest of this spec is organized as those two engines:
+
+- **Engine 1**: `# Engine 1 — the asymmetric engine (W2, W3, W4, W5)` below.
+- **Engine 2**: `# Engine 2 — the JIT break-glass engine (W0, W1, WJ.1–WJ.15)` below.
+
+---
+
 ## THE ORDERING THAT HOLDS — the founder's correction, 2026-09-08
 
 Record, verbatim and the only source (never paraphrased from memory):
@@ -113,7 +136,7 @@ the JIT system's own foundation, they are folded into the WJ items below, and th
 
 ---
 
-# WJ — The JIT Token Broker. The one thing we build.
+# Engine 2 — the JIT break-glass engine (W0, W1, WJ.1–WJ.15)
 
 ## The shape
 
@@ -302,7 +325,18 @@ reason.
 
 ---
 
-# W2 — The shadow dimension. A virtual cluster that carries production's state.
+# Engine 1 — the asymmetric engine (W2, W3, W4, W5)
+
+For 95% of infrastructure work — changing configs, updating Kyverno policies, rolling out new
+images — the agent never needs a live token to production. The agent works in the vcluster
+shadow dimension, mathematically proves the fix works, opens a Git pull request, the founder
+taps Merge on his phone (or the Greenlane auto-merges it), and Flux pulls it into prod. Every
+change is permanently version-controlled, rollback is instant, and the agent's blast radius is
+zero. W2 through W5 below are the spec for that engine; W4 is already true and costs nothing.
+
+---
+
+## W2 — The shadow dimension. A virtual cluster that carries production's state.
 
 The virtual cluster is built (`platform/sandbox/vcluster/helmrelease.yaml`,
 `.github/workflows/demo-sandbox.yml`, `bin/idp-sandbox-sweep`). Giving it production's state, and
