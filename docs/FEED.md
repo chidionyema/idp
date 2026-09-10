@@ -504,3 +504,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔧 TOUCHES: bin/idp-cloud, bin/idp-otto-homes, .github/workflows/otto-lifeboat.yml, backstage/templates/founder-actions/otto-lifeboat
 🔀 OVERLAP: anyone editing bin/idp-cloud's vault resolution or the otto-gateway telegram secrets should read #2968 first
 
+
+## 2026-09-10T20:52:15Z · session pi-unkno · lane mums-concierge
+🟢 Done: found the real cause of six red gates here — three nested checkouts of this same repo (scratchpad/ 512M, idp/ 74M, wt-mum286-sessions/ 73M), untracked+unignored, each holding its own tests/fixtures/*/bad.yaml. Gates globbed ROOT/** and read those back as this branch's defects. All six exit 0 once the copies are excluded; none was a real defect here.
+🟢 Done: my first hypothesis (scratchpad alone) was WRONG — moving it aside left all six red; the offenders were idp/wt-mum284 and wt-mum286-sessions. Corrected by quarantine test, not assertion.
+🟢 Done: NEW GUARD bin/idp-stray-checkout + fixture pair + rules.yaml row (id: stray-checkout); 60 rules, render --check clean. .gitignore now covers the names that occur. NEW helper bin/treewalk.py (walk_tree/glob_tree/is_this_tree) so gates cannot drift into nine opinions; git check-ignore is the authority.
+🟢 Done: 3 of 6 gates wired green — idp-flux-subst-gate, idp-clickhouse-system-log-ttl, idp-crd-then-cr exit 0. priority-class-exists edited, not yet run.
+🟡 Active: estate-zone-gate and port-gate still to wire.
+⚪ Pending: full idp-ci run; the founder's four backup-audit greps.
+📍 State: feat/mum-289-minimax-json-constrained; test_key_ingest_part4.py 24/24 passed.
+🔧 TOUCHES: bin/treewalk.py, bin/idp-stray-checkout, bin/idp-flux-subst-gate, bin/idp-clickhouse-system-log-ttl, bin/idp-crd-then-cr, bin/idp-priority-class-exists, .gitignore, rules.yaml, AGENTS.md, tests/fixtures/stray-checkout/
+🔀 OVERLAP: none
+
