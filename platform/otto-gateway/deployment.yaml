@@ -154,7 +154,17 @@ spec:
               # The same key under the second name that reads it: the memory engine's
               # embedding provider (hermes-v2 otto/memory/embeddings_litellm.py). One
               # credential and one router, not a second door to a vendor.
-              OTTO_MEMORY_EMBEDDING_API_KEY=$LITELLM_API_KEY
+              # ...but NOT the same FORM of it. The line above now holds the sidecar's master
+              # key, and OTTO_MEMORY_EMBEDDING_URL points at the estate router in llm/, which
+              # has a database and wants the virtual key itself. Handing it the derived key
+              # authenticates nothing. Measured 2026-09-10 in otto-gateway-8684f564f5-r2gtd,
+              # both forms against litellm.llm.svc.cluster.local:4000/v1/embeddings:
+              #   raw     -> HTTP 429 (rate-limited upstream: the key was accepted)
+              #   derived -> HTTP 401 "Invalid proxy server token passed"
+              # So embeddings read the mounted file directly. Two doors, one credential, and
+              # each door gets the form it can verify -- the sidecar compares a master key in
+              # process, the estate router looks a virtual key up in Postgres.
+              OTTO_MEMORY_EMBEDDING_API_KEY=$OTTO_ROUTER_KEY
               export OTTO_MEMORY_EMBEDDING_API_KEY
               # The fact store the answering lane now reads memory from, instead of
               # waiting on hindsight's cross-encoder for 31.87s per question

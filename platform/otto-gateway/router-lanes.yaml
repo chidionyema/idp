@@ -51,7 +51,27 @@ data:
   # quietly broke -- judgment on minimax, the verify lane on another vendor, so a wrong
   # answer and its check never come from the same one. (Verify sat on gemini when that was
   # written; it moved to deepseek the same day, on the measurement below.)
-  OTTO_ROUTER_LANE_JUDGMENT_MODEL: "minimax"
+  # 2026-09-10, and minimax is now the lane with no money. Measured through the door's own
+  # answer probe, run by hand during the outage (job otto-fire-probe-1445):
+  #   FAIL answer-probe lane=judgment model=minimax http 402
+  #        "The Token Plan usage limit has been reached ... buy credits" (2067)
+  #   ok   answer-probe lane=bulk   model=deepseek 42ms
+  #   ok   answer-probe lane=verify model=deepseek 56ms
+  # The judgment lane is the one a founder turn actually takes, so a 402 there is Otto silent
+  # while every other instrument reads green -- the founder's words, "otto still broken", with
+  # bulk and verify both answering. Probed directly against the brain in the same minutes, five
+  # lanes returned 200 (deepseek, gemini, home-floor, home-floor-3, and minimax right up until
+  # the plan tripped) and two did not (home-direct 402, home-floor-2 429).
+  #
+  # gemini, not deepseek: the family separation the note above describes is load-bearing, and
+  # verify is on deepseek. An answer and its check must not come from the same vendor, or a
+  # wrong answer is confirmed by the model that produced it.
+  #
+  # This is the third time in three days that this line has moved for the same reason -- a
+  # prepaid vendor lane quietly reaching zero, with no instrument that watches the balance
+  # rather than the reply. The permanent answer is the lifeboat's free lanes, which are metered
+  # per day and reset, not prepaid; until those carry Otto, this line will keep moving.
+  OTTO_ROUTER_LANE_JUDGMENT_MODEL: "gemini"
 
   # `gemini`, not `fast`: otto/router/config.py derives a lane's family from an explicit map
   # (_DEFAULT_MODEL_FAMILIES) and refuses any model absent from it -- "policy defect: model
