@@ -70,11 +70,17 @@ jobs:
           VERDICT_NONCE: ${{ inputs.nonce }}
           VERDICT_EVIDENCE_REF: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          set -o pipefail
-          rc=0
-          bin/idp-prove signoz --out "$RUNNER_TEMP/verdict.json" 2>&1 | tee prove.out || rc=$?
-          echo "rc=$rc" >> "$GITHUB_OUTPUT"
-          exit 0
+          set -euo pipefail
+          # The verdict must fail this run. Until 2026-09-10 this captured `rc=`,
+          # published it to GITHUB_OUTPUT under id `prove`, and then `exit 0` -- and NO
+          # step in the workflow read that output (grepped: no `steps.prove.outputs`
+          # anywhere in this file). So the prover's failure was computed, published,
+          # and dropped, and a broken surface read green. Found by
+          # bin/idp-grader-exit-gate: the same class as the router lane that graded
+          # FAIL and returned 0 (docs/specs/a-dead-lane-reaches-the-founder.md).
+          # The artifact step below carries `if: always()`, so the verdict file is
+          # still uploaded when this fails -- which is all the rc dance ever bought.
+          bin/idp-prove signoz --out "$RUNNER_TEMP/verdict.json" 2>&1 | tee prove.out
       - name: the verdict file is the run's artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

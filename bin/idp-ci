@@ -124,6 +124,16 @@ if "$IDP/bin/idp-vendor-render" --check >/dev/null 2>&1; then
   say "ok    render   llm/config.yaml + platform/llm/config.yaml match platform/vendors/consoles.yaml"
 else say "FAIL  render   rendered router configs do not match the vendor registry; run bin/idp-vendor-render"; fail=1; fi
 
+# 4b2b. A grading step whose exit code cannot fail its run is not a gate (LAW 28).
+#       Founder 2026-09-10: the estate had every fact on the router's first failing lane
+#       and told nobody for twenty hours, because bin/idp-router-lanes graded every lane
+#       FAIL and the workflow that ran it used `set -uo pipefail` (no -e) and piped the
+#       verdict into tee. This gate covers the class: every workflow step in the tree whose
+#       purpose is to grade must be able to fail the run. docs/specs/a-dead-lane-reaches-the-founder.md
+if "$IDP/bin/idp-grader-exit-gate" "$IDP/.github/workflows" >/tmp/grader-exit.out 2>&1; then
+  say "ok    graders  every workflow step that grades can fail its run"
+else say "FAIL  graders  a grading step cannot fail its run; see the lines below"; head -20 /tmp/grader-exit.out | sed 's/^/      /'; fail=1; fi
+
 # 4b3. crew#857: the store plan is generated from platform/features/features.yaml.
 #      A hand edit to features.yaml that skipped `bin/idp-features plan --json > platform/features/plan.json`
 #      is drift and keeps the price figures wrong until someone regenerates.

@@ -160,7 +160,13 @@ jobs:
         env:
           LITELLM_API_KEY: ${{ secrets.SEED_HERMES_LITELLM_API_KEY }}   # the virtual key conscience-ask.yml already uses
         run: |
-          set -uo pipefail
+          # `-e` and `pipefail` together, added 2026-09-10 by bin/idp-grader-exit-gate.
+          # Before this the probe graded every lane ok/FAIL/UNKNOWN, wrote the FAILs into
+          # its own JSON and its own summary line, and the step could not fail: no -e, and
+          # a pipe into tee whose status is tee's. On 2026-09-10 Google retired the embed
+          # model, the lane graded FAIL for twenty hours, and nobody was told -- the exact
+          # failure gateway used to have no alert for.
+          set -euo pipefail
           bin/idp-router-lanes --config platform/llm/config.yaml --zone-from clusters/oke/estate-config.yaml --out "$RUNNER_TEMP/lanes.json" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: build and validate against platform/estate-state/schema.json
         env:

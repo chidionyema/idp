@@ -54,7 +54,11 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           ESCROW_RECEIPT_DIR: ${{ github.workspace }}/receipt
         run: |
-          set -o pipefail
+          # `-e`, added 2026-09-10 by bin/idp-grader-exit-gate: idp-escrow IS this step's
+          # verdict and nothing downstream reads an rc, so without -e a failing escrow
+          # step passed. The summary step below is `if: always()`, so escrow.out is still
+          # published on failure.
+          set -euo pipefail
           bin/idp-escrow 2>&1 | tee escrow.out
       - name: the verdict is on the run summary, pass or fail
         if: always()

@@ -131,3 +131,98 @@ Then the end-to-end, which is the only proof that counts (THE EMPIRICAL PROOF RU
 pointed at a dead model, the scheduled run goes **red** and a Telegram message arrives naming the
 lane; when the lane is restored, the alert clears. Until that message is quoted, this is not
 working.
+
+---
+
+# Layers 1 and 3, measured after the census
+
+The census above found the exit-code class. Three more layers were checked against the estate
+rather than assumed, and two of them are missing. Both belong in this sweep.
+
+## Layer 1 — the runner's own shell, which nobody chose
+
+GitHub Actions' default shell for a `run:` step is `bash -e {0}` **without** `pipefail` [1.1.1].
+So every one of the 13 steps found in the census was already running under `-e`, and the exit was
+still lost — because a pipe's status is the *last* command's without `pipefail`.
+
+Measured in this estate:
+
+```
+$ grep -rn "shell:\|defaults:" .github/workflows/*.yml | head -8
+demo-sandbox.yml:147:        shell: bash
+```
+
+One workflow names a shell, and it names plain `bash`. Nothing declares
+`bash --noprofile --norc -euo pipefail {0}` anywhere, which is the elite CI standard precisely
+because it removes the author's discretion [1.2.1].
+
+**So Part F of this sweep:** a workflow-level `defaults.run.shell` of
+`bash --noprofile --norc -euo pipefail {0}` on every workflow that runs an estate grader. That is
+the clamp that makes Part A's gate the second line of defence rather than the only one — the gate
+catches an author who writes a pipe, and the shell catches it even if the gate is bypassed.
+
+`bin/idp-grader-exit-gate` extends to refuse a workflow that runs a grader while declaring a
+weaker shell, so the two cannot drift apart.
+
+## Layer 3 — a fallback that engages silently is an invisibility cloak
+
+The founder's requirement is seamless failover. Seamless **to the person using it** does not mean
+invisible **to the estate**. Today a lane falling over produces no event anywhere:
+
+```
+$ grep -rn "fallback\|Fallback" platform/monitoring/ --include="*.yaml"
+(no matches)
+```
+
+No rule, no alert, no counter. The router logged `No fallback model group found for original
+model_group=embed` and 26 rate-limit lines in its last 100 lines, and none of it was an event.
+
+That is the exact mechanism that let this run 20 hours: the fallback is what *removes the symptom*,
+so the only signal was the symptom, and the fallback deleted it.
+
+**So Part G of this sweep:** `RouterFallbackEngaged` in `platform/monitoring/rules/estate.yaml`,
+beside `GatewayRefusals`. It fires when the router serves a request from a fallback rather than
+the primary, at `severity: warning`, `owner: idp`, routed through the existing Alertmanager →
+Telegram receiver.
+
+**The data source, measured rather than assumed.** The router exposes no Prometheus metrics to
+this estate: `platform/llm/litellm.yaml` declares only `containerPort: 4000` with no metrics
+listener, and `kubectl get servicemonitor -A` lists twelve monitors and **none for litellm**. So a
+rule written against a `litellm_*` counter would match nothing forever, which is a wish wearing a
+rule's clothes (LAW 44).
+
+The honest source is the one that already exists and is already measured: **`bin/idp-router-lanes`
+probes every lane on a schedule and grades each `ok` / `FAIL` / `UNKNOWN`.** A lane that is `FAIL`
+is a fallback that has engaged. Part D makes that verdict fail the run; this makes it an alert.
+
+So Part G is delivered as two things that cannot drift apart:
+
+1. `bin/idp-router-lanes` writes its verdict as a **Prometheus textfile** at a path given by
+   `--textfile <path>` (the `node_exporter` textfile-collector convention), one gauge per lane:
+   `estate_router_lane_up{lane="embed"} 0`. This is a file the estate controls, needs no new
+   scrape target, and is proved by running the probe and reading the metric back.
+2. `RouterFallbackEngaged` reads that gauge: a primary lane at 0 while a fallback lane is up is a
+   fallback carrying production, which is exactly the event nobody was told about.
+
+If the textfile collector is not present in this cluster's node-exporter, then this Part ships as
+**the name of the gap and nothing else** — no `expr`, no rule — because a rule with no data source
+is worse than a rule that is absent: it makes the estate look covered when it is not. The Builder
+must measure which of these two is true and say which in the PR body.
+
+## Layer 4 — the Watchdog, and it is already real
+
+Correcting the assumption this sweep started from: the estate **has** the dead man's switch, and
+it is further along than expected.
+
+- `kps-general.rules` carries `Watchdog` with `expr: vector(1)` and no `for`. It fires forever [1.3.1].
+- `platform/monitoring/alertmanager-config.yaml` routes `alertname = "Watchdog"` to the `null`
+  receiver **on purpose** — it is meant to fire always, so it must never be a message.
+- `bin/idp-cluster-state:109-116` grades the receipt: `alert_watchdog == 0` is `FAIL` with its own
+  ticket, not `UNKNOWN`.
+- `.github/workflows/oke-check.yml` runs `bin/idp-cluster-state --json` on a daily cron.
+
+So the heartbeat fires, the absence is graded, and the grade runs on a clock. **What is missing is
+the snitch**: the grade reaches a CI log, and if the whole pipeline hangs there is no external
+service that pages on the *silence* [1.4.1]. That is the one real gap in Layer 4, and it is a
+follow-up, not part of this sweep — it needs a third-party endpoint, which is a founder decision
+and a credential the estate does not hold.

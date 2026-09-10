@@ -513,7 +513,12 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
         run: |
-          set -uo pipefail
+          # `-e`, added 2026-09-10 by bin/idp-grader-exit-gate. idp-fits-a-node is the last
+          # line of this step and NOTHING captured its exit, so a placement failure passed
+          # green -- the very gate this step exists for, added on 2026-09-07 after ClickHouse
+          # sat Unschedulable while the aggregate capacity row read fine. The receipt fetch
+          # above keeps its `|| true` (a missing receipt is a BLIND the grader itself names).
+          set -euo pipefail
           # Line 1 of the receipt is the graded summary; the rest is the JSON body.
           bin/idp-cloud object get --bucket "${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}" \
             --name state/cluster 2>/dev/null | tail -n +2 > "$RUNNER_TEMP/receipt.json" || true
@@ -682,7 +687,12 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
-          set -o pipefail
+          # `-e`, added 2026-09-10 by bin/idp-grader-exit-gate. The drill is the last
+          # substantive line, piped into tee, and NOTHING captured its status -- no -e, no
+          # rc, no PIPESTATUS. So a failing workforce drill passed green and still posted a
+          # cheerful summary. The summary printf below is not `if: always()`-guarded on the
+          # drill's success, so it prints whatever drill.out holds either way.
+          set -eo pipefail
           tok=$(bin/idp-github-app token ticket-verifier 2>&1) || { echo "BLIND   agent-workforce  no App token: ${tok:0:160}"; exit 2; }
           echo "::add-mask::$tok"
           pk=$(bin/idp-cloud secret get langfuse-init-public-key 2>/dev/null || true)

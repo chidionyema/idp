@@ -53,7 +53,10 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
-          set -o pipefail
+          # `-e`, added 2026-09-10 by bin/idp-grader-exit-gate: the tee'd verify.out is
+          # posted as the PR comment regardless, and nothing downstream reads an rc, so a
+          # failing verification step passed silently.
+          set -euo pipefail
           tok=$(bin/idp-github-app token ticket-verifier 2>&1) || { echo "BLIND   ticket-verify  no App token: ${tok:0:160}"; exit 2; }
           echo "::add-mask::$tok"
           apply=--apply

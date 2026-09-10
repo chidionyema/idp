@@ -1,0 +1,353 @@
+#!/usr/bin/env python3
+"""A grader whose failure cannot leave the runner is not a gate (LAW 28).
+
+docs/specs/a-dead-lane-reaches-the-founder.md. The estate had every fact on the
+first failure and told nobody for 20 hours: bin/idp-router-lanes graded every
+router lane FAIL/UNKNOWN, but the workflow that ran it could not fail -- it used
+`set -uo pipefail` (no -e) and piped the verdict into tee. Verified in bash on
+this machine:
+
+    false | tee /dev/null; echo $?
+    0                       # pipe without pipefail: the LAST command's status wins
+    set -o pipefail; false | tee /dev/null; echo $?
+    1
+
+This gate closes the class, not just the instance. It walks every workflow in
+its target, finds each step whose purpose is to grade, and fails any whose exit
+code cannot fail the run. Three mechanisms, one bad fixture each:
+
+  1. piped verdict          the run pipes the grader into tee/cat with no pipefail
+  2. set -o without -e     the run sets o-flags without -e and relies on grader exit
+  3. orphan || true        the run applies || true to the grader with no marker
+
+The escape hatch: a step that carries the literal marker `# optional: <reason>`
+is allowed to swallow its exit. It exists so a genuinely-skippable leg stays
+sayable rather than being smuggled in as `|| true`. The marker is the same
+literal-sentinel shape as bin/idp-portal-buttons' NOT-generated, so a weakened
+rule cannot quietly un-flag it. The marker is read from THREE places, in order,
+any one of which makes the step optional: the step's `run` text, the step's
+`name`, and any YAML comment that appears within ~120 chars BEFORE the step's
+`name:`/`run:` line in the raw file text (the realistic shape of a comment
+written by a person above their step).
+
+Usage:
+
+    python3 bin/idp-grader-exit-gate .github/workflows
+    python3 bin/idp-grader-exit-gate tests/fixtures/grader-exit/bad   # exit 1
+    python3 bin/idp-grader-exit-gate tests/fixtures/grader-exit/good  # exit 0
+"""
+
+from __future__ import annotations
+
+import pathlib
+import re
+import sys
+
+import yaml
+
+
+# The grader command list. Match anywhere in a step's `run` text -- these are
+# the commands whose exit code is THE verdict, not a side effect. The list is
+# closed: a new grader either joins this list (and gets checked) or it is not a
+# grader for the purposes of this gate.
+GRADERS = (
+    "idp-prove",
+    "idp-root-trust",
+    "idp-conscience",
+    "idp-escrow",
+    "idp-inventory",
+    "idp-router-lanes",
+    "idp-fits-a-node",
+    "idp-ticket-verify",
+    "idp-agent-workforce-drill",
+    "idp-mechanism-gate",
+    "idp-rule-coverage",
+    "idp-one-scheduler",
+    "idp-drill-heartbeat",
+    "idp-portability-drill",
+)
+
+GRADER_RE = re.compile(r"\b(" + "|".join(GRADERS) + r")\b")
+
+# `set -uo pipefail`, `set -o pipefail`, etc. -- o-flags present, no e.
+SET_HAS_O = re.compile(r"\bset\s+-[A-Za-z]*o[A-Za-z]*\b")
+SET_HAS_E = re.compile(r"\bset\s+-[A-Za-z]*e[A-Za-z]*\b")
+
+# A pipe into tee or cat that hides the grader's exit.
+PIPE_INTO = re.compile(r"\|\s*(tee|cat)\b")
+
+# `|| true` swallowing the grader line.
+ORPHAN_TRUE = re.compile(r"\|\|\s*true\b|\|\|\s*\{?true\}?")
+
+# The optional marker. A literal sentinel so a weakened rule cannot un-flag it.
+OPTIONAL_MARKER = re.compile(r"#\s*optional:\s*\S")
+
+# `pipefail` somewhere in the run text. Even on a separate line.
+HAS_PIPEFAIL = re.compile(r"\bpipefail\b")
+
+# How far BACK from a step's `name:` / `run:` key we look for an `# optional:`
+# comment in the raw file text. ~120 chars covers a single-line comment and a
+# short bullet -- it is a deliberate cap, not arbitrary.
+COMMENT_LOOKBACK_CHARS = 200
+
+
+def step_invokes_grader(run: str) -> bool:
+    """True when this step's run text invokes one of the named graders."""
+    return bool(GRADER_RE.search(run or ""))
+
+
+def step_has_optional_marker(run: str, name: str, raw_window: str) -> bool:
+    """An optional leg says so literally. Three places, any one is enough:
+
+    1. the run text itself (a `# optional: ...` line inside the run block)
+    2. the step's `name` (rare but the same sentinel contract)
+    3. any YAML `# optional: ...` comment within `raw_window` characters BEFORE
+       the step -- the realistic shape of a comment written above the step
+    """
+    if OPTIONAL_MARKER.search(run or ""):
+        return True
+    if name and OPTIONAL_MARKER.search(name):
+        return True
+    if raw_window and OPTIONAL_MARKER.search(raw_window):
+        return True
+    return False
+
+
+def step_pipes_verdict(run: str) -> bool:
+    """`... | tee ...` or `... | cat ...` in the run, with no pipefail anywhere."""
+    if not PIPE_INTO.search(run or ""):
+        return False
+    return not HAS_PIPEFAIL.search(run or "")
+
+
+def step_runs_with_no_e(run: str) -> bool:
+    """`set -uo pipefail` (or `set -o pipefail`) with no `-e` anywhere in the run."""
+    r = run or ""
+    if not SET_HAS_O.search(r):
+        return False
+    # If any subsequent `set` line carries -e, the script is strict and we do
+    # not flag it. The whole text, not just the first `set` line, because shell
+    # semantics re-evaluate later set lines.
+    for line in r.splitlines():
+        if "set -" in line and SET_HAS_E.search(line):
+            return False
+    return True
+
+
+def step_has_orphan_true(run: str) -> bool:
+    """`... || true` applied to THE GRADER LINE, with no marker explaining why.
+
+    Line-scoped, not whole-text: a run that does `kubectl get pods ... || true`
+    above an honest grader line is not swallowing the verdict, and flagging it
+    would be exactly the guard that refuses correct work this estate keeps
+    tripping over (R38: a guard that refuses correct work is an outage). Only a
+    line that actually invokes a grader is inspected.
+    """
+    for line in (run or "").splitlines():
+        if GRADER_RE.search(line) and ORPHAN_TRUE.search(line):
+            return True
+    return False
+
+
+PIPESTATUS_IDIOM = re.compile(r"\$\{PIPESTATUS\[0\]\}|\$\{PIPESTATUS\[@\]\}")
+
+
+def step_uses_pipestatus(run: str) -> bool:
+    """True when the run captures the pipeline's first stage status properly.
+
+    `cmd | tee f; RC=${PIPESTATUS[0]}` is THE correct way to read a piped
+    command's status in bash, and it is strictly better than `pipefail` when the
+    author needs the downstream stage to survive (estate-bootstrap-preflight.yml
+    uses it with an explicit `set +e` / `set -e` bracket, so the gate's verdict
+    is captured before the shell is put back into fail-fast mode). Flagging it
+    would be the guard-that-refuses-correct-work failure this estate keeps
+    recording (R38).
+    """
+    return bool(PIPESTATUS_IDIOM.search(run or ""))
+
+
+def step_captures_and_consults_rc(run: str) -> bool:
+    """True when the run captures the grader's exit AND actually reads it back.
+
+    `rc=0; bin/idp-x || rc=$?` followed later by `[ "$rc" -ne 2 ]` is deliberate
+    and documented in this estate: conscience.yml:90-94 explains that `bash -eo
+    pipefail` aborted the step before rc was written, so every rc-gated step was
+    skipped including the founder line. That is an honest grader -- it decides
+    its own verdict from the code and says so -- and this gate has no business
+    flagging it.
+
+    What the gate IS for is the same dance with the consultation missing:
+    verdict-backstage/-langfuse/-signoz captured `rc`, published it to
+    GITHUB_OUTPUT, and `exit 0`, with no step in the file ever reading that
+    output. Captured-and-dropped is the defect; captured-and-consulted is a
+    design.
+    """
+    text = run or ""
+    if "rc=" not in text:
+        return False
+    # The consult: rc is tested or compared somewhere after the capture.
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if "rc=" in stripped and "$?" in stripped:
+            continue  # the capture itself, not a consult
+        if re.search(r"\$\{?rc\}?", stripped) and re.search(r"\[|test |!=|-ne|-eq|== ", stripped):
+            return True
+    return False
+
+
+def _clean_windows_before_steps(path: pathlib.Path) -> dict[str, str]:
+    """Map each step's `name` text to the raw text AROUND its step block.
+
+    Stdlib yaml does not expose comments, so the marker has to be found in the
+    raw file. The window is the text from just before the step's `- name:` line
+    through to the start of the NEXT step -- that whole slab is "this step's
+    block", and a `# optional: ...` anywhere in it belongs to this step.
+
+    Looking only backwards (the first version of this function) missed the
+    realistic shape, which is a person writing the marker on the line AFTER
+    their step name and just above `run:`:
+
+        - name: an optional leg
+          # optional: the drill may find nothing on a fresh cluster
+          run: |
+
+    Keyed on the step's own name text rather than a positional zip, because the
+    zip misaligned on the good fixture. Returns {name_text: block_text}.
+    """
+    text = path.read_text()
+    out: dict[str, str] = {}
+    starts = [m for m in re.finditer(r"^\s*-\s*name:\s*(.+?)\s*$", text, re.M)]
+    # Include any leading comments directly above the FIRST step too.
+    for i, m in enumerate(starts):
+        step_name = m.group(1).strip().strip("'\"")
+        head = max(0, m.start() - COMMENT_LOOKBACK_CHARS)
+        tail = starts[i + 1].start() if i + 1 < len(starts) else len(text)
+        out.setdefault(step_name, text[head:tail])
+    return out
+
+
+def grade_step(file_label: str, step: dict, raw_window: str) -> list[str]:
+    """Return problems for one step; empty list if the step is honest."""
+    run = step.get("run") or ""
+    name = step.get("name") or ""
+    if not step_invokes_grader(run):
+        return []
+    problems: list[str] = []
+    # An rc that is captured AND consulted is this estate's documented alternative
+    # to letting the step fail; it decides its own verdict and says so.
+    consulted = step_captures_and_consults_rc(run) or step_uses_pipestatus(run)
+    # A step that consults GITHUB_OUTPUT cannot be consulted FROM here (the read
+    # lives in a later step), so only the run-local shape counts as honest.
+    if step_pipes_verdict(run) and not consulted:
+        problems.append("verdict piped into tee/cat without `pipefail`")
+    if step_runs_with_no_e(run) and not consulted:
+        problems.append("runs under `set -o` (no -e); the grader's exit cannot fail the run")
+    if step_has_orphan_true(run) and not consulted and not step_has_optional_marker(run, name, raw_window):
+        problems.append("`|| true` on the grader with no `# optional: <reason>` marker")
+    if not problems:
+        return []
+    label = name or "<unnamed>"
+    return [f"{file_label}: step '{label}': {'; '.join(problems)}"]
+
+
+def _windows_for_steps(path: pathlib.Path) -> list[str]:
+    """Deprecated positional variant, kept out of the grading path.
+
+    Superseded by _clean_windows_before_steps, which keys on the step's name
+    text rather than a positional zip -- the zip misaligned on the good fixture
+    and would have misaligned silently on any workflow whose parsed step count
+    differs from its textual count. Kept as a named tombstone rather than
+    deleted so the reason is on the record (LAW 6).
+    """
+    text = path.read_text()
+    windows: list[str] = []
+    pattern = re.compile(r"^\s*-\s*name:\s|^\s*-\s*run:\s", re.M)
+    for m in pattern.finditer(text):
+        start = max(0, m.start() - COMMENT_LOOKBACK_CHARS)
+        windows.append(text[start:m.start()])
+    return windows
+
+
+def _published_rc_outputs_are_read(doc: dict, raw: str) -> set[str]:
+    """Step ids whose GITHUB_OUTPUT rc IS read by a later step in the same file.
+
+    `conscience.yml` is the shape this exists for: the grade step captures
+    `rc=$?`, writes it to GITHUB_OUTPUT under `id: grade`, and the FOUNDER LINE
+    step 120 lines later reads `steps.grade.outputs.rc` and grades it
+    (`[ "$rc" -ne 2 ]`, line 220, with six references in all). That is an honest
+    grader deciding its own verdict, and the estate documented why the capture
+    exists at all (line 90: `bash -eo pipefail` aborted the step before rc was
+    written, so every rc-gated step was skipped).
+
+    A run-local detector cannot see across steps, so this reads the file's raw
+    text for any `steps.<id>.outputs` reference and returns those ids. A step
+    that publishes rc under an id nobody reads stays flagged -- that is the
+    verdict-backstage/-langfuse/-signoz defect, where the publish existed and the
+    read never did.
+    """
+    read_ids: set[str] = set()
+    for m in re.finditer(r"steps\.([A-Za-z0-9_-]+)\.outputs", raw):
+        read_ids.add(m.group(1))
+    return read_ids
+
+
+def grade_workflow(path: pathlib.Path) -> list[str]:
+    """Return problems across every step of one workflow file."""
+    try:
+        doc = yaml.safe_load(path.read_text())
+    except yaml.YAMLError as e:
+        return [f"{path}: will not parse: {e}"]
+    if not isinstance(doc, dict):
+        return []
+    problems: list[str] = []
+    windows = _clean_windows_before_steps(path)
+    raw = path.read_text()
+    read_ids = _published_rc_outputs_are_read(doc, raw)
+    for job_name, job in (doc.get("jobs") or {}).items():
+        if not isinstance(job, dict):
+            continue
+        file_label = f"{path.name}:job '{job_name}'"
+        for step in job.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            raw_window = windows.get((step.get("name") or "").strip().strip("'\""), "")
+            # A step whose published rc IS read later in this file is honest.
+            sid = step.get("id")
+            if sid and sid in read_ids:
+                continue
+            problems.extend(grade_step(file_label, step, raw_window))
+    return problems
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 2:
+        print("usage: idp-grader-exit-gate <workflow-or-dir>", file=sys.stderr)
+        return 2
+    target = pathlib.Path(argv[1])
+    if not target.exists():
+        print(f"BLIND idp-grader-exit-gate: {target} does not exist", file=sys.stderr)
+        return 2
+    if target.is_file():
+        files = [target]
+    else:
+        files = sorted(target.rglob("*.yml")) + sorted(target.rglob("*.yaml"))
+    files = [f for f in files if not any(p in f.parts for p in ("node_modules", ".crew", ".git"))]
+    total = 0
+    all_problems: list[str] = []
+    for f in files:
+        total += 1
+        all_problems.extend(grade_workflow(f))
+    bad = len(all_problems)
+    if bad:
+        print(f"FAIL idp-grader-exit-gate: {bad} grading step(s) across {total} file(s) cannot fail their run:")
+        for line in all_problems:
+            print(f"  - {line}")
+        return 1
+    print(f"ok   idp-grader-exit-gate: {total} workflow file(s) -- every grading step can fail the run")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
