@@ -464,7 +464,11 @@ spec:
         # Home 2's key. Optional so a vault entry that is late costs Otto home 2 and leaves
         # homes 1 and 3 answering, rather than holding the whole door closed.
         - name: brain-secrets
-          secret: { secretName: otto-gateway-direct, optional: true }
+          # human-minimax, not otto-gateway-direct: the vault copy of this key was revoked at
+          # the vendor and the founder's live key only ever reaches the cluster through the
+          # Bitwarden bridge (2026-09-10, the note in three-homes-secrets.yaml). `optional`
+          # stays: a missing key must leave home 2 unusable, never keep the door from starting.
+          secret: { secretName: human-minimax, optional: true }
         - name: tailscale-authkey
           secret: { secretName: otto-gateway-tailscale, optional: true }
         # Step 5: the fork's env dir, one file per credential name. The MCP key is optional so a

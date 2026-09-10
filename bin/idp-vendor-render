@@ -129,6 +129,14 @@ def seed(vendors: dict) -> str:
         for t in v.get("targets") or []:
             if not t.get("bw") or not t.get("ns") or t.get("derived"):
                 continue
+            # No `entry:` means the vendor has no vault copy on purpose, so there is nothing
+            # to seed Bitwarden FROM and nothing that could become a stale second key. MiniMax
+            # is the reason the field is optional: its vault copies held a revoked key while
+            # the human door held the live one, and only the consumers that read the vault
+            # alone could see it (2026-09-10; the measurement is on the minimax block of
+            # platform/vendors/consoles.yaml).
+            if not t.get("entry"):
+                continue
             # Keyed by (namespace, name), not by name: one Bitwarden secret is often held in
             # more than one place -- TELEGRAM_ALERTS_BOT_TOKEN sits in flux-system/flux-telegram
             # and in notify/notify-apprise-founder-telegram. Seeding from every holder costs

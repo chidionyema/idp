@@ -93,9 +93,30 @@ vendors:
     verify: { method: GET, url: https://api.minimax.io/v1/models, headers: { Authorization: "Bearer {key}" } }
     rotation: assisted  # MiniMax publishes no create-key API (R52)
     store_default: human-vault
+    # No `entry:` on any of these three rows, and that absence is the fix for a week of
+    # silent 401s (2026-09-10). MiniMax is a human-vault vendor: the founder rotates the key
+    # in Bitwarden Secrets Manager and the bridge carries it to the cluster within a minute.
+    # The vault entries beside it were a SECOND copy of the same credential, seeded once and
+    # never rotated again, and by 2026-09-10 they held a key the vendor had revoked:
+    #
+    #   llm/litellm-upstream/MINIMAX_API_KEY        -> 401 invalid api key (2049)
+    #   otto-gateway/otto-gateway-direct/...        -> 401 invalid api key (2049)
+    #   prospector/prospector-engine-env/...        -> 401 invalid api key (2049)
+    #   llm/human-minimax/MINIMAX_API_KEY           -> answered
+    #
+    # (measured from inside litellm-77f5fbf88d-vnlkl against api.minimax.io, values never
+    # printed, fingerprints only). The router survived because litellm.yaml exports the human
+    # mount last and the human door wins -- so the dead copy was invisible there and fatal
+    # anywhere that read the vault alone, which is exactly what Otto's lifeboat did. Founder,
+    # 2026-09-10: "we are using it now in prod so there must be 2 keys or ur wrong", then "get
+    # rid of dead one". A target with no `entry:` gets the bridge and no push-back, so there
+    # is one MiniMax key in this estate and one place it is rotated.
     targets:
-      - { entry: litellm-upstream, ns: llm, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
-      - { entry: prospector-engine-env, ns: prospector, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
+      - { ns: llm, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
+      - { ns: prospector, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
+      # Otto's home 2, the direct vendor line his lifeboat falls to when the estate router
+      # cannot answer. It read the vault copy and so had a dead second home all along.
+      - { ns: otto-gateway, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
     router:
       lanes: |
         # --- the moat's cheap primary --------------------------------------------------------
