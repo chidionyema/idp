@@ -58,3 +58,26 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔧 TOUCHES: platform/lifeboat, bin/idp-otto-homes, docs/explanation/otto-survival-matrix.md, platform/otto-gateway/deployment.yaml, platform/vendors/consoles.yaml
 🔀 OVERLAP: none
 
+
+## 2026-09-10T12:43:08Z · session a941270d · lane wt-edge
+🟢 Done (the Calico/cross-node repair, posted because the founder asked for it): the week-long cross-node failure was NOT a Calico defect. Flannel was parked as a DaemonSet but its SNAT rules stayed in iptables and kept rewriting the source address of cross-node packets, so Calico saw a source it did not recognise and defaulted to DROP. Local-node policy worked the whole time, which is why it looked like a policy bug.
+🟢 Done: measured before touching a rule (break-glass, read-only): on node .197 cali-FORWARD sits at position 1 with 137M packets / 200G bytes, KUBE-FORWARD at 3 with 1250M / 1939G, FLANNEL-FWD at 6 with 7651K / 752M, and the final mark-match ACCEPT at 7 with 0/0. So Calico was upstream of kube-proxy and of Flannel, nothing was short-circuiting, and the ordering was never the fault.
+🟢 Done: the leftover Flannel SNAT rules were cleaned out by hand, calico-node was rolling-restarted (which also activated the TCP checksum-offload fix), and cross-node connectivity came back. Proved with a drill workload that spreads pods across nodes and grades pod-to-pod reach and peer discovery, plus a cross-node canary — both passed. This is what the three homes needed underneath them.
+🟡 Active: PR #2911 (the estate mints its own Cloudflare Workers token, so home 2 needs no dashboard) and the headroom chooser, now written: 27 tests green, up from 20.
+⚪ Pending: the estate-bootstrap button is still BLIND on vault in its preflight job — "not reachable as DEFAULT" — so the live cloudflare mint is skipped as a failed dependency. Fixing that next; it is the last thing between the design and home 2 being live.
+📍 State: PR #2909 (the matrix) MERGED to main. Otto's door fix #2898 head 9d9382d7 waiting on CI. Home 2 still MEASURED_FAIL until the Workers token exists.
+📎 FACTS: estate-bootstrap.yml preflight had CMD="bin/x --preflight" then "$CMD", which asks for a file with a space in its name — every scope of that button has exited 127 since it was written, and the live job below it was always skipped. Fixed with an array; measured on run 34477655011.
+🔧 TOUCHES: platform/lifeboat/src/homes.js, platform/lifeboat/test/lifeboat.test.mjs, bin/idp-bootstrap-cloudflare, .github/workflows/estate-bootstrap.yml
+🔀 OVERLAP: none
+
+
+## 2026-09-10T12:56:21Z · session a941270d · lane otto-matrix
+🟢 Done: PR #2898 merged — Otto's door now presents the key its sidecar reads; two otto-gateway pods rolled 3/3. PR #2911 has the edge lane chooser, 27 tests green: it spends whichever free lane has most of ITS OWN daily budget left, so Groq no longer drains by lunch while Gemini's 1,500 expires unspent.
+🟡 Active: PR #2914 — external-dns has been crashlooping five days: the edge fence had no internet egress, so `Get https://api.cloudflare.com/client/v4/zones: i/o timeout` then a liveness kill, forever. Every hostname still resolves (records predate the fence, upsert-only never deletes) so it looked quiet; what was lost is every NEW hostname. Fix is `egress_internet: [443]` on the edge allowance row, regenerated.
+🔴 Blocked: home 2 cannot deploy. There is no SEED_CLOUDFLARE_ROOT_TOKEN repo secret and the vault's cloudflare-api-token is DNS-only — measured 9109 on /user/tokens and zero accounts visible. Under R52 one root token, set once by the founder, mints everything else in code.
+⚪ Pending: six researched free lanes unminted (NVIDIA NIM 10k/day, Cerebras 1M tok/day, GitHub Models, Mistral, Cohere, HF router); Telegram webhook move waits on the founder's own words; commerce/lago-* six pods CrashLoopBackOff; otto-memory-store-6 four Errors 17h.
+📍 State: the class behind #2914 is its third instance — a controller that talks outside the cluster, fenced as though it only talked to neighbours (estate-vault, 2026-09-08, was the same). Generalising bin/idp-store-can-reach-its-vault is the follow-up.
+🔧 TOUCHES: platform/ns-fences/allowances.yaml, platform/ns-fences/network/edge.yaml, platform/lifeboat/src/homes.js, .github/workflows/estate-bootstrap.yml
+🔀 OVERLAP: none
+📎 FACTS: PR #2914, PR #2911, PR #2898 merged; run 34478690947 live-cloudflare failed BLIND on the missing root secret
+
