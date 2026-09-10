@@ -74,6 +74,7 @@ nav:
       - explanation/index.md
       - Founder self-service, the field (crew#66): explanation/founder-self-service-research.md
       - Otto on the founder's Mac, the setup and the friction (crew#561): explanation/otto-on-the-mac.md
+      - Otto's survival matrix, three homes crossed with sixteen lanes: explanation/otto-survival-matrix.md
       - The otto door is a standing query, not a question to a person (pull request 1188): explanation/otto-door-receipts.md
       - Otto rolls on every build, never by hand: explanation/otto-rolls-on-every-build.md
       - Why the catalogue still looks old, and the one look that is allowed: explanation/portal-look-research.md
@@ -145,6 +146,7 @@ nav:
       - Estate cleaner: tutorials/demo/estate-cleaner.md
       - Flux wait brake: tutorials/demo/idp-flux-wait-brake.md
       - Otto's three homes: tutorials/demo/otto-three-homes.md
+      - Otto homes, grade and deploy: tutorials/demo/idp-otto-homes.md
       - Estate diagram: tutorials/demo/estate-diagram.md
       - Spend breaker: tutorials/demo/spend-breaker.md
       - Notifications: tutorials/demo/notify.md
@@ -274,6 +276,7 @@ nav:
       - Estate cleaner: how-to/onboarding/estate-cleaner.md
       - Flux wait brake: how-to/onboarding/idp-flux-wait-brake.md
       - Otto's three homes: how-to/onboarding/otto-three-homes.md
+      - Otto homes, grade and deploy: how-to/onboarding/idp-otto-homes.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md

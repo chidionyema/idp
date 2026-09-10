@@ -1,0 +1,31 @@
+# The lifeboat's deployment. Rendered and applied by `bin/idp-otto-homes deploy`.
+#
+# There is no `route` and no `zone_name` in this file on purpose. Both would have to name the
+# estate's DNS zone as a literal, and the zone is one value in clusters/*/estate-config.yaml
+# (LAW 46, graded by bin/estate-zone-gate). The deploy command reads it from there and passes
+# it on the command line, so this file stays true on any zone.
+#
+# There is no `[[d1_databases]]`, no `[[kv_namespaces]]`, no `[[durable_objects]]` and no
+# observability block either, and those absences are the design rather than an omission. The
+# founder's spec: "It has no database, no SigNoz tracing, and no complex configuration. It is
+# a dumb, bulletproof proxy." Every binding added here is one more thing that can be down at
+# the moment this worker is the only thing left up.
+name = "estate-lifeboat"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Workers AI: an inference lane that runs in this isolate, over no network, with no account
+# id and no API key. The binding IS the credential. It is the third lane in src/homes.js and
+# the only one that cannot be partitioned away from the code calling it.
+[ai]
+binding = "AI"
+
+# Everything else this worker needs is a secret, set by `bin/idp-otto-homes deploy` from the
+# estate's vault and never written in this repository:
+#
+#   LIFEBOAT_KEY             the bearer the crew presents to /v1/chat/completions
+#   TELEGRAM_BOT_TOKEN       so the edge can answer the founder directly when both other homes are gone
+#   TELEGRAM_WEBHOOK_SECRET  the header Telegram presents; the same value otto-gateway verifies
+#   ORIGIN_WEBHOOK_URL       home 1, the cluster's real Otto
+#   MACBOOK_WEBHOOK_URL      home 3, set only once the founder has given his Mac a public door
+#   GROQ_API_KEY GEMINI_API_KEY OPENROUTER_API_KEY   the free lanes, same keys home 1 uses
