@@ -59,7 +59,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: otto-memory-store-6
+  name: otto-memory-store-7
   namespace: otto-gateway
   labels:
     app.kubernetes.io/name: otto-memory-store
@@ -78,11 +78,18 @@ metadata:
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
   ttlSecondsAfterFinished: 86400
-  backoffLimit: 3
+  # 2026-09-09: hindsight-api was being OOMKilled and restarting, so every paged read
+  # from it timed out. Four attempts at backoffLimit 3 burned in six minutes (19:27:53
+  # to 19:33:50 on the -6 run), the Job went Failed, and its four Error pods sat in the
+  # namespace for twenty-one hours while hindsight came back on its own after ninety
+  # minutes. Kubernetes backs a Job off exponentially and caps the wait at six minutes,
+  # so six attempts spans about half an hour of a dependency being down, not six.
+  backoffLimit: 6
   # Several hundred memories: one embedding call and one write each, plus the paged
-  # reads from hindsight. Twenty minutes is generous and is a hard stop, so a run
-  # that hangs against a slow dependency cannot sit in the namespace forever.
-  activeDeadlineSeconds: 1200
+  # reads from hindsight. The deadline is a wall clock over the whole Job, retries
+  # included, so it has to outlast the window above or the later attempts never run.
+  # It is still a hard stop: a run that hangs cannot sit in the namespace forever.
+  activeDeadlineSeconds: 3600
   template:
     metadata:
       labels:
