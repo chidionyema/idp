@@ -281,6 +281,32 @@ flows:
     # dagster: the scheduler reads Alertmanager's firing alerts to decide there is
     # anything worth investigating at all.
     ingress_from: [observability, edge, dagster, robusta]
+    # THE ESTATE COULD NOT TELL ANYONE ANYTHING, for two days, and this line is why it can.
+    #
+    # Alertmanager pages over Telegram and blackbox probes the founder's own surfaces over
+    # the public internet. Both live here, and this namespace declared no route out, so both
+    # were dropped on the wire. Measured 2026-09-10 from the alertmanager pod, on every
+    # attempt, for every receiver:
+    #
+    #   level=ERROR source=dispatch.go:589 msg="Notify for alerts failed"
+    #     err="telegram-p1-page/telegram[0]: notify retry canceled after 3 attempts:
+    #     dial tcp 149.154.166.110:443: connect: connection timed out"
+    #
+    # What that cost, exactly: MacScreenSharingOff had been firing since 2026-09-08T10:43:58
+    # -- the estate knew the founder's Mac was not sharing its screen, correctly, for two
+    # days -- and he was never told, so he raised the door as broken repeatedly and was given
+    # a different guess each time. AlertmanagerFailedToSendAlerts was firing too, and could
+    # not deliver itself either. An alert that cannot leave the cluster is not a quiet estate,
+    # it is a silent one, and the two are indistinguishable from outside.
+    #
+    # It cost the measurements as well. 29 of the 36 founder-surface probes read 0 while the
+    # surfaces answered: `curl https://catalogue.<zone>/` from outside returns 302 in 0.31s.
+    # blackbox was grading its own fence, not the estate, and every one of those 29 was a
+    # false alarm nobody could see anyway.
+    #
+    # 443 only, and outbound only: api.telegram.org and the public names of this estate's own
+    # doors. Nothing here accepts a connection from the internet.
+    egress_internet: [443]
   observability:
     egress: [monitoring, identity, estate-db]
     # telemetry-coverage, science-facts and the Langfuse alert drill each write a receipt to
