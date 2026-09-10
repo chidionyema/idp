@@ -1,0 +1,22 @@
+# Refused: the grader's verdict is overwritten before the step ends.
+#
+# The step reads as a gate -- it runs bin/idp-prove -- but the echo after it overwrites $?, and
+# with no '-e' the step's status is the echo's, which is 0. Measured 2026-09-10 on bash 5.2:
+#
+#   set -uo pipefail; false             -> exit 1   the bare 'false' IS the script's status
+#   set -uo pipefail; false; echo done  -> exit 0   the echo overwrites it
+#
+# An earlier version of this fixture ended at the grader line and used 'set -o pipefail', so it
+# failed the step correctly and asserted a bug that did not exist: the gate refused it as a false
+# positive while passing genuinely bad shapes. Fix: add '-e', or test the captured rc after.
+name: bad
+on: [workflow_dispatch]
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: prove langfuse
+        run: |
+          set -uo pipefail
+          bin/idp-prove langfuse
+          echo "the prover has been run"

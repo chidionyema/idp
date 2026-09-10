@@ -1267,3 +1267,27 @@ rules:
     fail: >-
       the door presents a key the lifeboat cannot validate, so every real turn dies at the
       lifeboat's door while probes that go around it stay green
+
+  - id: grader-exit-gate
+    label: grader-exit
+    statement: >-
+      A grading step whose verdict cannot reach the run is refused: a grader piped into tee/cat
+      with neither pipefail nor -e, a bare grader that is not the last command under a set line
+      without -e, or a grader ending in '|| true' with no '# optional: <reason>' marker. The step
+      is accepted when the same job asserts the captured verdict in a later step
+    law: LAW 28
+    origin: incident 2026-09-10, grading steps whose verdict is discarded
+    planes: [ci]
+    run: [python3, bin/idp-grader-exit-gate]
+    fixtures:
+      must_fail: tests/fixtures/grader-exit/bad
+      must_pass: tests/fixtures/grader-exit/good
+    cases:
+      - {expect: refuse, args: [tests/fixtures/grader-exit/bad]}
+      - {expect: pass, args: [tests/fixtures/grader-exit/good]}
+      - {expect: pass, live: true, args: [.github/workflows], note: "this repository's own workflows"}
+    ok: "every grading step in the tree can fail its run, or a later step asserts the captured verdict"
+    fail: >-
+      measured 2026-09-10: 'set -u; grader | tee out' exits 0 while the grader failed, so a run
+      reports green having graded nothing. 'set -o pipefail' or '-e' fixes it; a bare last command
+      propagates without -e, and a later step that tests the captured rc is an assertion
