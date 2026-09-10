@@ -81,7 +81,7 @@ vendors:
         # sits in this chain: a hop that always refuses is latency, not redundancy. That sentence
         # now applies to Gemini itself, so it moved to the back -- see the measurement on the
         # gemini block below.
-        - deepseek: [gemini, minimax]
+        - deepseek: [gemini, minimax, groq]
   minimax:
     kind: secret
     secret: SEED_MINIMAX_API_KEY
@@ -209,7 +209,7 @@ vendors:
         # file already says twice that a hop which always refuses is latency, not redundancy;
         # here that is applied. deepseek stays a chain HEAD, so the lane rejoins the moment
         # the founder adds its key in the LiteLLM console -- no pull request, no session.
-        - minimax: [gemini]
+        - minimax: [gemini, groq]
   kimi:
     # Moonshot's Kimi (platform.kimi.ai). The vendor documents no key shape (API overview and
     # list-models pages, read 2026-09-02), so the shape only refuses an empty or malformed paste;
@@ -385,9 +385,9 @@ vendors:
         # `default` and `fast` are themselves Gemini rows (gemini-2.5-pro and -2.5-flash), so
         # naming gemini in their own fallback lists was a hop back to the model that had just
         # failed. Those entries are gone rather than reordered.
-        - gemini: [minimax]
-        - default: [gemini, minimax]
-        - fast: [gemini, minimax]
+        - gemini: [minimax, groq]
+        - default: [gemini, minimax, groq]
+        - fast: [gemini, minimax, groq]
   groq:
     # The free floor (founder 2026-09-08, the cost mandate). Every lane the router served until
     # today bills per token, so 100% of every turn was paid: the chains ended in `deepseek`, an
@@ -412,11 +412,60 @@ vendors:
       # in that namespace to seed Bitwarden FROM -- the founder's copy is the only copy, and
       # the bridge only reads outward here.
       - { ns: otto-gateway, field: GROQ_API_KEY, bw: GROQ_API_KEY }
-    # NO router block yet, on purpose. A rendered lane naming os.environ/GROQ_API_KEY before the
-    # vault holds that field is exactly the break this registry already carries a scar from (see
-    # the kimi row: "a row that pointed at env keys the vault never held was removed"). The lane
-    # and the chain tails land in the follow-up the moment bin/idp-bootstrap-vendors has written
-    # the field -- one edit, no new mechanism.
+    # This is that follow-up. The condition the block above set -- "the moment
+    # bin/idp-bootstrap-vendors has written the field" -- was measured met on 2026-09-10:
+    # Secret/litellm-upstream in namespace `llm` carries the key names
+    # ANTHROPIC_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, LITELLM_DB_PASSWORD,
+    # LITELLM_MASTER_KEY, OPENROUTER_API_KEY. So the lane below names an environment
+    # variable the router pod actually holds, which is the whole of what was missing.
+    router:
+      lanes: |
+        # --- the free floor ------------------------------------------------------------------
+        # Until this row, the estate router had no free lane at all. Every one of its nine model
+        # rows billed per token and the tail of every fallback chain was a paid account: the
+        # cascade ended on `minimax` or `gemini`, so a day that emptied both accounts left every
+        # consumer of this router -- Holmes, the agent workforce, prospector, whatever answers
+        # the founder next -- with nowhere to go. Otto has carried a free floor in its own
+        # private brain config since 2026-09-10 (platform/otto-gateway/three-homes.yaml); this
+        # is the same floor under the router the rest of the estate rides.
+        #
+        # It is a floor, never a routing choice. Nothing heads a chain with it; it is the last
+        # hop of every chain, which is also what sovereign/tests/bdd/test_cp30.py holds about
+        # the cheap model, and why `[routing] cheap` in AGENTS.md moves to `groq` in the same
+        # change. Groq's free tier meters REQUESTS per day, not dollars, and resets daily --
+        # so unlike a prepaid balance it cannot reach zero and stay there.
+        #
+        # `openai/` twice on purpose: the first is LiteLLM's provider prefix (an
+        # OpenAI-compatible endpoint), the second belongs to the model's own name.
+        #
+        # gpt-oss-120b, and not the Llama 3.3 70B this registry named when the row was written:
+        # asked from inside the otto-gateway pod on this key on 2026-09-10, Groq answered
+        #   404 "The model `llama-3.3-70b-versatile` does not exist or you do not have access
+        #   to it."
+        # while GET /openai/v1/models returned the fourteen it does serve. Measured on the same
+        # call: openai/gpt-oss-120b HTTP 200 0.48s, 119 tokens, a real three-sentence answer,
+        # and a tool-calling turn returned tool_calls=['get_weather'] -- a floor that cannot
+        # call a tool is a floor that can only chat.
+        #
+        # No input_cost_per_token / output_cost_per_token, and that is the one row where their
+        # absence is correct rather than the 176-million-token accounting hole the minimax row
+        # describes: this lane costs nothing per token, so $0.0000 a call is the true price.
+        # general_settings.max_budget still bounds it, and the daily request meter is Groq's.
+        - model_name: groq
+          litellm_params:
+            model: openai/gpt-oss-120b
+            api_base: https://api.groq.com/openai/v1
+            api_key: os.environ/GROQ_API_KEY
+            # Shorter than the paid lanes' 300s on purpose. This is the hop a turn reaches
+            # after the lanes above it have already spent their own timeouts; a floor that
+            # takes five minutes to refuse is not a floor. Measured latency above was 0.48s.
+            timeout: 60
+            max_tokens: 8192
+          model_info:
+            # Groq publishes 131,072 tokens of context for gpt-oss-120b. Capped here so an
+            # oversized turn is refused by the estate rather than by the vendor at the end of
+            # a cascade, the same reason the minimax row carries a cap.
+            max_input_tokens: 131072
 
   cerebras:
     # The largest daily allowance in the matrix by volume: Cerebras advertises 1,000,000 free

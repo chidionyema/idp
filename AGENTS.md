@@ -166,12 +166,19 @@ days_per_month = 31   # the longest month, so a sum under the cap holds in every
 # 2026-09-08, the founder's cost mandate. `default` and `cheap` both named `deepseek`, an
 # account at $0 that has answered 401 since 2026-09-04 -- so the estate's default model and
 # its cheap model were the same dead lane, and test_cp30 enforced that every fallback chain
-# ended there. They move to the one lane measured answering from inside the router pod today.
-# This is a stopgap, not the destination: `cheap` belongs on a FREE lane, and becomes `groq`
-# the moment SEED_GROQ_API_KEY exists (platform/vendors/consoles.yaml).
+# ended there. They moved to the one lane measured answering from inside the router pod that
+# day, with the note that this was "a stopgap, not the destination: `cheap` belongs on a FREE
+# lane, and becomes `groq` the moment SEED_GROQ_API_KEY exists".
+#
+# 2026-09-10, that condition is met and this is the destination. Secret/litellm-upstream in
+# namespace `llm` carries GROQ_API_KEY (key names read that day), platform/vendors/consoles.yaml
+# now renders a `groq` model row, and every fallback chain ends on it. So `cheap` is a lane that
+# costs nothing per token and is metered in requests per day that reset -- which is the point:
+# a prepaid balance can reach zero and stay there, and a daily meter cannot. `default` stays
+# on minimax, because the floor is a floor and never a routing choice.
 default = "minimax"
 vision = "vision"
-cheap = "minimax"
+cheap = "groq"
 # deepseek stays a voter: the lane is console-owned, so it rejoins the moment its key is added
 # without a pull request. Until then quorum needs both minimax and gemini, and gemini is
 # rate-limited -- consensus is one refusal from failing. The third live voter is groq.
