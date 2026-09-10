@@ -659,3 +659,18 @@ jobs:
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
     skip_on_battery: false
     timeout_s: 1800
+  com.estate.research-engine:
+    runs_on: cluster
+    runs_on_ref: crew#850 CP5 - the research lane is the estate's research department
+    command:
+      - /usr/local/bin/kubectl
+      - create
+      - job
+      - research-engine-$(date -u +%Y%m%d%H%M%S)
+      - --from
+      - cronjob/research-engine
+      - -n
+      - research
+    cron: '23 * * * *'
+    timeout_s: 600
+    skip_on_battery: false

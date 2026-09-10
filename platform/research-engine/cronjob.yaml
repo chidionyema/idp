@@ -34,7 +34,11 @@ metadata:
   namespace: research
   labels: { app.kubernetes.io/name: research-engine, app.kubernetes.io/part-of: idp }
 spec:
-  schedule: "23 * * * *"
+  # Dagster is the estate's one scheduler (crew#929 / one-scheduler); the research-engine
+  # CronJob is owned by Dagster now and runs when the com.estate.research-engine cluster
+  # schedule does `kubectl create job <ts> --from=cronjob/research-engine -n research`.
+  # `schedule` is therefore gone and `concurrencyPolicy: Forbid` keeps a manual one-off
+  # from clashing with the next scheduled run.
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 3

@@ -145,7 +145,9 @@ still_outside_dagster:
   fold: 'pending: to be declared as a Dagster schedule'
 - job: platform/research-engine/cronjob.yaml
   kind: Kubernetes CronJob
-  fold: 'pending: to be declared as a Dagster schedule'
+  # com.estate.research-engine runs in scheduler/schedule.yml and triggers this CronJob
+  # via `kubectl create job --from=cronjob/research-engine -n research`. Scheduled by Dagster.
+  fold: 'no: scheduled by the com.estate.research-engine cluster Dagster schedule'
 - job: platform/sandbox/vcluster/sweeper.yaml
   kind: Kubernetes CronJob
   fold: 'pending: to be declared as a Dagster schedule'
