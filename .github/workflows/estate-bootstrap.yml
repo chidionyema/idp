@@ -102,14 +102,18 @@ jobs:
         # verdict, not bash's. bash -e would mask it.
         run: |
           set +e
+          # An array, not a string. `CMD="bin/x --preflight"` then `"$CMD"` asks the shell for a
+          # file literally named "bin/x --preflight", which exists nowhere: every scope of this
+          # button exited 127 "No such file or directory" and the live job below it was skipped
+          # as a failed dependency. Measured 2026-09-10, run 34477655011. LAW 55.
           case "$SCOPE" in
-            estate-seed) CMD="bin/idp-estate-seed --preflight" ;;
-            tailscale)   CMD="bin/idp-bootstrap-tailscale --preflight" ;;
-            cloudflare)  CMD="bin/idp-bootstrap-cloudflare --preflight" ;;
-            vendors)     CMD="bin/idp-bootstrap-vendors --preflight" ;;
+            estate-seed) CMD=(bin/idp-estate-seed --preflight) ;;
+            tailscale)   CMD=(bin/idp-bootstrap-tailscale --preflight) ;;
+            cloudflare)  CMD=(bin/idp-bootstrap-cloudflare --preflight) ;;
+            vendors)     CMD=(bin/idp-bootstrap-vendors --preflight) ;;
             *) echo "FAIL    estate-bootstrap: unknown scope '$SCOPE'" >&2; exit 2 ;;
           esac
-          out=$("$CMD" 2>&1)
+          out=$("${CMD[@]}" 2>&1)
           rc=$?
           set -e
           printf '%s\n' "$out"
