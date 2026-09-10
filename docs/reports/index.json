@@ -11,16 +11,16 @@
     },
     {
       "file": "docs/reports/flux-state.md",
-      "generated_at": "2026-09-10T08:00:58Z",
+      "generated_at": "2026-09-10T08:15:46Z",
       "id": "flux-state",
       "schedule_minutes": 15,
       "source": "the cluster receipt platform/state/cluster-state.yaml writes to the receipts bucket every 15 minutes",
-      "summary": "114 objects: 89 ready, 23 not ready, 0 unknown, 2 suspended",
+      "summary": "114 objects: 86 ready, 26 not ready, 0 unknown, 2 suspended",
       "title": "Flux: what is applied"
     },
     {
       "file": "docs/reports/forge-spend.md",
-      "generated_at": "2026-09-10T08:05:50Z",
+      "generated_at": "2026-09-10T08:20:39Z",
       "id": "forge-spend",
       "schedule_minutes": 1440,
       "source": "forge/experiments/*.md front matter (usd: per completed run)",
@@ -28,5 +28,5 @@
       "title": "Forge compute spend (Modal + free lanes)"
     }
   ],
-  "updated_at": "2026-09-10T08:06:06Z"
+  "updated_at": "2026-09-10T08:20:54Z"
 }
