@@ -1,6 +1,7 @@
-# Personal Agent — Sovereign Spec (v1.0)
+# Personal Agent — Sovereign Spec (v1.1)
 
-> **Status:** Draft, founder-authored, 2026-09-10.
+> **Status:** Draft, founder-authored, 2026-09-10. v1.1 folds in the Day-0 Concierge
+> architecture and the Issues-for-Nunn checklist (Nunn is non-technical).
 > **Scope:** A personally-owned assistant that uses Nunn's own computer, Nunn's own accounts,
 > Nunn's own browser — with explicit per-action consent captured once, and a Sentinel that keeps
 > every raw secret out of the LLM context window.
@@ -143,3 +144,115 @@ cross that boundary.
 
 *Drafted by the founder in session 2026-09-10; landed as a draft PR for review before any
 implementation begins.*
+
+---
+
+## v1.1 amendment — Day-0 architecture: The Mother's Sovereign Concierge
+
+The v1.0 spec (above) is the *sovereign* shape — Sentinel-protected, OS-level, no automation
+framework. v1.1 adds the **Day-0 Concierge** shape the founder authored next: a WhatsApp/Telegram
+intake, a 3-tier Guardian Engine, a Playwright persistent-session operator, and a FastAPI
+concierge service. Day-0 is the pragmatic first deploy; v1.0 remains the long-horizon target.
+
+### Day-0 component table
+
+| Module | File | Role | Boundary |
+|---|---|---|---|
+| **Intake webhook** | Twilio WhatsApp Business → `/webhook/whatsapp` | Voice note → text via Whisper; text fallback | Verifies caller's phone is Mum's; rejects spoofed senders with empty TwiML |
+| **Module 1 — Guardian Policy Engine** | `guardian_engine.py` | Tier 1 ≤ £15 trusted-vendor auto, Tier 2 £15-£75 trusted-vendor Mum confirm, Tier 3 > £75 or untrusted vendor → silent push to Founder | Returns typed `IntentEvaluation {tier, approved, estimated_cost, vendor, reason, approval_prompt}` |
+| **Module 1a — Blacklist + Whitelist** | (same file) | Zero-tolerance: `wire transfer`, `gift card`, `crypto`, `western union`, `password`, `login details`, `bank account number`. Trusted vendors: `amazon.co.uk`, `tesco.com`, `boots.com`, `marksandspencer.com`, `sainsburys.co.uk`. | Hard-coded whitelist is a v1.0 place-holder; per-vendor trust is learned with consent |
+| **Module 2 — Browser Operator** | `browser_operator.py` | Playwright Chromium `launch_persistent_context(user_data_dir=…)` carrying Nunn's existing logged-in cookies (no 2FA challenge). Vision model returns `{x, y, action, description}` from a full-page screenshot. Click dispatched via `page.mouse` with a small randomised dwell and tiny lateral jitter. Receipt is the post-checkout screenshot. | Mounts Nunn's *real* Chrome profile at deployment. In tests/dev, mounts a fake profile dir. Never mounts the real one outside deployment. |
+| **Module 3 — Concierge Service** | `concierge_service.py` | FastAPI on `0.0.0.0:8000`. Routes by tier: Tier 3 silences Mum with a "working on it" reply and pushes the order to Founder's phone; Tier 2 sends Mum the confirmation prompt; Tier 1 executes and returns the receipt screenshot to Mum's chat. Dependencies: `fastapi uvicorn playwright anthropic openai httpx twilio python-multipart`. | Public surface — sits behind Cloudflare Tunnel + Twilio signature verification |
+
+### Deps to install (Day-0)
+```
+pip install fastapi uvicorn playwright anthropic openai httpx twilio python-multipart
+playwright install chromium
+```
+Env (per Day-0 spec): `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `MOM_PHONE_NUMBER`,
+`GUARDIAN_PHONE_NUMBER`, `CHROME_PROFILE_DIR` — **out of scope until a vault-backed alternative
+lands** (LAW 52 / R54: one root per provider, set once; code mints the rest). v1.1 rejects bare
+env-var keys in production builds; Day-0 code as published is read-only against the spec until the
+plumbing is moved to vault-backed secrets.
+
+### Deployment shape
+Mac Mini at Nunn's home Wi-Fi. Cloudflare Tunnel fronts Twilio's webhook. The Mac Mini's idle
+session must auto-lock when Nunn walks away.
+
+---
+
+## v1.1 — Issues for Nunn (the user, not the engineer)
+
+Nunn is not tech-savvy. These are the issues that affect *her experience*, not the engineering
+ones. Tracked, not blockers for the spec landing. Each issue names *who owns it*.
+
+1. **"What if my phone dies?"** — WhatsApp/Telegram is the *only* intake in Day-0. **Owner: Day-0
+   §Intake.** Need a fallback: in-browser voice button on her Mac Mini, or an SMS shortcode to
+   the same number.
+2. **"What if I mispronounce 'Bisoprolol'?"** — Whisper is good, not infallible; elderly
+   pronunciation of drug and brand names will fail. **Owner: Day-0 §concierge_service.** Tier-1
+   must *always* read back the parsed item + price before executing, not just Tier-2.
+3. **"What if my son is asleep?"** — Tier 3 silently escalates to Founder's phone. No second-line
+   approval, no timeout-with-action. **Owner: Guardian Engine.** Tier 3 needs a deterministic
+   fallback — either a higher-tier Guardian (your partner / her GP / a named neighbour), or a
+   timed default (e.g. "approve after 4 hours no reply") that the user has *pre-configured*.
+4. **"What if I change my mind?"** — no revocation path. **Owner: Browser Operator.** STOP / cancel
+   must work inside the in-flight checkout window — not just pre-execute.
+5. **"What if I accidentally say yes?"** — voice-only "Yes"/"No" on Tier-2 is trivial to mis-hear or
+   mis-utter. **Owner: Concierge Service.** Use a *typed* reply or a two-step confirm ("Reply
+   `YES 1247` to confirm ordering X") — voice confirm alone is a foot-gun.
+6. **"Will I see what got bought?"** — Day-0 only ships a receipt on Tier-1 success.
+   **Owner: Concierge Service.** All three tiers must echo back to Mum's chat: *"I ordered X
+   for £Y from Z on <date>"* — including the Founder-approved and Mum-confirmed ones.
+7. **"What if I don't know the vendor's name?"** — Mum may say "the place that does the wool
+   slippers". **Owner: Guardian Engine.** Need an "I don't recognise that vendor" branch that
+   *asks Mum which one* before Tier 1 fires. Today the LLM resolves it and fires — wrong-vendor
+   purchases are how Mum gets sent the wrong thing.
+8. **"What if my card gets charged twice?"** — Day-0 has no idempotency. **Owner: Browser
+   Operator.** Single in-flight order token; the operator refuses to re-execute while one is
+   already in flight.
+9. **"What if the browser is logged out?"** — Persistent-context cookies expire; 2FA may
+   re-trigger; Mum may be on a different device. **Owner: Browser Operator.** Report a clear,
+   *non-technical* error to Mum's chat ("I couldn't reach Tesco — please sign in once on your
+   Mac"), not a stack trace.
+10. **"I don't trust the £75 cap"** — hard cap is a sensible default but Mum's *own* spending
+    patterns matter more. **Owner: Guardian Engine.** Per-month spend tracker; ping Mum when she's
+    spent more than her usual weekly pattern, even if she's under £75.
+11. **"What if I have a new phone number?"** — `MUM_PHONE_NUMBER` is hard-coded. **Owner:
+    Concierge Service.** Re-binding flow (text the new number from the old one with a one-time
+    code) instead of a config rewrite.
+12. **"Will the reply confuse me?"** — TwiML `<Message>` text. **Owner: Concierge Service.**
+    Replies must be short, single-screen, and written in her own son's voice (not LLM-default).
+    Track per-message template review.
+13. **"What if my son comes to fix it and breaks it?"** — `CHROME_PROFILE_DIR` points at Nunn's
+    *actual* Chrome profile by default. **Owner: Browser Operator.** Tests/dev run against a fake
+    profile dir; the real profile is mounted only at deployment, with a one-line "you are touching
+    Mum's live profile" warning printed to the operator's stdout.
+14. **"What if it accidentally clicks the wrong thing?"** — vision step returns coordinates and
+    the operator trusts them. **Owner: Browser Operator.** Vision-confidence threshold: if the LLM
+    is not confident in the {x, y}, escalate to Tier 2 (Mum confirm) — don't auto-click.
+15. **"What about Mum's privacy in the screenshot?"** — receipt is a full-page Playwright
+    screenshot; if Mum has other tabs in the persistent context, the screenshot captures them.
+    **Owner: Browser Operator.** Close unrelated tabs *before* navigating to the purchase flow.
+
+---
+
+## v1.1 — On the spec side, what we are NOT building
+
+These mirror the sovereign non-goals in §2 and are repeated here because the Day-0 paste made
+the boundary fuzzy:
+
+- **We are not building anti-bot bypass.** The Day-0 spec frames "residential IP + Quartz OS
+  Event Tap (isTrusted=true)" as if defeating third-party bot detection is a feature. It is not.
+  The Browser Operator uses Nunn's *own* logged-in session on her *own* Mac. If a vendor's
+  anti-bot challenges her session (because *she* triggered it), Nunn solves it. The Operator
+  does not forge `isTrusted`, fingerprint-spoof, or pretend to be a different user.
+- **We are not building cross-user impersonation.** Nunn only. Not "anyone in the WhatsApp
+  contact list". Not "anyone whose phone number is in the env".
+- **We are not building a generic browser automation framework.** This is one user, one surface.
+
+---
+
+*Drafted by the founder in session 2026-09-10. v1.1 amendment landed on the same draft PR for
+review. Implementation must wait for founder sign-off on the Issues-for-Nunn list and consent
+receipt for the live deployment.*
