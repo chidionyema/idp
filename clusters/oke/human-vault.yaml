@@ -52,6 +52,13 @@ spec:
   interval: 5m
   dependsOn:
     - name: human-vault
+    # concierge, because this row generates one ExternalSecret per vendor into the namespaces
+    # their targets name, and the `twilio` vendor row's target is namespace `concierge`. Without
+    # this edge the bridge applies first and fails whole:
+    #   `ExternalSecret/concierge/human-twilio not found: namespaces "concierge" not found`
+    # -- which is what happened on the first apply, and it is the same ordering class crew#539
+    # records: a row that writes into a namespace must not race the namespace's own row.
+    - name: concierge
   sourceRef:
     kind: GitRepository
     name: flux-system
