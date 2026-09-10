@@ -648,3 +648,87 @@ jobs, not merely refuse new ones.
     This is a claim about behaviour, so it needs a test, not a paragraph.
 44. **Cost gate must not strand her mid-task.** Hitting the daily API cap while an order is in
     flight must not leave a half-finished purchase.
+
+---
+
+## v1.7 amendment — Configurable limits, human routing, and how she confirms
+
+Founder decision 2026-09-10: the pocket-money guarantee is implemented by the Guardian Engine
+(no separate prepaid instrument), and the limits must be **configurable**, with the user experience
+thought through.
+
+### The pocket-money guarantee, made true
+
+The script says *"a strict £50 prepaid limit"*. With the Guardian Engine as the mechanism, the
+honest wording is:
+
+> "She does not have access to your bank account. I have set her a strict £50 limit for pocket money
+> each day. Even if she makes a mistake, she physically cannot spend more than that."
+
+The cap must be a **daily** figure, enforced before every order, and configurable per household.
+`GUARDIAN_MAX_AUTONOMOUS` becomes the pocket-money ceiling; the tier bands move with it.
+
+### A limit must route to a person, not to a wall
+
+The obvious implementation refuses when she is over her limit. That is the wrong experience: it
+teaches her the assistant is unreliable, and it blocks a genuine need (medication) over a
+bookkeeping rule.
+
+Instead, exceeding the pocket-money limit **escalates to the Guardian** with the request intact, and
+she is told a person is looking at it:
+
+> "Mummy, that would take you a little over your pocket money for today. I have asked Chidi to
+> approve it — shall I keep it ready for you?"
+
+She is never told no by a machine; she is told a human has been asked. If the Guardian approves,
+the order proceeds.
+
+### How she confirms (the read-back)
+
+A bare "YES"/"NO" is the wrong confirmation surface for an elderly user:
+
+- it is easy to mis-hear and easy to mis-say;
+- it is trivially producible by anyone holding her phone;
+- it carries no evidence of *what* she agreed to.
+
+So confirmation is a **read-back**: the agent names the item, the shop and the price, and asks her to
+confirm *that sentence*.
+
+> "So that is the original Dettol 500ml and McVitie's Digestives from Sainsbury's, about £6.20
+> altogether. Shall I go ahead, Mummy?"
+
+Her "yes" is recorded against the read-back text, so the receipt shows exactly what she agreed to.
+Voice confirmation is accepted on a live call (where the biometric gate has already passed); on
+WhatsApp a voice, typed or tapped reply is accepted, and the pending item is always re-stated.
+
+### Everything is configuration
+
+| Setting | Meaning | Default |
+|---|---|---|
+| `GUARDIAN_POCKET_MONEY` | Her daily ceiling; above this routes to the Guardian | 50 |
+| `GUARDIAN_CONFIRM_ABOVE` | Above this, she is asked to confirm | 15 |
+| `GUARDIAN_CURRENCY` | Currency label for every spoken figure | GBP |
+| `CONCIERGE_VOICE` | Voice for WhatsApp voice notes | en-NG-EzinneNeural |
+| `CONCIERGE_CALL_VOICE` | Voice on a live call; `model` opts out | en-NG-EzinneNeural |
+| `CONCIERGE_READBACK_ON_CALL` | Read-back confirmation on live calls | true |
+| `CONCIERGE_GREETING_MESSAGE` | What she hears first | warm morning greeting |
+| `CONCIERGE_MORNING_HOUR` / `_MESSAGE` | When and what the morning check-in says | 08:30 |
+| `CONCIERGE_AFTERNOON_HOUR` / `_MESSAGE` | Afternoon check-in | 14:00 |
+
+Every one of these is read at use time, so changing her limit or her check-in hour is a settings
+change, not a deploy.
+
+### Issues-for-Nunn — v1.7 batch
+
+45. **"What if I just want to spend a little more one day?"** — the escalation must carry the
+    request, not just an alert. **Owner: Guardian Engine.** The Guardian's approval must release the
+    specific pending order.
+46. **"Will she keep asking me the same thing?"** — a pending confirmation must expire, and must not
+    resurrect after she said no. **Owner: Concierge.** Pending approvals expire and are cleared on
+    refusal.
+47. **"What if I say yes but I meant no?"** — the read-back names the item and price, so a mistaken
+    "yes" is visible in her own receipt. **Owner: Concierge.** The receipt echoes the read-back text
+    she agreed to.
+48. **"What if someone else answers my phone and says yes?"** — voice confirmation on a call is
+    gated by the biometric check; on WhatsApp, a typed or numeric-tagged confirmation is preferred.
+    **Owner: Concierge + VoiceprintGate.**
