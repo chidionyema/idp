@@ -181,6 +181,131 @@ def publish(
     )
 
 
+# --- MUM-285: persist the Holmes finding so it never goes void. ---
+#
+# A real Holmes spend whose answer only ever publishes to a chat is a finding
+# that scrolls past: the moment the channel is muted the model-spend is gone.
+# A down or misconfigured memory store is logged and the investigation is
+# allowed to complete; a finder that double-pages the founder because its
+# note-taker is offline is worse than a finder that lets the note vanish for
+# this run. Endpoint, payload shape, env keys, byte ceiling and fail-open
+# posture mirror mcp/plugins/estate_memory.do_remember exactly, so a finding
+# written here is indistinguishable to the recall side.
+
+
+MEMORY_TIMEOUT_S = float(os.environ.get("ESTATE_MEMORY_TIMEOUT_S", "5"))
+MEMORY_BYTE_CEILING = int(os.environ.get("ESTATE_MEMORY_BYTE_CEILING", "8000"))
+MEMORY_URL = os.environ.get("ESTATE_MEMORY_URL", "").strip()
+MEMORY_ORG = os.environ.get("ESTATE_MEMORY_ORG", "default")
+MEMORY_BANK = os.environ.get("ESTATE_MEMORY_BANK", "hermes")
+
+
+def _memory_endpoint() -> str:
+    base = MEMORY_URL.rstrip("/")
+    return f"{base}/v1/{MEMORY_ORG}/banks/{MEMORY_BANK}/memories"
+
+
+def _truncate_to_bytes(text: str, ceiling: int) -> str:
+    raw = text.encode("utf-8")
+    if len(raw) <= ceiling:
+        return text
+    return raw[:ceiling].decode("utf-8", "ignore") + "\n\n[truncated to byte ceiling]"
+
+
+def _build_finding(
+    analysis: str, fingerprint: str, alert_names: List[str]
+) -> Dict[str, Any]:
+    """The structured finding the op persists: subject, kind, tags and the
+    analysis body, in the same shape ``mcp/plugins/estate_memory.do_remember``
+    accepts."""
+    names = sorted({str(n).strip() for n in (alert_names or []) if str(n).strip()})
+    subject = "Holmes finding for " + (", ".join(names) if names else "firing alerts")
+    tags = ["holmes", "finding", "alert"]
+    if fingerprint:
+        tags.append("fp-" + str(fingerprint).lower())
+    for n in names:
+        tags.append("alert:" + n.lower())
+    return {
+        "analysis": analysis,
+        "subject": subject,
+        "kind": "incident.investigation",
+        "tags": tags,
+        "fingerprint": fingerprint or "",
+    }
+
+
+def _retain(
+    analysis: str,
+    subject: str,
+    kind: str,
+    tags: List[str],
+    fingerprint: str,
+) -> Dict[str, Any]:
+    """POST one Holmes finding to the estate memory bank. Never raises.
+
+    Returns ``{"written": True, ...}`` on success or ``{"written": False,
+    "error": "..."}`` on every failure path. The investigation caller logs
+    ``error`` and continues.
+    """
+    import json as _json
+    import urllib.error as _urllib_error
+    import urllib.request as _urllib_request
+
+    if not MEMORY_URL:
+        return {"written": False, "error": "ESTATE_MEMORY_URL is unset"}
+    if not analysis or not analysis.strip():
+        return {"written": False, "error": "analysis is empty; nothing to retain"}
+
+    clean_tags = sorted(
+        {str(t).strip().lower() for t in (tags or []) if str(t).strip()}
+    )
+    tag_field = ",".join(clean_tags) if clean_tags else None
+    body = _truncate_to_bytes(analysis.strip(), MEMORY_BYTE_CEILING)
+    payload = {
+        "items": [
+            {
+                "content": body,
+                "context": subject or None,
+                "metadata": {
+                    "subject": subject,
+                    "kind": kind,
+                    "tags": tag_field,
+                    "fingerprint": fingerprint,
+                    "source": "holmes_watch",
+                },
+            }
+        ],
+        "async": True,
+    }
+
+    endpoint = _memory_endpoint()
+    if not endpoint.startswith(("http://", "https://")):
+        return {"written": False, "error": "ESTATE_MEMORY_URL is not http(s)"}
+
+    try:
+        request = _urllib_request.Request(  # noqa: S310
+            endpoint,
+            data=_json.dumps(payload).encode("utf-8"),
+            headers={"content-type": "application/json"},
+            method="POST",
+        )
+        with _urllib_request.urlopen(request, timeout=MEMORY_TIMEOUT_S) as response:  # noqa: S310
+            response.read()
+        return {
+            "written": True,
+            "endpoint": endpoint,
+            "fingerprint": fingerprint,
+        }
+    except (_urllib_error.URLError, TimeoutError, OSError, ValueError) as exc:  # type: ignore[name-defined]
+        return {
+            "written": False,
+            "error": "memory store unreachable: "
+            + type(exc).__name__
+            + ": "
+            + str(exc),
+        }
+
+
 class InvestigationConfig(Config):
     alerts: List[Dict[str, str]] = []
     fingerprint: str = ""
@@ -207,18 +332,41 @@ def investigate_firing_alerts(context, config: InvestigationConfig) -> None:
     publish(f"{SENDER} - investigated {names}", analysis)
     context.log.info("published to %s/%s", APPRISE_URL, NOTIFY_CHANNEL)
 
+    # Persist the finding so it never goes void (MUM-285). A down memory store
+    # is logged and the investigation is allowed to complete; a finder that
+    # double-pages the founder because its note-taker is offline is worse than
+    # a finder that takes the investigation and lets the note vanish for this run.
+    finding = _build_finding(
+        analysis=analysis,
+        fingerprint=config.fingerprint,
+        alert_names=[a["alertname"] for a in alerts],
+    )
+    written = _retain(
+        finding["analysis"],
+        subject=finding["subject"],
+        kind=finding["kind"],
+        tags=finding["tags"],
+        fingerprint=finding["fingerprint"],
+    )
+    if written["written"]:
+        context.log.info("finding retained (fingerprint %s)", finding["fingerprint"])
+    else:
+        context.log.warning("finding NOT retained: %s", written["error"])
+
 
 @job(
     name="holmes_investigation",
     description=(
         "HolmesGPT investigates whatever is firing and sends what it found to the "
-        "founder. Started by holmes_alert_sensor, never on a clock: a quiet cluster "
-        "costs nothing."
+        "founder, and persists its analysis to the estate memory bank so the finding "
+        "is recoverable later (MUM-285). Started by holmes_alert_sensor, never on a "
+        "clock: a quiet cluster costs nothing."
     ),
     metadata={
         "asks": f"{HOLMES_URL}/api/chat",
         "reads": f"{ALERTMANAGER_URL}/api/v2/alerts",
         "publishes to": f"{APPRISE_URL}/notify/{NOTIFY_CHANNEL}",
+        "retains to": "$ESTATE_MEMORY_URL/v1/$ESTATE_MEMORY_ORG/banks/$ESTATE_MEMORY_BANK/memories",
         "defined in": "scheduler/estate_scheduler/holmes_watch.py",
     },
     tags={"estate/label": "ai.estate.holmes-investigation", "estate/owner": "estate"},
