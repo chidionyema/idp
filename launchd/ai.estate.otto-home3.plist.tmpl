@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Otto's home 3: the founder's Mac, on local silicon (founder order 2026-09-09, "otto must
+  have 3 homes"; THE MEDIC LAW, "it runs on local silicon (Ollama) ... when the cluster or
+  router is down, the medic must still be fully able to think").
+
+  Ollama.app binds 127.0.0.1 and takes its address from its own GUI setting, not from the
+  environment: `launchctl setenv OLLAMA_HOST 0.0.0.0:11434` was measured on 2026-09-09 to
+  leave the relaunched app still on `TCP 127.0.0.1:11434 (LISTEN)`. A loopback listener is
+  unreachable from the tailnet, so home 3 did not exist. Asking the founder to tick a box in
+  a GUI is a hand on his machine every reinstall (LAW 31, R52), so this job owns the server
+  instead: the same `ollama serve`, bound where the tunnel can reach it, restarted by launchd
+  if it dies and started again at login.
+
+  It is NOT a recurring job, so it is not a second scheduler and bin/idp-one-scheduler has
+  nothing to fold in (THE HEADLINE): KeepAlive means "this daemon stays up", not "run this on
+  a timer". Dagster remains the estate's one scheduler.
+
+  Reach is fenced by the tailnet, not by the bind: platform/tailscale/policy.hujson is
+  deny-by-default and admits only tag:k8s to tag:founder-mac:11434. 0.0.0.0 also exposes the
+  port to whatever local network the laptop is on, which is the honest cost of Ollama.app
+  having no per-interface bind; the macOS application firewall is the control for that and is
+  the founder's to keep on.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.estate.otto-home3</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/ollama</string>
+    <string>serve</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OLLAMA_HOST</key>
+    <string>0.0.0.0:11434</string>
+    <!-- The lifeboat answers the founder, so a model stays resident rather than paying a
+         cold load on the one turn that matters. -->
+    <key>OLLAMA_KEEP_ALIVE</key>
+    <string>30m</string>
+    <key>PATH</key>
+    <string>${PATH}</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${HOME}/Library/Logs/ai.estate.otto-home3.log</string>
+  <key>StandardErrorPath</key>
+  <string>${HOME}/Library/Logs/ai.estate.otto-home3.log</string>
+</dict>
+</plist>

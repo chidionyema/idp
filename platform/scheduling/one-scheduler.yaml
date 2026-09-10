@@ -92,6 +92,11 @@ still_outside_dagster:
 - job: launchd/ai.estate.kubeapi.plist.tmpl
   kind: launchd job on the laptop
   fold: 'pending: to be declared as a Dagster schedule'
+- job: launchd/ai.estate.otto-home3.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'never: Dagster runs in the cluster, and this job exists so Otto can still think
+    when the cluster is gone (THE MEDIC LAW). A scheduler that dies with the estate cannot
+    own the estate''s last brain. It is a persistent daemon, not a recurring job.'
 - job: launchd/ai.estate.scheduler.plist.tmpl
   kind: launchd job on the laptop
   fold: 'pending: to be declared as a Dagster schedule'

@@ -26,9 +26,23 @@ spec:
   # Job's pod was refused ("exceeded quota: otto-gateway-ceiling, requested: limits.cpu=500m,
   # used: limits.cpu=800m") and the memory store never migrated (LAW 38: a fence that refuses
   # correct work is an outage).
+  #
+  # 2026-09-09, the founder's three-homes order: the door pod is three containers now, not
+  # one -- `gateway` (50m/192Mi req), `otto-brain` (50m/256Mi req, the loopback lifeboat) and
+  # `tailscale` (50m/64Mi req, the road to his Mac). Two replicas, one more while a rollout
+  # surges, and the otto-memory-store Job beside them:
+  #
+  #   requests.cpu     3 x 150m  = 450m  + 50m job  = 500m   -> 700m
+  #   requests.memory  3 x 512Mi = 1536Mi + 128Mi   = 1664Mi -> 1792Mi
+  #   limits.cpu       3 x 1000m = 3000m + 500m job = 3500m  -> 3500m
+  #   limits.memory    3 x 1024Mi = 3072Mi + 512Mi  = 3584Mi -> 3584Mi
+  #
+  # Headroom on each line rather than the exact sum, for the reason the note above records:
+  # a ceiling sized to the exact fit refuses the next correct thing, and LAW 38 calls a fence
+  # that refuses correct work an outage.
   hard:
-    requests.cpu: 300m
-    requests.memory: 768Mi
-    limits.cpu: 1800m
-    limits.memory: 1792Mi
-    pods: "6"
+    requests.cpu: 700m
+    requests.memory: 1792Mi
+    limits.cpu: 3500m
+    limits.memory: 3584Mi
+    pods: "8"
