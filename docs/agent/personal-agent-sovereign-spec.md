@@ -340,3 +340,104 @@ Adds 10 items to the v1.1 list. Tracked, not blockers for the spec landing.
 warmth modules (Biometrics, Auntie Voice, Scam Sentinel, Caretaker Scheduler) and the
 Issues-for-Nunn v1.2 batch. Implementation must wait for founder sign-off on the v1.2 Issues list
 and consent receipt for the live deployment.*
+
+---
+
+## v1.3 amendment — the master build, and live duplex voice
+
+Two founder specs folded in. v1.3a captures the master `main.py` build and the five production
+fixes to the Day-0 design. v1.3b adds the live telephone surface.
+
+### v1.3a — The master build (five critical gaps closed)
+
+The Day-0 design as first written would have broken in Nunn's hands. Five fixes, each of which is
+a moment where an elderly user loses trust in the system rather than merely a bug:
+
+| # | Gap | Why it breaks for her | Fix |
+|---|---|---|---|
+| 1 | **Twilio 15-second timeout** | A browser takes 30–45s to load, add to basket and check out. Twilio drops the call and sends an error. | The webhook returns `200 OK` immediately; all browser work is detached into a `BackgroundTask`. |
+| 2 | **"Amnesia" — no state** | The agent asks "This is £45, shall I buy it?" and she answers "Yes, please" — with no memory of what she is agreeing to. | A `PENDING_APPROVALS` state machine holds the intent keyed by her number until she confirms or cancels. |
+| 3 | **Race condition on disk** | Two voice notes back-to-back both write `/tmp/mum_voice.ogg`, overwrite, and crash. | A UUID per voice note and per receipt screenshot. No fixed filenames anywhere. |
+| 4 | **Out of stock / browser crash** | She cannot receive a stack trace. It is not her fault and must not look like it. | The whole execution loop is wrapped; code failures become a gentle, apologetic voice note. A copy goes to the Guardian. |
+| 5 | **Twilio cannot read local disk** | Media must be fetchable over HTTP or the voice note never arrives. | FastAPI `StaticFiles` serves a dedicated media directory (never all of `/tmp`). |
+
+**Two further corrections applied at build time**, because the master file as pasted would not boot:
+
+- `@app.on_event("startup")` is deprecated in FastAPI 0.104 and removed in later versions.
+  Replaced with a `lifespan` context manager.
+- The caretaker was constructed as `lambda msg: asyncio.run(...)`. `asyncio.run()` inside a running
+  event loop raises `RuntimeError` — the scheduler would die at boot and **no morning message would
+  ever be sent**, which is precisely the failure the rest of the design exists to prevent. The
+  coroutine function is passed directly, and a regression test guards it.
+
+Code: `~/dev/code/mums-concierge/`. Seven modules, 46 tests, runnable with no network, no browser
+and no model calls.
+
+### v1.3b — Live duplex telephone (Zero-Touch onboarding)
+
+Push-to-talk voice notes still feel like a machine: hold a button, wait in silence, receive a file.
+A live phone call is the least friction available to a non-technical user.
+
+**Onboarding — she should meet it like a helpful niece who has moved to town:**
+
+1. **Contact-card drop.** A `.vcf` contact card sent over WhatsApp: *"Auntie Ezinne (Concierge)"*,
+   with a friendly photograph and the dedicated number. She taps Save. No app, no password, no
+   permissions.
+2. **Proactive welcome call.** Within minutes the server rings her directly and introduces itself in
+   Nigerian English — explaining, in plain words, the things it can do: her medications, groceries,
+   airtime home, and someone sending her a link that looks like a scam.
+3. **Passive enrollment.** During that first natural conversation the system captures her acoustic
+   profile and locks her voiceprint into the biometric gate. She is never asked to "enrol".
+
+**Live call path:**
+
+```
+Mum dials  ->  Twilio Voice  ->  (raw µ-law 8kHz)
+            ->  FastAPI WebSocket  ->  streaming STT
+            ->  conversational LLM  ->  streaming TTS (Ezinne)
+            ->  audio back down the line
+                     |
+                     +-> background tool trigger: Playwright order runs silently,
+                         receipt screenshot lands in her WhatsApp afterwards
+```
+
+Requirements stated by the spec:
+
+- **Sub-500ms turn-taking** so conversation flows without dead air.
+- **Barge-in.** If she says "wait, no, get the smaller one" while the agent is speaking, the agent
+  stops instantly and listens. This is not a nicety — an agent that talks over an elderly user is
+  the single fastest way to lose her.
+- **Hands-free.** Speakerphone while she walks around the kitchen.
+- **Hybrid proof.** The conversation is voice; the proof is visual. When the call ends, the browser
+  finishes checkout and the receipt screenshot arrives in her WhatsApp thread.
+
+**Engineer setup noted by the spec:** Twilio Console "A Call Comes In" -> `POST /voice/incoming`;
+reverse proxy must pass WebSocket upgrade headers; telephony is `audio/x-mulaw` at 8000 Hz, so
+ffmpeg must convert TTS output to 8 kHz µ-law before streaming back.
+
+### Issues-for-Nunn — v1.3 batch
+
+27. **"What if I call and it does not answer?"** A live call that rings out is worse than no feature.
+    **Owner: voice_call_server.** Ring-through to the Guardian on the second attempt; never leave a
+    silence.
+28. **"What if it talks over me?"** Barge-in is specified but must be *tested*, not assumed.
+    **Owner: voice_call_server.** A test that asserts the agent's outbound stream stops within one
+    frame of inbound speech.
+29. **"What if the line is bad and it mishears?"** Elderly callers on mobile lines are the hardest
+    ASR case. **Owner: voice_call_server.** Read-back confirmation of item and price before any
+    order, on the call, in her hearing.
+30. **"What if someone else dials the number?"** The biometric gate is stated for voice notes; it
+    must equally gate the live call before any action. **Owner: voice_call_server + VoiceprintGate.**
+31. **"What if the welcome call frightens me?"** An unexpected call from an unknown number reads as
+    a scam to an elderly person — the exact thing this system defends against. **Owner: onboarding.**
+    The contact card must be saved *first* so the call shows a saved name, and the opening line must
+    name her son immediately.
+32. **"What if I don't understand the accent?"** `en-NG-EzinneNeural` is warm and familiar to her; a
+    fallback voice must exist and be selectable by her. **Owner: tts_audio.**
+
+### What is still not built
+
+- `voice_call_server.py` — the duplex call handler is specified here, not yet implemented.
+- The onboarding flow (contact card, welcome call, passive enrollment) is specified, not yet built.
+- Recording-replay defence, the cold-voice lockout path, and the trusted-other registry remain open
+  from v1.2.
