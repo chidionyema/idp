@@ -653,3 +653,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 ⚪ Next: merge #2980, watch the roll, then drive it — send a URL, ask for a summary, read the answer.
 📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
 
+
+## 2026-09-10T22:24:14Z · session pi-unkno · lane mums-concierge
+🟢 Done: the blocker is cleared — human-twilio ExternalSecret is SecretSynced True in the concierge namespace. The founder renamed the Bitwarden secret to TWILIO_AUTH_TOKEN and it landed within 60s. Three PRs merged: #2945 (grader gate + 13 workflows + rules.yaml pointer), #2974 (Twilio vendor row, concierge namespace + fence, Flux row, root-trust register row), #2977 (missing postBuild.substituteFrom for ${ESTATE_APISERVER_CIDR}, and human-vault-bridge racing the concierge namespace).
+🟢 Done: verified the Twilio signature algorithm against a from-scratch implementation of the vendor spec — both produce gu4dGkf+mKN4hlos7SeG/qQxT68=. The L/OH5 vector I quoted was my own bad recollection, corrected on the record.
+🟡 Active: bringing the concierge up on this Mac per docs/DEPLOYMENT.md — venv, ffmpeg, Chromium, then the pinned torch 2.2.2 / speechbrain 0.5.15 stack. Founder has asked for no chat until it is operational.
+🔴 Blocked: nothing yet; checking the toolchain.
+⚪ Pending: PUBLIC_SERVER_URL (the tunnel hostname) must be filled before a real Twilio request can verify — Twilio signs the public URL it called, not the local one.
+📍 State: concierge code complete, nothing running yet. First live credential is in place.
+🔧 TOUCHES: ~/.concierge/env
+🔀 OVERLAP: none
+📎 FACTS: human-twilio SecretSynced True; TWILIO_ACCOUNT_SID in env; signature algorithm verified independently
+
