@@ -222,6 +222,24 @@ const HealthchecksTile = ({ data }: { data: Checks }) => {
   );
 };
 
+// crew#716 + crew#684 CP-pending: the estate's one scheduler (Dagster) lives in-cluster; the
+// tile is the link from /ops to the webserver. The backend proxy plugin (/dagster -> the
+// in-cluster Service) is the door, so the browser never reaches the cluster address directly.
+// Once the platform/edge HTTPRoute for dagster-webserver lands (W4 glass-break), the target
+// moves to the gateway hostname and the loop is closed end to end.
+const SchedulerTile = () => (
+  <Tile title="Scheduler (Dagster)" testId="ops-scheduler">
+    <Text variant="body-medium" data-testid="ops-scheduler-sentence">
+      The one scheduler for every recurring job. Open it for runs, sensors and schedules.
+    </Text>
+    <Names>
+      <li data-testid="ops-scheduler-link">
+        <Link to="/dagster" data-testid="ops-scheduler-open">Open the scheduler</Link>
+      </li>
+    </Names>
+  </Tile>
+);
+
 // crew#740: what every plane actually holds, graded against git, from the table the inventory
 // workflow publishes on the state branch. An unread plane is said so, never a green zero.
 const InventoryTile = ({ data, now }: { data: InventoryData; now: number }) => {
@@ -290,6 +308,7 @@ export const Ops = () => {
           <DrillsTile drills={reds.drills} />
         )}
         {checks.state === 'ready' && <HealthchecksTile data={checks.data} />}
+        <SchedulerTile />
         {checks.state === 'error' && (
           <UnreadTile testId="ops-healthchecks-error" detail={checks.error}>
             Scheduled jobs could not be read, so their state is unknown.
