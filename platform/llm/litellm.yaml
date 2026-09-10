@@ -112,6 +112,12 @@ spec:
             - { name: human-gemini, mountPath: /run/secrets/human/gemini, readOnly: true }
             - { name: human-openrouter, mountPath: /run/secrets/human/openrouter, readOnly: true }
             - { name: human-kimi, mountPath: /run/secrets/human/kimi, readOnly: true }
+            # 2026-09-10: both keys were in Secrets Manager and both bridge Secrets existed in
+            # this namespace, and neither was mounted -- so the estate router could not reach
+            # Cerebras or NVIDIA at all, and any agent that wanted them had to go direct and
+            # off the ledger. Founder, same day: "all agets send should be in litelln".
+            - { name: human-cerebras, mountPath: /run/secrets/human/cerebras, readOnly: true }
+            - { name: human-nvidia, mountPath: /run/secrets/human/nvidia, readOnly: true }
             - { name: tmp, mountPath: /tmp }
           resources:
             # OOMKilled at 1Gi within 19s of start on the -database image (Prisma engine plus the
@@ -161,6 +167,10 @@ spec:
           secret: { secretName: human-openrouter, optional: true }
         - name: human-kimi
           secret: { secretName: human-kimi, optional: true }
+        - name: human-cerebras
+          secret: { secretName: human-cerebras, optional: true }
+        - name: human-nvidia
+          secret: { secretName: human-nvidia, optional: true }
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
 ---
