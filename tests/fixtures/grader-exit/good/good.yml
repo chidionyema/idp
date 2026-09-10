@@ -1,0 +1,19 @@
+name: good
+on: [workflow_dispatch]
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: grade and fail loudly
+        run: |
+          set -euo pipefail
+          bin/idp-root-trust | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: prove langfuse
+        run: |
+          set -eo pipefail
+          bin/idp-prove langfuse
+      - name: an optional leg
+        # optional: the drill may legitimately find nothing to reuse on a fresh cluster
+        run: |
+          set -euo pipefail
+          bin/idp-fits-a-node || true
