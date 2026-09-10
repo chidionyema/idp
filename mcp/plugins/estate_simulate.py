@@ -535,9 +535,69 @@ def _live_graders(source):
             "detail": first or "placement grader did not answer",
         }
 
+    def blast():
+        """Grade 'what else does this change touch?' (MUM-288 blast row) by checking every
+        manifest reference against the manifest itself and the Backstage catalogue graph via
+        bin/idp-blast-grade. A reference whose target is in neither set is a dangling edge the
+        apply would hit; blast returns UNSAFE. A graph the bin cannot read is UNKNOWN, not
+        SAFE -- the same fail-closed rule idp-fence-enforcement enforces. Verdicts come from
+        the bin's leading ok/FAIL/BLIND token, never from its exit code (it exits 0 for SAFE
+        and 2 for BLIND; an exit-code reader would fold a blind read into a pass)."""
+        if not isinstance(source, str) or not source.strip():
+            return {
+                "verdict": "UNKNOWN",
+                "detail": "blast requires an inline manifest; non-inline source is ungraded",
+            }
+        blast_bin = base / "bin" / "idp-blast-grade"
+        if not blast_bin.is_file():
+            return {"verdict": "UNKNOWN", "detail": "bin/idp-blast-grade not present"}
+        try:
+            import tempfile as _tempfile
+
+            with _tempfile.NamedTemporaryFile(
+                mode="w", suffix=".yaml", delete=False, encoding="utf-8"
+            ) as _fp:
+                _fp.write(source)
+                _tmp = _fp.name
+            try:
+                proc = subprocess.run(
+                    [
+                        sys.executable,
+                        str(blast_bin),
+                        "--quiet",
+                        "--catalog-dir",
+                        os.environ.get("ESTATE_BLAST_CATALOG_DIR", "backstage"),
+                        "--source",
+                        _tmp,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+            finally:
+                try:
+                    os.unlink(_tmp)
+                except OSError:
+                    pass
+        except Exception as exc:  # noqa: BLE001 - a grader that could not run is UNKNOWN
+            return {"verdict": "UNKNOWN", "detail": f"blast could not run: {exc}"}
+        verdict_mark, first = _prefix(proc)
+        if verdict_mark == "ok":
+            return {"verdict": "SAFE", "detail": first or "every reference resolves"}
+        if verdict_mark == "FAIL":
+            return {
+                "verdict": "UNSAFE",
+                "detail": first or "a reference dangling in the catalogue graph",
+            }
+        return {
+            "verdict": "UNKNOWN",
+            "detail": first or "blast grader did not answer",
+        }
+
     return {
         "admission": admission,
         "laws": laws,
+        "blast": blast,
         "converge": converge,
         "network": network,
         "placement": placement,

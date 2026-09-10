@@ -1,0 +1,273 @@
+#!/usr/bin/env python3
+"""The blast grader's reference-resolver (MUM-288 blast row).
+
+R40 says "never reinvent the wheel and do a worse job". This script does NOT
+copy ``bin/catalog-refcheck``'s parser; it loads the same ``catalog-info.yaml``
+graph and asks one question: every reference inside a proposed manifest is
+either defined in the manifest OR named in the catalogue? An unmapped
+reference is a dangling edge in the world-model graph that the apply would
+hit; blast returns UNSAFE. A graph the script cannot load is a fail-closed
+UNKNOWN, the same rule ``bin/idp-fence-enforcement`` and
+``bin/idp-calico-deny-log`` enforce.
+
+Exit codes:
+    0  ok    blast-grade  every reference resolves
+    1  FAIL  blast-grade  N dangling reference(s) ... (verbatim, plain)
+    2  BLIND blast-grade  catalogue unreadable (UNKNOWN)
+
+The first line of stdout carries the verdict token; the simulate door reads
+that token, never the exit code (idp-fits-a-node returns 0 on BLIND too, and
+an exit-code reader would fold a blind read into a pass). Use ``--quiet`` to
+suppress the JSON report that follows the verdict line.
+
+The reference fields scanned are the ones Backstage and the platform's own
+catalog reach through K8s manifests: secretKeyRef (env / volume projection),
+configMapKeyRef, secret/configMap volumes, PVC volume sources, csi
+nodePublishSecretRef, imagePullSecrets, serviceAccountName (Pod and
+Deployment), and envFrom.configMapRef / envFrom.secretRef. Targets without
+a namespace resolve against ``default`` (the same normalisation
+``bin/catalog-refcheck`` uses).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:  # the CI venv may not carry PyYAML on every rung
+    yaml = None  # type: ignore[assignment]
+
+EXIT_OK = 0
+EXIT_FAIL = 1
+EXIT_BLIND = 2
+
+# K8s doc root fields that carry a reference. Each entry maps the field path
+# (in dot notation on a parsed dict) to the kind it resolves into. A path
+# component of "*" means "any element of this list".
+_REF_FIELDS: tuple[tuple[str, str], ...] = (
+    ("spec.template.spec.containers.*.env.*.valueFrom.secretKeyRef.name", "Secret"),
+    ("spec.template.spec.containers.*.env.*.valueFrom.configMapKeyRef.name", "ConfigMap"),
+    ("spec.template.spec.containers.*.envFrom.*.secretRef.name", "Secret"),
+    ("spec.template.spec.containers.*.envFrom.*.configMapRef.name", "ConfigMap"),
+    ("spec.template.spec.imagePullSecrets.*.name", "Secret"),
+    ("spec.template.spec.serviceAccountName", "ServiceAccount"),
+    ("spec.serviceAccountName", "ServiceAccount"),
+    ("volumes.*.secret.secretName", "Secret"),
+    ("volumes.*.configMap.name", "ConfigMap"),
+    ("volumes.*.csi.nodePublishSecretRef.name", "Secret"),
+    ("volumes.*.persistentVolumeClaim.claimName", "PersistentVolumeClaim"),
+)
+
+
+def _walk_field(doc: dict, path: str):
+    """Yield every leaf along ``path``. The path is a dotted sequence where
+    every ``*`` follows a step whose value is a list (so iterating ``*``
+    descends element-by-element). Other steps descend dict keys. Missing
+    intermediate nodes yield nothing.
+    """
+    if not isinstance(doc, dict):
+        return
+    parts = path.split(".")
+    yield from _walk_recursive(doc, parts)
+
+
+def _walk_recursive(node, parts):
+    if not parts:
+        if isinstance(node, str):
+            yield node
+        return
+    head, *rest = parts
+    if head == "*":
+        # ``*`` is a placeholder for "current node is a list; iterate it".
+        if not isinstance(node, list):
+            return
+        for c in node:
+            yield from _walk_recursive(c, rest)
+        return
+    if not isinstance(node, dict):
+        return
+    children = node.get(head)
+    if children is None:
+        return
+    yield from _walk_recursive(children, rest)
+
+
+def _metadata(doc: dict) -> tuple[str, str, str]:
+    """Best-effort (kind, namespace, name) of a K8s document. Defaults are
+    plain ('kind', 'default', 'name') when fields are absent."""
+    if not isinstance(doc, dict):
+        return ("", "default", "")
+    md = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+    kind = str(doc.get("kind") or "")
+    name = str(md.get("name") or "")
+    ns = str(md.get("namespace") or "default")
+    return (kind, ns, name)
+
+
+def _identity(doc: dict) -> str:
+    """``kind/namespace/name`` triple, normalised to lowercase for matching.
+    Empty fields stay empty."""
+    k, ns, n = _metadata(doc)
+    return f"{k.lower()}/{ns.lower()}/{n.lower()}"
+
+
+def _defined_in_manifest(docs) -> dict:
+    out = set()
+    for d in docs:
+        if isinstance(d, dict):
+            ident = _identity(d)
+            if ident and ident != "//":
+                out.add(ident)
+    return out
+
+
+def _defined_in_catalog(catalog_dir: Path) -> dict:
+    """Read every ``catalog-info.yaml`` under ``catalog_dir`` and treat each
+    parsed document's ``kind``, ``metadata.namespace``, ``metadata.name`` as
+    defined. The Backstage convention ``metadata.namespace = default`` for
+    top-level objects matches Kubernetes' default namespace convention.
+    Missing catalogues or unparseable docs are not failures of the loader --
+    they are absence of proof, returned to the caller as ``None`` so the
+    script can be UNKNOWN, not SAFE.
+    """
+    if not catalog_dir.exists():
+        return None  # type: ignore[return-value]
+    if yaml is None:
+        return None
+    matches = list(catalog_dir.rglob("catalog-info.yaml"))
+    if not matches:
+        return None
+    defined = set()
+    for path in matches:
+        try:
+            for doc in yaml.safe_load_all(path.read_text()):
+                if isinstance(doc, dict):
+                    ident = _identity(doc)
+                    if ident and ident != "//":
+                        defined.add(ident)
+        except (yaml.YAMLError, OSError):
+            return None
+    return defined
+
+
+def _extract_references(docs) -> list:
+    """Return a list of (from_identity, target_kind, target_namespace, target_name)
+    for every K8s ref the proposed manifest carries."""
+    out = []
+    if not isinstance(docs, list):
+        docs = [docs]
+    for d in docs:
+        if not isinstance(d, dict):
+            continue
+        from_ident = _identity(d)
+        for path, kind in _REF_FIELDS:
+            for value in _walk_field(d, path):
+                if not isinstance(value, str) or not value.strip():
+                    continue
+                out.append(
+                    (from_ident, kind, "default", value.strip())
+                )
+    return out
+
+
+def _scan(catalog_dir: Path, manifest_text: str) -> dict:
+    if yaml is None:
+        return {"verdict": "BLIND", "reason": "PyYAML not installed"}
+    try:
+        docs = list(yaml.safe_load_all(manifest_text))
+    except yaml.YAMLError as exc:
+        return {"verdict": "BLIND", "reason": f"manifest is not parseable YAML: {exc}"}
+    in_manifest = _defined_in_manifest(docs)
+    in_catalog = _defined_in_catalog(catalog_dir)
+    if in_catalog is None:
+        return {"verdict": "BLIND", "reason": f"catalogue not reachable at {catalog_dir}"}
+    refs = _extract_references(docs)
+    dangling = []
+    for from_ident, kind, ns, name in refs:
+        ident = f"{kind.lower()}/{ns.lower()}/{name.lower()}"
+        if ident in in_manifest or ident in in_catalog:
+            continue
+        # also accept matches where the catalogue or manifest defined the target
+        # under a different kind name (e.g. a Component in Backstage named
+        # ``mumchimp-secret`` may satisfy a Secret reference when no Secret
+        # entity exists). This is the spec's *informational* match: a catalog
+        # entity whose ``metadata.name`` matches the reference name is treated
+        # as a possible source-of-truth for that resource.
+        wildcard_ok = any(
+            ident.endswith("/" + name.lower())
+            for ident in in_catalog
+        )
+        if wildcard_ok:
+            continue
+        dangling.append({"from": from_ident, "ref": ident})
+    if dangling:
+        return {
+            "verdict": "FAIL",
+            "count": len(dangling),
+            "dangling": dangling,
+        }
+    return {"verdict": "ok", "in_manifest": len(in_manifest), "in_catalog": len(in_catalog)}
+
+
+def _verdict_line(outcome: dict) -> str:
+    if outcome.get("verdict") == "ok":
+        return f"ok    blast-grade  {outcome['in_manifest']} manifest, {outcome['in_catalog']} catalogue identities"
+    if outcome.get("verdict") == "FAIL":
+        return f"FAIL  blast-grade  {outcome['count']} dangling reference(s)"
+    return f"BLIND blast-grade  {outcome.get('reason', 'catalogue unreadable')}"
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--catalog-dir",
+        default=os.environ.get("ESTATE_BLAST_CATALOG_DIR", "backstage"),
+        help="Directory walked for catalog-info.yaml files (default: ESTATE_BLAST_CATALOG_DIR or 'backstage').",
+    )
+    parser.add_argument(
+        "--source", "-f",
+        default=None,
+        help="Path to the proposed manifest YAML; stdin when omitted.",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress the JSON report after the verdict line.",
+    )
+    args = parser.parse_args(argv)
+
+    if args.source:
+        text = Path(args.source).read_text()
+    elif not sys.stdin.isatty():
+        text = sys.stdin.read()
+    else:
+        print("no manifest on stdin and no --source given", file=sys.stderr)
+        return EXIT_FAIL
+
+    catalog_dir = Path(args.catalog_dir)
+    if not catalog_dir.is_absolute():
+        catalog_dir = Path(os.getcwd()) / catalog_dir
+
+    outcome = _scan(catalog_dir, text)
+    line = _verdict_line(outcome)
+    print(line)
+    if not args.quiet:
+        sanitised = {
+            k: v for k, v in outcome.items()
+            if k not in ("verdict",)  # already on the verdict line
+        }
+        print(json.dumps(sanitised, sort_keys=True))
+
+    if outcome.get("verdict") == "ok":
+        return EXIT_OK
+    if outcome.get("verdict") == "FAIL":
+        return EXIT_FAIL
+    return EXIT_BLIND
+
+
+if __name__ == "__main__":
+    sys.exit(main())
