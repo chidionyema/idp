@@ -20,13 +20,16 @@
 #           the estate router with a different address, it is not the estate router
 #           at all.
 #
-#   home 3  the founder's Mac, over Tailscale, on local silicon
-#           Ollama on the tailnet address in clusters/oke/estate-config.yaml.
-#           dies only when the laptop is off. Free, private, and cannot run out of
-#           credit -- which is why it is last, the same reason llm/config.yaml:166
-#           already gives for putting ollama at the tail ("it is local and cannot run
-#           out of credit"). A hop that costs nothing is the right floor, not the
-#           right first try.
+#   home 3  a second vendor on a second cloud, out through the same tailscale sidecar
+#           https://api.groq.com/openai/v1, free tier, no card.
+#           dies only when Groq does -- a failure domain it shares with neither of the
+#           other two. Free, so it cannot run out of credit, which is why it is last:
+#           a hop that costs nothing is the right floor, not the right first try.
+#           This WAS the founder's Mac on Ollama until 2026-09-10, when he killed it:
+#           "no i killed ollama because machine is slow", "lets think of another cloud
+#           home", "dont rely on macbook". The laptop is an Intel i7-8850H with no GPU
+#           and could not answer a real prompt inside Otto's client ceiling; the
+#           measurements are in the home 3 block below.
 #
 # THE SWITCH IS NOT A SCRIPT. It is the same litellm binary the estate already runs
 # (THE HEADLINE, rule 1: no script for a problem a proven platform solves), as a sidecar
@@ -91,33 +94,120 @@ data:
           timeout: 60
           num_retries: 0
 
-      # ---- home 3: the founder's Mac, local silicon over Tailscale --------------------
-      # Measured on the laptop 2026-09-09: qwen2.5-coder:7b answered "OK, I understand."
-      # in one call to 127.0.0.1:11434/v1/chat/completions. The address is
-      # FOUNDER_MAC_TS_IP from clusters/oke/estate-config.yaml -- one value, one
-      # place, never a literal here (LAW 46). Reached only through the Tailscale sidecar
-      # in this pod; there is no other route from the cluster to the laptop.
-      - model_name: home-mac
+      # ---- home 3: a second vendor, on a second cloud, reached the same way ----------
+      # Was the founder's Mac over Tailscale until 2026-09-10. It is not any more, on his
+      # order -- "no i killed ollama because machine is slow", and "lets think of another
+      # cloud home / dont rely on macbook". The measurements behind that call, taken on the
+      # laptop the same morning: it is an Intel i7-8850H, Ollama reports
+      # `inference compute id=cpu library=cpu` with 4.7 GiB free and NO GPU; qwen2.5-coder:7b
+      # pinned resident answered 16 output tokens in 24-46s, returned
+      # `unexpected EOF` on a realistic 1.4k-token prompt, and llama3.2:3b returned nothing
+      # in 240s. A home that cannot answer a real prompt inside Otto's own 120s client
+      # ceiling (otto/router/config.py _DEFAULT_TIMEOUT_SECONDS) is not a lifeboat.
+      #
+      # Groq instead. It is a different vendor on a different cloud from home 2, so the two
+      # tails share no failure domain; it serves frontier open weights (Llama 3.3 70B) on a
+      # free tier with no card, so the floor still cannot run out of credit -- the same
+      # property the laptop was chosen for, without the laptop; and it is OpenAI-compatible,
+      # so it is a lane here and not an adapter. platform/vendors/consoles.yaml already
+      # registers it as the estate's free floor, and ExternalSecret/human-groq in llm has
+      # been Ready=True since the founder set the seed.
+      #
+      # Egress is the direct road out of the pod, the same one home 2 takes to
+      # api.minimax.io -- which is why api.groq.com joins NO_PROXY on the sidecar in
+      # deployment.yaml. The tailscale proxy in this pod carries the tailnet, not the
+      # internet: asked to carry this call it refused in 0.05s. So home 3 needs no new
+      # route, no new fence rule, and nothing at all on the founder's machine.
+      - model_name: home-floor
         litellm_params:
-          model: openai/qwen2.5-coder:7b
-          api_base: http://${FOUNDER_MAC_TS_IP}:11434/v1
-          api_key: ollama
-          # Measured on the founder's Mac, 2026-09-10: warm, 12.7s for a 20-token reply; cold,
-          # over 120s -- a 7B load on a laptop already 46% free and paging. 120 was the first
-          # number here and it timed out on exactly the turn home 3 exists for, so the job
-          # below now keeps the model resident (OLLAMA_KEEP_ALIVE=-1) and this is the ceiling
-          # for the one cold load after a reboot. A lifeboat that gives up is not a lifeboat.
-          timeout: 240
+          # `openai/` twice on purpose: the first is LiteLLM's provider prefix (an
+          # OpenAI-compatible endpoint), the second belongs to the model's own name.
+          # gpt-oss-120b and not Llama 3.3 70B, which every list of Groq's models still
+          # names: asked from inside this pod on 2026-09-10 it answered
+          #   404 "The model `llama-3.3-70b-versatile` does not exist or you do not have
+          #   access to it."
+          # while GET /v1/models returned the fourteen it actually serves. Measured on the
+          # same call, from this container, on this key:
+          #   openai/gpt-oss-120b   HTTP 200  0.48s  119 tokens, a real three-sentence answer
+          #   qwen/qwen3.8-27b      HTTP 200  0.43s   74 tokens
+          # and a tool-calling turn came back with tool_calls=['get_weather'], which Otto
+          # needs: OTTO_ROUTER_TOOL_MAX_TURNS is 12 and a home that cannot call a tool is
+          # a home that can only chat.
+          model: openai/openai/gpt-oss-120b
+          api_base: https://api.groq.com/openai/v1
+          api_key: os.environ/GROQ_API_KEY
+          # Generation is not the risk -- half a second, measured above. A free tier that
+          # is spent says so instantly with a 429, it does not hang. So the budget here is
+          # small on purpose: a floor lane that stalls costs the NEXT floor lane its turn.
+          timeout: 20
+          num_retries: 0
+
+      # ---- the floor is a chain, because a free tier ends ----------------------------
+      # Founder, 2026-09-10: "free with linits? what if lnnit is reached? need otto to
+      # live forever", and "this has to be sophisticated".
+      #
+      # He is right, and one free vendor is not a floor. Groq's own headers, read from
+      # inside this pod on this key:
+      #     x-ratelimit-limit-requests   1000        (per day)
+      #     x-ratelimit-limit-tokens     8000        (per minute)
+      # Generous for a lifeboat and still finite. So under Groq sit two more free lanes at
+      # two more vendors, and the estate already holds a live key for both. Exhausting one
+      # is not an outage, it is a hop -- the same mechanism that carries every other hop in
+      # this file, with nothing new invented for it.
+      #
+      # Measured from inside this container, all three the same morning:
+      #     groq openai/gpt-oss-120b       0.48s   tool_calls ok
+      #     gemini-2.5-flash-lite          0.82s   tool_calls ok
+      #     gemini-2.5-flash               0.78s   answered, but returned NO tool call on a
+      #                                            prompt that demanded one -- so `lite` is
+      #                                            the lane, not the bigger sibling
+      # Tool calling is not a nicety here: OTTO_ROUTER_TOOL_MAX_TURNS is 12 and a home that
+      # cannot call a tool can only chat.
+      - model_name: home-floor-2
+        litellm_params:
+          model: openai/gemini-2.5-flash-lite
+          api_base: https://generativelanguage.googleapis.com/v1beta/openai
+          api_key: os.environ/GEMINI_API_KEY
+          timeout: 20
+          num_retries: 0
+
+      # The last lane, and honestly the weakest -- kept because something beats silence and
+      # it is a third vendor again. OpenRouter's free catalogue is genuinely unreliable:
+      # of four free models with tool support asked in one run from this pod,
+      #     nvidia/nemotron-3-ultra-550b-a55b:free   timed out at 45s
+      #     thinkingmachines/inkling:free            403, "only available on agentic harnesses"
+      #     google/gemma-4-26b-a4b-it:free           429 from the upstream provider
+      #     nvidia/nemotron-3.5-lightning:free       200 in 8.68s, but no tool call
+      # so it is last, on a short leash, and never counted on. Its slugs also churn: three
+      # `:free` models that every list still names now answer
+      # 404 "This model is unavailable for free."
+      - model_name: home-floor-3
+        litellm_params:
+          model: openai/nvidia/nemotron-3.5-lightning:free
+          api_base: https://openrouter.ai/api/v1
+          api_key: os.environ/OPENROUTER_API_KEY
+          # 8.68s measured, and it is the last thing standing between Otto and silence.
+          timeout: 25
           num_retries: 0
 
     router_settings:
       # The whole point of the file. Every lane Otto can ask for walks the three homes in
       # order and stops at the first that answers.
       fallbacks:
-        - minimax:  [home-direct, home-mac]
-        - deepseek: [home-direct, home-mac]
-        - gemini:   [home-direct, home-mac]
-        # `embed` deliberately has NO tail. otto_facts.embedding is a 1536-wide column,
+        - minimax:  [home-direct, home-floor, home-floor-2, home-floor-3]
+        - deepseek: [home-direct, home-floor, home-floor-2, home-floor-3]
+        - gemini:   [home-direct, home-floor, home-floor-2, home-floor-3]
+        # A spent lane is PARKED, not re-asked. Without this the chain still works but it
+      # works stupidly: the day Groq's thousandth request is spent, every single turn pays
+      # a round trip to Groq to be told 429 again before it reaches Gemini. allowed_fails
+      # 1 with a 5-minute cooldown means the first 429 takes that lane out of the chain and
+      # the turns behind it go straight to the next vendor. This is the router's own
+      # cooldown machinery, which is the whole reason the switch is litellm and not a
+      # script of mine.
+      allowed_fails: 1
+      cooldown_time: 300
+
+      # `embed` deliberately has NO tail. otto_facts.embedding is a 1536-wide column,
         # matched to gemini-embedding-001; the laptop's nomic-embed-text is 768-wide, so a
         # fallback there would not degrade recall, it would write vectors of the wrong shape
         # into the fact store. Otto already handles a failed embedding correctly without
@@ -133,7 +223,11 @@ data:
       # node -- both of those killed a router replica that night.
       drop_params: true
       turn_off_message_logging: true
-      request_timeout: 330  # home 1 (20) + home 2 (60) + home 3 (240), plus the hop
+      # home 1 (20) + home 2 (60) + the three floor lanes (20 + 20 + 25), plus the hops.
+      # The whole ladder, every lane silent, and the founder still gets an answer from the
+      # last one inside Otto's client ceiling -- which deployment.yaml sets to 170 for
+      # exactly this arithmetic. The default 120 would have hung up mid-floor.
+      request_timeout: 155
 
     general_settings:
       master_key: os.environ/OTTO_BRAIN_KEY

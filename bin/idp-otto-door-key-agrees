@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""The door must present a key the lifeboat it talks to can actually validate.
+
+Otto's door (container `gateway`) sends every model call to LITELLM_BASE_URL. When that URL
+is the loopback otto-brain sidecar, the key it presents has to be that sidecar's MASTER key:
+litellm compares a master key in process, but a *virtual* key is a row in a Postgres the
+sidecar does not have, so it answers
+
+    400 {"error":{"message":"No connected db.","type":"no_db_connection"}}
+
+before any of the three homes is tried.
+
+That is not hypothetical. On 2026-09-10 the door exported the estate router's virtual key
+into LITELLM_API_KEY while LITELLM_BASE_URL pointed at 127.0.0.1:4010, and every real
+founder turn died there:
+
+    "component": "router", "event": "router.outcome",
+    "state": "needs_human", "lane": "judgment", "attempts": 2      (in 0.2 s)
+
+on both replicas, with the sidecar logging a 400 for each attempt. The three homes had been
+merged, deployed and reported working for a day, and had never carried one real turn. Every
+probe stayed green throughout, because the probe asked home 1 directly and never presented a
+key to the lifeboat -- exactly the shape THE EMPIRICAL PROOF RULE names.
+
+So this grades the join no single file owns. It reads the parsed pod spec, not a git hunk,
+and resolves each container's key back through its volumeMounts to the Secret it actually
+comes from: the two must derive the same master key, by the same formula, from the same
+Secret.
+
+    python3 bin/idp-otto-door-key-agrees [deployment.yaml]
+
+0 = they agree, or the door does not point at the sidecar at all.  1 = they disagree.
+2 = the file cannot be read or parsed.
+"""
+
+import re
+import sys
+
+import yaml
+
+DEFAULT = "platform/otto-gateway/deployment.yaml"
+KEY_NAME = "LITELLM_API_KEY"
+
+# `sk-$(printf '%s' "$VAR" | sha256sum | cut -c1-40)` -- the one derivation, captured so both
+# containers can be checked against each other rather than against a copy of it written here.
+DERIVATION = re.compile(
+    r"""sk-\$\(printf\s+'%s'\s+"\$(\w+)"\s*\|\s*sha256sum\s*\|\s*cut\s+-c1-40\)"""
+)
+DIRECT_READ = re.compile(r"(\w+)=\$\(cat\s+(\S*" + KEY_NAME + r")\)")
+GLOB_EXPORT = re.compile(
+    r'for\s+f\s+in\s+(\S+?)/\*/\*\s*;.*?export\s+"\$\(basename\s+"?\$f"?\)=', re.S
+)
+
+
+def script_of(container):
+    return "\n".join(container.get("args") or [])
+
+
+def env_of(container, name):
+    for e in container.get("env") or []:
+        if e.get("name") == name:
+            return e.get("value")
+    return None
+
+
+def secret_behind(path, container, volumes):
+    """The Secret name a file path inside this container actually comes from."""
+    best = None
+    for m in container.get("volumeMounts") or []:
+        mp = m.get("mountPath", "")
+        if path == mp or path.startswith(mp.rstrip("/") + "/"):
+            if best is None or len(mp) > len(best[0]):
+                best = (mp, m.get("name"))
+    if best is None:
+        return None
+    vol = next((v for v in volumes if v.get("name") == best[1]), None)
+    if not vol:
+        return None
+    return (vol.get("secret") or {}).get("secretName")
+
+
+def key_source(container, volumes):
+    """(secrets, derives?) -- every Secret this container's LITELLM_API_KEY could come from.
+
+    A direct `VAR=$(cat <path>)` names exactly one. The sidecar's shape -- export every file
+    under <root>/*/* by its basename -- names one per mount under that root, and which of them
+    actually carries LITELLM_API_KEY is a fact about the Secret's contents that this file does
+    not hold. So the sidecar contributes the set, and the door must read one OF that set.
+    """
+    text = script_of(container)
+    m = DERIVATION.search(text)
+    derives = bool(m)
+    wanted = m.group(1) if m else KEY_NAME
+
+    for name, path in DIRECT_READ.findall(text):
+        if name == wanted or (not m and name == KEY_NAME):
+            sec = secret_behind(path, container, volumes)
+            return ({sec} if sec else set()), derives
+
+    g = GLOB_EXPORT.search(text)
+    if g:
+        root = g.group(1).rstrip("/") + "/"
+        found = set()
+        for mnt in container.get("volumeMounts") or []:
+            mp = mnt.get("mountPath", "")
+            if mp.startswith(root):
+                sec = secret_behind(mp.rstrip("/") + "/" + KEY_NAME, container, volumes)
+                if sec:
+                    found.add(sec)
+        return found, derives
+    return set(), derives
+
+
+def main() -> int:
+    path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT
+    try:
+        docs = [d for d in yaml.safe_load_all(open(path, encoding="utf-8")) if d]
+    except (OSError, yaml.YAMLError) as exc:
+        print(f"FAIL  cannot read {path}: {exc}")
+        return 2
+
+    spec = next(
+        (
+            d["spec"]["template"]["spec"]
+            for d in docs
+            if d.get("kind") == "Deployment"
+            and d.get("metadata", {}).get("name") == "otto-gateway"
+        ),
+        None,
+    )
+    if spec is None:
+        print("ok    no otto-gateway Deployment in this file; nothing to grade")
+        return 0
+
+    by_name = {c["name"]: c for c in spec.get("containers") or []}
+    door, brain = by_name.get("gateway"), by_name.get("otto-brain")
+    if not door or not brain:
+        print("ok    no gateway/otto-brain pair; nothing to grade")
+        return 0
+
+    base = env_of(door, "LITELLM_BASE_URL") or ""
+    if "127.0.0.1" not in base and "localhost" not in base:
+        print(f"ok    the door talks to {base or 'nothing'}, not the loopback lifeboat; "
+              "a virtual key is the right key for the estate router")
+        return 0
+
+    volumes = spec.get("volumes") or []
+    door_secret, door_derives = key_source(door, volumes)
+    brain_secret, brain_derives = key_source(brain, volumes)
+
+    if not brain_derives:
+        print("ok    otto-brain derives no master key; nothing for the door to agree with")
+        return 0
+
+    if not door_derives:
+        print("FAIL  otto-brain derives its master key with sha256sum, but the door presents")
+        print(f"      {KEY_NAME} unhashed. The sidecar has no database, so it cannot look up a")
+        print("      virtual key: it answers 400 'No connected db.' to every turn, before any")
+        print("      of the three homes is tried. Derive the same key in the door's entrypoint.")
+        return 1
+
+    if not door_secret or not brain_secret:
+        print("FAIL  cannot resolve the key back to a Secret:")
+        print(f"      gateway    -> {sorted(door_secret) or 'nothing'}")
+        print(f"      otto-brain -> {sorted(brain_secret) or 'nothing'}")
+        print("      A key whose origin cannot be read cannot be proved to match.")
+        return 1
+
+    shared = door_secret & brain_secret
+    if not shared:
+        print("FAIL  the door's key comes from a Secret the lifeboat does not mount:")
+        print(f"      gateway    reads  {', '.join('Secret/' + s for s in sorted(door_secret))}")
+        print(f"      otto-brain mounts {', '.join('Secret/' + s for s in sorted(brain_secret))}")
+        print("      The same formula over different values is still a key the lifeboat refuses.")
+        return 1
+
+    print("ok    door and lifeboat derive the same master key from "
+          + ", ".join("Secret/" + s for s in sorted(shared)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

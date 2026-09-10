@@ -134,6 +134,12 @@ def seed(vendors: dict) -> str:
             # and in notify/notify-apprise-founder-telegram. Seeding from every holder costs
             # nothing (IfNotExists means the first one to arrive wins and the rest no-op) and
             # means the seed still happens when one of the holders does not exist yet.
+            # A target with no vault `entry` has no cluster Secret to seed Bitwarden FROM:
+            # the founder's copy IS the only copy (minimax, 2026-09-10, after the vault copies
+            # were proved revoked and unset). Nothing to push, so no PushSecret -- the
+            # ExternalSecret in the other direction is the whole relationship.
+            if not t.get("entry"):
+                continue
             rows.setdefault((t["ns"], t["bw"]), (t["entry"], t["field"]))
     docs = []
     for (ns, bw), (entry, field) in sorted(rows.items()):
