@@ -521,3 +521,64 @@ proof is a receipt image in her WhatsApp thread. Zero apps installed, ever.
 
 `voice_call_server.py` (v1.3b), `realtime_bridge.py` (v1.4), and the Zero-Touch onboarding are all
 specified and none are implemented. Nothing is deployed.
+
+---
+
+## v1.5 amendment — Unified voice, zero retention, consent enforced
+
+Founder decision 2026-09-10. v1.4 left a voice-identity split: the realtime model spoke with its
+own voice on the phone while WhatsApp used `en-NG-EzinneNeural`. Two different people answering to
+the same name is a trust problem for an elderly user. v1.5 closes it without giving up latency.
+
+### The insight
+
+The realtime session already requests `modalities: ["audio", "text"]`. That means the same
+conversation can emit **text** as well as audio. So the call's audio can be spoken by Ezinne — the
+same voice as WhatsApp — while still using the realtime model's low-latency VAD and barge-in. The
+Deepgram rebuild is unnecessary.
+
+```
+Twilio µ-law ──> realtime model (audio in, VAD, barge-in)
+                     │
+                     ├── response.audio_transcript.delta  -> text
+                     │        └──> edge-tts (en-NG-EzinneNeural) -> µ-law -> Twilio
+                     │
+                     └── function tool -> browser worker -> receipt to WhatsApp
+```
+
+Text is the transport between the model and the voice; the audio modality is not used for output,
+but VAD, turn detection and barge-in all still come from the model.
+
+### Privacy — zero retention
+
+- `session.store = false` in the realtime session configuration.
+- The disclosure is the *first* thing said on the first call, before anything is asked of her:
+  that the system listens to help, and that nothing is saved or shared.
+- A refusal is honoured and an unclear answer is never read as assent.
+
+### What v1.5 changes
+
+| Concern | v1.4 | v1.5 |
+|---|---|---|
+| Call voice | model-native (`shimmer`) | `en-NG-EzinneNeural`, same as WhatsApp |
+| Model output consumed | `response.audio.delta` | `response.audio_transcript.delta` -> TTS |
+| Barge-in | model VAD + Twilio `clear` | unchanged (still model VAD) |
+| Retention | `store: false` | unchanged |
+| Consent | scripted, asserted by test | additionally spoken as the opening line |
+
+### Issues-for-Nunn — v1.5 batch
+
+39. **"What if the voice is slower than the realtime audio?"** Routing every utterance through TTS
+    adds buffering. **Owner: bridge.** Spoken replies must stay short, and the first sentence must
+    start playing before the last is synthesised.
+40. **"What if Ezinne mispronounces a medicine?"** TTS reads what it is given. **Owner: bridge.**
+    Drug names must be spelled for pronunciation, and the order still read back to her for
+    confirmation before it is placed.
+41. **"What if the model says something it should not read aloud?"** Text output now includes
+    anything the model emits, including tool payloads. **Owner: bridge.** Only assistant-role
+    transcript deltas may reach the speaker; everything else is filtered.
+
+### What is still not built
+
+Nothing is deployed. No Twilio number, no voice baseline, no recording of Nunn's consent. The
+onboarding flow (contact card, welcome call) remains specified only.
