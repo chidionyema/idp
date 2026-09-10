@@ -323,17 +323,6 @@ model_list:
     model_info:
       mode: embedding
 
-  # The embed lane's second fallback: Cohere embed-english-v3.0, the better of the two
-  # models on this chain. It reads the key the cohere vendor row above carries into the
-  # router through the human door, mounted at /run/secrets/human/cohere.
-  - model_name: embed-cohere
-    litellm_params:
-      model: cohere/embed-english-v3.0
-      api_key: os.environ/COHERE_API_KEY
-      timeout: 120
-    model_info:
-      mode: embedding
-
   - model_name: vision
     litellm_params:
       model: gemini/gemini-2.5-flash
@@ -363,6 +352,17 @@ model_list:
       model: gemini/gemini-3.1-flash-image
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
+
+  # The embed lane's second fallback: Cohere embed-english-v3.0, the better of the two
+  # models on this chain. It reads the key this row carries into the router through the
+  # human door, mounted at /run/secrets/human/cohere.
+  - model_name: embed-cohere
+    litellm_params:
+      model: cohere/embed-english-v3.0
+      api_key: os.environ/COHERE_API_KEY
+      timeout: 120
+    model_info:
+      mode: embedding
 
 router_settings:
   fallbacks:

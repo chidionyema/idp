@@ -391,17 +391,6 @@ vendors:
           model_info:
             mode: embedding
 
-        # The embed lane's second fallback: Cohere embed-english-v3.0, the better of the two
-        # models on this chain. It reads the key the cohere vendor row above carries into the
-        # router through the human door, mounted at /run/secrets/human/cohere.
-        - model_name: embed-cohere
-          litellm_params:
-            model: cohere/embed-english-v3.0
-            api_key: os.environ/COHERE_API_KEY
-            timeout: 120
-          model_info:
-            mode: embedding
-
         - model_name: vision
           litellm_params:
             model: gemini/gemini-2.5-flash
@@ -695,6 +684,22 @@ vendors:
     store_default: human-vault
     targets:
       - { entry: litellm-upstream, ns: llm, field: COHERE_API_KEY, bw: COHERE_API_KEY }
+    router:
+      # The chain's second hop is declared on this row rather than on the gemini row that
+      # carries the `embed` lane itself, because a lane belongs to the vendor whose key it
+      # spends. A router that mounts COHERE_API_KEY and serves no row on it is what
+      # tests/test_every_vendor_key_the_router_holds_has_a_lane.py refuses, and it did.
+      cluster_lanes: |
+        # The embed lane's second fallback: Cohere embed-english-v3.0, the better of the two
+        # models on this chain. It reads the key this row carries into the router through the
+        # human door, mounted at /run/secrets/human/cohere.
+        - model_name: embed-cohere
+          litellm_params:
+            model: cohere/embed-english-v3.0
+            api_key: os.environ/COHERE_API_KEY
+            timeout: 120
+          model_info:
+            mode: embedding
 
   exa:
     kind: secret
