@@ -44,7 +44,14 @@ def one(rel, kind, name=None):
 def test_flux_row_substitutes_the_zone_and_waits_on_both_releases():
     row = one("clusters/oke/platform.yaml", "Kustomization", "monitoring")
     assert row["spec"]["path"] == "./platform/monitoring"
-    assert row["spec"]["wait"] is True and row["spec"]["prune"] is True
+    assert row["spec"]["prune"] is True and "wait" not in row["spec"]
+    # "waits on both releases" is these two health checks, and only these two. `wait: true`
+    # would discard them and wait on every object under ./platform/monitoring instead
+    # (bin/idp-flux-wait-brake, incident 2026-09-10).
+    assert {(h["kind"], h["name"]) for h in row["spec"]["healthChecks"]} == {
+        ("HelmRelease", "kube-prometheus-stack"),
+        ("HelmRelease", "blackbox"),
+    }
     subs = row["spec"]["postBuild"]["substituteFrom"]
     assert {"kind": "ConfigMap", "name": "estate-config"} in subs
     deps = {d["name"] for d in row["spec"]["dependsOn"]}
