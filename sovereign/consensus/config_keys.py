@@ -21,7 +21,12 @@ CONSENSUS_KEYS: dict[str, tuple[Any, type, str, str]] = {
         # It is the code-side twin of `[routing] cheap` in AGENTS.md and the two must agree --
         # test_cp30 grades the router's chain tails against THIS value, so the dead lane here was
         # what forced every fallback chain to end in a guaranteed 401.
-        "minimax", str, "SB_CONSENSUS_CHEAP_MODEL",
+        #
+        # 2026-09-10: "groq", the router's free floor. minimax was still a prepaid account, so
+        # the cheapest lane the estate served was one that could reach zero and stay there --
+        # and did. Groq's free tier meters requests per day and resets, which is the property
+        # being bought here; the lane is rendered from platform/vendors/consoles.yaml.
+        "groq", str, "SB_CONSENSUS_CHEAP_MODEL",
         "Single model used for a non-destructive op: the cheapest entry the estate router "
         "serves (idp platform/llm/config.yaml; the local ollama lane is laptop-only, crew#313)"),
     "consensus.request_timeout_s": (
