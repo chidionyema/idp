@@ -61,30 +61,32 @@ data:
       # retries belong to the estate router, which already does two; doing them again here
       # only delays the hop to a home that can answer, which is the founder's "we wait for
       # a nodel to finish and then swtich whih fails all the tine" (2026-09-08).
-      # 8s, not 20. This lane and the two under it are the ESTATE router -- the one rung
-      # in this file that is inside the cluster, and therefore the one rung that dies with
-      # it. It heads every chain because that is where estate spend accounting and tracing
-      # live, and Otto's turns should be visible with everything else the estate spends.
-      # But a head rung that is also the only cluster dependency must be cheap to lose:
-      # measured from this pod, a healthy router answers in seconds and a dead one refuses
-      # instantly, so the only thing a 20s budget ever bought was 20 seconds of a founder
-      # waiting on a service that was already gone. Everything below this line is a direct
-      # line to a vendor and needs no cluster at all.
-      - model_name: minimax
+      # This is the ESTATE router: the one rung in this file that is inside the cluster,
+      # and therefore the one rung that dies with it. Until 2026-09-10 it HEADED every
+      # chain, which meant every one of Otto's turns began with a call into the cluster --
+      # a cluster outage did not degrade Otto, it cost him the first rung of every ladder
+      # before he could start climbing. Founder, same day: "theesare fr lands, can we use
+      # oront". Yes. The free direct lanes below need no cluster, no Postgres, no collector
+      # and no node, and the two fastest of them were measured from this pod that day at
+      # 0.48s (Groq) and 0.25s (Cerebras) -- faster than the router they were queued behind.
+      # So the free lanes head the chains now and this one is a rung in the middle: still
+      # here, still where estate spend accounting and tracing live, no longer the thing
+      # standing between Otto and an answer. 8s, not 20: a healthy router answers in
+      # seconds and a dead one refuses instantly, so a 20s budget only ever bought 20
+      # seconds of a founder waiting on a service that was already gone.
+      # The price, stated plainly: a turn Groq answers is not counted in the estate's
+      # LiteLLM spend table, because it never touches it. Otto's brain still emits
+      # router.outcome for every turn, so nothing goes unlogged -- it is logged in one
+      # place instead of two. Availability outranks the accounting (founder, 2026-09-10:
+      # "ptto nust nnever go sdoen").
+      - model_name: home-estate
         litellm_params: &home1
           model: openai/minimax
           api_base: http://litellm.llm.svc.cluster.local:4000/v1
           api_key: os.environ/LITELLM_API_KEY
           timeout: 8
           num_retries: 0
-      - model_name: deepseek
-        litellm_params:
-          <<: *home1
-          model: openai/deepseek
-      - model_name: gemini
-        litellm_params:
-          <<: *home1
-          model: openai/gemini
+      # `embed` stays on the estate router alone; see the note under the chains.
       - model_name: embed
         litellm_params:
           <<: *home1
@@ -131,7 +133,7 @@ data:
       # internet: asked to carry this call it refused in 0.05s. So home 3 needs no new
       # route, no new fence rule, and nothing at all on the founder's machine.
       - model_name: home-floor
-        litellm_params:
+        litellm_params: &floor_groq
           # `openai/` twice on purpose: the first is LiteLLM's provider prefix (an
           # OpenAI-compatible endpoint), the second belongs to the model's own name.
           # gpt-oss-120b and not Llama 3.3 70B, which every list of Groq's models still
@@ -178,7 +180,7 @@ data:
       # Tool calling is not a nicety here: OTTO_ROUTER_TOOL_MAX_TURNS is 12 and a home that
       # cannot call a tool can only chat.
       - model_name: home-floor-2
-        litellm_params:
+        litellm_params: &floor_gemini
           model: openai/gemini-2.5-flash-lite
           api_base: https://generativelanguage.googleapis.com/v1beta/openai
           api_key: os.environ/GEMINI_API_KEY
@@ -249,7 +251,7 @@ data:
       # longer. The weights matching Groq's costs nothing here -- a home is a failure
       # domain, not a model lane, and the domain being bought is the vendor.
       - model_name: home-floor-4
-        litellm_params:
+        litellm_params: &floor_cerebras
           model: openai/gpt-oss-120b
           api_base: https://api.cerebras.ai/v1
           api_key: os.environ/CEREBRAS_API_KEY
@@ -271,6 +273,26 @@ data:
           timeout: 45
           num_retries: 0
 
+      # ---- the three names Otto actually asks for ------------------------------------
+      # Otto's client sends `minimax`, `deepseek` or `gemini`; those names are its API and
+      # do not change. What changes is what they are POINTED AT. Each is now an alias of a
+      # free direct lane -- no cluster in the path -- and the estate router is `home-estate`
+      # in the chain below. They are declared here, at the bottom of model_list, because a
+      # YAML alias has to come after the anchor it names.
+      # Which lane heads which name is not arbitrary: each opens on a DIFFERENT vendor from
+      # the one it is named for, so a vendor's own outage never takes both the head and the
+      # first rung (the mistake this file made until 2026-09-10, when `minimax` and its own
+      # first fallback home-direct went out together on the same MiniMax balance).
+      - model_name: minimax
+        litellm_params:
+          <<: *floor_groq
+      - model_name: deepseek
+        litellm_params:
+          <<: *floor_cerebras
+      - model_name: gemini
+        litellm_params:
+          <<: *floor_gemini
+
     router_settings:
       # The whole point of the file. Every lane Otto can ask for walks the three homes in
       # order and stops at the first that answers.
@@ -285,11 +307,15 @@ data:
       # It still answered, because Groq sits behind the dead hop. It answered a hop later
       # than it needed to, and on the day Groq is also spent that wasted hop is the outage.
       #
-      # So each chain now opens on a DIFFERENT vendor from its own, and each ends on its own
-      # vendor's other door -- worth trying last, worthless first:
-      #     minimax  is MiniMax  -> Groq, Gemini, OpenRouter, then MiniMax's direct line
-      #     deepseek is DeepSeek -> Groq, Gemini, MiniMax, OpenRouter
-      #     gemini   is Gemini   -> Groq, MiniMax, OpenRouter, then Gemini's own free tier
+      # So each chain opens on a DIFFERENT vendor from its own, and each ends on its own
+      # vendor's other door -- worth trying last, worthless first. And since 2026-09-10 the
+      # thing it opens on is a FREE DIRECT lane, not the cluster:
+      #     minimax  -> Groq, Cerebras, Gemini, [cluster], NVIDIA, OpenRouter, MiniMax direct
+      #     deepseek -> Cerebras, Groq, Gemini, [cluster], MiniMax direct, NVIDIA, OpenRouter
+      #     gemini   -> Gemini, Groq, NVIDIA, [cluster], MiniMax direct, Cerebras, OpenRouter
+      # `home-estate` sits fourth in all three. It is not first because it is the only rung
+      # that needs a Kubernetes cluster to answer, and it is not last because it is the only
+      # rung that meters what Otto spends.
       # Four vendors is what this file can reach today. It is not enough and it is not a
       # matrix: docs/explanation/otto-survival-matrix.md names twenty lanes. Measured from
       # this pod on 2026-09-10, FOUR are alive: Groq, Gemini, OpenRouter and DeepSeek --
@@ -305,9 +331,9 @@ data:
       # account-scoped token like any other vendor. The remaining twelve each need one key,
       # and platform/vendors/consoles.yaml is where each one's road is declared.
       fallbacks:
-        - minimax:  [home-floor, home-floor-4, home-floor-2, home-floor-5, home-floor-3, home-direct]
-        - deepseek: [home-floor-4, home-floor, home-floor-2, home-direct, home-floor-5, home-floor-3]
-        - gemini:   [home-floor, home-floor-5, home-direct, home-floor-4, home-floor-3, home-floor-2]
+        - minimax:  [home-floor-4, home-floor-2, home-estate, home-floor-5, home-floor-3, home-direct]
+        - deepseek: [home-floor, home-floor-2, home-estate, home-direct, home-floor-5, home-floor-3]
+        - gemini:   [home-floor, home-floor-5, home-estate, home-direct, home-floor-4, home-floor-3]
         # A spent lane is PARKED, not re-asked. Without this the chain still works but it
       # works stupidly: the day Groq's thousandth request is spent, every single turn pays
       # a round trip to Groq to be told 429 again before it reaches Gemini. allowed_fails
@@ -342,8 +368,10 @@ data:
       # against a request_timeout of 155 -- so the last rung of Otto's ladder could not be
       # reached inside the budget the router itself enforced. The ladder was longer than the
       # turn. With the timeouts retuned to what each lane was measured to need:
-      #     estate router 8 + groq 10 + cerebras 10 + gemini 20 + nvidia 45 + openrouter 25
+      #     groq 10 + cerebras 10 + gemini 20 + estate router 8 + nvidia 45 + openrouter 25
       #     + minimax direct 35 = 153, plus the loopback hops
+      # Reordering the rungs on 2026-09-10 so a free lane heads each chain did not change
+      # that sum -- all three chains still walk the same seven lanes, in a different order.
       # and 165 is that with headroom, still under the 170 Otto's own client allows
       # (OTTO_ROUTER_TIMEOUT_SECONDS, deployment.yaml). tests/test_otto_ladder_fits.py holds
       # the inequality so the next rung cannot quietly push the last one out of reach.

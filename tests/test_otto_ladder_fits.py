@@ -151,3 +151,50 @@ def test_the_founder_reaches_the_last_home_before_his_client_hangs_up(
         f"chain {chain!r} took {spent * SCALE:.0f}s to reach its last home, past the "
         f"{ceiling * SCALE:.0f}s Otto's client waits"
     )
+
+
+def test_no_chain_begins_inside_the_cluster(dead_vendor):
+    """The founder, 2026-09-10: "theesare fr lands, can we use oront".
+
+    A head rung is the one every turn pays for. While that rung was the estate router,
+    losing the cluster cost Otto the first hop of every ladder before he could climb.
+    The free lanes cost nothing and need no cluster, so they head the chains and the
+    router is a rung in the middle. This holds that shape: it fails the moment anyone
+    moves a `.svc.cluster.local` lane back to the front.
+    """
+    cfg = _brain()
+    params = {m["model_name"]: m["litellm_params"] for m in cfg["model_list"]}
+    chains = _chains(cfg)
+
+    inside = [
+        h
+        for h in sorted(chains)
+        if ".svc.cluster.local" in params[h].get("api_base", "")
+    ]
+    assert not inside, (  # noqa: S101
+        f"chains {inside} open on the estate router, so every one of Otto's turns starts "
+        "with a call into the cluster and a cluster outage costs him the first rung"
+    )
+
+    # and the router is still IN each chain -- dropped, not demoted, is a different bug.
+    missing = [
+        h
+        for h in sorted(chains)
+        if not any(
+            ".svc.cluster.local" in params[r].get("api_base", "") for r in chains[h]
+        )
+    ]
+    assert not missing, (  # noqa: S101
+        f"chains {missing} no longer reach the estate router at all; it is where estate "
+        "spend accounting and tracing live and it belongs in the middle, not gone"
+    )
+
+    # the heads must really be reachable without the cluster: prove the hop leaves this
+    # process for a vendor address, not a cluster DNS name that resolves nowhere here.
+    for head in sorted(chains):
+        assert params[head]["api_base"].startswith("https://"), (  # noqa: S101
+            f"head lane {head!r} is not a direct vendor line: {params[head]['api_base']}"
+        )
+    assert _ask(dead_vendor, 0.2) < 5.0, (  # noqa: S101
+        "the loopback vendor answered nothing, as designed"
+    )
