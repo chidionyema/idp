@@ -316,7 +316,7 @@ test("think reports which lanes it tried when none of them answered", async () =
 
 test("with every lane untouched the declared quality order is what runs", () => {
   assert.deepEqual(chooseOrder(Date.now()).map((l) => l.name),
-                   ["groq", "gemini", "workers-ai", "openrouter"]);
+                   ["groq", "gemini", "workers-ai", "kaggle", "openrouter"]);
 });
 
 test("a 429 takes a lane out of the running until its window rolls, it does not just skip it once", async () => {
@@ -362,4 +362,61 @@ test("a spent lane is skipped and a live one answers, without the spent lane bei
   const { lane } = await think(env({ AI: undefined }), { messages: [] }, fetchImpl);
   assert.equal(lane, "gemini");
   assert.ok(!calls.some((c) => c.url.includes("groq")));
+});
+
+// --------------------------------------------------------------------------------------
+// The GPU lane nobody bills for.
+
+test("a lane whose address lives in the environment is fetched at that address", async () => {
+  const kaggle = LANES.find((l) => l.name === "kaggle");
+  let asked = null;
+  const out = await tryLane(
+    kaggle,
+    { KAGGLE_LANE_KEY: "k", KAGGLE_LANE_URL: "https://gpu.example/v1/chat/completions" },
+    { messages: [{ role: "user", content: "hi" }] },
+    async (url) => {
+      asked = url;
+      return { ok: true, status: 200, headers: new Headers(), json: async () => ({ choices: [{ message: { content: "yes" } }] }) };
+    },
+  );
+  assert.equal(asked, "https://gpu.example/v1/chat/completions");
+  assert.equal(out.choices[0].message.content, "yes");
+});
+
+test("the same lane with a key but no address is skipped, not fetched against undefined", async () => {
+  const kaggle = LANES.find((l) => l.name === "kaggle");
+  let fetched = false;
+  const out = await tryLane(
+    kaggle,
+    { KAGGLE_LANE_KEY: "k" },
+    { messages: [{ role: "user", content: "hi" }] },
+    async () => { fetched = true; throw new Error("must not be reached"); },
+  );
+  assert.equal(out, null);
+  assert.equal(fetched, false, "a lane with no address must cost no request");
+});
+
+test("a notebook that is not running costs one lane, not the turn", async () => {
+  // No session up: the hostname does not answer and fetch throws. think() must count it and
+  // carry on, because a down GPU is the normal state of a 30-hour-a-week lane.
+  const order = [];
+  const res = await think(
+    { KAGGLE_LANE_KEY: "k", KAGGLE_LANE_URL: "https://gpu.example/v1", OPENROUTER_API_KEY: "o" },
+    { messages: [{ role: "user", content: "hi" }] },
+    async (url) => {
+      order.push(url);
+      if (url.startsWith("https://gpu.example")) throw new Error("connect ECONNREFUSED");
+      return { ok: true, status: 200, headers: new Headers(), json: async () => ({ choices: [{ message: { content: "fallback" } }] }) };
+    },
+  );
+  assert.equal(res.out.choices[0].message.content, "fallback");
+  assert.ok(res.tried.some((t) => t.startsWith("kaggle(")), `kaggle should be tried and named: ${res.tried}`);
+});
+
+test("the GPU lane is never reordered by headroom, because nothing counted its hours", () => {
+  const kaggle = LANES.find((l) => l.name === "kaggle");
+  assert.equal(kaggle.budget, undefined, "a lane with no measured budget must declare none");
+  const at = LANES.indexOf(kaggle);
+  for (const l of LANES) if (l.budget) exhaust(l, Date.now(), null);
+  assert.equal(chooseOrder(Date.now())[at].name, "kaggle");
 });

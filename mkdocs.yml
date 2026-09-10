@@ -96,6 +96,7 @@ nav:
       - The Tools page: demo/tools.md
       - Estate clock recording: demo/dagster.md
       - Dashboards recording: demo/superset.md
+      - GPU lane: tutorials/demo/idp-kaggle-lane.md
       - Portal: tutorials/demo/idp.md
       - Estate compiler: tutorials/demo/intent.md
       - Conscience: tutorials/demo/conscience.md
@@ -189,6 +190,7 @@ nav:
       - Estate compiler recording: onboarding/intent-compiler.md
       - Estate clock recording: onboarding/dagster.md
       - Dashboards recording: onboarding/superset.md
+      - GPU lane: how-to/onboarding/idp-kaggle-lane.md
       - Trace matrix: how-to/onboarding/trace-matrix.md
       - Namespace fences: how-to/onboarding/ns-fence-gate.md
       - Portal: how-to/onboarding/idp.md

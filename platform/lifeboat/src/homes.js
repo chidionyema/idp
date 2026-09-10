@@ -69,6 +69,37 @@ export const LANES = [
     model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
   },
   {
+    // KAGGLE. The only lane in this list that is not somebody's free tier -- it is a GPU, and
+    // the estate is the one running the model on it. Every other lane here lives on a vendor's
+    // goodwill: a free tier can be withdrawn, re-priced, or have its slug churned, and on the
+    // day all four do it at once the estate has nothing. A notebook we launch, running a model
+    // we chose, answers regardless of what any vendor decides. That is what "forever" has to
+    // mean; the free tiers above are what it means until then.
+    //
+    // Kaggle gives 30 GPU-hours a week on a T4 or P100, at zero cost, on infrastructure that
+    // shares nothing with OKE and nothing with Cloudflare -- so it is a fourth failure domain,
+    // not a fourth vendor.
+    //
+    // It is not metered here, and deliberately: the constraint is hours of session, not
+    // requests, and this code has measured no hour figure. An unmetered lane keeps its declared
+    // rank and is never reordered on a number nobody counted (the same rule workers-ai gets).
+    //
+    // Its URL is a var and not a constant because the estate's DNS zone is one value in
+    // clusters/*/estate-config.yaml and a platform file may never name it (LAW 46);
+    // bin/idp-otto-homes passes it in at deploy time. Its address is a NAMED Cloudflare
+    // tunnel, so it is the same hostname every session -- the notebook dials out, nothing
+    // dials in, and there is no ngrok URL to chase and no inbound port anywhere.
+    //
+    // When no notebook is running the hostname simply does not answer, the fetch throws, and
+    // think() counts it as tried and moves on. A lane that is down costs one timeout, and a
+    // lane whose key was never set costs nothing at all -- so this can be merged, deployed and
+    // sit inert until the session that fills it in.
+    name: "kaggle",
+    secret: "KAGGLE_LANE_KEY",
+    urlVar: "KAGGLE_LANE_URL",
+    model: "qwen2.5-coder:7b",
+  },
+  {
     name: "openrouter",
     budget: { requests: 50, window: "day" },     // published free tier, no credit balance
     secret: "OPENROUTER_API_KEY",
@@ -232,7 +263,13 @@ export async function tryLane(lane, env, body, fetchImpl = fetch) {
   const key = env[lane.secret];
   if (!key) return null; // a lane whose key was never set is skipped, not an error
 
-  const res = await fetchImpl(lane.url, {
+  // A lane may carry its address in the environment rather than in this file -- the estate's
+  // zone is one value in estate-config.yaml and no platform file may write it down (LAW 46).
+  // An unset var is the same "skip me" a missing key is, never a fetch against `undefined`.
+  const url = lane.url ?? env[lane.urlVar];
+  if (!url) return null;
+
+  const res = await fetchImpl(url, {
     method: "POST",
     headers: {
       authorization: `Bearer ${key}`,
