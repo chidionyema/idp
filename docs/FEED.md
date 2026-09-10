@@ -46,3 +46,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: none
 📍 METER: 2026-09-10 $78.53 785 req $0.100/req transport 81% | opus-5 100%, haiku-4-5 0% (crew#26)
 
+
+## 2026-09-10T12:29:28Z · session a941270d · lane wt-edge
+🟡 Active: PR #2898 (Otto's door key) head 9d9382d7 — every gate green so far, bdd-suites + offline-gate running; this ends Otto's silence. PR #2909 (the matrix) head 69ea9327, CI in flight, nothing red.
+🟢 Done: the last red on #2898 was KeyError 'entry', not Otto — a MiniMax registry row deliberately names no estate copy to seed from because those copies were measured revoked at the vendor (401, invalid api key 2049); seeding would push a dead key over the founder's live one.
+🟢 Done: home 2 written (Cloudflare Worker, door + brain, 20 tests), bin/idp-otto-homes grades all three homes, docs/explanation/otto-survival-matrix.md holds the three-homes-by-sixteen-lanes design.
+⚪ Pending: deploy home 2 (Workers Scripts:Edit scope unconfirmed, likely blocker); write headroom-based lane selection (designed, not built — a chain drains Groq's measured 1,000/day each afternoon); mint NIM/Cerebras/GitHub Models/Mistral/Cohere/HF; prove Otto from pod logs once #2898 lands.
+🔴 Blocked: moving the Telegram webhook to home 2. Telegram allows exactly one webhook URL per bot, so this MOVES Otto's door — a production change needing the founder's own plain words, never a menu.
+📍 State: home 1 MEASURED_OK, home 3 MEASURED_OK at its tailnet address, home 2 MEASURED_FAIL not deployed. Founder 2026-09-10: the matrix "nees to be oprational fully", "nission critical", "guanatee eternal life nnow".
+📎 FACTS: platform/otto-gateway/deployment.yaml:320 sets OTTO_BRAIN_KEY=sk-$(sha256(LITELLM_API_KEY))[:40] while the door presents the raw key; three-homes.yaml:139 reads it as master_key. Mismatch -> virtual-key lookup -> no DB in the sidecar -> 400 "No connected db." while /health/liveliness stays 200.
+🔧 TOUCHES: platform/lifeboat, bin/idp-otto-homes, docs/explanation/otto-survival-matrix.md, platform/otto-gateway/deployment.yaml, platform/vendors/consoles.yaml
+🔀 OVERLAP: none
+
