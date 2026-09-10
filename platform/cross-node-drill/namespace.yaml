@@ -16,6 +16,11 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: cross-node-drill
+  annotations:
+    # A namespace this Flux row prunes is a namespace a file move can destroy (incident
+    # 2026-08-29, catalogue 404). The mark is the estate's floor for every namespace manifest,
+    # and platform/edge/protect-namespaces.yaml refuses a DELETE of anything carrying it.
+    kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/audit: restricted
