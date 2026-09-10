@@ -85,7 +85,9 @@ class TestTheWriterEnforcesTheCustomerAllowList:
     def _load_scoper():
         mod_path = WRITER_DIR / "scoping.py"
         if not mod_path.exists():
-            pytest.fail(f"no writer scoping module at {mod_path} (key-ingest-door part 4 part B)")
+            pytest.fail(
+                f"no writer scoping module at {mod_path} (key-ingest-door part 4 part B)"
+            )
         spec = importlib.util.spec_from_file_location("writer_scoping", mod_path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
@@ -239,7 +241,9 @@ class TestTheGrantIsScopedToCustomerEntries:
         )
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        expected = mod.customer_owned_entries(ROOT / "docs" / "reference" / "policy" / "root-trust.md")
+        expected = mod.customer_owned_entries(
+            ROOT / "docs" / "reference" / "policy" / "root-trust.md"
+        )
         assert expected, "the register parsed to no Customer entries at all"
         text = VAULT_TF.read_text()
         missing = [n for n in expected if f'"{n}"' not in text]

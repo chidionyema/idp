@@ -76,7 +76,10 @@ def _emit_span(entry: str, key: str, store: str, sha_prefix: str, tenant: str) -
                     {
                         "resource": {
                             "attributes": [
-                                {"key": "service.name", "value": {"stringValue": "vault-writer"}}
+                                {
+                                    "key": "service.name",
+                                    "value": {"stringValue": "vault-writer"},
+                                }
                             ]
                         },
                         "scopeSpans": [
@@ -90,14 +93,26 @@ def _emit_span(entry: str, key: str, store: str, sha_prefix: str, tenant: str) -
                                         "startTimeUnixNano": str(int(_now_ns())),
                                         "endTimeUnixNano": str(int(_now_ns())),
                                         "attributes": [
-                                            {"key": "entry", "value": {"stringValue": entry}},
-                                            {"key": "key", "value": {"stringValue": key}},
-                                            {"key": "store", "value": {"stringValue": store}},
+                                            {
+                                                "key": "entry",
+                                                "value": {"stringValue": entry},
+                                            },
+                                            {
+                                                "key": "key",
+                                                "value": {"stringValue": key},
+                                            },
+                                            {
+                                                "key": "store",
+                                                "value": {"stringValue": store},
+                                            },
                                             {
                                                 "key": "sha256_prefix",
                                                 "value": {"stringValue": sha_prefix},
                                             },
-                                            {"key": "tenant", "value": {"stringValue": tenant}},
+                                            {
+                                                "key": "tenant",
+                                                "value": {"stringValue": tenant},
+                                            },
                                         ],
                                     }
                                 ],
@@ -224,7 +239,10 @@ class Handler(BaseHTTPRequestHandler):
 
         _emit_span(entry, key, store, sha_prefix, "estate")
         logger.info("wrote entry=%s key=%s sha=%s", entry, key, sha_prefix)
-        self._send(200, {"entry": entry, "key": key, "sha256_prefix": sha_prefix, "store": store})
+        self._send(
+            200,
+            {"entry": entry, "key": key, "sha256_prefix": sha_prefix, "store": store},
+        )
 
 
 def main() -> int:
