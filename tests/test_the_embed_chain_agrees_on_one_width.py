@@ -23,6 +23,8 @@ no gate and no user will say so. This one grades it from the rendered router con
 gateway's own environment, so the two cannot drift apart.
 """
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -33,7 +35,26 @@ ROUTER = ROOT / "platform" / "llm" / "config.yaml"
 GATEWAY = ROOT / "platform" / "otto-gateway" / "deployment.yaml"
 
 
-def _router():
+@pytest.fixture(scope="module")
+def rendered():
+    """The router config the vendor registry produces, not the copy checked in beside it.
+
+    Running the generator is the difference between grading a decision and grading a
+    defect. The widths live in platform/vendors/consoles.yaml; platform/llm/config.yaml
+    is written from it by bin/idp-vendor-render, the same generator bin/idp-ci runs. Read
+    the rendered file alone and this test would assert a generated artefact back at
+    itself and could never catch a registry edit that renders wrong.
+    """
+    proc = subprocess.run(  # noqa: S603
+        [sys.executable, str(ROOT / "bin" / "idp-vendor-render")],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, (
+        f"bin/idp-vendor-render failed:\n{proc.stdout}{proc.stderr}"
+    )
     return yaml.safe_load(ROUTER.read_text())
 
 
@@ -64,17 +85,17 @@ def _lanes(cfg, group):
     return [m for m in cfg["model_list"] if m.get("model_name") == group]
 
 
-def test_the_gateway_asks_for_a_model_group_the_router_serves():
+def test_the_gateway_asks_for_a_model_group_the_router_serves(rendered):
     env = _gateway_env()
     group = env["OTTO_MEMORY_EMBEDDING_MODEL"]
-    assert _lanes(_router(), group), (
+    assert _lanes(rendered, group), (
         f"otto-gateway embeds through the model group {group!r} and the estate router "
         f"declares no lane by that name, so every fact is stored with no vector"
     )
 
 
-def test_every_hop_of_the_embed_chain_declares_the_column_width():
-    cfg, env = _router(), _gateway_env()
+def test_every_hop_of_the_embed_chain_declares_the_column_width(rendered):
+    cfg, env = rendered, _gateway_env()
     width = int(env["OTTO_MEMORY_EMBEDDING_DIM"])
     group = env["OTTO_MEMORY_EMBEDDING_MODEL"]
 
@@ -94,7 +115,7 @@ def test_every_hop_of_the_embed_chain_declares_the_column_width():
     )
 
 
-def test_the_embedding_write_outlives_a_walk_down_the_whole_chain():
+def test_the_embedding_write_outlives_a_walk_down_the_whole_chain(rendered):
     """A client that gives up before the chain finishes has no fallback, only the illusion.
 
     This is the first of the two defects: the bound was 1.5 seconds, the walk past one
@@ -103,7 +124,7 @@ def test_the_embedding_write_outlives_a_walk_down_the_whole_chain():
     deliberately loose, because the point is to catch a bound set below the chain's own
     length, not to pin a latency.
     """
-    cfg, env = _router(), _gateway_env()
+    cfg, env = rendered, _gateway_env()
     group = env["OTTO_MEMORY_EMBEDDING_MODEL"]
     bound = float(env["OTTO_MEMORY_EMBEDDING_TIMEOUT_S"])
     hops = len(_chain(cfg, group))
