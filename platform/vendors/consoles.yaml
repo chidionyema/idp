@@ -727,6 +727,35 @@ vendors:
           model_info:
             mode: embedding
 
+  twilio:
+    # Added 2026-09-10, when the founder created the account for Mum's Sovereign Concierge.
+    #
+    # The concierge is the consumer: its WhatsApp surface is the product's main door, and the
+    # webhook verifies Twilio's HMAC signature before it trusts anything in the request --
+    # including the `From` field, which whoever sends the POST controls. That verification needs
+    # the Auth Token, and this row is how it arrives.
+    #
+    # store_default is human-vault, so the token the founder holds in Bitwarden Secrets Manager is
+    # read by name and never pasted into a portal, a terminal or this repository. The Account SID
+    # is NOT here: it is an identifier, not a credential, and it lives in the concierge's own
+    # ~/.concierge/env beside the sender number.
+    #
+    # R52: Twilio publishes no create-token API for the primary Auth Token (the Console is the
+    # only road, read 2026-09-10), so the token IS the root. He makes it once and the estate does
+    # the rest.
+    kind: secret
+    secret: SEED_TWILIO_AUTH_TOKEN
+    page: https://console.twilio.com/
+    shape: "[0-9a-f]{32}"
+    rotation: assisted  # Twilio publishes no create-token API (read 2026-09-10)
+    store_default: human-vault
+    targets:
+      # No litellm-upstream field and no router lane: this key routes nothing. It is the
+      # concierge's, and the concierge reads it from the human door by that name. `entry` is
+      # required by the push-secrets half of the bridge, which names the vault entry a value
+      # would be carried UP into -- bin/idp-vendor-render fails without it.
+      - { entry: concierge-twilio, ns: concierge, field: TWILIO_AUTH_TOKEN, bw: TWILIO_AUTH_TOKEN }
+
   exa:
     kind: secret
     secret: SEED_EXA_API_KEY
