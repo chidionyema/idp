@@ -12,7 +12,13 @@ spec:
     - type: Container
       default: { cpu: 200m, memory: 256Mi }
       defaultRequest: { cpu: 50m, memory: 128Mi }
-      max: { cpu: 500m, memory: 512Mi }
+      # 2026-09-10: this ceiling, not the container's own limits, is what actually held
+      # otto-brain at 512Mi -- a LimitRange max is a namespace-wide refusal, so raising the
+      # container alone would have been rejected at admission and the crash loop would have
+      # looked identical. Both move together or neither does. The value is the measured peak
+      # of the same litellm binary elsewhere in this estate (1417Mi, `kubectl top pod -n llm
+      # --containers`, 2026-09-10), rounded up.
+      max: { cpu: 1, memory: 1536Mi }
 ---
 apiVersion: v1
 kind: ResourceQuota
@@ -37,12 +43,27 @@ spec:
   #   limits.cpu       3 x 1000m = 3000m + 500m job = 3500m  -> 3500m
   #   limits.memory    3 x 1024Mi = 3072Mi + 512Mi  = 3584Mi -> 3584Mi
   #
+  # 2026-09-10, the OOM: the lifeboat sized above was given 512Mi and the litellm binary
+  # needs roughly three times that (measured 956Mi and 1417Mi on the two `llm` replicas of
+  # the same version, `kubectl top pod -n llm --containers`). otto-brain moves to 384Mi
+  # requested / 1536Mi limited and 1 cpu limited, so the pod's own arithmetic changes and
+  # this ceiling has to follow it -- a quota left at the old sum would refuse the fixed pod
+  # exactly as the LimitRange refused it, and Otto would still be on one home:
+  #
+  #   requests.cpu     3 x 150m   = 450m   + 50m job  = 500m   -> 700m   (unchanged)
+  #   requests.memory  3 x 640Mi  = 1920Mi + 128Mi    = 2048Mi -> 2304Mi
+  #   limits.cpu       3 x 1500m  = 4500m  + 500m job = 5000m  -> 5500m
+  #   limits.memory    3 x 2048Mi = 6144Mi + 512Mi    = 6656Mi -> 7168Mi
+  #
+  # per pod: gateway 50m/192Mi req, 400m/384Mi lim; otto-brain 50m/384Mi, 1/1536Mi;
+  # tailscale 50m/64Mi, 100m/128Mi. Two replicas plus one surge is the three.
+  #
   # Headroom on each line rather than the exact sum, for the reason the note above records:
   # a ceiling sized to the exact fit refuses the next correct thing, and LAW 38 calls a fence
   # that refuses correct work an outage.
   hard:
     requests.cpu: 700m
-    requests.memory: 1792Mi
-    limits.cpu: 3500m
-    limits.memory: 3584Mi
+    requests.memory: 2304Mi
+    limits.cpu: 5500m
+    limits.memory: 7168Mi
     pods: "8"

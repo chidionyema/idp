@@ -331,9 +331,30 @@ spec:
             - { name: HTTP_PROXY, value: "http://127.0.0.1:1055" }
             - { name: HTTPS_PROXY, value: "http://127.0.0.1:1055" }
             - { name: NO_PROXY, value: "127.0.0.1,localhost,api.minimax.io,.svc,.svc.cluster.local,.cluster.local,10.0.0.0/8" }
+          # 2026-09-10: 512Mi was not a tight fit, it was the wrong order of magnitude, and
+          # it kept Otto on one home for a day. The lifeboat never reached its first request
+          # -- `exitCode 137 OOMKilled` at 26 seconds (started 09:49:25Z, killed 09:49:51Z),
+          # five times on one ReplicaSet and thirteen on another, while the old
+          # single-container pod otto-gateway-7d8b47fc79-b2fwm kept answering with home 1 and
+          # nothing else. A lifeboat that cannot finish importing is not a lifeboat.
+          #
+          # The number has a receipt rather than a guess: the SAME binary at the SAME version
+          # elsewhere in this estate, measured 2026-09-10, `kubectl top pod -n llm
+          # --containers` -- litellm-77f5fbf88d-vnlkl 1417Mi, litellm-77f5fbf88d-zk66s 956Mi.
+          # Those replicas carry a Postgres, a Redis, callbacks and a far longer model_list
+          # than this one does, so the lifeboat should sit under them; the ceiling is set
+          # ABOVE the higher of the two anyway, because the cost of guessing low is another
+          # crash loop and another day on one home, and the cost of guessing high is limit
+          # headroom on a node whose limits are already 174% overcommitted and whose requests
+          # are what the scheduler actually counts.
+          #
+          # cpu 500m -> 1 for the same reason in the other direction: the startupProbe allows
+          # 120s (24 x 5s) and a throttled litellm import can spend most of it. The request
+          # stays 50m -- both nodes are at 95% of requested cpu, and the steady draw measured
+          # on those same two replicas is 83m and 58m.
           resources:
-            requests: { cpu: 50m, memory: 256Mi }
-            limits: { cpu: 500m, memory: 512Mi }
+            requests: { cpu: 50m, memory: 384Mi }
+            limits: { cpu: 1, memory: 1536Mi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
