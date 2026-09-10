@@ -237,9 +237,19 @@ spec:
             # LAW 50. The entrypoint refuses to start without this, so a door that cannot be
             # seen never opens rather than running dark.
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
-            # The estate's one model router, by its in-cluster Service name -- no vendor host,
-            # no key in this file (LAW 46, LAW 43: one router, not a second path to a vendor).
-            - { name: LITELLM_BASE_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
+            # Otto's three homes (founder order 2026-09-09, "otto must have 3 homes"), and the
+            # only line of Otto's own configuration that changes to get them. Loopback: the
+            # otto-brain sidecar in this same pod. It is the estate's one router first
+            # (home 1, http://litellm.llm.svc.cluster.local:4000/v1 -- still every happy-path
+            # turn, still the budgets, still Langfuse), then a direct vendor line with no
+            # cluster hop, then the founder's Mac on local silicon over Tailscale. The chain
+            # and the reasoning are platform/otto-gateway/three-homes.yaml.
+            #
+            # Reaching 127.0.0.1 crosses no Service, no CNI, no node and no DNS -- which is
+            # exactly what took the door down on 2026-09-09, when one broken VXLAN link
+            # between the two workers killed CoreDNS, the collector, a router replica and Otto
+            # in one stroke.
+            - { name: LITELLM_BASE_URL, value: "http://127.0.0.1:4010/v1" }
             # The four lane values are not here. They are one ConfigMap,
             # platform/otto-gateway/router-lanes.yaml, read through the envFrom above,
             # because this door and the drill that grades it (answer-probe.yaml) held
@@ -287,6 +297,121 @@ spec:
             - { name: agent-env, mountPath: /run/secrets/hermes-agent-env, readOnly: true }
             - { name: data, mountPath: /data }
             - { name: tmp, mountPath: /tmp }
+        # ---- home 1/2/3 switch -------------------------------------------------------------
+        # The same litellm binary the estate already runs, as a sidecar on loopback (THE
+        # HEADLINE rule 1: no script for a problem a proven platform solves). The
+        # NON-database image: no Postgres, no Redis, no callbacks, no tracing, no UI. On
+        # 2026-09-09 the database image's replica on the partitioned node died on a Redis
+        # timeout to a cache on the other node -- a lifeboat that needs a cache to float is
+        # not a lifeboat. Everything it needs is this pod and the config below.
+        - name: otto-brain
+          image: ghcr.io/berriai/litellm:v1.98.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              for f in /run/secrets/otto-brain/*/*; do
+                [ -f "$f" ] || continue
+                export "$(basename "$f")=$(cat "$f")"
+              done
+              # The lifeboat is loopback-only, so its master key is never a credential anyone
+              # can reach; it exists because litellm requires one, and it is derived from the
+              # router key already mounted rather than minting a second secret nobody rotates.
+              OTTO_BRAIN_KEY="sk-$(printf '%s' "$LITELLM_API_KEY" | sha256sum | cut -c1-40)"
+              export OTTO_BRAIN_KEY
+              exec litellm --config /etc/otto-brain/config.yaml --port 4010 --host 127.0.0.1
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: LITELLM_LOG, value: INFO }
+            # Home 3 is reached through the Tailscale sidecar's HTTP proxy; everything else --
+            # the estate router on the cluster network, the direct vendor line on ordinary pod
+            # egress -- must NOT be. NO_PROXY names them, so exactly one destination in this
+            # container's world takes the tunnel: the founder's laptop.
+            - { name: ALL_PROXY, value: "http://127.0.0.1:1055" }
+            - { name: HTTP_PROXY, value: "http://127.0.0.1:1055" }
+            - { name: HTTPS_PROXY, value: "http://127.0.0.1:1055" }
+            - { name: NO_PROXY, value: "127.0.0.1,localhost,api.minimax.io,.svc,.svc.cluster.local,.cluster.local,10.0.0.0/8" }
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          # require-pod-probes (Kyverno autogen-validate-probes) needs one on every container.
+          # /health/liveliness needs no key and no upstream, so a probe failure is this
+          # sidecar's own state and never a vendor's.
+          readinessProbe:
+            httpGet: { path: /health/liveliness, port: 4010, host: 127.0.0.1 }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health/liveliness, port: 4010, host: 127.0.0.1 }
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet: { path: /health/liveliness, port: 4010, host: 127.0.0.1 }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 24
+          volumeMounts:
+            - { name: three-homes, mountPath: /etc/otto-brain, readOnly: true }
+            - { name: brain-secrets, mountPath: /run/secrets/otto-brain/direct, readOnly: true }
+            - { name: router, mountPath: /run/secrets/otto-brain/router, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+
+        # ---- the road to home 3 ------------------------------------------------------------
+        # Same sidecar, same mechanism and same operator-minted key as
+        # platform/hermes-agent/tailscale.yaml, which has carried the tailnet node `hermes-pod`
+        # since crew#516 CP5. It was on that pod and not this one, which is why the founder's
+        # assistant -- the pod Telegram actually reaches -- had no route to his Mac at all.
+        #
+        # Userspace mode: no NET_ADMIN, no /dev/net/tun, nothing privileged. The tunnel is
+        # offered to the rest of the pod as a local HTTP proxy on 1055, which is what
+        # otto-brain's HTTP_PROXY above points at.
+        - name: tailscale
+          image: ghcr.io/tailscale/tailscale:v1.102.3
+          env:
+            - { name: TS_AUTHKEY, value: "file:/run/secrets/otto-gateway-tailscale/TS_AUTHKEY" }
+            - { name: TS_HOSTNAME, value: otto-pod }
+            - { name: TS_USERSPACE, value: "true" }
+            - { name: TS_STATE_DIR, value: /data/tailscale }
+            - { name: TS_KUBE_SECRET, value: "" }
+            - { name: TS_SOCKET, value: /tmp/tailscaled.sock }
+            - { name: TS_SOCKS5_SERVER, value: "localhost:1056" }
+            - { name: TS_OUTBOUND_HTTP_PROXY_LISTEN, value: "localhost:1055" }
+            - { name: TS_EXTRA_ARGS, value: "--advertise-tags=tag:k8s" }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 100m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            # tailscaled writes only its state (TS_STATE_DIR=/data) and its socket (/tmp), and
+            # both are emptyDir mounts this pod already carries -- so nothing needs a writable
+            # image layer. KSV-0014 / require-ro-rootfs.
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            exec: { command: ["tailscale", "--socket=/tmp/tailscaled.sock", "status", "--json"] }
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec: { command: ["tailscale", "--socket=/tmp/tailscaled.sock", "status", "--json"] }
+            periodSeconds: 60
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            exec: { command: ["tailscale", "--socket=/tmp/tailscaled.sock", "status", "--json"] }
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+            - { name: tailscale-authkey, mountPath: /run/secrets/otto-gateway-tailscale, readOnly: true }
       volumes:
         - name: db-password
           secret: { secretName: otto-gateway-db }
@@ -298,6 +423,15 @@ spec:
           configMap: { name: otto-gateway-binding-seed }
         - name: tmp
           emptyDir: {}
+        # The three homes and their order, one file, read only by the otto-brain sidecar.
+        - name: three-homes
+          configMap: { name: otto-three-homes }
+        # Home 2's key. Optional so a vault entry that is late costs Otto home 2 and leaves
+        # homes 1 and 3 answering, rather than holding the whole door closed.
+        - name: brain-secrets
+          secret: { secretName: otto-gateway-direct, optional: true }
+        - name: tailscale-authkey
+          secret: { secretName: otto-gateway-tailscale, optional: true }
         # Step 5: the fork's env dir, one file per credential name. The MCP key is optional so a
         # vault entry that is late never holds the door closed.
         - name: agent-env

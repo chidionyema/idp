@@ -22,7 +22,7 @@
 // The ACL rules are what remains of "locked down by identity", and they are exact:
 //   - `tag:k8s` (the operator's egress proxies and the hermes-agent sidecar; tagOwners below) may
 //     reach the Mac on 22 (mac-run, sshd), 5900 (Guacamole's VNC egress,
-//     platform/guacamole/mac-egress.yaml) and 47989/47990 (the portal's "Pair my phone"
+//     platform/guacamole/mac-egress.yaml), 11434 (Ollama, Otto's home 3) and 47989/47990 (the portal's "Pair my phone"
 //     relay to Sunshine on the Mac, platform/backstage/overlays/oke/sunshine-egress.yaml) and
 //     nothing else.
 //   - `group:founder` (his login, and only his) may reach the Mac on any port: the iOS Shortcut's
@@ -72,7 +72,15 @@
   "acls": [
     {"action": "accept", "src": ["tag:k8s"],
      "dst":    ["tag:founder-mac:22", "tag:founder-mac:5900",
-                "tag:founder-mac:47989", "tag:founder-mac:47990"]},
+                "tag:founder-mac:47989", "tag:founder-mac:47990",
+                // 11434: Ollama on the founder's Mac -- home 3 of Otto's three homes
+                // (founder order 2026-09-09, platform/otto-gateway/three-homes.yaml). The
+                // otto-gateway pod's tailscale sidecar carries tag:k8s and reaches this and
+                // nothing else on the laptop. It is the only inference path in the estate
+                // that survives losing the cluster AND the internet vendor lines at once,
+                // which is what THE MEDIC LAW requires of the assistant that has to think
+                // while the estate is down.
+                "tag:founder-mac:11434"]},
     {"action": "accept", "src": ["group:founder"],
      "dst":    ["tag:founder-mac:*", "autogroup:self:*"]},
     // His phone reads the cluster through the bridge, and only the one port the bridge serves.

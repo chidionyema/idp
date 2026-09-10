@@ -1340,10 +1340,69 @@ pb_tigera_reset() {
   dns_probe tigera-reset-probe '' github.com kube-system
 }
 
+# otto-homes: which of Otto's three homes is answering right now, and are the other two there
+# if this one goes? The founder's door, rendered into Backstage from .github/workflows/otto-homes.yml
+# (founder order 2026-09-09, "otto must have 3 homes"; operationalisation rule 2026-09-09, every
+# fix names the button a person presses). Read-only: it asks, it never changes a thing.
+#
+# The rows are deliberately in failure order, not in health order. `which-home-answers` is the
+# only row that matters when Otto is quiet -- it prints the model that actually produced a token
+# -- and every row after it says which home would have caught it.
+pb_otto_homes() {
+  local ns=otto-gateway d=deploy/otto-gateway
+  step gateway-ready $K rollout status "$d" -n "$ns" --timeout=60s
+  # The switch is the otto-brain sidecar. Its own probe needs no key and no upstream, so a red
+  # row here is the sidecar itself and never a vendor having a bad morning.
+  # python3, not curl or wget: the litellm image is a python slim base and ships neither, so a
+  # row written with them would go red on a healthy switch -- a guard that refuses correct work
+  # is an outage (R38). Python is the one binary this container is guaranteed to have.
+  step switch-up $K exec "$d" -n "$ns" -c otto-brain -- python3 -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:4010/health/liveliness", timeout=10).read().decode()[:80])'
+  # THE row. One real completion through the switch, and the model name in the answer says which
+  # home produced it: a MiniMax id means home 1 or 2, qwen2.5-coder means the founder's laptop.
+  # Empirical proof rule: this is a live token, not a 200 on a health endpoint.
+  step which-home-answers $K exec "$d" -n "$ns" -c otto-brain -- sh -c '
+    k="sk-$(printf "%s" "$(cat /run/secrets/otto-brain/router/LITELLM_API_KEY)" | sha256sum | cut -c1-40)"
+    python3 - "$k" <<EOF
+import json, sys, urllib.request
+req = urllib.request.Request(
+    "http://127.0.0.1:4010/v1/chat/completions",
+    data=json.dumps({"model": "minimax", "max_tokens": 20,
+                     "messages": [{"role": "user", "content": "Reply with exactly: HOME CHECK"}]}).encode(),
+    headers={"Content-Type": "application/json", "Authorization": "Bearer " + sys.argv[1]})
+d = json.load(urllib.request.urlopen(req, timeout=340))
+m = d.get("model", "")
+if "qwen" in m.lower(): home = "home 3, the founder Mac (local silicon)"
+elif "minimax" in m.lower(): home = "home 1 or 2 (a MiniMax lane)"
+else: home = "an unexpected model -- read the config"
+print("answered by", m, "->", home)
+print("said:", d["choices"][0]["message"]["content"].strip())
+EOF'
+  # Home 1: is the estate router itself reachable from this pod at all? A red row here with a
+  # green row above is the whole point of the change -- Otto answered without the router.
+  step home1-router-reachable $K exec "$d" -n "$ns" -c otto-brain -- python3 -c 'import urllib.request; print(urllib.request.urlopen("http://litellm.llm.svc.cluster.local:4000/health/liveliness", timeout=10).read().decode()[:80])'
+  # Home 2: the direct vendor line needs no cluster and no router, only the pod's own egress and
+  # a key. The key is a file, never pod env (Kyverno secrets-not-from-env-vars).
+  step home2-key-present $K exec "$d" -n "$ns" -c otto-brain -- sh -c 'f=/run/secrets/otto-brain/direct/MINIMAX_API_KEY; test -s "$f" && echo "home 2 key present, $(wc -c < "$f") bytes" || { echo "home 2 has no key: the ExternalSecret has not landed"; exit 1; }'
+  # Home 3: the road first, then the house. tailscaled in userspace, then the Mac answering on
+  # its own port through that tunnel's HTTP proxy.
+  step home3-tailnet-up $K exec "$d" -n "$ns" -c tailscale -- tailscale --socket=/tmp/tailscaled.sock status --json --peers=false
+  # Never a literal address (LAW 46), and never the repository's copy of one either: the address
+  # is read out of the config the switch actually loaded, which Flux already substituted from
+  # FOUNDER_MAC_TS_IP in clusters/oke/estate-config.yaml. So this row grades the running estate
+  # rather than the tree, and a config that never reconciled shows up here as a wrong address.
+  # The models list proves the house is serving without paying a cold load in a break-glass window.
+  step home3-mac-answers $K exec "$d" -n "$ns" -c otto-brain -- python3 -c 'import json, urllib.parse, urllib.request, yaml; c=yaml.safe_load(open("/etc/otto-brain/config.yaml")); b=[m["litellm_params"]["api_base"] for m in c["model_list"] if m["model_name"]=="home-mac"][0]; h=urllib.parse.urlsplit(b).netloc; d=json.load(urllib.request.urlopen("http://%s/api/tags" % h, timeout=20)); print("home 3 serving:", ", ".join(m["name"] for m in d.get("models", [])) or "NO MODELS")'
+  # Eyes, not a verdict (LAW 28): the config the switch actually loaded, so a chain edited in git
+  # and never reconciled is visible here rather than inferred from the repository.
+  show_redacted homes-as-loaded $K exec "$d" -n "$ns" -c otto-brain -- sh -c 'sed -n "/router_settings/,/litellm_settings/p" /etc/otto-brain/config.yaml'
+  show_redacted switch-log $K logs "$d" -n "$ns" -c otto-brain --tail=40
+}
+
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-homes otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
+  otto-homes) pb_otto_homes ;;
   otto-parity) pb_otto_parity ;;
   otto-lockdown) pb_otto_lockdown ;;
   otto-restore) pb_otto_restore ;;

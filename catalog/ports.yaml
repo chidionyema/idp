@@ -21,6 +21,10 @@ ports:
   - {port: 3210, service: dagster-webserver,    compose: none}
   - {port: 3310, service: agentgateway,         compose: mcp/agentgateway.yml}
   - {port: 4000, service: litellm,              compose: llm/litellm.yml}
+  # Otto's own switch, the otto-brain sidecar: the same litellm binary on the pod's
+  # loopback, walking home 1 -> home 2 -> home 3. Loopback only and never a Service,
+  # so no other workload can reach the founder's laptop through it (R20).
+  - {port: 4010, service: otto-brain,           compose: none, bind: 127.0.0.1}
   - {port: 4318, service: otel-fallback,        compose: observability/langfuse.yml}
   - {port: 5291, service: prospector-store-api, compose: prospector}
   - {port: 6445, service: k3d-estate-server-0, compose: none, bind: 127.0.0.1}

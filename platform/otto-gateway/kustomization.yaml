@@ -19,6 +19,8 @@ resources:
   - availability.yaml
   - registration-reconciler.yaml
   - router-lanes.yaml
+  - three-homes.yaml
+  - three-homes-secrets.yaml
   - answer-probe.yaml
   - memory-store-job.yaml
 images:
