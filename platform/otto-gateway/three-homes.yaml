@@ -193,10 +193,40 @@ data:
     router_settings:
       # The whole point of the file. Every lane Otto can ask for walks the three homes in
       # order and stops at the first that answers.
+      # The first hop never lands on the vendor that just died. Every chain below used to
+      # open with home-direct, which is MiniMax on a direct line -- the same account as the
+      # `minimax` lane it was rescuing. So when MiniMax's balance reached zero on 2026-09-10
+      # the lane and its own first fallback failed together and the ladder was a rung shorter
+      # than it read. Measured in otto-gateway-8684f564f5-r2gtd that afternoon, one run:
+      #     minimax      200  7s   served by openai/gpt-oss-120b   <- Groq, two hops down
+      #     home-direct  402  0s   "The Token Plan usage limit has been reached"
+      #     home-floor   200  2s   home-floor-2 429   home-floor-3 200  8s
+      # It still answered, because Groq sits behind the dead hop. It answered a hop later
+      # than it needed to, and on the day Groq is also spent that wasted hop is the outage.
+      #
+      # So each chain now opens on a DIFFERENT vendor from its own, and each ends on its own
+      # vendor's other door -- worth trying last, worthless first:
+      #     minimax  is MiniMax  -> Groq, Gemini, OpenRouter, then MiniMax's direct line
+      #     deepseek is DeepSeek -> Groq, Gemini, MiniMax, OpenRouter
+      #     gemini   is Gemini   -> Groq, MiniMax, OpenRouter, then Gemini's own free tier
+      # Four vendors is what this file can reach today. It is not enough and it is not a
+      # matrix: docs/explanation/otto-survival-matrix.md names twenty lanes. Measured from
+      # this pod on 2026-09-10, FOUR are alive: Groq, Gemini, OpenRouter and DeepSeek --
+      # deepseek answered 200 in 1s. (A comment in this tree said "DeepSeek 401 since
+      # 2026-09-04". That was a revoked key, replaced since; the founder caught the claim
+      # being repeated as if it were a measurement. It was not one. Probe, then write.)
+      # ONE is wired and dead: MiniMax, out of balance. THREE are ruled out: SiliconFlow and
+      # ModelScope want a Chinese government-ID check, and the MacBook Ollama home the founder
+      # killed. That leaves TWELVE usable and unwired. Two of the twelve were counted as
+      # needing no credential and do not survive contact: GitHub Models answered
+      # 410 "github_models_retirement_brownout" from this pod on 2026-09-10 and is retired,
+      # and Workers AI's binding is only a credential INSIDE a Worker -- from here it needs an
+      # account-scoped token like any other vendor. The remaining twelve each need one key,
+      # and platform/vendors/consoles.yaml is where each one's road is declared.
       fallbacks:
-        - minimax:  [home-direct, home-floor, home-floor-2, home-floor-3]
-        - deepseek: [home-direct, home-floor, home-floor-2, home-floor-3]
-        - gemini:   [home-direct, home-floor, home-floor-2, home-floor-3]
+        - minimax:  [home-floor, home-floor-2, home-floor-3, home-direct]
+        - deepseek: [home-floor, home-floor-2, home-direct, home-floor-3]
+        - gemini:   [home-floor, home-direct, home-floor-3, home-floor-2]
         # A spent lane is PARKED, not re-asked. Without this the chain still works but it
       # works stupidly: the day Groq's thousandth request is spent, every single turn pays
       # a round trip to Groq to be told 429 again before it reaches Gemini. allowed_fails
