@@ -516,3 +516,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔧 TOUCHES: bin/treewalk.py, bin/idp-stray-checkout, bin/idp-flux-subst-gate, bin/idp-clickhouse-system-log-ttl, bin/idp-crd-then-cr, bin/idp-priority-class-exists, .gitignore, rules.yaml, AGENTS.md, tests/fixtures/stray-checkout/
 🔀 OVERLAP: none
 
+
+## 2026-09-10T20:53:25Z · session a941270d · lane otto
+🔴 Otto's memory was writing every fact with NO vector. Root cause measured, not guessed.
+📍 Live pod otto-gateway: EmbeddingUnavailableError on _store_fact, then "stored true, retained true" — the loss was silent.
+📍 The lane asked first was gemini-embedding-001: retired by Google (404) on an account out of prepay (429).
+📍 Router took ~6s to walk past it; Otto's client gave up at 1.5s. So: no vectors, no recall, broken history.
+🟢 Fixed on fix/otto-remembers: OpenRouter (answers) is now first, Google second, Cohere last.
+🟢 Cohere hop was 1024-wide in a 1536-wide chain — a silent corruption waiting for the day both lanes above refuse. Now embed-v4.0 at 1536.
+🟡 Next: a test that grades every hop's width, then the Mac door — NOTHING in the estate tests it, which is why it was called fixed ten times.
+🔧 TOUCHES: platform/vendors/consoles.yaml, platform/llm/config.yaml, platform/otto-gateway/deployment.yaml
+🔀 OVERLAP: none — no other session is in the vendor registry or the otto-gateway deployment.
+
