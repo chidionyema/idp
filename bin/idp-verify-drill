@@ -19,7 +19,8 @@
 #   ok      root-trust   every entry registered, every MEETS row has its bootstrapper, every miss its ticket
 #   ok      github-tokens 2 token(s) re-minted from the App
 #   ok      loop-meter   median PR wall-clock this week 274s (n=27), last week 400s (n=31)
-#   ok      verify-drill 9/9 rows green
+#   ok      cross-node   4/4 check(s) green
+#   ok      verify-drill 10/10 rows green
 #
 # The receipt row is the cluster's own word, written every 15 minutes from inside by
 # platform/state/cluster-state.yaml on the node's instance principal and graded by
@@ -174,6 +175,20 @@ case "$lm_rc" in
   *) bl loop-meter "$(printf '%s\n' "$lm_out" | tail -1 | cut -c1-160)";;
 esac
 
+# --- cross-node: pod-to-pod TCP between the nodes, and the address it arrives wearing. The
+# 504 epidemic of 2026-09-03..10 was a dead flannel's FLANNEL-POSTRTG chain masquerading every
+# cross-node pod packet as the node's own IP, so every destination fence -- which whitelists pod
+# selectors, not node addresses -- dropped it. Nothing in this estate measured that: every gate
+# reads files, and every health check was same-node or synthetic. This row reads the canaries'
+# own logs (platform/cross-node-drill), so it needs no exec grant and measures continuously.
+xn_out=$("$(dirname "$0")/idp-cross-node-drill" 2>&1); xn_rc=$?
+case "$xn_rc" in
+  0) say ok cross-node "$(printf '%s\n' "$xn_out" | tail -1 | sed -E 's/^ok +cross-node-drill +//' | cut -c1-160)";;
+  1) printf '%s\n' "$xn_out" | grep -vE '^(ok|FAIL) +cross-node-drill' | sed 's/^/        /'
+     fail cross-node "$(printf '%s\n' "$xn_out" | tail -1 | sed -E 's/^FAIL +cross-node-drill +//' | cut -c1-160)";;
+  *) bl cross-node "$(printf '%s\n' "$xn_out" | tail -1 | cut -c1-160)";;
+esac
+
 if [ "$red" -gt 0 ]; then say FAIL verify-drill "$red row(s) red, $blind blind"; exit 1; fi
 if [ "$blind" -gt 0 ]; then say BLIND verify-drill "$blind row(s) not measured"; exit 2; fi
-say ok verify-drill "9/9 rows green on the machine identity"
+say ok verify-drill "10/10 rows green on the machine identity"

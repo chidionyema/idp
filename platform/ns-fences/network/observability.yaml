@@ -162,6 +162,9 @@ spec:
           kubernetes.io/metadata.name: commerce
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: cross-node-drill
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: crossplane-system
     - namespaceSelector:
         matchLabels:

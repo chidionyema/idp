@@ -445,6 +445,27 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-cross-node-drill
+  title: 'Cross-node network drill'
+  description: 'Two small canaries, one on each worker, that call each other over the network every few seconds and write down what they saw. It answers the two questions a week-long outage in September 2026 could not: do pods on different machines still reach each other, and does the traffic still arrive under the sender''s own address rather than the machine''s. If either stops being true it is a red row within the hour instead of a month of unexplained timeouts.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=cross-node-drill'
+    estate/flux-kustomization: 'cross-node-drill'
+    estate/path: './platform/cross-node-drill'
+    estate/cluster: 'oke'
+  tags: [platform, resilience]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: resilience
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-crossplane
   title: 'Cloud control loop'
   description: 'Keeps the cloud resources the estate asks for looking the way the repository says they should; a change made in a provider console is put back at the next reconcile instead of surviving until someone runs a plan.'

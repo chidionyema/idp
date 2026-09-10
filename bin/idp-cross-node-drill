@@ -1,0 +1,242 @@
+#!/usr/bin/env python3
+"""A real TCP packet from a pod on one node to a pod on every other node, both directions.
+
+    bin/idp-cross-node-drill [--json] [--window S]
+
+WHY THIS EXISTS. Between 2026-09-03 and 2026-09-10 the founder was served 504s daily and sessions
+declared it fixed six or seven times. It was one iptables rule, on the nodes, left behind by a
+flannel install that had already been removed -- FLANNEL-POSTRTG's catch-all:
+
+    -A FLANNEL-POSTRTG -s 10.244.0.0/16 ! -d 224.0.0.0/4 -j MASQUERADE --random-fully
+
+whose only RETURN exemptions covered flannel's own /25. Every Calico pod-to-pod packet that left a
+node was rewritten to carry the node's physical IP. The destination namespace's fence whitelists
+POD IPs, so the packet arrived looking like a stranger and was dropped at "End of tier default" --
+with no log, no event, and no counter anyone was reading.
+
+It survived a week of "fixed" for one reason: it only ever hurt traffic BETWEEN nodes. Every gate
+in this repository reads files. Every health check the estate trusted was same-node or synthetic.
+While one node was cordoned the estate was accidentally single-node and the bug had no symptom at
+all, which is why uncordoning looked like the cause. Thirty commits in eight days touched this
+network, every one landed green, and not one of them sent a packet across the node boundary.
+
+So this drill sends the packet. Nothing here parses a manifest.
+
+WHAT IT GRADES, for every ordered pair of nodes:
+
+  1. reach  -- the canary on node A got a TCP connect through to the canary on node B inside the
+               window. This is the symptom the founder felt: a 504 is this, timing out behind a
+               gateway.
+  2. source -- the address node B's listener actually SAW is A's POD IP. This is the cause, and it
+               is the more valuable of the two. A masquerade can be introduced while the fences
+               happen to be permissive, so `reach` still passes and the estate sits one policy
+               tighten away from the same week. Grading the source address catches it on the day
+               it lands rather than the day it bites.
+
+The canaries dial each other every 15 seconds on their own and print what they saw; this drill
+only reads their logs. That is deliberate -- a drill needing pods/exec needs a write grant on the
+cluster, and a guarantee that costs a standing privilege is one an operator eventually turns off.
+Reading logs is what the estate's read-only identity already does, so this can run unattended from
+anywhere. Freshness comes from `--since`, so a dead canary cannot pass on yesterday's success.
+
+Both ends sit in the cross-node-drill namespace behind the same generated default-deny plus
+allow-same-namespace fence every other namespace carries -- deliberately, because that is the exact
+configuration that failed. A drill run somewhere unfenced would have stayed green all week.
+
+VERDICTS. Exit 0 only when every ordered pair passed both checks. Exit 1 FAIL, naming the pair and
+which check. Exit 2 BLIND -- fewer than two Ready nodes, a canary that is not Running, both pods on
+one node, or a log with nothing in the window. BLIND is never a pass: "the probe did not run"
+reading as green is the precise mistake this drill exists to end.
+"""
+from __future__ import annotations
+
+import argparse
+import ipaddress
+import json
+import os
+import subprocess
+import sys
+
+NS = "cross-node-drill"
+SELECTOR = "app=cross-node-canary"
+KUBE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "idp-kube")
+
+GREEN, FAIL, BLIND = 0, 1, 2
+
+
+class Blind(Exception):
+    """The drill could not measure. Fail closed; never a pass."""
+
+
+def kube(*args: str, timeout: int = 60) -> str:
+    """One read through bin/idp-kube, the estate's only path to the cluster."""
+    try:
+        p = subprocess.run([KUBE, *args], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise Blind(f"`idp-kube {' '.join(args)}` did not return in {timeout}s") from exc
+    if p.returncode != 0:
+        raise Blind(f"`idp-kube {' '.join(args)}` exited {p.returncode}: {p.stderr.strip()[:300]}")
+    return p.stdout
+
+
+def ready_nodes() -> list[str]:
+    try:
+        items = json.loads(kube("get", "nodes", "-o", "json"))["items"]
+    except (ValueError, KeyError) as exc:
+        raise Blind("could not parse the node list") from exc
+    return sorted(
+        n["metadata"]["name"]
+        for n in items
+        if any(c.get("type") == "Ready" and c.get("status") == "True"
+               for c in n.get("status", {}).get("conditions", []))
+    )
+
+
+def canaries() -> dict[str, dict]:
+    """One Running canary per node, keyed by node name."""
+    try:
+        items = json.loads(kube("get", "pods", "-n", NS, "-l", SELECTOR, "-o", "json"))["items"]
+    except (ValueError, KeyError) as exc:
+        raise Blind("could not parse the canary pod list") from exc
+    if not items:
+        raise Blind(
+            f"no {SELECTOR} pods in {NS}; the drill's own workload is not running, so nothing "
+            "measured the datapath -- reconcile platform/cross-node-drill"
+        )
+    by_node: dict[str, dict] = {}
+    for p in items:
+        node = (p.get("spec") or {}).get("nodeName")
+        st = p.get("status") or {}
+        ip, phase, name = st.get("podIP"), st.get("phase"), p["metadata"]["name"]
+        if phase != "Running" or not ip or not node:
+            raise Blind(f"canary {name} is {phase} (node={node}, ip={ip}); the pair is incomplete")
+        if node in by_node:
+            raise Blind(
+                f"two canaries on node {node} ({by_node[node]['name']} and {name}); the "
+                "anti-affinity did not hold, so no pair spans a node boundary"
+            )
+        by_node[node] = {"name": name, "ip": ip}
+    return by_node
+
+
+def recent(pod: str, window: int) -> tuple[dict[str, list[str]], list[str]]:
+    """(what this canary dialled and how it went, what source addresses it saw) in the window."""
+    out = kube("logs", "-n", NS, pod, f"--since={window}s")
+    probes: dict[str, list[str]] = {}
+    saw: list[str] = []
+    for line in out.splitlines():
+        f = line.split()
+        if len(f) >= 3 and f[0] == "probe":
+            probes.setdefault(f[1], []).append(f[2])
+        elif len(f) >= 2 and f[0] == "saw":
+            saw.append(f[1])
+    return probes, saw
+
+
+def describe(addr: str, pod_ips: set[str], node_ips: set[str]) -> str:
+    """Name what an unexpected source address is, because the name is the diagnosis."""
+    if addr in node_ips:
+        return f"{addr}, which is a NODE address"
+    if addr in pod_ips:
+        return f"{addr}, which is a different pod"
+    try:
+        ipaddress.ip_address(addr)
+    except ValueError:
+        return f"{addr!r}, which is not an address at all"
+    return addr
+
+
+def node_addresses() -> set[str]:
+    try:
+        items = json.loads(kube("get", "nodes", "-o", "json"))["items"]
+    except (ValueError, KeyError):
+        return set()
+    return {
+        a["address"]
+        for n in items
+        for a in (n.get("status") or {}).get("addresses", [])
+        if a.get("type") in ("InternalIP", "ExternalIP")
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--json", action="store_true", help="one JSON object instead of rows")
+    ap.add_argument("--window", type=int, default=120,
+                    help="seconds of canary log to grade (default 120; they dial every 15)")
+    args = ap.parse_args()
+
+    rows: list[tuple[str, str, str]] = []
+    verdict = GREEN
+
+    try:
+        nodes = ready_nodes()
+        if len(nodes) < 2:
+            raise Blind(f"{len(nodes)} Ready node(s); a cross-node drill needs two")
+        pods = canaries()
+        absent = [n for n in nodes if n not in pods]
+        if absent:
+            raise Blind(f"no canary on Ready node(s) {', '.join(absent)}; those node boundaries "
+                        "went unmeasured")
+
+        pod_ips = {p["ip"] for p in pods.values()}
+        node_ips = node_addresses()
+        log = {node: recent(p["name"], args.window) for node, p in pods.items()}
+
+        for src_node, src in sorted(pods.items()):
+            probes, _ = log[src_node]
+            if not probes:
+                raise Blind(f"{src['name']} logged no probe in {args.window}s; the canary is up "
+                            "but not dialling, so its side of every pair is unmeasured")
+            for dst_node, dst in sorted(pods.items()):
+                if src_node == dst_node:
+                    continue
+                pair = f"{src_node} -> {dst_node}"
+
+                results = probes.get(dst["ip"], [])
+                if not results:
+                    raise Blind(f"{src['name']} never dialled {dst['ip']} in {args.window}s; "
+                                f"{pair} went unmeasured")
+                bad = [r for r in results if r != "ok"]
+                if bad:
+                    rows.append(("FAIL", f"reach  {pair}",
+                                 f"{len(bad)}/{len(results)} attempt(s) failed: "
+                                 f"{', '.join(sorted(set(bad)))}"))
+                    verdict = FAIL
+                    continue
+                rows.append(("ok", f"reach  {pair}", f"{len(results)}/{len(results)} connects"))
+
+                _, saw = log[dst_node]
+                if not saw:
+                    raise Blind(f"{dst['name']} logged no arrival in {args.window}s though "
+                                f"{src['name']} says it connected; the source address for {pair} "
+                                "could not be read")
+                wrong = sorted({a for a in saw if a != src["ip"]})
+                if wrong:
+                    rows.append(("FAIL", f"source {pair}",
+                                 "arrived as " + "; ".join(describe(a, pod_ips, node_ips)
+                                                           for a in wrong)
+                                 + f" -- not the pod IP {src['ip']}. Something on the path is "
+                                 "masquerading, and every fence that whitelists pod IPs will "
+                                 "drop this in silence"))
+                    verdict = FAIL
+                else:
+                    rows.append(("ok", f"source {pair}", f"arrived as the pod IP {src['ip']}"))
+    except Blind as exc:
+        rows.append(("BLIND", "cross-node", str(exc)))
+        verdict = BLIND
+
+    name = {GREEN: "ok", FAIL: "FAIL", BLIND: "BLIND"}[verdict]
+    if args.json:
+        print(json.dumps({"verdict": name.lower(),
+                          "rows": [{"state": s, "check": c, "detail": d} for s, c, d in rows]}))
+    else:
+        for state, check, detail in rows:
+            print(f"{state:<5} {check:<34} {detail}")
+        green = sum(1 for s, _, _ in rows if s == "ok")
+        print(f"{name:<5} {'cross-node-drill':<34} {green}/{len(rows)} check(s) green")
+    return verdict
+
+
+if __name__ == "__main__":
+    sys.exit(main())

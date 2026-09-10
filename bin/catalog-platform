@@ -72,6 +72,11 @@ SYSTEMS = {
 
 # kustomization name -> (area, plain title, one sentence)
 LAYERS = {
+    "cross-node-drill": (
+        "resilience",
+        "Cross-node network drill",
+        "Two small canaries, one on each worker, that call each other over the network every few seconds and write down what they saw. It answers the two questions a week-long outage in September 2026 could not: do pods on different machines still reach each other, and does the traffic still arrive under the sender's own address rather than the machine's. If either stops being true it is a red row within the hour instead of a month of unexplained timeouts.",
+    ),
     "crossplane": (
         "delivery",
         "Cloud control loop",
