@@ -20,7 +20,20 @@ He now has three, in three different failure domains:
 |---|---|---|
 | 1 | the estate router, `litellm.llm.svc.cluster.local:4000` | OKE pod networking breaks, or the router pod does |
 | 2 | a direct vendor line, `api.minimax.io`, no cluster hop and no router | pod egress to the internet breaks, or the vendor does |
-| 3 | Ollama on the founder's Mac, over Tailscale, local silicon | the laptop is off |
+| 3 | Groq, `api.groq.com`, free tier, `openai/gpt-oss-120b` | Groq does, or the day's 1000 free requests are spent |
+| 4 | Gemini, free tier, `gemini-2.5-flash-lite` | Google does, or that tier is spent too |
+| 5 | OpenRouter, a free slug — last, and never counted on | it already fails often; see the onboarding page |
+
+Home 3 was the founder's Mac on Ollama until 2026-09-10, when he killed it: *"no i killed
+ollama because machine is slow"*, *"dont rely on macbook"*. The laptop is an Intel i7-8850H
+with no GPU; it could not answer a real prompt inside Otto's own timeout. Nothing about Otto
+depends on that machine any more.
+
+Homes 3, 4 and 5 are all free, so the floor cannot run out of credit — the one property the
+laptop was ever chosen for. They are three different vendors on purpose: a free tier ends, and
+the answer to *"what if the limit is reached"* is another vendor, not a bigger promise. A
+spent lane is parked for five minutes on its first 429 (`allowed_fails: 1`) so the turns behind
+it go straight past it.
 
 The switch is the same `litellm` binary the estate already runs, as a sidecar in Otto's own pod
 on `127.0.0.1:4010`. Reaching it crosses no Service, no DNS, no CNI and no node.

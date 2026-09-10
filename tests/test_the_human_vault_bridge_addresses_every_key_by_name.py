@@ -115,13 +115,19 @@ def test_one_key_the_estate_lacks_cannot_stop_the_others_being_seeded():
 
 
 def test_the_seed_reads_the_secret_the_registry_says_holds_the_key():
+    """A target names `entry:` when the estate holds a copy of the key worth seeding from, and
+    omits it when the founder's own copy is the only live one -- MiniMax's estate copies were
+    measured revoked at the vendor on 2026-09-10 (HTTP 401, invalid api key 2049) and unset, so
+    seeding from them would push a dead key over a working one. An entry-less row is therefore
+    a row the seed must NOT carry, which the equality below grades in both directions: a missing
+    seed for a row that names an entry, and a seed for a row that does not."""
     reg = yaml.safe_load(REGISTRY.read_text())["vendors"]
     want = {
         (t["ns"], t["bw"]): (t["entry"], t["field"])
         for v in reg.values()
         if v.get("store_default") == "human-vault"
         for t in (v.get("targets") or [])
-        if t.get("bw") and t.get("ns") and not t.get("derived")
+        if t.get("bw") and t.get("ns") and t.get("entry") and not t.get("derived")
     }
     got = {}
     for d in yaml.safe_load_all(SEED.read_text()):

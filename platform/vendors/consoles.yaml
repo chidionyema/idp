@@ -45,6 +45,7 @@ vendors:
     store_default: human-vault
     targets:
       - { entry: litellm-upstream, ns: llm, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
+      - { ns: otto-gateway, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
       - { entry: prospector-engine-env, ns: prospector, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
       - { entry: hermes-agent-env, ns: hermes-agent, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
   deepseek:
@@ -94,8 +95,14 @@ vendors:
     rotation: assisted  # MiniMax publishes no create-key API (R52)
     store_default: human-vault
     targets:
-      - { entry: litellm-upstream, ns: llm, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
-      - { entry: prospector-engine-env, ns: prospector, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
+      # No `entry:` on any of these three any more. The vault copies of this key were proved
+      # revoked at the vendor on 2026-09-10 -- HTTP 401 "invalid api key (2049)", measured from
+      # inside the router pod, while the founder's own copy answered -- and have been unset. The
+      # live key reaches every consumer through the Bitwarden human door alone, which is the one
+      # place a rotation actually lands. otto-gateway is here because Otto's home 2 reads it.
+      - { ns: llm, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
+      - { ns: prospector, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
+      - { ns: otto-gateway, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
     router:
       lanes: |
         # --- the moat's cheap primary --------------------------------------------------------
@@ -129,6 +136,28 @@ vendors:
             # how 176 million tokens went by as $0.0000 in the first place. A turn above the cap
             # 400s here instead of walking the fallback chain into unfunded lanes (the 2026-08-27
             # Telegram outage).
+            max_input_tokens: 512000
+
+        # The constrained-decoding variant of the primary lane (MUM-289).
+        # Identical billing and rate limits, but the proxy returns strict JSON
+        # only — the 400 cases callers hit parsing free-form prose from a model
+        # that should have been structured are avoided here. Consumers opt in
+        # by routing to `minimax_json` rather than `minimax`; the unconstrained
+        # lane is unchanged.
+        - model_name: minimax_json
+          litellm_params:
+            model: openai/MiniMax-M3
+            api_base: https://api.minimax.io/v1
+            api_key: os.environ/MINIMAX_API_KEY
+            timeout: 300
+            max_tokens: 8192
+            input_cost_per_token: 0.0000003
+            output_cost_per_token: 0.0000012
+            # Forces the model into JSON-only output. LiteLLM forwards
+            # response_format to OpenAI-compatible providers, and MiniMax is one
+            # (api_base above), so this is the contract the proxy enforces.
+            response_format: { type: json_schema, json_schema: { name: estate_json, schema: { type: object, additionalProperties: true } } }
+          model_info:
             max_input_tokens: 512000
 
         # The failover tier: same account and adapter, different model. It is a failover, never
@@ -228,6 +257,7 @@ vendors:
     store_default: human-vault
     targets:
       - { entry: litellm-upstream, ns: llm, field: GEMINI_API_KEY, bw: GEMINI_API_KEY }
+      - { ns: otto-gateway, field: GEMINI_API_KEY, bw: GEMINI_API_KEY }
     router:
       lanes: |
         # The ceiling is Google's, measured, not chosen here. On 2026-09-08 the router pod's
@@ -378,6 +408,10 @@ vendors:
     store_default: human-vault
     targets:
       - { entry: litellm-upstream, ns: llm, field: GROQ_API_KEY, bw: GROQ_API_KEY }
+      # Otto's own copy, home 3 of the three homes. No `entry:`: there is no cluster Secret
+      # in that namespace to seed Bitwarden FROM -- the founder's copy is the only copy, and
+      # the bridge only reads outward here.
+      - { ns: otto-gateway, field: GROQ_API_KEY, bw: GROQ_API_KEY }
     # NO router block yet, on purpose. A rendered lane naming os.environ/GROQ_API_KEY before the
     # vault holds that field is exactly the break this registry already carries a scar from (see
     # the kimi row: "a row that pointed at env keys the vault never held was removed"). The lane

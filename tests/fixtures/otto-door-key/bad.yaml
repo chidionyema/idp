@@ -148,8 +148,7 @@ spec:
               # A master key needs no database: litellm compares it in process. So the door
               # presents the SAME key the otto-brain container derives for itself, by the same
               # formula, from the same mounted file -- no second secret to mint and rotate.
-              OTTO_ROUTER_KEY=$(cat /run/secrets/otto-gateway-router/LITELLM_API_KEY)
-              LITELLM_API_KEY="sk-$(printf '%s' "$OTTO_ROUTER_KEY" | sha256sum | cut -c1-40)"
+              LITELLM_API_KEY=$(cat /run/secrets/otto-gateway-router/LITELLM_API_KEY)
               export LITELLM_API_KEY
               # The same key under the second name that reads it: the memory engine's
               # embedding provider (hermes-v2 otto/memory/embeddings_litellm.py). One
