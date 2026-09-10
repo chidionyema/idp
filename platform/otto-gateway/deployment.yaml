@@ -294,13 +294,13 @@ spec:
             - { name: OTTO_GATEWAY_MAX_TOOLS, value: "256" }
             - { name: OTTO_ROUTER_TOOL_MAX_TURNS, value: "12" }
             # The three homes are tried in series inside the sidecar: 20s at home 1, 60s at
-            # home 2, 45s at home 3, plus the loopback hops -- 135s worst case, and only ever
-            # reached when the first two are both silent. Otto's own client ceiling is 120s
+            # home 2, then the three free floor lanes (20 + 20 + 25), plus the loopback hops --
+            # 155s worst case, and only ever reached when every lane above is silent. Otto's own client ceiling is 120s
             # (otto/router/config.py _DEFAULT_TIMEOUT_SECONDS) and was never set here, so the
             # default would have hung up on home 3 fifteen seconds before it answered: the
-            # failover would work perfectly and the founder would still get nothing. 150
+            # failover would work perfectly and the founder would still get nothing. 170
             # leaves the switch room to finish its last try and still be heard.
-            - { name: OTTO_ROUTER_TIMEOUT_SECONDS, value: "150" }
+            - { name: OTTO_ROUTER_TIMEOUT_SECONDS, value: "170" }
           ports:
             - { containerPort: 8080, name: http }
           startupProbe:
@@ -361,7 +361,7 @@ spec:
             - { name: ALL_PROXY, value: "http://127.0.0.1:1055" }
             - { name: HTTP_PROXY, value: "http://127.0.0.1:1055" }
             - { name: HTTPS_PROXY, value: "http://127.0.0.1:1055" }
-            - { name: NO_PROXY, value: "127.0.0.1,localhost,api.minimax.io,api.groq.com,.svc,.svc.cluster.local,.cluster.local,10.0.0.0/8" }
+            - { name: NO_PROXY, value: "127.0.0.1,localhost,api.minimax.io,api.groq.com,generativelanguage.googleapis.com,openrouter.ai,.svc,.svc.cluster.local,.cluster.local,10.0.0.0/8" }
           # 2026-09-10: 512Mi was not a tight fit, it was the wrong order of magnitude, and
           # it kept Otto on one home for a day. The lifeboat never reached its first request
           # -- `exitCode 137 OOMKilled` at 26 seconds (started 09:49:25Z, killed 09:49:51Z),
@@ -428,6 +428,8 @@ spec:
             # home 3's key, a second directory under the same /run/secrets/otto-brain/*/*
             # glob the entrypoint already walks: one more Secret, zero new mechanism.
             - { name: brain-floor, mountPath: /run/secrets/otto-brain/floor, readOnly: true }
+            - { name: brain-floor-2, mountPath: /run/secrets/otto-brain/floor2, readOnly: true }
+            - { name: brain-floor-3, mountPath: /run/secrets/otto-brain/floor3, readOnly: true }
             - { name: router, mountPath: /run/secrets/otto-brain/router, readOnly: true }
             - { name: tmp, mountPath: /tmp }
 
@@ -516,6 +518,13 @@ spec:
         # same reason as home 2: a late key costs Otto one home, never the whole door.
         - name: brain-floor
           secret: { secretName: human-groq, optional: true }
+        # The two lanes under Groq. A free tier ends; three vendors' free tiers ending in
+        # the same five minutes is a different kind of day. Both keys are already live in
+        # the estate and both were measured answering from this container.
+        - name: brain-floor-2
+          secret: { secretName: human-gemini, optional: true }
+        - name: brain-floor-3
+          secret: { secretName: human-openrouter, optional: true }
         - name: tailscale-authkey
           secret: { secretName: otto-gateway-tailscale, optional: true }
         # Step 5: the fork's env dir, one file per credential name. The MCP key is optional so a

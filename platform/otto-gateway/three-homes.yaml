@@ -136,19 +136,78 @@ data:
           model: openai/openai/gpt-oss-120b
           api_base: https://api.groq.com/openai/v1
           api_key: os.environ/GROQ_API_KEY
-          # Generation is not the risk -- half a second, measured above. The budget is for
-          # a rate-limit wait on a free tier, and it still sits well inside Otto's ceiling.
-          timeout: 45
+          # Generation is not the risk -- half a second, measured above. A free tier that
+          # is spent says so instantly with a 429, it does not hang. So the budget here is
+          # small on purpose: a floor lane that stalls costs the NEXT floor lane its turn.
+          timeout: 20
+          num_retries: 0
+
+      # ---- the floor is a chain, because a free tier ends ----------------------------
+      # Founder, 2026-09-10: "free with linits? what if lnnit is reached? need otto to
+      # live forever", and "this has to be sophisticated".
+      #
+      # He is right, and one free vendor is not a floor. Groq's own headers, read from
+      # inside this pod on this key:
+      #     x-ratelimit-limit-requests   1000        (per day)
+      #     x-ratelimit-limit-tokens     8000        (per minute)
+      # Generous for a lifeboat and still finite. So under Groq sit two more free lanes at
+      # two more vendors, and the estate already holds a live key for both. Exhausting one
+      # is not an outage, it is a hop -- the same mechanism that carries every other hop in
+      # this file, with nothing new invented for it.
+      #
+      # Measured from inside this container, all three the same morning:
+      #     groq openai/gpt-oss-120b       0.48s   tool_calls ok
+      #     gemini-2.5-flash-lite          0.82s   tool_calls ok
+      #     gemini-2.5-flash               0.78s   answered, but returned NO tool call on a
+      #                                            prompt that demanded one -- so `lite` is
+      #                                            the lane, not the bigger sibling
+      # Tool calling is not a nicety here: OTTO_ROUTER_TOOL_MAX_TURNS is 12 and a home that
+      # cannot call a tool can only chat.
+      - model_name: home-floor-2
+        litellm_params:
+          model: openai/gemini-2.5-flash-lite
+          api_base: https://generativelanguage.googleapis.com/v1beta/openai
+          api_key: os.environ/GEMINI_API_KEY
+          timeout: 20
+          num_retries: 0
+
+      # The last lane, and honestly the weakest -- kept because something beats silence and
+      # it is a third vendor again. OpenRouter's free catalogue is genuinely unreliable:
+      # of four free models with tool support asked in one run from this pod,
+      #     nvidia/nemotron-3-ultra-550b-a55b:free   timed out at 45s
+      #     thinkingmachines/inkling:free            403, "only available on agentic harnesses"
+      #     google/gemma-4-26b-a4b-it:free           429 from the upstream provider
+      #     nvidia/nemotron-3.5-lightning:free       200 in 8.68s, but no tool call
+      # so it is last, on a short leash, and never counted on. Its slugs also churn: three
+      # `:free` models that every list still names now answer
+      # 404 "This model is unavailable for free."
+      - model_name: home-floor-3
+        litellm_params:
+          model: openai/nvidia/nemotron-3.5-lightning:free
+          api_base: https://openrouter.ai/api/v1
+          api_key: os.environ/OPENROUTER_API_KEY
+          # 8.68s measured, and it is the last thing standing between Otto and silence.
+          timeout: 25
           num_retries: 0
 
     router_settings:
       # The whole point of the file. Every lane Otto can ask for walks the three homes in
       # order and stops at the first that answers.
       fallbacks:
-        - minimax:  [home-direct, home-floor]
-        - deepseek: [home-direct, home-floor]
-        - gemini:   [home-direct, home-floor]
-        # `embed` deliberately has NO tail. otto_facts.embedding is a 1536-wide column,
+        - minimax:  [home-direct, home-floor, home-floor-2, home-floor-3]
+        - deepseek: [home-direct, home-floor, home-floor-2, home-floor-3]
+        - gemini:   [home-direct, home-floor, home-floor-2, home-floor-3]
+        # A spent lane is PARKED, not re-asked. Without this the chain still works but it
+      # works stupidly: the day Groq's thousandth request is spent, every single turn pays
+      # a round trip to Groq to be told 429 again before it reaches Gemini. allowed_fails
+      # 1 with a 5-minute cooldown means the first 429 takes that lane out of the chain and
+      # the turns behind it go straight to the next vendor. This is the router's own
+      # cooldown machinery, which is the whole reason the switch is litellm and not a
+      # script of mine.
+      allowed_fails: 1
+      cooldown_time: 300
+
+      # `embed` deliberately has NO tail. otto_facts.embedding is a 1536-wide column,
         # matched to gemini-embedding-001; the laptop's nomic-embed-text is 768-wide, so a
         # fallback there would not degrade recall, it would write vectors of the wrong shape
         # into the fact store. Otto already handles a failed embedding correctly without
@@ -164,8 +223,11 @@ data:
       # node -- both of those killed a router replica that night.
       drop_params: true
       turn_off_message_logging: true
-      request_timeout: 135  # home 1 (20) + home 2 (60) + home 3 (45), plus the hop --
-                            # now inside Otto's own 120s client ceiling on the first two
+      # home 1 (20) + home 2 (60) + the three floor lanes (20 + 20 + 25), plus the hops.
+      # The whole ladder, every lane silent, and the founder still gets an answer from the
+      # last one inside Otto's client ceiling -- which deployment.yaml sets to 170 for
+      # exactly this arithmetic. The default 120 would have hung up mid-floor.
+      request_timeout: 155
 
     general_settings:
       master_key: os.environ/OTTO_BRAIN_KEY

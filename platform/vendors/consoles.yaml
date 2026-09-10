@@ -45,6 +45,7 @@ vendors:
     store_default: human-vault
     targets:
       - { entry: litellm-upstream, ns: llm, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
+      - { ns: otto-gateway, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
       - { entry: prospector-engine-env, ns: prospector, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
       - { entry: hermes-agent-env, ns: hermes-agent, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
   deepseek:
@@ -234,6 +235,7 @@ vendors:
     store_default: human-vault
     targets:
       - { entry: litellm-upstream, ns: llm, field: GEMINI_API_KEY, bw: GEMINI_API_KEY }
+      - { ns: otto-gateway, field: GEMINI_API_KEY, bw: GEMINI_API_KEY }
     router:
       lanes: |
         # The ceiling is Google's, measured, not chosen here. On 2026-09-08 the router pod's
