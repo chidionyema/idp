@@ -129,6 +129,7 @@ nav:
       - Scheduling immunity: tutorials/demo/scheduling-immunity.md
       - Front-door login drill: tutorials/demo/idp-login-drill.md
       - Portability drill: tutorials/demo/idp-portability-drill.md
+      - Probe host: tutorials/demo/idp-probe-host.md
       - Free-tier allowance row: tutorials/demo/idp-free-tier.md
       - PR report (operating-model gate): tutorials/demo/pr-report.md
       - Estate security scan: tutorials/demo/estate-security-scan.md
@@ -224,6 +225,7 @@ nav:
       - Actions pinned: how-to/onboarding/actions-pinned.md
       - Front-door login drill: how-to/onboarding/idp-login-drill.md
       - Portability drill: how-to/onboarding/idp-portability-drill.md
+      - Probe host: how-to/onboarding/idp-probe-host.md
       - Free-tier allowance row: how-to/onboarding/idp-free-tier.md
       - PR report (operating-model gate): how-to/onboarding/pr-report.md
       - Monitoring (Prometheus, Alertmanager): how-to/onboarding/monitoring.md

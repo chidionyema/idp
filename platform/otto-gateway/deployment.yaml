@@ -341,18 +341,32 @@ spec:
           # require-pod-probes (Kyverno autogen-validate-probes) needs one on every container.
           # /health/liveliness needs no key and no upstream, so a probe failure is this
           # sidecar's own state and never a vendor's.
+          #
+          # These are exec probes, not httpGet, and that is not a style choice. The sidecar
+          # binds 127.0.0.1 on purpose (R20, and the whole point of a lifeboat you reach
+          # without crossing a network), so an httpGet probe -- which the kubelet sends to the
+          # pod IP -- would never arrive. Naming `host: 127.0.0.1` to redirect it is the one
+          # thing PodSecurity `restricted` forbids outright, and otto-gateway enforces
+          # restricted: every pod create was refused with `probe or lifecycle host (container
+          # "otto-brain" uses probe or lifecycle host "127.0.0.1")`, so the ReplicaSet made no
+          # pod, the Deployment never went Available, and Otto's three homes sat merged in git
+          # for hours while the old single-home pod kept serving. An exec probe runs inside the
+          # container, where loopback is the sidecar, and needs no host field at all.
           readinessProbe:
-            httpGet: { path: /health/liveliness, port: 4010, host: 127.0.0.1 }
+            exec:
+              command: ["python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4010/health/liveliness', timeout=2)"]
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
           livenessProbe:
-            httpGet: { path: /health/liveliness, port: 4010, host: 127.0.0.1 }
+            exec:
+              command: ["python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4010/health/liveliness', timeout=2)"]
             periodSeconds: 30
             timeoutSeconds: 3
             failureThreshold: 3
           startupProbe:
-            httpGet: { path: /health/liveliness, port: 4010, host: 127.0.0.1 }
+            exec:
+              command: ["python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4010/health/liveliness', timeout=2)"]
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 24

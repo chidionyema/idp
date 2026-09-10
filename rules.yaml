@@ -72,6 +72,34 @@ rules:
       a Kustomization sets wait: true beside a healthChecks list, so the list is dead text and the
       row is braked by every object in its path
 
+  - id: probe-host
+    fast: true   # one parse of platform/ and clusters/, cheap enough for the 60-second fast gate
+    label: probe-host
+    statement: >-
+      No probe or lifecycle handler names a host: PodSecurity restricted refuses the pod at create,
+      not the manifest at apply, so a workload carrying one merges green, reconciles green, and
+      then its ReplicaSet fails to make a pod forever while the old pod keeps serving
+    law: "incident 2026-09-10, otto-gateway three homes Available=False for hours"
+    origin: >-
+      The otto-brain sidecar binds 127.0.0.1 by design (R20, and a lifeboat you reach without
+      crossing a network). Its probes were pointed back at loopback with host: 127.0.0.1, which
+      cannot work anyway -- the kubelet is not in the pod's network namespace -- and which
+      PodSecurity restricted forbids outright: "probe or lifecycle host (container \"otto-brain\"
+      uses probe or lifecycle host \"127.0.0.1\")". Otto's three homes merged and never ran. An
+      exec probe runs inside the container, where loopback is the sidecar, and needs no host.
+    planes: [ci, session]
+    session_glob: ['platform/**/*.yaml', 'clusters/**/*.yaml']
+    run: [python3, bin/idp-probe-host]
+    cluster: {policy: null, why: "PodSecurity restricted already refuses it at pod create in every namespace; this row moves the refusal to the pull request, where it is readable"}
+    fixtures: {must_fail: tests/fixtures/probe-host/bad.yaml, must_pass: tests/fixtures/probe-host/good.yaml}
+    cases:
+      - {expect: refuse, args: [tests/fixtures/probe-host/bad.yaml]}
+      - {expect: pass, args: [tests/fixtures/probe-host/good.yaml]}
+      - {expect: pass, live: true, note: "this estate's own workloads"}
+    ok: "no probe or lifecycle handler names a host"
+    fail: >-
+      a probe or lifecycle handler sets host, so PodSecurity restricted will refuse every pod the
+      workload tries to create while the manifest itself stays green
   - id: cloud-agnostic
     label: agnostic
     statement: No provider-specific annotation or Service outside the compute provisioner
