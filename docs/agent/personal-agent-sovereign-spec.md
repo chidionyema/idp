@@ -582,3 +582,69 @@ but VAD, turn detection and barge-in all still come from the model.
 
 Nothing is deployed. No Twilio number, no voice baseline, no recording of Nunn's consent. The
 onboarding flow (contact card, welcome call) remains specified only.
+
+---
+
+## v1.6 amendment — Guarantees she can understand, and the Shadow Ledger
+
+### The script (what is said to Nunn)
+
+She is not told how it works. She is told what it **cannot** do. A promise she can restate in her
+own words is worth more than any explanation of the machinery.
+
+> "Mummy, I've set up a new dedicated assistant on your phone called Auntie Ezinne to help you with
+> your groceries and errands. I know there are a lot of scammers out there, so I built this with
+> three unbreakable rules to keep you safe:
+>
+> **The Pocket Money Guarantee.** She does not have access to your bank account. I have given her a
+> strict £50 prepaid limit. Even if she makes a mistake, she physically cannot spend more than the
+> pocket money I gave her.
+>
+> **The Guardian Guarantee.** She reports directly to me. Whenever she buys something for you, she
+> sends me the receipt at the exact same time. If anything looks wrong, I have a red button on my
+> phone that turns her off instantly.
+>
+> **The Privacy Guarantee.** She cannot read your personal WhatsApp messages with your friends. She
+> only wakes up when you specifically call her or message her directly."
+
+The framing is deliberate: she is not trusting a machine, she is trusting her son and the leash he
+put on it.
+
+### The Shadow Ledger
+
+A Telegram control panel on the Guardian's phone: silent notifications with the receipt image on
+every spend, API burn against a daily cap, and `/kill` / `/resume`.
+
+### Two corrections that must be stated, not silently applied
+
+**1. The £50 figure in the script is not yet true.** The Guardian Engine's hard cap is £75 and there
+is no prepaid card in either build. Under the estate's empirical-proof rule, a guarantee either has
+a mechanism behind it or it is not said. So the script's promises land in one of two ways: either a
+prepaid instrument with a real £50 ceiling is provisioned (then the sentence is true as written), or
+the Guardian Engine's cap is the mechanism and the script must name £75. **It must not be said before
+it is true** — telling an elderly person a limit that does not exist is worse than telling her no
+limit, because she will rely on it.
+
+**2. The kill switch in the spec is not a kill switch.** `self.agent_active` is an in-process
+boolean. It is lost on restart, it does not reach the live call path, and — critically — it does not
+stop work already in flight. A Guardian who presses the red button and believes the agent is off,
+while an order is already completing, has been misled by the same class of bug as the false
+"order placed" acknowledgement. The ledger's state must be durable, and `/kill` must cancel in-flight
+jobs, not merely refuse new ones.
+
+### What the Shadow Ledger must additionally do
+
+- Persist kill state and daily spend to disk, so a restart does not resurrect a killed agent.
+- Cancel in-flight orders on `/kill`, and report which were cancelled.
+- Refuse to send a receipt image that contains unrelated tabs (Issue v1.2 #15).
+- Never log a card number, an OTP or a password to Telegram — the ledger is a notification surface,
+  not a secret store.
+
+### Issues-for-Nunn — v1.6 batch
+
+42. **"Chidi can turn her off" must survive a restart.** Otherwise the button is theatre.
+43. **"She cannot read my messages"** is only true if the WhatsApp webhook ignores every message not
+    addressed to the agent. Group messages and forwards to other contacts must never be ingested.
+    This is a claim about behaviour, so it needs a test, not a paragraph.
+44. **Cost gate must not strand her mid-task.** Hitting the daily API cap while an order is in
+    flight must not leave a half-finished purchase.
