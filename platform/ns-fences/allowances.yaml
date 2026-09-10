@@ -487,6 +487,19 @@ flows:
     # programs to land on a traefik pod rather than leave for the load balancer, so the request
     # arrives here as ordinary pod-to-pod traffic and a fence that does not name it drops it.
     ingress_from: [monitoring, otto-gvisor-sandbox, prospector, identity, hermes-agent]
+    # external-dns is the estate's only writer of the public DNS zone, and the provider it
+    # writes to is Cloudflare's API on the internet -- so a fence with no internet egress does
+    # not slow it down, it stops it dead. Measured 2026-09-10, the fatal line it exits on:
+    # `Failed to do run once: Get "https://api.cloudflare.com/client/v4/zones": dial tcp
+    # 104.19.192.29:443: i/o timeout`, then a liveness kill 30s later because the health
+    # listener is never reached, forever. This is the estate's repeated fence defect in its
+    # third instance: a controller that authenticates or writes outside the cluster was given
+    # a namespace fence written only for pod-to-pod traffic (the ClusterSecretStore/estate-vault
+    # incident on 2026-09-08 is the same shape, and has its own gate). It reads as a quiet
+    # CrashLoopBackOff rather than an outage because the zone still answers -- the records
+    # written before the fence landed are still there, and upsert-only never deletes. What is
+    # actually lost is every NEW hostname: an HTTPRoute added today gets no record at all.
+    egress_internet: [443]
   cert-manager:
     # Serves an admission webhook, so the control plane calls IN. It is outside the pod
     # network and outside every namespace selector, so default-deny drops it and only an
