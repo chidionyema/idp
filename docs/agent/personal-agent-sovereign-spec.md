@@ -849,3 +849,53 @@ from her own conversation, and the gate must pass on **both** the baseline match
 These are recorded as **unverified**, not as working. The rule already exists in the estate — a
 system is not MEASURED_OK because a synthetic probe passed — and this amendment applies it to this
 build explicitly, so that a complete file tree is never mistaken for a working system.
+
+---
+
+## v1.10 amendment — Webhook authenticity (found while auditing, not while building)
+
+### The hole
+
+Both webhook endpoints trusted values that the *sender* supplies:
+
+- `/webhook/whatsapp` checked `From`, which is a form field. Anyone who learns Nunn's number
+  could POST a forged request and have the agent order goods on her card.
+- `/webhook/telegram` checked `chat_id`, which is a JSON body field. A forged body with the
+  Guardian's chat id is a remote kill switch for her agent.
+
+Neither was a defence. The estate's own rule applies: a check that reads its answer from the
+thing being checked is not a check.
+
+### The fix
+
+**Twilio.** Every request Twilio sends carries `X-Twilio-Signature`: an HMAC-SHA1 over the full
+signed URL plus all POST parameters, keyed by the account's auth token. The webhook recomputes it
+and compares in constant time. A request that cannot be verified is refused with 403 — including
+one with no signature at all, which is not "probably fine" but "someone who is not Twilio".
+
+Two details that silently break this, both handled: the URL must be the one Twilio *signed*
+(the public origin behind the tunnel, not the 127.0.0.1 the process is bound to), and the
+parameters must be sorted by key and form-encoded, not JSON.
+
+`CONCIERGE_REQUIRE_SIGNATURE=0` exists for a local walkthrough only. It logs loudly that anyone
+who knows Mum's number can place orders, and the default is *required* — so a deployment that
+configures nothing is still protected.
+
+**Telegram.** Two independent checks, because they answer different questions: the webhook secret
+token proves the call came from Telegram, and the chat id proves it came from the Guardian rather
+than from another Telegram user. Either alone is insufficient.
+
+### Issues-for-Nunn — v1.10 batch
+
+53. **"What if someone finds my number?"** — previously they could spend her money. Now a request
+    without a valid Twilio signature is refused before anything is read. **Owner: request_auth.**
+54. **"What if someone tries to switch her off?"** — previously a forged kill was accepted. Now
+    both the Telegram secret and the chat id must match. **Owner: main.**
+55. **What was tested:** the forged requests that used to be accepted are now refused end to end,
+    through the real ASGI app, including a valid signature sent with a tampered body — the attack
+    that replaces her order with a different one.
+
+### Recorded status
+
+This was found by auditing for it, not by a test failing, which is the honest account: the tests
+could not have failed, because nothing tested that the sender was who it claimed to be.
