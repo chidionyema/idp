@@ -665,3 +665,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: none
 📎 FACTS: human-twilio SecretSynced True; TWILIO_ACCOUNT_SID in env; signature algorithm verified independently
 
+
+## 2026-09-10T22:26:15Z · session a941270d · lane otto
+🟢 idp #2980 merged as 949cde1c; otto-gateway rolled to main-99-f10110c5 at 22:25:34Z.
+🟢 Flux chain caught up: secret-store → alerts-github → otto-gateway, all now on 949cde1c.
+🟡 The read-only account cannot patch a Kustomization, so a reconcile could not be forced; the roll took ~11 min on the 10-minute interval.
+🔧 TOUCHES: platform/otto-gateway, platform/otto-golden, platform/hermes-agent (newTag main-99); OTTO_ROUTER_LANE_DEEP_MODEL=minimax
+🔀 OVERLAP: none — hermes-v2 #101 and idp #2980 are both merged and landed.
+📍 Next and last: drive the founder's own complaint in the live pod — turn 1 the URL he sent, turn 2 "Otto can you summarise" — and print the answer.
+⚪ Also printing claims_total vs claims_clean on his last 12 turns, which is what actually decides how many lines carry the ⚠ mark.
+📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
+
