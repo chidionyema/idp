@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+"""Otto's three homes, graded and deployed.
+
+    bin/idp-otto-homes            grade all three homes and say which could take a turn
+    bin/idp-otto-homes deploy     deploy home 2, the Cloudflare edge, and set its secrets
+    bin/idp-otto-homes cutover    what pointing Telegram at home 2 would require (does nothing)
+
+THE FOUNDER, 2026-09-09: "otto must have 3 homes. Otto is founders personal assistant, has
+never been stable even once." And 2026-09-10, naming them: "three homes, cloudflare, macbook".
+
+A HOME IS A FAILURE DOMAIN. The estate's first attempt gave Otto five model lanes and called
+them homes; all five were in one ConfigMap read by one sidecar in one pod on one cluster, so
+all five died together. The founder's verdict: "this route is still tied to our cluster". A
+home earns the name only by failing independently of the other two.
+
+    home 1  the cluster      full Otto: memory, tools, the estate, traces
+    home 2  the Cloudflare   platform/lifeboat: a door Telegram can always reach and a brain
+            edge             of free lanes behind it. No node, network or DNS of ours
+    home 3  the founder's    over the tailnet, which is WireGuard and not our cluster's
+            MacBook          network. Answers when the internet is the broken thing
+
+WHAT THIS GRADES AND WHAT IT REFUSES TO CLAIM. Each home is asked a question only a working
+home can answer, and the verdict is MEASURED_OK, MEASURED_FAIL or UNKNOWN -- never "up" or
+"fine". A home whose probe could not run at all is UNKNOWN, which is neither a failure nor a
+pass. The design behind the three: docs/explanation/otto-survival-matrix.md.
+
+This is Python and not bash because the estate's shell standard (crew#620) refuses a new
+shell file over 100 lines, and the first draft of this was 248.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parent.parent
+CFG = IDP / "clusters/oke/estate-config.yaml"
+LIFEBOAT = IDP / "platform/lifeboat"
+
+OK, FAIL, UNKNOWN = "MEASURED_OK", "MEASURED_FAIL", "UNKNOWN"
+
+# Every secret home 2 needs: the worker's env name, the vault entry, the field inside it.
+# A lane whose key is absent is skipped by src/homes.js rather than failing, so a missing one
+# is a shorter ladder and never a broken deploy.
+SECRETS = [
+    ("LIFEBOAT_KEY", "otto-lifeboat", "LIFEBOAT_KEY"),
+    ("TELEGRAM_BOT_TOKEN", "otto-gateway-channels", "OTTO_TELEGRAM_BOT_TOKEN"),
+    ("TELEGRAM_WEBHOOK_SECRET", "otto-gateway-channels", "OTTO_TELEGRAM_WEBHOOK_SECRET"),
+    ("GROQ_API_KEY", "human-groq", "GROQ_API_KEY"),
+    ("GEMINI_API_KEY", "human-gemini", "GEMINI_API_KEY"),
+    ("OPENROUTER_API_KEY", "human-openrouter", "OPENROUTER_API_KEY"),
+]
+
+
+def zone() -> str:
+    """The zone is one value, in one file, and never a literal in this repository (LAW 46,
+    graded by bin/estate-zone-gate)."""
+    import yaml
+
+    doc = yaml.safe_load(CFG.read_text(encoding="utf-8")) or {}
+    data = doc.get("data", doc)
+    for key in ("ESTATE_ZONE", "estate_zone", "zone"):
+        if data.get(key):
+            return str(data[key]).strip()
+    sys.exit(f"no zone in {CFG}")
+
+
+def mac_addr() -> str | None:
+    """Home 3's TAILNET ADDRESS, never its MagicDNS name.
+
+    Measured 2026-09-10: the same Ollama answers HTTP 200 on the address and HTTP 403 on the
+    name, because it refuses a Host header it does not recognise. A probe written against the
+    name would have reported home 3 dead while home 3 was answering -- and worse, the cluster
+    reaching for home 3 by name would have got the same 403 and fallen through to a vendor for
+    no reason at all.
+    """
+    for exe in ("tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"):
+        path = shutil.which(exe) or (exe if os.access(exe, os.X_OK) else None)
+        if not path:
+            continue
+        try:
+            out = subprocess.run([path, "status", "--json"], capture_output=True,
+                                 text=True, timeout=15)
+            state = json.loads(out.stdout)
+        except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+            continue
+        for ip in (state.get("Self") or {}).get("TailscaleIPs") or []:
+            if ":" not in ip:  # the v4 address; Ollama is not listening on v6 here
+                return ip
+    return None
+
+
+def probe(home: str, what: str, url: str, expect: str = "") -> bool:
+    """One probe, one verdict. The body is captured before it is graded, never piped into a
+    test -- a failing left-hand stage inverts the answer silently (LAW 55, bin/idp-pipeverdict).
+
+    An empty expectation means the 2xx is the verdict.
+    """
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            body = resp.read(65536).decode("utf-8", "replace")
+            code = resp.status
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        why = getattr(exc, "code", None) or type(exc).__name__
+        print(f"  {home:<16} {what:<26} {FAIL}  no answer from {url} ({why})")
+        return False
+    if expect and expect not in body:
+        print(f"  {home:<16} {what:<26} {FAIL}  HTTP {code}, no {expect!r} in the answer")
+        return False
+    print(f"  {home:<16} {what:<26} {OK}    HTTP {code}")
+    return True
+
+
+def status() -> int:
+    z = zone()
+    print(f"Otto's three homes, {datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ}\n")
+    green = 0
+
+    # /healthz, not /health: measured 2026-09-10, otto answers 200 on the former and 404 on
+    # the latter, so the obvious path grades a working cluster as dead. Home 1 is the only
+    # home that remembers the conversation, so it is what everything else is a degradation from.
+    green += probe("1 cluster", f"otto.{z}", f"https://otto.{z}/healthz")
+
+    # Home 2 is asked the one question that touches no vendor and reads no key, so no spent
+    # free tier can take it red. Whether a lane can think is a different question, asked at
+    # /v1/chat/completions.
+    green += probe("2 cloudflare", f"lifeboat-llm.{z}", f"https://lifeboat-llm.{z}/health", "afloat")
+
+    mac = mac_addr()
+    if mac:
+        # A tag list, not a TCP connect: it proves the daemon is serving models, which is the
+        # thing home 3 exists to do.
+        green += probe("3 macbook", f"{mac} (tailnet)", f"http://{mac}:11434/api/tags", "models")
+    else:
+        print(f"  {'3 macbook':<16} {'-':<26} {UNKNOWN}        no tailscale on this machine to ask")
+
+    print()
+    if green == 3:
+        print("All three homes could take a turn.")
+    else:
+        print(f"{green} of 3 homes could. Otto answers while any one of the three is green.")
+    return 0  # a red home is a report, not a failed command: this is a status board
+
+
+def vault_get(entry: str, field: str = "") -> str:
+    """Read a value out of the estate's vault without it ever reaching a terminal, a log line
+    or this process's argv (LAW 21, R52). bin/idp-cloud is the estate's one vault reader --
+    the same call bin/idp-bootstrap-cloudflare:80 makes. An entry is either a bare value or a
+    JSON object; a field name picks a key out of the second shape and is ignored for the first.
+    """
+    try:
+        out = subprocess.run([str(IDP / "bin/idp-cloud"), "secret", "get", entry],
+                             capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    raw = out.stdout.strip()
+    if not raw or out.returncode != 0:
+        return ""
+    if not field:
+        return raw
+    try:
+        return str(json.loads(raw).get(field) or "")
+    except (json.JSONDecodeError, AttributeError):
+        return raw  # a non-JSON entry is the bare value, not a missing key
+
+
+def wrangler(args: list[str], stdin: str | None = None) -> None:
+    subprocess.run(["npx", "--yes", "wrangler@latest", *args], cwd=LIFEBOAT,
+                   input=stdin, text=True, check=True,
+                   stdout=subprocess.DEVNULL if stdin else None)
+
+
+def deploy() -> int:
+    z = zone()
+    if not shutil.which("npx"):
+        sys.exit("npx not found; wrangler is run through it")
+
+    token = os.environ.get("CLOUDFLARE_API_TOKEN") or vault_get("cloudflare-api-token",
+                                                                "CLOUDFLARE_API_TOKEN")
+    if not token:
+        sys.exit("FOUNDER ACTION: the vault holds no cloudflare-api-token. "
+                 "Run bin/idp-bootstrap-cloudflare first.")
+
+    # The account id is DERIVED, never written down -- the same read bin/idp-bootstrap-cloudflare
+    # does at line 155. This is what retires the note at platform/vendors/consoles.yaml:387,
+    # which refuses a Workers lane on the grounds that no file in the estate holds an account id.
+    req = urllib.request.Request(f"https://api.cloudflare.com/client/v4/zones?name={z}",
+                                 headers={"authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = (json.load(resp).get("result") or [{}])[0]
+        account = (result.get("account") or {}).get("id", "")
+    except (urllib.error.URLError, OSError, ValueError, KeyError):
+        account = ""
+    if not account:
+        sys.exit(f"FOUNDER ACTION: the cloudflare token cannot read zone {z}, so the account id\n"
+                 "  cannot be derived. It needs Zone:Read on that zone, plus Workers Scripts:Edit\n"
+                 "  to deploy. Mint at https://dash.cloudflare.com/profile/api-tokens and store\n"
+                 "  it with bin/idp-vault-put.")
+
+    os.environ["CLOUDFLARE_API_TOKEN"] = token
+    os.environ["CLOUDFLARE_ACCOUNT_ID"] = account
+
+    # The route is passed here rather than written in wrangler.toml, because a route in that
+    # file would name the estate's DNS zone as a literal (LAW 46).
+    wrangler(["deploy", "--route", f"lifeboat-llm.{z}/*"])
+
+    # Home 2's secrets, piped on stdin so no value is ever an argument, an environment
+    # variable or a line in this session's scrollback (LAW 21).
+    for name, entry, field in SECRETS:
+        value = vault_get(entry, field)
+        if value:
+            wrangler(["secret", "put", name], stdin=value)
+            print(f"  set {name}")
+        else:
+            print(f"  SKIP {name} (no {field} in vault entry {entry})")
+
+    # Home 1's address, so the edge knows where to send a turn it should not be answering
+    # itself. otto-origin is a second name for the same cluster ingress; it exists so that
+    # otto.<zone> can move to the edge without the edge losing its way back.
+    wrangler(["secret", "put", "ORIGIN_WEBHOOK_URL"],
+             stdin=f"https://otto-origin.{z}/webhook/telegram")
+    print("  set ORIGIN_WEBHOOK_URL\n")
+    print("Home 2 deployed. Grade it with: bin/idp-otto-homes")
+    return 0
+
+
+def cutover() -> int:
+    """Its own verb, never folded into deploy. Deploying home 2 changes nothing the founder can
+    see; this repoints his live assistant, and a production change is his to authorise in his
+    own words (THE MEDIC LAW AND CONSENT, 2026-09-09). So this prints and does nothing."""
+    z = zone()
+    print(f"""The cutover moves Telegram's webhook from home 1 to home 2, so that a turn arrives at the
+edge and is fanned out to the cluster first, the Mac second, and answered at the edge only
+when neither can be reached. Telegram allows exactly one webhook URL per bot, which is why
+the door is moved rather than multiplied.
+
+  1. otto-origin.{z} must resolve to the cluster ingress, alongside otto.{z}.
+  2. otto.{z} becomes a Cloudflare-proxied record in front of the worker.
+  3. platform/otto-gateway/registration-reconciler.yaml stops setting the webhook, or it
+     will set it straight back to the cluster on its next run. That file is the reason the
+     webhook is a single hostname today; its own comment reads "# The one door".
+
+Nothing here is done by this command.""")
+    return 0
+
+
+if __name__ == "__main__":
+    verb = sys.argv[1] if len(sys.argv) > 1 else "status"
+    handler = {"status": status, "deploy": deploy, "cutover": cutover}.get(verb)
+    if not handler:
+        print(__doc__.split("\n\nTHE FOUNDER")[0], file=sys.stderr)
+        sys.exit(2)
+    sys.exit(handler())

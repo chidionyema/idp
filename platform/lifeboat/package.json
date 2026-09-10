@@ -1,0 +1,10 @@
+{
+  "name": "estate-lifeboat",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Otto's second home: a door and a brain on Cloudflare's network",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}
