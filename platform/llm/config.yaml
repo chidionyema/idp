@@ -288,6 +288,41 @@ model_list:
     model_info:
       mode: embedding
 
+  # The embed lane's first fallback, added 2026-09-10. `embed` was the one group in the
+  # fallback list with no chain at all, so Google's refusal travelled straight to every
+  # caller. Measured from the router's own log that day, repeatedly:
+  #
+  #   litellm.aembedding(model=gemini/gemini-embedding-001) Exception
+  #     litellm.RateLimitError: GeminiException - {"code": 429, "status": "RESOURCE_EXHAUSTED"}
+  #   No fallback model group found for original model_group=embed
+  #   POST /embeddings HTTP/1.1" 429 Too Many Requests
+  #
+  # One lane, two casualties. The memory backfill (otto-memory-store-6, Error 20h) ends
+  # at otto/memory/backfill.py:102 with `urllib.error.URLError: <urlopen error timed
+  # out>`. And hindsight-api's FastAPI lifespan blocks on this same lane at boot, and a
+  # lifespan that blocks never binds 8888, so its startup probe never passed: 168
+  # restarts in 18h, each container dying at 329s of a 600s budget with two 120s timeouts
+  # inside it.
+  #
+  # A live probe found the deeper fault behind both: HTTP 404, `models/
+  # gemini-embedding-001 is not found for API version v1beta`. Google has retired the id,
+  # so the primary lane cannot answer at all and the chain below is doing real work, not
+  # standing by.
+  #
+  # OpenRouter is first because the estate already holds its key -- this registry seeds it
+  # into estate-vault/litellm-upstream and the human door re-reads it as
+  # OPENROUTER_API_KEY, mounted and exported by basename. It serves the same model at the
+  # same 1536 width, so a vector written by either hop stays comparable and no store
+  # migration is needed.
+  - model_name: embed-fallback
+    litellm_params:
+      model: openrouter/openai/text-embedding-3-small
+      api_key: os.environ/OPENROUTER_API_KEY
+      dimensions: 1536
+      timeout: 120
+    model_info:
+      mode: embedding
+
   - model_name: vision
     litellm_params:
       model: gemini/gemini-2.5-flash
@@ -317,6 +352,17 @@ model_list:
       model: gemini/gemini-3.1-flash-image
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
+
+  # The embed lane's second fallback: Cohere embed-english-v3.0, the better of the two
+  # models on this chain. It reads the key this row carries into the router through the
+  # human door, mounted at /run/secrets/human/cohere.
+  - model_name: embed-cohere
+    litellm_params:
+      model: cohere/embed-english-v3.0
+      api_key: os.environ/COHERE_API_KEY
+      timeout: 120
+    model_info:
+      mode: embedding
 
 router_settings:
   fallbacks:
@@ -387,7 +433,23 @@ router_settings:
     - gemini: [minimax, groq]
     - default: [gemini, minimax, groq]
     - fast: [gemini, minimax, groq]
-
+    # The lane that had no chain at all until 2026-09-10, and the only one that needed it.
+    # Every other group failed over; `embed` did not, so a Google 429 travelled straight out
+    # to the caller and killed two services (the embed rows in cluster_lanes above carry the
+    # full measurement).
+    #
+    # This lives in cluster_fallbacks and NOT in fallbacks, and that is load-bearing rather
+    # than tidy. `embed` is a cluster lane: the OCI container's own render (llm/config.yaml)
+    # has no cluster-lanes marker and therefore carries no embed lane at all, so a chain
+    # naming `embed` in the plain block renders into both configs and fails the one that
+    # legitimately lacks the lane. The renderer catches exactly that, and did:
+    #
+    #   FAIL vendor-render llm/config.yaml: fallback names no lane serves:
+    #     ['embed', 'embed-cohere', 'embed-fallback']
+    #
+    # OpenRouter first because its key is already in the estate; Cohere second because it is
+    # the better model and its key rides the human door.
+    - embed: [embed-fallback, embed-cohere]
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
   # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored
   # encrypted in litellm-db under the vendor's own name, `moonshot/kimi-k3`. Rendering a

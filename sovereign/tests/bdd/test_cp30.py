@@ -210,22 +210,42 @@ def _one_cheap_model(proxy: FakeProxy, context: dict[str, Any]) -> None:
     # like an answer and is worse than a clean failure. So image chains are graded by their own
     # rule below -- every hop must itself make images -- and a text chain that reaches into an
     # image lane, or an image chain that reaches out of one, still fails here.
-    image_lanes = {
-        m["model_name"]
-        for m in yaml.safe_load(litellm_path.read_text())["model_list"]
-        if "image" in m["litellm_params"]["model"]
+    lanes = yaml.safe_load(litellm_path.read_text())["model_list"]
+    image_lanes = {m["model_name"] for m in lanes if "image" in m["litellm_params"]["model"]}
+    # An embedding lane is exempt from the cheap-model floor for exactly the reason an image
+    # lane is, and the exemption arrives with the same obligation. "End in the cheapest" is a
+    # statement about the cost of answering in TEXT. There is no text cost in an embedding
+    # call and no chat model can serve one: a chain that fell from `embed` into `groq` would
+    # hand a caller expecting a vector a paragraph of prose, which the caller cannot tell from
+    # a working answer. So an embedding chain is graded by its own rule below -- every hop must
+    # itself embed -- and mixing the two directions still fails here.
+    #
+    # Added 2026-09-10 with the embed chain. Until that day `embed` had no chain at all, so
+    # Google retiring gemini-embedding-001 (HTTP 404, "not found for API version v1beta")
+    # reached every caller: "No fallback model group found for original model_group=embed".
+    # The lane the estate declares as an embedding one is the lane litellm treats as one --
+    # model_info.mode, not a guess at the model id.
+    embed_lanes = {
+        m["model_name"] for m in lanes if (m.get("model_info") or {}).get("mode") == "embedding"
     }
-    graded = [members for head, members in chains if head != cheap and head not in image_lanes]
+    special = image_lanes | embed_lanes
+    graded = [members for head, members in chains if head != cheap and head not in special]
     assert graded, "every chain is headed by the cheap model; nothing to grade"
     for chain in graded:
         members = [m.strip() for m in chain.split(",")]
         assert not (set(members) & image_lanes), f"a text chain falls into an image lane: {chain}"
+        assert not (set(members) & embed_lanes), f"a text chain falls into an embedding lane: {chain}"
         assert members[-1] == cheap, chain
     for head, chain in chains:
         if head not in image_lanes:
             continue
         for member in (m.strip() for m in chain.split(",")):
             assert member in image_lanes, f"{head} falls back to the text lane {member}"
+    for head, chain in chains:
+        if head not in embed_lanes:
+            continue
+        for member in (m.strip() for m in chain.split(",")):
+            assert member in embed_lanes, f"{head} falls back to {member}, which does not embed"
     assert config_mod.POLICY.routing["cheap"] == cheap
 
 

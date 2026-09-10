@@ -111,6 +111,10 @@ spec:
             - { name: human-minimax, mountPath: /run/secrets/human/minimax, readOnly: true }
             - { name: human-gemini, mountPath: /run/secrets/human/gemini, readOnly: true }
             - { name: human-openrouter, mountPath: /run/secrets/human/openrouter, readOnly: true }
+            # cohere, added 2026-09-10 with the vendor row and the embed chain. `optional`
+            # like every human mount, so the router starts whether or not the key is in the
+            # vault yet; a missing one fails that Secret alone and the Cohere hop alone.
+            - { name: human-cohere, mountPath: /run/secrets/human/cohere, readOnly: true }
             - { name: human-kimi, mountPath: /run/secrets/human/kimi, readOnly: true }
             # 2026-09-10: both keys were in Secrets Manager and both bridge Secrets existed in
             # this namespace, and neither was mounted -- so the estate router could not reach
@@ -165,6 +169,8 @@ spec:
           secret: { secretName: human-gemini, optional: true }
         - name: human-openrouter
           secret: { secretName: human-openrouter, optional: true }
+        - name: human-cohere
+          secret: { secretName: human-cohere, optional: true }
         - name: human-kimi
           secret: { secretName: human-kimi, optional: true }
         - name: human-cerebras
