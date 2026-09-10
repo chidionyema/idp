@@ -102,7 +102,12 @@ data:
           model: openai/qwen2.5-coder:7b
           api_base: http://${FOUNDER_MAC_TS_IP}:11434/v1
           api_key: ollama
-          timeout: 120
+          # Measured on the founder's Mac, 2026-09-10: warm, 12.7s for a 20-token reply; cold,
+          # over 120s -- a 7B load on a laptop already 46% free and paging. 120 was the first
+          # number here and it timed out on exactly the turn home 3 exists for, so the job
+          # below now keeps the model resident (OLLAMA_KEEP_ALIVE=-1) and this is the ceiling
+          # for the one cold load after a reboot. A lifeboat that gives up is not a lifeboat.
+          timeout: 240
           num_retries: 0
 
     router_settings:
@@ -128,7 +133,7 @@ data:
       # node -- both of those killed a router replica that night.
       drop_params: true
       turn_off_message_logging: true
-      request_timeout: 130
+      request_timeout: 330  # home 1 (20) + home 2 (60) + home 3 (240), plus the hop
 
     general_settings:
       master_key: os.environ/OTTO_BRAIN_KEY

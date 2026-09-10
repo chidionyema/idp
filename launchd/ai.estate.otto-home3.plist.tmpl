@@ -36,9 +36,11 @@
     <key>OLLAMA_HOST</key>
     <string>0.0.0.0:11434</string>
     <!-- The lifeboat answers the founder, so a model stays resident rather than paying a
-         cold load on the one turn that matters. -->
+         cold load on the one turn that matters. Measured 2026-09-10: warm 12.7s, cold over
+         120s. -1 is "never unload": the founder's laptop pays that load once after a reboot,
+         and never on the message he sends while the cluster is down. -->
     <key>OLLAMA_KEEP_ALIVE</key>
-    <string>30m</string>
+    <string>-1</string>
     <key>PATH</key>
     <string>${PATH}</string>
   </dict>

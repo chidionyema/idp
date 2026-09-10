@@ -67,3 +67,15 @@ other workload is the founder's assistant.
    `/health/liveliness` on `127.0.0.1:4010`, and it needs no upstream, so a red probe there is
    the sidecar and never a vendor.
 3. Is home 3 reachable: `tailscale status` on the Mac should list `otto-pod`.
+4. Is home 3 serving at all: `lsof -nP -iTCP:11434 -sTCP:LISTEN` on the Mac must show a
+   listener on `*:11434`, not only on `127.0.0.1:11434`. Ollama.app runs its own server on
+   loopback and that one is invisible to the tailnet; the launchd job is the one that matters,
+   and the two coexist happily on the same port.
+5. After editing the plist, reload it with `launchctl kickstart -k gui/$(id -u)/ai.estate.otto-home3`.
+   `bootout` followed immediately by `bootstrap` returns `Bootstrap failed: 5: Input/output error`
+   while the old job is still tearing down, and leaves home 3 loaded but not running — measured
+   2026-09-10.
+6. Cold versus warm, so a slow first answer is not read as an outage: measured on the founder's
+   Mac 2026-09-10, a warm `qwen2.5-coder:7b` answered in 12.7s and a cold one took over 120s.
+   The job sets `OLLAMA_KEEP_ALIVE=-1`, so that load is paid once after a reboot and never on
+   the message he sends while the cluster is down.
