@@ -801,3 +801,51 @@ The Action Cam is built and fenced, default off. The founder may enable it; the 
 this spec is to ship the *narration and the still receipt* first, watch whether she actually asks for
 more, and enable the video only if she does. Adding capability is cheap; withdrawing a promise about
 her card details is not.
+
+---
+
+## v1.9 amendment — The challenge phrase, and what "tested" actually means
+
+### The hole being closed
+
+The biometric gate compares a voice to a baseline. A **recording** of Nunn's voice passes it. So a
+recording is enough to authorise spending her money — which defeats the point of the gate.
+
+### The fix: a challenge the agent chooses, and she answers
+
+Before any order is authorised, the agent asks her to read back a short phrase it has just chosen
+from her own conversation, and the gate must pass on **both** the baseline match and the phrase.
+
+- The phrase is **one-shot**: used once, then discarded. A recording of her answering yesterday's
+  phrase is worthless today.
+- The phrase is **spoken back inside the same call or voice note**, so the recording cannot be
+  assembled from separately-captured answers.
+- The check is **on text**. The transcript of her answer must contain the phrase; transcription is
+  done by the existing Whisper path.
+- **A refusal to be challenged is a refusal to proceed** — if the phrase does not come back, no order
+  is placed and the Guardian is told. Not "try again later" in a loop, which would teach her to
+  repeat herself into a recording.
+
+### The honest limits, stated rather than glossed
+
+- This raises the cost of an attack from "play a recording" to "hold a live, two-way conversation in
+  her voice". It does not make replay impossible for an attacker using a real-time voice conversion
+  model. Nothing available today does; the compensating controls are the pocket-money ceiling and the
+  Guardian's receipt, not the gate alone.
+- It adds a step to every order. That is friction for her, and it is the right amount of friction,
+  because the alternative is that a recording can spend her money.
+- It must **not** be applied to the morning check-in or her general chat — only to a state-changing
+  action. Being challenged every time she says hello would make her stop using it.
+
+### The second thing this amendment records
+
+"Tested" has meant "tested against a fake". The heavy paths have never run:
+
+- the realtime voice model has never been connected to;
+- no speechbrain model has ever been downloaded or loaded;
+- the browser operator has never driven a real browser;
+- nothing has run against a real Twilio number.
+
+These are recorded as **unverified**, not as working. The rule already exists in the estate — a
+system is not MEASURED_OK because a synthetic probe passed — and this amendment applies it to this
+build explicitly, so that a complete file tree is never mistaken for a working system.
