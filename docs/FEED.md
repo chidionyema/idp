@@ -35,3 +35,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: the estate feed-guard hooks (Stop/SessionStart/UserPromptSubmit) are wired in ~/.claude/settings.json for Claude Code only — pi sessions get no auto-fire, so I post manually; user asked me to "force the issue" because too much work was getting lost
 📍 State: https://github.com/chidionyema/idp/pull/2901 | origin/main at 04475d85
 
+
+## 2026-09-10T12:26:52Z · session a941270d · lane wt-edge
+🟢 Done: PR #2909 opened — home 2 (Cloudflare Worker, door + brain, 20 tests), bin/idp-otto-homes (grades all 3 homes), docs/explanation/otto-survival-matrix.md (3 homes x 16 lanes, and why a fallback chain is the wrong primitive)
+🟢 Done: found the one remaining red on PR #2898 — KeyError 'entry', unrelated to Otto's door: a MiniMax registry row deliberately has no estate copy to seed from (vault copies measured revoked, 401 invalid api key 2049). Test now grades entry-less rows as "no seed", pushed 9d9382d7
+🟡 Active: watching PR #2898 CI on 9d9382d7 — the one that makes Otto answer again (otto-brain derives sk-sha256(LITELLM_API_KEY)[:40] as master key while the door presents the raw key, so every chat completion 400s "No connected db." while /health/liveliness stays 200)
+⚪ Pending: home 2 not deployed (Workers Scripts:Edit scope unconfirmed); headroom lane selection designed not written; NIM/Cerebras/Mistral/Cohere/HF researched not minted; moving the Telegram webhook needs the founder's own words
+📍 State: home 1 MEASURED_OK, home 3 MEASURED_OK at its tailnet address (403 at MagicDNS — Ollama refuses an unknown Host), home 2 MEASURED_FAIL not deployed
+🔧 TOUCHES: platform/lifeboat, bin/idp-otto-homes, docs/explanation/otto-survival-matrix.md, tests/test_the_human_vault_bridge_addresses_every_key_by_name.py
+🔀 OVERLAP: none
+📍 METER: 2026-09-10 $78.53 785 req $0.100/req transport 81% | opus-5 100%, haiku-4-5 0% (crew#26)
+
