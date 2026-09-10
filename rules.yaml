@@ -723,7 +723,7 @@ rules:
     run: [python3, bin/idp-fits-a-node]
     requires_python: [yaml]
     fixtures: {must_fail: tests/fixtures/fits-a-node/bad, must_pass: tests/fixtures/fits-a-node/good}
-    live_elsewhere: ".github/workflows/oke-check.yml:520 -- the cluster-state job feeds it the same receipt the state collector wrote, so the placement it grades is the one the scheduler saw (#2444)"
+    live_elsewhere: ".github/workflows/oke-check.yml:525 -- the cluster-state job feeds it the same receipt the state collector wrote, so the placement it grades is the one the scheduler saw (#2444)"
     cases:
       - {expect: refuse, args: [tests/fixtures/fits-a-node/bad], note: "a database the scheduler has already refused, and two workloads that could not be placed again"}
       - {expect: pass, args: [tests/fixtures/fits-a-node/good], note: "the same cluster sized to fit, its one pinned workload named in the ledger beside it"}
