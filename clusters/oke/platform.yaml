@@ -1268,6 +1268,34 @@ spec:
   wait: true
   timeout: 10m
 ---
+# The concierge's namespace row. It exists before the workload because the Twilio Auth Token
+# rides the human door: platform/vendors/consoles.yaml declares `twilio` with
+# store_default: human-vault, and the ExternalSecret bin/idp-vendor-render generates for it names
+# namespace `concierge`. Without this namespace that row has nowhere to land and the token never
+# arrives, which was the whole gap between "the credential is in Bitwarden" and "the product can
+# verify a Twilio request".
+#
+# Nothing runs here. The concierge itself is Mac-hosted -- mums-concierge/docs/DEPLOYMENT.md pins
+# Homebrew, a Python 3.12 venv, ffmpeg, Chromium and torch 2.2.2 / speechbrain 0.5.15 in a fixed
+# order, and the browser operator needs her own Chrome profile on her own machine. After
+# secret-store, because the row's purpose is to receive a secret.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: concierge
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/concierge
+  prune: true
+  dependsOn:
+    - name: secret-store
+  timeout: 5m
+
+---
 # Notifications row (R75 founder spec 2026-08-29): Apprise API, the single fan-out engine. Publish
 # once, deliver everywhere. Named channels (founder-telegram, Slack, email) route to distinct
 # backends; every surface sends a POST to /notify/<channel> and never learns the URL or the key.

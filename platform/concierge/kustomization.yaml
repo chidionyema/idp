@@ -1,0 +1,10 @@
+# The concierge namespace, with its fence in the same apply. One object runs here: nothing.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - ns-fence.yaml
+  - network.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: idp
