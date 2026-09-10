@@ -169,13 +169,61 @@ jobs:
           tail -1 <<<"$out" >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
 
+  # Cloudflare is the one vendor scope that no longer needs the laptop. Since crew#66 the estate
+  # holds a standing root for it -- repository secret SEED_CLOUDFLARE_ROOT_TOKEN, one token with
+  # "User API Tokens: Edit", made once (R52) -- and oke-check apply has been minting the DNS and R2
+  # credentials from it in CI ever since. The refusal below still named Cloudflare as unreachable
+  # from cloud-execution, which stopped being true and made this button refuse correct work
+  # (LAW 38). Same bootstrapper, same root, same vault write; it just no longer has to ride along
+  # with a whole cluster apply to run.
+  live-cloudflare:
+    needs: [preflight]
+    if: ${{ inputs.mode == 'live' && inputs.scope == 'cloudflare' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: bin/idp-bootstrap-cloudflare (R52, standing root)
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          REASON: ${{ inputs.reason }}
+        # set +e is intentional: the bootstrapper's exit code is the verdict (0 ok, 1 FAIL, 2 BLIND).
+        run: |
+          [ -n "$CLOUDFLARE_ROOT_TOKEN" ] || {
+            echo "BLIND   cloudflare: no SEED_CLOUDFLARE_ROOT_TOKEN repository secret; one token with 'User API Tokens: Edit', set once, is the root (R52)"
+            exit 2
+          }
+          set +e
+          out=$(bin/idp-bootstrap-cloudflare --rotate 2>&1)
+          rc=$?
+          set -e
+          printf '%s\n' "$out"
+          tail -1 <<<"$out" >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
   # Vendor scopes refuse the live run on purpose: cloud-execution cannot complete a vendor
-  # bootstrap without a long-lived service principal for that vendor. The preflight still runs
+  # bootstrap without a long-lived service principal for that vendor -- Cloudflare excepted,
+  # which has one and is handled above. The preflight still runs
   # above (so the operator sees the verdict), the live job returns a non-zero that points the
   # operator at the laptop runbook under bin/estate-preflight.d/. No silent skip.
   live-vendor-refused:
     needs: [preflight]
-    if: ${{ inputs.mode == 'live' && inputs.scope != 'estate-seed' }}
+    if: ${{ inputs.mode == 'live' && inputs.scope != 'estate-seed' && inputs.scope != 'cloudflare' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -186,7 +234,7 @@ jobs:
           cat <<'EOF' >&2
           FAIL    estate-bootstrap: live cloud-side for scope '$SCOPE' is not wired.
           why:    cloud-execution has no trusted identity in the vendor's console
-                  (Tailscale, Cloudflare, GitHub App, vendor SaaS). A long-lived service
+                  (Tailscale, GitHub App, vendor SaaS). A long-lived service
                   principal in each vendor is a founder decision that is not in this scope.
           fix:    run the laptop runbook under bin/estate-preflight.d/ for this scope, OR
                   pre-load the vendor key into the vault and re-dispatch scope=estate-seed,

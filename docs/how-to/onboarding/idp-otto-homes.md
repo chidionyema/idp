@@ -47,8 +47,21 @@ Three things it does that are worth knowing before you run it:
    line in this session's scrollback (LAW 21, R52). A lane whose key is absent is skipped, and
    the edge simply runs a shorter ladder — a missing key is never a failed deploy.
 
-If the token cannot read the zone, the command prints a `FOUNDER ACTION:` line naming the exact
-scopes and the console URL, and stops. It never mints a credential on its own.
+### Where the two Cloudflare credentials come from
+
+The deploy holds two, because they are two jobs. `cloudflare-api-token` reads the zone, which is
+how the account id is derived rather than written into a file. `cloudflare-workers-token` uploads
+the script and attaches the route: Workers Scripts Write and Workers AI Write on the account,
+Workers Routes Write on the zone.
+
+Neither is made in a dashboard. Both are minted by `bin/idp-bootstrap-cloudflare` from the estate's
+one standing Cloudflare root — repository secret `SEED_CLOUDFLARE_ROOT_TOKEN`, a single token with
+*User API Tokens: Edit*, created once — which is R52 exactly: one root per provider, and code mints
+the rest. The bootstrapper proves the Workers token can list the account's scripts before it writes
+it to the vault, so a token that verifies but cannot deploy never reaches an entry.
+
+If the vault holds no Workers token, run the mint from the UI: **Backstage → Run the estate
+bootstrap → scope `cloudflare`, mode `live`**. It needs no laptop and no console step.
 
 ## Add a lane
 
