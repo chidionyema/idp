@@ -587,6 +587,8 @@ metadata:
   links:
     - url: https://signoz.${ESTATE_ZONE}
       title: 'Live logs and metrics'
+    - url: /dagster
+      title: 'Open the scheduler'
 spec:
   type: platform-layer
   lifecycle: production

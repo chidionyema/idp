@@ -179,6 +179,19 @@ proxy:
       changeOrigin: true
       allowedMethods: ['POST']
 
+    # The estate's one scheduler (Dagster) lives in the dagster namespace on port 3210. The
+    # webserver is bound to 127.0.0.1 today (catalog/ports.md), so the browser cannot reach it
+    # and must not: the backend's proxy plugin is the door, the same one /holmes uses. The
+    # browser sees /dagster/* and the proxy forwards to the in-cluster Service. No credential:
+    # the namespace fence (platform/ns-fences/allowances.yaml declares backstage -> dagster
+    # both ways), and the portal itself sits behind the estate's one login. Once an HTTPRoute
+    # for dagster-webserver lands in platform/edge (W4 glass-break), the proxy's target can
+    # move to the gateway hostname and the loop is closed.
+    '/dagster':
+      target: 'http://dagster-dagster-webserver.dagster.svc.cluster.local:80'
+      changeOrigin: true
+      allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
 # Note: After experimenting with basic setup, use CI/CD to generate docs
 # and an external cloud storage when deploying TechDocs for production use-case.
