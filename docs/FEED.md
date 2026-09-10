@@ -493,3 +493,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: platform/vendors/consoles.yaml platform/llm/config.yaml docs/reference/policy/root-trust.md
 📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
 
+
+## 2026-09-10T20:33:55Z · session a941270d · lane otto
+🟡 PR #2968: Otto's home 2 (the Cloudflare lifeboat) gets a door, a secret table that exists, and a key.
+🔴 bin/idp-cloud found the vault only from local OpenTofu state, so every cloudflare bootstrap on a runner said BLIND. Now it asks OCI.
+🔴 The lifeboat's secret map named Kubernetes Secrets, not vault entries — all four NotFound. A deploy would have shipped a lifeboat with no bot token and no model.
+🟢 LIFEBOAT_KEY minted in code into vault entry otto-lifeboat, 64 hex, idempotent on the second call.
+📍 Backstage → Founder actions → "Put Otto's lifeboat back in the water" is the one button.
+⚪ Not yet: the dispatch has not run, so home 2 is still UNKNOWN. Homes 3 (MacBook), Kaggle and Hugging Face untouched.
+🔧 TOUCHES: bin/idp-cloud, bin/idp-otto-homes, .github/workflows/otto-lifeboat.yml, backstage/templates/founder-actions/otto-lifeboat
+🔀 OVERLAP: anyone editing bin/idp-cloud's vault resolution or the otto-gateway telegram secrets should read #2968 first
+
