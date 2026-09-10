@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Refuse a probe or lifecycle handler that names ``host:``.
+
+PodSecurity ``restricted`` forbids the field outright. Not "discourages", not
+"warns": the ``restricted`` profile's *HostProcess / host ports* family rejects any
+container whose ``httpGet``/``tcpSocket`` probe or ``lifecycle`` handler sets
+``host``, because that field lets a pod aim a kubelet-issued request at an address
+of its choosing -- the node, another pod, anything the kubelet can reach. Every
+namespace this estate runs workloads in enforces ``restricted``.
+
+The refusal happens at pod *create*, not at apply. So a Deployment carrying one
+lands green through Flux, through admission, through every gate, and then its
+ReplicaSet quietly fails forever::
+
+  ReplicaFailure True FailedCreate | pods "otto-gateway-77776744bb-4dtvz" is
+  forbidden: violates PodSecurity "restricted:latest": probe or lifecycle host
+  (container "otto-brain" uses probe or lifecycle host "127.0.0.1")
+
+Incident 2026-09-10. Otto's three homes -- the founder's assistant finally given a
+fallback past the estate router -- merged, reconciled, and never ran. The old
+single-home pod kept serving, so nothing alarmed. The Deployment sat
+``Available=False`` for hours while the branch read as landed.
+
+``host: 127.0.0.1`` is the shape that gets written, and it is always the same
+mistake: a sidecar deliberately binds loopback, someone notices the kubelet probes
+the pod IP instead, and points the probe at loopback to fix it. That cannot work --
+the kubelet is not in the pod's network namespace, so the request would leave the
+node's loopback, not the pod's. An ``exec`` probe is the answer: it runs inside the
+container, where ``127.0.0.1`` is the sidecar, and it needs no ``host`` at all.
+
+Usage: idp-probe-host             scan platform/ and clusters/
+       idp-probe-host FILE...     scan the named files
+Exit 0 clean, 1 on any hit.
+"""
+import glob
+import os
+import sys
+
+import yaml
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROBES = ("livenessProbe", "readinessProbe", "startupProbe")
+HANDLERS = ("httpGet", "tcpSocket")
+
+
+def pod_specs(doc):
+    """Yield every PodSpec inside one document, whatever wraps it."""
+    if not isinstance(doc, dict):
+        return
+    kind = doc.get("kind")
+    spec = doc.get("spec")
+    if not isinstance(spec, dict):
+        return
+    if kind == "Pod":
+        yield spec
+        return
+    template = spec.get("template")
+    if isinstance(template, dict) and isinstance(template.get("spec"), dict):
+        yield template["spec"]
+    # CronJob nests one level deeper: spec.jobTemplate.spec.template.spec
+    job = spec.get("jobTemplate")
+    if isinstance(job, dict):
+        for inner in pod_specs({"kind": "Job", "spec": job.get("spec")}):
+            yield inner
+
+
+def offenders(pod):
+    """Yield (container, where, host) for every host: a pod create would be refused for."""
+    for field in ("containers", "initContainers", "ephemeralContainers"):
+        for container in pod.get(field) or []:
+            if not isinstance(container, dict):
+                continue
+            name = container.get("name", "<unnamed>")
+            for probe in PROBES:
+                block = container.get(probe)
+                if not isinstance(block, dict):
+                    continue
+                for handler in HANDLERS:
+                    inner = block.get(handler)
+                    if isinstance(inner, dict) and inner.get("host"):
+                        yield name, f"{probe}.{handler}", inner["host"]
+            lifecycle = container.get("lifecycle")
+            if not isinstance(lifecycle, dict):
+                continue
+            for hook in ("postStart", "preStop"):
+                block = lifecycle.get(hook)
+                if not isinstance(block, dict):
+                    continue
+                for handler in HANDLERS:
+                    inner = block.get(handler)
+                    if isinstance(inner, dict) and inner.get("host"):
+                        yield name, f"lifecycle.{hook}.{handler}", inner["host"]
+
+
+def scan(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            docs = list(yaml.safe_load_all(handle))
+    except (OSError, yaml.YAMLError):
+        return
+    for doc in docs:
+        for pod in pod_specs(doc):
+            for hit in offenders(pod):
+                yield ((doc.get("metadata") or {}).get("name", "<unnamed>"), *hit)
+
+
+def main(argv):
+    paths = argv or sorted(
+        p
+        for tree in ("platform", "clusters")
+        for p in glob.glob(os.path.join(ROOT, tree, "**", "*.yaml"), recursive=True)
+    )
+    hits = 0
+    for path in paths:
+        for workload, container, where, host in scan(path):
+            print(
+                f"{os.path.relpath(path, ROOT)}: {workload} container {container!r} sets "
+                f"{where}.host: {host} -- PodSecurity restricted refuses the pod at create, "
+                "so the workload lands green and never runs; use an exec probe instead"
+            )
+            hits += 1
+    if hits:
+        print(f"FAIL  idp-probe-host: {hits} probe or lifecycle host(s) a pod create would refuse")
+        return 1
+    print("PASS  idp-probe-host: no probe or lifecycle handler names a host")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
