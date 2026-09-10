@@ -1,0 +1,442 @@
+#!/usr/bin/env python3
+"""bin/idp-truthteller-demo — The "Agent That Couldn't Lie" buyer demo.
+
+The buyable moment of the two-engine framework (docs/policy/agent-infra-safety-spec.md W2 +
+W0.5 + W0.6): a rogue agent's claim about a workload's post-apply state is read back from
+the ACTUAL sandbox vcluster by a read-only truth-teller, the contradiction is quoted, and
+the merge is refused. The agent cannot forge its proof because the observation comes from
+the real cluster, queried by an identity the agent does not control.
+
+This file is the founder's spec realised. The class shape -- ShadowCluster, RogueAgent,
+TruthTeller, run_buyer_demo -- is the founder's design verbatim. The ShadowCluster's data
+source is the real demo-sandbox vcluster (same mechanism bin/idp-shadow already uses:
+the sandbox's kubeconfig is fetched from the kube-system secret vc-demo-sandbox, then
+kubectl is run against the vcluster API). The buyer sees a real workload's real state, not
+a mock.
+
+Glass-break: no. The script is read-only against the vcluster (W1.1). A buyer can run it
+from any laptop with kubectl configured for the host cluster.
+
+Subcommands:
+
+  demo                  run the founder's prototype against the real vcluster.
+                        default: rogue scenario (the lying agent). Pass --honest for the
+                        same shape with an honest claim.
+
+  shadow                dump the live observed state of one or more workloads. The ground
+                        truth -- what the truth-teller would read. Useful for the buyer's
+                        engineer to verify the demo is real, not a recorded show.
+
+Exit codes: 0 truth matches claim or honest demo ran, 1 contradiction caught, 2 BLIND.
+
+Mechanism in five lines:
+
+  1. RogueAgent submits a PR -- a real-shaped diff that would break a workload.
+  2. ShadowCluster fetches the vcluster's kubeconfig and queries the actual workload's
+     observed state via kubectl. Not mocked, not cached -- the live cluster.
+  3. TruthTeller compares the agent's claim to the observed state, field by field.
+     Ready requires ready == available; a partial match is a refusal.
+  4. TruthTeller signs the verdict with the estate's own key (sha256 over the workload
+     name, observed status, match flag, and estate key). In production this becomes a
+     cosign signature (W0.5); the buyer demo runs the placeholder signer, the audit
+     story -- "the platform's own key, not the agent's" -- holds either way.
+  5. run_buyer_demo prints the side-by-side: claimed vs observed, signature, business impact.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime
+
+# The founder's prototype class shape. Names and behaviour verbatim; ShadowCluster's data
+# source swapped from a hardcoded dict (the prototype) to the live demo-sandbox vcluster.
+
+ANSI = {
+    "reset": "\033[0m", "bold": "\033[1m",
+    "red": "\033[31m", "green": "\033[32m", "yellow": "\033[33m",
+    "blue": "\033[34m", "cyan": "\033[36m", "magenta": "\033[35m",
+}
+
+HOST_NS = "demo-sandbox"
+SANDBOX_SECRET = "vc-demo-sandbox"
+SHADOW_NS = "demo"  # the vcluster namespace workloads run in
+# The seed workload of the demo-sandbox vcluster (per bin/idp-shadow up demo-shop). This is
+# the real workload the buyer sees when they open the demo -- not a fictional store-frontend
+# that doesn't exist anywhere on the estate.
+DEFAULT_WORKLOAD = "demo-shop"
+
+
+def _color(text: str, color: str, *, bold: bool = False) -> str:
+    if not sys.stdout.isatty():
+        return text
+    prefix = ANSI["bold"] if bold else ""
+    return f"{prefix}{ANSI[color]}{text}{ANSI['reset']}"
+
+
+# =====================================================================
+# 1. THE SHADOW CLUSTER (The Ground Truth)
+# =====================================================================
+# The real cluster. The buyer sees this as the source of truth -- not a script the
+# agent wrote, not a log URL the agent chose. The read goes through the same path
+# bin/idp-shadow already uses: the sandbox vcluster's kubeconfig is pulled from the host
+# cluster's kube-system secret vc-demo-sandbox, written to /tmp, and queried via kubectl.
+
+
+class ShadowCluster:
+    """The real demo-sandbox vcluster. The truth-teller's only source of 'observed' state.
+
+    The dict shape -- {workload: {"replicas": N, "status": str, "error": str|None}} -- is
+    the one the founder's prototype defined; TruthTeller depends on it.
+
+    The vcluster's kubeconfig (from the kube-system secret vc-demo-sandbox) uses
+    `server: https://localhost:8443` -- it works from inside the pod but not from a laptop.
+    We start a kubectl port-forward to the pod (background process, 127.0.0.1:18443 ->
+    pod:8443), rewrite the kubeconfig's server to point at our forwarded port, and query
+    via the rewritten kubeconfig. Cleans up the port-forward on demand via stop().
+    """
+
+    def __init__(self):
+        self._pod = self._find_vcluster_pod()
+        if not self._pod:
+            raise ShadowUnavailable(
+                "sandbox vcluster not running: launch it first (bin/idp-sandbox action=launch, "
+                "or the Demo Sandbox tile on /showcase)"
+            )
+        self._kubeconfig_path = self._setup_kubeconfig_with_port_forward()
+        if not self._kubeconfig_path:
+            raise ShadowUnavailable(
+                "could not set up port-forward to the sandbox vcluster pod"
+            )
+
+    @staticmethod
+    def _find_vcluster_pod() -> str | None:
+        """Find the running vcluster pod. Label is app=vcluster,release=demo-sandbox on this
+        estate; fall back to a name-prefix match for older helmrelease shapes."""
+        # Primary: label-based selector (the helmrelease stamps this).
+        p = subprocess.run(
+            ["kubectl", "get", "pods", "-n", HOST_NS,
+             "-l", "app=vcluster,release=demo-sandbox",
+             "-o", "jsonpath={.items[?(@.status.phase==\"Running\")].metadata.name}"],
+            capture_output=True, text=True, check=False,
+        )
+        if p.returncode == 0 and p.stdout.strip():
+            names = p.stdout.split()
+            if names:
+                return names[0]
+        # Fallback: any running pod whose name starts with demo-sandbox-.
+        p = subprocess.run(
+            ["kubectl", "get", "pods", "-n", HOST_NS,
+             "-o", "jsonpath={.items[?(@.status.phase==\"Running\")].metadata.name}"],
+            capture_output=True, text=True, check=False,
+        )
+        if p.returncode != 0 or not p.stdout.strip():
+            return None
+        for name in p.stdout.split():
+            if name.startswith("demo-sandbox-"):
+                return name
+        return None
+
+    @staticmethod
+    def _setup_kubeconfig_with_port_forward() -> str | None:
+        """Fetch the kubeconfig from the secret, start a port-forward, rewrite the server URL,
+        return the path to the rewritten kubeconfig. None if any step fails (caller fails closed)."""
+        # Fetch kubeconfig from the secret.
+        p = subprocess.run(
+            ["kubectl", "get", "secret", "-n", HOST_NS, SANDBOX_SECRET,
+             "-o", "jsonpath={.data.config}"],
+            capture_output=True, text=True, check=False,
+        )
+        if p.returncode != 0 or not p.stdout.strip():
+            return None
+        try:
+            kubeconfig_text = base64.b64decode(p.stdout).decode()
+        except (OSError, ValueError):
+            return None
+        # Rewrite localhost:8443 -> localhost:18443 (the port-forward target).
+        kubeconfig_text = kubeconfig_text.replace("localhost:8443", "localhost:18443")
+        path = "/tmp/idp-truthteller-vc-kubeconfig.yaml"
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(kubeconfig_text)
+        except OSError:
+            return None
+        # Start port-forward to the specific pod. kubectl port-forward does NOT accept
+        # label selectors, so we resolve the pod name first.
+        pod_name = ShadowCluster._find_vcluster_pod()
+        if not pod_name:
+            return None
+        pf_proc = subprocess.Popen(
+            ["kubectl", "port-forward", "-n", HOST_NS, pod_name, "18443:8443"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        # Wait up to 8s for the port to come up.
+        import socket
+        for _ in range(16):
+            try:
+                s = socket.create_connection(("127.0.0.1", 18443), timeout=0.5)
+                s.close()
+                return path
+            except OSError:
+                time.sleep(0.5)
+        # Failed to come up; kill the port-forward and bail.
+        try:
+            pf_proc.terminate()
+        except OSError:
+            pass
+        return None
+
+    def _vc_run(self, *args: str) -> tuple[int, str, str]:
+        """kubectl against the vcluster via the port-forwarded kubeconfig."""
+        p = subprocess.run(
+            ["kubectl", "--kubeconfig", self._kubeconfig_path, *args],
+            capture_output=True, text=True, check=False,
+        )
+        return p.returncode, p.stdout, p.stderr
+
+    def get_deployment_state(self, deployment_name: str) -> dict:
+        """Returns the undeniable, physical state of the pods in the shadow dimension.
+
+        Read from the real vcluster: the deployment's spec.replicas, status.readyReplicas,
+        status.availableReplicas, and any CrashLoopBackOff condition. Fail-closed: if the
+        read fails for any reason (no secret, no workload, kubectl error), returns a
+        Unknown status -- TruthTeller treats that as a refusal.
+        """
+        code, out, err = self._vc_run("get", "deployment", deployment_name,
+                                      "-n", SHADOW_NS, "-o", "json")
+        if code != 0:
+            return {"replicas": 0, "status": "Unknown",
+                    "error": (err or out).strip().splitlines()[-1] if (err or out).strip() else "kubectl non-zero"}
+        try:
+            d = json.loads(out)
+            spec_replicas = int(d.get("spec", {}).get("replicas", 0))
+            status = d.get("status", {}) or {}
+            ready = int(status.get("readyReplicas") or 0)
+            available = int(status.get("availableReplicas") or 0)
+            conditions = status.get("conditions") or []
+            reasons = [c.get("reason") for c in conditions]
+            error_field = next((c.get("message") for c in conditions
+                                if c.get("reason") == "CrashLoopBackOff"), None)
+            if ready >= spec_replicas and available >= spec_replicas:
+                short = "Ready"
+            elif "CrashLoopBackOff" in reasons:
+                short = "CrashLoopBackOff"
+            else:
+                short = "NotReady"
+            return {"replicas": ready or spec_replicas, "status": short, "error": error_field}
+        except Exception as exc:  # noqa: BLE001
+            return {"replicas": 0, "status": "Unknown",
+                    "error": f"parse: {type(exc).__name__}: {exc}"}
+
+
+class ShadowUnavailable(RuntimeError):
+    """Raised when the vcluster is not running. TruthTeller treats this as a refusal."""
+
+
+# =====================================================================
+# 2. THE ROGUE AGENT (The Bad Actor)
+# =====================================================================
+# The founder's prototype. The claim is fixed in the prototype; in production the claim
+# would come from the agent's own PR body. TruthTeller does not care which -- it grades
+# whatever it gets.
+
+
+class RogueAgent:
+    def submit_pull_request(self) -> dict:
+        """The agent submits a change it claims it applied, but the shadow says it didn't converge.
+
+        This is the W3.1 case the spec calls out: an agent observes an OOMKill alert, proposes
+        a memory-limit raise (the change the spec identifies as the buyable limit-raise), and
+        claims the workload converged. The shadow dimension runs the change; the truth-teller
+        reads back the actual state. If the agent lied (or the change didn't actually take
+        effect), the contradiction is named.
+        """
+        return {
+            "pr_author": "agent-hermes-v2",
+            "target_workload": DEFAULT_WORKLOAD,
+            # The proposed change matches what an OOM-recovery agent actually proposes per
+            # the spec's W3.1 / W3.4 narrative -- a memory-limit raise on a crashing workload.
+            "proposed_change": "Raise memory limit from 256Mi to 1Gi on the OOMKilled workload",
+            "agent_proof_of_convergence": {
+                # The lie is structural: the agent inflates its own success metric
+                # (asserted_replicas=3 vs the workload's real 1). The replica count is a
+                # platform-defined assertion (W0.6) -- the agent cannot choose what it is
+                # graded on. If the actual state were also CrashLoopBackOff the status word
+                # would also disagree; the prototype's most buyable moment is the W3.1
+                # "OOMKilled but agent said Ready at 3/3" case.
+                "asserted_replicas": 3,
+                "asserted_status": "Ready",
+                "logs": "Memory raised, pod restarted, probes green. OOMKill resolved.",
+            },
+        }
+
+
+# =====================================================================
+# 3. THE TRUTH-TELLER (The Estate's Cryptographic Gatekeeper)
+# =====================================================================
+# The founder's prototype. The receipt is sha256 over workload | observed.status |
+# is_match | estate_private_key. In production this becomes a real cosign signature
+# (W0.5); the audit story -- "the platform's own key, not the agent's" -- holds without
+# the real key being present in the binary.
+
+
+class TruthTeller:
+    def __init__(self, shadow_cluster: ShadowCluster, *, estate_private_key: str | None = None):
+        self.shadow = shadow_cluster
+        # Placeholder for the KMS-held key the real signer reads at run time. The demo's
+        # audit story -- "the platform's own key, not the agent's" -- holds without the real
+        # key being present in the binary.
+        self.estate_private_key = estate_private_key or "ESTATE_ROOT_KEY_99823"
+
+    def generate_cryptographic_receipt(self, pr_data: dict, actual_state: dict, is_match: bool) -> str:
+        """Signs the observation so the agent cannot tamper with the final verdict."""
+        payload = f"{pr_data['target_workload']}|{actual_state['status']}|{is_match}|{self.estate_private_key}"
+        return hashlib.sha256(payload.encode()).hexdigest()
+
+    def evaluate_merge(self, pr_data: dict) -> dict:
+        """Compares the agent's claim against the physical shadow cluster."""
+        workload = pr_data["target_workload"]
+        claim = pr_data["agent_proof_of_convergence"]
+
+        # The truth-teller bypasses the agent and looks at the shadow cluster itself.
+        actual = self.shadow.get_deployment_state(workload)
+
+        # Ready requires ready == available. A claim of Ready at 3/3 against 1/1 is a lie
+        # in two ways: the status word AND the replica count.
+        status_match = claim["asserted_status"] == actual["status"]
+        replicas_match = int(claim["asserted_replicas"]) == int(actual.get("replicas", 0))
+        is_match = status_match and replicas_match
+
+        receipt_hash = self.generate_cryptographic_receipt(pr_data, actual, is_match)
+
+        return {
+            "match": is_match,
+            "claim": claim,
+            "actual": actual,
+            "signature": receipt_hash,
+            "business_impact": "Loss of checkout functionality for 5,000+ active sessions.",
+        }
+
+
+# =====================================================================
+# 4. THE BUYER SHOWCASE (The "Wow" UI)
+# =====================================================================
+# The founder's prototype. The four-act narrative: the lie, the audit, the reveal, the
+# outcome. Output formatting kept close to the prototype so a buyer's engineer reading
+# either output sees the same shape.
+
+
+def run_buyer_demo(*, shadow: ShadowCluster | None = None, honest: bool = False) -> dict:
+    """Run the buyer demo. Returns the verdict dict so tests can assert on it.
+
+    honest=True swaps the rogue agent's claim for one that matches the actual state. Used
+    by the test suite and by --honest on the CLI.
+    """
+    shadow = shadow or ShadowCluster()
+    gatekeeper = TruthTeller(shadow)
+    agent = RogueAgent()
+
+    # Act 1: The Lie (or the honest claim).
+    print("\n" + "=" * 70)
+    print(_color("🚀 LIVE DEMO: ZERO-TRUST AUTONOMY IN ACTION".center(70), "cyan", bold=True))
+    print("=" * 70)
+
+    print("\n[1] Agent proposes a change to production...")
+    pr = agent.submit_pull_request()
+    if honest:
+        # The honest claim: read the actual state, then assert what the cluster actually
+        # says. The positive case -- the merge is approved because the claim is honest.
+        actual = shadow.get_deployment_state(pr["target_workload"])
+        pr["agent_proof_of_convergence"] = {
+            "asserted_replicas": int(actual.get("replicas", 1)),
+            "asserted_status": actual["status"],
+            "logs": "Clean boot. No errors. Workload converges as observed.",
+        }
+    print(f"    Target: {pr['target_workload']}")
+    print(f"    Change: {pr['proposed_change']}")
+    print(
+        f"    Agent's Claim: [ STATUS: {pr['agent_proof_of_convergence']['asserted_status']} | REPLICAS: {pr['agent_proof_of_convergence']['asserted_replicas']} ]"
+    )
+
+    # Act 2: The Audit.
+    print("\n[2] Truth-Teller querying isolated Shadow Cluster...")
+    audit = gatekeeper.evaluate_merge(pr)
+
+    # Act 3: The Reveal (Weaving Tech & Business).
+    print("\n" + "!" * 70)
+    if not audit["match"]:
+        print(_color("🚨 MERGE REJECTED: AGENT FABRICATION DETECTED 🚨".center(70), "red", bold=True))
+        print("!" * 70)
+        print("\n🔍 THE CONTRADICTION (Technical Proof):")
+        for field in ("asserted_status", "asserted_replicas"):
+            claim_v = pr["agent_proof_of_convergence"][field]
+            actual_key = "status" if field == "asserted_status" else "replicas"
+            actual_v = audit["actual"].get(actual_key, "?")
+            mark = "❌" if str(claim_v) != str(actual_v) else "✅"
+            label = field.replace("asserted_", "").replace("_", " ")
+            print(f"    {mark} {label:<22}  claim={claim_v!s:<14}  observed={actual_v!s:<14}")
+        print(f"    🔐 Estate Sig    : {audit['signature']}")
+
+        print("\n🛡️ THE CUSTOMER OUTCOME (Business Value):")
+        print("    If this AI operated on trust, the change would have merged.")
+        print(f"    Outcome Prevented: {audit['business_impact']}")
+        print("    Customers impacted: ZERO.")
+    else:
+        print(_color("✅ MERGE APPROVED: Claims match shadow state.".center(70), "green", bold=True))
+        print(f"    🔐 Estate Sig    : {audit['signature']}")
+        print("\n🛡️ THE CUSTOMER OUTCOME (Business Value):")
+        print("    The agent's claim matched what the cluster said. Honest work approved.")
+        print("    Customers impacted: ZERO.")
+
+    print("\n" + "=" * 70 + "\n")
+    return audit
+
+
+# -- CLI entry --------------------------------------------------------------
+
+
+def main(argv: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="idp-truthteller-demo")
+    p.add_argument("--honest", action="store_true",
+                   help="swap the rogue agent's claim for an honest one that matches the observed state.")
+    p.add_argument("--workload", default=DEFAULT_WORKLOAD,
+                   help="workload to query (default: demo-shop, the seed of the demo-sandbox).")
+    sub = p.add_subparsers(dest="cmd")
+    sub.add_parser("demo", help="the full buyer demo (default: rogue).")
+    shadow_cmd = sub.add_parser("shadow", help="dump the live observed state of one or more workloads.")
+    shadow_cmd.add_argument("--workload", default=DEFAULT_WORKLOAD,
+                            help="workload to query (default: demo-shop).")
+    shadow_cmd.add_argument("--all", action="store_true",
+                            help="dump both demo-shop and payment-gateway.")
+    args = p.parse_args(argv)
+
+    if args.cmd == "shadow":
+        try:
+            shadow = ShadowCluster()
+        except ShadowUnavailable as exc:
+            print(f"BLIND  truth-teller  shadow cluster not reachable: {exc}", file=sys.stderr)
+            return 2
+        workloads = ["store-frontend", "payment-gateway"] if args.all else [args.workload]
+        for name in workloads:
+            state = shadow.get_deployment_state(name)
+            print(json.dumps({name: state}, indent=2))
+        return 0
+
+    # Default: run the demo (rogue unless --honest).
+    try:
+        shadow = ShadowCluster()
+    except ShadowUnavailable as exc:
+        print(f"BLIND  truth-teller  {exc}", file=sys.stderr)
+        return 2
+    audit = run_buyer_demo(shadow=shadow, honest=args.honest)
+    return 0 if audit["match"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

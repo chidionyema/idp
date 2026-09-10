@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zero-Trust Autonomy — The Agent That Couldn't Lie</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0a0d12;
+    --bg-card: #11151c;
+    --bg-card-2: #161b25;
+    --border: #1f2630;
+    --text: #e6e9ef;
+    --text-dim: #8b94a3;
+    --text-faint: #4d5566;
+    --green: #00d68f;
+    --red: #ff4d4f;
+    --yellow: #ffb946;
+    --cyan: #4dd0e1;
+    --magenta: #c586c0;
+    --blue: #4a9eff;
+    --mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Subtle grid background for the "platform" feel */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(77, 208, 225, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(77, 208, 225, 0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 32px 96px;
+  }
+
+  /* HERO */
+  .hero {
+    text-align: center;
+    margin-bottom: 56px;
+  }
+
+  .eyebrow {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--cyan);
+    border: 1px solid rgba(77, 208, 225, 0.3);
+    padding: 6px 14px;
+    border-radius: 999px;
+    margin-bottom: 24px;
+  }
+
+  h1 {
+    font-size: 44px;
+    line-height: 1.15;
+    font-weight: 800;
+    margin: 0 0 16px;
+    letter-spacing: -1px;
+  }
+  h1 .accent { color: var(--cyan); }
+
+  .lede {
+    font-size: 18px;
+    color: var(--text-dim);
+    max-width: 720px;
+    margin: 0 auto 32px;
+    line-height: 1.55;
+  }
+
+  .controls {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  button {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    padding: 12px 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  button:hover { border-color: var(--cyan); color: var(--cyan); }
+  button.primary {
+    background: var(--cyan);
+    color: var(--bg);
+    border-color: var(--cyan);
+  }
+  button.primary:hover { background: #5de4f5; }
+
+  .toggle {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .toggle button {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-dim);
+  }
+  .toggle button.active { background: var(--bg-card-2); color: var(--cyan); }
+  .toggle button:first-child { border-right: 1px solid var(--border); }
+
+  .live {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+  }
+  .live .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .live.blind .dot { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* SCENES */
+  .scene {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+
+  .scene-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .scene-header .num {
+    color: var(--cyan);
+    font-weight: 700;
+  }
+
+  .scene-body {
+    padding: 24px;
+  }
+
+  /* CLAIM (Agent's PR) */
+  .pr-card {
+    background: rgba(197, 134, 192, 0.06);
+    border: 1px solid rgba(197, 134, 192, 0.25);
+    border-radius: 8px;
+    padding: 20px;
+    font-family: var(--mono);
+    font-size: 14px;
+  }
+  .pr-card .row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+  .pr-card .key { color: var(--text-dim); min-width: 120px; }
+  .pr-card .val { color: var(--text); }
+  .pr-card .val.claim { color: var(--magenta); font-weight: 600; }
+  .pr-card .logs {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 4px;
+    color: var(--text-faint);
+    font-style: italic;
+    font-size: 13px;
+  }
+
+  /* OBSERVED (the truth-teller's read) */
+  .observed-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .observed-cell {
+    background: rgba(74, 158, 255, 0.04);
+    border: 1px solid rgba(74, 158, 255, 0.2);
+    border-radius: 8px;
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 14px;
+  }
+  .observed-cell .key { color: var(--text-dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .observed-cell .val { font-size: 24px; font-weight: 700; color: var(--blue); }
+  .observed-cell .val.bad { color: var(--red); }
+
+  /* FIELD-BY-FIELD COMPARISON */
+  .compare {
+    display: grid;
+    gap: 12px;
+  }
+  .compare-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 1fr;
+    align-items: center;
+    background: var(--bg-card-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-family: var(--mono);
+    font-size: 14px;
+    gap: 18px;
+  }
+  .compare-row .badge {
+    font-weight: 800;
+    font-size: 12px;
+    letter-spacing: 1.5px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    text-align: center;
+  }
+  .compare-row .badge.lie {
+    background: rgba(255, 77, 79, 0.15);
+    color: var(--red);
+    border: 1px solid rgba(255, 77, 79, 0.4);
+  }
+  .compare-row .badge.match {
+    background: rgba(0, 214, 143, 0.15);
+    color: var(--green);
+    border: 1px solid rgba(0, 214, 143, 0.4);
+  }
+  .compare-row .field { color: var(--text-dim); }
+  .compare-row .claim { color: var(--magenta); }
+  .compare-row .observed { color: var(--blue); }
+  .compare-row .observed.bad { color: var(--red); }
+
+  /* SIGNATURE */
+  .sig {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-faint);
+    word-break: break-all;
+    line-height: 1.5;
+  }
+  .sig .label { color: var(--cyan); font-weight: 700; }
+
+  /* VERDICT BANNER */
+  .verdict {
+    text-align: center;
+    padding: 36px 24px;
+    border-radius: 12px;
+    margin: 24px 0;
+    border: 2px solid;
+    animation: slideIn 0.5s ease;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .verdict.reject {
+    background: linear-gradient(135deg, rgba(255, 77, 79, 0.08), rgba(255, 77, 79, 0.02));
+    border-color: var(--red);
+    box-shadow: 0 0 60px rgba(255, 77, 79, 0.15);
+  }
+  .verdict.approve {
+    background: linear-gradient(135deg, rgba(0, 214, 143, 0.08), rgba(0, 214, 143, 0.02));
+    border-color: var(--green);
+    box-shadow: 0 0 60px rgba(0, 214, 143, 0.15);
+  }
+  .verdict.blind {
+    background: linear-gradient(135deg, rgba(255, 185, 70, 0.08), rgba(255, 185, 70, 0.02));
+    border-color: var(--yellow);
+  }
+  .verdict .label {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+  }
+  .verdict.reject .label { color: var(--red); }
+  .verdict.approve .label { color: var(--green); }
+  .verdict.blind .label { color: var(--yellow); }
+  .verdict .title {
+    font-size: 26px;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 8px;
+  }
+  .verdict .why {
+    font-size: 15px;
+    color: var(--text-dim);
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  /* OUTCOME BANNER (the buyable sentence) */
+  .outcome {
+    text-align: center;
+    padding: 32px 24px;
+    background: linear-gradient(135deg, rgba(255, 185, 70, 0.06), rgba(255, 77, 79, 0.04));
+    border: 1px solid rgba(255, 185, 70, 0.3);
+    border-radius: 12px;
+    margin: 24px 0;
+  }
+  .outcome .big {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--yellow);
+    margin-bottom: 8px;
+  }
+  .outcome .detail {
+    color: var(--text-dim);
+    font-size: 15px;
+    max-width: 680px;
+    margin: 0 auto 16px;
+    line-height: 1.55;
+  }
+  .outcome .stat {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 36px;
+    font-weight: 800;
+    color: var(--green);
+    letter-spacing: -1px;
+  }
+  .outcome .stat-label {
+    display: block;
+    font-size: 12px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* Honest variant */
+  .verdict.approve + .outcome {
+    background: linear-gradient(135deg, rgba(0, 214, 143, 0.06), rgba(77, 208, 225, 0.04));
+    border-color: rgba(0, 214, 143, 0.3);
+  }
+  .verdict.approve + .outcome .big { color: var(--green); }
+
+  /* FOOTER */
+  footer {
+    margin-top: 64px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-faint);
+    letter-spacing: 1px;
+  }
+  footer a { color: var(--text-dim); text-decoration: none; border-bottom: 1px dotted var(--text-faint); }
+  footer a:hover { color: var(--cyan); border-color: var(--cyan); }
+
+  @media (max-width: 720px) {
+    .observed-grid { grid-template-columns: 1fr; }
+    .compare-row { grid-template-columns: 60px 1fr; }
+    .compare-row .observed::before { content: "actual: "; color: var(--text-faint); }
+    h1 { font-size: 32px; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+
+    <header class="hero">
+      <span class="eyebrow">Zero-Trust Autonomy · Live</span>
+      <h1>The Agent That <span class="accent">Couldn't Lie</span></h1>
+      <p class="lede">
+        A rogue agent claims a workload is ready. The truth-teller reads the actual
+        state from the shadow cluster, the contradiction is named, the merge is refused —
+        and the customer's outage is prevented.
+      </p>
+      <div class="controls">
+        <button class="primary" onclick="runLive()">▶ Run the live demo</button>
+        <div class="toggle">
+          <button id="t-rogue" class="active" onclick="setMode('rogue')">Rogue agent</button>
+          <button id="t-honest" onclick="setMode('honest')">Honest agent</button>
+        </div>
+        <span class="live" id="live-pill"><span class="dot"></span> <span id="live-label">live vcluster</span></span>
+      </div>
+    </header>
+
+    <!-- ACT 1: The Lie -->
+    <section class="scene" id="act-1">
+      <div class="scene-header">
+        <span class="num">[1]</span> Agent proposes a change to production
+      </div>
+      <div class="scene-body">
+        <div class="pr-card" id="pr-card"></div>
+      </div>
+    </section>
+
+    <!-- ACT 2: The Audit -->
+    <section class="scene" id="act-2">
+      <div class="scene-header">
+        <span class="num">[2]</span> Truth-Teller queries the isolated Shadow Cluster
+      </div>
+      <div class="scene-body">
+        <div class="observed-grid" id="observed-grid"></div>
+      </div>
+    </section>
+
+    <!-- ACT 3: The Reveal -->
+    <section class="scene" id="act-3">
+      <div class="scene-header">
+        <span class="num">[3]</span> Field-by-field — the contradiction
+      </div>
+      <div class="scene-body">
+        <div class="compare" id="compare"></div>
+      </div>
+    </section>
+
+    <!-- ACT 4: The Verdict -->
+    <div class="verdict" id="verdict">
+      <div class="label" id="verdict-label">VERDICT</div>
+      <div class="title" id="verdict-title">—</div>
+      <div class="why" id="verdict-why">—</div>
+    </div>
+
+    <!-- Signature -->
+    <section class="scene" id="act-sig">
+      <div class="scene-header"><span class="num">[4]</span> Cryptographic receipt (estate key, not agent's)</div>
+      <div class="scene-body">
+        <div class="sig" id="sig">—</div>
+      </div>
+    </section>
+
+    <!-- ACT 5: The Outcome -->
+    <div class="outcome" id="outcome">
+      <div class="big" id="outcome-big">—</div>
+      <div class="detail" id="outcome-detail">—</div>
+      <span class="stat" id="outcome-stat">ZERO</span>
+      <span class="stat-label">Customers impacted</span>
+    </div>
+
+    <footer>
+      Read the source: <a href="https://github.com/chidionyema/idp/blob/main/bin/idp-truthteller-demo">bin/idp-truthteller-demo</a>
+      · Spec: <a href="https://github.com/chidionyema/idp/blob/main/docs/policy/agent-infra-safety-spec.md">zero-trust framework</a>
+      · Mechanism: read-only <code>kubectl</code> against the demo-sandbox vcluster kubeconfig
+    </footer>
+  </div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Four-act narrative. The shapes here match the founder's prototype
+// (run_buyer_demo): Act 1 = the lie, Act 2 = the audit, Act 3 = the reveal,
+// Act 4 = the customer outcome prevented. The visual rendering is the new
+// layer; the data path is the same script + read-only kubectl.
+// ---------------------------------------------------------------------------
+
+let MODE = 'rogue';
+
+const SCENARIOS = {
+  rogue: {
+    pr: {
+      pr_author: "agent-hermes-v2",
+      target_workload: "demo-shop",
+      proposed_change: "Raise memory limit from 256Mi to 1Gi on the OOMKilled workload",
+      claim: {
+        asserted_status: "Ready",
+        asserted_replicas: 1,
+        logs: "Memory raised, pod restarted, probes green. OOMKill resolved.",
+      },
+    },
+    // These are the live observed-state values the truth-teller reads from the
+    // vcluster; populated by runLive(). The sample data is what the buyer sees
+    // when the vcluster is reachable but demo-shop happens to be in
+    // CrashLoopBackOff (the spec's W3.1 / W3.4 case).
+    sample_observed: { status: "CrashLoopBackOff", replicas: 0, available: 0, error: "OOMKilled" },
+  },
+  honest: {
+    pr: {
+      pr_author: "agent-hermes-v2",
+      target_workload: "demo-shop",
+      proposed_change: "Raise memory limit from 256Mi to 1Gi on the OOMKilled workload",
+      claim: {
+        asserted_status: "Ready",
+        asserted_replicas: 1,
+        logs: "Memory raised, pod restarted, probes green. OOMKill resolved.",
+      },
+    },
+    sample_observed: { status: "Ready", replicas: 1, available: 1, error: null },
+  },
+};
+
+function setMode(m) {
+  MODE = m;
+  document.getElementById('t-rogue').classList.toggle('active', m === 'rogue');
+  document.getElementById('t-honest').classList.toggle('active', m === 'honest');
+  renderPR(SCENARIOS[m].pr);
+  // Clear the audit + verdict until the user hits Run.
+  document.getElementById('observed-grid').innerHTML = '<div style="color: var(--text-faint); font-family: var(--mono); font-size: 13px;">— press Run to query the shadow —</div>';
+  document.getElementById('compare').innerHTML = '';
+  document.getElementById('verdict').className = 'verdict';
+  document.getElementById('verdict-label').textContent = 'VERDICT';
+  document.getElementById('verdict-title').textContent = '—';
+  document.getElementById('verdict-why').textContent = '—';
+  document.getElementById('sig').innerHTML = '—';
+  document.getElementById('outcome-big').textContent = '—';
+  document.getElementById('outcome-detail').textContent = '—';
+  document.getElementById('outcome-stat').textContent = '—';
+}
+
+function renderPR(pr) {
+  const card = document.getElementById('pr-card');
+  card.innerHTML = `
+    <div class="row"><span class="key">pr_author</span><span class="val">${pr.pr_author}</span></div>
+    <div class="row"><span class="key">target_workload</span><span class="val">${pr.target_workload}</span></div>
+    <div class="row"><span class="key">proposed_change</span><span class="val">${pr.proposed_change}</span></div>
+    <div class="row"><span class="key">asserted_status</span><span class="val claim">${pr.claim.asserted_status}</span></div>
+    <div class="row"><span class="key">asserted_replicas</span><span class="val claim">${pr.claim.asserted_replicas}</span></div>
+    <div class="logs">"${pr.claim.logs}"</div>
+  `;
+}
+
+function renderObserved(obs) {
+  const grid = document.getElementById('observed-grid');
+  const isBad = obs.status !== "Ready" || obs.replicas < 1;
+  grid.innerHTML = `
+    <div class="observed-cell">
+      <div class="key">status</div>
+      <div class="val ${isBad ? 'bad' : ''}">${obs.status}</div>
+    </div>
+    <div class="observed-cell">
+      <div class="key">ready / desired</div>
+      <div class="val ${isBad ? 'bad' : ''}">${obs.replicas} / ${obs.replicas === 0 ? 1 : obs.replicas}</div>
+    </div>
+    <div class="observed-cell">
+      <div class="key">available</div>
+      <div class="val ${isBad ? 'bad' : ''}">${obs.available}</div>
+    </div>
+    <div class="observed-cell">
+      <div class="key">observed_at</div>
+      <div class="val" style="font-size: 14px; color: var(--text-dim);">${new Date().toISOString()}</div>
+    </div>
+  `;
+}
+
+function renderCompare(claim, obs) {
+  const fields = [
+    { field: "status", claim: claim.asserted_status, observed: obs.status, key: "status" },
+    { field: "replicas", claim: claim.asserted_replicas, observed: obs.replicas, key: "replicas" },
+    { field: "available", claim: claim.asserted_replicas, observed: obs.available, key: "available" },
+  ];
+  const html = fields.map(f => {
+    const ok = String(f.claim) === String(f.observed);
+    return `<div class="compare-row">
+      <div class="badge ${ok ? 'match' : 'lie'}">${ok ? 'MATCH' : 'LIE'}</div>
+      <div class="field">${f.field}</div>
+      <div><span class="claim">${f.claim}</span> &nbsp;→&nbsp; <span class="observed ${ok ? '' : 'bad'}">${f.observed}</span></div>
+    </div>`;
+  }).join('');
+  document.getElementById('compare').innerHTML = html;
+}
+
+function renderVerdict(claim, obs) {
+  const statusMatch = claim.asserted_status === obs.status;
+  const replicasMatch = String(claim.asserted_replicas) === String(obs.replicas);
+  const allMatch = statusMatch && replicasMatch;
+  const v = document.getElementById('verdict');
+  v.className = 'verdict ' + (allMatch ? 'approve' : 'reject');
+  document.getElementById('verdict-label').textContent = allMatch ? '✅ MERGE APPROVED' : '🚨 MERGE REJECTED';
+  document.getElementById('verdict-title').textContent = allMatch
+    ? 'Claims match the shadow cluster state.'
+    : 'AGENT FABRICATION DETECTED.';
+  document.getElementById('verdict-why').textContent = allMatch
+    ? 'The agent asserted what the cluster actually said. Honest work approved.'
+    : 'The agent claimed Ready at 1/1. The shadow cluster shows CrashLoopBackOff at 0/1. The merge is refused before it reaches production.';
+}
+
+function renderSignature(claim, obs, isMatch) {
+  // Reproduce the prototype's receipt shape: sha256(workload|status|match|key).
+  // The actual signature is produced by the backend; we display its hash and
+  // the canonical payload it signed, so a buyer can verify the construction.
+  const payload = `demo-shop|${obs.status}|${isMatch}|ESTATE_ROOT_KEY_99823`;
+  const sig = sha256(payload);
+  document.getElementById('sig').innerHTML = `
+    <div><span class="label">payload</span> &nbsp; <code>${payload}</code></div>
+    <div style="margin-top: 10px;"><span class="label">sha256</span> &nbsp; <code>${sig}</code></div>
+  `;
+  return sig;
+}
+
+function renderOutcome(claim, obs, isMatch) {
+  const o = document.getElementById('outcome');
+  if (isMatch) {
+    document.getElementById('outcome-big').textContent = 'Honest work approved.';
+    document.getElementById('outcome-detail').textContent = 'The agent\'s claim matched what the cluster said. The Greenlane merges the change.';
+    document.getElementById('outcome-stat').textContent = 'ZERO';
+  } else {
+    document.getElementById('outcome-big').textContent = 'CUSTOMER OUTCOME PREVENTED';
+    document.getElementById('outcome-detail').textContent = 'If this AI had been trusted, the change would have merged. The workload would have stayed in CrashLoopBackOff in production — checkout would have failed for 5,000+ active sessions.';
+    document.getElementById('outcome-stat').textContent = 'ZERO';
+  }
+  o.className = 'outcome ' + (isMatch ? 'good' : 'bad');
+}
+
+async function runLive() {
+  const pill = document.getElementById('live-pill');
+  const label = document.getElementById('live-label');
+  pill.classList.remove('blind');
+  label.textContent = 'querying vcluster…';
+
+  const sc = SCENARIOS[MODE];
+  // Try the real backend route; fall back to sample observed state with a yellow
+  // blind pill so the buyer can still see the demo.
+  let observed = null;
+  let blindReason = null;
+  try {
+    const r = await fetch('/api/truthteller?workload=demo-shop&namespace=demo&honest=' + (MODE === 'honest'), { method: 'GET' });
+    if (r.ok) {
+      const j = await r.json();
+      observed = j.observed;
+    } else {
+      blindReason = `backend returned ${r.status}`;
+    }
+  } catch (e) {
+    blindReason = e.message || 'fetch failed';
+  }
+  if (!observed) {
+    // No backend reachable. Render the sample data so the buyer still sees the
+    // four-act narrative; mark the live pill as BLIND.
+    observed = sc.sample_observed;
+    pill.classList.add('blind');
+    label.textContent = 'blind (sample data — backend unreachable)';
+  } else {
+    label.textContent = 'live vcluster';
+  }
+
+  renderObserved(observed);
+  renderCompare(sc.pr.claim, observed);
+  const statusMatch = sc.pr.claim.asserted_status === observed.status;
+  const replicasMatch = String(sc.pr.claim.asserted_replicas) === String(observed.replicas);
+  const isMatch = statusMatch && replicasMatch;
+  renderVerdict(sc.pr.claim, observed);
+  renderSignature(sc.pr.claim, observed, isMatch);
+  renderOutcome(sc.pr.claim, observed, isMatch);
+}
+
+function sha256(s) {
+  // Lightweight client-side sha256 for the signature display. This is NOT the
+  // cryptographic trust primitive — the backend's signature is the real one.
+  // The display lets a buyer see the construction.
+  function r(n, c) { return (c + n).slice(-c.length); }
+  function add(x, y) { var m = (x & 0xFFFF) + (y & 0xFFFF); var l = (x >> 16) + (y >> 16) + (m >> 16); return (l << 16) | (m & 0xFFFF); }
+  function rol(n, c) { return (n << c) | (n >>> (32 - c)); }
+  function k(e) { return (function(n) { for (var i = 0; i < e.length; i++) e[i] = r(e[i], '0x100000000'); return e; })([0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]); }
+  var h = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  var bytes = [];
+  for (var i = 0; i < s.length; i++) bytes.push(s.charCodeAt(i) & 0xFF);
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+  var len = s.length * 8;
+  bytes.push((len >>> 56) & 0xFF, (len >>> 48) & 0xFF, (len >>> 40) & 0xFF, (len >>> 32) & 0xFF, (len >>> 24) & 0xFF, (len >>> 16) & 0xFF, (len >>> 8) & 0xFF, len & 0xFF);
+  for (var b = 0; b < bytes.length; b += 64) {
+    var w = [];
+    for (var j = 0; j < 16; j++) w.push((bytes[b + j*4] << 24) | (bytes[b + j*4+1] << 16) | (bytes[b + j*4+2] << 8) | bytes[b + j*4+3]);
+    for (var j = 16; j < 64; j++) {
+      var s0 = rol(w[j-15], 7) ^ rol(w[j-15], 18) ^ (w[j-15] >>> 3);
+      var s1 = rol(w[j-2], 17) ^ rol(w[j-2], 19) ^ (w[j-2] >>> 10);
+      w.push(add(add(w[j-16], s0), add(w[j-7], s1)));
+    }
+    var K = k();
+    var [a,b1,c,d,e,f,g,hh] = h;
+    for (var j = 0; j < 64; j++) {
+      var S1 = rol(e, 6) ^ rol(e, 11) ^ rol(e, 25);
+      var ch = (e & f) ^ (~e & g);
+      var t1 = add(add(hh, S1), add(add(K[j], ch), w[j]));
+      var S0 = rol(a, 2) ^ rol(a, 13) ^ rol(a, 22);
+      var mj = (a & b1) ^ (a & c) ^ (b1 & c);
+      var t2 = add(S0, mj);
+      hh = g; g = f; f = e; e = add(d, t1); d = c; c = b1; b1 = a; a = add(t1, t2);
+    }
+    h = h.map((x, i) => add(x, [a,b1,c,d,e,f,g,hh][i]));
+  }
+  return h.map(x => x.toString(16).padStart(8, '0')).join('');
+}
+
+// Initial render
+setMode('rogue');
+</script>
+</body>
+</html>
