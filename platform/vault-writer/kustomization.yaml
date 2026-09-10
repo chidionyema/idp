@@ -1,0 +1,23 @@
+# The key ingest door's writer (docs/specs/key-ingest-door-part4.md, part B).
+#
+# Why a service rather than the portal talking to OCI: workload identity per pod needs an
+# Enhanced cluster (billed per hour), so today the boundary is the NODE identity
+# (platform/oci/vault.tf:4-6). A portal pod would inherit the node's dynamic group and with it
+# `read secret-family` on the whole compartment -- including every entry the register marks
+# Operator. That is the opposite of decision 0021, which says superadmin is a grant on the
+# operator road and never a widening of the customer road.
+#
+# So the write grant lives in exactly one place, this service, and it is scoped by name list to
+# the entries whose register Owner is Customer. The portal calls it over a ClusterIP Service;
+# nothing outside the cluster can reach it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: backstage
+resources:
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: idp
+    includeSelectors: true

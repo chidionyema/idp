@@ -171,31 +171,79 @@ class TestTheWriterServiceIsClusterOnly:
 # ---- Part C: the grant is scoped, never compartment-wide --------------------------------------
 
 
+def _vault_tf_resource_block(resource_name: str) -> str:
+    """The text of one `resource "..." "name" { ... }` block, or "" when absent.
+
+    Brace-counted rather than regex-terminated, so a nested block (the `format(` call here)
+    cannot end the match early.
+    """
+    text = VAULT_TF.read_text()
+    marker = f'"{resource_name}"'
+    i = text.find(marker)
+    if i == -1:
+        return ""
+    start = text.find("{", i)
+    if start == -1:
+        return ""
+    depth = 0
+    for j in range(start, len(text)):
+        if text[j] == "{":
+            depth += 1
+        elif text[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : j + 1]
+    return ""
+
+
 class TestTheGrantIsScopedToCustomerEntries:
     def test_a_writer_policy_exists(self):
         text = VAULT_TF.read_text()
         assert "vault_writer" in text, "no writer policy in platform/oci/vault.tf"
 
     def test_the_writer_policy_is_not_a_compartment_wide_write(self):
-        """A compartment-wide write grant would hand the portal every Operator secret."""
-        text = VAULT_TF.read_text()
-        for line in text.splitlines():
-            stripped = line.strip().strip('",')
-            if "vault_writer" in text and "manage secret-family" in stripped:
-                pytest.fail(f"compartment-wide write granted: {stripped}")
-        assert re.search(r'where\s+target\.secret\.name\s+in\s*\(', text), (
+        """A compartment-wide write grant would hand the portal every Operator secret.
+
+        Graded on the RESOURCE BLOCK, not on a quoted statement literal: the policy builds its
+        statement with `format(...)` so the sentence never appears contiguously in the file, and
+        a test that grepped for the sentence would pass on a file that grants nothing at all.
+        That is the failure mode this estate keeps recording -- a check that measures the shape
+        of the code instead of what the code does.
+        """
+        block = _vault_tf_resource_block("vault_writer_customer_entries")
+        assert block, "no vault_writer_customer_entries resource block found"
+        assert re.search(r"where\s+target\.secret\.name\s+in\s*\(", block), (
             "the writer grant is not scoped to a name list"
+        )
+        assert "to manage secret-family" not in block, (
+            "the writer grant uses `manage`, which is compartment-wide by definition"
         )
 
     def test_the_writer_grant_uses_use_not_manage(self):
         """`use` is the narrowest statement that lets a principal create a secret version."""
+        block = _vault_tf_resource_block("vault_writer_customer_entries")
+        assert block, "no vault_writer_customer_entries resource block found"
+        assert "to use secret-family" in block, "the writer grant is not a `use` grant"
+
+    def test_the_scope_list_is_generated_from_the_register(self):
+        """The names in the grant must be the register's Customer rows, not a typed list.
+
+        Proven by running the scoping module over the real register and checking every one of
+        its answers appears in the Terraform list. A hand-typed list would drift the first time
+        a row changed owner, and the door would then refuse a write it should allow.
+        """
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "writer_scoping", ROOT / "platform" / "vault-writer" / "scoping.py"
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        expected = mod.customer_owned_entries(ROOT / "docs" / "reference" / "policy" / "root-trust.md")
+        assert expected, "the register parsed to no Customer entries at all"
         text = VAULT_TF.read_text()
-        writer_stanzas = [
-            s for s in re.findall(r'"(Allow[^"]*vault[^"]*writer[^"]*)"', text, re.I)
-        ]
-        assert writer_stanzas, "no writer statement found"
-        for stmt in writer_stanzas:
-            assert " to use secret-family " in stmt, f"not a `use` grant: {stmt}"
+        missing = [n for n in expected if f'"{n}"' not in text]
+        assert not missing, f"the grant is missing register entries: {missing}"
 
 
 class TestTheWallProvesTheRefusal:

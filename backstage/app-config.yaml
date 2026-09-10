@@ -336,6 +336,18 @@ catalog:
       rules:
         - allow: [Template]
 
+    # crew#749. The two customer-road templates, registered in the compose config as well as the
+    # container one, so a person running the portal locally sees the same pages the deployed
+    # portal shows. Two configs that disagree about which pages exist is its own defect.
+    - type: file
+      target: ../../templates/onboarding/*/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ../../templates/customer-onboarding/template.yaml
+      rules:
+        - allow: [Template]
+
     # The guest identity. Load-bearing, not an example: the guest auth provider
     # resolves user:default/guest through the catalog, so removing this file
     # breaks sign-in.

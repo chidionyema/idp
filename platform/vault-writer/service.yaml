@@ -1,0 +1,19 @@
+# ClusterIP and nothing else. R20: only the gateway binds off loopback, and a writer with a
+# route would be a vault write door reachable from the internet. bin/idp-ci renders this
+# directory and fails on any Service that is not ClusterIP, so it cannot drift quietly -- the
+# same wall platform/backstage/base/kustomization.yaml carries.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-writer
+  labels:
+    app.kubernetes.io/name: vault-writer
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: vault-writer
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

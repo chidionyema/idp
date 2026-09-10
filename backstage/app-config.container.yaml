@@ -214,6 +214,22 @@ catalog:
       rules:
         - allow: [Template]
 
+    # crew#749, the key ingest door (docs/specs/key-ingest-door.md). The two customer-road
+    # templates: "Activate a key" and "Onboard a customer onto messaging". Both exist in the tree
+    # and had never been registered, so neither appeared in any portal -- measured 2026-09-10,
+    # no onboarding target in this file at all. The founder's requirement is that anyone can set
+    # this up themselves from the portal, and a page the portal does not load cannot be used by
+    # anyone. backstage/Dockerfile:126 already copies templates/ into the image; this is the
+    # missing half.
+    - type: file
+      target: /app/templates/onboarding/*/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: /app/templates/customer-onboarding/template.yaml
+      rules:
+        - allow: [Template]
+
     # user:default/guest. The guest auth provider resolves it through the
     # catalog, so this is sign-in, not example data.
     - type: file

@@ -1,0 +1,55 @@
+# The in-cluster writer. It shells out to bin/idp-vault-put, which is the estate's one proven
+# path for a value that must never be printed: the value is passed on STDIN and not in argv,
+# because argv is visible to any process on the node.
+#
+# LAW 50: it emits one span per submission, carrying entry/key/store/sha256_prefix and no value.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault-writer
+  labels:
+    app.kubernetes.io/name: vault-writer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault-writer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vault-writer
+    spec:
+      serviceAccountName: vault-writer
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: writer
+          # Placeholder tag; bin/idp-ci's image policy rewrites it. The writer is stdlib-only
+          # Python so the image only has to carry an interpreter and bin/idp-vault-put.
+          image: python:3.12-slim
+          command: ["python3", "/app/platform/vault-writer/app.py"]
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            # The register, read at request time so a row added in a pull request takes effect
+            # without a restart (part 2 of the spec).
+            - { name: VAULT_WRITER_REGISTER, value: /app/docs/reference/policy/root-trust.md }
+            - { name: VAULT_WRITER_PORT, value: "8080" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: PYTHONUNBUFFERED, value: "1" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
