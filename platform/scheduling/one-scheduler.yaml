@@ -92,14 +92,22 @@ still_outside_dagster:
 - job: launchd/ai.estate.kubeapi.plist.tmpl
   kind: launchd job on the laptop
   fold: 'pending: to be declared as a Dagster schedule'
-- job: launchd/ai.estate.otto-home3.plist.tmpl
-  kind: launchd job on the laptop
-  fold: 'never: Dagster runs in the cluster, and this job exists so Otto can still think
-    when the cluster is gone (THE MEDIC LAW). A scheduler that dies with the estate cannot
-    own the estate''s last brain. It is a persistent daemon, not a recurring job.'
 - job: launchd/ai.estate.scheduler.plist.tmpl
   kind: launchd job on the laptop
   fold: 'pending: to be declared as a Dagster schedule'
+# NOT pending, and the reason is the opposite of the one every row above carries. Dagster is a
+# cluster service; a job that delivers a credential TO THE MAC cannot depend on the cluster being
+# up. The moment the cluster is down is exactly when this Mac still has to answer Twilio's webhook
+# with a valid signature -- the concierge's whole WhatsApp surface is refused 403 without that
+# token in place. Folding it into Dagster would mean the credential expires at the same moment the
+# estate is least able to notice.
+#
+# It is also not the shape bin/idp-one-scheduler exists to catch: that rule is about a SECOND
+# SCHEDULER (a cron that competes with Dagster for the same work), and this job does not schedule
+# work -- it delivers one file, idempotently, and writes nothing when it already matches.
+- job: launchd/ai.estate.concierge-secrets.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'never: delivers a credential the Mac needs when the cluster is down; see the note above'
 - job: launchd/ai.estate.sovereign-worker.plist.tmpl
   kind: launchd job on the laptop
   fold: 'pending: to be declared as a Dagster schedule'
