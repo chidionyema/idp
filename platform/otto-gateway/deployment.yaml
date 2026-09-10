@@ -195,6 +195,19 @@ spec:
                 for f in "$HERMES_ENV_DIR"/*; do
                   [ -f "$f" ] || continue
                   n=$(basename "$f")
+                  # LITELLM_API_KEY is the one name this mount may not win. This
+                  # container talks to the loopback brain on 127.0.0.1:4010, whose
+                  # master key is the sha256 derivation above; the agent-env mount
+                  # still carries the ESTATE router's old virtual key under the same
+                  # name, and it used to land here AFTER the derivation and overwrite
+                  # it. The brain has no database, so a key that is not its master key
+                  # cannot be looked up: every judgment-lane call came back
+                  # `400 No connected db.`, the router counted two attempts and
+                  # returned needs_human. Measured 2026-09-10 15:06:09Z, one real
+                  # founder turn, task 01M25XNN0ZXTPG95B32FAF41VB -- and the pod's own
+                  # env proved it: app key hash bbcd6a50 == the agent-env file's,
+                  # never the derived 5fd221d5 the brain accepts.
+                  case "$n" in LITELLM_API_KEY) continue ;; esac
                   case "$n" in [A-Z_][A-Z0-9_]*) export "$n=$(cat "$f")" ;; esac
                 done
               fi
