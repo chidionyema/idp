@@ -54,12 +54,31 @@
 # So the rename to -6 is the re-run against a lane that now answers, and nothing else
 # about this Job changes.
 #
+# 2026-09-10, the -8 rename. -7 ran with the longer retry budget the comment above
+# gave it and still went Failed, six Error pods in nineteen minutes, every one ending:
+#
+#   read=1 written=0 already_present=0 empty=0 failed=0
+#   ERROR:__main__:the embedding lane refused f1998feb-dba4-425a-9b8d-04171239fd73:
+#     embedding call to the estate router failed: HTTPError
+#
+# The retry budget was not the fault this time; the `embed` lane was. Google had
+# retired gemini-embedding-001 and the lane carried no fallback at all, so the first
+# refusal was also the last word. #2939 gave it a chain, and the router's own log a
+# minute after that rollout, from inside the litellm pod:
+#
+#   17:14:10 - fallback_event_handlers.py:357 - Falling back to model_group = embed-fallback
+#   17:14:10 - litellm.aembedding(model=openrouter/openai/text-embedding-3-small) 200 OK
+#   INFO:     "POST /embeddings HTTP/1.1" 200 OK
+#
+# So -8 is the re-run against a lane that now falls over instead of failing, and
+# nothing else about this Job changes.
+#
 # If this never runs, nothing breaks: the read path finds no store, returns nothing,
 # and the lane answers exactly as it did before while hindsight keeps every write.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: otto-memory-store-7
+  name: otto-memory-store-8
   namespace: otto-gateway
   labels:
     app.kubernetes.io/name: otto-memory-store
