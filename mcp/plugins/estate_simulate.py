@@ -168,6 +168,8 @@ def simulate_change(
 
     The overall `verdict` is SAFE only when every grader answered SAFE. One UNSAFE is UNSAFE.
     Anything else -- a single UNKNOWN, an absent grader -- is UNKNOWN, and execute refuses.
+
+    MUM-288 / ADR 0006 -- the simulate-before-execute door on the estate MCP server.
     """
     cfg = cfg or config()
     registry = registry or _REGISTRY
@@ -232,11 +234,16 @@ def execute_change(
     cfg: dict | None = None,
     now: dt.datetime | None = None,
 ) -> dict:
-    """Execute a proposal only when it is kept, unexpired, not UNKNOWN, and the presented state
-    hash still equals the one it was computed against. Every refusal is a dict with `executed:
-    False` and the reason; the only success path is `executed: True` and names the state branch a
-    Flux/JIT write would land on. This module never writes to the world; it is the guard before a
-    JIT-broker grant or a commit to the state branch, which is the founder's one-platform door.
+    """Execute the world's only door for a graded proposal.
+
+    A successful call runs the JIT-broker grant that lands the state change on the named
+    Flux state branch (default `estate/state`). This function does NOT touch the world; the
+    broker does. The proposal must exist, be unexpired, have graded verdict SAFE, and the
+    `presented_hash` must equal the cluster_state_hash the proposal was computed against.
+    Every refusal returns `{"executed": False, "error": <reason>}`; the only success returns
+    `{"executed": True, "state_branch": ..., "git_sha": ..., "cluster_state_hash": ...}`.
+
+    MUM-288 / ADR 0006 -- the execute door on the estate MCP server.
     """
     cfg = cfg or config()
     registry = registry or _REGISTRY
@@ -286,46 +293,73 @@ def execute_change(
 
 
 @hookimpl
-def register_mcp_tools(datasette, mcp):
-    # The MCP tool names must stay `simulate_change` and `execute_change`. The module-level
-    # functions of the same names would be shadowed by the inner `@mcp.tool()` defs below at
-    # call-time (Python's enclosing-scope lookup), so the live-cluster reproduction called the
-    # inner def with `graders=...`, which only accepts `source`, and returned "Error executing
-    # tool" silently. Going through `import sys` + `sys.modules[__name__]` avoids Python's
-    # compile-time local-name detection (any `def <name>` makes `<name>` local throughout this
-    # function; aliasing by `<name> = <name>` then hits UnboundLocalError). We pull the original
-    # targets through the module's namespace, which is constant, and bind them to fresh names
-    # the inner defs can call.
-    import sys as _door_sys
+def _make_simulate_change(_simulate, _live_graders, _config):
+    """Build an MCP-tool wrapper for the simulate door.
 
-    _door_module = _door_sys.modules[__name__]
-    _door_simulate = _door_module.simulate_change
-    _door_execute = _door_module.execute_change
+    The wrapper MUST carry the registered tool name `simulate_change`, which precludes
+    inlining an `async def simulate_change(...)` -- a name-equal inner def would shadow the
+    module-level `_simulate` at call-time via Python's enclosing-scope lookup, and live-cluster
+    reproduction showed the inner then receiving `graders=...` it had no slot for, returning
+    "Error executing tool" silently. The wrapper is bound by closure to the module-level
+    functions: `_simulate`, `_live_graders`, and `_config` are all outer parameters, so the
+    inner resolves them through the closure cell on every call. `@wraps` keeps the public
+    tool name unchanged.
+    """
 
-    @mcp.tool()
-    async def simulate_change(source: str) -> dict:
+    import functools
+
+    @functools.wraps(_simulate)
+    async def _simulate_change(source: str) -> dict:
         """Propose a state change before any state-changing tool may run it (MUM-288, ADR 0006).
         `source` is a git ref plus path in this repository, or a named MCP action (`scale`,
         `suspend`, `rollout-restart`) with its arguments. Returns one proposal whose overall
         verdict is SAFE only when every grader answered SAFE; any grader that could not run makes
         it UNKNOWN and execute refuses. A SAFE/UNSAFE proposal is stored under its id; an UNKNOWN
         proposal answers but is never executable."""
-        return _door_simulate(
+        return _simulate(
             source,
-            graders=_live_graders(source) if config().get("graders_door") else {},
+            graders=_live_graders(source) if _config().get("graders_door") else {},
         )
 
-    @mcp.tool()
-    async def execute_change(proposal_id: str, cluster_state_hash: str) -> dict:
+    return _simulate_change
+
+
+def _make_execute_change(_execute):
+    """Build an MCP-tool wrapper for the execute door. Same closure pattern: the inner MUST NOT
+    be named `execute_change` (it would shadow the module-level target). `@wraps` keeps the
+    public tool name unchanged.
+    """
+
+    import functools
+
+    @functools.wraps(_execute)
+    async def _execute_change(proposal_id: str, cluster_state_hash: str) -> dict:
         """Run a simulated change. Refuses unless the proposal exists, is unexpired, graded SAFE,
         and the cluster_state_hash you present still equals the one the proposal was computed
         against. The hash is the sha256 over the sorted resourceVersion of every object in the
         touched namespaces plus the git sha of clusters/. On success names the state branch the
         Flux/JIT write lands on; the write itself is the broker's grant, not this tool."""
-        return _door_execute(
-            proposal_id,
-            cluster_state_hash,
-        )
+        return _execute(proposal_id, cluster_state_hash)
+
+    return _execute_change
+
+
+def register_mcp_tools(datasette, mcp):
+    """Register the simulate and execute doors with the MCP server.
+
+    The MCP tools MUST be registered under the names `simulate_change` and `execute_change`
+    (MUM-288, ADR 0006). The wrappers are built by `_make_simulate_change` / `_make_execute_change`
+    using closure over the module-level functions -- NOT named `simulate_change` or `execute_change`
+    themselves. Naming the wrappers the same would shadow the targets at call-time (Python's
+    enclosing-scope lookup), and live-cluster reproduction showed the shadowed inner then receiving
+    `graders=...` it had no slot for, returning "Error executing tool" silently with no traceback
+    in pod logs.
+    """
+    simulate_tool = _make_simulate_change(simulate_change, _live_graders, config)
+    execute_tool = _make_execute_change(execute_change)
+
+    mcp.add_tool(simulate_tool, name="simulate_change")
+    mcp.add_tool(execute_tool, name="execute_change")
 
 
 def _live_graders(source):
