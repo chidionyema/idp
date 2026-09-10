@@ -11,6 +11,7 @@ a renderer you can replace in one command is not a dependency. If Backstage is
 wrong in a year, this adapter changes its output format and the estate does not.
 """
 import json, os, re, subprocess, sys
+from typing import Any, Dict
 
 # INV and OUT can be overridden so CI can run this against a fixture (bin/idp-ci).
 INV = os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json")
@@ -39,6 +40,25 @@ COMPANIES = {
                   ("Hermes on GitHub", "https://github.com/chidionyema/hermes-v2")),
     "platform": ("Platform", (),
                  "The one platform every product runs on: catalogue, routing, traces, identity, secrets, scheduling, CI."),
+}
+
+# Per-company metadata that does not fit the 4-tuple above. Each entry may carry
+# `tags` (a list written under `metadata.tags` of the Domain entity, every
+# tag lowercase) and `extra_links` (a list of (title, url) tuples appended
+# after the company's home link). Kept next to COMPANIES so a reader of the
+# catalogue sees where a Domain's tags come from.
+COMPANY_EXTRAS: Dict[str, Dict[str, Any]] = {
+    # MUM-284: voice intake is the founder-facing capability the entity names
+    # so the Backstage catalogue surfaces it next to the existing GitHub link.
+    # The onboarding page (docs/onboarding/telegram.md) is the page that already
+    # documents voice transcription; pointing the Domain's extra_links at it
+    # is the producer-backed naming the row asks for.
+    "hermes-v2": {
+        "tags": ["voice-intake", "voice", "agent", "founder-facing"],
+        "extra_links": [
+            ("Voice intake onboarding", "https://github.com/chidionyema/hermes-v2/blob/origin/main/docs/onboarding/telegram.md"),
+        ],
+    },
 }
 
 
@@ -955,11 +975,20 @@ def main() -> int:
     for key, (title, _needles, desc, *_home) in COMPANIES.items():
         if key == "platform":
             continue
+        extras = COMPANY_EXTRAS.get(key, {})
+        tags = [str(t).strip().lower() for t in (extras.get("tags") or []) if str(t).strip()]
+        extra_links = [tuple(map(str, t)) for t in (extras.get("extra_links") or []) if t]
+        tags_yaml = (
+            ["  tags:"] + [f"    - {y(t)}" for t in tags]
+            if tags
+            else []
+        )
         docs.append("\n".join([
             "apiVersion: backstage.io/v1alpha1", "kind: Domain", "metadata:",
             f"  name: {key}", f"  title: {y(title)}",
+            *tags_yaml,
             f"  description: {y(desc)}",
-            *links_yaml(company_links(key)),
+            *links_yaml(company_links(key) + extra_links),
             "spec:", f"  owner: {OWNER}"]))
     # One product System per tracked repository, inside its company.
     repo_rows = [r for r in rows if r.get("kind") == "repo"]
