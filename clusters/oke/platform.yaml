@@ -1291,6 +1291,18 @@ spec:
     name: flux-system
   path: ./platform/concierge
   prune: true
+  # postBuild.substituteFrom is REQUIRED here and its absence is what held this row on its first
+  # apply: platform/concierge/network.yaml carries ${ESTATE_APISERVER_CIDR}, the same variable
+  # every generated fence under platform/ns-fences/network/ carries. A Kustomization without this
+  # does not substitute, so the literal string reached the API and the whole apply failed
+  # (`NetworkPolicy ... ipBlock.cidr: Invalid value: "${ESTATE_APISERVER_CIDR}"`), leaving the
+  # Namespace created and the fence and the ExternalSecret unapplied. Every row that uses an
+  # estate variable carries this block; this one now does too.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+        optional: false
   dependsOn:
     - name: secret-store
   timeout: 5m
