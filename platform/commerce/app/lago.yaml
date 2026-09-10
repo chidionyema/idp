@@ -188,10 +188,10 @@ spec:
         images:
           - name: getlago/api
             newName: ghcr.io/chidionyema/lago-api
-            newTag: main-7341-15f7821280634660e2674332a4dd1e4d2b821427 # {"$imagepolicy": "flux-system:lago-api:tag"}
+            newTag: main-7346-5cf1e879efc8fd2706f9f7ff87be0a0acae79cc7 # {"$imagepolicy": "flux-system:lago-api:tag"}
           - name: getlago/front
             newName: ghcr.io/chidionyema/lago-front
-            newTag: main-7341-15f7821280634660e2674332a4dd1e4d2b821427 # {"$imagepolicy": "flux-system:lago-front:tag"}
+            newTag: main-7346-5cf1e879efc8fd2706f9f7ff87be0a0acae79cc7 # {"$imagepolicy": "flux-system:lago-front:tag"}
           - name: getlago/lago-events-processor
             newName: docker.io/getlago/lago-events-processor
           - name: getlago/lago-gotenberg
