@@ -1759,3 +1759,25 @@ spec:
       kind: HelmRelease
       name: trivy-operator
       namespace: trivy-system
+---
+# The guarantee against the 504 epidemic of 2026-09-03..10. A dead flannel left a
+# FLANNEL-POSTRTG chain in the nodes' nat table that masqueraded every cross-node pod packet
+# as the node's own address, so every destination NetworkPolicy -- which whitelists pod
+# selectors, never node addresses -- dropped it at the tier default, silently, for a week.
+# No gate in this tree could have caught it: they all read files. Two canaries, one per node,
+# probe each other every 15 seconds and print what they saw; bin/idp-cross-node-drill reads
+# those logs and is a row of the hourly verify-drill. Flux owns it so it cannot be lost.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cross-node-drill
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/cross-node-drill
+  prune: true
+  wait: true
+  timeout: 5m

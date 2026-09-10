@@ -5,6 +5,7 @@ calico-system
 cert-manager
 chaos-mesh
 commerce
+cross-node-drill
 crossplane-system
 cyrus
 dagster

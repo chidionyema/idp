@@ -109,6 +109,11 @@ def test_a_one_cluster_two_active_pools_is_an_ok_row(tmp_path: Path) -> None:
     )  # crew#66 hourly row
     _fake(
         b,
+        "idp-cross-node-drill",
+        "echo 'ok    cross-node-drill                   4/4 check(s) green'",
+    )  # the hourly cross-node row
+    _fake(
+        b,
         "idp-github-app",
         "echo 'ok      github-tokens 2 token(s) re-minted from the App'",
     )  # crew#577 hourly token row
@@ -141,7 +146,7 @@ def test_a_one_cluster_two_active_pools_is_an_ok_row(tmp_path: Path) -> None:
     assert (
         "ok      cluster      1 cluster ACTIVE, 2/2 node pool(s) ACTIVE" in r.stdout
     ), r.stdout + r.stderr
-    assert r.returncode == 0 and "9/9 rows green" in r.stdout
+    assert r.returncode == 0 and "10/10 rows green" in r.stdout
 
 
 def test_a_layer_exit_2_on_cluster_list_makes_the_row_blind(tmp_path: Path) -> None:
@@ -171,6 +176,11 @@ def test_a_layer_exit_2_on_cluster_list_makes_the_row_blind(tmp_path: Path) -> N
     _fake(
         b, "idp-no-toil", "echo 'PASS    no-toil gate (2 document(s))'"
     )  # crew#66 hourly row
+    _fake(
+        b,
+        "idp-cross-node-drill",
+        "echo 'ok    cross-node-drill                   4/4 check(s) green'",
+    )  # the hourly cross-node row
     _fake(
         b,
         "idp-github-app",

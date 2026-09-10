@@ -1,0 +1,174 @@
+# Two pods, one per node, that dial each other across the node boundary every 15 seconds and say
+# out loud what they saw. Nothing execs into them; bin/idp-cross-node-drill only reads their logs.
+#
+# That is deliberate. A drill that needs pods/exec needs a write grant on the cluster, and a
+# guarantee that costs a standing privilege is one an operator eventually turns off. Reading logs
+# is what the estate's read-only identity already does, so this drill can run from anywhere,
+# unattended, forever -- which is the only property that makes it a guarantee rather than a check
+# somebody remembered to run.
+#
+# The anti-affinity is `required`, not `preferred`: two replicas on one node are one replica, and a
+# drill whose ends share a node measures nothing. If the scheduler cannot place them apart the
+# second pod stays Pending and the drill reports BLIND rather than green.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cross-node-canary
+  namespace: cross-node-drill
+  labels:
+    app: cross-node-canary
+    backstage.io/kubernetes-id: cross-node-drill
+spec:
+  replicas: 2
+  # `required` anti-affinity and a surging rollout cannot both be satisfied: with one pod already
+  # on each node there is nowhere for a surge pod to land, so the roll deadlocks with the new pod
+  # Pending forever. Measured on the first roll of this very Deployment, 2026-09-10. Replace in
+  # place instead: take one down, bring its replacement up on the node it vacated.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: cross-node-canary
+  template:
+    metadata:
+      labels:
+        app: cross-node-canary
+        backstage.io/kubernetes-id: cross-node-drill
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: cross-node-canary
+              topologyKey: kubernetes.io/hostname
+      # The datapath breaks under pressure, which is exactly when a node is cordoned. A drill that
+      # stops measuring the moment an operator cordons a node would have gone quiet for the whole
+      # week this outage lasted -- while .221 was cordoned the estate was accidentally single-node
+      # and the bug had no symptom at all.
+      tolerations:
+        - key: node.kubernetes.io/unschedulable
+          operator: Exists
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: canary
+          image: docker.io/library/python:3.11-slim
+          command: ["python3", "-u", "-c"]
+          args:
+            - |
+              # A listener and a prober in one process. No framework and no HTTP: the thing under
+              # test is whether a SYN from the other node arrives, and with which source address.
+              # Anything richer than accept() would add its own failure modes to the measurement.
+              import socket, threading, time
+
+              PORT = 8080
+              PEERS = "cross-node-canary.cross-node-drill.svc.cluster.local"
+              MARKER = b"xnode\n"   # tells a peer's probe apart from the kubelet's health check
+              MINE = socket.gethostbyname(socket.gethostname())
+
+              def listen():
+                  s = socket.socket()
+                  s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                  s.bind(("0.0.0.0", PORT))
+                  s.listen(64)
+                  while True:
+                      conn, addr = s.accept()
+                      # The kubelet's own readiness and liveness probes connect from the NODE's
+                      # address every 10 seconds and send nothing. Logging those as arrivals would
+                      # make this drill report a masquerade that is not there, and a drill that
+                      # cries wolf is a drill somebody switches off -- which is how a week of 504s
+                      # happened. Only a connection carrying the marker is a peer.
+                      conn.settimeout(2)
+                      try:
+                          marker = conn.recv(len(MARKER))
+                      except Exception:
+                          marker = b""
+                      if marker != MARKER:
+                          conn.close()
+                          continue
+                      # The source address THIS node sees. On a healthy datapath it is the peer
+                      # POD's IP. If anything on the path masquerades -- the flannel remnant that
+                      # caused the 2026-09-10 outage did exactly this -- it is the peer NODE's IP,
+                      # and every fence that whitelists pod IPs will drop it in silence.
+                      print("saw %s" % addr[0], flush=True)
+                      conn.close()
+
+              threading.Thread(target=listen, daemon=True).start()
+              print("canary %s listening on %d" % (MINE, PORT), flush=True)
+
+              while True:
+                  # Peer discovery over the headless Service: DNS returns one A record per pod, so
+                  # the pair needs no API access and no configuration to find each other.
+                  try:
+                      peers = sorted({r[4][0] for r in socket.getaddrinfo(
+                          PEERS, PORT, socket.AF_INET, socket.SOCK_STREAM)})
+                  except Exception as exc:
+                      print("dns fail %s" % type(exc).__name__, flush=True)
+                      peers = []
+                  for peer in peers:
+                      if peer == MINE:
+                          continue
+                      s = socket.socket()
+                      s.settimeout(5)
+                      started = time.time()
+                      try:
+                          s.connect((peer, PORT))
+                          s.sendall(MARKER)
+                          print("probe %s ok %d" % (peer, (time.time() - started) * 1000),
+                                flush=True)
+                      except Exception as exc:
+                          print("probe %s fail %s" % (peer, type(exc).__name__), flush=True)
+                      finally:
+                          s.close()
+                  time.sleep(15)
+          ports:
+            - name: probe
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+# Headless: DNS returns one A record per pod, which is how each canary finds the other without
+# talking to the API server. A ClusterIP here would load-balance a pod onto itself and measure
+# the loopback instead of the node boundary.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cross-node-canary
+  namespace: cross-node-drill
+  labels:
+    app: cross-node-canary
+    backstage.io/kubernetes-id: cross-node-drill
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: cross-node-canary
+  ports:
+    - name: probe
+      port: 8080
+      targetPort: 8080

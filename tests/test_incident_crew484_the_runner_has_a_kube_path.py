@@ -3,7 +3,6 @@ of asking the API server. bin/idp-verify-drill now mints a kubeconfig from the e
 (the same identity its identity row proves) and reads the nodes through it. Rung 4, both ways:
 a Ready node is an ok row; a 403 is a BLIND row naming the IAM gap; a NotReady node is red."""
 import json
-import os
 import stat
 import subprocess
 from pathlib import Path
@@ -45,6 +44,7 @@ def _bin(tmp: Path, nodes_out: str, nodes_rc: int = 0) -> Path:
     (b / "idp-cluster-state").write_text("#!/bin/sh\necho 'ok      cluster-state nodes=1 ready=1 (3 min ago)'\n")
     (b / "idp-drills-row").write_text("#!/bin/sh\necho 'ok        drills    login-drill  login-drill.yml last green 1.0h ago (max 26h)'\n")
     (b / "idp-no-toil").write_text("#!/bin/sh\necho 'PASS    no-toil gate (2 document(s))'\n")  # crew#66 hourly row
+    (b / "idp-cross-node-drill").write_text("#!/bin/sh\necho 'ok    cross-node-drill                   4/4 check(s) green'\n")  # the hourly cross-node row
     (b / "idp-github-app").write_text("#!/bin/sh\necho 'ok      github-tokens 2 token(s) re-minted from the App'\n")  # crew#577 hourly token row
     (b / "idp-root-trust").write_text("#!/bin/sh\necho 'PASS    root-trust: every entry registered, every MEETS row has its bootstrapper'\n")  # crew#66 root-trust row (crew#580)
     (b / "idp-loop-meter").write_text("#!/bin/sh\necho 'ok    loop-meter: median PR wall-clock this week 274s (n=27), last week 400s (n=31)'\n")  # crew#584 CP4 loop row
@@ -77,7 +77,7 @@ def test_a_ready_node_read_through_the_api_server_is_an_ok_row(tmp_path: Path) -
     _token(tmp_path)
     r = _run(tmp_path, b)
     assert "ok      kube         1/1 node(s) Ready through the API server" in r.stdout, r.stdout + r.stderr
-    assert r.returncode == 0 and "9/9 rows green" in r.stdout
+    assert r.returncode == 0 and "10/10 rows green" in r.stdout
     args = (tmp_path / "kc-args").read_text()
     assert "--token-version 2.0.0" in args and "--cluster-id ocid1.cluster.fake.abc" in args   # the exec plugin, not a static token
     assert not (tmp_path / "kc").exists(), "the kubeconfig outlived the run"
