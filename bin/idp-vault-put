@@ -34,8 +34,22 @@ ENVF=${ESTATE_ENV_FILE:-$HOME/.estate/.env}
 export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
 if [ "${1:-}" = "--preflight" ] || [ "${VAULT_PUT_PREFLIGHT:-}" = 1 ]; then
   # The same read the write path needs; callers that hold one-time material run this first.
-  "$IDP/bin/idp-cloud" secret list >/dev/null 2>&1 \
-    && { echo "ok      vault   reachable as $OCI_CLI_PROFILE"; exit 0; } || { echo "FAIL    vault   not reachable as $OCI_CLI_PROFILE"; exit 2; }
+  # Keep the reason. This check used to send both streams to /dev/null and print four words,
+  # so an estate-bootstrap run that could not see the vault said "not reachable as DEFAULT"
+  # and nothing else -- true, useless, and the same sentence whether the identity was wrong,
+  # the compartment unset, or the vault genuinely down. Measured 2026-09-10: it blocked the
+  # Cloudflare mint twice, and neither run said what to fix. A check that hides its own cause
+  # is a check nobody can act on.
+  vp_err=$("$IDP/bin/idp-cloud" secret list 2>&1 >/dev/null) && vp_rc=0 || vp_rc=$?
+  if [ "$vp_rc" = 0 ]; then
+    echo "ok      vault   reachable as $OCI_CLI_PROFILE"; exit 0
+  fi
+  echo "FAIL    vault   not reachable as $OCI_CLI_PROFILE (idp-cloud secret list exited $vp_rc)"
+  # One line, and never the value of anything: this path only ever lists names, and a failure
+  # here has produced none. Trimmed so a stack trace cannot push a secret-shaped string into a
+  # public Actions log (LAW 21).
+  [ -z "$vp_err" ] || printf '        cause   %s\n' "$(printf '%s' "$vp_err" | tail -1 | cut -c1-200)"
+  exit 2
 fi
 rc=0; current=$("$IDP/bin/idp-cloud" secret get "$SECRET_NAME" 2>"${TMPDIR:-/tmp}/vault-put.err") || rc=$?
 case $rc in
