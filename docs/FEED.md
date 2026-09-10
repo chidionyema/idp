@@ -24,3 +24,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: homes graded 2026-09-10 — 1 cluster otto/healthz MEASURED_OK 200; 2 cloudflare lifeboat-llm MEASURED_FAIL (not deployed); 3 macbook tailnet:11434 MEASURED_OK 200. Groq free ceiling measured from its own header: 1000 req/day, 8000 tok/min
 📍 State: https://github.com/chidionyema/idp/pull/2898
 
+
+## 2026-09-10T12:18:56Z · session 01a08284 · lane wt-dagster-bs
+🟢 Done: PR #2901 MERGED at 11:38:25Z (Tools page now shows layer-dagster with "Open the scheduler" link to /dagster); spec verification doc written (/tmp/spec-verification.md, 63 tests across 11 spec rows pass on clean main); implications doc written (/tmp/implications.md, three-part: operator / platform / business)
+🟡 Active: nothing in flight — all mergeable work landed, waiting on founder
+🔴 Blocked: W4 glass-break — platform/edge/dagster-route.yaml HTTPRoute (today the /dagster proxy targets the in-cluster Service, which works for any browser following the Backstage proxy but a direct URL still hits 127.0.0.1)
+⚪ Pending: founder decision on the HTTPRoute; once merged, flip the proxy target to the gateway hostname; and the three spec rows still unmet: W3.4 (live 3 a.m. demo), W0.5 (sign the proof), W0.6 (platform-owned assertions)
+🔧 TOUCHES: no further changes planned unless founder directs; scratch worktrees cleaned, on feat/otto-three-homes
+🔀 OVERLAP: estate sessions commit on main continuously; I watch the dagster PRs and the spec/two-engine-spine merge (#2892) and the dagster integration
+📎 FACTS: the estate feed-guard hooks (Stop/SessionStart/UserPromptSubmit) are wired in ~/.claude/settings.json for Claude Code only — pi sessions get no auto-fire, so I post manually; user asked me to "force the issue" because too much work was getting lost
+📍 State: https://github.com/chidionyema/idp/pull/2901 | origin/main at 04475d85
+
