@@ -1,0 +1,35 @@
+# The same row with the brake off: the Deployment is the readiness signal, and a
+# one-shot Job in the same path cannot hold the row out of the cluster.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: otto-gateway
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/otto-gateway
+  prune: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: otto-gateway
+      namespace: otto-gateway
+---
+# A row with no healthChecks keeps wait: true -- there it is the only signal it has.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: scheduling
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/scheduling
+  prune: true
+  wait: true

@@ -33,7 +33,11 @@ def _one(docs, kind, name):
 
 def test_spire_row_waits_on_the_helmrelease():
     ks = _one(_docs(ROOT / "clusters/oke/platform.yaml"), "Kustomization", "spire")
-    assert ks["spec"]["path"] == "./platform/spire" and ks["spec"]["wait"] is True
+    # The HelmRelease below is what this row waits on. `wait: true` is not a second way of
+    # saying that -- Flux treats the two as mutually exclusive and wait wins, which would
+    # throw this health check away and wait on every object under ./platform/spire instead
+    # (bin/idp-flux-wait-brake, incident 2026-09-10).
+    assert ks["spec"]["path"] == "./platform/spire" and "wait" not in ks["spec"]
     hc = ks["spec"]["healthChecks"]
     assert {(h["kind"], h["name"], h["namespace"]) for h in hc} == {("HelmRelease", "spire", "spire-mgmt")}
 

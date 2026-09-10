@@ -45,7 +45,6 @@ spec:
     name: flux-system
   path: ./platform/kyverno
   prune: true
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -146,7 +145,6 @@ spec:
     name: prospector
   path: ./deploy/k8s/overlays/oke
   prune: true
-  wait: true
   timeout: 10m
   # Which build runs is decided here, not in prospector's overlay (crew#693): the markers below are
   # written by the image-automation-controller from platform/image-automation/prospector.yaml, and

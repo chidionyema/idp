@@ -19,7 +19,6 @@ spec:
     name: flux-system
   path: ./platform/image-automation
   prune: true
-  wait: true
   timeout: 10m
   healthChecks:
     - apiVersion: image.toolkit.fluxcd.io/v1

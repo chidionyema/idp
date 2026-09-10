@@ -20,7 +20,6 @@ spec:
     name: flux-system
   path: ./platform/human-vault
   prune: true
-  wait: true
   timeout: 10m
   postBuild:
     substituteFrom:

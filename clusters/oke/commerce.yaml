@@ -47,7 +47,6 @@ spec:
     # than standing up a database of its own (founder 2026-09-04). Lago's migrations run against
     # database `lago` there on first boot.
     - name: estate-db
-  wait: true
   timeout: 10m
   healthChecks:
     - { apiVersion: apps/v1, kind: StatefulSet, name: commerce-redis, namespace: commerce }

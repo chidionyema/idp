@@ -44,7 +44,10 @@ def _one(docs: list[dict], kind: str, name: str) -> dict:
 def test_flux_applies_the_reloader_row_after_the_secret_store_and_waits_on_it() -> None:
     ks = _one(_docs(FLUX), "Kustomization", "reloader")
     spec = ks["spec"]
-    assert spec["path"] == "./platform/reloader" and spec["wait"] is True
+    # Deployment/reloader on the last line is what the row waits on. `wait: true` beside it
+    # would discard that check and brake the row on every object in the path instead
+    # (bin/idp-flux-wait-brake, incident 2026-09-10).
+    assert spec["path"] == "./platform/reloader" and "wait" not in spec
     assert {"name": "secret-store"} in spec["dependsOn"], spec["dependsOn"]
     assert any(h["kind"] == "Deployment" and h["name"] == "reloader" for h in spec["healthChecks"])
 
