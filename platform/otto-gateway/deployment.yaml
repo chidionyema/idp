@@ -313,6 +313,17 @@ spec:
             - { name: HOME, value: /data }
             - { name: HERMES_HOME, value: /data }
             - { name: HERMES_ENV_DIR, value: /run/secrets/hermes-agent-env }
+            # OTTO_TOOLSETS below names cronjob, and the door was refusing it on every
+            # single turn: `check_fn check_cronjob_requirements returned False; dependent
+            # tools will be unavailable this turn`. That check (tools/cronjob_tools.py) is
+            # the fork's LEGACY test -- it reads only the three process-env flags and does
+            # not know about the newer per-session contextvar the Telegram platform binds
+            # (HERMES_SESSION_PLATFORM, gateway/session_context.py), which is why skills and
+            # approvals already behave as a gateway surface here and cron alone did not.
+            # tui_gateway/server.py sets exactly this variable for exactly this reason.
+            # Cron-originated approvals are unaffected: _is_cron_approval_context() returns
+            # before this flag is ever read (tools/approval.py).
+            - { name: HERMES_GATEWAY_SESSION, value: "1" }
             - { name: OTTO_TOOLSETS, value: "terminal,web,search,skills,file,vision,tts,memory,todo,cronjob,code_execution" }
             - { name: OTTO_GATEWAY_MAX_TOOLS, value: "256" }
             - { name: OTTO_ROUTER_TOOL_MAX_TURNS, value: "12" }
