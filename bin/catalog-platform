@@ -482,6 +482,15 @@ LAYERS = {
 }
 
 
+# kustomization name -> (path, title) for the layer's own web UI, opened through the
+# Backstage backend proxy (LAW 46: never a hostname typed here; the proxy entry in
+# backstage/app-config.yaml is the door, the same shape as /holmes). A layer with no entry
+# here gets no UI link; the catalog never invents a URL it cannot back.
+UI_DOORS = {
+    "dagster": ("/dagster", "Open the scheduler"),
+}
+
+
 # Layers launched by hand, on purpose, so they never sit in clusters/<cluster>/*.yaml: the buyer
 # sandbox is launched by the founder's portal button (docs/runbooks/demo-sandbox.md) and reaped on a
 # one-hour timer. The catalogue still records it -- the launch stamps exactly the label the
@@ -627,6 +636,9 @@ def render(rows):
             doors.append(("Live logs and metrics", f"https://{signoz_door}"))
         if langfuse_door and emits_model_traces(src):
             doors.append(("Model traces", f"https://{langfuse_door}"))
+        if n in UI_DOORS:
+            ui_path, ui_title = UI_DOORS[n]
+            doors.append((ui_title, ui_path))
         if doors:
             out.append("  links:")
             for door_title, door_url in doors:
