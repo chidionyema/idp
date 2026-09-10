@@ -441,3 +441,83 @@ ffmpeg must convert TTS output to 8 kHz µ-law before streaming back.
 - The onboarding flow (contact card, welcome call, passive enrollment) is specified, not yet built.
 - Recording-replay defence, the cold-voice lockout path, and the trusted-other registry remain open
   from v1.2.
+
+---
+
+## v1.4 amendment — Real-Time Duplex Bridge (sub-300ms, true barge-in)
+
+The v1.3b call path stitched three models (Whisper STT -> text LLM -> TTS), which costs 2-3 seconds
+of latency and breaks outright if Nunn speaks while the agent is talking. v1.4 replaces the pipeline
+with an **audio-native frontier model** over a dual-WebSocket bridge.
+
+### The architecture
+
+```
+Mum's phone  <--μ-law 8kHz-->  Twilio  <--WS-->  FastAPI bridge  <--WS-->  Realtime audio model
+                                                      |
+                                                      +--> execute_purchase tool
+                                                           -> run_browser_task (Playwright, silent)
+                                                           -> receipt PNG to her WhatsApp
+```
+
+Two concurrent coroutines, one per direction, joined by `asyncio.gather`:
+
+1. **Twilio -> model.** `start` triggers the opening greeting; each `media` packet's base64 payload is
+   forwarded verbatim as `input_audio_buffer.append`. No decoding, no re-encoding.
+2. **Model -> Twilio.** `response.audio.delta` deltas are wrapped as `media` packets and written
+   straight to the phone line.
+
+### Why it is faster
+
+**No transcoding.** The session declares `input_audio_format` and `output_audio_format` as
+`g711_ulaw`, which is exactly what telephony carries. Audio crosses the bridge as opaque
+base64 — ffmpeg is not in the path at all. The v1.3b design, by contrast, had to convert TTS output
+to 8kHz µ-law before it could be streamed, which was the dominant cost.
+
+### Barge-in (the part that matters most for her)
+
+Barge-in is the difference between a conversation and a broadcast. An agent that talks over an
+elderly user is the fastest way to make her stop using it.
+
+Two coordinated events on `input_audio_buffer.speech_started`:
+
+- `{"event": "clear", "streamSid": ...}` to Twilio — empties its playback buffer, silencing the
+  agent mid-sentence.
+- `{"type": "response.cancel"}` to the model — abandons the in-flight response so it is not still
+  generating against a question she has already replaced.
+
+Turn-taking is model-side VAD (`server_vad`, threshold 0.5, 300ms prefix padding, 500ms silence).
+
+### The omnichannel handoff
+
+`execute_purchase` is declared as a function tool. When she confirms, the model emits
+`response.function_call_arguments.done`; the bridge speaks a one-line acknowledgement, lets the call
+close naturally, and dispatches `run_browser_task` in the background. The conversation is voice; the
+proof is a receipt image in her WhatsApp thread. Zero apps installed, ever.
+
+### Issues-for-Nunn — v1.4 batch
+
+33. **"What if it hangs up before the order is done?"** The spec has the agent *say* it is hanging up
+    and then dispatch the browser task. If that dispatch fails, she has been told an order was placed
+    when it was not — the worst possible failure, because she will not re-order. **Owner: bridge.**
+    Dispatch must be confirmed started before the acknowledgement is spoken, and any later failure
+    must push to both her WhatsApp and the Guardian.
+34. **"What if I interrupt and it forgets what I asked for?"** Cancelling the response must not
+    discard the half-completed intent. **Owner: bridge.** The in-flight tool argument set must be
+    retained across a barge-in.
+35. **"What if two orders get placed?"** Barge-in plus a tool call creates a window for a duplicate
+    `execute_purchase`. **Owner: bridge.** Single in-flight order token, as in Issue #8.
+36. **"What if the call drops mid-sentence?"** **Owner: bridge.** Reconnect with the pending intent
+    intact, or ring her back; never leave her holding a half-finished instruction.
+37. **"Is she being recorded?"** Audio streams to a third-party model provider. **Owner: bridge +
+    policy.** Requires Nunn's informed consent, a stated retention position, and a disclosure at the
+    start of the first call. Not optional.
+38. **"What if it does not sound like the warm voice from the messages?"** v1.4 uses the model's own
+    voice (`shimmer`), not `en-NG-EzinneNeural`. The phone and the WhatsApp messages would sound like
+    two different people. **Owner: bridge.** Either accept and document the split, or keep one
+    identity.
+
+### What is still not built
+
+`voice_call_server.py` (v1.3b), `realtime_bridge.py` (v1.4), and the Zero-Touch onboarding are all
+specified and none are implemented. Nothing is deployed.
