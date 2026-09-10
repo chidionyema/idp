@@ -1,7 +1,8 @@
-# Personal Agent — Sovereign Spec (v1.1)
+# Personal Agent — Sovereign Spec (v1.2)
 
-> **Status:** Draft, founder-authored, 2026-09-10. v1.1 folds in the Day-0 Concierge
-> architecture and the Issues-for-Nunn checklist (Nunn is non-technical).
+> **Status:** Draft, founder-authored, 2026-09-10. v1.1 folded in the Day-0 Concierge architecture
+> and the Issues-for-Nunn checklist. v1.2 adds voice biometrics, an Auntie-Voice TTS surface, a
+> Scam Sentinel, and a proactive Caretaker Scheduler.
 > **Scope:** A personally-owned assistant that uses Nunn's own computer, Nunn's own accounts,
 > Nunn's own browser — with explicit per-action consent captured once, and a Sentinel that keeps
 > every raw secret out of the LLM context window.
@@ -253,6 +254,89 @@ the boundary fuzzy:
 
 ---
 
-*Drafted by the founder in session 2026-09-10. v1.1 amendment landed on the same draft PR for
-review. Implementation must wait for founder sign-off on the Issues-for-Nunn list and consent
-receipt for the live deployment.*
+## v1.2 amendment — Mother's Concierge: full warmth edition
+
+Four new modules, all in scope of the personal-accessibility frame, none of which require
+anti-bot bypass on third-party services.
+
+### Module table (v1.2)
+
+| Module | File | Role | Hard deps |
+|---|---|---|---|
+| **Voice Biometric Gate** | `voice_biometrics.py` | SpeechBrain ECAPA-TDNN speaker verification: a one-shot 15-second voice baseline (`mum_baseline.wav`) gates every inbound voice note. Score threshold `>0.25` per the upstream model card. | `speechbrain==0.5.15`, `torchaudio==2.1.0` (≈700 MB on first run) |
+| **Auntie Voice Synthesizer** | `tts_audio.py` | `edge-tts` with `en-NG-EzinneNeural`, ffmpeg-transcoded to OGG/Opus so WhatsApp renders it as a native voice note (inline play button). | `edge-tts==6.1.9`, `pydub==0.25.1`, system `ffmpeg` |
+| **Scam Sentinel** | `scam_sentinel.py` | Intercept forwarded scam messages before they reach the Guardian Engine. UK/Nigerian fraud patterns; phishing-link detection. Pure string matching. | none |
+| **Caretaker Scheduler** | `scheduler.py` | APScheduler with daily 08:30 morning meds + 14:00 hydration nudges (cron). Boot-starts inside the FastAPI process. | `APScheduler==3.10.4` |
+| **Webhook server (Day-0)** | `main.py` | Twilio WhatsApp webhook → Biometric → Whisper (Nigerian-Pidgin-prompted) → Scam → Guardian Engine → Browser Operator → Voice-note reply + receipt image. | `fastapi==0.104.1`, `uvicorn==0.24.0`, `twilio==8.10.3`, `openai==1.3.5`, `anthropic==0.7.0`, `playwright==1.40.0`, `python-multipart==0.0.6` |
+
+### End-to-end flow (v1.2)
+```
+[ Mum's phone → WhatsApp voice note ]
+        │
+        ▼
+[ Twilio webhook → /webhook/whatsapp ]
+        │
+        ▼
+[ VoiceprintGate.verify_caller(audio) ]── fail ─▶ Founder push alert + Mum receives "I couldn't recognise your voice"
+        │ pass
+        ▼
+[ Whisper (Nigerian English / Pidgin prompt) ]  → text
+        │
+        ▼
+[ ScamSentinel.evaluate_threat(text) ]── is_scam ─▶ Mum: "don't click that" + Founder: copy of intercepted text
+        │ clear
+        ▼
+[ GuardianPolicyEngine.evaluate(...) ]   ── Tier 1 / Tier 2 / Tier 3 (Day-0 §1)
+        │
+        ▼
+[ BrowserOperator ]  ── receipt screenshot
+        │
+        ▼
+[ AuntieVoice.synth(reply) ] ── OGG/Opus voice note back to Mum's WhatsApp
+```
+
+### Issues-for-Nunn (the user) — v1.2 batch
+
+Adds 10 items to the v1.1 list. Tracked, not blockers for the spec landing.
+
+16. **"What if I have a cold and my voice sounds different?"** — the biometric baseline is captured once; hay-fever, hoarseness, a sore throat all shift Mum's timbre and the ECAPA-TDNN model may reject her. **Owner: Voice Biometric Gate.** Need a per-failure-acknowledge path (Mum taps "it's really me" on her phone, baseline updates) and a liveness probe so a recording of her voice doesn't pass either.
+17. **"What if my grandchild wants to order me something?"** — biometric gate is hard-coded mother-only. Family helpers are blocked. **Owner: Voice Biometric Gate.** Need a "named trusted-other voice" registry, captured with Mum's explicit approval, not implicit.
+18. **"Will my voice be recorded by somebody else?"** — a recording replay of Mum's voice against the current baseline would pass the gate (no challenge-response in the current spec). **Owner: Voice Biometric Gate.** Add a one-shot challenge phrase ("repeat after me: 7 3 5 9") or a random nonce; refuse matches without it.
+19. **"Will the morning voice note wake me?"** — APScheduler fires at 08:30 every day regardless of Mum's state. **Owner: Caretaker Scheduler.** Quiet hours (configurable per-Mum); skip if the previous Mum-side check-in was an "I'm out" or "I'm sleeping" message.
+20. **"What if I had visitors last night and I'm tired?"** — same problem; morning voice note at fixed 08:30. **Owner: Caretaker Scheduler.** Same fix as #19; or, simpler, ask Mum once a week what her usual wake-up time is.
+21. **"Will the medication reminder say which tablet?"** — the literal morning text is generic ("take your morning blood pressure tablets"); Mum has more than one med. **Owner: Caretaker Scheduler.** Per-medication schedule (med name + dose + window) configurable by Mum or her son, not hard-coded prose.
+22. **"What if a forwarded message mentions bbc.com?"** — Scam Sentinel's `http` / `www` markers flag benign text like "I read it on bbc.com/news/..." as a scam. **Owner: Scam Sentinel.** Whitelist trusted news domains; require a *combination* of (link + urgency + money) to fire, not any one alone.
+23. **"What if I don't recognise the WhatsApp sandbox number?"** — `from_="whatsapp:+441234567890"` is a placeholder in the spec. **Owner: main.py.** Bind to a verified Meta WhatsApp Business sender at deployment; never deploy with a sandbox number.
+24. **"Will /tmp be exposed on the internet?"** — Twilio's webhook needs a public URL for the .ogg voice notes and the receipt PNG. The spec suggests serving `/tmp` via FastAPI StaticFiles or Nginx. **Owner: main.py.** Serve only a dedicated `/var/concierge/media/` directory with a *positive* allowlist of filenames; never the entire `/tmp`.
+25. **"What if the morning message fails to send?"** — APScheduler's job is fire-and-forget; if Twilio is down at 08:30, Mum hears nothing. **Owner: Caretaker Scheduler + main.py.** Retry with backoff (3 attempts, exponential); if all fail, push a notification to Founder's phone with the missed message.
+26. **"What if my phone is on silent?"** — WhatsApp voice notes still arrive and auto-play depending on settings. Not much can be done here, but **Owner: Caretaker Scheduler.** Default reminder hour to a Mum-configured value, not 08:30; honour Do Not Disturb hours.
+
+### On the architectural choices in v1.2
+
+- **SpeechBrain ECAPA-TDNN** is the right speaker-verification backbone for this surface, but the
+  spec publishes a magic-number threshold (`>0.25`). That number is from the model's eval card and
+  is correct *for that model*, but we hold the threshold as a configurable field, not a literal.
+- **Edge-TTS en-NG-EzinneNeural** is the natural Nigerian female voice the founder picked. That's
+  the voice Mum hears. Verified to be in `edge-tts`'s voice list as of v6.1.9.
+- **APScheduler in the FastAPI process** ties the caretaker loop to the webhook process. If
+  uvicorn restarts (deploy, OOM, ssh shell disconnect), the schedule re-binds. Acceptable for
+  v1.2; v1.3 should move this out into a small systemd-managed worker if cadence gets tighter.
+- **Biometric baseline at rest** (`mum_baseline.wav`): the spec keeps it as a wav on disk.
+  **Owner hardening:** the baseline file MUST be stored outside /tmp and MAY NOT be exposed via
+  the FastAPI StaticFiles allowlist. v1.3 encrypts it at rest with a key the Sentinel-only path can
+  reach.
+
+### What's NOT changing in v1.2
+
+- The sovereign non-goals remain: no anti-bot bypass; no cross-user impersonation; no generic
+  browser automation.
+- The v1.0 Iron Rule (Sentinel never holds a raw secret) is unchanged. Env-var API keys remain
+  out of scope for production builds.
+- The Issues-for-Nunn checklist from v1.1 (§v1.1) stays open and tracked.
+
+---
+
+*Drafted by the founder in session 2026-09-10. v1.1 folded in Day-0 architecture. v1.2 adds the
+warmth modules (Biometrics, Auntie Voice, Scam Sentinel, Caretaker Scheduler) and the
+Issues-for-Nunn v1.2 batch. Implementation must wait for founder sign-off on the v1.2 Issues list
+and consent receipt for the live deployment.*
