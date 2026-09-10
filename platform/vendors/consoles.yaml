@@ -94,8 +94,14 @@ vendors:
     rotation: assisted  # MiniMax publishes no create-key API (R52)
     store_default: human-vault
     targets:
-      - { entry: litellm-upstream, ns: llm, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
-      - { entry: prospector-engine-env, ns: prospector, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
+      # No `entry:` on any of these three any more. The vault copies of this key were proved
+      # revoked at the vendor on 2026-09-10 -- HTTP 401 "invalid api key (2049)", measured from
+      # inside the router pod, while the founder's own copy answered -- and have been unset. The
+      # live key reaches every consumer through the Bitwarden human door alone, which is the one
+      # place a rotation actually lands. otto-gateway is here because Otto's home 2 reads it.
+      - { ns: llm, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
+      - { ns: prospector, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
+      - { ns: otto-gateway, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
     router:
       lanes: |
         # --- the moat's cheap primary --------------------------------------------------------
@@ -378,6 +384,10 @@ vendors:
     store_default: human-vault
     targets:
       - { entry: litellm-upstream, ns: llm, field: GROQ_API_KEY, bw: GROQ_API_KEY }
+      # Otto's own copy, home 3 of the three homes. No `entry:`: there is no cluster Secret
+      # in that namespace to seed Bitwarden FROM -- the founder's copy is the only copy, and
+      # the bridge only reads outward here.
+      - { ns: otto-gateway, field: GROQ_API_KEY, bw: GROQ_API_KEY }
     # NO router block yet, on purpose. A rendered lane naming os.environ/GROQ_API_KEY before the
     # vault holds that field is exactly the break this registry already carries a scar from (see
     # the kimi row: "a row that pointed at env keys the vault never held was removed"). The lane

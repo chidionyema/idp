@@ -1243,3 +1243,27 @@ rules:
     fail: >-
       a mutating estate MCP tool registers with no simulate twin, and the gate cannot tell the
       breach from the pair
+
+  - id: otto-door-key
+    label: ottodoorkey
+    statement: >-
+      Otto's door presents a key the lifeboat it talks to can validate: when LITELLM_BASE_URL is
+      the loopback otto-brain sidecar, the door derives the same master key from the same Secret
+      the sidecar does. A sidecar with no database cannot look up a virtual key, so it refuses
+      every turn with 400 "No connected db." before any of the three homes is tried
+    law: THE EMPIRICAL PROOF RULE
+    origin: incident 2026-09-10, the three homes carried no real turn for a day while every probe stayed green
+    planes: [ci]
+    run: [python3, bin/idp-otto-door-key-agrees]
+    session_glob: ['platform/otto-gateway/deployment.yaml']
+    fixtures:
+      must_fail: tests/fixtures/otto-door-key/bad.yaml
+      must_pass: tests/fixtures/otto-door-key/good.yaml
+    cases:
+      - {expect: refuse, args: [tests/fixtures/otto-door-key/bad.yaml]}
+      - {expect: pass, args: [tests/fixtures/otto-door-key/good.yaml]}
+      - {expect: pass, live: true, args: [platform/otto-gateway/deployment.yaml], note: "the door and lifeboat as they actually ship"}
+    ok: "the door and the lifeboat derive one master key from one Secret; proved both ways"
+    fail: >-
+      the door presents a key the lifeboat cannot validate, so every real turn dies at the
+      lifeboat's door while probes that go around it stay green
