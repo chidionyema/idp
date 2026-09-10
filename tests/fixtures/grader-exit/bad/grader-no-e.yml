@@ -1,0 +1,10 @@
+name: bad
+on: [workflow_dispatch]
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: prove langfuse
+        run: |
+          set -o pipefail
+          bin/idp-prove langfuse

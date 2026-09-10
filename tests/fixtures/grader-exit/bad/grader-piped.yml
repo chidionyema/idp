@@ -1,0 +1,10 @@
+name: bad
+on: [workflow_dispatch]
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: grade the estate
+        run: |
+          set -uo pipefail
+          bin/idp-root-trust | tee -a "$GITHUB_STEP_SUMMARY"
