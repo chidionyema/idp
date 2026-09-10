@@ -48,6 +48,31 @@ vendors:
       - { ns: otto-gateway, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
       - { entry: prospector-engine-env, ns: prospector, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
       - { entry: hermes-agent-env, ns: hermes-agent, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
+    router:
+      lanes: |
+        # This key has been mounted in the router pod for days and served no model row, so the
+        # estate router held an OpenRouter credential it could not use. Founder, 2026-09-10:
+        # "all agets send should be in litelln".
+        #
+        # Last resort and honestly the weakest lane in the matrix, kept because a fourth free
+        # vendor is a fourth failure domain. Of four `:free` tool-capable models asked in one
+        # run from the otto-gateway pod on 2026-09-10:
+        #   nvidia/nemotron-3-ultra-550b-a55b:free   timed out at 45s
+        #   thinkingmachines/inkling:free            403, "only available on agentic harnesses"
+        #   google/gemma-4-26b-a4b-it:free           429 from the upstream provider
+        #   nvidia/nemotron-3.5-lightning:free       200 in 8.68s, but no tool call
+        # and OpenRouter's `:free` slugs churn -- three that every list still names answer
+        # 404 "This model is unavailable for free."
+        - model_name: openrouter
+          litellm_params:
+            model: openai/nvidia/nemotron-3.5-lightning:free
+            api_base: https://openrouter.ai/api/v1
+            api_key: os.environ/OPENROUTER_API_KEY
+            # 8.68s measured, and its free pool is shared, so it queues where the others do not.
+            timeout: 90
+            max_tokens: 8192
+          model_info:
+            max_input_tokens: 131072
   deepseek:
     kind: secret
     secret: SEED_DEEPSEEK_API_KEY
@@ -494,6 +519,39 @@ vendors:
       # Otto's own copy. No `entry:` for the same reason the groq row gives: there is no
       # cluster Secret in that namespace to seed Bitwarden FROM, so the bridge reads outward.
       - { ns: otto-gateway, field: CEREBRAS_API_KEY, bw: CEREBRAS_API_KEY }
+    router:
+      lanes: |
+        # Founder, 2026-09-10: "all agets send should be in litelln". Until this row the key
+        # above reached exactly one consumer -- Otto's private brain -- and the estate router
+        # could not call Cerebras at all, so any other agent that wanted it had to go direct
+        # and off the ledger. The Secret existed in namespace `llm` (human-cerebras, bridged
+        # from Secrets Manager) and simply was not mounted; platform/llm/litellm.yaml mounts
+        # it in the same change.
+        #
+        # gpt-oss-120b, not llama-3.3-70b: asked on this key from inside the otto-gateway pod
+        # on 2026-09-10, Cerebras answered 404 "Model does not exist or you do not have access
+        # to it." GET /v1/models returned three -- gemma-4-31b, gpt-oss-120b, qwen-3.8-27b.
+        # Measured on the same call: openai/gpt-oss-120b HTTP 200 0.25s, and a tool-calling
+        # turn returned tool_calls=['get_weather'].
+        #
+        # gpt-oss over qwen even though qwen is different weights from the Groq floor: this
+        # is the one vendor in the matrix whose meter counts TOKENS (1,000,000/day), and qwen
+        # spent 290 tokens saying READY where gpt-oss spent 104. On a token meter the cheaper
+        # answer keeps the lane alive longer.
+        #
+        # No input/output cost keys: the lane is free, so $0.0000 a call is the true price.
+        # general_settings.max_budget still bounds the router; the daily meter is Cerebras's.
+        - model_name: cerebras
+          litellm_params:
+            model: openai/gpt-oss-120b
+            api_base: https://api.cerebras.ai/v1
+            api_key: os.environ/CEREBRAS_API_KEY
+            # 0.25s measured. Short for the same reason the groq row gives: a free lane that
+            # takes minutes to refuse is not a floor.
+            timeout: 60
+            max_tokens: 8192
+          model_info:
+            max_input_tokens: 65536
 
   nvidia:
     # NVIDIA's own NIM endpoints, OpenAI-compatible at https://integrate.api.nvidia.com/v1.
@@ -514,6 +572,32 @@ vendors:
     targets:
       - { entry: litellm-upstream, ns: llm, field: NVIDIA_API_KEY, bw: NVIDIA_API_KEY }
       - { ns: otto-gateway, field: NVIDIA_API_KEY, bw: NVIDIA_API_KEY }
+    router:
+      lanes: |
+        # Same story as the cerebras row above, and the same fix: the key was in Secrets
+        # Manager, the bridge Secret human-nvidia existed in namespace `llm`, and nothing
+        # mounted it, so the estate router could not reach NVIDIA at all.
+        #
+        # nemotron-3.5-lightning-30b-a3b, not meta/llama-3.3-70b-instruct: asked on this key
+        # from inside the otto-gateway pod on 2026-09-10, NVIDIA answered
+        #   410 "... has reached its end of life on 2026-08-26T09:00:00Z"
+        # Measured on the replacement, same call: plain chat HTTP 200 in 2.92s, and a
+        # TOOL-CALLING turn HTTP 200 in 38.33s. That second number is why the timeout below
+        # is not the 60s the other free lanes carry: a lane whose tool turns take 38s and
+        # whose budget is 25s is recorded as the vendor refusing when the vendor answered.
+        #
+        # NVIDIA meters per MODEL (10,000 requests/day/model), not per account, which is a
+        # third meter shape again -- lanes whose meters run in different units do not empty
+        # together, which is the whole point of carrying more than one free vendor.
+        - model_name: nvidia
+          litellm_params:
+            model: openai/nvidia/nemotron-3.5-lightning-30b-a3b
+            api_base: https://integrate.api.nvidia.com/v1
+            api_key: os.environ/NVIDIA_API_KEY
+            timeout: 90
+            max_tokens: 8192
+          model_info:
+            max_input_tokens: 131072
 
   # Cloudflare Workers AI is NOT a row, and the reason is a second value. Its OpenAI-compatible
   # endpoint is /accounts/{account_id}/ai/v1, so a lane needs the account id as well as a token,
