@@ -1,9 +1,11 @@
 # Demo: take Otto's cluster away and watch him keep answering
 
-**Door (from the UI):** Backstage → **Otto** → *Which home is Otto on?* — the card names the
-home that answered his last turn (`home 1 cluster`, `home 2 direct`, `home 3 mac`) and how long
-ago. Nothing below needs a terminal; the terminal lines are here so a buyer's engineer can
-reproduce the claim rather than take it.
+**Door (from the UI):** Backstage → **Create** → *Which home is Otto on?* — one button, no
+parameters. It asks Otto a real question through his own switch and the run names the home that
+produced the token: a MiniMax model id is home 1 or 2, `qwen2.5-coder` is the founder's laptop.
+The rows after it say whether the other two homes are there if that one goes. Nothing below
+needs a terminal; the terminal lines are here so a buyer's engineer can reproduce the claim
+rather than take it.
 
 ## What this shows
 

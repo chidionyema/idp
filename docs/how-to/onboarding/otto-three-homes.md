@@ -1,7 +1,11 @@
 # Onboarding: Otto's three homes
 
-**Door (from the UI):** Backstage → **Otto** → *Which home is Otto on?*. You never need a
-terminal to know which brain answered the founder, and you never need one to change the order.
+**Door (from the UI):** Backstage → **Create** → *Which home is Otto on?*. One button, no
+parameters, and its verdict is a token Otto actually generated rather than a health check. You
+never need a terminal to know which brain answered the founder. The button dispatches
+`.github/workflows/otto-homes.yml`, which runs the `otto-homes` playbook of
+`bin/idp-oke-break-glass`; the Backstage template is generated from that workflow's header by
+`bin/idp-portal-buttons`, so the button and the check can never drift apart.
 
 ## Why this exists
 
