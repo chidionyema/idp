@@ -1,0 +1,85 @@
+# The expert swarm, on the cloud, small because the runtime is Rust.
+#
+# WHY THIS FITS WHEN A PYTHON STACK WOULD NOT. The runtime is one static 6.1 MB binary on a 42 MB
+# image and it mmap's a quantized GGUF -- the model is mapped from disk, not copied into the heap.
+# A python+torch inference image is 700 MB+ BEFORE a model, and it loads weights into RAM rather
+# than mapping them. On a node with 4.8 Gi free, that difference is the whole question.
+#
+# THE SIZING IS FROM THE ESTATE'S OWN SPEC, not estimated here:
+#   0.6B Q4 is about 400 MB mmap'd; 1.7B about 1.1 GB   (docs/specs/2026-09-06-model-forge-edge-runtime.md)
+# Each pod below requests ~1.2 Gi against a 400 MB-1.1 GB model, which leaves room for activations.
+#
+# THE MODELS COME FROM THE FOUNDER'S LIST. Each is a narrow expert, because that is the shape that
+# MEASURED 97.7% here against a 7-way expert that abstained on 93.6%.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: swarm-registry
+  namespace: edge-runtime
+data:
+  # One line per expert: artifact directory name, and the question it answers. Nothing here names a
+  # model we have not measured, and an artifact that does not exist is a pod that CrashLoops with
+  # "no such file" -- which is the runtime refusing correctly rather than serving nothing.
+  #
+  # `edge-runtime` loads ONE GGUF per process. A swarm is therefore several tiny pods, not one big
+  # one -- which is also why the footprint matters: three 400 MB experts cost less than one 32B.
+  experts: |
+    flake-triage     is this red run a flake?          (BINARY,  measured 97.7%)
+    ticket-lane      which lane owns this ticket?      (narrow,  to measure)
+    her-intent       what is she asking for?           (narrow,  to measure)
+---
+# The swarm. Three small pods, each one expert, each one Rust.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: swarm-expert-flake-triage
+  namespace: edge-runtime
+  labels:
+    backstage.io/kubernetes-id: estate-edge-runtime-flake-triage
+    founder/surface: ai-agents
+spec:
+  replicas: 0   # Off until an artifact exists. A pod with no model CrashLoops, and a CrashLoop that
+                # repeats forever is noise that hides a real fault.
+  selector:
+    matchLabels: { app: swarm-expert, expert: flake-triage }
+  template:
+    metadata:
+      labels: { app: swarm-expert, expert: flake-triage }
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: "10.0.148.221"
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: expert
+          image: ghcr.io/chidionyema/edge-runtime@sha256:eae0df039b91bd444f0ea23853397d2bc5fddc569e2677e8e79d8e7ccd8c16f8
+          env:
+            - { name: EDGE_BIND, value: "127.0.0.1:8421" }
+            - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
+            - { name: RUST_LOG, value: "info" }
+          resources:
+            # 1.2 Gi for a 0.6-1.7B expert at Q4 plus activations. GUARANTEED (request == limit),
+            # because policy/require-priority-class refuses a container where they differ.
+            requests: { cpu: "50m", memory: "1200Mi" }
+            limits:   { cpu: "1500m", memory: "1200Mi" }
+          readinessProbe:
+            httpGet: { path: /v1/health, port: 8421 }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact, readOnly: true }
+            - { name: scratch, mountPath: /tmp }
+      volumes:
+        - name: artifact
+          emptyDir: {}
+        - name: scratch
+          emptyDir: { medium: Memory }
