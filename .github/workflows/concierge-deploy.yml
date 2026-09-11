@@ -164,60 +164,53 @@ jobs:
           # Each is created only when missing. Re-minting on every deploy would rotate the card key
           # out from under whatever encrypted card is already on file -- a rotation that silently
           # makes every stored card unreadable is worse than no rotation at all.
-          # TWO defects here, and the second only showed once the first was fixed.
+          # THREE defects, and only the third was real.
           #
-          # 1. `modal secret list` renders a BOXED TABLE, so the name is not at the start of a line
-          #    and `grep -q "^name "` NEVER matches -- the mint step created the secret and the very
-          #    next step reported it missing.
+          # 1. `modal secret list` renders a BOXED TABLE, so `grep "^name "` never matches a cell.
+          # 2. `grep -q` exits on match and SIGPIPEs the writer, which `pipefail` turns into a
+          #    failure even though grep matched.
+          # 3. THE ACTUAL ONE: MODAL TRUNCATES THE NAME TO FIT THE COLUMN. A 25-character name is
+          #    printed as `cloudflare-r2-cred…`. No pattern matches a name that is not fully there,
+          #    which is why three attempts failed while the secret had existed since the first run.
           #
-          # 2. `grep -q` EXITS THE MOMENT IT MATCHES, closing the pipe. `modal` then dies of SIGPIPE,
-          #    and under `set -o pipefail` the whole pipeline fails EVEN THOUGH GREP MATCHED. So the
-          #    check read "exists" as "does not exist" and the step tried to create a secret that
-          #    was already there. Same class as bin/idp-pipeverdict exists to catch: a verdict taken
-          #    from a pipeline into grep.
+          # Rather than guess a fourth pattern, the output was printed and read. That is why the
+          # probe step exists in this workflow's history -- and why it is the right instinct: two of
+          # the three defects above were invented by me and fixed nothing.
           #
-          # So the output is captured ONCE, then graded as text. No pipe, no signal, no ambiguity.
-          # WHAT MODAL ACTUALLY PRINTS IS NOT GUESSED AT. Three attempts at a pattern failed; so the
-          # output is printed, visibly, on the way past. It costs one line of a run's log and it is
-          # the difference between fixing this and guessing a fourth time.
-          listing=$(modal secret list 2>/dev/null || true)
-          echo "---- modal secret list says ----"
-          printf '%s\n' "$listing" | sed 's/^/    /'
-          echo "--------------------------------"
-          # `grep -q` on a captured string sets no signal on anybody, so the || is belt and braces
-          # rather than a fix -- kept because a false MISSING costs a run and a false EXISTS costs
-          # a deploy, and only one of those is recoverable.
-          have() { printf '%s' "$listing" | grep -qE "[|[:space:]]$1[|[:space:]]"; }
+          # So the check does not read the table at all. `modal secret create` is idempotent in
+          # effect: creating one that exists fails with "already exists", which is a POSITIVE
+          # confirmation the secret is there. That is the fact being asked for, from the command
+          # that owns it, rather than a rendering of it.
+          ensure_secret() {
+            local name="$1"; shift
+            local out
+            if out=$(modal secret create "$name" "$@" 2>&1); then
+              echo "ok      minted $name"
+            elif printf '%s' "$out" | grep -q "already exists"; then
+              echo "ok      $name exists (Modal said so)"
+            else
+              echo "FAIL    could not mint or confirm $name:"
+              printf '%s\n' "$out" | sed 's/^/        /'
+              exit 1
+            fi
+          }
 
-          if ! have cloudflare-r2-credentials; then
-            modal secret create cloudflare-r2-credentials \
-              R2_ENDPOINT_URL="https://${{ secrets.SEED_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-              R2_ACCESS_KEY="${{ secrets.SEED_R2_ACCESS_KEY_ID }}" \
-              R2_SECRET_KEY="${{ secrets.SEED_R2_SECRET_ACCESS_KEY }}" \
-              R2_BUCKET="${{ secrets.SEED_R2_BUCKET }}"
-            echo "ok      minted cloudflare-r2-credentials from the estate's R2 root"
-          else
-            echo "ok      cloudflare-r2-credentials already exists"
-          fi
+          # THE PROBE IS GONE with the guessing: it printed the output precisely because three
+          # patterns had failed on a name that was never fully printed.
+          ensure_secret cloudflare-r2-credentials \
+            R2_ENDPOINT_URL="https://${{ secrets.SEED_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+            R2_ACCESS_KEY="${{ secrets.SEED_R2_ACCESS_KEY_ID }}" \
+            R2_SECRET_KEY="${{ secrets.SEED_R2_SECRET_ACCESS_KEY }}" \
+            R2_BUCKET="${{ secrets.SEED_R2_BUCKET }}"
 
-          if ! have kms-master-key; then
-            # The profile key. Random, generated here, never typed by anybody -- a key a human
-            # chooses is a key a human can be guessed at having reused.
-            modal secret create kms-master-key KMS_MASTER_KEY="$(openssl rand -hex 32)"
-            echo "ok      minted kms-master-key"
-          else
-            echo "ok      kms-master-key already exists"
-          fi
+          # The profile key. Random, generated here, never typed by anybody -- a key a human chooses
+          # is a key a human can be guessed at having reused.
+          ensure_secret kms-master-key KMS_MASTER_KEY="$(openssl rand -hex 32)"
 
-          if ! have card-key; then
-            # A DIFFERENT key from the profile's, on purpose: one key decrypting both her browsing
-            # session and her card would mean a leaked profile key is a leaked card, and the profile
-            # key is the one that moves on every order.
-            modal secret create card-key CARD_KEY_HEX="$(openssl rand -hex 32)"
-            echo "ok      minted card-key"
-          else
-            echo "ok      card-key already exists"
-          fi
+          # A DIFFERENT key from the profile's: one key decrypting both her browsing session and her
+          # card would make a leaked profile key a leaked card, and the profile key is the one that
+          # moves on every order.
+          ensure_secret card-key CARD_KEY_HEX="$(openssl rand -hex 32)"
 
       - name: what the deploy needs, and whether it is there
         run: |
@@ -231,12 +224,22 @@ jobs:
           # moving one checkout POST moves the request, not the fingerprint. What replaced it is
           # the carried session -- her signed-in state, minted once at enrolment, carried in from
           # the profile. So the runtime needs no proxy and no bypass.
-          # A BOXED TABLE, not one name per line. See the note in the mint step: matching at line
-          # start reports every secret missing, including ones this run just created.
+          # ASKED BY CREATING, NOT BY READING THE TABLE. `modal secret list` TRUNCATES names to fit
+          # the column, so `cloudflare-r2-credentials` is printed as `cloudflare-r2-cred…` and no
+          # pattern matches it. Three attempts failed on that while the secret had existed since the
+          # first run. Creating an existing secret fails with "already exists", which is a positive
+          # confirmation from the command that owns the fact.
           missing=0
-          listing=$(modal secret list 2>/dev/null || true)
           for s in cloudflare-r2-credentials kms-master-key card-key; do
-            if printf '%s' "$listing" | grep -qE "[|[:space:]]$s[|[:space:]]"; then
+            out=$(modal secret create "$s" PROBE=1 2>&1) && {
+              # A secret that did NOT exist now holds a stray PROBE key. Removed immediately, so
+              # this report cannot leave a half-made secret behind for the deploy to trip over.
+              modal secret delete "$s" --yes >/dev/null 2>&1 || true
+              echo "MISSING modal secret $s (created empty and removed again)"
+              missing=$((missing + 1))
+              continue
+            }
+            if printf '%s' "$out" | grep -q "already exists"; then
               echo "ok      modal secret $s exists"
             else
               echo "MISSING modal secret $s"
@@ -252,14 +255,18 @@ jobs:
           # Every secret the function declares must exist, because Modal refuses a deploy whose
           # declared secret is absent -- and that refusal is right: it is the platform telling us a
           # piece is missing rather than letting a run believe a bypass it does not have.
-          listing=$(modal secret list 2>/dev/null || true)
           for s in cloudflare-r2-credentials kms-master-key card-key; do
-            if ! printf '%s' "$listing" | grep -qE "[|[:space:]]$s[|[:space:]]"; then
-              echo "FAIL    concierge-deploy  the secret '$s' does not exist, so the runtime's"
-              echo "        declared secrets cannot all be satisfied and Modal will refuse."
-              echo "        Mint it from the estate's root rather than pasting a value here."
+            out=$(modal secret create "$s" PROBE=1 2>&1) && {
+              modal secret delete "$s" --yes >/dev/null 2>&1 || true
+              echo "FAIL    concierge-deploy  the secret '$s' does not exist and the mint step"
+              echo "        above should have created it. Nothing has been deployed."
               exit 1
-            fi
+            }
+            printf '%s' "$out" | grep -q "already exists" || {
+              echo "FAIL    concierge-deploy  could not confirm '$s':"
+              printf '%s\n' "$out" | sed 's/^/        /'
+              exit 1
+            }
           done
           modal deploy code/ephemeral/agent.py
           echo "ok      concierge runtime deployed"
