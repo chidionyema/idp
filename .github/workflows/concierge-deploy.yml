@@ -164,11 +164,24 @@ jobs:
           # Each is created only when missing. Re-minting on every deploy would rotate the card key
           # out from under whatever encrypted card is already on file -- a rotation that silently
           # makes every stored card unreadable is worse than no rotation at all.
-          # `modal secret list` renders a BOXED TABLE, so the name is not at the start of a line
-          # and `grep -q "^name "` NEVER matches. That cost a run: the mint step created the secret
-          # and this step immediately reported it missing. The first row is a header, so the name is
-          # matched with a leading separator instead of at line start.
-          have() { modal secret list 2>/dev/null | grep -qE "[|[:space:]]$1[|[:space:]]"; }
+          # TWO defects here, and the second only showed once the first was fixed.
+          #
+          # 1. `modal secret list` renders a BOXED TABLE, so the name is not at the start of a line
+          #    and `grep -q "^name "` NEVER matches -- the mint step created the secret and the very
+          #    next step reported it missing.
+          #
+          # 2. `grep -q` EXITS THE MOMENT IT MATCHES, closing the pipe. `modal` then dies of SIGPIPE,
+          #    and under `set -o pipefail` the whole pipeline fails EVEN THOUGH GREP MATCHED. So the
+          #    check read "exists" as "does not exist" and the step tried to create a secret that
+          #    was already there. Same class as bin/idp-pipeverdict exists to catch: a verdict taken
+          #    from a pipeline into grep.
+          #
+          # So the output is captured ONCE, then graded as text. No pipe, no signal, no ambiguity.
+          listing=$(modal secret list 2>/dev/null || true)
+          # `grep -q` on a captured string sets no signal on anybody, so the || is belt and braces
+          # rather than a fix -- kept because a false MISSING costs a run and a false EXISTS costs
+          # a deploy, and only one of those is recoverable.
+          have() { printf '%s' "$listing" | grep -qE "[|[:space:]]$1[|[:space:]]"; }
 
           if ! have cloudflare-r2-credentials; then
             modal secret create cloudflare-r2-credentials \
