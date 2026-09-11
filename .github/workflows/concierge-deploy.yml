@@ -212,10 +212,23 @@ jobs:
           # moves on every order.
           ensure_secret card-key CARD_KEY_HEX="$(openssl rand -hex 32)"
 
+          # THE VISION LANE. It was missing entirely, so the first real order would have failed on
+          # its first screenshot with a missing-key error -- and `OPENAI_API_KEY`, which the runtime
+          # asked for, DOES NOT EXIST anywhere in the estate.
+          #
+          # The estate's router is the destination (LAW 34), but its master key lives in the cluster
+          # and GitHub does not hold it, so a router secret cannot be minted from CI. What CI does
+          # hold is a vendor key. So the vendor lane is minted here, and the runtime PREFERS the
+          # router the moment one is configured -- printing that it is not, rather than falling back
+          # silently, because a silent vendor call is how a provider-agnostic rule stops being one.
+          ensure_secret vision-lane \
+            VISION_API_KEY="${{ secrets.SEED_ANTHROPIC_API_KEY }}" \
+            CONCIERGE_VISION_MODEL="claude-sonnet-4-6"
+
       - name: what the deploy needs, and whether it is there
         run: |
           set -euo pipefail
-          # The runtime declares THREE modal secrets. Named here, in the run's own output, rather
+          # The runtime declares 4 modal secrets. Named here, in the run's own output, rather
           # than discovered at the deploy step -- where a missing one looks like a broken workflow
           # instead of a piece of the architecture that has not been minted yet.
           #
@@ -230,7 +243,7 @@ jobs:
           # first run. Creating an existing secret fails with "already exists", which is a positive
           # confirmation from the command that owns the fact.
           missing=0
-          for s in cloudflare-r2-credentials kms-master-key card-key; do
+          for s in cloudflare-r2-credentials kms-master-key card-key vision-lane; do
             out=$(modal secret create "$s" PROBE=1 2>&1) && {
               # A secret that did NOT exist now holds a stray PROBE key. Removed immediately, so
               # this report cannot leave a half-made secret behind for the deploy to trip over.
@@ -246,7 +259,7 @@ jobs:
               missing=$((missing + 1))
             fi
           done
-          echo "        $missing of 3 missing"
+          echo "        $missing of 4 missing"
 
       - name: deploy to Modal
         if: ${{ inputs.dry_run == false }}
@@ -255,7 +268,7 @@ jobs:
           # Every secret the function declares must exist, because Modal refuses a deploy whose
           # declared secret is absent -- and that refusal is right: it is the platform telling us a
           # piece is missing rather than letting a run believe a bypass it does not have.
-          for s in cloudflare-r2-credentials kms-master-key card-key; do
+          for s in cloudflare-r2-credentials kms-master-key card-key vision-lane; do
             out=$(modal secret create "$s" PROBE=1 2>&1) && {
               modal secret delete "$s" --yes >/dev/null 2>&1 || true
               echo "FAIL    concierge-deploy  the secret '$s' does not exist and the mint step"
