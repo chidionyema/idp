@@ -152,6 +152,50 @@ jobs:
           print("ok      threshold is 0.6 (the model family's own default)")
           PY
 
+      - name: mint the secrets the runtime declares, from the roots the estate already holds
+        run: |
+          set -euo pipefail
+          # LAW 52: ONE ROOT PER PROVIDER, SET ONCE; CODE MINTS THE REST; NEVER A CONSOLE STEP.
+          #
+          # The estate already holds the R2 root (SEED_R2_*), and the Modal root answers in this very
+          # run. So every secret the function declares is derivable here, and a deploy that stops to
+          # ask a human for them would be the console step R52 exists to remove.
+          #
+          # Each is created only when missing. Re-minting on every deploy would rotate the card key
+          # out from under whatever encrypted card is already on file -- a rotation that silently
+          # makes every stored card unreadable is worse than no rotation at all.
+          have() { modal secret list 2>/dev/null | grep -q "^$1 "; }
+
+          if ! have cloudflare-r2-credentials; then
+            modal secret create cloudflare-r2-credentials \
+              R2_ENDPOINT_URL="https://${{ secrets.SEED_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+              R2_ACCESS_KEY="${{ secrets.SEED_R2_ACCESS_KEY_ID }}" \
+              R2_SECRET_KEY="${{ secrets.SEED_R2_SECRET_ACCESS_KEY }}" \
+              R2_BUCKET="${{ secrets.SEED_R2_BUCKET }}"
+            echo "ok      minted cloudflare-r2-credentials from the estate's R2 root"
+          else
+            echo "ok      cloudflare-r2-credentials already exists"
+          fi
+
+          if ! have kms-master-key; then
+            # The profile key. Random, generated here, never typed by anybody -- a key a human
+            # chooses is a key a human can be guessed at having reused.
+            modal secret create kms-master-key KMS_MASTER_KEY="$(openssl rand -hex 32)"
+            echo "ok      minted kms-master-key"
+          else
+            echo "ok      kms-master-key already exists"
+          fi
+
+          if ! have card-key; then
+            # A DIFFERENT key from the profile's, on purpose: one key decrypting both her browsing
+            # session and her card would mean a leaked profile key is a leaked card, and the profile
+            # key is the one that moves on every order.
+            modal secret create card-key CARD_KEY_HEX="$(openssl rand -hex 32)"
+            echo "ok      minted card-key"
+          else
+            echo "ok      card-key already exists"
+          fi
+
       - name: what the deploy needs, and whether it is there
         run: |
           set -euo pipefail
