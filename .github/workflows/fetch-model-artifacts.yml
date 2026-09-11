@@ -100,14 +100,37 @@ jobs:
           echo "ok      card written (abstain 0.0 and held_out 0: this is a DOWNLOAD, not a Forge")
           echo "        artifact, and the card says so rather than claiming a measurement nobody made"
 
-      - name: install oras
-        uses: oras-project/setup-oras@v1
+      # THE SAME ORAS THE FORGE USES, PINNED TO THE SAME VERSION.
+      #
+      # `forge/modal_app.py` installs oras 1.2.0 explicitly and pushes with the media types below.
+      # `oras-project/setup-oras@v1` is an unpinned action that may fetch a different binary and
+      # certainly fetches a different version. A model pushed by one and read by the other is a
+      # mismatch nobody would look for, so this reuses the Forge's pin rather than introducing a
+      # second convention (LAW 43).
+      - name: install oras, pinned as the Forge pins it
+        run: |
+          set -euo pipefail
+          curl -sSL "https://github.com/oras-project/oras/releases/download/v1.2.0/oras_1.2.0_linux_amd64.tar.gz" \
+            | tar -zx -C /usr/local/bin oras
+          oras version
 
       - name: publish to GHCR
         run: |
           set -euo pipefail
-          oras push "ghcr.io/${{ github.repository_owner }}/models/${{ matrix.key }}:v1" \
-            --artifact-type application/vnd.estate.model.v1 \
-            model.gguf:application/octet-stream \
-            model-card.yaml:text/yaml
-          echo "ok      published ghcr.io/${{ github.repository_owner }}/models/${{ matrix.key }}:v1"
+          # LOGIN THE WAY THE FORGE LOGS IN. GHCR refuses the default GITHUB_TOKEN for a package
+          # owned by a user account, which is why the Forge carries GHCR_USER and GHCR_PAT.
+          echo "${{ secrets.GHCR_PAT }}" | oras login ghcr.io -u "${{ vars.GHCR_USER || github.repository_owner }}" --password-stdin
+
+          # THE TAG IS THE FORGE'S SHAPE: v1.<epoch>. A bare `v1` would be OVERWRITTEN by the next
+          # model of the same name, and a digest pinned in a Deployment would then point at bytes
+          # nobody tested. That is the whole reason artifacts are addressed by digest here.
+          TAG="v1.$(date +%s)"
+
+          # THE MEDIA TYPES ARE THE FORGE'S, unchanged: a reader that looks for
+          # `application/vnd.gguf.model` does not find `application/octet-stream`, and the failure
+          # reads as a missing file.
+          oras push "ghcr.io/${{ github.repository_owner }}/models/${{ matrix.key }}:$TAG" \
+            model.gguf:application/vnd.gguf.model \
+            model-card.yaml:application/yaml
+
+          echo "ok      published ghcr.io/${{ github.repository_owner }}/models/${{ matrix.key }}:$TAG"
