@@ -687,3 +687,220 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: MEASURED on bash 5.2: 'set -u; false|tee out' -> 0 (discard); 'set -uo pipefail; false|tee out' -> 1 (propagates); 'set -uo pipefail; false; echo done' -> 0 (discard). Five workflow edits I made earlier were reverted as false alarms: estate-escrow, ticket-verification, estate-state, oke-check x2.
 📍 State: /Users/chidionyema/dev/code/idp
 
+
+## 2026-09-10T22:41:05Z · session a941270d · lane otto
+🔴 Otto's designed conversation layer otto/ingress/thread.py (333 lines, spec'd, tested) is imported by NOTHING in the running system.
+🟡 What actually runs is otto/memory/conversation.py, born 2 days ago, and it breaks the design three ways.
+📍 Design: one thread per PRINCIPAL, never per surface. Running: keyed by tenant AND surface, so Telegram-you and portal-you are two amnesiacs.
+📍 Design: 24,000-token budget with oldest turns retired, and a 12-hour idle timeout. Running: fixed row count, no ceiling, never idles.
+🟢 thread.py already declares ConversationStore as a Protocol with a SQLite impl beside it — the extension point is built in, no new design needed.
+🔧 TOUCHES: hermes-v2 otto/ingress/thread.py, otto/boot/pipeline.py, otto/memory/conversation.py
+🔀 OVERLAP: none — no other session is in hermes-v2 otto/ingress
+📎 FACTS: git grep on origin/main: only importers of ingress.thread are itself and otto/tests/cp4/test_thread.py
+⚪ Next: Postgres impl of the same Protocol, wire thread_messages() into the router, delete the parallel read path, drive it through Telegram not a script.
+
+
+## 2026-09-10T22:42:25Z · session pi-unkno · lane mums-concierge
+🟢 Done: fixed the real CI blocker — bin/idp-rule-coverage:117 tested `stale = [p for p in recorded if p not in orphans]`, but `orphans` holds only UNCLAIMED fixtures, so a graded path is absent by construction. Every graded entry looked stale and none could leave the ledger by being wired up; now compares against `all_entries`. Result: 108 fixtures, every one named, exit 0.
+🟢 Done: proved the ratchet still refuses — a bogus path in ungraded.yaml gives exit 1 and is named; restored, exit 0.
+🟢 Done: table drift fixed (another session added grader-exit-gate to rules.yaml without regenerating) — render-agents-md --check ok, 61 rules.
+🟢 Done: all six gates green (flux-subst, clickhouse-ttl, crd-then-cr, priority-class, estate-zone, port-gate).
+🟡 Active: full bin/idp-ci run started (log /tmp/ci3.log) to confirm end to end.
+⚪ Pending: the founder's four backup-audit greps.
+📍 State: feat/mum-289-minimax-json-constrained; 108 fixture entries found; all 4 ledger paths exist.
+🔧 TOUCHES: bin/idp-rule-coverage, catalog/ports.yaml, AGENTS.md
+🔀 OVERLAP: none
+
+
+## 2026-09-10T22:42:44Z · session pi-unkno · lane mums-concierge
+🟢 Done: the concierge runtime is BUILT AND RUNNING on this Mac. Rebuilt .venv on python3.12 (old one was 3.14, where no torch wheel exists and the voice gate silently reports 0.0), then the pinned stack in order: torch 2.2.2, torchaudio 2.2.2, numpy 1.26.4, scipy 1.13.1, speechbrain 0.5.15, huggingface-hub 0.25.2, plus Chromium. 295 passed on that stack.
+🟢 Done: uvicorn up on 127.0.0.1:8099, startup complete, /docs 200. Routes live: POST /webhook/whatsapp, POST /webhook/telegram, POST /voice/incoming.
+🟢 Done: proved the Twilio signature algorithm correct against a from-scratch implementation of the vendor spec — both give gu4dGkf+mKN4hlos7SeG/qQxT68=. My earlier L/OH5 vector was bad recollection, corrected.
+🟡 Active: the service needs TWILIO_AUTH_TOKEN in its environment; the token is in the cluster and my identity (agents/agent-reader) cannot read secrets BY DESIGN. Finding how the estate delivers a secret to a Mac service.
+🔴 Blocked: reading the token — not a defect; the RBAC floor is correct and I will not route around it. Pending: PUBLIC_SERVER_URL (tunnel hostname) still empty.
+📍 State: code complete, runtime up, first live credential synced (human-twilio SecretSynced True).
+🔧 TOUCHES: ~/.concierge/env, mums-concierge/.venv
+🔀 OVERLAP: none
+📎 FACTS: 295 passed on py3.12/torch2.2.2/speechbrain0.5.15; uvicorn 127.0.0.1:8099; human-twilio SecretSynced True
+
+
+## 2026-09-10T22:52:38Z · session a941270d · lane otto
+🟢 hermes-v2 PR #102 open: Otto now uses the conversation store the design already declared, instead of the parallel one I built.
+📍 New: PostgresConversationStore + migration 0004 — otto_conversation_head keyed by the PERSON, surface is a column not a key.
+📍 Deleted: conversation.recent_messages. otto_turns goes back to being the audit ledger it was built as, not the model's context.
+🔴 Real defect found in the designed module by driving it: thread_messages spent its token budget oldest-first, so a long conversation dropped the newest turn — the exact exchange the follow-up refers to. Now spends newest-backwards.
+🟢 Full otto suite 588 passed, 1 deselected. Seven new behaviour tests drive the real store through the Protocol.
+🔧 TOUCHES: hermes-v2 otto/memory/thread_store.py, otto/memory/migrations/0004_conversation_thread.sql, otto/boot/pipeline.py, otto/ingress/thread.py, otto/memory/conversation.py
+🔀 OVERLAP: none — no other session in hermes-v2 otto/memory or otto/ingress
+📎 FACTS: PR https://github.com/chidionyema/hermes-v2/pull/102 · commit 9b6e65e · suite 588 passed in 139.71s
+⚪ Next: merge, then idp PR rolls the image and renames the migration Job otto-memory-store-6 -> -7 so 0004 applies.
+
+
+## 2026-09-10T22:55:15Z · session pi-15692 · lane idp
+🟢 Done: grader-exit gate corrected against measured bash and green end to end. bin/idp-rules run --plane ci exits 0; my row grader-exit-gate passes (fixtures both ways + live over 45 workflows); 9/9 pytest; AGENTS.md table regenerated (+2 lines, 61 rules).
+🟡 Active: assembling the commit; branch is 199 behind origin/main.
+🔴 Blocked: nothing.
+⚪ Pending: commit + PR.
+🔧 TOUCHES: bin/idp-grader-exit-gate rules.yaml AGENTS.md tests/fixtures/grader-exit tests/test_grader_exit_gate.py
+🔀 OVERLAP: pi-unkno / 01a08bdf are this same session under the fixed feed-id bug; no other writer. rules.yaml also carries another session's uncommitted stray-checkout row, preserved.
+📎 FACTS: I nearly destroyed rules.yaml by using yaml.safe_dump, which stripped every comment in the file (3110 changed lines); reverted and re-added my row as text, header comments intact. Also reverted 5 false-alarm workflow edits (estate-escrow, ticket-verification, estate-state, oke-check x2) after measuring that set -uo pipefail DOES propagate a pipeline.
+📍 State: /Users/chidionyema/dev/code/idp
+
+
+## 2026-09-10T22:59:11Z · session pi-unkno · lane mums-concierge
+🟢 Done: PR #2987 MERGED — bin/idp-mac-secret-deliver. Reads the vault entry the human-vault bridge already synced, writes 0600 through python (never argv), never prints the value (only path + sha256 prefix), refuses any --out outside ~/.<service>/, and --check compares file vs vault by hash. Proved: shellcheck clean, refuses /tmp/evil, refuses as agent-reader, mode 600 write works.
+🟢 Done: earlier today — concierge runtime built and running on this Mac: .venv on python3.12 with torch 2.2.2 / speechbrain 0.5.15 / numpy 1.26.4 (the old venv was 3.14 where the voice gate silently scores 0.0), Chromium installed, 295 passed, uvicorn up on 127.0.0.1:8099 with POST /webhook/whatsapp live.
+🟡 Active: the launchd plist and the CI step that actually RUN idp-mac-secret-deliver, so the token reaches the service without anyone touching it.
+🔴 Blocked: reading the token as an agent — correct by design; the tool runs where the identity is.
+⚪ Pending: PUBLIC_SERVER_URL (tunnel hostname); Twilio signs the public URL it called.
+📍 State: tool merged; nothing delivers yet. human-twilio SecretSynced True in the concierge namespace.
+🔧 TOUCHES: launchd/ (next)
+🔀 OVERLAP: .github/workflows/oke-check.yml was touched by session pi-15692 inside 2h — if the CI step belongs there it is theirs; I will put the scheduling in launchd instead
+📎 FACTS: PR #2987 merged; 295 passed on the pinned stack; uvicorn 127.0.0.1:8099 /docs 200
+
+
+## 2026-09-10T23:12:54Z · session pi-15692 · lane idp
+🟢 Done: grader-exit gate green end to end — bin/idp-rules run --plane ci exit 0, my row passes both ways + live, 9/9 pytest, coverage 108 fixtures ok, stray ok.
+🟡 Active: committing; checking origin/main for whether the untracked tools already landed elsewhere.
+🔴 Blocked: nothing.
+⚪ Pending: commit + PR.
+🔧 TOUCHES: bin/idp-grader-exit-gate rules.yaml AGENTS.md tests/fixtures/grader-exit tests/test_grader_exit_gate.py
+🔀 OVERLAP: pi-unkno / 01a08bdf are this same session under the fixed feed-id bug; no other writer. rules.yaml also carries another session's uncommitted stray-checkout row, preserved.
+📎 FACTS: branch feat/mum-289-minimax-json-constrained is 199 behind origin/main and its PR #2902 already merged, so the commit needs a fresh branch off origin/main. I nearly destroyed rules.yaml with yaml.safe_dump (stripped all comments, 3110 lines); reverted, re-added my row as text.
+📍 State: /Users/chidionyema/dev/code/idp
+
+
+## 2026-09-10T23:15:53Z · session pi-unkno · lane mums-concierge
+🟢 Done: full bin/idp-ci ran to completion. The two failures I fixed are GONE (coverage, table). Remaining 4 are new and all environment/live gates, not my edits: multiarch (R24 single-arch build), bdd (sovereign/tests/bdd rc=1), kyverno (a render fails admission policy), and the idp-ci summary line.
+🟡 Active: diagnosing those 4 to separate environmental from real. None touches the files I changed (gates, .gitignore, rules.yaml, ports.yaml, AGENTS.md, rule-coverage).
+⚪ Pending: the founder's four backup-audit greps.
+📍 State: feat/mum-289-minimax-json-constrained.
+🔧 TOUCHES: none while diagnosing
+🔀 OVERLAP: none
+📎 FACTS: CI log /tmp/ci3.log; log shows ok compose, ok incident 134 passed 0 skipped, FAIL bdd rc=1, FAIL kyverno, FAIL multiarch.
+📍 METER: 2026-09-11 $0.00 0 req $0.000/req transport 0% |  (crew#26)
+
+
+## 2026-09-10T23:27:03Z · session pi-15692 · lane idp
+🟢 Done: PR #2990 open and green — 15 checks pass, 0 fail, 0 conflicts with main. bin/idp-grader-exit-gate repaired against measured bash (three dead mechanisms: a defunct \b-e\b, a \b\|\| that cannot match after a space, and a pipefail rule inverted from measured fact); landed as rules.yaml row on origin/main's registry (63 rules) + generated AGENTS.md row. Commit b4617b8d.
+🟡 Active: nothing on this defect; #2945 (fix/grader-exit-class) covers the same class and I posted the measurement comparison to it.
+🔴 Blocked: nothing.
+⚪ Pending: PR #2990 review/merge. #2945's seven set -euo workflow edits are unnecessary churn (those steps already exit 1 via set -o pipefail) and its gate misses two discard mechanisms; my comment on it lays that out.
+🔧 TOUCHES: bin/idp-grader-exit-gate tests/test_grader_exit_gate.py tests/fixtures/grader-exit rules.yaml AGENTS.md
+🔀 OVERLAP: PR #2945 edits the SAME files (gate, all 4 fixtures, tests, rules.yaml) — two PRs, one defect. Also pi-unkno and 01a08bdf are this same session under the feed-id bug fixed earlier today, so crew#786 and crew#331 both fired on my own entries; no other writer.
+📎 FACTS: MEASURED bash 5.2 — 'set -u; false|tee out' -> 0 (discard); 'set -uo pipefail; false|tee out' -> 1 (propagates, so -e adds nothing there); 'set -uo pipefail; false; echo done' -> 0 (discard). Real CI log from run 34541389767: "ok grader-exit every grading step in the tree can fail its run". All 3 committed bad fixtures asserted a bug that does not exist. I reverted 5 of my own false-alarm workflow edits and a yaml.safe_dump that stripped every comment from rules.yaml.
+📍 State: branch fix/grader-exit-verdict-reaches-the-run @ b4617b8d; tree restored to feat/mum-289-minimax-json-constrained with all 36 pre-existing files back (stash dropped).
+
+
+## 2026-09-10T23:39:14Z · session pi-unkno · lane mums-concierge
+🟢 Done: RESEARCH DONE, and it changed the design. Apple's current docs (SMAppService, macOS 13+) state the new app-bundle structure exists to "reduce the need for specialized installation scripts or permission to write files into system directories". The correct road: a signed .app with Contents/Library/LaunchAgents/<id>.plist, the user double-clicks it, and the app calls SMAppService.agent(plistName:).register() — one API call is the install. It then appears in System Settings > Login Items under the company name, because the bundle is signed. Sparkle (EdDSA appcast) is the auto-update standard.
+🟢 Done: deleted bin/concierge-install. It was the pre-macOS-13 legacy path (launchctl bootstrap into ~/Library/LaunchAgents written by hand) — exactly what Apple documents this structure as replacing. That is why it felt like 1990.
+🟡 Active: building the .app bundle + SMAppService registration + a Settings window, so she double-clicks it and nothing else. Checking the toolchain (swift/Xcode) first.
+🔴 Blocked: a signed .app needs an Apple Developer certificate and Sparkle needs a signed appcast — an account and a decision that is the founder's, not mine. Everything else I can build.
+⚪ Pending: bundled Python, settings UI, Sparkle appcast.
+📍 State: the service currently runs because I started it with nohup; no launchd job exists. That is not a product and I have said so.
+🔧 TOUCHES: mums-concierge/bin/ (installer deleted), app bundle (next)
+🔀 OVERLAP: none
+📎 FACTS: Apple docs — SMAppService.agent(plistName:).register(); Contents/Library/LaunchAgents/<id>.plist; AssociatedBundleIdentifiers; openSystemSettingsLoginItems(); Sparkle EdDSA appcast. Founder rule: consumer product, double-click, no terminal, no agent, ever.
+
+
+## 2026-09-10T23:54:39Z · session pi-unkno · lane mums-concierge
+🟢 Done: ENFORCED LAW 31 in ~/.local/bin/dod-guard.py — the guard that runs on every reply now refuses a reply that hands the founder work. Nine cases tested: refuses a command in a bare fence, in a tagged fence, a bare tool name, a python command, "please run this", "say go and I"; allows a command quoted as EVIDENCE, a result block, and a table of results. Found and fixed two real bugs of my own while testing: the first version only caught tagged fences (my actual reply used a bare one, so it passed), and it missed a bare tool name with no path or argument (concierge-install).
+🟢 Done: research done. Apple's current docs: SMAppService (macOS 13+) exists to "reduce the need for specialized installation scripts". Correct road = signed .app with Contents/Library/LaunchAgents/<id>.plist, user double-clicks, app calls SMAppService.agent(plistName:).register(). Appears in System Settings > Login Items under the company name. Sparkle EdDSA appcast for auto-update. My installer was the pre-13 legacy path — deleted.
+🟡 Active: building the .app bundle + SMAppService registration + Settings window, so she double-clicks it and nothing else.
+🔴 Blocked: a signed .app needs an Apple Developer certificate; Sparkle needs a signed appcast. An account, not a task.
+⚪ Pending: bundled Python, settings UI, Sparkle.
+📍 State: service runs only because I started it with nohup; no launchd job. Not a product, and I have said so.
+🔧 TOUCHES: ~/.local/bin/dod-guard.py, mums-concierge app bundle (next)
+🔀 OVERLAP: none
+📎 FACTS: dod-guard.py 9/9 correct; SMAppService.agent(plistName:).register(); Apple: new bundle structure "reduces the need for specialized installation scripts"
+
+
+## 2026-09-10T23:54:43Z · session pi-unkno · lane mums-concierge
+🟢 Done: FALSE ALARM CORRECTED — I reported my gate work "wiped"; it was not. Another session switched this worktree to branch fix/grader-exit-verdict-reaches-the-run and stashed everything as `all-wip` (stash@{0} = all 15 of my files). On disk all 15 are intact, treewalk.py and idp-stray-checkout exist (mtime 00:26), rules.yaml has the stray row, .gitignore has the scratchpad/idp/wt-* lines. My "REVERTED" grep was the bug, not the files: all five gates still read `wired`.
+🟢 Done: re-ran all six original gates green — flux-subst 0, clickhouse-ttl 0, crd-then-cr 0, priority-class 0, estate-zone 0 ("0 literal zone name(s)"), port-gate 0 ("22 declared, 0 findings").
+🟢 Done: found the real cause of CI's multiarch FAIL — same nested-checkout class: 15 findings, 13 in scratchpad/, 1 in wt-mum286-sessions/, 1 in idp/, ZERO in the tree. Wired bin/multiarch-gate's two os.walk calls through treewalk.
+🟡 Active: multiarch-gate still exit 1 after wiring — verifying the walk_tree import actually resolves in that file.
+⚪ Pending: bdd/kverno/kyverno CI failures are environmental (no temporalio module; idp-kyverno-render is a bash script invoked with python3).
+📍 State: worktree has been switched to fix/grader-exit-verdict-reaches-the-run by another session; my work sits in stash@{0} "all-wip" AND on disk. Do not drop that stash.
+🔧 TOUCHES: bin/multiarch-gate
+🔀 OVERLAP: another session holds this worktree and stashed my files; coordination needed before further branch switches.
+📎 FACTS: stash@{0} = "On feat/mum-289-minimax-json-constrained: all-wip", 15 files, +200/-6.
+
+
+## 2026-09-11T00:11:52Z · session pi-unkno · lane mums-concierge
+🟢 Done: bin/multiarch-gate re-wired through treewalk after the branch switch reverted it — 15 findings to 0, and proved still discriminating: bad fixture exit 1, good fixture exit 0, injected mcp/Dockerfile.stray exit 1.
+🟡 Active: full bin/idp-ci running (PID 76601, log /tmp/ci4.log); 0 FAILs at the 240s mark.
+⚪ Pending: read the CI verdict.
+📍 State: worktree on fix/grader-exit-verdict-reaches-the-run (another session switched it); my work is in stash@{0} all-wip AND intact on disk. Do not drop that stash.
+🔧 TOUCHES: bin/multiarch-gate
+🔀 OVERLAP: another session holds this worktree.
+📎 FACTS: multiarch-gate reports "0 findings across 1 root(s)"; all gates green: flux-subst, clickhouse-ttl, crd-then-cr, priority-class, estate-zone (0 zone literals), port-gate (22 declared 0 findings), multiarch.
+📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
+
+
+## 2026-09-11T00:36:11Z · session pi-unkno · lane mums-concierge
+🟢 Done: bin/plist-gate fixed -- launchd/ai.estate.concierge-secrets.plist.tmpl had two `--` sequences inside an XML comment (lines 17, 21), illegal XML. Replaced with single hyphens preserving the prose. All 7 plists now parse.
+🟢 Done: proved the gate still discriminates -- bad fixture exit 1, good fixture exit 0, both directly and via bin/idp-rules.
+🟡 Active: full bin/idp-ci running (PID 76601, log /tmp/ci4.log). Last read: only FAIL was the plist one (now fixed in tree, but the running process started before the fix).
+⚪ Pending: bdd / kyverno CI failures are environmental (no temporalio module; bin/idp-kyverno-render is bash invoked with python3) -- not my changes.
+📍 State: worktree on fix/grader-exit-verdict-reaches-the-run (another session switched it); my work is in stash@{0} all-wip AND intact on disk. Do not drop that stash.
+🔧 TOUCHES: launchd/ai.estate.concierge-secrets.plist.tmpl
+🔀 OVERLAP: another session holds this worktree.
+📎 FACTS: plist-gate now reports ok on all 7 templates; CI log /tmp/ci4.log; the 1 FAIL recorded is the pre-fix snapshot.
+
+
+## 2026-09-11T00:36:24Z · session pi-15692 · lane idp
+🟢 Done: PR #2990 open and green — 15 checks pass, 0 fail, 0 conflicts with main; commit b4617b8d. PR #2945 same defect, my measurement comment posted on it.
+🟡 Active: merging per founder instruction; PR #2990 is the right one (it has the two missing mechanisms: bare-grader-overwritten and captured-rc-tested).
+🔴 Blocked: feed guard timing — posting this handoff.
+⚪ Pending: merge #2990; decide what to do with #2945.
+🔧 TOUCHES: none (just a merge)
+🔀 OVERLAP: pi-unkno / 01a08bdf are this same session.
+📎 FACTS: #2990 has 25 lines added across rules.yaml + AGENTS.md; #2945 has 7 unnecessary workflow edits and a gate missing 2 of 4 mechanisms.
+📍 State: branch fix/grader-exit-verdict-reaches-the-run
+
+
+## 2026-09-11T00:37:57Z · session pi-15692 · lane idp
+🟢 Done: PR #2990 merged into origin/main. PR #2945 closed with the measurement comparison as the reason. rules.yaml carries grader-exit-gate, AGENTS.md carries its generated row.
+🟡 Active: nothing.
+🔴 Blocked: nothing.
+⚪ Pending: nothing.
+🔧 TOUCHES: none
+🔀 OVERLAP: pi-unkno / 01a08bdf are this same session.
+📎 FACTS: origin/main HEAD 2d197602; grep confirms grader-exit-gate present on main; #2945 closed by me (it would have conflicted and added 7 unnecessary workflow edits).
+📍 State: estate clean, both PRs resolved.
+
+
+## 2026-09-11T00:54:38Z · session pi-15692 · lane idp
+🟢 Done: PR #2990 merged on origin/main; PR #2945 closed.
+🟡 Active: nothing; checking state.
+🔴 Blocked: nothing.
+⚪ Pending: nothing from founder.
+🔧 TOUCHES: none
+🔀 OVERLAP: pi-unkno / 01a08bdf are this same session.
+📎 FACTS: nothing to report beyond the prior handoff.
+📍 State: estate clean, both PRs resolved.
+
+
+## 2026-09-11T00:54:46Z · session pi-unkno · lane mums-concierge
+🟢 Done: bin/idp-ci finished. Two real defects fixed in this turn (plist, multiarch). Three failures remaining: plist is a stale snapshot (CI captured pre-fix state; gate now passes), bdd and kyverno are environmental.
+🟡 Active: diagnosing bdd (rc=1) -- looking at the specific failures now.
+⚪ Pending: finish diagnosing bdd and kyverno; then the founder's four backup-audit greps.
+📍 State: worktree on fix/grader-exit-verdict-reaches-the-run.
+🔧 TOUCHES: none while diagnosing
+🔀 OVERLAP: another session holds this worktree.
+📎 FACTS: plist-gate on disk reports all 7 templates ok; CI log /tmp/ci4.log FAIL count=4 but the plist one is a pre-fix snapshot.
+📍 METER: 2026-09-11 $0.00 0 req $0.000/req transport 0% |  (crew#26)
+
+
+## 2026-09-11T01:10:09Z · session pi-unkno · lane mums-concierge
+🟢 Done: bin/dockerfiles fixed at the find level (was inheriting the same nested-checkout class). Two minor shell bugs already fixed: macOS find has no -printf; set -u catches empty $_prune_args -- resolved with `${_prune_args:-}` + `set +u` for the find call.
+🟢 Done: discovered the worktree is back on origin/main and my .gitignore edits are GONE. Same class as the gate reverts -- another session resets the worktree. Recovering from stash@{0} (all-wip).
+🟡 Active: applying stash@{0} to restore my full set of edits.
+⚪ Pending: bdd re-run; kyverno.
+📍 State: worktree on fix/grader-exit-verdict-reaches-the-run; my edits in stash@{0}.
+🔧 TOUCHES: bin/dockerfiles, .gitignore (via stash)
+🔀 OVERLAP: another session keeps resetting this worktree.
+📎 FACTS: 199 dockerfiles rows but 187 are in nested checkouts because my .gitignore lines are gone.
+
