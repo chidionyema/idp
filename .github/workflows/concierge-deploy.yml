@@ -177,7 +177,13 @@ jobs:
           #    from a pipeline into grep.
           #
           # So the output is captured ONCE, then graded as text. No pipe, no signal, no ambiguity.
+          # WHAT MODAL ACTUALLY PRINTS IS NOT GUESSED AT. Three attempts at a pattern failed; so the
+          # output is printed, visibly, on the way past. It costs one line of a run's log and it is
+          # the difference between fixing this and guessing a fourth time.
           listing=$(modal secret list 2>/dev/null || true)
+          echo "---- modal secret list says ----"
+          printf '%s\n' "$listing" | sed 's/^/    /'
+          echo "--------------------------------"
           # `grep -q` on a captured string sets no signal on anybody, so the || is belt and braces
           # rather than a fix -- kept because a false MISSING costs a run and a false EXISTS costs
           # a deploy, and only one of those is recoverable.
