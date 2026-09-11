@@ -7,6 +7,13 @@
 # Modal root, which lives as a repository secret and is never on a machine -- so the deployment is
 # a workflow, exactly as forge-train is.
 #
+# WHY THIS IS HERE AND NOT IN mums-concierge. The code, the sidecar and the model all live in
+# chidionyema/mums-concierge, so the obvious home is there. That workflow ran and failed with
+# `no Modal root`: SEED_MODAL_TOKEN_ID / SEED_MODAL_TOKEN_SECRET are set on THIS repository, and
+# GitHub secrets are write-only -- they cannot be read or copied. So the run happens where the root
+# is, and checks the code out with the estate's own App token (the road forge-train already uses).
+# No new credential, no second copy of the root, nothing for a person to paste.
+#
 # THE TWO ARTIFACTS THIS RUN BUILDS, in dependency order:
 #
 #   1. the Rust vault sidecar (ephemeral/cdp-vault-proxy) -- the Iron Rule. It must be COMPILED
@@ -48,6 +55,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The App token, because GITHUB_TOKEN is scoped to this repository and cannot clone another.
+      # The lane needs contents: read on the code repo; nothing wider is asked for.
+      - id: app
+        uses: ./.github/actions/github-app-token
+        with:
+          lane: recovery
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+
+      - name: check out the code the runtime is built from
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: chidionyema/mums-concierge
+          path: code
+          token: ${{ steps.app.outputs.token }}
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -68,16 +94,16 @@ jobs:
       - name: build the vault sidecar (the Iron Rule)
         run: |
           set -euo pipefail
-          cargo build --release --manifest-path ephemeral/cdp-vault-proxy/Cargo.toml
-          BIN=ephemeral/cdp-vault-proxy/target/release/cdp-vault-proxy
+          cargo build --release --manifest-path code/ephemeral/cdp-vault-proxy/Cargo.toml
+          BIN=code/ephemeral/cdp-vault-proxy/target/release/cdp-vault-proxy
           test -x "$BIN" || { echo "FAIL    concierge-deploy  the sidecar did not build at $BIN"; exit 1; }
           echo "ok      sidecar built ($(stat -c%s "$BIN") bytes)"
 
       - name: the sidecar refuses to run without a card, and passes its own tests
         run: |
           set -euo pipefail
-          cargo test --release --manifest-path ephemeral/cdp-vault-proxy/Cargo.toml
-          BIN=ephemeral/cdp-vault-proxy/target/release/cdp-vault-proxy
+          cargo test --release --manifest-path code/ephemeral/cdp-vault-proxy/Cargo.toml
+          BIN=code/ephemeral/cdp-vault-proxy/target/release/cdp-vault-proxy
           # Fail-closed check: without REAL_PAN it must refuse, not run as a passthrough that
           # claims to be a fence.
           if "$BIN" 2>&1 | grep -q "REAL_PAN is not set"; then
@@ -90,10 +116,10 @@ jobs:
       - name: fetch the CAM++ voice model
         run: |
           set -euo pipefail
-          mkdir -p models
+          mkdir -p code/models
           URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx"
-          curl -fsSL -o models/campplus.onnx "$URL"
-          SIZE=$(stat -c%s models/campplus.onnx)
+          curl -fsSL -o code/models/campplus.onnx "$URL"
+          SIZE=$(stat -c%s code/models/campplus.onnx)
           # A 9-byte file is GitHub's "Not Found" body, which is how the bad URL in the plan would
           # have failed -- silently, as a model that loads nothing. Size is the check.
           [ "$SIZE" -gt 20000000 ] || { echo "FAIL    concierge-deploy  model is $SIZE bytes; the URL served an error body"; exit 1; }
@@ -105,7 +131,7 @@ jobs:
           python -m pip install --quiet boto3 cryptography zstandard 'sherpa-onnx' numpy
           python - <<'PY'
           import sys
-          sys.path.insert(0, ".")
+          sys.path.insert(0, "code")
           import ephemeral.agent as a
           from pathlib import Path
           for name, path in (("sidecar", a.LOCAL_SIDECAR), ("model", a.LOCAL_MODEL)):
@@ -120,7 +146,7 @@ jobs:
         if: ${{ inputs.dry_run == false }}
         run: |
           set -euo pipefail
-          modal deploy ephemeral/agent.py
+          modal deploy code/ephemeral/agent.py
           echo "ok      concierge runtime deployed"
 
       - name: dry run -- say plainly what was not done
