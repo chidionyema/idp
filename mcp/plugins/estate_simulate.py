@@ -292,7 +292,6 @@ def execute_change(
     }
 
 
-@hookimpl
 def _make_simulate_change(_simulate, _live_graders, _config):
     """Build an MCP-tool wrapper for the simulate door.
 
@@ -304,9 +303,16 @@ def _make_simulate_change(_simulate, _live_graders, _config):
     functions: `_simulate`, `_live_graders`, and `_config` are all outer parameters, so the
     inner resolves them through the closure cell on every call. `@wraps` keeps the public
     tool name unchanged.
+
+    `inspect.signature(wrapper)` defaults to following `__wrapped__` (set by `@wraps`) and
+    reports the module-level `_simulate`'s signature -- with its `Registry | None` etc.
+    FastMCP then walks the signature to build a JSON schema for the tool's input and breaks
+    on custom dataclass types like `Registry`. The fix is to pin the wrapper's `__signature__`
+    to its real (local) signature, so introspection stops at `_simulate_change`.
     """
 
     import functools
+    import inspect
 
     @functools.wraps(_simulate)
     async def _simulate_change(source: str) -> dict:
@@ -321,16 +327,21 @@ def _make_simulate_change(_simulate, _live_graders, _config):
             graders=_live_graders(source) if _config().get("graders_door") else {},
         )
 
+    _simulate_change.__signature__ = inspect.signature(
+        _simulate_change, follow_wrapped=False
+    )
     return _simulate_change
 
 
 def _make_execute_change(_execute):
-    """Build an MCP-tool wrapper for the execute door. Same closure pattern: the inner MUST NOT
-    be named `execute_change` (it would shadow the module-level target). `@wraps` keeps the
-    public tool name unchanged.
+    """Build an MCP-tool wrapper for the execute door. Same closure pattern as
+    `_make_simulate_change`: the inner MUST NOT be named `execute_change` (it would shadow
+    the module-level target), and the wrapper's `__signature__` is pinned to the inner's
+    real signature so FastMCP's JSON-schema generation sees only the public args.
     """
 
     import functools
+    import inspect
 
     @functools.wraps(_execute)
     async def _execute_change(proposal_id: str, cluster_state_hash: str) -> dict:
@@ -341,9 +352,13 @@ def _make_execute_change(_execute):
         Flux/JIT write lands on; the write itself is the broker's grant, not this tool."""
         return _execute(proposal_id, cluster_state_hash)
 
+    _execute_change.__signature__ = inspect.signature(
+        _execute_change, follow_wrapped=False
+    )
     return _execute_change
 
 
+@hookimpl
 def register_mcp_tools(datasette, mcp):
     """Register the simulate and execute doors with the MCP server.
 
