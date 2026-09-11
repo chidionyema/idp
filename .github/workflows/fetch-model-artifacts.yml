@@ -108,9 +108,17 @@ jobs:
       - name: publish to GHCR
         run: |
           set -euo pipefail
-          # LOGIN THE WAY THE FORGE LOGS IN. GHCR refuses the default GITHUB_TOKEN for a package
-          # owned by a user account, which is why the Forge carries GHCR_USER and GHCR_PAT.
-          echo "${{ secrets.GHCR_PAT }}" | oras login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
+          # LOGIN WITH THE GITHUB_TOKEN, WHICH THE FORGE ALSO USES.
+          #
+          # This first asked for `secrets.GHCR_PAT`, which DOES NOT EXIST in this repository -- so
+          # all five legs downloaded their model and then died at `oras login` with "Error: token
+          # required". The download had already succeeded: the failure was one layer later than it
+          # looked.
+          #
+          # forge-train.yml writes `GHCR_PAT: ${{ secrets.GITHUB_TOKEN }}` into the Modal secret, so
+          # the Forge logs in with the workflow token. Same package, same registry, same token, and
+          # `permissions: packages: write` below is what grants it.
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
 
           # THE TAG IS THE FORGE'S SHAPE: v1.<epoch>. A bare `v1` would be OVERWRITTEN by the next
           # model of the same name, and a digest pinned in a Deployment would then point at bytes
