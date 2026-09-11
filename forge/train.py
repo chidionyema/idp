@@ -33,6 +33,26 @@ def export_gguf(model, tokenizer, out: str) -> None:
     """
     merged = os.path.join(out, "merged")
     model.save_pretrained_merged(merged, tokenizer, save_method="merged_16bit")
+
+    # THE TOKENIZER, PASSED EXPLICITLY, AND THIS IS THE BUG THAT ATE EVERY ARTIFACT.
+    #
+    # `convert_hf_to_gguf.py` looks for `tokenizer.model` -- a SentencePiece file -- and Qwen2 does
+    # not have one. It uses a BPE `tokenizer.json`, which `save_pretrained_merged` writes and the
+    # converter does not look for by default. So the export died with
+    #     FileNotFoundError: File not found: artifact/merged/tokenizer.model
+    # AFTER both quality gates had passed. Run 34597942691: agreement 0.9846 against a 0.95 gate,
+    # abstain 0.1875 against 0.20 -- and artifact=None.
+    #
+    # `--vocab-only` would write a tokenizer rather than read the right one; `--tokenizer-json`
+    # points the converter at the file that exists. Named here rather than guessed: if neither file
+    # is present the export fails loudly below instead of producing a model that cannot tokenise.
+    tokenizer_json = os.path.join(merged, "tokenizer.json")
+    if not os.path.exists(tokenizer_json):
+        raise RuntimeError(
+            f"no tokenizer.json in {merged}: the merged model cannot be converted, and a GGUF "
+            "without a tokenizer is a model that answers nothing"
+        )
+
     f16 = os.path.join(out, "model-f16.gguf")
     subprocess.run(  # noqa: S603
         [
@@ -43,6 +63,8 @@ def export_gguf(model, tokenizer, out: str) -> None:
             f16,
             "--outtype",
             "f16",
+            "--tokenizer-json",
+            tokenizer_json,
         ],
         check=True,
     )
