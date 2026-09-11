@@ -104,13 +104,23 @@ jobs:
           set -euo pipefail
           cargo test --release --manifest-path code/ephemeral/cdp-vault-proxy/Cargo.toml
           BIN=code/ephemeral/cdp-vault-proxy/target/release/cdp-vault-proxy
-          # Fail-closed check: without REAL_PAN it must refuse, not run as a passthrough that
-          # claims to be a fence.
-          if "$BIN" 2>&1 | grep -q "REAL_PAN is not set"; then
-            echo "ok      sidecar fails closed with no card"
-          else
-            echo "FAIL    concierge-deploy  the sidecar started without a card"; exit 1
+          # Fail-closed check: without REAL_PAN it must REFUSE, not run as a passthrough that
+          # claims to be a fence. Graded on the EXIT CODE, not on a pipe into grep: the first
+          # version of this check piped the binary into grep under `set -o pipefail`, so the
+          # pipe failed before grep could read anything and the check reported a failure that had
+          # not happened. The binary was refusing correctly the whole time. Same defect class as
+          # bin/idp-pipeverdict exists to catch.
+          set +e
+          OUT=$("$BIN" 2>&1)
+          RC=$?
+          set -e
+          if [ "$RC" -eq 0 ]; then
+            echo "FAIL    concierge-deploy  the sidecar started without a card (exit 0)"; exit 1
           fi
+          case "$OUT" in
+            *"REAL_PAN is not set"*) echo "ok      sidecar fails closed with no card (exit $RC)" ;;
+            *) echo "FAIL    concierge-deploy  the sidecar refused for a reason nobody named:"; echo "$OUT"; exit 1 ;;
+          esac
 
       # STAGE 2 -- the voice model, from its real release.
       - name: fetch the CAM++ voice model
