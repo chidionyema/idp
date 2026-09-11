@@ -77,7 +77,7 @@ spec:
       # docs/reference/policy/dagster-arm64-images.md
       image:
         repository: ghcr.io/chidionyema/estate-scheduler
-        tag: "main-6325-c2546f127f593eaf8cb553748be8e99eb7365557" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+        tag: "main-8070-07e00fdea9661eab068f9a10df26d3faad605e58" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
         pullPolicy: IfNotPresent
       # crew#555: founder-facing namespace, so 2 replicas. The chart exposes replicaCount but
       # no spread or strategy value for the webserver; the spread is a postRenderer patch below,
@@ -137,7 +137,7 @@ spec:
       # docs/reference/policy/dagster-arm64-images.md
       image:
         repository: ghcr.io/chidionyema/estate-scheduler
-        tag: "main-6325-c2546f127f593eaf8cb553748be8e99eb7365557" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+        tag: "main-8070-07e00fdea9661eab068f9a10df26d3faad605e58" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
         pullPolicy: IfNotPresent
       initContainerResources:
         requests:
@@ -248,7 +248,7 @@ spec:
         - name: estate-scheduler
           image:
             repository: ghcr.io/chidionyema/estate-scheduler
-            tag: "main-6325-c2546f127f593eaf8cb553748be8e99eb7365557" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+            tag: "main-8070-07e00fdea9661eab068f9a10df26d3faad605e58" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
             pullPolicy: IfNotPresent
           dagsterApiGrpcArgs:
             - "-h"
