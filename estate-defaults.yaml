@@ -10,9 +10,30 @@ infrastructure:
 node_pool:                            # crew#289: '4/24 or 2/12?' is answered here, never asked
   prefer_free: true                   # the Always Free allowance is the floor; growth above it is paid
   budget_monthly_usd: 50              # paid growth up to this is STAGED; above it is FOUNDER ACTION
-  max_nodes: 2                        # crew#539 CP4: the Cluster Autoscaler may add this many nodes in total
-  burst_hours_monthly: 60             # hours a month the extra node may run; priced by policy/node_pool.rego under the cap
-  spot_max_nodes: 1                   # crew#539 CP10: preemptible nodes the autoscaler may add (pool a1-spot, from 0)
+  # 2026-09-11, after a blackout with NO SPARE. The founder: "we had a blackout with no backup
+  # options. that's not going to happen again." max_nodes was 2 and the estate RUNS 2, so the
+  # Cluster Autoscaler could never add anything -- and said so: "max node group size reached" while
+  # the edge-runtime waited Pending. The cap was set to the current count, which is a ceiling that
+  # is also a floor.
+  #
+  # The capability this restores: SPIN ONE UP, USE IT, SWITCH IT OFF. Idle cost is $0.00 because an
+  # autoscaled node scales to zero; the cost is only the hours it runs.
+  #
+  #   max_nodes 3          -> one node the autoscaler may add
+  #   burst_hours_monthly 24 -> 24 h/month for it, not 60
+  #   spot_max_nodes 2     -> two preemptible, 30 h/month at HALF price
+  #                           base $42.34 + burst $11.52 + spot $2.88 = $56.74
+  #
+  # MEASURED AGAINST THE CAP, AND CUT TO FIT IT. The first attempt was burst_hours 60, which the
+  # capacity precondition refuses: $56.74 is over budget_monthly_usd $50. What fits is 24 hours:
+  # $42.34 + $2.30 + $2.88 = $49.83, with $0.17 to spare.
+  #
+  # 24 hours a month is the right shape for this anyway: it is a node for TESTING ONE MODEL or for
+  # surviving an outage, not a third permanent worker. A day of spare capacity a month, and $0.00
+  # when the autoscaler has it at zero.
+  max_nodes: 3                        # crew#539 CP4: the Cluster Autoscaler may add this many nodes in total
+  burst_hours_monthly: 24             # hours a month the extra node may run -- a day of spare, priced under the cap
+  spot_max_nodes: 2                   # crew#539 CP10: preemptible nodes the autoscaler may add (pool a1-spot, from 0)
   spot_hours_monthly: 30              # hours a month a preemptible node may run, at half the on-demand price, under the same cap
 llm:
   virtual_key_daily_usd: 5             # every consumer's router key (bin/idp-router-key); the kernel's alias carries the same $5/day
