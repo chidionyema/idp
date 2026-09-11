@@ -4,7 +4,8 @@ kind: Template
 metadata:
   name: run-fetch-model-artifacts
   title: Fetch open models to the estate
-  description: Downloads the open-weight models from your list and publishes each one into the
+  description: Downloads the open-weight models from your list and publishes each one into the estate's
+    own registry, so they can run in the cluster instead of being called over the internet.
   tags:
   - founder-action
   - estate
@@ -17,7 +18,7 @@ spec:
       models:
         title: space-separated keys from the matrix below
         type: string
-        default: vibethinker-1.5b twil-lm3 vibethinker-3b nanbeige-4.2-3b falcon-h1-7b
+        default: vibethinker-1.5b vibethinker-3b twil-lm3 nanbeige-4.2-3b falcon-h1-7b
   steps:
   - id: dispatch
     name: Start Fetch open models to the estate

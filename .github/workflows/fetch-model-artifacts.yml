@@ -1,7 +1,5 @@
 # button: Fetch open models to the estate
-# founder: Downloads the open-weight models from your list and publishes each one into the
-#          estate’s own registry, so they can run in the cluster instead of being called over
-#          the internet.
+# founder: Downloads the open-weight models from your list and publishes each one into the estate's own registry, so they can run in the cluster instead of being called over the internet.
 # Pull open-weight models from Hugging Face and publish them as OCI artifacts in GHCR.
 #
 # WHY CI AND NOT A LAPTOP. The models are 1.1 - 4.5 GB each and the founder's machine has 26 GB
@@ -9,12 +7,9 @@
 # behind: the artifact lands in GHCR and the runner is destroyed. That is also why the local copies
 # can be deleted once these are up -- GHCR becomes the source.
 #
-# WHY OCI AND NOT A FILE SERVER. `platform/edge-runtime` pulls its artifact with an oras init
-# container by DIGEST (spec section 3). A digest is what makes a pod's next restart run the bytes
-# that were tested, and it is the addressing the runtime already speaks.
-#
-# WHICH MODELS. The five from the founder's list that fit a node, plus the card each needs. A model
-# without a card is a model the runtime will not load -- the card IS the contract.
+# WHY OCI. `platform/edge-runtime` pulls its artifact with an oras init container by DIGEST
+# (spec section 3). A digest is what makes a pod's next restart run the bytes that were tested, and
+# it is the addressing the runtime already speaks.
 name: fetch-model-artifacts
 
 on:
@@ -22,7 +17,7 @@ on:
     inputs:
       models:
         description: "space-separated keys from the matrix below"
-        default: "vibethinker-1.5b twil-lm3 vibethinker-3b nanbeige-4.2-3b falcon-h1-7b"
+        default: "vibethinker-1.5b vibethinker-3b twil-lm3 nanbeige-4.2-3b falcon-h1-7b"
         required: false
 
 permissions:
@@ -37,18 +32,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # key                 hf repo                                    hf file (Q4_K_M)                     task
-          - { key: vibethinker-1.5b,  repo: "mradermacher/VibeThinker-1.5B-GGUF",         file: "VibeThinker-1.5B.Q4_K_M.gguf" }
-          - { key: vibethinker-3b,    repo: "constructai/VibeThinker-3B-GGUF",            file: "" }
-          - { key: twil-lm3,          repo: "NANI-Nithin/TwIL-LM3-GGUF",                  file: "" }
-          - { key: nanbeige-4.2-3b,   repo: "Edge-Quant/Nanbeige4.1-3B-Q4_K_M-GGUF",      file: "" }
-          - { key: falcon-h1-7b,      repo: "tiiuae/Falcon-H1-7B-Instruct-GGUF",          file: "" }
+          - { key: vibethinker-1.5b, repo: "mradermacher/VibeThinker-1.5B-GGUF",    file: "VibeThinker-1.5B.Q4_K_M.gguf" }
+          - { key: vibethinker-3b,   repo: "constructai/VibeThinker-3B-GGUF",       file: "" }
+          - { key: twil-lm3,         repo: "NANI-Nithin/TwIL-LM3-GGUF",            file: "" }
+          - { key: nanbeige-4.2-3b,  repo: "Edge-Quant/Nanbeige4.1-3B-Q4_K_M-GGUF", file: "" }
+          - { key: falcon-h1-7b,     repo: "tiiuae/Falcon-H1-7B-Instruct-GGUF",     file: "" }
     steps:
       - uses: actions/checkout@v4
 
-      # The file name inside each repo is NOT guessed. `gf` is nothing; this lists the repo and picks
-      # the Q4_K_M file, or fails naming what it found. A wrong filename is a 404 that looks like a
-      # missing model.
+      # The file name inside each repo is NOT guessed. This lists the repo and picks the Q4_K_M
+      # file, or fails naming what it found. A wrong filename is a 404 that reads like a missing
+      # model.
       - name: find the quantized file in the repo
         id: find
         run: |
@@ -56,8 +50,7 @@ jobs:
           python3 - "${{ matrix.repo }}" "${{ matrix.file }}" <<'PY'
           import json, sys, urllib.request
           repo, wanted = sys.argv[1], sys.argv[2]
-          url = f"https://huggingface.co/api/models/{repo}"
-          d = json.load(urllib.request.urlopen(url, timeout=60))
+          d = json.load(urllib.request.urlopen(f"https://huggingface.co/api/models/{repo}", timeout=60))
           files = [f["rfilename"] for f in d.get("siblings", [])]
           ggufs = [f for f in files if f.endswith(".gguf")]
           if not ggufs:
@@ -65,14 +58,12 @@ jobs:
           if wanted and wanted in ggufs:
               pick = wanted
           else:
-              # Prefer the smallest Q4_K_M; fall back to any Q4; else fail with the list.
               q4 = [f for f in ggufs if "Q4_K_M" in f] or [f for f in ggufs if "q4_k_m" in f.lower()]
               pick = q4[0] if q4 else ""
           if not pick:
               raise SystemExit(f"FAIL {repo} has no Q4_K_M file. It has: {ggufs[:8]}")
           print(f"ok      {repo} -> {pick} ({len(ggufs)} gguf files)")
           open("/tmp/pick.txt","w").write(pick)
-          print(f"pick={pick}")
           PY
           echo "file=$(cat /tmp/pick.txt)" >> "$GITHUB_OUTPUT"
 
@@ -101,16 +92,12 @@ jobs:
           abstain_below: 0.0
           eval: { held_out: 0, agreement: 0.0, abstain_rate: 0.0 }
           YAML
-          echo "ok      card written (abstain 0.0 and held_out 0: this is a DOWNLOAD, not a Forge")
-          echo "        artifact, and the card says so rather than claiming a measurement nobody made"
+          echo "ok      card written (abstain 0.0 and held_out 0: this is a DOWNLOAD, not a Forge"
+          echo "        artifact, and the card says so rather than claiming a measurement nobody made)"
 
-      # THE SAME ORAS THE FORGE USES, PINNED TO THE SAME VERSION.
-      #
-      # `forge/modal_app.py` installs oras 1.2.0 explicitly and pushes with the media types below.
-      # `oras-project/setup-oras@v1` is an unpinned action that may fetch a different binary and
-      # certainly fetches a different version. A model pushed by one and read by the other is a
-      # mismatch nobody would look for, so this reuses the Forge's pin rather than introducing a
-      # second convention (LAW 43).
+      # THE SAME ORAS THE FORGE USES, PINNED TO THE SAME VERSION. forge/modal_app.py installs oras
+      # 1.2.0 explicitly; an unpinned action may fetch a different binary that writes artifacts a
+      # different way. A model pushed by one and read by the other is a mismatch nobody looks for.
       - name: install oras, pinned as the Forge pins it
         run: |
           set -euo pipefail
@@ -123,7 +110,7 @@ jobs:
           set -euo pipefail
           # LOGIN THE WAY THE FORGE LOGS IN. GHCR refuses the default GITHUB_TOKEN for a package
           # owned by a user account, which is why the Forge carries GHCR_USER and GHCR_PAT.
-          echo "${{ secrets.GHCR_PAT }}" | oras login ghcr.io -u "${{ vars.GHCR_USER || github.repository_owner }}" --password-stdin
+          echo "${{ secrets.GHCR_PAT }}" | oras login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
 
           # THE TAG IS THE FORGE'S SHAPE: v1.<epoch>. A bare `v1` would be OVERWRITTEN by the next
           # model of the same name, and a digest pinned in a Deployment would then point at bytes
@@ -131,8 +118,7 @@ jobs:
           TAG="v1.$(date +%s)"
 
           # THE MEDIA TYPES ARE THE FORGE'S, unchanged: a reader that looks for
-          # `application/vnd.gguf.model` does not find `application/octet-stream`, and the failure
-          # reads as a missing file.
+          # `application/vnd.gguf.model` does not find `application/octet-stream`.
           oras push "ghcr.io/${{ github.repository_owner }}/models/${{ matrix.key }}:$TAG" \
             model.gguf:application/vnd.gguf.model \
             model-card.yaml:application/yaml
