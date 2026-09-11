@@ -132,6 +132,22 @@ def run_forge(
     if dry_run:
         record["verdict"] = "dry-run"
         return record
+    # THE ONE PUBLISHER'S RULES, APPLIED HERE TOO.
+    #
+    # `.github/actions/publish-model-artifact` is the canonical writer: the oras pin, the login, the
+    # media types, the versioned tag and the file list all live there, because two publishers write
+    # the same artifact shape and `platform/edge-runtime` reads one shape.
+    #
+    # THIS FUNCTION CANNOT CALL THAT ACTION -- it runs inside a Modal GPU container, miles from any
+    # GitHub workflow -- so the rules are REPEATED here rather than shared. That is a real duplicate
+    # and it is named as one:
+    #
+    #   oras 1.2.0                 pinned in .github/actions/publish-model-artifact/action.yml
+    #   GHCR_USER / GHCR_PAT       the Forge's secret; the action uses secrets.GITHUB_TOKEN
+    #   application/vnd.gguf.model the media type a reader looks for
+    #   ghcr.io/<user>/models/<t>:v1.<epoch>   never a bare v1, which is overwritten
+    #
+    # CHANGE ONE AND CHANGE THE OTHER. A test in tests/ compares the two where it can read them.
     user = os.environ["GHCR_USER"]
     subprocess.run(
         ["oras", "login", "ghcr.io", "-u", user, "--password-stdin"],
