@@ -756,6 +756,29 @@ vendors:
       # would be carried UP into -- bin/idp-vendor-render fails without it.
       - { entry: concierge-twilio, ns: concierge, field: TWILIO_AUTH_TOKEN, bw: TWILIO_AUTH_TOKEN }
 
+  # The card key. Not a vendor: it is the symmetric key the concierge's card object is encrypted
+  # with, and it arrives the same way every other credential does -- the founder drops it into
+  # Bitwarden Secrets Manager under this name and the bridge carries it into the namespace. Nothing
+  # is pasted into a portal and no value is typed into this repository (R52).
+  #
+  # Deliberately a DIFFERENT key from the profile key, so a leaked profile key is a leaked set of
+  # cookies rather than a leaked card. The profile key moves on every order; the card key does not
+  # need to be anywhere near it.
+  #
+  # The card itself is not a secret in this registry: it is one object per customer, named
+  # `<customer>/pan.enc` in the agent-cards bucket, written by the concierge's own enrolment and
+  # read once per order by the sandbox. What is here is the key that makes it readable, and only
+  # the sandbox and the enrolment hold it.
+  card-key:
+    kind: secret
+    secret: SEED_CONCIERGE_CARD_KEY
+    page: https://bitwarden.com/
+    shape: "[0-9a-f]{64}"
+    rotation: assisted
+    store_default: human-vault
+    targets:
+      - { entry: concierge-card-key, ns: concierge, field: CARD_KEY_HEX, bw: CONCIERGE_CARD_KEY }
+
   exa:
     kind: secret
     secret: SEED_EXA_API_KEY
