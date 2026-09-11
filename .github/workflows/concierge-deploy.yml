@@ -1,0 +1,130 @@
+# The concierge's road to Modal (crew#885 pattern). Founder 2026-09-11: no terminal, no token on a
+# laptop -- the same rule the Forge follows, for the same reason.
+#
+# WHY THIS EXISTS. The concierge's runtime is one microVM per order: it boots, hydrates a customer's
+# encrypted profile into RAM, verifies the voiceprint, drives the browser with the model never
+# seeing a card, commits state atomically, and dies. Idle cost is zero. Deploying that needs the
+# Modal root, which lives as a repository secret and is never on a machine -- so the deployment is
+# a workflow, exactly as forge-train is.
+#
+# THE TWO ARTIFACTS THIS RUN BUILDS, in dependency order:
+#
+#   1. the Rust vault sidecar (ephemeral/cdp-vault-proxy) -- the Iron Rule. It must be COMPILED
+#      before the image can carry it, which is why this is a workflow and not a `modal deploy`.
+#   2. the CAM++ voice model, 29.6 MB, from its real upstream release. The name in the original
+#      plan (3dspeaker_speech_ecapa_tdnn_sv_en_voxceleb_16k.onnx) returns HTTP 404; the release has
+#      36 assets and none is named `ecapa`.
+#
+# until 2026-09-11 the image fetched both from https://internal.repo/..., which exists nowhere, so
+# it could never build. Everything here is now built in the run and handed to Modal as bytes.
+#
+# button: Deploy the concierge runtime
+# founder: Builds the vault sidecar and fetches the voice model, then deploys the concierge's ephemeral runtime to Modal and proves the sidecar is in the path; a dry run stops before deploy.
+name: concierge-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: build and verify, deploy nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write   # traded for the OCI session that reads vault entries (R52)
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.SEED_MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.SEED_MODAL_TOKEN_SECRET }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: the Modal root must answer before anything is built
+        run: |
+          set -euo pipefail
+          test -n "$MODAL_TOKEN_ID" && test -n "$MODAL_TOKEN_SECRET" \
+            || { echo "FAIL    concierge-deploy  no Modal root: run bin/idp-set-root modal once (R52)"; exit 1; }
+          python -m pip install --quiet 'modal==1.5.5'
+          modal secret list >/dev/null \
+            || { echo "FAIL    concierge-deploy  Modal refused the root pair; rotate with bin/idp-set-root modal"; exit 1; }
+          echo "ok      modal root answers"
+
+      # STAGE 1 -- the sidecar. The image cannot carry a binary that has not been built, and this is
+      # the piece four drafts fetched from a URL that does not exist.
+      - name: build the vault sidecar (the Iron Rule)
+        run: |
+          set -euo pipefail
+          cargo build --release --manifest-path ephemeral/cdp-vault-proxy/Cargo.toml
+          BIN=ephemeral/cdp-vault-proxy/target/release/cdp-vault-proxy
+          test -x "$BIN" || { echo "FAIL    concierge-deploy  the sidecar did not build at $BIN"; exit 1; }
+          echo "ok      sidecar built ($(stat -c%s "$BIN") bytes)"
+
+      - name: the sidecar refuses to run without a card, and passes its own tests
+        run: |
+          set -euo pipefail
+          cargo test --release --manifest-path ephemeral/cdp-vault-proxy/Cargo.toml
+          BIN=ephemeral/cdp-vault-proxy/target/release/cdp-vault-proxy
+          # Fail-closed check: without REAL_PAN it must refuse, not run as a passthrough that
+          # claims to be a fence.
+          if "$BIN" 2>&1 | grep -q "REAL_PAN is not set"; then
+            echo "ok      sidecar fails closed with no card"
+          else
+            echo "FAIL    concierge-deploy  the sidecar started without a card"; exit 1
+          fi
+
+      # STAGE 2 -- the voice model, from its real release.
+      - name: fetch the CAM++ voice model
+        run: |
+          set -euo pipefail
+          mkdir -p models
+          URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx"
+          curl -fsSL -o models/campplus.onnx "$URL"
+          SIZE=$(stat -c%s models/campplus.onnx)
+          # A 9-byte file is GitHub's "Not Found" body, which is how the bad URL in the plan would
+          # have failed -- silently, as a model that loads nothing. Size is the check.
+          [ "$SIZE" -gt 20000000 ] || { echo "FAIL    concierge-deploy  model is $SIZE bytes; the URL served an error body"; exit 1; }
+          echo "ok      voice model $SIZE bytes"
+
+      - name: the runtime module imports with both artifacts present
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet boto3 cryptography zstandard 'sherpa-onnx' numpy
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, ".")
+          import ephemeral.agent as a
+          from pathlib import Path
+          for name, path in (("sidecar", a.LOCAL_SIDECAR), ("model", a.LOCAL_MODEL)):
+              p = Path(path)
+              assert p.is_file(), f"{name} missing at {path}"
+              print(f"ok      {name} resolves ({p.stat().st_size} bytes)")
+          assert a.VOICEPRINT_THRESHOLD == 0.6, "threshold drifted from the model family's default"
+          print("ok      threshold is 0.6 (the model family's own default)")
+          PY
+
+      - name: deploy to Modal
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          set -euo pipefail
+          modal deploy ephemeral/agent.py
+          echo "ok      concierge runtime deployed"
+
+      - name: dry run -- say plainly what was not done
+        if: ${{ inputs.dry_run == true }}
+        run: |
+          echo "dry run: the sidecar built, the model fetched, the module imports; NOTHING was deployed."
+          echo "Re-run with dry_run=false to deploy."
