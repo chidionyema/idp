@@ -152,10 +152,37 @@ jobs:
           print("ok      threshold is 0.6 (the model family's own default)")
           PY
 
+      - name: what the deploy does and does not have
+        run: |
+          set -euo pipefail
+          # The runtime declares three Modal secrets. Two are prerequisites of the architecture
+          # (the object store and the key), and the third is the residential proxy for the checkout
+          # -- which does NOT exist, because bot detection is unsolved. Modal refuses a deploy whose
+          # declared secret is absent, and that refusal is correct: it is the platform telling us a
+          # piece is missing rather than letting a run believe a bypass it does not have.
+          #
+          # Named here, in the run's own output, rather than discovered at the deploy step.
+          for s in cloudflare-r2-credentials kms-master-key residential-proxy-url; do
+            if modal secret list 2>/dev/null | grep -q "^$s "; then
+              echo "ok      modal secret $s exists"
+            else
+              echo "MISSING modal secret $s"
+            fi
+          done
+
       - name: deploy to Modal
         if: ${{ inputs.dry_run == false }}
         run: |
           set -euo pipefail
+          if ! modal secret list 2>/dev/null | grep -q "^residential-proxy-url "; then
+            echo "FAIL    concierge-deploy  the residential proxy secret does not exist, so the"
+            echo "        runtime's declared secrets cannot all be satisfied. Bot detection is"
+            echo "        UNSOLVED: splitting the checkout POST onto a residential IP does not move"
+            echo "        the browser fingerprint that Akamai, Cloudflare and DataDome actually read."
+            echo "        The deploy is refused by Modal, correctly, rather than shipping a runtime"
+            echo "        that claims a bypass it does not perform."
+            exit 1
+          fi
           modal deploy code/ephemeral/agent.py
           echo "ok      concierge runtime deployed"
 
