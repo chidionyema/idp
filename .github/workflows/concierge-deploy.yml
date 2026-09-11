@@ -164,7 +164,11 @@ jobs:
           # Each is created only when missing. Re-minting on every deploy would rotate the card key
           # out from under whatever encrypted card is already on file -- a rotation that silently
           # makes every stored card unreadable is worse than no rotation at all.
-          have() { modal secret list 2>/dev/null | grep -q "^$1 "; }
+          # `modal secret list` renders a BOXED TABLE, so the name is not at the start of a line
+          # and `grep -q "^name "` NEVER matches. That cost a run: the mint step created the secret
+          # and this step immediately reported it missing. The first row is a header, so the name is
+          # matched with a leading separator instead of at line start.
+          have() { modal secret list 2>/dev/null | grep -qE "[|[:space:]]$1[|[:space:]]"; }
 
           if ! have cloudflare-r2-credentials; then
             modal secret create cloudflare-r2-credentials \
@@ -208,9 +212,12 @@ jobs:
           # moving one checkout POST moves the request, not the fingerprint. What replaced it is
           # the carried session -- her signed-in state, minted once at enrolment, carried in from
           # the profile. So the runtime needs no proxy and no bypass.
+          # A BOXED TABLE, not one name per line. See the note in the mint step: matching at line
+          # start reports every secret missing, including ones this run just created.
           missing=0
+          listing=$(modal secret list 2>/dev/null || true)
           for s in cloudflare-r2-credentials kms-master-key card-key; do
-            if modal secret list 2>/dev/null | grep -q "^$s "; then
+            if printf '%s' "$listing" | grep -qE "[|[:space:]]$s[|[:space:]]"; then
               echo "ok      modal secret $s exists"
             else
               echo "MISSING modal secret $s"
@@ -226,8 +233,9 @@ jobs:
           # Every secret the function declares must exist, because Modal refuses a deploy whose
           # declared secret is absent -- and that refusal is right: it is the platform telling us a
           # piece is missing rather than letting a run believe a bypass it does not have.
+          listing=$(modal secret list 2>/dev/null || true)
           for s in cloudflare-r2-credentials kms-master-key card-key; do
-            if ! modal secret list 2>/dev/null | grep -q "^$s "; then
+            if ! printf '%s' "$listing" | grep -qE "[|[:space:]]$s[|[:space:]]"; then
               echo "FAIL    concierge-deploy  the secret '$s' does not exist, so the runtime's"
               echo "        declared secrets cannot all be satisfied and Modal will refuse."
               echo "        Mint it from the estate's root rather than pasting a value here."
