@@ -80,8 +80,15 @@ spec:
         bash: { enabled: false }
         internet: { enabled: false }
       resources:
-        requests: { cpu: 100m, memory: 1Gi }
-        limits: { memory: 1Gi }
+        # 2026-09-11: 1Gi -> 640Mi. Measured use was 502Mi against a 1024Mi request, and the node
+        # was 99% reserved while the estate used ~20Gi of its 40Gi. The reservation protected
+        # nothing and was the second-largest reclaimable block.
+        #
+        # NOTE the request and the limit were ALREADY different here (100m/1Gi against 1Gi), so this
+        # container is Burstable, not Guaranteed -- require-priority-class's equality rule applies to
+        # the radio-room set, and holmes is not in it. Raised only enough to keep ~28% headroom.
+        requests: { cpu: 100m, memory: 640Mi }
+        limits: { memory: 640Mi }
       podSecurityContext:
         runAsNonRoot: true
         runAsUser: 1000

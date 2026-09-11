@@ -115,6 +115,24 @@ is two calls, propose then execute, and execute refuses when the state hash in t
 matches. Events reach agents debounced through the Sovereign Bus, never raw. Extend `mcp/`; never add
 a second server. Full text: `docs/decisions/0006-the-platform-answers-for-itself-over-one-mcp.md`.
 
+## Choosing a model to host: read this first
+
+**Before proposing, sizing or arguing for any model in this estate, read
+`docs/specs/2026-09-11-which-model-to-host.md`.** It is short and it settles the question:
+
+- **The hardware is two ARM nodes at 19 GiB allocatable each, and NO GPU.** That is the ground.
+- **The tier is chosen by the DECISION, not by ambition.** A 1.5B task expert (~1.1 GB) is the
+  default; a 14B (~9 GB) when the expert abstains; a 32B (~19 GB) only on a dedicated node.
+- **A binary expert measured 97.7% agreement here; a 7-way expert abstained on 93.6% and was
+  refused.** Prefer many narrow experts to one multi-class one. An expert answers the question it was
+  trained on; it does not notice the question was wrong, and nothing on this hardware replaces the
+  paid lane at noticing.
+- **A model is a download, not a purchase.** `platform/edge-runtime` loads one GGUF on ARM64.
+
+Two arguments are answered there so they stop recurring: **"we need 70B to replace the frontier
+lane"** (it fits no node at any quantisation, and a 1.5B expert got 97.7% on a real task) and
+**"smaller models rival GPT-4 for architecture"** (they do not).
+
 ## Living policy (crew#219 R38): the block below is code, not prose
 
 `sovereign/policy.py` parses the one ```toml block in this file, and `sovereign/config.py`
