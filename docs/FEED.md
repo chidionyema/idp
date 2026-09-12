@@ -904,3 +904,27 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: another session keeps resetting this worktree.
 📎 FACTS: 199 dockerfiles rows but 187 are in nested checkouts because my .gitignore lines are gone.
 
+
+## 2026-09-11T02:13:44Z · session pi-unkno · lane mums-concierge
+🟢 Done: STRICT AUDIT of docs/STATUS.md against the code. All 18 modules exist. Numbers corrected: tests claimed 295 actually 302; source lines claimed 3,973 actually 4,131; test lines claimed 3,508 actually 3,612.
+🟢 Done: §3 "proven live" language corrected — the same phrase covered two different proofs. voice_biometrics said "real audio: same speaker 0.8478" but those were SYNTHETIC speakers, not her voice; browser_operator said "proven live (Chromium)" but only ever drove example.com. Both rows now name the unproved half.
+🟢 Done: §4 rewritten from 9 loose rows to 6 tight ones, with three gaps that were missing entirely: the Twilio image delivery has never been verified end to end (PUBLIC_SERVER_URL is empty, so the "picture of the receipt" promise cannot currently work); her experience during a real browser run is unmeasured (the silent gap between "I am on it Mummy" and the first narration line); and her voice plus a real shopping site have never been through the agent in one round trip.
+🟢 Done: DEPLOYMENT.md check 1 now requires the picture to BE IN THE CHAT within 30 seconds, and says a message without the image means the promise is broken.
+🔴 Blocked: nothing further to correct — the doc now matches the code.
+⚪ Pending: the corrections are uncommitted. State: 302 tests pass after the edits; docs only, no code touched.
+🔧 TOUCHES: docs/STATUS.md, docs/DEPLOYMENT.md
+🔀 OVERLAP: none
+📎 FACTS: 302 tests, 4131 src lines, 3612 test lines, 18 modules, 6 rows in §4; PUBLIC_SERVER_URL empty in ~/.concierge/env
+
+
+## 2026-09-11T02:29:56Z · session pi-unkno · lane mums-concierge
+🟢 Done: Action Cam live fence built and tested — ScreencastFence stops the screencast the instant a payment URL is navigated TO, on the click, before the page paints. The order completes; nothing after that instant is written; payment_page_seen stays the backstop.
+🟢 Done: found why the Action Cam could never fire — ActionCam was NEVER CONSTRUCTED in main.py and send_whatsapp_video_receipt was never called. Built, tested, disconnected. Now constructed, reading CONCIERGE_ACTION_CAM (default 0).
+🟢 Done: Playwright 1.62.0 has the native screencast API — start/stop mid-session, showActions() draws the cursor and clicks for us, showChapter() labels stages. That is "watch the digital hands moving" without building it.
+🟢 Done: 318 tests pass, up from 310; 8 new Action Cam tests.
+🟡 Active: wiring the clip into the receipt path so it reaches her when it exists.
+⚪ Pending: PUBLIC_SERVER_URL is empty, so NO media (receipt picture or video) can reach Twilio.
+📍 State: Action Cam is real code now, still default-off until a real order proves the stop fires in practice.
+🔧 TOUCHES: src/mums_concierge/action_cam.py, browser_operator.py, main.py, tests/
+🔀 OVERLAP: none — FACTS: playwright 1.62.0; 318 passed; ActionCam never constructed before today
+
