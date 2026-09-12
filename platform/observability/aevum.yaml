@@ -183,9 +183,11 @@ spec:
         - name: aevum
           # Built by the estate from platform/observability/aevum.Dockerfile. Aevum publishes no
           # container; the version is the same literal the Dockerfile pins.
-          # Pinned, never untagged: an image with no tag resolves to latest, which
-          # policy disallow-latest-tag refuses. The tag matches aevum.Dockerfile's pin.
-          image: ghcr.io/chidionyema/aevum:0.9.0
+          # UNTAGGED ON PURPOSE. Flux image automation moves the tag from
+          # platform/observability/kustomization.yaml ({"$imagepolicy": "flux-system:aevum:tag"}),
+          # which is where the estate keeps every moving image. A literal tag here -- the original
+          # `:0.9.0`, which no build ever produced -- is what left these pods in ImagePullBackOff.
+          image: ghcr.io/chidionyema/aevum
           envFrom:
             - configMapRef:
                 name: aevum-config
