@@ -1,0 +1,5 @@
+{
+  "title": "platform: raise the gateway memory limit",
+  "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "body": "This raises the gateway memory limit so it stops OOMing.\n\nI ran the BDD suite and it passed locally."
+}

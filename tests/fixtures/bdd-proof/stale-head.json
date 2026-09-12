@@ -1,0 +1,5 @@
+{
+  "title": "proof on a commit that is not this head",
+  "headRefOid": "cccccccccccccccccccccccccccccccccccccccc",
+  "body": "```\nBDD-PROOF\nhead: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ncommand: npm run bdd\n31 scenarios (31 passed)\n0 failed\nEND-BDD-PROOF\n```\n"
+}
