@@ -105,6 +105,37 @@ Not done by this spec: the eBPF causal layer (Calico flows and the collector car
 only if a grader needs an edge the catalog cannot state); Z3 (revisit when an invariant is
 quantified over more than the Kyverno/rego engines can express, none is today).
 
+## State on 2026-09-12: the door is live and gated, not fully graded
+
+Founder decision, 2026-09-12: **park. Code complete, gated.** The standing-write fence is not
+routed around to make a grader green.
+
+The door is on the cluster and answering. `simulate_change` and `execute_change` are registered on
+the live estate-mcp server and `tools/call` returns a real proposal -- the two wiring defects that
+kept them off it (a `@hookimpl` on a helper instead of on `register_mcp_tools`, and the grader
+programs absent from the image) are fixed and proved live. What the door does **not** do yet is
+return SAFE or UNSAFE, and that is now a data and permission question, not a code defect:
+
+| grader | live verdict | what it needs, and why it is not there |
+|---|---|---|
+| `blast` | **SAFE** | works: 419 catalogue identities resolved from `/data` |
+| `admission` | UNKNOWN (BLIND) | `kubectl apply --dry-run=server` needs the `create` and `patch` verbs. RBAC has no dry-run verb, so a working admission grader means a pod holding standing write. Refused, per `platform/rbac-floor/agent-reader.yaml` ("Write ... is minted by the broker, one named action at a time, for minutes. There is no somewhere else"). |
+| `laws` | UNKNOWN | `ESTATE_MCP_GRADE_LAWS_DOOR` is off |
+| `converge` | UNKNOWN | `ESTATE_MCP_SHADOW_OBSERVATION` unset: no shadow observation exists yet |
+| `network` | UNKNOWN | `ESTATE_MCP_CALICO_FEED` unset: no deny feed is wired to the pod |
+| `placement` | UNKNOWN | `ESTATE_MCP_PLACEMENT_RECEIPT` unset: no cluster-state receipt is wired |
+
+Each of those is the grader's honest, fail-closed answer and each names the input it lacks in the
+proposal's `detail`, which is the behaviour this spec asked for. To make the door grade, the estate
+needs the JIT broker to mint a bounded dry-run grant for `admission`, and the four operator feeds
+above to exist -- not more code inside this feature.
+
+This is written down because the second half of the loop was expensive: four rounds of "a grader
+said UNKNOWN, so something must be broken" when in three of them the grader was answering
+correctly and its reason had simply been destroyed by the reporter (fixed in the same change -- a
+grader's own UNKNOWN is now carried through verbatim instead of being converted into
+`"<name> could not run: ValueError"`). Before treating an UNKNOWN as a defect, read its `detail`.
+
 
 ---
 
