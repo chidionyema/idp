@@ -31,15 +31,27 @@ jobs:
         run: pip install -r .github/requirements/demo-render.txt
       - name: install vhs and dependencies
         run: |
-          # vhs ships from Charm's own apt repository (https://github.com/charmbracelet/vhs#installation)
-          sudo mkdir -p /etc/apt/keyrings
-          curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
-          echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
+          # vhs and ttyd are pinned together, because vhs is what reads ttyd's version and the
+          # two must agree. Measured 2026-09-12: apt ships whatever vhs is current, which was
+          # v0.12.0, and v0.12.0 refuses the ttyd this workflow pins --
+          #     ttyd version (<nil>) is out of date, VHS requires 1.7.2
+          # -- and then EXITS 0 having written no GIF at all. Every tape rendered before that
+          # vhs release landed still has its recording, so the breakage only showed on a new
+          # tape: a green workflow and no demo, which is the silent-green class this estate
+          # keeps finding. Both binaries are release-pinned here (LAW 43: no unauthenticated
+          # latest-lookup, and no two components drifting apart).
           sudo apt-get update
-          sudo apt-get install -y vhs ffmpeg
-          # ttyd, pinned release (no unauthenticated latest-lookup flake)
+          sudo apt-get install -y ffmpeg
+          # vhs, pinned release
+          VHS=v0.11.0
+          curl -fsSL "https://github.com/charmbracelet/vhs/releases/download/${VHS}/vhs_${VHS#v}_Linux_x86_64.tar.gz" -o /tmp/vhs.tgz
+          tar xzf /tmp/vhs.tgz -C /tmp
+          sudo install -m 0755 "/tmp/vhs_${VHS#v}_Linux_x86_64/vhs" /usr/local/bin/vhs
+          # ttyd, pinned release (the version vhs v0.11.0 accepts)
           curl -sL "https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64" -o /tmp/ttyd
           chmod +x /tmp/ttyd && sudo mv /tmp/ttyd /usr/local/bin/ttyd
+          echo "vhs:  $(vhs --version)"
+          echo "ttyd: $(ttyd --version)"
       - name: render every tape
         run: |
           # vhs's parser does not support \" escapes inside a quoted string (run 33570143182);
