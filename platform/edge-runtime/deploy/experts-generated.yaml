@@ -40,7 +40,7 @@ spec:
               export HOME=/tmp/oras-home
               mkdir -p "$HOME/.docker"
               printf '%s' "$GHCR_TOKEN" > "$HOME/.docker/config.json"
-              oras pull "ghcr.io/chidionyema/models/falcon-h1-7b@sha256:5423cbebdad050fddbdc7e289eae5e4c9343f9ee3ab755cc2f3ef2920e08eef8"
+              oras pull "ghcr.io/chidionyema/models/falcon-h1-7b@sha256:86a7f1cd5f1a9cadca96671ee5070867d5ffa419c7e7b7da4388c3c97bb288db"
           env:
             - { name: GHCR_TOKEN, valueFrom: { secretKeyRef: { name: ghcr-pull, key: .dockerconfigjson } } }
           resources:
@@ -136,7 +136,7 @@ spec:
               export HOME=/tmp/oras-home
               mkdir -p "$HOME/.docker"
               printf '%s' "$GHCR_TOKEN" > "$HOME/.docker/config.json"
-              oras pull "ghcr.io/chidionyema/models/nanbeige-4.2-3b@sha256:db1afa685218632fbc3b7e216363106f8235d240723092046014079e26b93b58"
+              oras pull "ghcr.io/chidionyema/models/nanbeige-4.2-3b@sha256:1541573f632d5949071897cf0df507172de807a5d2b456eb573b2a0ca5d9a59e"
           env:
             - { name: GHCR_TOKEN, valueFrom: { secretKeyRef: { name: ghcr-pull, key: .dockerconfigjson } } }
           resources:
@@ -232,7 +232,7 @@ spec:
               export HOME=/tmp/oras-home
               mkdir -p "$HOME/.docker"
               printf '%s' "$GHCR_TOKEN" > "$HOME/.docker/config.json"
-              oras pull "ghcr.io/chidionyema/models/twil-lm3@sha256:451211c0cf0105d6fb752f641131361b076b130a8fab3023e474b2ade32b86b5"
+              oras pull "ghcr.io/chidionyema/models/twil-lm3@sha256:9db428982a116bd3f0527cc2200627ba46c39a55c49d3eb540e7830efc0726f7"
           env:
             - { name: GHCR_TOKEN, valueFrom: { secretKeyRef: { name: ghcr-pull, key: .dockerconfigjson } } }
           resources:
@@ -328,7 +328,7 @@ spec:
               export HOME=/tmp/oras-home
               mkdir -p "$HOME/.docker"
               printf '%s' "$GHCR_TOKEN" > "$HOME/.docker/config.json"
-              oras pull "ghcr.io/chidionyema/models/vibethinker-1.5b@sha256:869c10c0f902bce14940836460b176b7fe6c3ac50b755355a0501f79bcb68380"
+              oras pull "ghcr.io/chidionyema/models/vibethinker-1.5b@sha256:dc0298566d8a90bb4a5dd3805ed5084537206f1c860225f2b8b1863559f4750b"
           env:
             - { name: GHCR_TOKEN, valueFrom: { secretKeyRef: { name: ghcr-pull, key: .dockerconfigjson } } }
           resources:
@@ -424,7 +424,7 @@ spec:
               export HOME=/tmp/oras-home
               mkdir -p "$HOME/.docker"
               printf '%s' "$GHCR_TOKEN" > "$HOME/.docker/config.json"
-              oras pull "ghcr.io/chidionyema/models/vibethinker-3b@sha256:1d44c7fa609358818d2f96799da7224ca8a8a28016123de44256a5814eb06982"
+              oras pull "ghcr.io/chidionyema/models/vibethinker-3b@sha256:c99673ee7eb849eaa4240964a4cb844ffa672b8dff6cdb4fe022284b2ccaebbc"
           env:
             - { name: GHCR_TOKEN, valueFrom: { secretKeyRef: { name: ghcr-pull, key: .dockerconfigjson } } }
           resources:

@@ -31,6 +31,7 @@ ports:
   - {port: 7107, service: backstage-backend,    compose: none, bind: 127.0.0.1}
   - {port: 8000, service: healthchecks,         compose: none, bind: 127.0.0.1}
   - {port: 8080, service: prospector-edge,      compose: prospector, bind: 127.0.0.1}
+  - {port: 8421, service: edge-runtime-expert,  compose: none, bind: 127.0.0.1}
   - {port: 8443, service: prospector-edge-tls,  compose: prospector, bind: 127.0.0.1}
   - {port: 8611, service: prospector-engine,    compose: prospector}
   - {port: 8765, service: consultd,             compose: none}
