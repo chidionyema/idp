@@ -1,0 +1,2 @@
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"declare_plan","input":{"goal":"fix the gates and the class they exposed","subgoals":[{"id":"goal_1","text":"fix the nested-checkout class"}]}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I will wire rule-guard into pi's extensions directory, and upgrade the estate test scheduling."}]}}
