@@ -435,13 +435,58 @@ def grade_file(path: Path | str) -> dict:
     return grade(turns)
 
 
-def main(argv: list[str]) -> int:
-    args = [a for a in argv[1:] if not a.startswith("-")] if len(argv) > 1 else []
-    if not args and argv and not argv[0].startswith("-"):
-        args = [argv[0]]
-    if not args:
-        print("usage: trajectory_lock.py <session.jsonl>", file=sys.stderr)
+def _estate_sessions() -> list[Path]:
+    """The session transcripts this machine's agents actually wrote, newest first."""
+    home = Path.home() / ".pi" / "agent" / "sessions"
+    if not home.is_dir():
+        return []
+    return sorted(home.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def _grade_estate(limit: int = 25) -> int:
+    """Grade the most recent real sessions. The live case: no fixture is involved."""
+    sessions = _estate_sessions()[:limit]
+    if not sessions:
+        print(
+            "BLIND trajectory no session transcripts found under ~/.pi/agent/sessions",
+            file=sys.stderr,
+        )
         return 2
+    drifted = 0
+    for path in sessions:
+        verdict = grade_file(path)
+        if verdict["verdict"] == "BLIND":
+            continue
+        if verdict["drift"]:
+            drifted += 1
+            print(f"FAIL  trajectory {path.name}: {verdict['why']}", file=sys.stderr)
+    if drifted:
+        print(
+            f"FAIL  trajectory {drifted} of {len(sessions)} recent session(s) left their declared "
+            "plan",
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        f"ok    trajectory {len(sessions)} recent session(s) stayed inside a declared plan"
+    )
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    # Two callers, one entry point. The CLI passes sys.argv, so argv[0] is the script's own path;
+    # the tests pass [path], so argv[0] IS the transcript. Guessing from the name got this wrong
+    # in both directions. The honest test is whether the file is there: a path that exists is a
+    # transcript, and the script's own path exists but is not JSON -- so require the suffix too.
+    args = [a for a in argv[1:] if not a.startswith("-")] if len(argv) > 1 else []
+    if not args and argv and not argv[0].startswith("-") and argv[0].endswith(".jsonl"):
+        args = [argv[0]]
+
+    # No argument: grade the estate's own session transcripts. This is the live case the rule
+    # registry requires -- a rule whose every case names a fixture has never seen the platform.
+    if not args:
+        return _grade_estate()
+
     verdict = grade_file(args[0])
     if verdict["verdict"] == "BLIND":
         print(f"BLIND trajectory {verdict['why']}", file=sys.stderr)
