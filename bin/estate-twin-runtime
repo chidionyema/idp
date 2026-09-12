@@ -132,8 +132,14 @@ def ensure_schema(con: sqlite3.Connection) -> None:
     con.commit()
 
 
-def upsert(con: sqlite3.Connection, node_id: str, type_: str, status: str,
-           metadata: dict, at: str | None = None) -> str | None:
+def upsert(
+    con: sqlite3.Connection,
+    node_id: str,
+    type_: str,
+    status: str,
+    metadata: dict,
+    at: str | None = None,
+) -> str | None:
     """One node, UPSERTed, and its transition recorded if the status moved.
 
     The id is the identity; the metadata is the current truth. Returns the previous status
@@ -170,7 +176,9 @@ def upsert(con: sqlite3.Connection, node_id: str, type_: str, status: str,
     return None
 
 
-def upsert_edge(con: sqlite3.Connection, source: str, target: str, relation: str) -> None:
+def upsert_edge(
+    con: sqlite3.Connection, source: str, target: str, relation: str
+) -> None:
     con.execute(
         "INSERT OR IGNORE INTO edges (source_id, target_id, relation) VALUES (?, ?, ?)",
         (source, target, relation),
@@ -182,9 +190,17 @@ def upsert_edge(con: sqlite3.Connection, source: str, target: str, relation: str
 
 def _kubectl(args: list[str]) -> tuple[bool, str]:
     """Read the cluster. Returns (ok, stdout). Never raises, never writes."""
+    kubectl = _env("KUBECTL", "/usr/local/bin/kubectl")
+    if not os.path.exists(kubectl):
+        import shutil as _shutil
+
+        kubectl = _shutil.which("kubectl") or "kubectl"
     try:
-        p = subprocess.run(
-            ["kubectl", *args], capture_output=True, text=True, timeout=120
+        p = subprocess.run(  # noqa: S603 - fixed argv, no shell, no caller-built string
+            [kubectl, *args],
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
     except Exception as e:
         return False, str(e)
@@ -226,10 +242,7 @@ def sweep_nodes(con: sqlite3.Connection) -> int:
         containers = st.get("containerStatuses") or []
         restarts = sum(int(c.get("restartCount") or 0) for c in containers)
         ready = sum(1 for c in containers if c.get("ready"))
-        waiting = [
-            (c.get("state") or {}).get("waiting") or {}
-            for c in containers
-        ]
+        waiting = [(c.get("state") or {}).get("waiting") or {} for c in containers]
         reasons = {w.get("reason") for w in waiting if w.get("reason")}
 
         # The status vocabulary is closed. CrashLoopBackOff is its own state because it is
@@ -249,16 +262,22 @@ def sweep_nodes(con: sqlite3.Connection) -> int:
 
         started = _age_seconds(st.get("startTime") or "")
         node_id = f"k8s:pod:{ns}:{name}"
-        upsert(con, node_id, "pod", status, {
-            "namespace": ns,
-            "workload": name,
-            "phase": phase,
-            "ready": f"{ready}/{len(containers)}",
-            "restarts": restarts,
-            "reasons": sorted(r for r in reasons if r),
-            "age_s": started,
-            "node": spec.get("nodeName"),
-        })
+        upsert(
+            con,
+            node_id,
+            "pod",
+            status,
+            {
+                "namespace": ns,
+                "workload": name,
+                "phase": phase,
+                "ready": f"{ready}/{len(containers)}",
+                "restarts": restarts,
+                "reasons": sorted(r for r in reasons if r),
+                "age_s": started,
+                "node": spec.get("nodeName"),
+            },
+        )
 
         # owner edge: pod -> ReplicaSet -> Deployment is two hops in the API; the pod
         # carries its controller ref directly, which is one edge and enough to ask
@@ -299,13 +318,19 @@ def sweep_deployments(con: sqlite3.Connection) -> int:
             status = DEAD
 
         node_id = f"k8s:deployment:{ns}:{name}"
-        upsert(con, node_id, "deployment", status, {
-            "namespace": ns,
-            "workload": name,
-            "replicas": want,
-            "ready": have,
-            "available": int(st.get("availableReplicas") or 0),
-        })
+        upsert(
+            con,
+            node_id,
+            "deployment",
+            status,
+            {
+                "namespace": ns,
+                "workload": name,
+                "replicas": want,
+                "ready": have,
+                "available": int(st.get("availableReplicas") or 0),
+            },
+        )
         n += 1
     return n
 
@@ -343,7 +368,12 @@ def _kubectl_or_cloud(args: list[str]) -> tuple[bool, str]:
     if not cmd.exists():
         return False, f"{cmd} does not exist"
     try:
-        p = subprocess.run([str(cmd), *args], capture_output=True, text=True, timeout=180)
+        p = subprocess.run(  # noqa: S603 - a fixed path into this checkout, no shell
+            [str(cmd), *args],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
     except Exception as e:
         return False, str(e)
     return p.returncode == 0, (p.stdout if p.returncode == 0 else p.stderr)
@@ -365,42 +395,83 @@ def sweep_from_receipt(con: sqlite3.Connection, receipt: dict) -> dict:
     for r in receipt.get("deploy_short") or []:
         ns, name = r.get("ns", "?"), r.get("name", "?")
         avail, want = int(r.get("available") or 0), int(r.get("desired") or 0)
-        put(f"k8s:deployment:{ns}:{name}", "deployment",
+        put(
+            f"k8s:deployment:{ns}:{name}",
+            "deployment",
             DEAD if avail < want else ACTIVE,
-            {"namespace": ns, "workload": name, "replicas": want, "ready": avail,
-             # The age of a short deployment is the age of the pod that is failing under it,
-             # resolved after the pod pass below; the receipt carries no deployment timestamp.
-             "since": "", "age_s": None})
+            {
+                "namespace": ns,
+                "workload": name,
+                "replicas": want,
+                "ready": avail,
+                # The age of a short deployment is the age of the pod that is failing under it,
+                # resolved after the pod pass below; the receipt carries no deployment timestamp.
+                "since": "",
+                "age_s": None,
+            },
+        )
 
     # DaemonSets short of desired, same shape.
     for r in receipt.get("ds_short") or []:
         ns, name = r.get("ns", "?"), r.get("name", "?")
-        put(f"k8s:daemonset:{ns}:{name}", "daemonset", DEAD,
-            {"namespace": ns, "workload": name,
-             "desired": r.get("desired"), "ready": r.get("ready")})
+        put(
+            f"k8s:daemonset:{ns}:{name}",
+            "daemonset",
+            DEAD,
+            {
+                "namespace": ns,
+                "workload": name,
+                "desired": r.get("desired"),
+                "ready": r.get("ready"),
+            },
+        )
 
     # Pods not ready, with the reason the collector captured.
     for r in receipt.get("pods_not_ready") or []:
         ns, name = r.get("ns", "?"), r.get("name", "?")
         caps = r.get("failed") or {}
-        reason = ",".join(sorted(caps)) if caps else ",".join(sorted(r.get("waiting") or {}))
+        reason = (
+            ",".join(sorted(caps)) if caps else ",".join(sorted(r.get("waiting") or {}))
+        )
         restarts = int(r.get("restarts") or 0)
-        status = CRASHLOOPING if (restarts >= 5 or "CrashLoopBackOff" in reason) else DEAD
+        status = (
+            CRASHLOOPING if (restarts >= 5 or "CrashLoopBackOff" in reason) else DEAD
+        )
         since = r.get("since") or r.get("started") or ""
-        put(f"k8s:pod:{ns}:{name}", "pod", status,
-            {"namespace": ns, "workload": name, "phase": r.get("phase"),
-             "restarts": restarts, "reason": reason,
-             "since": since, "age_s": _age_seconds(since),
-             "last_log": (r.get("last_log") or {}) and list((r.get("last_log") or {}))})
+        put(
+            f"k8s:pod:{ns}:{name}",
+            "pod",
+            status,
+            {
+                "namespace": ns,
+                "workload": name,
+                "phase": r.get("phase"),
+                "restarts": restarts,
+                "reason": reason,
+                "since": since,
+                "age_s": _age_seconds(since),
+                "last_log": (r.get("last_log") or {})
+                and list((r.get("last_log") or {})),
+            },
+        )
 
     # Secrets that were rotated but never reached a running consumer -- the collector's own
     # finding, and one nothing else in the estate surfaces as a graph node.
     for r in receipt.get("secret_stale_consumers") or []:
         ns, pod, sec = r.get("ns", "?"), r.get("pod", "?"), r.get("secret", "?")
         nid = f"k8s:secret-stale:{ns}:{pod}:{sec}"
-        put(nid, "secret-staleness", DEAD,
-            {"namespace": ns, "pod": pod, "secret": sec,
-             "pod_started": r.get("pod_started"), "secret_written": r.get("secret_written")})
+        put(
+            nid,
+            "secret-staleness",
+            DEAD,
+            {
+                "namespace": ns,
+                "pod": pod,
+                "secret": sec,
+                "pod_started": r.get("pod_started"),
+                "secret_written": r.get("secret_written"),
+            },
+        )
         upsert_edge(con, f"k8s:pod:{ns}:{pod}", nid, "stale_secret")
 
     # Flux rows that are not Ready: the reconciliation half.
@@ -429,41 +500,73 @@ def sweep_from_receipt(con: sqlite3.Connection, receipt: dict) -> dict:
         # reconcile, so a failure propagates along exactly these edges -- this is the estate's
         # real ordering, declared by its own GitOps controller, not inferred by us.
         for dep in r.get("depends_on") or []:
-            upsert_edge(con,
-                        f"flux:{kind}:{ns_ + '/' if ns_ else ''}{name}",
-                        f"flux:Kustomization:{dep}", "depends_on")
+            upsert_edge(
+                con,
+                f"flux:{kind}:{ns_ + '/' if ns_ else ''}{name}",
+                f"flux:Kustomization:{dep}",
+                "depends_on",
+            )
         if r.get("source"):
-            upsert_edge(con,
-                        f"flux:{kind}:{ns_ + '/' if ns_ else ''}{name}",
-                        f"flux:{r['source']}", "read_from")
+            upsert_edge(
+                con,
+                f"flux:{kind}:{ns_ + '/' if ns_ else ''}{name}",
+                f"flux:{r['source']}",
+                "read_from",
+            )
         if r.get("store"):
-            upsert_edge(con,
-                        f"flux:{kind}:{ns_ + '/' if ns_ else ''}{name}",
-                        f"flux:{r['store']}", "reads_store")
+            upsert_edge(
+                con,
+                f"flux:{kind}:{ns_ + '/' if ns_ else ''}{name}",
+                f"flux:{r['store']}",
+                "reads_store",
+            )
         if r.get("chart_source"):
-            upsert_edge(con,
-                        f"flux:{kind}:{ns_ + '/' if ns_ else ''}{name}",
-                        f"flux:{r['chart_source']}", "charts_from")
-        put(f"flux:{kind}:{ns_ + '/' if ns_ else ''}{name}", "flux",
+            upsert_edge(
+                con,
+                f"flux:{kind}:{ns_ + '/' if ns_ else ''}{name}",
+                f"flux:{r['chart_source']}",
+                "charts_from",
+            )
+        put(
+            f"flux:{kind}:{ns_ + '/' if ns_ else ''}{name}",
+            "flux",
             ACTIVE if ready else DEAD,
-            {"kind": kind, "name": name, "namespace": r.get("ns"), "ready": ready,
-             "since": fsince, "age_s": _age_seconds(fsince),
-             "depends_on": r.get("depends_on") or [],
-             "path": r.get("path"), "prune": r.get("prune"),
-             "source": r.get("source"), "store": r.get("store"),
-             "chart_source": r.get("chart_source"),
-             "values_from": r.get("values_from") or [],
-             "target_secret": r.get("target_secret"),
-             "message": (r.get("message") or "")[:300]})
+            {
+                "kind": kind,
+                "name": name,
+                "namespace": r.get("ns"),
+                "ready": ready,
+                "since": fsince,
+                "age_s": _age_seconds(fsince),
+                "depends_on": r.get("depends_on") or [],
+                "path": r.get("path"),
+                "prune": r.get("prune"),
+                "source": r.get("source"),
+                "store": r.get("store"),
+                "chart_source": r.get("chart_source"),
+                "values_from": r.get("values_from") or [],
+                "target_secret": r.get("target_secret"),
+                "message": (r.get("message") or "")[:300],
+            },
+        )
 
     # Warning events. This is the estate's event stream: collected every 15 minutes since
     # the collector was written, stored nowhere, readable by nobody.
     for i, e in enumerate(receipt.get("events_warning") or []):
-        nid = f"event:{e.get('kind','?')}:{e.get('at','?')}:{i}"
-        put(nid, "event", DEAD,
-            {"kind": e.get("kind"), "at": e.get("at"), "count": e.get("count"),
-             "message": (e.get("message") or "")[:300],
-             "namespace": e.get("ns"), "reason": e.get("reason")})
+        nid = f"event:{e.get('kind', '?')}:{e.get('at', '?')}:{i}"
+        put(
+            nid,
+            "event",
+            DEAD,
+            {
+                "kind": e.get("kind"),
+                "at": e.get("at"),
+                "count": e.get("count"),
+                "message": (e.get("message") or "")[:300],
+                "namespace": e.get("ns"),
+                "reason": e.get("reason"),
+            },
+        )
 
     # k8sgpt: the cluster's own diagnosis engine, with a suggested fix. It is not a list of
     # findings, it is a scanner that runs on an interval, against a configured set of
@@ -475,44 +578,70 @@ def sweep_from_receipt(con: sqlite3.Connection, receipt: dict) -> dict:
         kind = f.get("kind") or "?"
         name = f.get("name") or kind
         nid = f"k8sgpt:finding:{kind}:{name}:{i}"
-        put(nid, "diagnosis", DEAD,
-            {"kind": kind, "name": name, "namespace": f.get("ns"),
-             "details": (f.get("details") or "")[:2000],
-             "sensitive": f.get("sensitive")})
+        put(
+            nid,
+            "diagnosis",
+            DEAD,
+            {
+                "kind": kind,
+                "name": name,
+                "namespace": f.get("ns"),
+                "details": (f.get("details") or "")[:2000],
+                "sensitive": f.get("sensitive"),
+            },
+        )
 
     # The scanner itself, as a node: what it covers, how often, on which model, and the
     # switch that decides whether a finding ever becomes an action.
     sg = receipt.get("k8sgpt_config") or {}
     if sg:
-        put("k8sgpt:scanner", "diagnosis-engine",
+        put(
+            "k8sgpt:scanner",
+            "diagnosis-engine",
             ACTIVE if sg.get("enabled", True) else DEAD,
-            {"enabled": sg.get("enabled"),
-             "interval": sg.get("analysis_interval"),
-             "filters": sg.get("filters"),
-             "kinds_scanned": len(sg.get("filters") or []),
-             "backend": sg.get("backend"), "model": sg.get("model"),
-             "base_url": sg.get("base_url"),
-             "anonymized": sg.get("anonymized"),
-             "remediation_enabled": sg.get("auto_remediation_enabled"),
-             "remediation_resources": sg.get("auto_remediation_resources"),
-             "backoff_enabled": sg.get("back_off_enabled"),
-             "max_retries": sg.get("back_off_max_retries"),
-             "topk": sg.get("topk"), "language": sg.get("language"),
-             "max_tokens": sg.get("max_tokens")})
+            {
+                "enabled": sg.get("enabled"),
+                "interval": sg.get("analysis_interval"),
+                "filters": sg.get("filters"),
+                "kinds_scanned": len(sg.get("filters") or []),
+                "backend": sg.get("backend"),
+                "model": sg.get("model"),
+                "base_url": sg.get("base_url"),
+                "anonymized": sg.get("anonymized"),
+                "remediation_enabled": sg.get("auto_remediation_enabled"),
+                "remediation_resources": sg.get("auto_remediation_resources"),
+                "backoff_enabled": sg.get("back_off_enabled"),
+                "max_retries": sg.get("back_off_max_retries"),
+                "topk": sg.get("topk"),
+                "language": sg.get("language"),
+                "max_tokens": sg.get("max_tokens"),
+            },
+        )
 
     # Kyverno: the estate's generated policy set and whether each is Ready.
     for r in receipt.get("kyverno_policies") or []:
         name = r.get("name", "?")
-        put(f"kyverno:policy:{name}", "policy",
+        put(
+            f"kyverno:policy:{name}",
+            "policy",
             ACTIVE if r.get("ready", True) else DEAD,
-            {"name": name, "ready": r.get("ready"), "actions": r.get("actions")})
+            {"name": name, "ready": r.get("ready"), "actions": r.get("actions")},
+        )
 
     # PolicyExceptions the cluster actually admitted -- proof a denied workload was let in.
     for r in receipt.get("policy_exceptions") or []:
         name = r.get("name", "?")
-        put(f"kyverno:exception:{name}", "policy-exception", ACTIVE,
-            {"name": name, "namespace": r.get("ns"), "policies": r.get("policies"),
-             "matches": r.get("matches")})
+        put(
+            f"kyverno:exception:{name}",
+            "policy-exception",
+            ACTIVE,
+            {
+                "name": name,
+                "namespace": r.get("ns"),
+                "policies": r.get("policies"),
+                "matches": r.get("matches"),
+            },
+        )
 
     # Hostnames the cluster publishes, as nodes, so "what is exposed" is a query.
     for h in receipt.get("hostnames") or []:
@@ -522,26 +651,41 @@ def sweep_from_receipt(con: sqlite3.Connection, receipt: dict) -> dict:
     # Services running that no catalogue entity declares -- the orphan detector.
     for svc in receipt.get("services_unlisted") or []:
         name = svc if isinstance(svc, str) else (svc or {}).get("name", "?")
-        put(f"unlisted-service:{name}", "unlisted-service", DEAD,
-            {"service": name, "why": "running and declared by no catalogue entity"})
+        put(
+            f"unlisted-service:{name}",
+            "unlisted-service",
+            DEAD,
+            {"service": name, "why": "running and declared by no catalogue entity"},
+        )
 
     # DaemonSets.
     for r in receipt.get("daemonsets") or []:
         ns, name = r.get("ns", "?"), r.get("name", "?")
         want, have = int(r.get("desired") or 0), int(r.get("ready") or 0)
-        put(f"k8s:daemonset:{ns}:{name}", "daemonset",
+        put(
+            f"k8s:daemonset:{ns}:{name}",
+            "daemonset",
             ACTIVE if have >= want else DEAD,
-            {"namespace": ns, "workload": name, "desired": want, "ready": have})
+            {"namespace": ns, "workload": name, "desired": want, "ready": have},
+        )
 
     # Nodes: capacity and readiness.
     for n in receipt.get("nodes") or []:
         name = n.get("name", "?")
-        put(f"k8s:node:{name}", "node",
+        put(
+            f"k8s:node:{name}",
+            "node",
             ACTIVE if n.get("ready") else DEAD,
-            {"name": name, "ready": n.get("ready"), "version": n.get("version"),
-             "cpu": n.get("cpu_allocatable"), "memory": n.get("memory_allocatable_gb"),
-             "cpu_used_pct": n.get("cpu_used_pct"),
-             "memory_used_pct": n.get("memory_used_pct")})
+            {
+                "name": name,
+                "ready": n.get("ready"),
+                "version": n.get("version"),
+                "cpu": n.get("cpu_allocatable"),
+                "memory": n.get("memory_allocatable_gb"),
+                "cpu_used_pct": n.get("cpu_used_pct"),
+                "memory_used_pct": n.get("memory_used_pct"),
+            },
+        )
 
     # Fleet capacity, as one node: headroom is a thing a founder should be able to query.
     cap = receipt.get("capacity") or []
@@ -551,68 +695,119 @@ def sweep_from_receipt(con: sqlite3.Connection, receipt: dict) -> dict:
         tot_used = sum(c.get("cpu_used") or 0 for c in cap)
         tot_mem = sum(c.get("memory_allocatable_gb") or 0 for c in cap)
         tot_mem_used = sum(c.get("memory_used_gb") or 0 for c in cap)
-        pct = (lambda a, b: round(100 * a / b) if b else None)
-        put("capacity:fleet", "capacity",
+        pct = lambda a, b: round(100 * a / b) if b else None
+        put(
+            "capacity:fleet",
+            "capacity",
             ACTIVE if (pct(tot_req, tot_cpu) or 0) < 90 else DEAD,
-            {"cpu_allocatable": tot_cpu, "cpu_requested": tot_req, "cpu_used": tot_used,
-             "cpu_requested_pct": pct(tot_req, tot_cpu), "cpu_used_pct": pct(tot_used, tot_cpu),
-             "memory_allocatable_gb": tot_mem, "memory_used_gb": tot_mem_used,
-             "memory_used_pct": pct(tot_mem_used, tot_mem),
-             "pods_total": receipt.get("pods_total")})
+            {
+                "cpu_allocatable": tot_cpu,
+                "cpu_requested": tot_req,
+                "cpu_used": tot_used,
+                "cpu_requested_pct": pct(tot_req, tot_cpu),
+                "cpu_used_pct": pct(tot_used, tot_cpu),
+                "memory_allocatable_gb": tot_mem,
+                "memory_used_gb": tot_mem_used,
+                "memory_used_pct": pct(tot_mem_used, tot_mem),
+                "pods_total": receipt.get("pods_total"),
+            },
+        )
 
     # Placement: pods the scheduler could not place.
     for pod in (receipt.get("placement") or {}).get("pods") or []:
         if pod.get("unschedulable"):
             ns, name = pod.get("namespace", "?"), pod.get("name", "?")
-            put(f"k8s:pod:{ns}:{name}", "pod", DEAD,
-                {"namespace": ns, "workload": name, "unschedulable": True,
-                 "reason": pod.get("unschedulable_reason"),
-                 "message": (pod.get("unschedulable") or "")[:300],
-                 "node": pod.get("node")})
+            put(
+                f"k8s:pod:{ns}:{name}",
+                "pod",
+                DEAD,
+                {
+                    "namespace": ns,
+                    "workload": name,
+                    "unschedulable": True,
+                    "reason": pod.get("unschedulable_reason"),
+                    "message": (pod.get("unschedulable") or "")[:300],
+                    "node": pod.get("node"),
+                },
+            )
 
     # SPIFFE identity: which workload holds which identity, and whether the agents are up.
     sp = receipt.get("spiffe") or {}
     spy = sp.get("svids") or []
-    put("spiffe:summary", "identity",
+    put(
+        "spiffe:summary",
+        "identity",
         ACTIVE if not sp.get("error") else DEAD,
-        {"server": sp.get("server"), "agents": len(sp.get("agents") or []),
-         "clusterspiffeids": len(sp.get("clusterspiffeids") or []),
-         "csi_workloads": sp.get("csi_workloads"), "svids": len(spy),
-         "error": sp.get("error")})
+        {
+            "server": sp.get("server"),
+            "agents": len(sp.get("agents") or []),
+            "clusterspiffeids": len(sp.get("clusterspiffeids") or []),
+            "csi_workloads": sp.get("csi_workloads"),
+            "svids": len(spy),
+            "error": sp.get("error"),
+        },
+    )
     for r in spy:
         pod = r.get("pod") or r.get("name") or "?"
         ns = r.get("namespace") or r.get("ns") or "?"
-        put(f"spiffe:workload:{ns}:{pod}", "spiffe-workload", ACTIVE,
-            {"namespace": ns, "pod": pod, "spiffe_ids": r.get("spiffe_ids")})
-        upsert_edge(con, f"k8s:pod:{ns}:{pod}", f"spiffe:workload:{ns}:{pod}", "identified_by")
+        put(
+            f"spiffe:workload:{ns}:{pod}",
+            "spiffe-workload",
+            ACTIVE,
+            {"namespace": ns, "pod": pod, "spiffe_ids": r.get("spiffe_ids")},
+        )
+        upsert_edge(
+            con, f"k8s:pod:{ns}:{pod}", f"spiffe:workload:{ns}:{pod}", "identified_by"
+        )
 
     # OCI identity: which pods hold credentials, and whether any hold a static key.
     oci = receipt.get("oci_identity") or {}
     static = oci.get("static_key_pods") or []
-    put("oci:identity", "identity",
+    put(
+        "oci:identity",
+        "identity",
         DEAD if static else ACTIVE,
-        {"pods": oci.get("pods"), "static_key_pods": len(static),
-         "unknown_identity_pods": oci.get("unknown_identity_pods"),
-         "static_key_names": static[:10]})
+        {
+            "pods": oci.get("pods"),
+            "static_key_pods": len(static),
+            "unknown_identity_pods": oci.get("unknown_identity_pods"),
+            "static_key_names": static[:10],
+        },
+    )
 
     # Monitoring: rules, firing alerts, and the watchdog that proves evaluation is alive.
     mon = receipt.get("monitoring") or {}
     alerts = mon.get("alerts_firing") or []
-    put("monitoring:summary", "monitoring",
+    put(
+        "monitoring:summary",
+        "monitoring",
         DEAD if alerts else ACTIVE,
-        {"rules": mon.get("rules"), "alerts_firing": len(alerts),
-         "alert_names": alerts[:20], "error": mon.get("error")})
+        {
+            "rules": mon.get("rules"),
+            "alerts_firing": len(alerts),
+            "alert_names": alerts[:20],
+            "error": mon.get("error"),
+        },
+    )
     for a in alerts:
         name = a if isinstance(a, str) else (a or {}).get("name", "?")
         put(f"monitoring:alert:{name}", "alert", DEAD, {"name": name})
 
     # Errors the collector recorded. An error field is BLIND, and BLIND is not clean.
-    for field in ("capacity_error", "hostnames_error", "secrets_error",
-                  "services_unlisted_error"):
+    for field in (
+        "capacity_error",
+        "hostnames_error",
+        "secrets_error",
+        "services_unlisted_error",
+    ):
         val = receipt.get(field)
         if val:
-            put(f"collector-error:{field}", "collector-error", DEAD,
-                {"field": field, "error": str(val)[:300]})
+            put(
+                f"collector-error:{field}",
+                "collector-error",
+                DEAD,
+                {"field": field, "error": str(val)[:300]},
+            )
 
     # ---- G4: the edges. A graph with no edges cannot answer "what breaks if this dies",
     # which is the founder's most important question and the reason this table exists.
@@ -622,8 +817,10 @@ def sweep_from_receipt(con: sqlite3.Connection, receipt: dict) -> dict:
     # the pod name and the short deployment names; `lago-api-655f5bf684-ts6qx` belongs to
     # `lago-api`. Longest match wins so `lago-api` does not shadow `lago-api-worker`.
     deploys = [r.get("name", "") for r in receipt.get("deploy_short") or []]
-    deploys += [n[0].split(":")[-1] for n in con.execute(
-        "select id from nodes where type='deployment'")]
+    deploys += [
+        n[0].split(":")[-1]
+        for n in con.execute("select id from nodes where type='deployment'")
+    ]
     deploys = sorted({d for d in deploys if d}, key=len, reverse=True)
     for (pod_id,) in con.execute("select id from nodes where type='pod'"):
         parts = pod_id.split(":")
@@ -637,7 +834,7 @@ def sweep_from_receipt(con: sqlite3.Connection, receipt: dict) -> dict:
 
     # deployment -> the k8sgpt findings that name it. The diagnosis engine said WHAT is
     # broken about it; this is the edge that lets "what is wrong with lago-api" be one hop.
-    for (fid, meta) in con.execute(
+    for fid, meta in con.execute(
         "select id, metadata from nodes where type='diagnosis'"
     ):
         m = json.loads(meta)
@@ -646,14 +843,18 @@ def sweep_from_receipt(con: sqlite3.Connection, receipt: dict) -> dict:
             fns, _, fbase = fname.partition("/")
         else:
             fns, fbase = m.get("namespace") or "", fname
-        for want, rel in (("deployment", "diagnosed"), ("pod", "diagnosed"),
-                          ("service", "diagnosed"), ("node", "diagnosed")):
+        for want, rel in (
+            ("deployment", "diagnosed"),
+            ("pod", "diagnosed"),
+            ("service", "diagnosed"),
+            ("node", "diagnosed"),
+        ):
             if fkind == want and fbase:
                 upsert_edge(con, f"k8s:{want}:{fns}:{fbase}", fid, rel)
 
     # deployment -> the key8s alert / events that name it. Kubernetes Warning events carry
     # the pod name in the message; this links the event to the workload it is about.
-    for (eid, meta) in con.execute("select id, metadata from nodes where type='event'"):
+    for eid, meta in con.execute("select id, metadata from nodes where type='event'"):
         m = json.loads(meta)
         msg = m.get("message") or ""
         for d in deploys[:40]:
@@ -667,11 +868,14 @@ def sweep_from_receipt(con: sqlite3.Connection, receipt: dict) -> dict:
 
     # hostname -> the service that publishes it. The receipt carries both lists; a hostname
     # whose first label matches a service name is that service's.
-    for (hid, meta) in con.execute("select id, metadata from nodes where type='hostname'"):
+    for hid, meta in con.execute(
+        "select id, metadata from nodes where type='hostname'"
+    ):
         host = json.loads(meta).get("hostname") or ""
         label = host.split(".")[0]
         for (sid,) in con.execute(
-            "select id from nodes where type='unlisted-service' and id like ?", (f"%/{label}",)
+            "select id from nodes where type='unlisted-service' and id like ?",
+            (f"%/{label}",),
         ):
             upsert_edge(con, sid, hid, "exposes")
 
@@ -699,21 +903,52 @@ def sweep_from_receipt(con: sqlite3.Connection, receipt: dict) -> dict:
                     upsert_edge(con, sid, did, "routes_to")
                     break
 
-    # Everything the receipt named this run is fresh; anything from a previous run in the
-    # same domains that it did NOT name is no longer dead and must stop being reported so.
-    if seen:
-        q = ("update nodes set status = 'active' where domain = 'runtime' "
-             "and id not in (%s) and status in ('dead','crashlooping') "
-             "and id like 'k8s:%%'" % ",".join("?" * len(seen)))
-        con.execute(q, tuple(seen))
+    # Everything the receipt named this run is fresh. Anything an EARLIER sweep marked dead
+    # which this receipt does NOT name is no longer dead, and must stop being reported so --
+    # otherwise a recovered workload is listed broken for ever.
+    #
+    # The discriminator is the id set this run named, NOT a timestamp: both Python and
+    # SQLite truncate to the second, so a node written moments ago shares the current second
+    # and a `< now` comparison resets this run's own writes. An earlier version of this code
+    # did exactly that and put the two short `lago-*` deployments back to `active` the
+    # instant they were written `dead` (found by the BDD suite, 2026-09-12).
+    marked = sorted(
+        node_id
+        for node_id in seen
+        if node_id.startswith(("k8s:deployment:", "k8s:pod:", "k8s:daemonset:"))
+    )
+    if marked:
+        # Every currently-dead runtime workload the receipt did NOT name this run has
+        # recovered. Read them, then reset them: no SQL text is built from a variable, so a
+        # reader can check any single statement in one line.
+        dead_now = [
+            row[0]
+            for row in con.execute(
+                "select id from nodes where domain = 'runtime' "
+                "and status in ('dead','crashlooping') "
+                "and type in ('deployment','statefulset','daemonset','pod',"
+                "'secret-staleness')"
+            )
+        ]
+        named = set(marked)
+        for node_id in dead_now:
+            if node_id in named:
+                continue
+            con.execute(
+                "update nodes set status = 'active' where id = ? "
+                "and domain = 'runtime' and status in ('dead','crashlooping')",
+                (node_id,),
+            )
 
     # G6: record when this domain was last successfully read, and by what window.
     con.execute(
         "INSERT INTO freshness (domain, fresh_s, updated_at) VALUES ('runtime', ?, ?) "
         "ON CONFLICT(domain) DO UPDATE SET fresh_s = excluded.fresh_s, "
         "updated_at = excluded.updated_at",
-        (int(_env("ESTATE_TWIN_FRESH_S", "180")),
-         datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
+        (
+            int(_env("ESTATE_TWIN_FRESH_S", "180")),
+            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        ),
     )
 
     con.commit()
@@ -740,9 +975,13 @@ def domain_state(con: sqlite3.Connection, domain: str) -> tuple[str, str]:
     fresh_s, updated = int(row[0]), row[1]
     age = _age_seconds(updated.replace(" ", "T") + "Z") or 0
     if age > fresh_s:
-        return "UNKNOWN", (f"{domain}: last read {age}s ago, window is {fresh_s}s "
-                           f"-- stale, so nothing here may be read as MEASURED_OK")
-    n = con.execute("select count(*) from nodes where domain = ?", (domain,)).fetchone()[0]
+        return "UNKNOWN", (
+            f"{domain}: last read {age}s ago, window is {fresh_s}s "
+            f"-- stale, so nothing here may be read as MEASURED_OK"
+        )
+    n = con.execute(
+        "select count(*) from nodes where domain = ?", (domain,)
+    ).fetchone()[0]
     # Not serving is not one status. `dead` and `crashlooping` are broken; `stranded` is
     # built and unmerged, which is a different problem with a different owner but is also
     # not serving anyone. A domain reporting OK while 648 branches sit unmerged is the
@@ -754,16 +993,25 @@ def domain_state(con: sqlite3.Connection, domain: str) -> tuple[str, str]:
     ).fetchone()[0]
     if bad:
         detail = ", ".join(
-            f"{st}={c}" for st, c in con.execute(
+            f"{st}={c}"
+            for st, c in con.execute(
                 "select status, count(*) from nodes where domain = ? "
                 "and status in ('dead','crashlooping','stranded') group by status "
-                "order by count(*) desc", (domain,)))
-        return "MEASURED_FAIL", f"{domain}: {bad} of {n} nodes not serving ({detail}, read {age}s ago)"
+                "order by count(*) desc",
+                (domain,),
+            )
+        )
+        return (
+            "MEASURED_FAIL",
+            f"{domain}: {bad} of {n} nodes not serving ({detail}, read {age}s ago)",
+        )
     return "MEASURED_OK", f"{domain}: {n} nodes, all serving (read {age}s ago)"
 
 
 # --- G4: blast radius over the edges table ---------------------------------
-def blast_radius(con: sqlite3.Connection, node_id: str, depth: int = 4) -> list[tuple[str, int, str]]:
+def blast_radius(
+    con: sqlite3.Connection, node_id: str, depth: int = 4
+) -> list[tuple[str, int, str]]:
     """G4: what is downstream of a node, walked over `edges`.
 
     This is the founder's most important question -- "if this dies, what dies with it" --
@@ -777,7 +1025,7 @@ def blast_radius(con: sqlite3.Connection, node_id: str, depth: int = 4) -> list[
     out: list[tuple[str, int, str]] = []
     while frontier:
         nxt = []
-        for nid, hops, rel in frontier:
+        for nid, hops, _rel in frontier:
             if hops >= depth:
                 continue
             for target, relation in con.execute(
@@ -816,8 +1064,10 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
                 "VALUES ('git:summary:stranded', 'code', 'summary', 'stranded', ?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET metadata = excluded.metadata, "
                 "last_seen = excluded.last_seen",
-                (json.dumps(counts, sort_keys=True),
-                 datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
+                (
+                    json.dumps(counts, sort_keys=True),
+                    datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                ),
             )
             # Every per-branch row this file knows about is stranded: it adds a file main
             # does not have. Rows left `active` here are stale state from an earlier run's
@@ -834,19 +1084,32 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
                 "INSERT INTO freshness (domain, fresh_s, updated_at) VALUES ('code', ?, ?) "
                 "ON CONFLICT(domain) DO UPDATE SET fresh_s = excluded.fresh_s, "
                 "updated_at = excluded.updated_at",
-                (int(_env("ESTATE_TWIN_FRESH_S", "180")),
-                 datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
+                (
+                    int(_env("ESTATE_TWIN_FRESH_S", "180")),
+                    datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                ),
             )
             con.commit()
-            return {"branches": stranded,
-                    "files_absent": counts.get("files_absent_from_base"),
-                    "source": "dark-matter.json"}
-        except Exception:
+            return {
+                "branches": stranded,
+                "files_absent": counts.get("files_absent_from_base"),
+                "source": "dark-matter.json",
+            }
+        except (OSError, ValueError, TypeError):
+            # The counts file is an optimisation: if it is unreadable or malformed, fall
+            # through to a real git scan rather than reporting nothing.
             pass
 
     names = [
-        b for b in _git(["for-each-ref", "--sort=-committerdate",
-                         "--format=%(refname:short)", "refs/heads/"]).splitlines()
+        b
+        for b in _git(
+            [
+                "for-each-ref",
+                "--sort=-committerdate",
+                "--format=%(refname:short)",
+                "refs/heads/",
+            ]
+        ).splitlines()
         if b.strip() and b.strip() != base.replace("origin/", "")
     ]
     # `stranded` means one thing: the branch adds a file main does not have. A second
@@ -857,8 +1120,13 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
     stranded = 0
 
     for b in names:
-        added = [f for f in _git(
-            ["diff", "--name-only", "--diff-filter=A", f"{base}..{b}"]).splitlines() if f.strip()]
+        added = [
+            f
+            for f in _git(
+                ["diff", "--name-only", "--diff-filter=A", f"{base}..{b}"]
+            ).splitlines()
+            if f.strip()
+        ]
         date = _git(["log", "-1", "--format=%cs", b]).strip()
         age_days = _age_days(date)
         if not added:
@@ -875,11 +1143,22 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
                 status = excluded.status, metadata = excluded.metadata,
                 last_seen = excluded.last_seen
             """,
-            (node_id, status,
-             json.dumps({"branch": b, "unmerged_files": len(added),
-                         "files": added[:20], "last_commit": date,
-                         "staleness_days": age_days, "base": base}, sort_keys=True),
-             datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
+            (
+                node_id,
+                status,
+                json.dumps(
+                    {
+                        "branch": b,
+                        "unmerged_files": len(added),
+                        "files": added[:20],
+                        "last_commit": date,
+                        "staleness_days": age_days,
+                        "base": base,
+                    },
+                    sort_keys=True,
+                ),
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            ),
         )
         seen.add(node_id)
         stranded += 1
@@ -888,16 +1167,29 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
         "INSERT INTO freshness (domain, fresh_s, updated_at) VALUES ('code', ?, ?) "
         "ON CONFLICT(domain) DO UPDATE SET fresh_s = excluded.fresh_s, "
         "updated_at = excluded.updated_at",
-        (int(_env("ESTATE_TWIN_FRESH_S", "180")),
-         datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
+        (
+            int(_env("ESTATE_TWIN_FRESH_S", "180")),
+            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        ),
     )
     con.commit()
     return {"branches": stranded, "unmerged_total": len(names)}
 
 
 def _git(args: list[str]) -> str:
+    git = _env("GIT", "/usr/bin/git")
+    if not os.path.exists(git):
+        import shutil as _shutil
+
+        git = _shutil.which("git") or "git"
     try:
-        p = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=300)
+        p = subprocess.run(  # noqa: S603 - fixed argv, no shell, no caller-built string
+            [git, *args],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
     except Exception:
         return ""
     return p.stdout if p.returncode == 0 else ""
@@ -912,6 +1204,623 @@ def _age_days(date: str) -> int | None:
     except Exception:
         return None
     return max(0, (datetime.now(timezone.utc) - d).days)
+
+
+def _fresh(con: sqlite3.Connection, domain: str) -> None:
+    """Every domain records when it was read. A domain with nodes and no freshness row reads
+    UNKNOWN for ever, which is the failure the three-state rule exists to prevent."""
+    con.execute(
+        "INSERT INTO freshness (domain, fresh_s, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(domain) DO UPDATE SET fresh_s = excluded.fresh_s, "
+        "updated_at = excluded.updated_at",
+        (
+            domain,
+            int(_env("ESTATE_TWIN_FRESH_S", "180")),
+            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        ),
+    )
+
+
+def _put(
+    con: sqlite3.Connection,
+    domain: str,
+    node_id: str,
+    type_: str,
+    status: str,
+    meta: dict,
+) -> None:
+    """One node in a domain other than runtime. Same identity rule: the id is the key."""
+    con.execute(
+        """
+        INSERT INTO nodes (id, domain, type, status, metadata, last_seen)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            type = excluded.type, status = excluded.status,
+            metadata = excluded.metadata, last_seen = excluded.last_seen
+        """,
+        (
+            node_id,
+            domain,
+            type_,
+            status,
+            json.dumps(meta, sort_keys=True, default=str),
+            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        ),
+    )
+
+
+def _clear_blind(con: sqlite3.Connection, domain: str) -> None:
+    """Drop the domain's unreadable marker when a real reading succeeds.
+
+    Without this the graph holds yesterday's blindness next to today's reading and a founder
+    reads both -- the same class of failure as a stale status that is never reconciled.
+    """
+    con.execute("delete from nodes where id = ?", (f"{domain}:unreadable",))
+
+
+def _blind(con: sqlite3.Connection, domain: str, type_: str, why: str) -> None:
+    """A domain that could not be read gets ONE node saying so.
+
+    Never an empty domain: an empty domain renders exactly like a domain that is fine, and
+    that is the class of lie this whole system exists to end (LAW 28).
+    """
+    _put(con, domain, f"{domain}:unreadable", type_, DEAD, {"why": why[:300]})
+
+
+def sweep_domains(con: sqlite3.Connection) -> dict:
+    """G2: the ten domains the estate owns and its graph could not see.
+
+    Each is read from something the estate ALREADY runs -- its receipt, its own repo, its
+    API server, its bus. No new collector, no new store. Every domain writes a freshness row;
+    every domain that cannot be read writes a BLIND node rather than nothing.
+    """
+    ensure_schema(con)
+    counts: dict[str, int] = {}
+
+    receipt = read_receipt() or {}
+
+    # 1. identity -- the SPIFFE workloads, from the receipt the collector already reads.
+    try:
+        sp = receipt.get("spiffe") or {}
+        n = 0
+        for r in sp.get("svids") or []:
+            pod = r.get("pod") or r.get("name") or "?"
+            ns = r.get("namespace") or r.get("ns") or "?"
+            _put(
+                con,
+                "identity",
+                f"spiffe:workload:{ns}:{pod}",
+                "spiffe-workload",
+                ACTIVE,
+                {"namespace": ns, "pod": pod, "spiffe_ids": r.get("spiffe_ids")},
+            )
+            n += 1
+        for i, a in enumerate(sp.get("agents") or []):
+            name = a if isinstance(a, str) else (a or {}).get("name") or ""
+            if not name:
+                # An unnamed agent row is still a real agent; name it by position so the id
+                # is stable and a reader is not handed a node called "?".
+                name = f"agent-{i}"
+            _put(
+                con,
+                "identity",
+                f"spiffe:agent:{name}",
+                "spiffe-workload",
+                ACTIVE,
+                {"name": name},
+            )
+            n += 1
+        if n == 0:
+            _blind(
+                con,
+                "identity",
+                "spiffe-workload",
+                "the receipt carries no svids or agents; SPIRE has not issued one yet",
+            )
+        if n:
+            _clear_blind(con, "identity")
+        counts["identity"] = n
+    except Exception as e:
+        _blind(con, "identity", "spiffe-workload", f"read failed: {e}")
+        counts["identity"] = 0
+    _fresh(con, "identity")
+
+    # 2. network -- the namespace fences the estate declares for itself.
+    try:
+        n = 0
+        for path in sorted(
+            (ROOT / "platform" / "ns-fences" / "network").glob("*.yaml")
+        ):
+            text = path.read_text()
+            ns = path.stem
+            allows = [
+                ln
+                for ln in text.splitlines()
+                if "from:" in ln or "to:" in ln or "- namespaceSelector" in ln
+            ]
+            _put(
+                con,
+                "network",
+                f"netfence:{ns}",
+                "network-allowance",
+                ACTIVE,
+                {
+                    "namespace": ns,
+                    "path": str(path.relative_to(ROOT)),
+                    "rules": len(allows),
+                    "bytes": len(text),
+                },
+            )
+            n += 1
+        for path in sorted((ROOT / "platform" / "ns-fences").glob("*.yaml")):
+            text = path.read_text()
+            ns = path.stem
+            _put(
+                con,
+                "network",
+                f"netfence:{ns}:allowances",
+                "network-allowance",
+                ACTIVE,
+                {
+                    "namespace": ns,
+                    "path": str(path.relative_to(ROOT)),
+                    "bytes": len(text),
+                },
+            )
+            n += 1
+        if n == 0:
+            _blind(
+                con,
+                "network",
+                "network-allowance",
+                "no fence manifests under platform/ns-fences",
+            )
+        if n:
+            _clear_blind(con, "network")
+        counts["network"] = n
+    except Exception as e:
+        _blind(con, "network", "network-allowance", f"read failed: {e}")
+        counts["network"] = 0
+    _fresh(con, "network")
+
+    # 3. certificates -- an expiring certificate is the outage nobody sees coming.
+    ok, out = _kubectl(["get", "certificates", "-A", "-o", "json"])
+    if not ok:
+        _blind(con, "certificates", "certificate", f"kubectl: {out[:200]}")
+        counts["certificates"] = 0
+    else:
+        n = 0
+        try:
+            for item in json.loads(out).get("items", []):
+                meta = item.get("metadata") or {}
+                st = item.get("status") or {}
+                ns, name = meta.get("namespace", "?"), meta.get("name", "?")
+                not_after = st.get("notAfter") or ""
+                days = None
+                if not_after:
+                    try:
+                        t = datetime.fromisoformat(
+                            re.sub(r"\.\d+", "", not_after).replace("Z", "+00:00")
+                        )
+                        days = int(
+                            (t - datetime.now(timezone.utc)).total_seconds() // 86400
+                        )
+                    except Exception:
+                        days = None
+                _put(
+                    con,
+                    "certificates",
+                    f"cert:{ns}:{name}",
+                    "certificate",
+                    DEAD if (days is not None and days < 14) else ACTIVE,
+                    {
+                        "namespace": ns,
+                        "name": name,
+                        "not_after": not_after,
+                        "expires_in_days": days,
+                        "renewal_time": st.get("renewalTime"),
+                        "issuer": ((item.get("spec") or {}).get("issuerRef") or {}).get(
+                            "name"
+                        ),
+                    },
+                )
+                n += 1
+        except Exception as e:
+            _blind(con, "certificates", "certificate", f"parse failed: {e}")
+        counts["certificates"] = n
+        if n:
+            _clear_blind(con, "certificates")
+    _fresh(con, "certificates")
+
+    # 4. capacity -- the fleet's headroom, as its own domain as well as under runtime.
+    try:
+        cap = receipt.get("capacity") or []
+        if cap:
+            tot_cpu = sum(c.get("cpu_allocatable") or 0 for c in cap)
+            req = sum(c.get("cpu_requested") or 0 for c in cap)
+            used = sum(c.get("cpu_used") or 0 for c in cap)
+            mem = sum(c.get("memory_allocatable_gb") or 0 for c in cap)
+            mem_used = sum(c.get("memory_used_gb") or 0 for c in cap)
+            pct = lambda a, b: round(100 * a / b) if b else None
+            _put(
+                con,
+                "capacity",
+                "capacity:fleet",
+                "capacity",
+                DEAD if (pct(req, tot_cpu) or 0) >= 90 else ACTIVE,
+                {
+                    "cpu_allocatable": tot_cpu,
+                    "cpu_requested": req,
+                    "cpu_used": used,
+                    "cpu_requested_pct": pct(req, tot_cpu),
+                    "cpu_used_pct": pct(used, tot_cpu),
+                    "memory_allocatable_gb": mem,
+                    "memory_used_gb": mem_used,
+                    "memory_used_pct": pct(mem_used, mem),
+                    "nodes": len(cap),
+                },
+            )
+            counts["capacity"] = 1
+        else:
+            _blind(
+                con, "capacity", "capacity", "the receipt carries no capacity section"
+            )
+            counts["capacity"] = 0
+        for nrow in receipt.get("nodes") or []:
+            name = nrow.get("name", "?")
+            _put(
+                con,
+                "capacity",
+                f"capacity:node:{name}",
+                "capacity",
+                ACTIVE if nrow.get("ready") else DEAD,
+                {
+                    "name": name,
+                    "ready": nrow.get("ready"),
+                    "version": nrow.get("version"),
+                    "cpu_allocatable": nrow.get("cpu_allocatable"),
+                    "cpu_used_pct": nrow.get("cpu_used_pct"),
+                    "memory_used_pct": nrow.get("memory_used_pct"),
+                },
+            )
+            counts["capacity"] = counts.get("capacity", 0) + 1
+    except Exception as e:
+        _blind(con, "capacity", "capacity", f"read failed: {e}")
+        counts["capacity"] = 0
+    _fresh(con, "capacity")
+
+    # 5. cost -- what the estate's router is configured to charge, per lane.
+    try:
+        n = 0
+        cfg = ROOT / "llm" / "config.yaml"
+        if cfg.exists():
+            import yaml as _yaml
+
+            doc = _yaml.safe_load(cfg.read_text()) or {}
+            for row in doc.get("model_list") or []:
+                name = row.get("model_name", "?")
+                p = row.get("litellm_params") or {}
+                mi = row.get("model_info") or {}
+                inp, outp = (
+                    p.get("input_cost_per_token"),
+                    p.get("output_cost_per_token"),
+                )
+                free = inp is None and outp is None
+                _put(
+                    con,
+                    "cost",
+                    f"llm:lane:{name}",
+                    "spend",
+                    ACTIVE,
+                    {
+                        "lane": name,
+                        "model": p.get("model"),
+                        "input_cost_per_token": inp,
+                        "output_cost_per_token": outp,
+                        "free": free,
+                        "max_input_tokens": mi.get("max_input_tokens"),
+                        "timeout": p.get("timeout"),
+                    },
+                )
+                n += 1
+            counts["cost"] = n
+        if not n:
+            _blind(con, "cost", "spend", "llm/config.yaml carries no model rows")
+            counts["cost"] = 0
+    except Exception as e:
+        _blind(con, "cost", "spend", f"read failed: {e}")
+        counts["cost"] = 0
+    _fresh(con, "cost")
+
+    # 6. data -- Dagster, the estate's one scheduler.
+    ok, out = _kubectl(["get", "cronjob", "-A", "-o", "json"])
+    n = 0
+    if ok:
+        try:
+            for item in json.loads(out).get("items", []):
+                meta = item.get("metadata") or {}
+                ns, name = meta.get("namespace", "?"), meta.get("name", "?")
+                spec = item.get("spec") or {}
+                suspend = bool(spec.get("suspend"))
+                sched = item.get("status") or {}
+                _put(
+                    con,
+                    "data",
+                    f"pipeline:{ns}:{name}",
+                    "pipeline",
+                    DEAD if suspend else ACTIVE,
+                    {
+                        "namespace": ns,
+                        "name": name,
+                        "schedule": spec.get("schedule"),
+                        "suspend": suspend,
+                        "last_schedule_time": sched.get("lastScheduleTime"),
+                        "active": len(sched.get("active") or []),
+                    },
+                )
+                n += 1
+        except Exception as e:
+            _blind(con, "data", "pipeline", f"cronjob parse failed: {e}")
+    ok2, out2 = _kubectl(["get", "deploy", "-n", "dagster", "-o", "json"])
+    if ok2:
+        try:
+            for item in json.loads(out2).get("items", []):
+                meta = item.get("metadata") or {}
+                name = meta.get("name", "?")
+                st = item.get("status") or {}
+                want = int((item.get("spec") or {}).get("replicas") or 0)
+                have = int(st.get("readyReplicas") or 0)
+                _put(
+                    con,
+                    "data",
+                    f"pipeline:dagster:{name}",
+                    "pipeline",
+                    ACTIVE if have >= want else DEAD,
+                    {
+                        "namespace": "dagster",
+                        "name": name,
+                        "replicas": want,
+                        "ready": have,
+                    },
+                )
+                n += 1
+        except Exception as e:
+            _blind(con, "data", "pipeline", f"dagster parse failed: {e}")
+    if n == 0:
+        _blind(
+            con,
+            "data",
+            "pipeline",
+            "no CronJob and no dagster deployment could be read",
+        )
+    counts["data"] = n
+    _fresh(con, "data")
+
+    # 7. postgres -- the estate's own database.
+    n = 0
+    ok3, out3 = _kubectl(["get", "cluster", "-n", "estate-db", "-o", "json"])
+    if ok3:
+        try:
+            for item in json.loads(out3).get("items", []):
+                meta = item.get("metadata") or {}
+                name = meta.get("name", "?")
+                st = item.get("status") or {}
+                ready = int(st.get("readyInstances") or 0)
+                want = int(
+                    (st.get("instances") or (item.get("spec") or {}).get("instances"))
+                    or 0
+                )
+                _put(
+                    con,
+                    "postgres",
+                    f"estate-db:cluster:{name}",
+                    "database",
+                    ACTIVE if ready >= want and want > 0 else DEAD,
+                    {
+                        "name": name,
+                        "ready_instances": ready,
+                        "instances": want,
+                        "phase": st.get("phase"),
+                        "current_primary": st.get("currentPrimary"),
+                        "conditions": [
+                            c.get("type") for c in st.get("conditions") or []
+                        ],
+                    },
+                )
+                n += 1
+        except Exception as e:
+            _blind(con, "postgres", "database", f"cluster parse failed: {e}")
+    ok4, out4 = _kubectl(["get", "pods", "-n", "estate-db", "-o", "json"])
+    if ok4:
+        try:
+            for item in json.loads(out4).get("items", []):
+                meta = item.get("metadata") or {}
+                name = meta.get("name", "?")
+                phase = (item.get("status") or {}).get("phase", "?")
+                _put(
+                    con,
+                    "postgres",
+                    f"estate-db:pod:{name}",
+                    "database",
+                    ACTIVE if phase == "Running" else DEAD,
+                    {"name": name, "namespace": "estate-db", "phase": phase},
+                )
+                n += 1
+        except Exception as e:
+            _blind(con, "postgres", "database", f"pod parse failed: {e}")
+    if n == 0:
+        _blind(con, "postgres", "database", "the estate-db cluster could not be read")
+    counts["postgres"] = n
+    _fresh(con, "postgres")
+
+    # 8. sessions -- the agent sessions the estate has recorded.
+    try:
+        n = 0
+        ledger = Path.home() / ".estate" / "heads"
+        if ledger.is_dir():
+            for f in sorted(ledger.iterdir())[:200]:
+                if f.is_file():
+                    _put(
+                        con,
+                        "sessions",
+                        f"session:{f.name}",
+                        "session",
+                        ACTIVE,
+                        {"name": f.name, "path": str(f), "bytes": f.stat().st_size},
+                    )
+                    n += 1
+        claims = Path.home() / ".estate" / "claims.jsonl"
+        if claims.is_file():
+            for i, ln in enumerate(claims.read_text().splitlines()):
+                if not ln.strip():
+                    continue
+                try:
+                    row = json.loads(ln)
+                except (ValueError, TypeError):
+                    # A malformed ledger line is skipped, not fatal: one bad row must not
+                    # hide every session behind it.
+                    continue
+                _put(
+                    con,
+                    "sessions",
+                    f"session:claim:{row.get('id', i)}",
+                    "session",
+                    ACTIVE,
+                    {
+                        "id": row.get("id"),
+                        "branch": row.get("branch"),
+                        "session": row.get("session"),
+                        "at": row.get("at"),
+                    },
+                )
+                n += 1
+        if n == 0:
+            _blind(
+                con,
+                "sessions",
+                "session",
+                "no session ledger under $HOME/.estate; this machine records none",
+            )
+        if n:
+            _clear_blind(con, "sessions")
+        counts["sessions"] = n
+    except Exception as e:
+        _blind(con, "sessions", "session", f"read failed: {e}")
+        counts["sessions"] = 0
+    _fresh(con, "sessions")
+
+    # 9. worktrees -- the checkouts on this machine, which nothing else reports.
+    try:
+        out9 = _git(["worktree", "list", "--porcelain"])
+        n = 0
+        cur: dict = {}
+        for line in out9.splitlines() + [""]:
+            if line.startswith("worktree "):
+                if cur.get("path"):
+                    _put(
+                        con,
+                        "worktrees",
+                        f"worktree:{cur['path']}",
+                        "worktree",
+                        ACTIVE,
+                        cur,
+                    )
+                    n += 1
+                cur = {"path": line.split(" ", 1)[1]}
+            elif line.startswith("branch ") and cur:
+                cur["branch"] = line.split(" ", 1)[1].replace("refs/heads/", "")
+            elif line.startswith("HEAD ") and cur:
+                cur["head"] = line.split(" ", 1)[1][:12]
+            elif line.startswith("detached") and cur:
+                cur["detached"] = True
+        if n == 0:
+            _blind(con, "worktrees", "worktree", "git worktree list returned nothing")
+        if n:
+            _clear_blind(con, "worktrees")
+        counts["worktrees"] = n
+    except Exception as e:
+        _blind(con, "worktrees", "worktree", f"read failed: {e}")
+        counts["worktrees"] = 0
+    _fresh(con, "worktrees")
+
+    # 10. bus -- JetStream itself. A full bus is a stalled estate.
+    try:
+        n = _bus_streams(con)
+        if n == 0:
+            _blind(
+                con,
+                "bus",
+                "stream",
+                "no JetStream stream could be read; the bus is unreachable from here",
+            )
+        if n:
+            _clear_blind(con, "bus")
+        counts["bus"] = n
+    except Exception as e:
+        _blind(con, "bus", "stream", f"read failed: {e}")
+        counts["bus"] = 0
+    _fresh(con, "bus")
+
+    con.commit()
+    return counts
+
+
+def _bus_streams(con: sqlite3.Connection) -> int:
+    """JetStream streams, over the estate's own bus. Lazily imported so every other flag
+    works with no NATS client present."""
+    import asyncio
+
+    import nats
+
+    async def _go() -> list[dict]:
+        # NATS_URL wins if set. Otherwise try the in-cluster name, then loopback: a sweep in
+        # a pod reaches the first, a sweep on a laptop with a port-forward reaches the second.
+        # Reporting the bus blind when it is one hop away is the failure this avoids.
+        candidates = (
+            [_env("NATS_URL", "")]
+            if _env("NATS_URL", "")
+            else [
+                "nats://nats.event-bus.svc:4222",
+                "nats://127.0.0.1:4222",
+            ]
+        )
+        last = None
+        nc = None
+        for url in candidates:
+            try:
+                nc = await nats.connect(url, connect_timeout=5)
+                break
+            except Exception as e:  # noqa: BLE001 - the next candidate is the recovery
+                last = e
+        if nc is None:
+            raise RuntimeError(f"no bus reachable from {candidates}: {last}")
+        try:
+            js = nc.jetstream()
+            out = []
+            for name in await js.streams_info():
+                info = name
+                out.append(
+                    {
+                        "name": info.config.name,
+                        "subjects": list(info.config.subjects or []),
+                        "messages": info.state.messages,
+                        "bytes": info.state.bytes,
+                        "consumers": info.state.consumer_count,
+                        "retention": str(info.config.retention),
+                        "max_age_s": info.config.max_age // 1_000_000_000
+                        if info.config.max_age
+                        else None,
+                    }
+                )
+            return out
+        finally:
+            await nc.close()
+
+    streams = asyncio.run(_go())
+    for st in streams:
+        name = st["name"]
+        _put(con, "bus", f"stream:{name}", "stream", ACTIVE, st)
+    return len(streams)
 
 
 def sweep(con: sqlite3.Connection) -> dict:
@@ -973,13 +1882,15 @@ def events_for(con: sqlite3.Connection) -> list[dict]:
     for node_id, type_, status, metadata in con.execute(
         "select id, type, status, metadata from nodes where domain = 'runtime'"
     ):
-        out.append({
-            "subject": f"{_env('ESTATE_TWIN_SUBJECT', 'estate.runtime')}.{type_}.{status}",
-            "id": node_id,
-            "kind": f"{type_}.{status}",
-            "status": status,
-            "metadata": json.loads(metadata),
-        })
+        out.append(
+            {
+                "subject": f"{_env('ESTATE_TWIN_SUBJECT', 'estate.runtime')}.{type_}.{status}",
+                "id": node_id,
+                "kind": f"{type_}.{status}",
+                "status": status,
+                "metadata": json.loads(metadata),
+            }
+        )
     return out
 
 
@@ -988,20 +1899,49 @@ def events_for(con: sqlite3.Connection) -> list[dict]:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="estate-twin-runtime")
-    ap.add_argument("--once", action="store_true",
-                    help="one sweep, written to the graph; no bus, no loop")
-    ap.add_argument("--publish", action="store_true",
-                    help="also publish what was written to the estate bus")
-    ap.add_argument("--code", action="store_true",
-                    help="also sweep git: which capability is built and never merged")
-    ap.add_argument("--dead", action="store_true",
-                    help="print what is dead and exit; a founder's one-liner")
-    ap.add_argument("--state", action="store_true",
-                    help="the three-state rule for every domain: MEASURED_OK/FAIL/UNKNOWN")
-    ap.add_argument("--history", metavar="NODE_ID", nargs="?", const="",
-                    help="every transition recorded for a node, newest first")
-    ap.add_argument("--blast-radius", metavar="NODE_ID",
-                    help="what is downstream of a node, over the edges table")
+    ap.add_argument(
+        "--once",
+        action="store_true",
+        help="one sweep, written to the graph; no bus, no loop",
+    )
+    ap.add_argument(
+        "--publish",
+        action="store_true",
+        help="also publish what was written to the estate bus",
+    )
+    ap.add_argument(
+        "--domains",
+        action="store_true",
+        help="also sweep the ten domains: identity, network, certificates, "
+        "capacity, cost, data, postgres, sessions, worktrees, bus",
+    )
+    ap.add_argument(
+        "--code",
+        action="store_true",
+        help="also sweep git: which capability is built and never merged",
+    )
+    ap.add_argument(
+        "--dead",
+        action="store_true",
+        help="print what is dead and exit; a founder's one-liner",
+    )
+    ap.add_argument(
+        "--state",
+        action="store_true",
+        help="the three-state rule for every domain: MEASURED_OK/FAIL/UNKNOWN",
+    )
+    ap.add_argument(
+        "--history",
+        metavar="NODE_ID",
+        nargs="?",
+        const="",
+        help="every transition recorded for a node, newest first",
+    )
+    ap.add_argument(
+        "--blast-radius",
+        metavar="NODE_ID",
+        help="what is downstream of a node, over the edges table",
+    )
     args = ap.parse_args(argv)
 
     db = db_path()
@@ -1011,8 +1951,10 @@ def main(argv: list[str]) -> int:
             return 2
         con = sqlite3.connect(db)
         try:
-            rows = [domain_state(con, d[0]) for d in
-                    con.execute("select distinct domain from nodes")]
+            rows = [
+                domain_state(con, d[0])
+                for d in con.execute("select distinct domain from nodes")
+            ]
         except sqlite3.OperationalError as e:
             con.close()
             print(f"estate-twin-runtime: {e}", file=sys.stderr)
@@ -1027,10 +1969,21 @@ def main(argv: list[str]) -> int:
             print("estate-twin-runtime: no asset database; run --once", file=sys.stderr)
             return 2
         con = sqlite3.connect(db)
-        q = ("select node_id, from_status, to_status, at from node_events "
-             + ("where node_id like ? " if args.history else "")
-             + "order by at desc, id desc limit 50")
-        rows = list(con.execute(q, (f"%{args.history}%",)) if args.history else con.execute(q))
+        if args.history:
+            rows = list(
+                con.execute(
+                    "select node_id, from_status, to_status, at from node_events "
+                    "where node_id like ? order by at desc, id desc limit 50",
+                    (f"%{args.history}%",),
+                )
+            )
+        else:
+            rows = list(
+                con.execute(
+                    "select node_id, from_status, to_status, at from node_events "
+                    "order by at desc, id desc limit 50",
+                )
+            )
         con.close()
         if not rows:
             print("no transitions recorded")
@@ -1045,9 +1998,12 @@ def main(argv: list[str]) -> int:
             return 2
         con = sqlite3.connect(db)
         rows = blast_radius(con, args.blast_radius)
-        upstream = list(con.execute(
-            "select source_id, relation from edges where target_id = ?",
-            (args.blast_radius,)))
+        upstream = list(
+            con.execute(
+                "select source_id, relation from edges where target_id = ?",
+                (args.blast_radius,),
+            )
+        )
         con.close()
         print(f"  {args.blast_radius}")
         if upstream:
@@ -1055,7 +2011,9 @@ def main(argv: list[str]) -> int:
             for src, rel in upstream[:20]:
                 print(f"    <- {src}  ({rel})")
         if not rows:
-            print("  downstream: nothing recorded in edges; the graph cannot answer this yet")
+            print(
+                "  downstream: nothing recorded in edges; the graph cannot answer this yet"
+            )
             return 0
         print("  downstream (what dies with it):")
         for nid, hops, rel in sorted(rows, key=lambda r: r[1])[:40]:
@@ -1069,23 +2027,39 @@ def main(argv: list[str]) -> int:
         con = sqlite3.connect(db)
         # Workloads first, then pods, and never a finished job: an ordering that puts the
         # 14 things a founder can act on above the 200 that already did their job.
-        rows = list(con.execute(
-            "select id, type, status, metadata from nodes "
-            "where domain='runtime' and status in (?,?) "
-            "order by case type when 'deployment' then 0 when 'statefulset' then 1 else 2 end, "
-            "         status, id",
-            (DEAD, CRASHLOOPING),
-        ))
-        con.close()
-        if not rows:
-            print("nothing is dead")
-            return 0
+        rows = list(
+            con.execute(
+                "select id, type, status, metadata from nodes "
+                "where domain='runtime' and status in (?,?) "
+                "and type in ('deployment','statefulset','daemonset','pod',"
+                "'secret-staleness','unlisted-service','collector-error','monitoring',"
+                "'identity','capacity') "
+                "order by case type when 'deployment' then 0 when 'statefulset' then 1 "
+                "when 'daemonset' then 2 when 'pod' then 3 else 4 end, "
+                "         status, id",
+                (DEAD, CRASHLOOPING),
+            )
+        )
+        # Evidence, counted and named rather than listed: 240 warning events ranked above a
+        # crash-looping pod is how a dead list stops being read.
+        evidence = list(
+            con.execute(
+                "select type, count(*) from nodes where domain='runtime' "
+                "and type in ('event','diagnosis','alert','flux') group by 1 order by 2 desc"
+            )
+        )
         # G6: a dead list with no freshness reads as current even when it is days old.
+        # Read the state BEFORE closing: the connection is the only thing that can answer.
         try:
             state, sentence = domain_state(con, "runtime")
-            print(f"  [{state}] {sentence}")
         except sqlite3.OperationalError:
-            print("  [UNKNOWN] no freshness table; this list may be stale")
+            state, sentence = "UNKNOWN", "no freshness table; this list may be stale"
+        con.close()
+        if not rows:
+            print(f"  [{state}] {sentence}")
+            print("nothing is dead")
+            return 0
+        print(f"  [{state}] {sentence}")
         workloads = [r for r in rows if r[1] in ("deployment", "statefulset")]
         pods = [r for r in rows if r[1] not in ("deployment", "statefulset")]
         for node_id, _type, status, metadata in workloads + pods:
@@ -1100,6 +2074,11 @@ def main(argv: list[str]) -> int:
             if m.get("age_s"):
                 extra += f" age={m['age_s'] // 60}m"
             print(f"  {status:13s} {node_id}{extra}")
+        if evidence:
+            print(
+                "  also recorded, as evidence rather than failure: "
+                + ", ".join(f"{n} {t}" for t, n in evidence)
+            )
         return 0
 
     try:
@@ -1111,10 +2090,15 @@ def main(argv: list[str]) -> int:
     counts = sweep(con)
     if args.code:
         counts.update(sweep_code(con))
+    if args.domains:
+        counts.update(sweep_domains(con))
     total = sum(v for k, v in counts.items() if k != "source" and isinstance(v, int))
     if total == 0:
         con.close()
-        print("estate-twin-runtime: nothing was read; nothing was written", file=sys.stderr)
+        print(
+            "estate-twin-runtime: nothing was read; nothing was written",
+            file=sys.stderr,
+        )
         return 1
 
     src = counts.pop("source", "?")
