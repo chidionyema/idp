@@ -9,6 +9,7 @@ resources:
   - signoz-retention.yaml
   - signoz-sso.yaml
   - langfuse.yaml
+  - aevum.yaml
   - httproute.yaml
   - edge-manners.yaml
   - superset.yaml
