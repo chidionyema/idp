@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""Write one Deployment per model artifact, from the artifacts that exist.
+
+    bin/idp-expert-manifest > platform/edge-runtime/deploy/experts-generated.yaml
+
+WHY GENERATED. Fourteen hand-written Deployments is fourteen places for the same six mistakes --
+the probe that cannot reach loopback, the read-only root that is missing, the memory limit that
+OOMs. Every one of those was found once today by running a pod into it. Writing them once and
+generating is how the fifteenth model costs nothing.
+
+THE DIGEST IS THE ADDRESS. Each Deployment pulls its artifact BY DIGEST, so a restart runs the bytes
+that were tested rather than whatever a tag points at today.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+
+RUNTIME_IMAGE = "ghcr.io/chidionyema/edge-runtime@sha256:eae0df039b91bd444f0ea23853397d2bc5fddc569e2677e8e79d8e7ccd8c16f8"
+NODE = "10.0.148.221"
+
+# Memory per model, MEASURED not derived: a 1.5B needed 3 Gi because candle builds tensors alongside
+# the mmapped file, and 1.6 Gi was OOMKilled at eleven seconds. Sizes scale with parameters.
+def memory_for(task: str) -> str:
+    name = task.lower()
+    if "1.5b" in name or "1.5" in name:
+        return "3Gi"
+    if "3b" in name:
+        return "416Mi" if False else "4Gi"
+    if "7b" in name or "8b" in name:
+        return "7Gi"
+    if "26b" in name or "27b" in name:
+        return "18Gi"
+    return "4Gi"
+
+
+def deployments(tasks: list[tuple[str, str]]) -> str:
+    docs = []
+    for task, digest in tasks:
+        mem = memory_for(task)
+        docs.append(f"""---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: expert-{task.replace('.', '-').replace('_', '-')}
+  namespace: edge-runtime
+  labels:
+    backstage.io/kubernetes-id: estate-edge-runtime-{task.replace('.', '-')}
+    founder/surface: ai-agents
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, never RollingUpdate: these hold gigabytes, and a rolling swap needs two copies on
+    # one node at the moment of change.
+    type: Recreate
+  selector:
+    matchLabels: {{ app: expert-{task} }}
+  template:
+    metadata:
+      labels: {{ app: expert-{task} }}
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: "{NODE}"
+      securityContext:
+        seccompProfile: {{ type: RuntimeDefault }}
+      imagePullSecrets:
+        - name: ghcr-pull
+      initContainers:
+        - name: fetch-artifact
+          image: ghcr.io/oras-project/oras:v1.2.0
+          workingDir: /artifact
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              # GHCR answers 401 without a login even for a public package. The secret is a
+              # dockerconfigjson, so oras reads it from ~/.docker/config.json -- no login call.
+              # $HOME is unset in this image, which is why it is set explicitly: $HOME/.docker
+              # expanded to //.docker and mkdir said "Permission denied".
+              export HOME=/tmp/oras-home
+              mkdir -p "$HOME/.docker"
+              printf '%s' "$GHCR_TOKEN" > "$HOME/.docker/config.json"
+              oras pull "ghcr.io/chidionyema/models/{task}@{digest}"
+          env:
+            - {{ name: GHCR_TOKEN, valueFrom: {{ secretKeyRef: {{ name: ghcr-pull, key: .dockerconfigjson }} }} }}
+          resources:
+            requests: {{ cpu: "50m", memory: "128Mi" }}
+            limits:   {{ cpu: "500m", memory: "320Mi" }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: {{ drop: ["ALL"] }}
+          volumeMounts:
+            - {{ name: artifact, mountPath: /artifact }}
+            - {{ name: scratch, mountPath: /tmp }}
+      containers:
+        - name: expert
+          image: {RUNTIME_IMAGE}
+          env:
+            - {{ name: EDGE_BIND, value: "127.0.0.1:8421" }}
+            - {{ name: EDGE_ARTIFACT_DIR, value: "/artifact" }}
+            - {{ name: RUST_LOG, value: "info" }}
+          resources:
+            requests: {{ cpu: "100m", memory: "{mem}" }}
+            limits:   {{ cpu: "1500m", memory: "{mem}" }}
+          # EXEC, NOT httpGet. The server binds 127.0.0.1 (R20, enforced in main.rs) and the kubelet
+          # probes from outside the pod namespace, so an httpGet gets connection refused forever
+          # while the container is healthy. The image is distroless, so the binary checks itself.
+          readinessProbe:
+            exec: {{ command: ["/edge-runtime", "--health"] }}
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 20
+          livenessProbe:
+            exec: {{ command: ["/edge-runtime", "--health"] }}
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            failureThreshold: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: {{ drop: ["ALL"] }}
+          volumeMounts:
+            - {{ name: artifact, mountPath: /artifact, readOnly: true }}
+            - {{ name: scratch, mountPath: /tmp }}
+      volumes:
+        - name: artifact
+          emptyDir: {{}}
+        - name: scratch
+          emptyDir: {{ medium: Memory }}""")
+    return "\n".join(docs) + "\n"
+
+
+def published() -> list[tuple[str, str]]:
+    """Every model artifact in GHCR, with its newest digest. Read, never listed by hand."""
+    out = subprocess.run(
+        ["gh", "api", "users/chidionyema/packages?package_type=container&per_page=100",
+         "--jq", '.[].name'],
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    tasks = []
+    for name in out:
+        if not name.startswith("models/"):
+            continue
+        task = name.split("/", 1)[1]
+        v = subprocess.run(
+            ["gh", "api", f"users/chidionyema/packages/container/models%2F{task}/versions",
+             "--jq", '.[0]|{digest:.name,tags:(.metadata.container.tags//[])}'],
+            capture_output=True, text=True,
+        ).stdout.strip()
+        if not v:
+            continue
+        d = json.loads(v)
+        # A version carrying no tag is the COSIGN SIGNATURE, not the image -- the same trap that made
+        # the edge-runtime pull fail with "unexpected EOF" for an hour.
+        if not d["tags"]:
+            continue
+        tasks.append((task, d["digest"]))
+    return sorted(tasks)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--check", action="store_true", help="exit 1 if the file on disk differs")
+    ap.add_argument("--out", default="platform/edge-runtime/deploy/experts-generated.yaml")
+    args = ap.parse_args()
+
+    body = deployments(published())
+    if args.check:
+        try:
+            on_disk = open(args.out).read()
+        except FileNotFoundError:
+            print(f"FAIL  {args.out} does not exist; run bin/idp-expert-manifest")
+            return 1
+        if on_disk != body:
+            print(f"FAIL  {args.out} is stale; run bin/idp-expert-manifest and commit")
+            return 1
+        print(f"ok    expert-manifest: {args.out} matches {len(published())} published artifact(s)")
+        return 0
+
+    open(args.out, "w").write(body)
+    print(f"ok    expert-manifest: wrote {args.out} for {len(published())} artifact(s)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
