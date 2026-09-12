@@ -16,7 +16,7 @@ Enter
 Sleep 1s
 Type "grep -n 'class RogueAgent' -A 12 bin/idp-truthteller-demo | head -16"
 Enter
-Sleep 3s
+Sleep 2s
 
 Type "# The observed state is not an opinion -- it is read back from the cluster."
 Enter
@@ -61,7 +61,7 @@ Type "print('impact   ', r['business_impact'])"
 Enter
 Type "PY"
 Enter
-Sleep 6s
+Sleep 3s
 
 Type "# 3 Ready is claimed; the cluster says 1 CrashLoopBackOff. The merge is refused,"
 Enter
