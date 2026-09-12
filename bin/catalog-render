@@ -46,6 +46,10 @@ TRACE_JSON = "docs/trace-matrix.json"
 CARRIED = ["docs/inventory.json", "docs/inventory.md"]
 CARRIED += ["docs/FEED.md", "docs/NEXT.md"]  # the feed and its answer ride the same carry (crew#786)
 CARRIED += ["docs/reports"]  # crew#684: the Reports page (index.json + one md per report, written by estate-state.yml and estate-inventory.yml) rides the same carry
+# 2026-09-12: the placement measurement the cluster-state job writes every 15 minutes. This render
+# force-pushes the branch from origin/main, so a document only the cluster writes is dropped unless
+# it is staged first -- the same reason inventory and reports are carried.
+CARRIED += ["docs/placement.json"]
 INV = Path(os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json"))
 
 
