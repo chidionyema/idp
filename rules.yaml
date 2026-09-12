@@ -1,1293 +1,1926 @@
-# The estate's rule registry. One row per rule; every plane reads this file.
-#
-# Why this file exists (founder 2026-09-07, docs/founder/2026-09-07T1719Z-ere-is-the-blunt-expert-
-# architectural-analysis-of-d2f5ead9.md): LAW 44 ("a law without a protocol is a wish") and LAW 45
-# ("your mistake ends as a guard no session can walk past") made a new executable the required
-# output of every mistake, and nothing was ever retired. A rule's statement, its wiring, its
-# fixtures and its verdict message lived in four places -- the AGENTS.md table, a hand-written
-# rung in bin/idp-ci, a case list inside bin/policy-test, and the gate script itself -- and they
-# drifted. Measured on 2026-09-07: 15 policy fixtures under policy/fixtures were graded by nothing
-# at all, and the AGENTS.md table declared fixture pairs no rung ran.
-#
-# A row is the rule. `run` names the one script that implements it; `cases` are the inputs and the
-# verdict each must produce; `ok`/`fail` are the lines the CI plane prints. bin/idp-rules is the
-# only engine: bin/idp-ci calls it, AGENTS.md's table is generated from it, and the cluster
-# adapter reads `cluster:` to say which rules have an admission twin.
-#
-# Adding a rule: add a row here with at least one refusing case and one passing case, and run
-# `bin/idp-rules run`. There is no second place to edit.
 version: 1
-
-# The ceiling on rules that admit in live_gap that they have no real input yet. bin/idp-rules
-# refuses a run where more rules than this name a gap, so the number may only fall. An escape
-# hatch with no ratchet is how a temporary exception becomes the permanent state.
 live_gap_budget: 10
-
 rules:
-  - id: flux-subst
-    fast: true   # cheap enough for the 60-second fast gate
-    label: flux-subst
-    statement: >-
-      No shell parameter expansion (${NAME:-...} and kin) in a Flux-reconciled manifest; Flux
-      substitution rewrites it before the pod runs it
-    law: incident 2026-09-06, otto-gateway
-    planes: [ci, session]
-    session_glob: ['platform/*.yaml', 'clusters/*.yaml']
-    run: [python3, bin/idp-flux-subst-gate]
-    cluster: {policy: null, why: "the break is in the repo bytes; admission never sees the pre-substitution form"}
-    fixtures: {must_fail: tests/fixtures/flux-subst/bad.yaml, must_pass: tests/fixtures/flux-subst/good.yaml}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/flux-subst/bad.yaml]}
-      - {expect: pass, args: [tests/fixtures/flux-subst/good.yaml]}
-      - {expect: pass, live: true, note: "the manifests actually committed"}
-    ok: "no manifest hands Flux a shell expansion; the gate is proved both ways"
-    fail: "a manifest hands Flux a shell expansion, or the gate is not discriminating"
-
-  - id: flux-wait-brake
-    fast: true   # one parse of clusters/, cheap enough for the 60-second fast gate
-    label: flux-wait-brake
-    statement: >-
-      A Flux Kustomization never sets both wait: true and healthChecks; wait wins, the checks the
-      author wrote are discarded, and the row then waits on every object in its path -- so one
-      optional Job going Failed holds every change to that path out of the cluster
-    law: "incident 2026-09-10, otto-gateway held out by Job/otto-memory-store-6"
-    origin: >-
-      The otto-gateway row named one health check, Deployment/otto-gateway, and set wait: true
-      above it. The Deployment was healthy. A one-shot backfill in the same path timed out
-      reaching the LLM router, went Failed, and the row reported "failed early due to stalled
-      resources" and stopped applying -- including the change that repairs the router path the
-      backfill could not reach. The Job's own manifest says "If this never runs, nothing breaks".
-      41 of the estate's 82 Kustomizations carried the same dead healthChecks list.
-    planes: [ci, session]
-    session_glob: ['clusters/**/*.yaml']
-    run: [python3, bin/idp-flux-wait-brake]
-    cluster: {policy: null, why: "the break is in the Kustomization spec in git; admission never sees a row's own readiness policy"}
-    fixtures: {must_fail: tests/fixtures/flux-wait-brake/bad.yaml, must_pass: tests/fixtures/flux-wait-brake/good.yaml}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/flux-wait-brake/bad.yaml]}
-      - {expect: pass, args: [tests/fixtures/flux-wait-brake/good.yaml]}
-      - {expect: pass, live: true, note: "this estate's own cluster rows"}
-    ok: "no Kustomization declares healthChecks that wait would throw away"
-    fail: >-
-      a Kustomization sets wait: true beside a healthChecks list, so the list is dead text and the
-      row is braked by every object in its path
-
-  - id: probe-host
-    fast: true   # one parse of platform/ and clusters/, cheap enough for the 60-second fast gate
-    label: probe-host
-    statement: >-
-      No probe or lifecycle handler names a host: PodSecurity restricted refuses the pod at create,
-      not the manifest at apply, so a workload carrying one merges green, reconciles green, and
-      then its ReplicaSet fails to make a pod forever while the old pod keeps serving
-    law: "incident 2026-09-10, otto-gateway three homes Available=False for hours"
-    origin: >-
-      The otto-brain sidecar binds 127.0.0.1 by design (R20, and a lifeboat you reach without
-      crossing a network). Its probes were pointed back at loopback with host: 127.0.0.1, which
-      cannot work anyway -- the kubelet is not in the pod's network namespace -- and which
-      PodSecurity restricted forbids outright: "probe or lifecycle host (container \"otto-brain\"
-      uses probe or lifecycle host \"127.0.0.1\")". Otto's three homes merged and never ran. An
-      exec probe runs inside the container, where loopback is the sidecar, and needs no host.
-    planes: [ci, session]
-    session_glob: ['platform/**/*.yaml', 'clusters/**/*.yaml']
-    run: [python3, bin/idp-probe-host]
-    cluster: {policy: null, why: "PodSecurity restricted already refuses it at pod create in every namespace; this row moves the refusal to the pull request, where it is readable"}
-    fixtures: {must_fail: tests/fixtures/probe-host/bad.yaml, must_pass: tests/fixtures/probe-host/good.yaml}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/probe-host/bad.yaml]}
-      - {expect: pass, args: [tests/fixtures/probe-host/good.yaml]}
-      - {expect: pass, live: true, note: "this estate's own workloads"}
-    ok: "no probe or lifecycle handler names a host"
-    fail: >-
-      a probe or lifecycle handler sets host, so PodSecurity restricted will refuse every pod the
-      workload tries to create while the manifest itself stays green
-  - id: cloud-agnostic
-    label: agnostic
-    statement: No provider-specific annotation or Service outside the compute provisioner
-    law: R36
-    origin: crew#250
-    planes: [ci]
-    run: [python3, bin/cloud-agnostic-gate]
-    fixtures: {must_fail: tests/fixtures/cloud-agnostic/bad, must_pass: tests/fixtures/cloud-agnostic/good}
-    cases:
-      - {expect: refuse, env: {CLOUD_AGNOSTIC_ROOT: tests/fixtures/cloud-agnostic/bad}}
-      - {expect: pass, env: {CLOUD_AGNOSTIC_ROOT: tests/fixtures/cloud-agnostic/good}}
-      - {expect: pass, live: true}
-    ok: "cloud-agnostic-gate refuses a provider annotation, permits a plain Service, and the repo is clean"
-    fail: "cloud-agnostic-gate is not discriminating or the platform names a cloud outside platform/oci"
-
-  - id: estate-zone
-    label: zone
-    statement: >-
-      The DNS zone is one value in clusters/*/estate-config.yaml; a platform file naming it as a
-      literal fails, in the tree and in a pull-request diff
-    law: R46
-    origin: crew#269, crew#796
-    planes: [ci]
-    run: [python3, bin/estate-zone-gate]
-    fixtures: {must_fail: tests/fixtures/estate-zone/bad, must_pass: tests/fixtures/estate-zone/good}
-    cases:
-      - {expect: refuse, env: {ESTATE_ZONE_ROOT: tests/fixtures/estate-zone/bad}}
-      - {expect: pass, env: {ESTATE_ZONE_ROOT: tests/fixtures/estate-zone/good}}
-      - {expect: refuse, env: {ESTATE_ZONE_ROOT: tests/fixtures/estate-zone/bad}, args: [--diff, tests/fixtures/estate-zone/added-literal.diff]}
-      - {expect: pass, env: {ESTATE_ZONE_ROOT: tests/fixtures/estate-zone/bad}, args: [--diff, tests/fixtures/estate-zone/added-substituted.diff]}
-      - {expect: pass, env: {ESTATE_ZONE_ROOT: tests/fixtures/estate-zone/bad}, args: [--diff, tests/fixtures/estate-zone/added-self-marker.diff]}
-      - {expect: pass, live: true}
-    ok: "estate-zone-gate refuses a literal zone (tree and diff), permits the substituted form, and the repo is clean"
-    fail: "estate-zone-gate is not discriminating or the platform names the zone outside clusters/*/estate-config.yaml"
-
-  - id: port-lock
-    label: portlock
-    statement: A compose publication not declared in catalog/ports.yaml, or off loopback without non_loopback, fails
-    law: R22 mechanism 4, R20
-    origin: crew#186 CP4
-    planes: [ci]
-    run: [python3, bin/port-gate]
-    fixtures: {must_fail: tests/fixtures/ports-bad, must_pass: catalog/ports.yaml}
-    cases:
-      - {expect: refuse, env: {COMPOSE_GLOB: "tests/fixtures/ports-bad/*.yml"}}
-      - {expect: pass, live: true, tail_of: true}
-    ok: "{tail}"
-    tail_strip: '^ports\s+'
-    ok_fallback: "port-gate refuses an undeclared publication and passes the repo"
-    fail: "port-gate is not discriminating or the repo has an undeclared bind"
-
-  - id: port-bind
-    label: portbind
-    statement: A listener bound to a different address than its ports.yaml row declares is refused
-    law: R20
-    planes: [ci]
-    run: [python3, bin/port-gate, --live]
-    fixtures: {must_fail: tests/fixtures/ports-live/inventory.bad.json, must_pass: tests/fixtures/ports-live/inventory.good.json}
-    cases:
-      - expect: refuse
-        env: {REG: tests/fixtures/ports-live/ports.yaml, INV: tests/fixtures/ports-live/inventory.bad.json, COMPOSE_GLOB: none, BIN_DIR: none}
-      - expect: pass
-        env: {REG: tests/fixtures/ports-live/ports.yaml, INV: tests/fixtures/ports-live/inventory.good.json, COMPOSE_GLOB: none, BIN_DIR: none}
-    ok: "port-gate --live refuses a bind that differs from the declared address and passes a matching one"
-    fail: "port-gate --live does not discriminate on bind address"
-
-  - id: security-policy
-    label: security
-    statement: A control on the security policy page without a proof command that exists is a wish
-    law: LAW 44
-    origin: crew#198
-    planes: [ci]
-    run: [python3, bin/security-policy-gate]
-    fixtures: {must_fail: tests/fixtures/security-policy/bad.md, must_pass: tests/fixtures/security-policy/good.md}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/security-policy/bad.md]}
-      - {expect: pass, args: [tests/fixtures/security-policy/good.md]}
-      - {expect: pass, live: true}
-    ok: "every control on docs/reference/security-policy.md names a proof command that exists; gate proved both ways"
-    fail: "security-policy-gate does not discriminate, or a control has no proof"
-
-  - id: root-trust
-    label: root-trust
-    statement: Every vault entry an ExternalSecret reads is born by a bootstrapper on disk or ticketed
-    law: R52
-    origin: crew#66 ruling 5453747447, crew#580
-    planes: [ci]
-    proved_elsewhere: >-
-      tests/test_incident_crew66_root_trust_register.py refuses a register with a missing bootstrapper and admits a complete one; the case here is the live register
-    run: [python3, bin/idp-root-trust]
-    fixtures: {must_fail: tests/test_incident_crew66_root_trust_register.py, must_pass: platform/secrets}
-    cases:
-      - {expect: pass, live: true, tail_of: true}
-    ok: "{tail}"
-    tail_strip: '^root-trust:\s*'
-    ok_fallback: "every ExternalSecret credential is registered"
-    fail: "an ExternalSecret reads a credential nobody registered, or a register row has no bootstrapper/ticket"
-
-  - id: ai-act
-    label: ai-act
-    statement: Every registered AI system has its Annex IV file, risk entries and declared data (Arts. 9, 10, 11)
-    law: AI Act, kept voluntarily
-    origin: crew#202
-    planes: [ci]
-    run: [python3, bin/ai-act-gate]
-    fixtures: {must_fail: tests/fixtures/ai-act/bad, must_pass: tests/fixtures/ai-act/good}
-    cases:
-      - {expect: refuse, env: {TODAY: "2026-08-25"}, args: [tests/fixtures/ai-act/bad]}
-      - {expect: pass, env: {TODAY: "2026-08-25"}, args: [tests/fixtures/ai-act/good]}
-      - {expect: pass, live: true, args: ["."]}
-    ok: "every registered AI system has its Annex IV file, risk entries and declared data; gate proved both ways"
-    fail: "ai-act-gate does not discriminate, or a registered system has a gap"
-
-  - id: law32-demo-onboarding
-    label: law32
-    statement: A new bin file ships with docs/tutorials/demo and docs/how-to/onboarding, above the prose floor and in the nav
-    law: LAW 32
-    origin: founder 2026-08-25
-    planes: [ci]
-    run: [python3, bin/law32-gate]
-    fixtures: {must_fail: bin/feature-with-no-pages, must_pass: bin/supply-chain}
-    cases:
-      - {expect: pass, args: [--added, bin/supply-chain]}
-      - {expect: refuse, args: [--added, bin/feature-with-no-pages]}
-      - {expect: pass, live: true}
-    ok: "every new bin file has its demo and onboarding; every page is above the prose floor and in the nav; gate proved both ways"
-    fail: "a feature shipped without demo/onboarding, or a page is thin or unlisted"
-
-  - id: plist-renders
-    label: plist
-    statement: Every launchd template renders to a plist that parses and names its job
-    law: LAW 45
-    origin: idp#49
-    planes: [ci]
-    run: [python3, bin/plist-gate]
-    fixtures: {must_fail: tests/fixtures/plist/bad.plist.tmpl, must_pass: tests/fixtures/plist/abandoned-children.plist.tmpl}
-    cases:
-      - {expect: pass, live: true}
-      - {expect: refuse, args: [tests/fixtures/plist/bad.plist.tmpl]}
-      - {expect: refuse, args: [tests/fixtures/plist/bare-argv.plist.tmpl]}
-      - {expect: refuse, args: [tests/fixtures/plist/orphaned-children.plist.tmpl]}
-      - {expect: pass, args: [tests/fixtures/plist/abandoned-children.plist.tmpl]}
-    ok: "every launchd template renders to a plist that parses and names its job; gate proved both ways"
-    fail: "a launchd template does not render to a valid plist, or the gate does not discriminate"
-
-  - id: migration-idempotent
-    label: migration
-    statement: A migration whose second apply adds a resource is refused
-    law: R22 mechanism 1
-    origin: crew#186 CP1
-    planes: [ci]
-    proved_elsewhere: >-
-      the permitting case is the live migration rung in bin/idp-ci, which applies bin/scheduler-migrate twice and rolls it back under a real dagster
-    run: [bin/migration-gate]
-    fixtures: {must_fail: tests/fixtures/migration-not-idempotent, must_pass: bin/scheduler-migrate}
-    live_elsewhere: "bin/idp-ci:337 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back"
-    cases:
-      - {expect: refuse, args: [tests/fixtures/migration-not-idempotent]}
-    ok: "migration-gate refuses the non-idempotent fixture"
-    fail: "migration-gate accepted a migration whose second apply adds a resource"
-
-  - id: static-secret
-    label: secrets
-    statement: Zero static secrets on disk; a key or a .env in the tree is refused
-    law: security-policy.md, kini-master-spec 4.1/4.4
-    origin: crew#227
-    planes: [ci]
-    run: [bin/static-secret-gate]
-    fixtures: {must_fail: tests/fixtures/static-secret/bad, must_pass: tests/fixtures/static-secret/good}
-    cases:
-      - expect: pass
-        env: {STATIC_SECRET_GATE_ROOT: tests/fixtures/static-secret/good, ESTATE_CODE: tests/fixtures/static-secret/good, ESTATE_SECRETS: tests/fixtures/static-secret/good/vault}
-      - expect: refuse
-        env: {STATIC_SECRET_GATE_ROOT: tests/fixtures/static-secret/bad, ESTATE_CODE: tests/fixtures/static-secret/bad/code, ESTATE_SECRETS: tests/fixtures/static-secret/good/vault}
-    ok: "static-secret-gate passes the empty fixture and refuses the one with a key and a .env"
-    fail: "static-secret-gate fixtures"
-
-  - id: owner-account
-    label: owners
-    statement: Every provider account names a second owner
-    law: R54
-    planes: [ci]
-    run: [bin/owner-account-gate]
-    fixtures: {must_fail: tests/fixtures/owner-accounts/bad.yaml, must_pass: tests/fixtures/owner-accounts/good.yaml}
-    live_gap: "chidionyema/idp#2452 -- pointed at docs/reference/owner-accounts.yaml, the file it exists to grade, this gate exits 1: six provider accounts name no second owner. The live case lands with the fix, not before it."
-    cases:
-      - {expect: pass, args: [tests/fixtures/owner-accounts/good.yaml]}
-      - {expect: refuse, args: [tests/fixtures/owner-accounts/bad.yaml]}
-    ok: "owner-account-gate passes a provider with a second owner and refuses one without"
-    fail: "owner-account-gate fixtures"
-
-  - id: bind-audit
-    label: binds
-    statement: Only the gateway binds a non-loopback address; everything else is 127.0.0.1 or nothing
-    law: R20
-    planes: [ci]
-    run: [bin/bind-audit]
-    fixtures: {must_fail: tests/fixtures/listeners.bad.txt, must_pass: tests/fixtures/listeners.good.txt}
-    cases:
-      - {expect: refuse, args: [--table, tests/fixtures/listeners.bad.txt]}
-      - {expect: pass, args: [--table, tests/fixtures/listeners.good.txt]}
-      - {expect: pass, args: [--selftest], note: "the allow-list parser, which would otherwise rot silently"}
-    ok: "bind-audit refuses an unknown listener and permits an allow-listed one; selftest green"
-    fail: "bind-audit does not discriminate on the recorded listener tables"
-
-  - id: conscience
-    label: ethos
-    statement: The founder's ethos is seven measured tenet rows; a row without a command is refused
-    law: LAW 44
-    origin: crew#586 CP1
-    planes: [ci]
-    proved_elsewhere: >-
-      bin/idp-conscience --selftest is itself the both-ways proof: it scores the good fixture 2/2, the bad one 1/2, and refuses a tenet with no command
-    run: [python3, bin/idp-conscience, --selftest]
-    fixtures: {must_fail: "a tenet row with no command", must_pass: bin/idp-conscience}
-    live_elsewhere: ".github/workflows/conscience.yml:94 -- the conscience job runs the gate bare over the estate's own tenet rows, not the selftest"
-    cases:
-      - {expect: pass}
-    ok: "idp-conscience scores the good fixture 2/2, the bad 1/2, and refuses a tenet with no command"
-    fail: "bin/idp-conscience --selftest"
-
-  - id: job-described
-    label: describe
-    statement: Every scheduled job reaches the Dagster UI with a description of what it does
-    law: LAW 28
-    planes: [ci]
-    proved_elsewhere: >-
-      estate_scheduler.describe --selftest is the both-ways proof: it derives a description through a wrapper and refuses to invent one from a command line
-    run: [python3, -m, estate_scheduler.describe, --selftest]
-    cwd: scheduler
-    fixtures: {must_fail: tests/fixtures/schedule-undescribed.yml, must_pass: tests/fixtures/schedule-described.yml}
-    live_gap: "chidionyema/idp#2452 -- the selftest grades the describer, not the estate's schedules. bin/idp-verify:170 runs it for real, and bin/idp-verify is invoked by no workflow: a gate that runs only when somebody types it is not a plane."
-    cases:
-      - {expect: pass}
-    ok: "job descriptions derive from the script, and are refused when absent"
-    fail: "estate_scheduler.describe --selftest"
-
-  - id: vm-shared-path
-    label: vmmount
-    statement: A VM mount source outside the shared tree is refused; one inside it is permitted
-    law: R19
-    planes: [ci]
-    run: [bin/vm-shared-path]
-    fixtures: {must_fail: /private/tmp, must_pass: $HOME}
-    cases:
-      - {expect: pass, env: {VM_SHARED_ROOTS: "$HOME"}, args: ["$HOME"]}
-      - {expect: refuse, env: {VM_SHARED_ROOTS: "$HOME"}, args: [/private/tmp]}
-    ok: "vm-shared-path permits a path under the shared root and refuses one outside it"
-    fail: "bin/vm-shared-path selftest"
-
-  - id: ns-fence
-    label: fences
-    statement: >-
-      No namespace without a both-ways default-deny NetworkPolicy, a ResourceQuota, a LimitRange
-      and a DNS exception
-    law: crew#191, crew#839
-    planes: [ci, cluster]
-    run: [python3, bin/ns-fence-gate]
-    cluster: {policy: platform/kyverno, why: "admission refuses a namespace with no fence"}
-    fixtures: {must_fail: tests/fixtures/ns-fence/bad.yaml, must_pass: tests/fixtures/ns-fence/good.yaml}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/ns-fence/bad.yaml]}
-      - {expect: pass, args: [tests/fixtures/ns-fence/good.yaml]}
-      - {expect: pass, args: [platform], live: true, tail_of: true, note: "the namespaces actually committed"}
-    ok: "{tail}"
-    tail_strip: '^ns-fence-gate:\s*'
-    ok_fallback: "every namespace under platform/ ships a fence"
-    fail: "a namespace ships with no fence; add it to platform/ns-fences/allowances.yaml and run bin/idp-ns-fence-gen"
-
-  - id: main-verdict
-    label: verdict
-    statement: A workflow that grades main never cancels main's own run; stale pull-request runs still are
-    law: crew#865
-    planes: [ci]
-    run: [python3, bin/main-verdict-gate]
-    fixtures: {must_fail: tests/fixtures/main-verdict/bad.yml, must_pass: tests/fixtures/main-verdict/good.yml}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/main-verdict/bad.yml]}
-      - {expect: pass, args: [tests/fixtures/main-verdict/good.yml]}
-      - {expect: pass, live: true, tail_of: true, note: ".github/workflows, where a real regression fails it"}
-    ok: "{tail}"
-    tail_strip: '^main-verdict\s+'
-    ok_fallback: "no workflow cancels main's own run"
-    fail: "bin/main-verdict-gate refuses .github/workflows/"
-
-  - id: prose-pin
-    label: prose
-    statement: >-
-      A test grades behavior or parsed structure, never prose: no test function may only assert
-      sentences or string membership in file text
-    law: R76
-    origin: founder 2026-09-03
-    planes: [ci, session]
-    session_glob: ['tests/test_*.py', 'sovereign/tests/*.py']
-    run: [python3, bin/test-prose-gate]
-    fixtures: {must_fail: tests/fixtures/prose-pin/bad.py, must_pass: tests/fixtures/prose-pin/good.py}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/prose-pin/bad.py]}
-      - {expect: pass, args: [tests/fixtures/prose-pin/good.py]}
-      - {expect: pass, live: true, glob: "tests/test_*.py"}
-    ok: "no test function only asserts prose/string membership in file text (R76)"
-    fail: "a test function only asserts prose/string membership in file text (R76)"
-
-  - id: tenant-split
-    label: twohats
-    statement: One credential is one tenant's; the operator's road never widens the customer's
-    law: decision 0021
-    planes: [ci]
-    run: [python3, bin/idp-tenant-split]
-    fixtures: {must_fail: tests/fixtures/tenant-split/bad.yaml, must_pass: tests/fixtures/tenant-split/good.yaml}
-    live_gap: "chidionyema/idp#2452 -- a bare run over the repository returns 15 findings, every one of the shape 'no data.seed.sql to grade'. That reads like the gate scanning past its own subject rather than 15 tenant defects, and it wants reading before either is claimed."
-    cases:
-      - {expect: refuse, args: [tests/fixtures/tenant-split/bad.yaml]}
-      - {expect: pass, args: [tests/fixtures/tenant-split/good.yaml]}
-    ok: "idp-tenant-split refuses one secret under two tenants; the clean split passes"
-    fail: "idp-tenant-split cannot tell one-secret-one-tenant from a leak (decision 0021)"
-
-  - id: jit-grants
-    label: jitgrant
-    statement: >-
-      A grant the JIT broker may mint can never be turned into standing access: no token for a verb
-      that rewrites a pod spec, no secrets or RBAC, no core namespace, no wildcard, a TTL under the
-      ceiling and a declared rate
-    law: WJ.5
-    planes: [ci]
-    run: [python3, bin/idp-jit-grants]
-    fixtures: {must_fail: tests/fixtures/jit-grants/bad.yaml, must_pass: tests/fixtures/jit-grants/good.yaml}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/jit-grants/bad.yaml]}
-      - {expect: pass, args: [tests/fixtures/jit-grants/good.yaml]}
-      - {expect: pass, args: [platform/jit/grants.yaml], live: true, note: "the catalogue the broker actually mints from"}
-    ok: "idp-jit-grants refuses the escalating catalogue; the live one cannot become standing access"
-    fail: "idp-jit-grants cannot tell a time-boxed grant from a route to admin (WJ.5)"
-
-  - id: fence-enforcement
-    label: fencdrill
-    statement: >-
-      A profile of a denied packet is only ever a wall when the probe proved it could reach an
-      allowed path; a probe that could not run is a fail-closed FAIL, never a pass
-    law: zero-trust-boundary.md step 1
-    planes: [ci]
-    run: [python3, bin/idp-fence-enforcement]
-    fixtures: {must_fail: tests/fixtures/fence-drill/gate-broken-fence.json, must_pass: tests/fixtures/fence-drill/gate-good.json}
-    live_gap: "chidionyema/idp#2452 -- the input is a fence drill receipt and nothing in .github writes one, so the three fixtures are the only fence profiles this rule has ever read."
-    cases:
-      - {expect: pass, args: [tests/fixtures/fence-drill/gate-good.json]}
-      - {expect: refuse, args: [tests/fixtures/fence-drill/gate-broken-fence.json]}
-      - {expect: refuse, args: [tests/fixtures/fence-drill/gate-fail-closed.json], note: "a probe that never ran (shell 127) once read as a passing wall"}
-    ok: "fence-enforcement drops a denied packet, fails closed when the probe could not run"
-    fail: "fence-enforcement cannot tell a dropped packet from a leak or a dead probe (ZT step 1)"
-
-  - id: calico-denyflow
-    label: denyflow
-    statement: >-
-      The 39 generated policies stay unwired until a deny feed has been read over a full cycle; an
-      empty log feed is a fail-closed FAIL, never a clean bill
-    law: platform/calico README
-    planes: [ci]
-    run: [python3, bin/idp-calico-deny-log]
-    fixtures: {must_fail: tests/fixtures/calico-denyflow/feed-no-evidence.log, must_pass: tests/fixtures/calico-denyflow/feed-with-deny.log}
-    live_gap: "chidionyema/idp#2452 -- no real deny feed is collected anywhere, and worse, bin/idp-calico-deny-log:35 names its own passing fixture as the default input for a rule whose statement is that an empty feed is a fail-closed FAIL."
-    cases:
-      - {expect: pass, args: [tests/fixtures/calico-denyflow/feed-with-deny.log]}
-      - {expect: refuse, args: [tests/fixtures/calico-denyflow/feed-no-evidence.log]}
-    ok: "calico deny-feed parses into flows; an empty feed fails closed (README cutover)"
-    fail: "calico deny-feed cannot tell a denied flow from no evidence (platform/calico README)"
-
-  - id: gvisor-cell
-    label: gvisor
-    statement: >-
-      A pod in the gVisor sandbox cell must name runtimeClassName gvisor and must not be
-      privileged, host-networked or mount a hostPath
-    law: zero-trust-boundary.md step 5
-    origin: crew#892 CP4
-    planes: [ci, cluster]
-    cluster: {policy: platform/edge/gvisor-admission.yaml, why: "the same shape is refused at admission"}
-    run: [python3, bin/gvisor-cell-gate]
-    fixtures: {must_fail: tests/fixtures/gvisor-cell/bad.yaml, must_pass: tests/fixtures/gvisor-cell/good.yaml}
-    cases:
-      - {expect: pass, args: [tests/fixtures/gvisor-cell/good.yaml]}
-      - {expect: refuse, args: [tests/fixtures/gvisor-cell/bad.yaml]}
-      # Every manifest the platform declares. The gate prints how many landed in the cell
-      # namespace, so a run that matched nothing reads as nothing graded rather than as ok.
-      - {expect: pass, args: [platform]}
-    ok: "a cell Pod without the runtime class (or privileged, host-networked, hostPath) is refused; the conforming cell Pod passes"
-    fail: "bin/gvisor-cell-gate cannot tell a gVisor cell boundary break from a conforming Pod (ZT step 5)"
-
-  - id: gvisor-cell-fence
-    label: gvrfence
-    statement: >-
-      A gVisor-cell namespace fence is default-deny with the gateway the one allowed route; a fence
-      granting the cell internet egress is a break caught in the pull request
-    law: zero-trust-boundary.md step 6
-    origin: crew#892 CP4
-    planes: [ci, cluster]
-    cluster: {policy: platform/ns-fences, why: "the fence the generator fans out is what admission enforces"}
-    run: [python3, bin/gvisor-cell-fence-gate]
-    fixtures: {must_fail: tests/fixtures/gvisor-cell-fence/bad.yaml, must_pass: tests/fixtures/gvisor-cell-fence/good.yaml}
-    cases:
-      - {expect: pass, args: [tests/fixtures/gvisor-cell-fence/good.yaml]}
-      - {expect: refuse, args: [tests/fixtures/gvisor-cell-fence/bad.yaml]}
-      # The fence the estate actually declares for the sandbox cell, not a copy of it.
-      - {expect: pass, args: [platform/ns-fences/allowances.yaml]}
-    ok: "a gVisor-cell fence granting internet egress is refused; the default-deny cell fence passes"
-    fail: "bin/gvisor-cell-fence-gate cannot tell a cell fence that leaks to the internet from the default-deny fence (ZT step 6)"
-
-  - id: availability
-    label: ha
-    statement: Every surface the founder can open survives losing one node, and so does every fail-closed admission webhook -- losing one of those costs not a hostname but the cluster's ability to apply anything, its own repair included
-    law: docs/reference/policy/availability-standard.md
-    origin: crew#539
-    planes: [ci]
-    run: [python3, bin/idp-availability-gate]
-    fixtures: {must_fail: tests/fixtures/availability/bad, must_pass: tests/fixtures/availability/good}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/availability/bad]}
-      - {expect: pass, args: [tests/fixtures/availability/good]}
-      - {expect: pass, live: true, tail_of: true, echo: "^WAIVED"}
-    ok: "{tail}"
-    tail_strip: '^availability\s+'
-    ok_fallback: "every routed surface survives losing one node"
-    fail: "a routed surface does not survive losing one node, or the gate is not discriminating"
-
-  # --- the policy engine's own fixtures. Until 2026-09-07 these lived as a third case list inside
-  # bin/policy-test, and fifteen fixtures under policy/fixtures were named by no runner at all.
-  - id: rego-unit-tests
-    label: rego
-    statement: The policy/*_test.rego unit tests run in CI; a test no job runs is decoration
-    law: LAW 3
-    origin: crew#638
-    planes: [ci]
-    requires: [conftest]
-    proved_elsewhere: >-
-      conftest verify runs policy/*_test.rego, whose assertions are the both-ways proof of each rule
-    run: [conftest, verify, -p, policy]
-    cases:
-      - {expect: pass, tail_of: true}
-    ok: "rego unit tests: {tail}"
-    ok_fallback: "rego unit tests pass"
-    fail: "conftest verify -p policy"
-
-  - id: licence-policy
-    label: licence
-    statement: No dependency whose licence blocks a sale; a scan with no licences is not clean
-    law: LAW 40
-    planes: [ci]
-    requires: [conftest]
-    run: [conftest, test, --parser, json, -p, policy]
-    fixtures: {must_fail: policy/fixtures/sell-blocking.json, must_pass: policy/fixtures/clean.json}
-    live_gap: "chidionyema/idp#2452 -- bin/pr-report writes reports/pr.json and runs conftest over it, and no workflow in .github invokes bin/pr-report. Every conftest rule in this file grades policy/fixtures and nothing else."
-    cases:
-      - {expect: pass, args: [policy/fixtures/clean.json], note: "an ordinary permissive tree, including packages with no licence metadata"}
-      - {expect: refuse, args: [policy/fixtures/sell-blocking.json], note: "AGPL, SSPL, BUSL, Elastic, non-commercial CC, Commons Clause"}
-      - {expect: refuse, args: [policy/fixtures/broken-scan.json], note: "a full parts list with no terms in it is not clean"}
-    ok: "the licence policy allows a permissive tree and refuses a sale-blocking one"
-    fail: "the licence policy did not behave as specified"
-
-  - id: placement-policy
-    label: placement
-    statement: No scheduled job on this laptop that runs in the sleep window or is never pinged
-    law: LAW 28
-    planes: [ci]
-    requires: [conftest]
-    run: [conftest, test, --parser, json, -p, policy]
-    fixtures: {must_fail: policy/fixtures/placement-misplaced.json, must_pass: policy/fixtures/placement-ok.json}
-    live_gap: "chidionyema/idp#2452 -- same as licence-policy: the producer bin/pr-report exists and no workflow runs it."
-    cases:
-      - {expect: pass, args: [policy/fixtures/placement-ok.json]}
-      - {expect: refuse, args: [policy/fixtures/placement-misplaced.json]}
-      - {expect: refuse, args: [policy/fixtures/placement-blind.json], note: "a monitoring outage cannot read as a pass"}
-    ok: "the placement policy allows a monitored desk job and refuses sleep-window and never-pinged work"
-    fail: "the placement policy did not behave as specified"
-
-  - id: capacity-policy
-    label: capacity
-    statement: >-
-      Paid capacity is auto-defaulted up to estate-defaults.yaml node_pool.budget_monthly_usd and
-      refused above it
-    law: R14
-    origin: crew#289
-    planes: [ci]
-    requires: [conftest]
-    run: [conftest, test, --parser, json, -p, policy]
-    fixtures: {must_fail: policy/fixtures/capacity-over-cap.json, must_pass: policy/fixtures/capacity-under-cap.json}
-    live_elsewhere: "bin/idp-oke-rebuild:66 -- the rebuild grades reports/capacity.json, the real node-pool plan, before it provisions anything"
-    cases:
-      - {expect: pass, args: [policy/fixtures/capacity-under-cap.json]}
-      - {expect: refuse, args: [policy/fixtures/capacity-over-cap.json]}
-      - {expect: pass, args: [policy/fixtures/capacity-spot-under-cap.json]}
-      - {expect: refuse, args: [policy/fixtures/capacity-spot-over-cap.json]}
-      - {expect: pass, args: [policy/fixtures/capacity-burst-under-cap.json]}
-      - {expect: refuse, args: [policy/fixtures/capacity-burst-over-cap.json]}
-    ok: "paid capacity under the cap is allowed and over it refused, on demand, spot and burst"
-    fail: "the capacity policy did not behave as specified"
-
-  - id: operating-model-policy
-    label: opmodel
-    statement: >-
-      A pull request carries its identity and grant together, no console step, a canary label on
-      a paid-capacity change, and no estate-zone literal in the lines it adds
-    law: LAW 51, ZCP
-    origin: crew#286, crew#287, crew#584
-    planes: [ci]
-    requires: [conftest]
-    run: [conftest, test, --parser, json, -p, policy]
-    fixtures: {must_fail: policy/fixtures/opmodel-half-provisioned.json, must_pass: policy/fixtures/opmodel-ok.json}
-    live_elsewhere: "bin/pr-report:63 -- .githooks/pre-push:33 runs bin/pr-report on every push from this repo, so these rules read a real pull request, not only the fixtures below. The one they cannot read there is founder_denied: the hook runs at push time, before the founder can have commented, and the workflow that re-judged on his word is gone (chidionyema/idp#2452)."
-    # Eight rules that graded the WORDING of a pull request body were deleted on 2026-09-08 on
-    # the founder's 2026-09-04 ruling ("addingzero value, paper work for nothing"), and their
-    # thirteen fixtures with them. What is left reads the world: the files a PR changes, the
-    # lines it adds, its labels, and the founder's own DENY: word.
-    cases:
-      - {expect: pass, args: [policy/fixtures/opmodel-ok.json]}
-      - {expect: refuse, args: [policy/fixtures/opmodel-half-provisioned.json]}
-      - {expect: refuse, args: [policy/fixtures/opmodel-gui.json]}
-      - {expect: pass, args: [policy/fixtures/opmodel-no-approval.json], note: "no founder friction; the word is only his veto handle"}
-      - {expect: pass, args: [policy/fixtures/opmodel-approval-pending.json]}
-      - {expect: pass, args: [policy/fixtures/opmodel-approval-other-word.json]}
-      - {expect: refuse, args: [policy/fixtures/opmodel-denied.json]}
-      - {expect: refuse, args: [policy/fixtures/opmodel-no-canary.json]}
-    ok: "the operating-model policy allows a complete pull request and refuses each incomplete shape"
-    fail: "the operating-model policy did not behave as specified"
-
-  - id: no-toil-policy
-    label: notoil
-    statement: A doc that tells a person to mint a credential by hand is refused; a FOUNDER ACTION line is not
-    law: LAW 47, R52
-    origin: crew#66
-    planes: [ci]
-    requires: [conftest]
-    run: [conftest, test, --parser, json, -p, policy]
-    fixtures: {must_fail: policy/fixtures/notoil-doc-manual.json, must_pass: policy/fixtures/notoil-doc-founder-action.json}
-    live_gap: "chidionyema/idp#2452 -- bin/idp-no-toil:88 does run conftest over real documents, and no workflow in .github invokes bin/idp-no-toil."
-    cases:
-      - {expect: refuse, args: [policy/fixtures/notoil-doc-manual.json]}
-      - {expect: pass, args: [policy/fixtures/notoil-doc-founder-action.json]}
-    ok: "a doc that hands a person a credential to mint is refused; a FOUNDER ACTION line is allowed"
-    fail: "the no-toil policy did not behave as specified"
-
-  - id: conscience-rego
-    label: ethos-rego
-    statement: The conscience rules judge a pull request both ways
-    law: LAW 44
-    origin: crew#586 CP2
-    planes: [ci]
-    requires: [conftest]
-    run: [conftest, test, --parser, json, -p, policy]
-    fixtures: {must_fail: policy/fixtures/conscience-bad.json, must_pass: policy/fixtures/conscience-clean.json}
-    live_elsewhere: "bin/pr-report:63 -- .githooks/pre-push:33 runs bin/pr-report on every push from this repo, so what survives here is graded against the real pull request and not only against the fixtures below."
-    cases:
-      - {expect: refuse, args: [policy/fixtures/conscience-bad.json], expect_rules: [no_provider_in_diff, no_floating_tag, new_script_has_a_test, incident_has_a_guard, new_dependency_has_a_ledger_entry]}
-      - {expect: pass, args: [policy/fixtures/conscience-clean.json]}
-    ok: "conscience.rego fires all 5 rules on conscience-bad.json and none on conscience-clean.json"
-    fail: "policy/conscience.rego fixtures"
-
-  # --- rules that were declared in the AGENTS.md table and graded by no runner at all until
-  #     2026-09-07. Named here so the registry and the table cannot disagree.
-  - id: shell-lint
-    # Not fast: shellcheck over the 112 scripts in bin/ took 63 s on this laptop, and the fast
-    # gate's whole budget is 60 s (crew#584 CP-C). It runs in the full gate.
-    label: shell
-    statement: Every bash script in bin/ passes shellcheck at warning level
-    law: LAW 45
-    origin: >-
-      the rung that graded this was deleted with the fixture-grading rungs in 519d59e8, and the
-      fast gate went on printing the word "shell" in its summary line while nothing ran shellcheck
-      in CI at all -- .pre-commit-config.yaml was the only place left, and a local hook is not a gate
-    requires: [shellcheck]
-    run: [shellcheck, -S, warning]
-    fixtures: {must_fail: tests/fixtures/shell-lint/bad.sh, must_pass: tests/fixtures/shell-lint/good.sh}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/shell-lint/bad.sh]}
-      - {expect: pass, args: [tests/fixtures/shell-lint/good.sh]}
-      - {expect: pass, live: true, glob: 'bin/*', shebang: bash}
-    ok: "every bash script in bin/ is clean at warning level; the unguarded-cd fixture is refused"
-    fail: "a script in bin/ fails shellcheck at warning level"
-
-  - id: hardcoded-path
-    fast: true   # cheap enough for the 60-second fast gate
-    label: hardcode
-    statement: No file names where the checkout, home directory or machine lives
-    law: LAW 46
-    planes: [ci, session]
-    # fnmatch, and its * crosses directory separators: '*.sh' is every shell file at any depth.
-    session_glob: ['*.sh', '*.py', '*.yaml', '*.yml', '*.json', 'bin/*', 'launchd/*']
-    run: [bin/idp-hardcode-scan]
-    fixtures: {must_fail: tests/fixtures/hardcoded-path.bad.sh, must_pass: tests/fixtures/hardcoded-path.good.sh}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/hardcoded-path.bad.sh]}
-      - {expect: pass, args: [tests/fixtures/hardcoded-path.good.sh]}
-      - {expect: pass, live: true, tail_of: true}
-    ok: "{tail}"
-    tail_strip: '^hardcode\s+'
-    ok_fallback: "0 files hardcode a checkout path"
-    fail: "a file hardcodes a checkout path, or the scan is not discriminating"
-
-  - id: defs-load-by-path
-    label: codeloc
-    statement: 'A code location loads the way workspace.yaml loads it: by file path, not as a package'
-    law: LAW 45
-    planes: [ci]
-    requires_python: [dagster]
-    run: [bin/idp-defs-validate]
-    fixtures: {must_fail: tests/fixtures/definitions/relative-import.py, must_pass: tests/fixtures/definitions/loads-by-path.py}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/definitions/relative-import.py]}
-      - {expect: pass, args: [tests/fixtures/definitions/loads-by-path.py]}
-      - {expect: pass, args: [scheduler/estate_scheduler/definitions.py], live: true}
-    ok: "the code location loads by file path, as workspace.yaml loads it; a relative import is refused"
-    fail: "the code location does not load by file path -- the dashboard will show PythonError"
-
-  # --- founder 2026-09-07: "we should only be using dagster for scheduling". Temporal is a durable
-  #     workflow engine, not a scheduler, and is not counted here. This row is the fold: a recurring
-  #     job declared anywhere but Dagster is named, and the count only goes down.
-  - id: fits-a-node
-    label: placement
-    statement: A workload that runs must be one the nodes that exist could place again; a pod the scheduler has refused, and a pod that fits on no other node, are both named
-    law: LAW 45
-    origin: idp#2378 (a memory request was raised past what any single node could hold; aggregate capacity read fine and the database was Unschedulable)
-    planes: [ci]
-    run: [python3, bin/idp-fits-a-node]
-    requires_python: [yaml]
-    fixtures: {must_fail: tests/fixtures/fits-a-node/bad, must_pass: tests/fixtures/fits-a-node/good}
-    live_elsewhere: ".github/workflows/oke-check.yml:520 -- the cluster-state job feeds it the same receipt the state collector wrote, so the placement it grades is the one the scheduler saw (#2444)"
-    cases:
-      - {expect: refuse, args: [tests/fixtures/fits-a-node/bad], note: "a database the scheduler has already refused, and two workloads that could not be placed again"}
-      - {expect: pass, args: [tests/fixtures/fits-a-node/good], note: "the same cluster sized to fit, its one pinned workload named in the ledger beside it"}
-    ok: every pod could be placed again on the nodes that exist
-    fail: a pod cannot be placed on any node, or a workload fits exactly one node and is not in platform/state/pinned-workloads.yaml
-  - id: reloader-operator-owned
-    label: reloader
-    statement: Reloader is off on a workload a custom resource owns; that operator owns its config
-      rollout, and Reloader on top of an operator is a loop, not a control. A Secret re-minted on
-      a timer says what Reloader does with it (ignore, or a sentence why the roll is wanted);
-      a silent one is refused
-    law: crew#684 rung 2
-    origin: incident 2026-09-08, SigNoz ClickHouse recreated every ~40s
-    planes:
-    - ci
-    requires:
-    - kyverno
-    run:
-    - kyverno
-    - test
-    fixtures:
-      must_fail: tests/fixtures/reloader-blind
-      must_pass: tests/fixtures/reloader
-    live_elsewhere: "bin/idp-ci:437 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them"
-    cases:
-    - expect: refuse
-      args:
-      - tests/fixtures/reloader-blind
-      note: >-
-        the real policy against an expectation that says the loop was never broken, so kyverno
-        test must fail. Perturbing the expectation rather than the rule's existence is
-        deliberate: an expectation naming a rule kyverno cannot find is scored Pass/Excluded and
-        the patched output is never compared, so deleting the rule proves nothing (2026-09-08).
-    - expect: pass
-      args:
-      - tests/fixtures/reloader
-      tail_of: true
-    ok: 'reloader operator-owned: {tail}'
-    ok_fallback: an operator-owned workload has Reloader turned off; an estate-owned one keeps it
-    fail: kyverno test tests/fixtures/reloader (and tests/fixtures/reloader-blind, which must fail)
-  - id: one-scheduler
-    label: sched
-    statement: >-
-      Dagster is the estate's one scheduler; a recurring job declared in launchd, a GitHub Actions
-      cron or a Kubernetes CronJob is named here until it is folded in
-    law: THE HEADLINE (one platform layer, not a stitched one)
-    origin: founder 2026-09-07
-    planes: [ci]
-    run: [python3, bin/idp-one-scheduler]
-    fixtures: {must_fail: tests/fixtures/one-scheduler/bad, must_pass: tests/fixtures/one-scheduler/good}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/one-scheduler/bad]}
-      - {expect: pass, args: [tests/fixtures/one-scheduler/good]}
-      - {expect: pass, live: true, tail_of: true, note: "the estate's own recurring jobs, against the recorded budget"}
-    ok: "{tail}"
-    tail_strip: '^sched\s+'
-    ok_fallback: "no recurring job outside Dagster beyond the recorded budget"
-    fail: "a recurring job was declared outside Dagster, or the ledger of the ones still to fold is stale"
-
-  - id: glass-break
-    label: glass
-    statement: >-
-      The broker, its grant catalogue, the RBAC floor and bin/idp-kube never land on a green check
-      alone: no auto-merge, no self-approval, and the founder's own review or nothing
-    law: WJ.8
-    origin: docs/policy/agent-infra-safety-spec.md
-    planes: [ci]
-    run: [python3, bin/idp-glass-break]
-    cluster: {policy: null, why: "the subject is a pull request, which no admission controller sees"}
-    fixtures: {must_fail: tests/fixtures/glass-break/bad.json, must_pass: tests/fixtures/glass-break/good.json}
-    live_gap: "chidionyema/idp#2452 -- the input is a pull request as JSON and nothing writes one in CI, so the gate that holds the WJ.8 line has never read a real pull request."
-    cases:
-      - {expect: refuse, args: [tests/fixtures/glass-break/bad.json]}
-      - {expect: pass, args: [tests/fixtures/glass-break/good.json]}
-    ok: "the broker and its floor cannot land on a green check alone (WJ.8)"
-    fail: "a change to the broker could be auto-merged or self-approved (WJ.8)"
-
-  - id: convergence-proof
-    label: proof
-    statement: >-
-      An infrastructure pull request reaches the merge gate with a Proof-of-Convergence; a body
-      with no such block, or whose proof's run is not a green run on its own head commit, is
-      refused -- a missing or unparseable proof is a fail-closed FAIL, never a pass
-    law: W2.3
-    origin: docs/policy/agent-infra-safety-spec.md
-    planes: [ci]
-    run: [python3, bin/idp-convergence-proof]
-    cluster: {policy: null, why: "the subject sits in a pull request body and the proof refers to a shadow run no admission controller can see"}
-    fixtures: {must_fail: tests/fixtures/convergence/no-proof.md, must_pass: tests/fixtures/convergence/proved.md}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/convergence/no-proof.md, HEAD]}
-      - {expect: pass, args: [tests/fixtures/convergence/proved.md, HEAD], env: {CONVERGENCE_RUN_GREEN: "1", CONVERGENCE_RUN_HEAD: HEAD}}
-      - {expect: refuse, args: [tests/fixtures/convergence/proved.md, HEAD], env: {CONVERGENCE_RUN_GREEN: "1", CONVERGENCE_RUN_HEAD: OTHER}}
-    ok: "a change that was never proved in the shadow dimension cannot reach the Greenlane (W2.3)"
-    fail: "a change without a green Proof-of-Convergence on its own head could be auto-merged (W2.3)"
-
-  - id: shadow-sync
-    label: shadow
-    statement: >-
-      A Secret cloned into the shadow dimension is a same-shape shell or it is refused; a live
-      value must never survive re-shaping -- a non-shell Secret in a shadow state-set is a fail
-      (secrets are never copied into a vcluster, only keyed dummies so a Deployment mounts)
-    law: W2.1
-    origin: docs/policy/agent-infra-safety-spec.md
-    planes: [ci]
-    run: [python3, bin/idp-shadow-sync]
-    cluster: {policy: null, why: "the subject is the manifest set carried into a shadow vcluster, which no admission controller sees"}
-    fixtures: {must_fail: tests/fixtures/shadow-sync/verbatim, must_pass: tests/fixtures/shadow-sync/shelled}
-    cases:
-      - {expect: refuse, args: [--check, tests/fixtures/shadow-sync/verbatim], note: "a verbatim secret is not a shell"}
-      - {expect: pass, args: [--check, tests/fixtures/shadow-sync/shelled]}
-    ok: "a shadow state-set carries only shell secrets, never a live value (W2.1)"
-    fail: "a live secret value could reach the shadow dimension (W2.1)"
-
-  - id: limit-raise-only
-    label: limit
-    statement: >-
-      A change to a workload passes the low-risk lane only when its sole difference is a strict
-      increase of a resources.limits.memory/cpu value on one workload; a request change (which
-      the scheduler counts), a lower limit, or any other edit is refused -- YAML ancestry is read
-      from the full parsed old and new files, never guessed from a git hunk
-    law: W3.1
-    origin: docs/policy/agent-infra-safety-spec.md
-    planes: [ci]
-    run: [python3, bin/idp-limit-raise-only-diff]
-    cluster: {policy: null, why: "the subject is a pull request diff, which no admission controller sees"}
-    fixtures: {must_fail: tests/fixtures/limit-raise/request, must_pass: tests/fixtures/limit-raise/good}
-    cases:
-      - {expect: pass, args: [--old, tests/fixtures/limit-raise/good/old/w.yaml, --new, tests/fixtures/limit-raise/good/new/w.yaml]}
-      - {expect: refuse, args: [--old, tests/fixtures/limit-raise/request/old/w.yaml, --new, tests/fixtures/limit-raise/request/new/w.yaml], note: "a request raise is not a limit raise"}
-      - {expect: refuse, args: [--old, tests/fixtures/limit-raise/lower/old/w.yaml, --new, tests/fixtures/limit-raise/lower/new/w.yaml], note: "a lower limit is not a raise"}
-      - {expect: refuse, args: [--old, tests/fixtures/limit-raise/config/old/w.yaml, --new, tests/fixtures/limit-raise/config/new/w.yaml], note: "a config/image edit is not a limit raise"}
-    ok: "a change that is exactly a limit raise on one workload can use the low-risk lane (W3.1)"
-    fail: "a request raise, lower limit, or wider edit could pass the low-risk lane (W3.1)"
-
-  - id: rollback-only
-    label: rollback
-    statement: >-
-      A pull request rolls one workload back only when every changed line is a newTag: whose value
-      that same file has already carried on origin/main; a tag never on main is a forward deploy
-      and waits, and a change that edits anything but a tag is refused -- the prior footprint is
-      proved from history, never assumed from age
-    law: W3.2
-    origin: docs/policy/agent-infra-safety-spec.md
-    planes: [ci]
-    run: [python3, bin/idp-rollback-only-diff]
-    cluster: {policy: null, why: "the subject is a pull request diff, which no admission controller sees"}
-    fixtures: {must_fail: tests/fixtures/rollback/forward-new-tag.diff, must_pass: tests/fixtures/rollback/rollback-known-good.diff}
-    cases:
-      - {expect: pass, args: [--diff, tests/fixtures/rollback/rollback-known-good.diff, --carried, tests/fixtures/rollback/carried.txt]}
-      - {expect: refuse, args: [--diff, tests/fixtures/rollback/forward-new-tag.diff, --carried, tests/fixtures/rollback/carried.txt], note: "a tag never carried on main is a forward deploy"}
-      - {expect: refuse, args: [--diff, tests/fixtures/rollback/not-only-tag.diff, --carried, tests/fixtures/rollback/carried.txt], note: "a change that is not only a tag"}
-    ok: "a rollback to a tag this release already ran on main can use the low-risk lane (W3.2)"
-    fail: "a forward tag or a wider edit could pass the rollback lane (W3.2)"
-
-  - id: sovereign-command
-    label: command
-    statement: >-
-      A sovereign agent's command is inside the allowlist or it is denied; an allowlist that
-      defaults to allow is a denylist wearing the wrong name
-    law: spec v1.0 4.2
-    origin: policy/sovereign_command.rego
-    planes: [ci]
-    requires: [conftest]
-    run: [conftest, test, --parser, json, -p, policy, --namespace, sovereign.command]
-    cluster: {policy: null, why: "the subject is a command a sovereign agent proposes, which no admission controller sees"}
-    fixtures: {must_fail: policy/fixtures/command-not-allowlisted.json, must_pass: policy/fixtures/command-allowed.json}
-    live_gap: "chidionyema/idp#2452 -- same as licence-policy: no workflow feeds this rule a command a sovereign agent actually asked to run."
-    cases:
-      # The namespace is load-bearing and was the reason these three fixtures read as ungraded:
-      # the package is `sovereign.command`, and a conftest run without --namespace evaluates
-      # `main` and permits all three.
-      - {expect: pass, args: [policy/fixtures/command-allowed.json]}
-      - {expect: refuse, args: [policy/fixtures/command-not-allowlisted.json]}
-      - {expect: refuse, args: [policy/fixtures/command-forbidden-fragment.json]}
-    ok: "the command allowlist permits an allowed verb and denies both an unlisted one and a forbidden fragment"
-    fail: "the command allowlist is not discriminating -- an agent could run a verb outside it"
-
-  # --- founder 2026-09-07, on the fifth instance in one day of a check that runs, returns
-  #     success and has never been graded against a real input: "this is a probel acrosss estate
-  #     d we have not solved it". This row is the general answer. Every other rule grades the
-  #     estate; this one grades the rules -- a fixture pair on disk that no case and no test
-  #     names is a rule that was deleted or never wired, and nothing else in the tree can see it,
-  #     because a gate that does not run produces no output.
-  - id: rule-coverage
-    label: coverage
-    statement: >-
-      Every fixture pair in the tree is named by a registry case or a test; a fixture graded by
-      nothing is a rule nobody runs, and the ledger of the ones still unwired only shrinks
-    law: LAW 45
-    origin: founder 2026-09-07; glass-break, jit-broker-role and vendor-name each nearly lost in one rebase
-    planes: [ci]
-    run: [python3, bin/idp-rule-coverage]
-    cluster: {policy: null, why: "the subject is this repository's own gates"}
-    fixtures: {must_fail: tests/fixtures/rule-coverage/bad, must_pass: tests/fixtures/rule-coverage/good}
-    cases:
-      - {expect: refuse, env: {RULE_COVERAGE_ROOT: tests/fixtures/rule-coverage/bad}}
-      - {expect: pass, env: {RULE_COVERAGE_ROOT: tests/fixtures/rule-coverage/good}}
-      - {expect: pass, live: true, tail_of: true, note: "this repository, against the recorded ledger"}
-    ok: "{tail}"
-    tail_strip: '^coverage\s+'
-    ok_fallback: "every fixture in the tree is graded by something, or is on the recorded ledger"
-    fail: "a fixture pair is graded by nothing and is not on the ledger -- a gate was deleted, or was never wired"
-
-  # --- added to main after this branch opened (2026-09-07), ported here rather than left as the
-  #     two hand-written rungs they arrived as: the registry is the one place a rule is declared.
-  - id: jit-broker-role
-    label: jitrole
-    statement: >-
-      The broker mints only what it already holds: its own ClusterRole carries no escalate, no
-      bind, no impersonate, no wildcard and no secrets, and no ClusterRoleBinding names it -- the
-      absence that makes KSV-0050 on that file an accepted risk rather than a defect
-    law: WJ.5
-    origin: trivy 2026-09-07
-    planes: [ci]
-    run: [python3, bin/idp-jit-broker-role]
-    cluster: {policy: null, why: "the ClusterRole is the thing graded; admission cannot see what a future edit would add"}
-    fixtures: {must_fail: tests/fixtures/jit-broker-role/bad.yaml, must_pass: tests/fixtures/jit-broker-role/good.yaml}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/jit-broker-role/bad.yaml]}
-      - {expect: pass, args: [tests/fixtures/jit-broker-role/good.yaml]}
-      - {expect: pass, args: [platform/jit/rbac.yaml], live: true, note: "the broker's own role, as committed"}
-    ok: "the broker's ClusterRole carries no escalate, bind, impersonate, wildcard or secrets, and nothing binds it"
-    fail: "the broker's ClusterRole grew a verb that turns a mint into standing access, or the gate is not discriminating"
-
-  - id: vendor-name
-    label: vendor
-    statement: >-
-      A deck that replaces a vendor operator never reuses the operator's cluster-scoped names; a
-      ClusterRole has no namespace, so moving the ServiceAccounts does not separate them
-    law: platform/calico/raw/README.md
-    origin: incident 2026-09-06, tigera-operator tombstones
-    planes: [ci]
-    run: [python3, bin/vendor-name-collision-gate]
-    cluster: {policy: null, why: "the collision is with names a removed operator left behind; admission sees only the new object"}
-    fixtures: {must_fail: tests/fixtures/vendor-names/bad.yaml, must_pass: tests/fixtures/vendor-names/good.yaml}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/vendor-names/bad.yaml]}
-      - {expect: pass, args: [tests/fixtures/vendor-names/good.yaml]}
-      - {expect: pass, args: [platform/calico/raw], live: true, note: "the real deck, whose README calls it byte-faithful to the vendor reference"}
-    ok: "no replacement deck reuses a vendor operator's cluster-scoped names"
-    fail: "a deck reuses a vendor operator's cluster-scoped name, or the gate is not discriminating"
-
-  - id: nodesoftware-operator
-    label: nodesoftware
-    statement: >-
-      A RuntimeInstall CR names a runtime in the closed set the NodeSoftwareOperator knows,
-      requires a canary on ProgressiveCanary rollouts, and rejects pause durations that would make
-      the canary pause a no-op
-    law: NodeSoftwareOperator option c, goal b9217bea
-    origin: crew#892 CP4
-    planes: [ci]
-    run: [bin/nodesoftware-operator-gate]
-    cluster: {policy: null, why: "the CRD's own schema catches a malformed CR at admission; this grades the CRs committed to the repo before they ever reach it"}
-    fixtures: {must_fail: tests/fixtures/nodesoftware-operator/bad.yaml, must_pass: tests/fixtures/nodesoftware-operator/good.yaml}
-    cases:
-      - {expect: refuse, args: [tests/fixtures/nodesoftware-operator/bad.yaml]}
-      - {expect: pass, args: [tests/fixtures/nodesoftware-operator/good.yaml]}
-      - {expect: pass, args: [platform/gvisor-runtime/runtimeinstall.yaml], live: true, note: "the first real RuntimeInstall, as committed"}
-    ok: "a RuntimeInstall CR names a closed-set runtime, requires a canary, and a 30s+ pause; the bad fixture is refused"
-    fail: "bin/nodesoftware-operator-gate cannot tell a well-formed CR from a closed-set / no-canary / too-short-pause violation"
-  - id: pipeverdict
-    label: pipeverdict
-    statement: >-
-      A conditional's verdict is never a pipeline into grep in a script that sets pipefail: a
-      failing left-hand stage inverts the answer silently. Capture the output first and grade the
-      text.
-    law: LAW 55
-    origin: incident 2026-08-25 (port-gate exited 1 on purpose and the leg failed with the message
-      exactly right)
-    planes: [ci, session]
-    session_glob: ["bin/*", "*.sh"]
-    fast: true
-    run: [bin/idp-pipeverdict]
-    fixtures:
-      must_fail: tests/fixtures/pipefail-verdict.bad.sh
-      must_pass: tests/fixtures/pipefail-verdict.good.sh
-    cases:
-      - expect: refuse
-        args: [tests/fixtures/pipefail-verdict.bad.sh]
-      - expect: pass
-        args: [tests/fixtures/pipefail-verdict.good.sh]
-      # The scope this rule was moved out of read bin/* and nothing else. This case reads all 231
-      # tracked shell files, 8 of them outside bin/, and it is why the widening was safe to make:
-      # measured at zero hits over those 8 before the move, not after. (The number in this comment
-      # was 632 until idp-1a counted it on #2390; nobody had taken it.)
-      - expect: pass
-        live: true
-    ok: "no shell file lets a pipeline exit status stand in for a grep match (LAW 55)"
-    fail: "a shell file lets a pipeline exit status stand in for a grep match (LAW 55)"
-
-  # --- decision 0026: Crossplane owns Day-2 and OpenTofu owns the ground. The guard predates the
-  #     thing it guards -- this row is step 1 of that record's order of work, written and green
-  #     before any operator is installed, so the first Claim ever merged is already judged.
-  - id: split-brain
-    label: split
-    fast: true   # a regex walk of platform/oci plus the YAML that names a Crossplane group
-    statement: >-
-      One cloud resource has exactly one owner: a Crossplane external-name that matches an
-      OpenTofu resource under platform/oci is two controllers undoing each other, forever
-    law: decision 0026
-    origin: founder 2026-09-07, "i think if crossplane has benefits for us we need to work out how to fit it in"
-    planes: [ci]
-    run: [python3, bin/idp-split-brain]
-    fixtures:
-      must_fail: tests/fixtures/split-brain/bad
-      must_pass: tests/fixtures/split-brain/good
-    cases:
-      - {expect: refuse, args: [tests/fixtures/split-brain/bad]}
-      - {expect: pass, args: [tests/fixtures/split-brain/good]}
-      - {expect: pass, live: true, note: "the estate's own tree, which owns nothing with Crossplane yet"}
-    ok: "no cloud object is claimed by both OpenTofu and Crossplane"
-    fail: "a cloud object is claimed by both OpenTofu and Crossplane; each controller will undo the other at the reconcile interval"
-
-  - id: mechanism
-    label: mechanism
-    fast: true
-    statement: >-
-      A mechanism this repository depends on may not be switched off, deleted or unproduced:
-      every `uses:` resolves to a workflow in the tree, and every workflow GitHub is not
-      running is named with a reason in .github/disabled.yaml -- a registry, and never
-      inside .github/workflows/, where GitHub tries to run it
-    law: "incident 2026-09-08, ten days of nothing merging and nothing red"
-    origin: 'founder 2026-09-08, "agents should be responsiblefor their own own, all this chasing is fricion"'
-    planes: [ci]
-    run: [python3, bin/idp-mechanism-gate]
-    fixtures:
-      must_fail: tests/fixtures/mechanism/bad
-      must_pass: tests/fixtures/mechanism/good
-    cases:
-      - {expect: refuse, args: [tests/fixtures/mechanism/bad]}
-      - {expect: pass, args: [tests/fixtures/mechanism/good]}
-      - {expect: pass, live: true, note: "this repository's own workflows"}
-    ok: "every workflow the tree calls exists, and every workflow GitHub has switched off says why"
-    fail: >-
-      a workflow calls one that is not in the tree (GitHub fails that run at startup with no job
-      and no log), or a workflow is disabled in settings with no line in the tree saying why
-
-  - id: clickhouse-system-log-ttl
-    label: clickhouse-system-log-ttl
-    fast: true
-    statement: >-
-      A ClickHouse system table the operator gives an <engine> carries its retention inside that
-      engine string, never as a sibling <ttl>; ClickHouse exits 36 on boot when both are present
-    law: "incident 2026-09-08, signoz-clickhouse CrashLoopBackOff"
-    origin: >-
-      One malformed stanza took the estate down: the server exited 36 on every boot, so
-      signoz-clickhouse had no endpoints, so the observability Kustomization hung on its
-      Job/langfuse-clickhouse-database health check, so lastApplied stayed thirty commits back,
-      so langfuse kept the two reserved cores #2429 had already removed in git -- and both nodes
-      went to 91% and 95% CPU requested, evicting flux's own controllers.
-    planes: [ci, session]
-    session_glob: ['platform/**/*.yaml', 'platform/**/*.yml']
-    run: [python3, bin/idp-clickhouse-system-log-ttl]
-    cluster: {policy: null, why: "the break is in the chart values; admission never sees the rendered config.d XML"}
-    fixtures:
-      must_fail: tests/fixtures/clickhouse-system-log-ttl/bad.yaml
-      must_pass: tests/fixtures/clickhouse-system-log-ttl/good.yaml
-    cases:
-      - {expect: refuse, args: [tests/fixtures/clickhouse-system-log-ttl/bad.yaml]}
-      - {expect: pass, args: [tests/fixtures/clickhouse-system-log-ttl/good.yaml]}
-      - {expect: pass, live: true, note: "this repository's own platform manifests"}
-    ok: "every ClickHouse system-log retention is inside its engine string"
-    fail: >-
-      a system table the Altinity operator ships an <engine> for also has a sibling <ttl>, which
-      ClickHouse refuses at startup with BAD_ARGUMENTS and exit 36
-
-  - id: crd-then-cr
-    label: crd-then-cr
-    fast: true
-    statement: >-
-      A Crossplane Provider and an instance of a kind its package installs never share a Flux
-      Kustomization path; Flux dry-runs the whole path first, so neither the instance nor the
-      Provider ever lands
-    law: "incident 2026-09-08, crossplane-providers"
-    origin: >-
-      platform/crossplane/providers held the Provider that installs oci.upbound.io and a
-      ProviderConfig of that group. Flux reported `no matches for kind "ProviderConfig" in version
-      "oci.upbound.io/v1beta1"`, which reads as a missing CRD; the truth was that the apply was
-      refused whole, so the Provider that would have installed the kind was never installed at
-      all -- `kubectl get providers.pkg.crossplane.io` returned "No resources found" for as long
-      as the row had existed. It never fails once and heals.
-    planes: [ci, session]
-    session_glob: ['platform/**/*.yaml', 'platform/**/*.yml', 'clusters/**/*.yaml']
-    run: [python3, bin/idp-crd-then-cr]
-    cluster: {policy: null, why: "the break is in the repository's Kustomization layout; the objects never reach admission"}
-    fixtures:
-      must_fail: tests/fixtures/crd-then-cr/bad
-      must_pass: tests/fixtures/crd-then-cr/good
-    cases:
-      - {expect: refuse, args: [tests/fixtures/crd-then-cr/bad]}
-      - {expect: pass, args: [tests/fixtures/crd-then-cr/good]}
-      - {expect: pass, live: true, note: "this repository's own Kustomization paths"}
-    ok: "no Flux Kustomization path holds both a Provider and an instance of a kind it installs"
-    fail: >-
-      a Kustomization path holds a Crossplane Provider and an object of a group that Provider
-      installs; the path can never converge, and the error names the instance rather than the
-      ordering
-
-  - id: store-reach
-    label: store-reach
-    fast: true
-    statement: >-
-      A secret store that authenticates outside the cluster has a fence that lets it get there:
-      egress_internet, and egress_metadata too when its identity is fetched at run time
-    law: "incident 2026-09-08, ClusterSecretStore/estate-vault"
-    origin: >-
-      The external-secrets fence allowed egress to the apiserver, kube-dns, the observability
-      namespace and its own pods. ClusterSecretStore/estate-vault authenticates as
-      InstancePrincipal, so it needed 169.254.169.254 and an HTTPS route to OCI, and had neither.
-      It reported `unable to create client`, reason InvalidProviderConfig -- a message that names
-      no network -- and every ExternalSecret in the estate then failed with `ClusterSecretStore
-      "estate-vault" is not ready`. Twenty-nine Flux rows waited behind one.
-    planes: [ci, session]
-    session_glob: ['platform/ns-fences/allowances.yaml', 'platform/**/store*.yaml']
-    run: [python3, bin/idp-store-can-reach-its-vault]
-    cluster: {policy: null, why: "the store and the fence are both valid objects; nothing admission sees is malformed"}
-    fixtures:
-      must_fail: tests/fixtures/store-reach/bad
-      must_pass: tests/fixtures/store-reach/good
-    cases:
-      - {expect: refuse, args: [tests/fixtures/store-reach/bad]}
-      - {expect: pass, args: [tests/fixtures/store-reach/good]}
-      - {expect: pass, live: true, note: "this estate's own stores and its fence register"}
-    ok: "every store reaching outside the cluster has the egress its provider needs"
-    fail: >-
-      a SecretStore or ClusterSecretStore names a provider outside the cluster that its
-      namespace's fence gives it no route to; the store reports InvalidProviderConfig and every
-      ExternalSecret behind it stops
-
-  - id: catalogue-entity-runtime-service
-    label: cat-runtime-svc
-    statement: >-
-      A package manager may mint its own webhook Service without a catalogue label, and an
-      undeclared door in the same namespace still may not
-    law: "R38 -- a guard that refuses correct work is an outage"
-    origin: >-
-      incident 2026-09-08. require-catalogue-entity runs at Enforce, and it refused the Service
-      Crossplane's package manager creates for each provider revision: `cannot apply provider
-      package service: admission webhook "validate.kyverno.svc-fail" denied the request ...
-      require-catalogue-entity`. No file in this repository renders that Service, so no kustomize
-      label and no Flux postRenderer could ever reach it. Both providers sat at Installed=True,
-      Healthy=False with zero CRDs established, and the crossplane-providerconfig row failed
-      forever with `no matches for kind "ProviderConfig" in version "oci.upbound.io/v1beta1"` --
-      an error that names the config, never the policy that caused it.
-    planes: [ci]
-    requires: [kyverno]
-    run: [kyverno, test]
-    fixtures:
-      must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
-      must_pass: tests/fixtures/catalogue-entity-runtime-service
-    live_elsewhere: "bin/idp-ci:477 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them"
-    cases:
-      - expect: refuse
-        args: [tests/fixtures/catalogue-entity-runtime-service-blind]
-        note: >-
-          the real policy with the exception file left out, so the provider's Service is refused
-          and kyverno reports "Want skip, got fail" -- the outage itself, graded
-      - expect: pass
-        args: [tests/fixtures/catalogue-entity-runtime-service]
-        tail_of: true
-    ok: 'catalogue entity, runtime service: {tail}'
-    ok_fallback: >-
-      the package manager's own Service is excepted by name and an unlabelled door in the same
-      namespace is still refused
-    fail: kyverno test tests/fixtures/catalogue-entity-runtime-service (and its -blind pair, which must fail)
-  - id: priority-class-exists
-    label: priority-class-exists
-    fast: true
-    statement: >-
-      Every priorityClassName a workload names is a PriorityClass this tree declares or one of
-      the two Kubernetes ships; a class that exists nowhere is refused at admission, not at apply
-    law: "incident 2026-09-08, nodesoftware-operator"
-    origin: >-
-      platform/nodesoftware-operator/deployment.yaml named priorityClassName idp-infrastructure.
-      No such class is declared in this tree and none exists in the cluster, so the apiserver
-      refused every pod the ReplicaSet asked for -- `pods "nodesoftware-operator-6d87fb9cbd-" is
-      forbidden: no PriorityClass with name idp-infrastructure was found`. The Deployment sat at
-      ReplicaFailure/FailedCreate and its Flux row went HealthCheckFailed. The name survived
-      review because the line carried a comment pointing at the directory where the real classes
-      live, which makes a wrong name look checked, and because the failure names a scheduling
-      concept, so it reads like capacity rather than a typo.
-    planes: [ci, session]
-    session_glob: ['platform/**/*.yaml', 'platform/**/*.yml', 'clusters/**/*.yaml', 'apps/**/*.yaml']
-    run: [python3, bin/idp-priority-class-exists]
-    cluster: {policy: null, why: "the apiserver already refuses the pod; the cost is that it refuses it after the manifest has merged and reconciled"}
-    fixtures:
-      must_fail: tests/fixtures/priority-class-exists/bad
-      must_pass: tests/fixtures/priority-class-exists/good
-    cases:
-      - {expect: refuse, args: [tests/fixtures/priority-class-exists/bad]}
-      - {expect: pass, args: [tests/fixtures/priority-class-exists/good]}
-      - {expect: pass, live: true, note: "this repository's own workloads and priority classes"}
-    ok: "every priorityClassName in the tree resolves to a class that exists"
-    fail: >-
-      a workload names a PriorityClass that neither this tree declares nor Kubernetes ships;
-      admission refuses every pod it asks for and the Deployment reports FailedCreate
-
-  - id: simulate-twin
-    label: simulategrade
-    statement: >-
-      A state-changing estate MCP tool (an @mcp.tool() named execute_* or exec_*) is refused
-      unless the same module registers a simulate twin to propose its change first (MUM-288, ADR 0006)
-    law: MUM-288, ADR 0006
-    origin: MUM-288
-    planes: [ci]
-    run: [python3, bin/idp-simulate-gate]
-    session_glob: ['mcp/plugins/*.py']
-    fixtures:
-      must_fail: tests/fixtures/simulate-grade/bad
-      must_pass: tests/fixtures/simulate-grade/good
-    cases:
-      - {expect: refuse, args: [tests/fixtures/simulate-grade/bad]}
-      - {expect: pass, args: [tests/fixtures/simulate-grade/good]}
-      - {expect: pass, live: true, note: "the genuine estate MCP server's simulate/execute door pairs"}
-    ok: "every mutating estate MCP tool in mcp/plugins ships a simulate twin; the gate is proved both ways"
-    fail: >-
-      a mutating estate MCP tool registers with no simulate twin, and the gate cannot tell the
-      breach from the pair
-
-  - id: otto-door-key
-    label: ottodoorkey
-    statement: >-
-      Otto's door presents a key the lifeboat it talks to can validate: when LITELLM_BASE_URL is
-      the loopback otto-brain sidecar, the door derives the same master key from the same Secret
-      the sidecar does. A sidecar with no database cannot look up a virtual key, so it refuses
-      every turn with 400 "No connected db." before any of the three homes is tried
-    law: THE EMPIRICAL PROOF RULE
-    origin: incident 2026-09-10, the three homes carried no real turn for a day while every probe stayed green
-    planes: [ci]
-    run: [python3, bin/idp-otto-door-key-agrees]
-    session_glob: ['platform/otto-gateway/deployment.yaml']
-    fixtures:
-      must_fail: tests/fixtures/otto-door-key/bad.yaml
-      must_pass: tests/fixtures/otto-door-key/good.yaml
-    cases:
-      - {expect: refuse, args: [tests/fixtures/otto-door-key/bad.yaml]}
-      - {expect: pass, args: [tests/fixtures/otto-door-key/good.yaml]}
-      - {expect: pass, live: true, args: [platform/otto-gateway/deployment.yaml], note: "the door and lifeboat as they actually ship"}
-    ok: "the door and the lifeboat derive one master key from one Secret; proved both ways"
-    fail: >-
-      the door presents a key the lifeboat cannot validate, so every real turn dies at the
-      lifeboat's door while probes that go around it stay green
-
-  - id: grader-exit-gate
-    label: grader-exit
-    statement: >-
-      A grading step whose verdict cannot reach the run is refused: a grader piped into tee/cat
-      with neither pipefail nor -e, a bare grader that is not the last command under a set line
-      without -e, or a grader ending in '|| true' with no '# optional: <reason>' marker. The step
-      is accepted when the same job asserts the captured verdict in a later step
-    law: LAW 28
-    origin: incident 2026-09-10, grading steps whose verdict is discarded
-    planes: [ci]
-    run: [python3, bin/idp-grader-exit-gate]
-    fixtures:
-      must_fail: tests/fixtures/grader-exit/bad
-      must_pass: tests/fixtures/grader-exit/good
-    cases:
-      - {expect: refuse, args: [tests/fixtures/grader-exit/bad]}
-      - {expect: pass, args: [tests/fixtures/grader-exit/good]}
-      - {expect: pass, live: true, args: [.github/workflows], note: "this repository's own workflows"}
-    ok: "every grading step in the tree can fail its run, or a later step asserts the captured verdict"
-    fail: >-
-      measured 2026-09-10: 'set -u; grader | tee out' exits 0 while the grader failed, so a run
-      reports green having graded nothing. 'set -o pipefail' or '-e' fixes it; a bare last command
-      propagates without -e, and a later step that tests the captured rc is an assertion
+- id: flux-subst
+  fast: true
+  label: flux-subst
+  statement: No shell parameter expansion (${NAME:-...} and kin) in a Flux-reconciled manifest; Flux substitution rewrites it before the pod runs it
+  law: incident 2026-09-06, otto-gateway
+  planes:
+  - ci
+  - session
+  session_glob:
+  - platform/*.yaml
+  - clusters/*.yaml
+  run:
+  - python3
+  - bin/idp-flux-subst-gate
+  cluster:
+    policy: null
+    why: the break is in the repo bytes; admission never sees the pre-substitution form
+  fixtures:
+    must_fail: tests/fixtures/flux-subst/bad.yaml
+    must_pass: tests/fixtures/flux-subst/good.yaml
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/flux-subst/bad.yaml
+  - expect: pass
+    args:
+    - tests/fixtures/flux-subst/good.yaml
+  - expect: pass
+    live: true
+    note: the manifests actually committed
+  ok: no manifest hands Flux a shell expansion; the gate is proved both ways
+  fail: a manifest hands Flux a shell expansion, or the gate is not discriminating
+- id: flux-wait-brake
+  fast: true
+  label: flux-wait-brake
+  statement: 'A Flux Kustomization never sets both wait: true and healthChecks; wait wins, the checks the author wrote are discarded, and the row then waits on every object in its path -- so one optional
+    Job going Failed holds every change to that path out of the cluster'
+  law: incident 2026-09-10, otto-gateway held out by Job/otto-memory-store-6
+  origin: 'The otto-gateway row named one health check, Deployment/otto-gateway, and set wait: true above it. The Deployment was healthy. A one-shot backfill in the same path timed out reaching the LLM
+    router, went Failed, and the row reported "failed early due to stalled resources" and stopped applying -- including the change that repairs the router path the backfill could not reach. The Job''s own
+    manifest says "If this never runs, nothing breaks". 41 of the estate''s 82 Kustomizations carried the same dead healthChecks list.'
+  planes:
+  - ci
+  - session
+  session_glob:
+  - clusters/**/*.yaml
+  run:
+  - python3
+  - bin/idp-flux-wait-brake
+  cluster:
+    policy: null
+    why: the break is in the Kustomization spec in git; admission never sees a row's own readiness policy
+  fixtures:
+    must_fail: tests/fixtures/flux-wait-brake/bad.yaml
+    must_pass: tests/fixtures/flux-wait-brake/good.yaml
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/flux-wait-brake/bad.yaml
+  - expect: pass
+    args:
+    - tests/fixtures/flux-wait-brake/good.yaml
+  - expect: pass
+    live: true
+    note: this estate's own cluster rows
+  ok: no Kustomization declares healthChecks that wait would throw away
+  fail: 'a Kustomization sets wait: true beside a healthChecks list, so the list is dead text and the row is braked by every object in its path'
+- id: probe-host
+  fast: true
+  label: probe-host
+  statement: 'No probe or lifecycle handler names a host: PodSecurity restricted refuses the pod at create, not the manifest at apply, so a workload carrying one merges green, reconciles green, and then
+    its ReplicaSet fails to make a pod forever while the old pod keeps serving'
+  law: incident 2026-09-10, otto-gateway three homes Available=False for hours
+  origin: 'The otto-brain sidecar binds 127.0.0.1 by design (R20, and a lifeboat you reach without crossing a network). Its probes were pointed back at loopback with host: 127.0.0.1, which cannot work anyway
+    -- the kubelet is not in the pod''s network namespace -- and which PodSecurity restricted forbids outright: "probe or lifecycle host (container \"otto-brain\" uses probe or lifecycle host \"127.0.0.1\")".
+    Otto''s three homes merged and never ran. An exec probe runs inside the container, where loopback is the sidecar, and needs no host.'
+  planes:
+  - ci
+  - session
+  session_glob:
+  - platform/**/*.yaml
+  - clusters/**/*.yaml
+  run:
+  - python3
+  - bin/idp-probe-host
+  cluster:
+    policy: null
+    why: PodSecurity restricted already refuses it at pod create in every namespace; this row moves the refusal to the pull request, where it is readable
+  fixtures:
+    must_fail: tests/fixtures/probe-host/bad.yaml
+    must_pass: tests/fixtures/probe-host/good.yaml
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/probe-host/bad.yaml
+  - expect: pass
+    args:
+    - tests/fixtures/probe-host/good.yaml
+  - expect: pass
+    live: true
+    note: this estate's own workloads
+  ok: no probe or lifecycle handler names a host
+  fail: a probe or lifecycle handler sets host, so PodSecurity restricted will refuse every pod the workload tries to create while the manifest itself stays green
+- id: cloud-agnostic
+  label: agnostic
+  statement: No provider-specific annotation or Service outside the compute provisioner
+  law: R36
+  origin: crew#250
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/cloud-agnostic-gate
+  fixtures:
+    must_fail: tests/fixtures/cloud-agnostic/bad
+    must_pass: tests/fixtures/cloud-agnostic/good
+  cases:
+  - expect: refuse
+    env:
+      CLOUD_AGNOSTIC_ROOT: tests/fixtures/cloud-agnostic/bad
+  - expect: pass
+    env:
+      CLOUD_AGNOSTIC_ROOT: tests/fixtures/cloud-agnostic/good
+  - expect: pass
+    live: true
+  ok: cloud-agnostic-gate refuses a provider annotation, permits a plain Service, and the repo is clean
+  fail: cloud-agnostic-gate is not discriminating or the platform names a cloud outside platform/oci
+- id: estate-zone
+  label: zone
+  statement: The DNS zone is one value in clusters/*/estate-config.yaml; a platform file naming it as a literal fails, in the tree and in a pull-request diff
+  law: R46
+  origin: crew#269, crew#796
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/estate-zone-gate
+  fixtures:
+    must_fail: tests/fixtures/estate-zone/bad
+    must_pass: tests/fixtures/estate-zone/good
+  cases:
+  - expect: refuse
+    env:
+      ESTATE_ZONE_ROOT: tests/fixtures/estate-zone/bad
+  - expect: pass
+    env:
+      ESTATE_ZONE_ROOT: tests/fixtures/estate-zone/good
+  - expect: refuse
+    env:
+      ESTATE_ZONE_ROOT: tests/fixtures/estate-zone/bad
+    args:
+    - --diff
+    - tests/fixtures/estate-zone/added-literal.diff
+  - expect: pass
+    env:
+      ESTATE_ZONE_ROOT: tests/fixtures/estate-zone/bad
+    args:
+    - --diff
+    - tests/fixtures/estate-zone/added-substituted.diff
+  - expect: pass
+    env:
+      ESTATE_ZONE_ROOT: tests/fixtures/estate-zone/bad
+    args:
+    - --diff
+    - tests/fixtures/estate-zone/added-self-marker.diff
+  - expect: pass
+    live: true
+  ok: estate-zone-gate refuses a literal zone (tree and diff), permits the substituted form, and the repo is clean
+  fail: estate-zone-gate is not discriminating or the platform names the zone outside clusters/*/estate-config.yaml
+- id: port-lock
+  label: portlock
+  statement: A compose publication not declared in catalog/ports.yaml, or off loopback without non_loopback, fails
+  law: R22 mechanism 4, R20
+  origin: crew#186 CP4
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/port-gate
+  fixtures:
+    must_fail: tests/fixtures/ports-bad
+    must_pass: catalog/ports.yaml
+  cases:
+  - expect: refuse
+    env:
+      COMPOSE_GLOB: tests/fixtures/ports-bad/*.yml
+  - expect: pass
+    live: true
+    tail_of: true
+  ok: '{tail}'
+  tail_strip: ^ports\s+
+  ok_fallback: port-gate refuses an undeclared publication and passes the repo
+  fail: port-gate is not discriminating or the repo has an undeclared bind
+- id: port-bind
+  label: portbind
+  statement: A listener bound to a different address than its ports.yaml row declares is refused
+  law: R20
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/port-gate
+  - --live
+  fixtures:
+    must_fail: tests/fixtures/ports-live/inventory.bad.json
+    must_pass: tests/fixtures/ports-live/inventory.good.json
+  cases:
+  - expect: refuse
+    env:
+      REG: tests/fixtures/ports-live/ports.yaml
+      INV: tests/fixtures/ports-live/inventory.bad.json
+      COMPOSE_GLOB: none
+      BIN_DIR: none
+  - expect: pass
+    env:
+      REG: tests/fixtures/ports-live/ports.yaml
+      INV: tests/fixtures/ports-live/inventory.good.json
+      COMPOSE_GLOB: none
+      BIN_DIR: none
+  ok: port-gate --live refuses a bind that differs from the declared address and passes a matching one
+  fail: port-gate --live does not discriminate on bind address
+- id: security-policy
+  label: security
+  statement: A control on the security policy page without a proof command that exists is a wish
+  law: LAW 44
+  origin: crew#198
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/security-policy-gate
+  fixtures:
+    must_fail: tests/fixtures/security-policy/bad.md
+    must_pass: tests/fixtures/security-policy/good.md
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/security-policy/bad.md
+  - expect: pass
+    args:
+    - tests/fixtures/security-policy/good.md
+  - expect: pass
+    live: true
+  ok: every control on docs/reference/security-policy.md names a proof command that exists; gate proved both ways
+  fail: security-policy-gate does not discriminate, or a control has no proof
+- id: root-trust
+  label: root-trust
+  statement: Every vault entry an ExternalSecret reads is born by a bootstrapper on disk or ticketed
+  law: R52
+  origin: crew#66 ruling 5453747447, crew#580
+  planes:
+  - ci
+  proved_elsewhere: tests/test_incident_crew66_root_trust_register.py refuses a register with a missing bootstrapper and admits a complete one; the case here is the live register
+  run:
+  - python3
+  - bin/idp-root-trust
+  fixtures:
+    must_fail: tests/test_incident_crew66_root_trust_register.py
+    must_pass: platform/secrets
+  cases:
+  - expect: pass
+    live: true
+    tail_of: true
+  ok: '{tail}'
+  tail_strip: ^root-trust:\s*
+  ok_fallback: every ExternalSecret credential is registered
+  fail: an ExternalSecret reads a credential nobody registered, or a register row has no bootstrapper/ticket
+- id: ai-act
+  label: ai-act
+  statement: Every registered AI system has its Annex IV file, risk entries and declared data (Arts. 9, 10, 11)
+  law: AI Act, kept voluntarily
+  origin: crew#202
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/ai-act-gate
+  fixtures:
+    must_fail: tests/fixtures/ai-act/bad
+    must_pass: tests/fixtures/ai-act/good
+  cases:
+  - expect: refuse
+    env:
+      TODAY: '2026-08-25'
+    args:
+    - tests/fixtures/ai-act/bad
+  - expect: pass
+    env:
+      TODAY: '2026-08-25'
+    args:
+    - tests/fixtures/ai-act/good
+  - expect: pass
+    live: true
+    args:
+    - .
+  ok: every registered AI system has its Annex IV file, risk entries and declared data; gate proved both ways
+  fail: ai-act-gate does not discriminate, or a registered system has a gap
+- id: law32-demo-onboarding
+  label: law32
+  statement: A new bin file ships with docs/tutorials/demo and docs/how-to/onboarding, above the prose floor and in the nav
+  law: LAW 32
+  origin: founder 2026-08-25
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/law32-gate
+  fixtures:
+    must_fail: bin/feature-with-no-pages
+    must_pass: bin/supply-chain
+  cases:
+  - expect: pass
+    args:
+    - --added
+    - bin/supply-chain
+  - expect: refuse
+    args:
+    - --added
+    - bin/feature-with-no-pages
+  - expect: pass
+    live: true
+  ok: every new bin file has its demo and onboarding; every page is above the prose floor and in the nav; gate proved both ways
+  fail: a feature shipped without demo/onboarding, or a page is thin or unlisted
+- id: plist-renders
+  label: plist
+  statement: Every launchd template renders to a plist that parses and names its job
+  law: LAW 45
+  origin: idp#49
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/plist-gate
+  fixtures:
+    must_fail: tests/fixtures/plist/bad.plist.tmpl
+    must_pass: tests/fixtures/plist/abandoned-children.plist.tmpl
+  cases:
+  - expect: pass
+    live: true
+  - expect: refuse
+    args:
+    - tests/fixtures/plist/bad.plist.tmpl
+  - expect: refuse
+    args:
+    - tests/fixtures/plist/bare-argv.plist.tmpl
+  - expect: refuse
+    args:
+    - tests/fixtures/plist/orphaned-children.plist.tmpl
+  - expect: pass
+    args:
+    - tests/fixtures/plist/abandoned-children.plist.tmpl
+  ok: every launchd template renders to a plist that parses and names its job; gate proved both ways
+  fail: a launchd template does not render to a valid plist, or the gate does not discriminate
+- id: migration-idempotent
+  label: migration
+  statement: A migration whose second apply adds a resource is refused
+  law: R22 mechanism 1
+  origin: crew#186 CP1
+  planes:
+  - ci
+  proved_elsewhere: the permitting case is the live migration rung in bin/idp-ci, which applies bin/scheduler-migrate twice and rolls it back under a real dagster
+  run:
+  - bin/migration-gate
+  fixtures:
+    must_fail: tests/fixtures/migration-not-idempotent
+    must_pass: bin/scheduler-migrate
+  live_elsewhere: bin/idp-ci:337 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/migration-not-idempotent
+  ok: migration-gate refuses the non-idempotent fixture
+  fail: migration-gate accepted a migration whose second apply adds a resource
+- id: static-secret
+  label: secrets
+  statement: Zero static secrets on disk; a key or a .env in the tree is refused
+  law: security-policy.md, kini-master-spec 4.1/4.4
+  origin: crew#227
+  planes:
+  - ci
+  run:
+  - bin/static-secret-gate
+  fixtures:
+    must_fail: tests/fixtures/static-secret/bad
+    must_pass: tests/fixtures/static-secret/good
+  cases:
+  - expect: pass
+    env:
+      STATIC_SECRET_GATE_ROOT: tests/fixtures/static-secret/good
+      ESTATE_CODE: tests/fixtures/static-secret/good
+      ESTATE_SECRETS: tests/fixtures/static-secret/good/vault
+  - expect: refuse
+    env:
+      STATIC_SECRET_GATE_ROOT: tests/fixtures/static-secret/bad
+      ESTATE_CODE: tests/fixtures/static-secret/bad/code
+      ESTATE_SECRETS: tests/fixtures/static-secret/good/vault
+  ok: static-secret-gate passes the empty fixture and refuses the one with a key and a .env
+  fail: static-secret-gate fixtures
+- id: owner-account
+  label: owners
+  statement: Every provider account names a second owner
+  law: R54
+  planes:
+  - ci
+  run:
+  - bin/owner-account-gate
+  fixtures:
+    must_fail: tests/fixtures/owner-accounts/bad.yaml
+    must_pass: tests/fixtures/owner-accounts/good.yaml
+  live_gap: 'chidionyema/idp#2452 -- pointed at docs/reference/owner-accounts.yaml, the file it exists to grade, this gate exits 1: six provider accounts name no second owner. The live case lands with the
+    fix, not before it.'
+  cases:
+  - expect: pass
+    args:
+    - tests/fixtures/owner-accounts/good.yaml
+  - expect: refuse
+    args:
+    - tests/fixtures/owner-accounts/bad.yaml
+  ok: owner-account-gate passes a provider with a second owner and refuses one without
+  fail: owner-account-gate fixtures
+- id: bind-audit
+  label: binds
+  statement: Only the gateway binds a non-loopback address; everything else is 127.0.0.1 or nothing
+  law: R20
+  planes:
+  - ci
+  run:
+  - bin/bind-audit
+  fixtures:
+    must_fail: tests/fixtures/listeners.bad.txt
+    must_pass: tests/fixtures/listeners.good.txt
+  cases:
+  - expect: refuse
+    args:
+    - --table
+    - tests/fixtures/listeners.bad.txt
+  - expect: pass
+    args:
+    - --table
+    - tests/fixtures/listeners.good.txt
+  - expect: pass
+    args:
+    - --selftest
+    note: the allow-list parser, which would otherwise rot silently
+  ok: bind-audit refuses an unknown listener and permits an allow-listed one; selftest green
+  fail: bind-audit does not discriminate on the recorded listener tables
+- id: conscience
+  label: ethos
+  statement: The founder's ethos is seven measured tenet rows; a row without a command is refused
+  law: LAW 44
+  origin: crew#586 CP1
+  planes:
+  - ci
+  proved_elsewhere: 'bin/idp-conscience --selftest is itself the both-ways proof: it scores the good fixture 2/2, the bad one 1/2, and refuses a tenet with no command'
+  run:
+  - python3
+  - bin/idp-conscience
+  - --selftest
+  fixtures:
+    must_fail: a tenet row with no command
+    must_pass: bin/idp-conscience
+  live_elsewhere: .github/workflows/conscience.yml:94 -- the conscience job runs the gate bare over the estate's own tenet rows, not the selftest
+  cases:
+  - expect: pass
+  ok: idp-conscience scores the good fixture 2/2, the bad 1/2, and refuses a tenet with no command
+  fail: bin/idp-conscience --selftest
+- id: job-described
+  label: describe
+  statement: Every scheduled job reaches the Dagster UI with a description of what it does
+  law: LAW 28
+  planes:
+  - ci
+  proved_elsewhere: 'estate_scheduler.describe --selftest is the both-ways proof: it derives a description through a wrapper and refuses to invent one from a command line'
+  run:
+  - python3
+  - -m
+  - estate_scheduler.describe
+  - --selftest
+  cwd: scheduler
+  fixtures:
+    must_fail: tests/fixtures/schedule-undescribed.yml
+    must_pass: tests/fixtures/schedule-described.yml
+  live_gap: 'chidionyema/idp#2452 -- the selftest grades the describer, not the estate''s schedules. bin/idp-verify:170 runs it for real, and bin/idp-verify is invoked by no workflow: a gate that runs only
+    when somebody types it is not a plane.'
+  cases:
+  - expect: pass
+  ok: job descriptions derive from the script, and are refused when absent
+  fail: estate_scheduler.describe --selftest
+- id: vm-shared-path
+  label: vmmount
+  statement: A VM mount source outside the shared tree is refused; one inside it is permitted
+  law: R19
+  planes:
+  - ci
+  run:
+  - bin/vm-shared-path
+  fixtures:
+    must_fail: /private/tmp
+    must_pass: $HOME
+  cases:
+  - expect: pass
+    env:
+      VM_SHARED_ROOTS: $HOME
+    args:
+    - $HOME
+  - expect: refuse
+    env:
+      VM_SHARED_ROOTS: $HOME
+    args:
+    - /private/tmp
+  ok: vm-shared-path permits a path under the shared root and refuses one outside it
+  fail: bin/vm-shared-path selftest
+- id: ns-fence
+  label: fences
+  statement: No namespace without a both-ways default-deny NetworkPolicy, a ResourceQuota, a LimitRange and a DNS exception
+  law: crew#191, crew#839
+  planes:
+  - ci
+  - cluster
+  run:
+  - python3
+  - bin/ns-fence-gate
+  cluster:
+    policy: platform/kyverno
+    why: admission refuses a namespace with no fence
+  fixtures:
+    must_fail: tests/fixtures/ns-fence/bad.yaml
+    must_pass: tests/fixtures/ns-fence/good.yaml
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/ns-fence/bad.yaml
+  - expect: pass
+    args:
+    - tests/fixtures/ns-fence/good.yaml
+  - expect: pass
+    args:
+    - platform
+    live: true
+    tail_of: true
+    note: the namespaces actually committed
+  ok: '{tail}'
+  tail_strip: ^ns-fence-gate:\s*
+  ok_fallback: every namespace under platform/ ships a fence
+  fail: a namespace ships with no fence; add it to platform/ns-fences/allowances.yaml and run bin/idp-ns-fence-gen
+- id: main-verdict
+  label: verdict
+  statement: A workflow that grades main never cancels main's own run; stale pull-request runs still are
+  law: crew#865
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/main-verdict-gate
+  fixtures:
+    must_fail: tests/fixtures/main-verdict/bad.yml
+    must_pass: tests/fixtures/main-verdict/good.yml
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/main-verdict/bad.yml
+  - expect: pass
+    args:
+    - tests/fixtures/main-verdict/good.yml
+  - expect: pass
+    live: true
+    tail_of: true
+    note: .github/workflows, where a real regression fails it
+  ok: '{tail}'
+  tail_strip: ^main-verdict\s+
+  ok_fallback: no workflow cancels main's own run
+  fail: bin/main-verdict-gate refuses .github/workflows/
+- id: prose-pin
+  label: prose
+  statement: 'A test grades behavior or parsed structure, never prose: no test function may only assert sentences or string membership in file text'
+  law: R76
+  origin: founder 2026-09-03
+  planes:
+  - ci
+  - session
+  session_glob:
+  - tests/test_*.py
+  - sovereign/tests/*.py
+  run:
+  - python3
+  - bin/test-prose-gate
+  fixtures:
+    must_fail: tests/fixtures/prose-pin/bad.py
+    must_pass: tests/fixtures/prose-pin/good.py
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/prose-pin/bad.py
+  - expect: pass
+    args:
+    - tests/fixtures/prose-pin/good.py
+  - expect: pass
+    live: true
+    glob: tests/test_*.py
+  ok: no test function only asserts prose/string membership in file text (R76)
+  fail: a test function only asserts prose/string membership in file text (R76)
+- id: tenant-split
+  label: twohats
+  statement: One credential is one tenant's; the operator's road never widens the customer's
+  law: decision 0021
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-tenant-split
+  fixtures:
+    must_fail: tests/fixtures/tenant-split/bad.yaml
+    must_pass: tests/fixtures/tenant-split/good.yaml
+  live_gap: chidionyema/idp#2452 -- a bare run over the repository returns 15 findings, every one of the shape 'no data.seed.sql to grade'. That reads like the gate scanning past its own subject rather
+    than 15 tenant defects, and it wants reading before either is claimed.
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/tenant-split/bad.yaml
+  - expect: pass
+    args:
+    - tests/fixtures/tenant-split/good.yaml
+  ok: idp-tenant-split refuses one secret under two tenants; the clean split passes
+  fail: idp-tenant-split cannot tell one-secret-one-tenant from a leak (decision 0021)
+- id: jit-grants
+  label: jitgrant
+  statement: 'A grant the JIT broker may mint can never be turned into standing access: no token for a verb that rewrites a pod spec, no secrets or RBAC, no core namespace, no wildcard, a TTL under the
+    ceiling and a declared rate'
+  law: WJ.5
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-jit-grants
+  fixtures:
+    must_fail: tests/fixtures/jit-grants/bad.yaml
+    must_pass: tests/fixtures/jit-grants/good.yaml
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/jit-grants/bad.yaml
+  - expect: pass
+    args:
+    - tests/fixtures/jit-grants/good.yaml
+  - expect: pass
+    args:
+    - platform/jit/grants.yaml
+    live: true
+    note: the catalogue the broker actually mints from
+  ok: idp-jit-grants refuses the escalating catalogue; the live one cannot become standing access
+  fail: idp-jit-grants cannot tell a time-boxed grant from a route to admin (WJ.5)
+- id: fence-enforcement
+  label: fencdrill
+  statement: A profile of a denied packet is only ever a wall when the probe proved it could reach an allowed path; a probe that could not run is a fail-closed FAIL, never a pass
+  law: zero-trust-boundary.md step 1
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-fence-enforcement
+  fixtures:
+    must_fail: tests/fixtures/fence-drill/gate-broken-fence.json
+    must_pass: tests/fixtures/fence-drill/gate-good.json
+  live_gap: chidionyema/idp#2452 -- the input is a fence drill receipt and nothing in .github writes one, so the three fixtures are the only fence profiles this rule has ever read.
+  cases:
+  - expect: pass
+    args:
+    - tests/fixtures/fence-drill/gate-good.json
+  - expect: refuse
+    args:
+    - tests/fixtures/fence-drill/gate-broken-fence.json
+  - expect: refuse
+    args:
+    - tests/fixtures/fence-drill/gate-fail-closed.json
+    note: a probe that never ran (shell 127) once read as a passing wall
+  ok: fence-enforcement drops a denied packet, fails closed when the probe could not run
+  fail: fence-enforcement cannot tell a dropped packet from a leak or a dead probe (ZT step 1)
+- id: calico-denyflow
+  label: denyflow
+  statement: The 39 generated policies stay unwired until a deny feed has been read over a full cycle; an empty log feed is a fail-closed FAIL, never a clean bill
+  law: platform/calico README
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-calico-deny-log
+  fixtures:
+    must_fail: tests/fixtures/calico-denyflow/feed-no-evidence.log
+    must_pass: tests/fixtures/calico-denyflow/feed-with-deny.log
+  live_gap: chidionyema/idp#2452 -- no real deny feed is collected anywhere, and worse, bin/idp-calico-deny-log:35 names its own passing fixture as the default input for a rule whose statement is that an
+    empty feed is a fail-closed FAIL.
+  cases:
+  - expect: pass
+    args:
+    - tests/fixtures/calico-denyflow/feed-with-deny.log
+  - expect: refuse
+    args:
+    - tests/fixtures/calico-denyflow/feed-no-evidence.log
+  ok: calico deny-feed parses into flows; an empty feed fails closed (README cutover)
+  fail: calico deny-feed cannot tell a denied flow from no evidence (platform/calico README)
+- id: gvisor-cell
+  label: gvisor
+  statement: A pod in the gVisor sandbox cell must name runtimeClassName gvisor and must not be privileged, host-networked or mount a hostPath
+  law: zero-trust-boundary.md step 5
+  origin: crew#892 CP4
+  planes:
+  - ci
+  - cluster
+  cluster:
+    policy: platform/edge/gvisor-admission.yaml
+    why: the same shape is refused at admission
+  run:
+  - python3
+  - bin/gvisor-cell-gate
+  fixtures:
+    must_fail: tests/fixtures/gvisor-cell/bad.yaml
+    must_pass: tests/fixtures/gvisor-cell/good.yaml
+  cases:
+  - expect: pass
+    args:
+    - tests/fixtures/gvisor-cell/good.yaml
+  - expect: refuse
+    args:
+    - tests/fixtures/gvisor-cell/bad.yaml
+  - expect: pass
+    args:
+    - platform
+  ok: a cell Pod without the runtime class (or privileged, host-networked, hostPath) is refused; the conforming cell Pod passes
+  fail: bin/gvisor-cell-gate cannot tell a gVisor cell boundary break from a conforming Pod (ZT step 5)
+- id: gvisor-cell-fence
+  label: gvrfence
+  statement: A gVisor-cell namespace fence is default-deny with the gateway the one allowed route; a fence granting the cell internet egress is a break caught in the pull request
+  law: zero-trust-boundary.md step 6
+  origin: crew#892 CP4
+  planes:
+  - ci
+  - cluster
+  cluster:
+    policy: platform/ns-fences
+    why: the fence the generator fans out is what admission enforces
+  run:
+  - python3
+  - bin/gvisor-cell-fence-gate
+  fixtures:
+    must_fail: tests/fixtures/gvisor-cell-fence/bad.yaml
+    must_pass: tests/fixtures/gvisor-cell-fence/good.yaml
+  cases:
+  - expect: pass
+    args:
+    - tests/fixtures/gvisor-cell-fence/good.yaml
+  - expect: refuse
+    args:
+    - tests/fixtures/gvisor-cell-fence/bad.yaml
+  - expect: pass
+    args:
+    - platform/ns-fences/allowances.yaml
+  ok: a gVisor-cell fence granting internet egress is refused; the default-deny cell fence passes
+  fail: bin/gvisor-cell-fence-gate cannot tell a cell fence that leaks to the internet from the default-deny fence (ZT step 6)
+- id: availability
+  label: ha
+  statement: Every surface the founder can open survives losing one node, and so does every fail-closed admission webhook -- losing one of those costs not a hostname but the cluster's ability to apply anything,
+    its own repair included
+  law: docs/reference/policy/availability-standard.md
+  origin: crew#539
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-availability-gate
+  fixtures:
+    must_fail: tests/fixtures/availability/bad
+    must_pass: tests/fixtures/availability/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/availability/bad
+  - expect: pass
+    args:
+    - tests/fixtures/availability/good
+  - expect: pass
+    live: true
+    tail_of: true
+    echo: ^WAIVED
+  ok: '{tail}'
+  tail_strip: ^availability\s+
+  ok_fallback: every routed surface survives losing one node
+  fail: a routed surface does not survive losing one node, or the gate is not discriminating
+- id: rego-unit-tests
+  label: rego
+  statement: The policy/*_test.rego unit tests run in CI; a test no job runs is decoration
+  law: LAW 3
+  origin: crew#638
+  planes:
+  - ci
+  requires:
+  - conftest
+  proved_elsewhere: conftest verify runs policy/*_test.rego, whose assertions are the both-ways proof of each rule
+  run:
+  - conftest
+  - verify
+  - -p
+  - policy
+  cases:
+  - expect: pass
+    tail_of: true
+  ok: 'rego unit tests: {tail}'
+  ok_fallback: rego unit tests pass
+  fail: conftest verify -p policy
+- id: licence-policy
+  label: licence
+  statement: No dependency whose licence blocks a sale; a scan with no licences is not clean
+  law: LAW 40
+  planes:
+  - ci
+  requires:
+  - conftest
+  run:
+  - conftest
+  - test
+  - --parser
+  - json
+  - -p
+  - policy
+  fixtures:
+    must_fail: policy/fixtures/sell-blocking.json
+    must_pass: policy/fixtures/clean.json
+  live_gap: chidionyema/idp#2452 -- bin/pr-report writes reports/pr.json and runs conftest over it, and no workflow in .github invokes bin/pr-report. Every conftest rule in this file grades policy/fixtures
+    and nothing else.
+  cases:
+  - expect: pass
+    args:
+    - policy/fixtures/clean.json
+    note: an ordinary permissive tree, including packages with no licence metadata
+  - expect: refuse
+    args:
+    - policy/fixtures/sell-blocking.json
+    note: AGPL, SSPL, BUSL, Elastic, non-commercial CC, Commons Clause
+  - expect: refuse
+    args:
+    - policy/fixtures/broken-scan.json
+    note: a full parts list with no terms in it is not clean
+  ok: the licence policy allows a permissive tree and refuses a sale-blocking one
+  fail: the licence policy did not behave as specified
+- id: placement-policy
+  label: placement
+  statement: No scheduled job on this laptop that runs in the sleep window or is never pinged
+  law: LAW 28
+  planes:
+  - ci
+  requires:
+  - conftest
+  run:
+  - conftest
+  - test
+  - --parser
+  - json
+  - -p
+  - policy
+  fixtures:
+    must_fail: policy/fixtures/placement-misplaced.json
+    must_pass: policy/fixtures/placement-ok.json
+  live_gap: 'chidionyema/idp#2452 -- same as licence-policy: the producer bin/pr-report exists and no workflow runs it.'
+  cases:
+  - expect: pass
+    args:
+    - policy/fixtures/placement-ok.json
+  - expect: refuse
+    args:
+    - policy/fixtures/placement-misplaced.json
+  - expect: refuse
+    args:
+    - policy/fixtures/placement-blind.json
+    note: a monitoring outage cannot read as a pass
+  ok: the placement policy allows a monitored desk job and refuses sleep-window and never-pinged work
+  fail: the placement policy did not behave as specified
+- id: capacity-policy
+  label: capacity
+  statement: Paid capacity is auto-defaulted up to estate-defaults.yaml node_pool.budget_monthly_usd and refused above it
+  law: R14
+  origin: crew#289
+  planes:
+  - ci
+  requires:
+  - conftest
+  run:
+  - conftest
+  - test
+  - --parser
+  - json
+  - -p
+  - policy
+  fixtures:
+    must_fail: policy/fixtures/capacity-over-cap.json
+    must_pass: policy/fixtures/capacity-under-cap.json
+  live_elsewhere: bin/idp-oke-rebuild:66 -- the rebuild grades reports/capacity.json, the real node-pool plan, before it provisions anything
+  cases:
+  - expect: pass
+    args:
+    - policy/fixtures/capacity-under-cap.json
+  - expect: refuse
+    args:
+    - policy/fixtures/capacity-over-cap.json
+  - expect: pass
+    args:
+    - policy/fixtures/capacity-spot-under-cap.json
+  - expect: refuse
+    args:
+    - policy/fixtures/capacity-spot-over-cap.json
+  - expect: pass
+    args:
+    - policy/fixtures/capacity-burst-under-cap.json
+  - expect: refuse
+    args:
+    - policy/fixtures/capacity-burst-over-cap.json
+  ok: paid capacity under the cap is allowed and over it refused, on demand, spot and burst
+  fail: the capacity policy did not behave as specified
+- id: operating-model-policy
+  label: opmodel
+  statement: A pull request carries its identity and grant together, no console step, a canary label on a paid-capacity change, and no estate-zone literal in the lines it adds
+  law: LAW 51, ZCP
+  origin: crew#286, crew#287, crew#584
+  planes:
+  - ci
+  requires:
+  - conftest
+  run:
+  - conftest
+  - test
+  - --parser
+  - json
+  - -p
+  - policy
+  fixtures:
+    must_fail: policy/fixtures/opmodel-half-provisioned.json
+    must_pass: policy/fixtures/opmodel-ok.json
+  live_elsewhere: 'bin/pr-report:63 -- .githooks/pre-push:33 runs bin/pr-report on every push from this repo, so these rules read a real pull request, not only the fixtures below. The one they cannot read
+    there is founder_denied: the hook runs at push time, before the founder can have commented, and the workflow that re-judged on his word is gone (chidionyema/idp#2452).'
+  cases:
+  - expect: pass
+    args:
+    - policy/fixtures/opmodel-ok.json
+  - expect: refuse
+    args:
+    - policy/fixtures/opmodel-half-provisioned.json
+  - expect: refuse
+    args:
+    - policy/fixtures/opmodel-gui.json
+  - expect: pass
+    args:
+    - policy/fixtures/opmodel-no-approval.json
+    note: no founder friction; the word is only his veto handle
+  - expect: pass
+    args:
+    - policy/fixtures/opmodel-approval-pending.json
+  - expect: pass
+    args:
+    - policy/fixtures/opmodel-approval-other-word.json
+  - expect: refuse
+    args:
+    - policy/fixtures/opmodel-denied.json
+  - expect: refuse
+    args:
+    - policy/fixtures/opmodel-no-canary.json
+  ok: the operating-model policy allows a complete pull request and refuses each incomplete shape
+  fail: the operating-model policy did not behave as specified
+- id: no-toil-policy
+  label: notoil
+  statement: A doc that tells a person to mint a credential by hand is refused; a FOUNDER ACTION line is not
+  law: LAW 47, R52
+  origin: crew#66
+  planes:
+  - ci
+  requires:
+  - conftest
+  run:
+  - conftest
+  - test
+  - --parser
+  - json
+  - -p
+  - policy
+  fixtures:
+    must_fail: policy/fixtures/notoil-doc-manual.json
+    must_pass: policy/fixtures/notoil-doc-founder-action.json
+  live_gap: chidionyema/idp#2452 -- bin/idp-no-toil:88 does run conftest over real documents, and no workflow in .github invokes bin/idp-no-toil.
+  cases:
+  - expect: refuse
+    args:
+    - policy/fixtures/notoil-doc-manual.json
+  - expect: pass
+    args:
+    - policy/fixtures/notoil-doc-founder-action.json
+  ok: a doc that hands a person a credential to mint is refused; a FOUNDER ACTION line is allowed
+  fail: the no-toil policy did not behave as specified
+- id: conscience-rego
+  label: ethos-rego
+  statement: The conscience rules judge a pull request both ways
+  law: LAW 44
+  origin: crew#586 CP2
+  planes:
+  - ci
+  requires:
+  - conftest
+  run:
+  - conftest
+  - test
+  - --parser
+  - json
+  - -p
+  - policy
+  fixtures:
+    must_fail: policy/fixtures/conscience-bad.json
+    must_pass: policy/fixtures/conscience-clean.json
+  live_elsewhere: bin/pr-report:63 -- .githooks/pre-push:33 runs bin/pr-report on every push from this repo, so what survives here is graded against the real pull request and not only against the fixtures
+    below.
+  cases:
+  - expect: refuse
+    args:
+    - policy/fixtures/conscience-bad.json
+    expect_rules:
+    - no_provider_in_diff
+    - no_floating_tag
+    - new_script_has_a_test
+    - incident_has_a_guard
+    - new_dependency_has_a_ledger_entry
+  - expect: pass
+    args:
+    - policy/fixtures/conscience-clean.json
+  ok: conscience.rego fires all 5 rules on conscience-bad.json and none on conscience-clean.json
+  fail: policy/conscience.rego fixtures
+- id: shell-lint
+  label: shell
+  statement: Every bash script in bin/ passes shellcheck at warning level
+  law: LAW 45
+  origin: the rung that graded this was deleted with the fixture-grading rungs in 519d59e8, and the fast gate went on printing the word "shell" in its summary line while nothing ran shellcheck in CI at
+    all -- .pre-commit-config.yaml was the only place left, and a local hook is not a gate
+  requires:
+  - shellcheck
+  run:
+  - shellcheck
+  - -S
+  - warning
+  fixtures:
+    must_fail: tests/fixtures/shell-lint/bad.sh
+    must_pass: tests/fixtures/shell-lint/good.sh
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/shell-lint/bad.sh
+  - expect: pass
+    args:
+    - tests/fixtures/shell-lint/good.sh
+  - expect: pass
+    live: true
+    glob: bin/*
+    shebang: bash
+  ok: every bash script in bin/ is clean at warning level; the unguarded-cd fixture is refused
+  fail: a script in bin/ fails shellcheck at warning level
+- id: hardcoded-path
+  fast: true
+  label: hardcode
+  statement: No file names where the checkout, home directory or machine lives
+  law: LAW 46
+  planes:
+  - ci
+  - session
+  session_glob:
+  - '*.sh'
+  - '*.py'
+  - '*.yaml'
+  - '*.yml'
+  - '*.json'
+  - bin/*
+  - launchd/*
+  run:
+  - bin/idp-hardcode-scan
+  fixtures:
+    must_fail: tests/fixtures/hardcoded-path.bad.sh
+    must_pass: tests/fixtures/hardcoded-path.good.sh
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/hardcoded-path.bad.sh
+  - expect: pass
+    args:
+    - tests/fixtures/hardcoded-path.good.sh
+  - expect: pass
+    live: true
+    tail_of: true
+  ok: '{tail}'
+  tail_strip: ^hardcode\s+
+  ok_fallback: 0 files hardcode a checkout path
+  fail: a file hardcodes a checkout path, or the scan is not discriminating
+- id: defs-load-by-path
+  label: codeloc
+  statement: 'A code location loads the way workspace.yaml loads it: by file path, not as a package'
+  law: LAW 45
+  planes:
+  - ci
+  requires_python:
+  - dagster
+  run:
+  - bin/idp-defs-validate
+  fixtures:
+    must_fail: tests/fixtures/definitions/relative-import.py
+    must_pass: tests/fixtures/definitions/loads-by-path.py
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/definitions/relative-import.py
+  - expect: pass
+    args:
+    - tests/fixtures/definitions/loads-by-path.py
+  - expect: pass
+    args:
+    - scheduler/estate_scheduler/definitions.py
+    live: true
+  ok: the code location loads by file path, as workspace.yaml loads it; a relative import is refused
+  fail: the code location does not load by file path -- the dashboard will show PythonError
+- id: fits-a-node
+  label: placement
+  statement: A workload that runs must be one the nodes that exist could place again; a pod the scheduler has refused, and a pod that fits on no other node, are both named
+  law: LAW 45
+  origin: idp#2378 (a memory request was raised past what any single node could hold; aggregate capacity read fine and the database was Unschedulable)
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-fits-a-node
+  requires_python:
+  - yaml
+  fixtures:
+    must_fail: tests/fixtures/fits-a-node/bad
+    must_pass: tests/fixtures/fits-a-node/good
+  live_elsewhere: .github/workflows/oke-check.yml:520 -- the cluster-state job feeds it the same receipt the state collector wrote, so the placement it grades is the one the scheduler saw (#2444)
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/fits-a-node/bad
+    note: a database the scheduler has already refused, and two workloads that could not be placed again
+  - expect: pass
+    args:
+    - tests/fixtures/fits-a-node/good
+    note: the same cluster sized to fit, its one pinned workload named in the ledger beside it
+  ok: every pod could be placed again on the nodes that exist
+  fail: a pod cannot be placed on any node, or a workload fits exactly one node and is not in platform/state/pinned-workloads.yaml
+- id: reloader-operator-owned
+  label: reloader
+  statement: Reloader is off on a workload a custom resource owns; that operator owns its config rollout, and Reloader on top of an operator is a loop, not a control. A Secret re-minted on a timer says
+    what Reloader does with it (ignore, or a sentence why the roll is wanted); a silent one is refused
+  law: crew#684 rung 2
+  origin: incident 2026-09-08, SigNoz ClickHouse recreated every ~40s
+  planes:
+  - ci
+  requires:
+  - kyverno
+  run:
+  - kyverno
+  - test
+  fixtures:
+    must_fail: tests/fixtures/reloader-blind
+    must_pass: tests/fixtures/reloader
+  live_elsewhere: bin/idp-ci:437 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/reloader-blind
+    note: 'the real policy against an expectation that says the loop was never broken, so kyverno test must fail. Perturbing the expectation rather than the rule''s existence is deliberate: an expectation
+      naming a rule kyverno cannot find is scored Pass/Excluded and the patched output is never compared, so deleting the rule proves nothing (2026-09-08).'
+  - expect: pass
+    args:
+    - tests/fixtures/reloader
+    tail_of: true
+  ok: 'reloader operator-owned: {tail}'
+  ok_fallback: an operator-owned workload has Reloader turned off; an estate-owned one keeps it
+  fail: kyverno test tests/fixtures/reloader (and tests/fixtures/reloader-blind, which must fail)
+- id: one-scheduler
+  label: sched
+  statement: Dagster is the estate's one scheduler; a recurring job declared in launchd, a GitHub Actions cron or a Kubernetes CronJob is named here until it is folded in
+  law: THE HEADLINE (one platform layer, not a stitched one)
+  origin: founder 2026-09-07
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-one-scheduler
+  fixtures:
+    must_fail: tests/fixtures/one-scheduler/bad
+    must_pass: tests/fixtures/one-scheduler/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/one-scheduler/bad
+  - expect: pass
+    args:
+    - tests/fixtures/one-scheduler/good
+  - expect: pass
+    live: true
+    tail_of: true
+    note: the estate's own recurring jobs, against the recorded budget
+  ok: '{tail}'
+  tail_strip: ^sched\s+
+  ok_fallback: no recurring job outside Dagster beyond the recorded budget
+  fail: a recurring job was declared outside Dagster, or the ledger of the ones still to fold is stale
+- id: glass-break
+  label: glass
+  statement: 'The broker, its grant catalogue, the RBAC floor and bin/idp-kube never land on a green check alone: no auto-merge, no self-approval, and the founder''s own review or nothing'
+  law: WJ.8
+  origin: docs/policy/agent-infra-safety-spec.md
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-glass-break
+  cluster:
+    policy: null
+    why: the subject is a pull request, which no admission controller sees
+  fixtures:
+    must_fail: tests/fixtures/glass-break/bad.json
+    must_pass: tests/fixtures/glass-break/good.json
+  live_gap: chidionyema/idp#2452 -- the input is a pull request as JSON and nothing writes one in CI, so the gate that holds the WJ.8 line has never read a real pull request.
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/glass-break/bad.json
+  - expect: pass
+    args:
+    - tests/fixtures/glass-break/good.json
+  ok: the broker and its floor cannot land on a green check alone (WJ.8)
+  fail: a change to the broker could be auto-merged or self-approved (WJ.8)
+- id: convergence-proof
+  label: proof
+  statement: An infrastructure pull request reaches the merge gate with a Proof-of-Convergence; a body with no such block, or whose proof's run is not a green run on its own head commit, is refused -- a
+    missing or unparseable proof is a fail-closed FAIL, never a pass
+  law: W2.3
+  origin: docs/policy/agent-infra-safety-spec.md
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-convergence-proof
+  cluster:
+    policy: null
+    why: the subject sits in a pull request body and the proof refers to a shadow run no admission controller can see
+  fixtures:
+    must_fail: tests/fixtures/convergence/no-proof.md
+    must_pass: tests/fixtures/convergence/proved.md
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/convergence/no-proof.md
+    - HEAD
+  - expect: pass
+    args:
+    - tests/fixtures/convergence/proved.md
+    - HEAD
+    env:
+      CONVERGENCE_RUN_GREEN: '1'
+      CONVERGENCE_RUN_HEAD: HEAD
+  - expect: refuse
+    args:
+    - tests/fixtures/convergence/proved.md
+    - HEAD
+    env:
+      CONVERGENCE_RUN_GREEN: '1'
+      CONVERGENCE_RUN_HEAD: OTHER
+  ok: a change that was never proved in the shadow dimension cannot reach the Greenlane (W2.3)
+  fail: a change without a green Proof-of-Convergence on its own head could be auto-merged (W2.3)
+- id: shadow-sync
+  label: shadow
+  statement: A Secret cloned into the shadow dimension is a same-shape shell or it is refused; a live value must never survive re-shaping -- a non-shell Secret in a shadow state-set is a fail (secrets are
+    never copied into a vcluster, only keyed dummies so a Deployment mounts)
+  law: W2.1
+  origin: docs/policy/agent-infra-safety-spec.md
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-shadow-sync
+  cluster:
+    policy: null
+    why: the subject is the manifest set carried into a shadow vcluster, which no admission controller sees
+  fixtures:
+    must_fail: tests/fixtures/shadow-sync/verbatim
+    must_pass: tests/fixtures/shadow-sync/shelled
+  cases:
+  - expect: refuse
+    args:
+    - --check
+    - tests/fixtures/shadow-sync/verbatim
+    note: a verbatim secret is not a shell
+  - expect: pass
+    args:
+    - --check
+    - tests/fixtures/shadow-sync/shelled
+  ok: a shadow state-set carries only shell secrets, never a live value (W2.1)
+  fail: a live secret value could reach the shadow dimension (W2.1)
+- id: limit-raise-only
+  label: limit
+  statement: A change to a workload passes the low-risk lane only when its sole difference is a strict increase of a resources.limits.memory/cpu value on one workload; a request change (which the scheduler
+    counts), a lower limit, or any other edit is refused -- YAML ancestry is read from the full parsed old and new files, never guessed from a git hunk
+  law: W3.1
+  origin: docs/policy/agent-infra-safety-spec.md
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-limit-raise-only-diff
+  cluster:
+    policy: null
+    why: the subject is a pull request diff, which no admission controller sees
+  fixtures:
+    must_fail: tests/fixtures/limit-raise/request
+    must_pass: tests/fixtures/limit-raise/good
+  cases:
+  - expect: pass
+    args:
+    - --old
+    - tests/fixtures/limit-raise/good/old/w.yaml
+    - --new
+    - tests/fixtures/limit-raise/good/new/w.yaml
+  - expect: refuse
+    args:
+    - --old
+    - tests/fixtures/limit-raise/request/old/w.yaml
+    - --new
+    - tests/fixtures/limit-raise/request/new/w.yaml
+    note: a request raise is not a limit raise
+  - expect: refuse
+    args:
+    - --old
+    - tests/fixtures/limit-raise/lower/old/w.yaml
+    - --new
+    - tests/fixtures/limit-raise/lower/new/w.yaml
+    note: a lower limit is not a raise
+  - expect: refuse
+    args:
+    - --old
+    - tests/fixtures/limit-raise/config/old/w.yaml
+    - --new
+    - tests/fixtures/limit-raise/config/new/w.yaml
+    note: a config/image edit is not a limit raise
+  ok: a change that is exactly a limit raise on one workload can use the low-risk lane (W3.1)
+  fail: a request raise, lower limit, or wider edit could pass the low-risk lane (W3.1)
+- id: rollback-only
+  label: rollback
+  statement: 'A pull request rolls one workload back only when every changed line is a newTag: whose value that same file has already carried on origin/main; a tag never on main is a forward deploy and
+    waits, and a change that edits anything but a tag is refused -- the prior footprint is proved from history, never assumed from age'
+  law: W3.2
+  origin: docs/policy/agent-infra-safety-spec.md
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-rollback-only-diff
+  cluster:
+    policy: null
+    why: the subject is a pull request diff, which no admission controller sees
+  fixtures:
+    must_fail: tests/fixtures/rollback/forward-new-tag.diff
+    must_pass: tests/fixtures/rollback/rollback-known-good.diff
+  cases:
+  - expect: pass
+    args:
+    - --diff
+    - tests/fixtures/rollback/rollback-known-good.diff
+    - --carried
+    - tests/fixtures/rollback/carried.txt
+  - expect: refuse
+    args:
+    - --diff
+    - tests/fixtures/rollback/forward-new-tag.diff
+    - --carried
+    - tests/fixtures/rollback/carried.txt
+    note: a tag never carried on main is a forward deploy
+  - expect: refuse
+    args:
+    - --diff
+    - tests/fixtures/rollback/not-only-tag.diff
+    - --carried
+    - tests/fixtures/rollback/carried.txt
+    note: a change that is not only a tag
+  ok: a rollback to a tag this release already ran on main can use the low-risk lane (W3.2)
+  fail: a forward tag or a wider edit could pass the rollback lane (W3.2)
+- id: sovereign-command
+  label: command
+  statement: A sovereign agent's command is inside the allowlist or it is denied; an allowlist that defaults to allow is a denylist wearing the wrong name
+  law: spec v1.0 4.2
+  origin: policy/sovereign_command.rego
+  planes:
+  - ci
+  requires:
+  - conftest
+  run:
+  - conftest
+  - test
+  - --parser
+  - json
+  - -p
+  - policy
+  - --namespace
+  - sovereign.command
+  cluster:
+    policy: null
+    why: the subject is a command a sovereign agent proposes, which no admission controller sees
+  fixtures:
+    must_fail: policy/fixtures/command-not-allowlisted.json
+    must_pass: policy/fixtures/command-allowed.json
+  live_gap: 'chidionyema/idp#2452 -- same as licence-policy: no workflow feeds this rule a command a sovereign agent actually asked to run.'
+  cases:
+  - expect: pass
+    args:
+    - policy/fixtures/command-allowed.json
+  - expect: refuse
+    args:
+    - policy/fixtures/command-not-allowlisted.json
+  - expect: refuse
+    args:
+    - policy/fixtures/command-forbidden-fragment.json
+  ok: the command allowlist permits an allowed verb and denies both an unlisted one and a forbidden fragment
+  fail: the command allowlist is not discriminating -- an agent could run a verb outside it
+- id: rule-coverage
+  label: coverage
+  statement: Every fixture pair in the tree is named by a registry case or a test; a fixture graded by nothing is a rule nobody runs, and the ledger of the ones still unwired only shrinks
+  law: LAW 45
+  origin: founder 2026-09-07; glass-break, jit-broker-role and vendor-name each nearly lost in one rebase
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-rule-coverage
+  cluster:
+    policy: null
+    why: the subject is this repository's own gates
+  fixtures:
+    must_fail: tests/fixtures/rule-coverage/bad
+    must_pass: tests/fixtures/rule-coverage/good
+  cases:
+  - expect: refuse
+    env:
+      RULE_COVERAGE_ROOT: tests/fixtures/rule-coverage/bad
+  - expect: pass
+    env:
+      RULE_COVERAGE_ROOT: tests/fixtures/rule-coverage/good
+  - expect: pass
+    live: true
+    tail_of: true
+    note: this repository, against the recorded ledger
+  ok: '{tail}'
+  tail_strip: ^coverage\s+
+  ok_fallback: every fixture in the tree is graded by something, or is on the recorded ledger
+  fail: a fixture pair is graded by nothing and is not on the ledger -- a gate was deleted, or was never wired
+- id: jit-broker-role
+  label: jitrole
+  statement: 'The broker mints only what it already holds: its own ClusterRole carries no escalate, no bind, no impersonate, no wildcard and no secrets, and no ClusterRoleBinding names it -- the absence
+    that makes KSV-0050 on that file an accepted risk rather than a defect'
+  law: WJ.5
+  origin: trivy 2026-09-07
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-jit-broker-role
+  cluster:
+    policy: null
+    why: the ClusterRole is the thing graded; admission cannot see what a future edit would add
+  fixtures:
+    must_fail: tests/fixtures/jit-broker-role/bad.yaml
+    must_pass: tests/fixtures/jit-broker-role/good.yaml
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/jit-broker-role/bad.yaml
+  - expect: pass
+    args:
+    - tests/fixtures/jit-broker-role/good.yaml
+  - expect: pass
+    args:
+    - platform/jit/rbac.yaml
+    live: true
+    note: the broker's own role, as committed
+  ok: the broker's ClusterRole carries no escalate, bind, impersonate, wildcard or secrets, and nothing binds it
+  fail: the broker's ClusterRole grew a verb that turns a mint into standing access, or the gate is not discriminating
+- id: vendor-name
+  label: vendor
+  statement: A deck that replaces a vendor operator never reuses the operator's cluster-scoped names; a ClusterRole has no namespace, so moving the ServiceAccounts does not separate them
+  law: platform/calico/raw/README.md
+  origin: incident 2026-09-06, tigera-operator tombstones
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/vendor-name-collision-gate
+  cluster:
+    policy: null
+    why: the collision is with names a removed operator left behind; admission sees only the new object
+  fixtures:
+    must_fail: tests/fixtures/vendor-names/bad.yaml
+    must_pass: tests/fixtures/vendor-names/good.yaml
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/vendor-names/bad.yaml
+  - expect: pass
+    args:
+    - tests/fixtures/vendor-names/good.yaml
+  - expect: pass
+    args:
+    - platform/calico/raw
+    live: true
+    note: the real deck, whose README calls it byte-faithful to the vendor reference
+  ok: no replacement deck reuses a vendor operator's cluster-scoped names
+  fail: a deck reuses a vendor operator's cluster-scoped name, or the gate is not discriminating
+- id: nodesoftware-operator
+  label: nodesoftware
+  statement: A RuntimeInstall CR names a runtime in the closed set the NodeSoftwareOperator knows, requires a canary on ProgressiveCanary rollouts, and rejects pause durations that would make the canary
+    pause a no-op
+  law: NodeSoftwareOperator option c, goal b9217bea
+  origin: crew#892 CP4
+  planes:
+  - ci
+  run:
+  - bin/nodesoftware-operator-gate
+  cluster:
+    policy: null
+    why: the CRD's own schema catches a malformed CR at admission; this grades the CRs committed to the repo before they ever reach it
+  fixtures:
+    must_fail: tests/fixtures/nodesoftware-operator/bad.yaml
+    must_pass: tests/fixtures/nodesoftware-operator/good.yaml
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/nodesoftware-operator/bad.yaml
+  - expect: pass
+    args:
+    - tests/fixtures/nodesoftware-operator/good.yaml
+  - expect: pass
+    args:
+    - platform/gvisor-runtime/runtimeinstall.yaml
+    live: true
+    note: the first real RuntimeInstall, as committed
+  ok: a RuntimeInstall CR names a closed-set runtime, requires a canary, and a 30s+ pause; the bad fixture is refused
+  fail: bin/nodesoftware-operator-gate cannot tell a well-formed CR from a closed-set / no-canary / too-short-pause violation
+- id: pipeverdict
+  label: pipeverdict
+  statement: 'A conditional''s verdict is never a pipeline into grep in a script that sets pipefail: a failing left-hand stage inverts the answer silently. Capture the output first and grade the text.'
+  law: LAW 55
+  origin: incident 2026-08-25 (port-gate exited 1 on purpose and the leg failed with the message exactly right)
+  planes:
+  - ci
+  - session
+  session_glob:
+  - bin/*
+  - '*.sh'
+  fast: true
+  run:
+  - bin/idp-pipeverdict
+  fixtures:
+    must_fail: tests/fixtures/pipefail-verdict.bad.sh
+    must_pass: tests/fixtures/pipefail-verdict.good.sh
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/pipefail-verdict.bad.sh
+  - expect: pass
+    args:
+    - tests/fixtures/pipefail-verdict.good.sh
+  - expect: pass
+    live: true
+  ok: no shell file lets a pipeline exit status stand in for a grep match (LAW 55)
+  fail: a shell file lets a pipeline exit status stand in for a grep match (LAW 55)
+- id: split-brain
+  label: split
+  fast: true
+  statement: 'One cloud resource has exactly one owner: a Crossplane external-name that matches an OpenTofu resource under platform/oci is two controllers undoing each other, forever'
+  law: decision 0026
+  origin: founder 2026-09-07, "i think if crossplane has benefits for us we need to work out how to fit it in"
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-split-brain
+  fixtures:
+    must_fail: tests/fixtures/split-brain/bad
+    must_pass: tests/fixtures/split-brain/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/split-brain/bad
+  - expect: pass
+    args:
+    - tests/fixtures/split-brain/good
+  - expect: pass
+    live: true
+    note: the estate's own tree, which owns nothing with Crossplane yet
+  ok: no cloud object is claimed by both OpenTofu and Crossplane
+  fail: a cloud object is claimed by both OpenTofu and Crossplane; each controller will undo the other at the reconcile interval
+- id: mechanism
+  label: mechanism
+  fast: true
+  statement: 'A mechanism this repository depends on may not be switched off, deleted or unproduced: every `uses:` resolves to a workflow in the tree, and every workflow GitHub is not running is named with
+    a reason in .github/disabled.yaml -- a registry, and never inside .github/workflows/, where GitHub tries to run it'
+  law: incident 2026-09-08, ten days of nothing merging and nothing red
+  origin: founder 2026-09-08, "agents should be responsiblefor their own own, all this chasing is fricion"
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-mechanism-gate
+  fixtures:
+    must_fail: tests/fixtures/mechanism/bad
+    must_pass: tests/fixtures/mechanism/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/mechanism/bad
+  - expect: pass
+    args:
+    - tests/fixtures/mechanism/good
+  - expect: pass
+    live: true
+    note: this repository's own workflows
+  ok: every workflow the tree calls exists, and every workflow GitHub has switched off says why
+  fail: a workflow calls one that is not in the tree (GitHub fails that run at startup with no job and no log), or a workflow is disabled in settings with no line in the tree saying why
+- id: clickhouse-system-log-ttl
+  label: clickhouse-system-log-ttl
+  fast: true
+  statement: A ClickHouse system table the operator gives an <engine> carries its retention inside that engine string, never as a sibling <ttl>; ClickHouse exits 36 on boot when both are present
+  law: incident 2026-09-08, signoz-clickhouse CrashLoopBackOff
+  origin: 'One malformed stanza took the estate down: the server exited 36 on every boot, so signoz-clickhouse had no endpoints, so the observability Kustomization hung on its Job/langfuse-clickhouse-database
+    health check, so lastApplied stayed thirty commits back, so langfuse kept the two reserved cores #2429 had already removed in git -- and both nodes went to 91% and 95% CPU requested, evicting flux''s
+    own controllers.'
+  planes:
+  - ci
+  - session
+  session_glob:
+  - platform/**/*.yaml
+  - platform/**/*.yml
+  run:
+  - python3
+  - bin/idp-clickhouse-system-log-ttl
+  cluster:
+    policy: null
+    why: the break is in the chart values; admission never sees the rendered config.d XML
+  fixtures:
+    must_fail: tests/fixtures/clickhouse-system-log-ttl/bad.yaml
+    must_pass: tests/fixtures/clickhouse-system-log-ttl/good.yaml
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/clickhouse-system-log-ttl/bad.yaml
+  - expect: pass
+    args:
+    - tests/fixtures/clickhouse-system-log-ttl/good.yaml
+  - expect: pass
+    live: true
+    note: this repository's own platform manifests
+  ok: every ClickHouse system-log retention is inside its engine string
+  fail: a system table the Altinity operator ships an <engine> for also has a sibling <ttl>, which ClickHouse refuses at startup with BAD_ARGUMENTS and exit 36
+- id: crd-then-cr
+  label: crd-then-cr
+  fast: true
+  statement: A Crossplane Provider and an instance of a kind its package installs never share a Flux Kustomization path; Flux dry-runs the whole path first, so neither the instance nor the Provider ever
+    lands
+  law: incident 2026-09-08, crossplane-providers
+  origin: platform/crossplane/providers held the Provider that installs oci.upbound.io and a ProviderConfig of that group. Flux reported `no matches for kind "ProviderConfig" in version "oci.upbound.io/v1beta1"`,
+    which reads as a missing CRD; the truth was that the apply was refused whole, so the Provider that would have installed the kind was never installed at all -- `kubectl get providers.pkg.crossplane.io`
+    returned "No resources found" for as long as the row had existed. It never fails once and heals.
+  planes:
+  - ci
+  - session
+  session_glob:
+  - platform/**/*.yaml
+  - platform/**/*.yml
+  - clusters/**/*.yaml
+  run:
+  - python3
+  - bin/idp-crd-then-cr
+  cluster:
+    policy: null
+    why: the break is in the repository's Kustomization layout; the objects never reach admission
+  fixtures:
+    must_fail: tests/fixtures/crd-then-cr/bad
+    must_pass: tests/fixtures/crd-then-cr/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/crd-then-cr/bad
+  - expect: pass
+    args:
+    - tests/fixtures/crd-then-cr/good
+  - expect: pass
+    live: true
+    note: this repository's own Kustomization paths
+  ok: no Flux Kustomization path holds both a Provider and an instance of a kind it installs
+  fail: a Kustomization path holds a Crossplane Provider and an object of a group that Provider installs; the path can never converge, and the error names the instance rather than the ordering
+- id: store-reach
+  label: store-reach
+  fast: true
+  statement: 'A secret store that authenticates outside the cluster has a fence that lets it get there: egress_internet, and egress_metadata too when its identity is fetched at run time'
+  law: incident 2026-09-08, ClusterSecretStore/estate-vault
+  origin: The external-secrets fence allowed egress to the apiserver, kube-dns, the observability namespace and its own pods. ClusterSecretStore/estate-vault authenticates as InstancePrincipal, so it needed
+    169.254.169.254 and an HTTPS route to OCI, and had neither. It reported `unable to create client`, reason InvalidProviderConfig -- a message that names no network -- and every ExternalSecret in the
+    estate then failed with `ClusterSecretStore "estate-vault" is not ready`. Twenty-nine Flux rows waited behind one.
+  planes:
+  - ci
+  - session
+  session_glob:
+  - platform/ns-fences/allowances.yaml
+  - platform/**/store*.yaml
+  run:
+  - python3
+  - bin/idp-store-can-reach-its-vault
+  cluster:
+    policy: null
+    why: the store and the fence are both valid objects; nothing admission sees is malformed
+  fixtures:
+    must_fail: tests/fixtures/store-reach/bad
+    must_pass: tests/fixtures/store-reach/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/store-reach/bad
+  - expect: pass
+    args:
+    - tests/fixtures/store-reach/good
+  - expect: pass
+    live: true
+    note: this estate's own stores and its fence register
+  ok: every store reaching outside the cluster has the egress its provider needs
+  fail: a SecretStore or ClusterSecretStore names a provider outside the cluster that its namespace's fence gives it no route to; the store reports InvalidProviderConfig and every ExternalSecret behind
+    it stops
+- id: catalogue-entity-runtime-service
+  label: cat-runtime-svc
+  statement: A package manager may mint its own webhook Service without a catalogue label, and an undeclared door in the same namespace still may not
+  law: R38 -- a guard that refuses correct work is an outage
+  origin: 'incident 2026-09-08. require-catalogue-entity runs at Enforce, and it refused the Service Crossplane''s package manager creates for each provider revision: `cannot apply provider package service:
+    admission webhook "validate.kyverno.svc-fail" denied the request ... require-catalogue-entity`. No file in this repository renders that Service, so no kustomize label and no Flux postRenderer could
+    ever reach it. Both providers sat at Installed=True, Healthy=False with zero CRDs established, and the crossplane-providerconfig row failed forever with `no matches for kind "ProviderConfig" in version
+    "oci.upbound.io/v1beta1"` -- an error that names the config, never the policy that caused it.'
+  planes:
+  - ci
+  requires:
+  - kyverno
+  run:
+  - kyverno
+  - test
+  fixtures:
+    must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
+    must_pass: tests/fixtures/catalogue-entity-runtime-service
+  live_elsewhere: bin/idp-ci:477 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/catalogue-entity-runtime-service-blind
+    note: the real policy with the exception file left out, so the provider's Service is refused and kyverno reports "Want skip, got fail" -- the outage itself, graded
+  - expect: pass
+    args:
+    - tests/fixtures/catalogue-entity-runtime-service
+    tail_of: true
+  ok: 'catalogue entity, runtime service: {tail}'
+  ok_fallback: the package manager's own Service is excepted by name and an unlabelled door in the same namespace is still refused
+  fail: kyverno test tests/fixtures/catalogue-entity-runtime-service (and its -blind pair, which must fail)
+- id: priority-class-exists
+  label: priority-class-exists
+  fast: true
+  statement: Every priorityClassName a workload names is a PriorityClass this tree declares or one of the two Kubernetes ships; a class that exists nowhere is refused at admission, not at apply
+  law: incident 2026-09-08, nodesoftware-operator
+  origin: 'platform/nodesoftware-operator/deployment.yaml named priorityClassName idp-infrastructure. No such class is declared in this tree and none exists in the cluster, so the apiserver refused every
+    pod the ReplicaSet asked for -- `pods "nodesoftware-operator-6d87fb9cbd-" is forbidden: no PriorityClass with name idp-infrastructure was found`. The Deployment sat at ReplicaFailure/FailedCreate and
+    its Flux row went HealthCheckFailed. The name survived review because the line carried a comment pointing at the directory where the real classes live, which makes a wrong name look checked, and because
+    the failure names a scheduling concept, so it reads like capacity rather than a typo.'
+  planes:
+  - ci
+  - session
+  session_glob:
+  - platform/**/*.yaml
+  - platform/**/*.yml
+  - clusters/**/*.yaml
+  - apps/**/*.yaml
+  run:
+  - python3
+  - bin/idp-priority-class-exists
+  cluster:
+    policy: null
+    why: the apiserver already refuses the pod; the cost is that it refuses it after the manifest has merged and reconciled
+  fixtures:
+    must_fail: tests/fixtures/priority-class-exists/bad
+    must_pass: tests/fixtures/priority-class-exists/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/priority-class-exists/bad
+  - expect: pass
+    args:
+    - tests/fixtures/priority-class-exists/good
+  - expect: pass
+    live: true
+    note: this repository's own workloads and priority classes
+  ok: every priorityClassName in the tree resolves to a class that exists
+  fail: a workload names a PriorityClass that neither this tree declares nor Kubernetes ships; admission refuses every pod it asks for and the Deployment reports FailedCreate
+- id: simulate-twin
+  label: simulategrade
+  statement: A state-changing estate MCP tool (an @mcp.tool() named execute_* or exec_*) is refused unless the same module registers a simulate twin to propose its change first (MUM-288, ADR 0006)
+  law: MUM-288, ADR 0006
+  origin: MUM-288
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-simulate-gate
+  session_glob:
+  - mcp/plugins/*.py
+  fixtures:
+    must_fail: tests/fixtures/simulate-grade/bad
+    must_pass: tests/fixtures/simulate-grade/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/simulate-grade/bad
+  - expect: pass
+    args:
+    - tests/fixtures/simulate-grade/good
+  - expect: pass
+    live: true
+    note: the genuine estate MCP server's simulate/execute door pairs
+  ok: every mutating estate MCP tool in mcp/plugins ships a simulate twin; the gate is proved both ways
+  fail: a mutating estate MCP tool registers with no simulate twin, and the gate cannot tell the breach from the pair
+- id: otto-door-key
+  label: ottodoorkey
+  statement: 'Otto''s door presents a key the lifeboat it talks to can validate: when LITELLM_BASE_URL is the loopback otto-brain sidecar, the door derives the same master key from the same Secret the sidecar
+    does. A sidecar with no database cannot look up a virtual key, so it refuses every turn with 400 "No connected db." before any of the three homes is tried'
+  law: THE EMPIRICAL PROOF RULE
+  origin: incident 2026-09-10, the three homes carried no real turn for a day while every probe stayed green
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-otto-door-key-agrees
+  session_glob:
+  - platform/otto-gateway/deployment.yaml
+  fixtures:
+    must_fail: tests/fixtures/otto-door-key/bad.yaml
+    must_pass: tests/fixtures/otto-door-key/good.yaml
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/otto-door-key/bad.yaml
+  - expect: pass
+    args:
+    - tests/fixtures/otto-door-key/good.yaml
+  - expect: pass
+    live: true
+    args:
+    - platform/otto-gateway/deployment.yaml
+    note: the door and lifeboat as they actually ship
+  ok: the door and the lifeboat derive one master key from one Secret; proved both ways
+  fail: the door presents a key the lifeboat cannot validate, so every real turn dies at the lifeboat's door while probes that go around it stay green
+- id: grader-exit-gate
+  label: grader-exit
+  statement: 'A grading step whose verdict cannot reach the run is refused: a grader piped into tee/cat with neither pipefail nor -e, a bare grader that is not the last command under a set line without
+    -e, or a grader ending in ''|| true'' with no ''# optional: <reason>'' marker. The step is accepted when the same job asserts the captured verdict in a later step'
+  law: LAW 28
+  origin: incident 2026-09-10, grading steps whose verdict is discarded
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-grader-exit-gate
+  fixtures:
+    must_fail: tests/fixtures/grader-exit/bad
+    must_pass: tests/fixtures/grader-exit/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/grader-exit/bad
+  - expect: pass
+    args:
+    - tests/fixtures/grader-exit/good
+  - expect: pass
+    live: true
+    args:
+    - .github/workflows
+    note: this repository's own workflows
+  ok: every grading step in the tree can fail its run, or a later step asserts the captured verdict
+  fail: 'measured 2026-09-10: ''set -u; grader | tee out'' exits 0 while the grader failed, so a run reports green having graded nothing. ''set -o pipefail'' or ''-e'' fixes it; a bare last command propagates
+    without -e, and a later step that tests the captured rc is an assertion'
+- id: founder-door
+  fast: true
+  label: founder-door
+  statement: Every workflow the founder can dispatch carries a '# button:' title and a '# founder:' sentence, and the portal template on disk matches the workflow that generated it. A feature with no door
+    is not finished, and a door nobody regenerated opens onto something else.
+  law: LAW 32
+  planes:
+  - ci
+  - session
+  session_glob:
+  - .github/workflows/*.yml
+  - backstage/templates/founder-actions/*.yaml
+  run:
+  - python3
+  - bin/idp-portal-buttons
+  - --check
+  cluster:
+    policy: null
+    why: the defect is in the repo bytes; the cluster never sees a workflow definition
+  fixtures:
+    must_fail: tests/fixtures/founder-door/bad.yml
+    must_pass: .github/workflows/catalog-render.yml
+  why: 'MEASURED 2026-09-12: bin/idp-portal-buttons existed, refused a workflow without the pair, and ran in NO gate -- not in bin/idp-ci, not in rules.yaml. fetch-model-artifacts.yml therefore merged with
+    no button, and the only thing that noticed was a bdd suite nobody reads as a door rule. The tool was built and never wired, which is the same class as every other defect on this page.'
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/founder-door/bad.yml
+  - expect: pass
+    args:
+    - .github/workflows/catalog-render.yml
+  - expect: pass
+    live: true
+    note: the workflows and portal templates actually committed
+  ok: every dispatchable workflow has a founder-facing button; the gate is proved both ways
+  fail: a workflow the founder can dispatch has no button, or the gate is not discriminating

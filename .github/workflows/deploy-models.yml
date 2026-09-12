@@ -11,9 +11,29 @@ name: deploy-models
 on:
   workflow_dispatch:
     inputs:
-      replicas:
-        description: "how many of each model to run (0 stops them all)"
+      action:
+        # A DROPDOWN OF WORDS, NOT A CODE. The first version asked for "space-separated keys from
+        # MODEL_ROWS", which is a string only the engineer who wrote it knows. These are the choices
+        # a person actually makes.
+        description: "What to do"
+        type: choice
+        options:
+          - "Start every model"
+          - "Stop every model"
+          - "Start one model"
+          - "Stop one model"
+        default: "Start every model"
+      model:
+        # Kept as a free string only because the list of artifacts changes as models are fetched;
+        # the run prints the valid names and REFUSES an unknown one rather than quietly doing
+        # nothing.
+        description: "Which model, for 'one model' above (e.g. falcon-h1-7b)"
         required: false
+        default: ""
+      replicas:
+        description: "How many copies of each model to run"
+        type: choice
+        options: ["1", "2", "3"]
         default: "1"
 
 permissions:
@@ -72,17 +92,42 @@ jobs:
         with:
           mode: reach
 
-      - name: apply
+      - name: apply the choices
         env:
+          ACTION: ${{ inputs.action }}
+          MODEL: ${{ inputs.model }}
           REPLICAS: ${{ inputs.replicas }}
         run: |
           set -euo pipefail
-          kubectl apply -f platform/edge-runtime/deploy/experts-generated.yaml
-          if [ "$REPLICAS" != "1" ]; then
-            for d in $(kubectl get deploy -n edge-runtime -o name | grep expert-); do
-              kubectl scale "$d" -n edge-runtime --replicas="$REPLICAS"
-            done
-          fi
+
+          # THE NAMES THAT EXIST, PRINTED EVERY RUN. A person reading the log sees the valid list
+          # without opening anything else.
+          AVAILABLE=$(kubectl get deploy -n edge-runtime -o name | grep expert- | sed 's|.*expert-||' | tr '\n' ' ')
+          echo "ok      models that exist: $AVAILABLE"
+
+          case "$ACTION" in
+            "Start every model"|"Stop every model")
+              kubectl apply -f platform/edge-runtime/deploy/experts-generated.yaml
+              N="$REPLICAS"; [ "$ACTION" = "Stop every model" ] && N=0
+              for d in $(kubectl get deploy -n edge-runtime -o name | grep expert-); do
+                kubectl scale "$d" -n edge-runtime --replicas="$N"
+              done
+              ;;
+            "Start one model"|"Stop one model")
+              # AN UNKNOWN NAME IS REFUSED, NOT IGNORED. Quietly doing nothing looks exactly like a
+              # model that started and is not answering.
+              [ -n "$MODEL" ] || { echo "FAIL  'one model' needs a name; the models are: $AVAILABLE"; exit 1; }
+              NAME="expert-$(printf '%s' "$MODEL" | tr '.[:upper:]' '-[:lower:]')"
+              kubectl get deploy -n edge-runtime "$NAME" >/dev/null 2>&1 \
+                || { echo "FAIL  no model called '$MODEL'; the models are: $AVAILABLE"; exit 1; }
+              # The Deployment must exist before it can be scaled, so apply first -- it is idempotent.
+              kubectl apply -f platform/edge-runtime/deploy/experts-generated.yaml
+              N="$REPLICAS"; [ "$ACTION" = "Stop one model" ] && N=0
+              kubectl scale "$NAME" -n edge-runtime --replicas="$N"
+              ;;
+            *)
+              echo "FAIL  unknown choice '$ACTION'"; exit 1 ;;
+          esac
           kubectl get pods -n edge-runtime
 
       - name: they must actually become ready

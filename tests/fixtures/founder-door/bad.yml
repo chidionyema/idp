@@ -1,0 +1,18 @@
+# A workflow the founder is meant to press, with NO button and NO founder sentence.
+#
+# This is the fixture the founder-door rule refuses. A dispatchable workflow without the pair shows
+# up in the Actions tab and NOWHERE the founder looks, which is how a feature is built, merged and
+# reported as done while no person can reach it.
+name: a-feature-with-no-door
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  work:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "built, merged, and unreachable by the person it was built for"
