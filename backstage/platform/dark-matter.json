@@ -1,0 +1,21 @@
+{
+  "at": "2026-09-12",
+  "base": "origin/main",
+  "branches_carried_in_portal_file": 200,
+  "dead_deployments": 10,
+  "dead_names": [
+    "chaos-mesh/chaos-controller-manager",
+    "edge-runtime/edge-runtime",
+    "edge-runtime/resident-brain",
+    "guacamole/guacamole",
+    "hindsight/hindsight-api",
+    "observability/langfuse-web",
+    "observability/langfuse-worker",
+    "observability/superset",
+    "observability/superset-worker",
+    "robusta/robusta-runner"
+  ],
+  "files_absent_from_base": 94093,
+  "portal_file_cap": 200,
+  "stranded_branches": 648
+}

@@ -126,6 +126,34 @@ jobs:
           python3 bin/catalog-render $flag 2>&1 | tee "$RUNNER_TEMP/render.log"; rc=${PIPESTATUS[0]}
           { echo; echo '```'; tail -60 "$RUNNER_TEMP/render.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit $rc
+      # The estate twin (2026-09-12): the runtime half of the graph. This job already builds
+      # estate.db from the declared inventory; that file describes what git DECLARES and is
+      # silent about what is RUNNING. Measured 2026-09-12: `research` 0/1, `hindsight` 0/1,
+      # `otto-gateway` 2/13, and 11 zero-scaled deployments were in none of the estate's three
+      # inventories, because a dead pod is declared nowhere.
+      #
+      # The emitter reads the cluster-state receipt the estate already publishes every 15
+      # minutes and writes it into the same estate.db this job ships, then the code half on top.
+      # It adds no store and no bus. Before this step the graph answers "what is declared";
+      # after it, "what is".
+      - name: estate twin -- runtime + code into the graph (G1, G3, G4)
+        if: ${{ (inputs.mode || 'commit') == 'commit' }}
+        working-directory: idp
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LITELLM_API_KEY: ${{ secrets.SEED_LITELLM_API_KEY }}
+        run: |
+          set -uo pipefail
+          # A sweep that cannot read the cluster must not fail the job it runs inside: the
+          # declared half has already shipped, and a BLIND runtime half is named, not fatal.
+          if bin/estate-twin-runtime --once --code; then
+            echo 'ok estate-twin: runtime + code written into estate.db' | tee -a "$GITHUB_STEP_SUMMARY"
+            bin/estate-twin-runtime --state 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'BLIND estate-twin: the runtime half could not be read; the declared half still ships' \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: estate.db to the registry (crew#458 row 3; estate-mcp on the cluster pulls it)
         if: ${{ (inputs.mode || 'commit') == 'commit' }}
         working-directory: idp
