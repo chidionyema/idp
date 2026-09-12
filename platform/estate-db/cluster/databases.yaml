@@ -184,3 +184,20 @@ spec:
   name: lago
   owner: lago
   ensure: present
+---
+# The evidence layer's ledger (decision 0028). Aevum writes its signed receipts here, in the
+# estate's own Postgres, so the records outlive the tool that wrote them -- which is the whole
+# reason this is not Aevum's in-memory default or its embedded store. Its factory calls
+# initialize_ledger_schema() on boot; the schema itself is created by that call, not by a
+# migration here.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: aevum-evidence
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: aevum_evidence
+  owner: aevum_evidence
+  ensure: present
