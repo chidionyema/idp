@@ -33,6 +33,9 @@ import sys
 
 import yaml
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from treewalk import glob_tree  # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHELL_FORM = re.compile(r"(?<!\$)\$\{[A-Za-z_][A-Za-z0-9_]*[:#%/^,-]")
 ESCAPED = re.compile(r"(?<!\\)\$\$\{")  # a backslash before it is the shell's literal $
@@ -54,7 +57,7 @@ def document_flags(lines):
 
 def kustomization_map():
     subst, plain = set(), set()
-    for f in glob.glob(os.path.join(ROOT, "clusters", "**", "*.y*ml"), recursive=True):
+    for f in glob_tree(ROOT, "clusters", "**", "*.y*ml"):
         try:
             docs = list(yaml.safe_load_all(open(f)))
         except yaml.YAMLError:
@@ -88,7 +91,7 @@ def scan(path, substituting):
 
 def files_under(rel):
     for ext in ("*.yaml", "*.yml"):
-        for f in glob.glob(os.path.join(ROOT, rel, "**", ext), recursive=True):
+        for f in glob_tree(ROOT, rel, "**", ext):
             # normpath: the estate-catalog row's path is ".", and without this its
             # hits arrive as ROOT/./x -- a different string from ROOT/x, so `seen`
             # never deduped and the whole repo was rescanned as plain (CI run

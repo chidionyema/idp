@@ -35,6 +35,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from treewalk import walk_tree  # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # The tables chi-signoz-clickhouse-common-configd defines an <engine> for, read off
@@ -87,7 +90,7 @@ def targets(argv):
     # contain the break, and the registry grades it by naming it as an argument.
     skip = os.path.join(ROOT, "tests", "fixtures")
     found = []
-    for base, dirs, files in os.walk(ROOT):
+    for base, dirs, files in walk_tree(ROOT):
         dirs[:] = [d for d in dirs if d not in (".git", "node_modules", ".venv")]
         if base.startswith(skip):
             continue

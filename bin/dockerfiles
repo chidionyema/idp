@@ -69,6 +69,18 @@ touched() {  # touched <dockerfile> <context>: does the diff reach this image?
 # Excluded, with the reason. Anything Dockerfile-shaped not listed here and not
 # produced below is a gate finding.
 EXCLUDE='backstage/packages/backend/Dockerfile backstage/Dockerfile.dockerignore'   # upstream scaffold: needs a host yarn build and the repo root as context; the .dockerignore is backstage/Dockerfile's build context filter, not an image
+# A nested checkout of this repository under its own root (idp/, wt-*/, scratchpad/) holds its
+# own Dockerfiles, and reading them graded a copy of this repo against this branch (incident
+# 2026-09-10: this list carried 187 of 199 rows from nested checkouts, and bdd cp0b's image-list
+# step failed because 'sovereign-worker' was hidden behind a nested path). gitignore is the
+# authority: every ignored top-level directory is not this tree. One git call, then one -prune.
+# An array, not a string: a name with a space or a leading dot broke the word-split form.
+_prune=()
+while IFS= read -r _d; do
+  [ -n "$_d" ] || continue
+  _prune+=(-path "./$_d" -prune -o)
+done < <(git ls-files --others --ignored --exclude-standard --directory 2>/dev/null \
+         | sed 's|/$||' | awk 'index($0,"/")==0' | sort -u)
 rows=()
 while IFS= read -r f; do
   f=${f#./}
@@ -77,7 +89,11 @@ while IFS= read -r f; do
   if [ "$b" = Dockerfile ]; then n=$(basename "$d"); [ "$n" = "." ] && n=idp; else n=${b%.Dockerfile}; fi
   touched "$f" "$d" || continue
   rows+=("$n $f $d")
-done < <(find . \( -name Dockerfile -o -name '*.Dockerfile' \) -not -path '*/node_modules/*' -not -path './.git/*' -not -path './tests/*' | sort)
+done < <(find . "${_prune[@]}" \( -name Dockerfile -o -name '*.Dockerfile' \) \
+            -not -path '*/node_modules/*' \
+            -not -path './.git/*' \
+            -not -path './tests/*' \
+            -print | sort)
 if [ "$json" = 1 ]; then
   { printf '%s\n' "${rows[@]:-}" | grep . || true; } | jq -Rc 'split(" ") | {name: .[0], dockerfile: .[1], context: .[2]}' | jq -sc .   # no image touched prints [], never a non-zero exit (crew#584 CP-G)
 else

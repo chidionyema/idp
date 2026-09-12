@@ -45,6 +45,9 @@ import pathlib
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from treewalk import is_this_tree  # noqa: E402
+
 HERE = pathlib.Path(__file__).resolve().parents[1]
 ZONE_KEY = re.compile(r"^\s*ESTATE_ZONE:\s*['\"]?([A-Za-z0-9.-]+)['\"]?\s*$", re.M)
 SUFFIXES = {
@@ -143,7 +146,9 @@ def scan_tree(root: pathlib.Path, pat: re.Pattern) -> list[str]:
             d
             for d in dirnames
             if d not in PRUNE_DIRS
-            and not d.startswith(".wt-")
+            # `.wt-` was a name, and the next session named its checkout scratchpad/ or
+            # idp/; git is the authority, not the name (incident 2026-09-10).
+            and is_this_tree(pathlib.Path(dirpath) / d, root)
             and not exempt_path((rel_dir + "/" + d + "/").lstrip("/"))
         )
         for name in sorted(filenames):
@@ -151,7 +156,9 @@ def scan_tree(root: pathlib.Path, pat: re.Pattern) -> list[str]:
             if f.is_symlink() or not f.is_file():
                 continue
             rel = f.relative_to(root).as_posix()
-            if exempt_path(rel) or not scannable(rel):
+            # A generated file is not a record (.gitignore), and a nested checkout is not
+            # this tree (incident 2026-09-10).
+            if exempt_path(rel) or not scannable(rel) or not is_this_tree(f, root):
                 continue
             try:
                 text = f.read_text(errors="replace")
