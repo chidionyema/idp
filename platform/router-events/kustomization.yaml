@@ -12,4 +12,4 @@ images:
   # image-automation-controller rewrites the newTag line from ImagePolicy
   # flux-system/router-events; the marker is how it finds the line.
   - name: ghcr.io/chidionyema/router-events
-    newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:router-events:tag"}
+    newTag: main-8705-66a5da216c1533cb5087a12b71f51546c2461662 # {"$imagepolicy": "flux-system:router-events:tag"}
