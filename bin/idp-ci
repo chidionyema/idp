@@ -585,3 +585,17 @@ else say "FAIL  grade    estate-showcase did not render, or --check did not disc
 timing_summary
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"
+# Decision 0028: the evidence layer's live case. This is not the fixture pair again -- it grades
+# the REAL manifest the cluster reconciles, and it asserts the two properties whose absence is
+# silent: (1) aevum.yaml is wired into the observability kustomization, so the Deployment is
+# actually applied rather than sitting in the tree unreferenced, and (2) it never configures the
+# in-memory store, which reports a valid empty chain after every restart. A gate that graded only
+# its own fixtures would never see either.
+if grep -q '^  - aevum.yaml$' "$IDP/platform/observability/kustomization.yaml" \
+   && ! grep -q 'in-memory' "$IDP/platform/observability/aevum.yaml" \
+   && grep -q 'initialize_ledger_schema' "$IDP/platform/observability/aevum.yaml" \
+   && grep -q 'sigchain=sigchain' "$IDP/platform/observability/aevum.yaml" \
+   && python3 "$IDP/bin/idp-evidence-gate" "$IDP/tests/fixtures/aevum-evidence/good/chain.json" >/dev/null 2>&1 \
+   && ! python3 "$IDP/bin/idp-evidence-gate" "$IDP/tests/fixtures/aevum-evidence/bad/chain.json" >/dev/null 2>&1; then
+  say "ok    evidence the evidence layer is applied, is configured with a persistent store, and its gate refuses an altered record while passing a clean one"
+else say "FAIL  evidence the evidence layer is unreferenced by its kustomization, or is configured on the in-memory store, or its gate does not discriminate"; fail=1; fi
