@@ -100,6 +100,7 @@ nav:
       - Dashboards recording: demo/superset.md
       - Portal: tutorials/demo/idp.md
       - The agent that couldn't lie: tutorials/demo/truthteller-demo.md
+      - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
@@ -197,6 +198,7 @@ nav:
       - Trace matrix: how-to/onboarding/trace-matrix.md
       - Namespace fences: how-to/onboarding/ns-fence-gate.md
       - The agent that couldn't lie: how-to/onboarding/truthteller-demo.md
+      - Every gate, with its output: how-to/onboarding/gate-demo.md
       - Portal: how-to/onboarding/idp.md
       - Estate compiler: how-to/onboarding/intent.md
       - Estate Mac screen: how-to/onboarding/founder-screen-access.md
@@ -285,6 +287,73 @@ nav:
       - Flux wait brake: how-to/onboarding/idp-flux-wait-brake.md
       - Otto's three homes: how-to/onboarding/otto-three-homes.md
       - Otto homes, grade and deploy: how-to/onboarding/idp-otto-homes.md
+  - Gates:
+      - What these are: gates/index.md
+      - flux-subst: gates/flux-subst.md
+      - flux-wait-brake: gates/flux-wait-brake.md
+      - probe-host: gates/probe-host.md
+      - agnostic: gates/cloud-agnostic.md
+      - zone: gates/estate-zone.md
+      - portlock: gates/port-lock.md
+      - portbind: gates/port-bind.md
+      - security: gates/security-policy.md
+      - root-trust: gates/root-trust.md
+      - ai-act: gates/ai-act.md
+      - law32: gates/law32-demo-onboarding.md
+      - plist: gates/plist-renders.md
+      - migration: gates/migration-idempotent.md
+      - secrets: gates/static-secret.md
+      - owners: gates/owner-account.md
+      - binds: gates/bind-audit.md
+      - ethos: gates/conscience.md
+      - describe: gates/job-described.md
+      - vmmount: gates/vm-shared-path.md
+      - fences: gates/ns-fence.md
+      - verdict: gates/main-verdict.md
+      - prose: gates/prose-pin.md
+      - twohats: gates/tenant-split.md
+      - jitgrant: gates/jit-grants.md
+      - fencdrill: gates/fence-enforcement.md
+      - denyflow: gates/calico-denyflow.md
+      - gvisor: gates/gvisor-cell.md
+      - gvrfence: gates/gvisor-cell-fence.md
+      - ha: gates/availability.md
+      - rego: gates/rego-unit-tests.md
+      - licence: gates/licence-policy.md
+      - placement: gates/placement-policy.md
+      - capacity: gates/capacity-policy.md
+      - opmodel: gates/operating-model-policy.md
+      - notoil: gates/no-toil-policy.md
+      - ethos-rego: gates/conscience-rego.md
+      - shell: gates/shell-lint.md
+      - hardcode: gates/hardcoded-path.md
+      - codeloc: gates/defs-load-by-path.md
+      - placement: gates/fits-a-node.md
+      - reloader: gates/reloader-operator-owned.md
+      - sched: gates/one-scheduler.md
+      - glass: gates/glass-break.md
+      - proof: gates/convergence-proof.md
+      - shadow: gates/shadow-sync.md
+      - limit: gates/limit-raise-only.md
+      - rollback: gates/rollback-only.md
+      - command: gates/sovereign-command.md
+      - coverage: gates/rule-coverage.md
+      - jitrole: gates/jit-broker-role.md
+      - vendor: gates/vendor-name.md
+      - nodesoftware: gates/nodesoftware-operator.md
+      - pipeverdict: gates/pipeverdict.md
+      - split: gates/split-brain.md
+      - mechanism: gates/mechanism.md
+      - clickhouse-system-log-ttl: gates/clickhouse-system-log-ttl.md
+      - crd-then-cr: gates/crd-then-cr.md
+      - store-reach: gates/store-reach.md
+      - cat-runtime-svc: gates/catalogue-entity-runtime-service.md
+      - priority-class-exists: gates/priority-class-exists.md
+      - simulategrade: gates/simulate-twin.md
+      - ottodoorkey: gates/otto-door-key.md
+      - grader-exit: gates/grader-exit-gate.md
+      - founder-door: gates/founder-door.md
+      - stray: gates/stray-checkout.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
