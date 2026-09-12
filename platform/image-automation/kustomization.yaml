@@ -3,6 +3,7 @@ resources:
   - backstage.yaml
   - pull-secret.yaml
   - sovereign-worker.yaml
+  - router-events.yaml
   - hermes-agent.yaml
   - estate-mcp.yaml
   - estate-scheduler.yaml
