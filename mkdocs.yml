@@ -105,6 +105,7 @@ nav:
       - Messaging: tutorials/demo/messaging.md
       - Prose-pin gate: tutorials/demo/test-prose-gate.md
       - Incident register: tutorials/demo/incident-register.md
+      - FleetView sessions: tutorials/demo/fleetview.md
       - Trace matrix: tutorials/demo/trace-matrix.md
       - Matrix gate: tutorials/demo/matrix.md
       - Plain English: tutorials/demo/plain-english.md
@@ -183,6 +184,7 @@ nav:
       - Human secret door: tutorials/demo/human-vault.md
   - Onboarding:
       - The Demo Standard: onboarding/demo-standard.md
+      - FleetView: how-to/onboarding/fleetview.md
       - Buyer sandbox (one hour): onboarding/demo-sandbox.md
       - Merge queue (hands-free landing): onboarding/merge-queue.md
       - Catalogue links: onboarding/catalog-links.md
