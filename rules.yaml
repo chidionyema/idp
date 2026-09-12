@@ -1252,21 +1252,41 @@ rules:
   - expect: refuse
     args:
     - tests/fixtures/convergence/no-proof.md
-    - HEAD
+    - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    note: no Proof-of-Convergence block in the body
   - expect: pass
     args:
     - tests/fixtures/convergence/proved.md
-    - HEAD
+    - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     env:
       CONVERGENCE_RUN_GREEN: '1'
-      CONVERGENCE_RUN_HEAD: HEAD
+      CONVERGENCE_RUN_HEAD: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    note: the proof's run is green and on the head commit
   - expect: refuse
     args:
     - tests/fixtures/convergence/proved.md
-    - HEAD
+    - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     env:
       CONVERGENCE_RUN_GREEN: '1'
-      CONVERGENCE_RUN_HEAD: OTHER
+      CONVERGENCE_RUN_HEAD: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    note: the proof's run belongs to a different commit (W2.3)
+  - expect: refuse
+    args:
+    - tests/fixtures/convergence/proved.md
+    - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    env:
+      CONVERGENCE_RUN_GREEN: '0'
+      CONVERGENCE_RUN_HEAD: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    note: an ungreen run is a fail-closed refuse, never a pass
+  - expect: pass
+    args:
+    - tests/fixtures/convergence/proved.md
+    - --from-env
+    env:
+      CONVERGENCE_HEAD: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      CONVERGENCE_RUN_HEAD: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      CONVERGENCE_RUN_GREEN: '1'
+    note: the CI seam -- all three witnesses come from the environment
   ok: a change that was never proved in the shadow dimension cannot reach the Greenlane (W2.3)
   fail: a change without a green Proof-of-Convergence on its own head could be auto-merged (W2.3)
 - id: shadow-sync
