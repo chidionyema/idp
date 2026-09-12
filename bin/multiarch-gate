@@ -96,7 +96,13 @@ def main(roots):
         else:
             findings += coverage_findings(root)
             files = []
-            for d, dirs, fs in os.walk(root):
+            # walk_tree, not os.walk: a nested checkout of this repository under the root carries
+            # its own harness/sandbox/build-image.sh with a raw `docker build`, which was reported
+            # as this branch's finding (measured 2026-09-12:
+            # scratchpad/wt-4669a220-sess7527/harness/sandbox/build-image.sh:31). This is the
+            # second of the gate's two walks; :81 was fixed in the same change and this one was
+            # missed, so the gate still read a copy while claiming to read the tree.
+            for d, dirs, fs in walk_tree(root):
                 dirs[:] = [x for x in dirs if x not in SKIP]
                 files += [os.path.join(d, f) for f in fs]
         for f in files:
