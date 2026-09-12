@@ -357,7 +357,41 @@ spec:
     # Postgres for the estate) -- it must report Ready first or the data would be pruned
     # ahead of being moved.
     - name: estate-db-migrate
+  # ESTATE_ZONE (found live 2026-09-12): platform/llm/litellm.yaml publishes an HTTPRoute whose
+  # hostname is llm.${ESTATE_ZONE}, and without this the literal string reached the API and the
+  # route was refused on EVERY reconcile -- "spec.hostnames[0] in body should match ...". Flux
+  # therefore never reported the llm path ready, which held every Kustomization that dependsOn it
+  # behind a door that could not open. The running pods predated the route and kept serving, so
+  # the only symptom was a dependency that never satisfied -- found only because router-events
+  # dependsOn llm and refused to apply.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
   timeout: 10m
+---
+# The router's own event wiring (founder decision 2026-09-12: the database is the source of
+# truth and git is its backup, with nothing connected by a poll).
+#
+# dependsOn llm, not the reverse: a listener on a lane table cannot be applied before the
+# router that owns the table exists, or the first reconcile fails and Flux reports a red row
+# for a manifest that is perfectly correct.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: router-events
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/router-events
+  prune: true
+  dependsOn:
+    - name: llm
+    - name: event-bus
+  timeout: 5m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment

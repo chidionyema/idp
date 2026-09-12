@@ -1286,21 +1286,41 @@ rules:
   - expect: refuse
     args:
     - tests/fixtures/convergence/no-proof.md
-    - HEAD
+    - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    note: no Proof-of-Convergence block in the body
   - expect: pass
     args:
     - tests/fixtures/convergence/proved.md
-    - HEAD
+    - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     env:
       CONVERGENCE_RUN_GREEN: '1'
-      CONVERGENCE_RUN_HEAD: HEAD
+      CONVERGENCE_RUN_HEAD: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    note: the proof's run is green and on the head commit
   - expect: refuse
     args:
     - tests/fixtures/convergence/proved.md
-    - HEAD
+    - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     env:
       CONVERGENCE_RUN_GREEN: '1'
-      CONVERGENCE_RUN_HEAD: OTHER
+      CONVERGENCE_RUN_HEAD: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    note: the proof's run belongs to a different commit (W2.3)
+  - expect: refuse
+    args:
+    - tests/fixtures/convergence/proved.md
+    - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    env:
+      CONVERGENCE_RUN_GREEN: '0'
+      CONVERGENCE_RUN_HEAD: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    note: an ungreen run is a fail-closed refuse, never a pass
+  - expect: pass
+    args:
+    - tests/fixtures/convergence/proved.md
+    - --from-env
+    env:
+      CONVERGENCE_HEAD: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      CONVERGENCE_RUN_HEAD: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      CONVERGENCE_RUN_GREEN: '1'
+    note: the CI seam -- all three witnesses come from the environment
   ok: a change that was never proved in the shadow dimension cannot reach the Greenlane (W2.3)
   fail: a change without a green Proof-of-Convergence on its own head could be auto-merged (W2.3)
 - id: shadow-sync
@@ -1922,6 +1942,38 @@ rules:
   ok: every grading step in the tree can fail its run, or a later step asserts the captured verdict
   fail: 'measured 2026-09-10: ''set -u; grader | tee out'' exits 0 while the grader failed, so a run reports green having graded nothing. ''set -o pipefail'' or ''-e'' fixes it; a bare last command propagates
     without -e, and a later step that tests the captured rc is an assertion'
+- id: cost-proof
+  fast: true
+  label: cost-proof
+  statement: A pull request that changes a file deciding what the estate SPENDS carries a cost-proof block naming a before, an after and the command that took both -- a number with no way to re-take it is a remembered number, and a change that says caching-enabled without the measured pair is an assertion, not a proof. A change outside the cost paths is never refused.
+  law: LAW 2
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-cost-proof
+  cases:
+  - expect: refuse
+    args:
+    - --pr-body
+    - tests/fixtures/cost-proof/bad.md
+    - --files
+    - platform/llm/config.yaml
+  - expect: pass
+    args:
+    - --pr-body
+    - tests/fixtures/cost-proof/good.md
+    - --files
+    - platform/llm/config.yaml
+  - expect: pass
+    args:
+    - --pr-body
+    - tests/fixtures/cost-proof/bad.md
+    - --files
+    - docs/readme.md
+  ok: a cost-touching change carries a measured before and after, taken by a named command
+  fail: a change that moves money reaches the merge gate with no measured pair, or with one number
+  why: 'FOUNDER ORDER 2026-09-12: "and from now on it is a required PR artifact". The instruction came after an afternoon in which the same figure was wrong twice ($128 for an OCI shape this tree does not define, $40-60 for a Hetzner server whose own price page says EUR 97.30) and the one figure that held was the only one measured the same way before and after -- cached=0 at 24,012 tokens, then cached=23,808 at 24,008 tokens, same lane, minutes apart.'
 - id: founder-door
   fast: true
   label: founder-door

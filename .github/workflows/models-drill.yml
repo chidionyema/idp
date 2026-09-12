@@ -1,0 +1,129 @@
+# button: Check the models still work
+# founder: Proves every model in the estate still answers, and says plainly what to do about any that does not. Runs on its own several times a day.
+#
+# THE DRILL THAT WOULD HAVE CAUGHT YESTERDAY. Every model that mattered was dead and nothing said
+# so: the session opened on a lane that had answered 401 for a week, fell through to a paid lane,
+# and the balance ran out with nothing underneath. A drill that runs on a schedule turns "we found
+# out when it mattered" into "it was on the board before anybody needed it".
+#
+# WHAT IT PROVES, and each is a separate table so a failure names itself:
+#   1. THE FREE LANES, one call each -- the router, and Ollama where one is reachable
+#   2. EVERY MODEL THAT IS RUNNING, one inference through the runtime
+#   3. THE ARTIFACTS, that each digest GHCR holds still resolves
+#
+# A FAILURE SAYS WHAT TO DO. "denied: denied" is not a finding; "the groq key is not scoped to the
+# groq lane; re-mint it with bin/idp-router-key" is. Every refusal below carries its next step.
+name: models-drill
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Four times a day, on the estate's clock's own marks. The dispatcher (platform/drills/
+    # drill-dispatcher.yaml) re-fires a missed run, because GitHub drops schedules under load.
+    - cron: "23 3,9,15,21 * * *"
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  lanes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: every free lane answers, or the run says which is dead
+        env:
+          ROUTER: ${{ vars.LLM_BASE_URL }}
+          ROUTER_KEY: ${{ secrets.LITELLM_API_KEY }}
+        run: |
+          set -uo pipefail
+          [ -n "${ROUTER:-}" ] || { echo "SKIP  no LLM_BASE_URL variable; the router is not reachable from here"; exit 0; }
+          dead=0
+          for lane in groq gemini fast default; do
+            code=$(curl -s -o /tmp/out.json -w "%{http_code}" -m 40 "$ROUTER/chat/completions" \
+              -H "Authorization: Bearer $ROUTER_KEY" -H 'content-type: application/json' \
+              -d "{\"model\":\"$lane\",\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}],\"max_tokens\":5}")
+            if [ "$code" = "200" ]; then
+              printf 'ok    lane %-10s answers\n' "$lane"
+            else
+              printf 'FAIL  lane %-10s HTTP %s\n' "$lane" "$code"
+              # WHAT TO DO, not just what happened. Each lane's failure has exactly one next step.
+              case "$lane" in
+                groq) echo "      -> the groq key is missing or not scoped to this lane. Re-mint with: bin/idp-router-key <consumer> groq,default" ;;
+                *)    echo "      -> the lane is rate-limited or its vendor key is dead. Check platform/llm/config.yaml for the lane's provider and re-seed that key." ;;
+              esac
+              dead=$((dead+1))
+            fi
+          done
+          echo
+          [ "$dead" -eq 0 ] || { echo "$dead lane(s) dead"; exit 1; }
+
+      - name: the model page matches what exists
+        run: |
+          set -euo pipefail
+          # The catalogue entity the founder reads is GENERATED. If it is stale, the page shows a
+          # model that was deleted or misses one that was added, and the founder trusts a lie.
+          bin/idp-models-page --check || {
+            echo "FAIL  the models page is stale."
+            echo "      -> run: bin/idp-models-page   and commit backstage/platform/models.catalog-info.yaml"
+            exit 1; }
+
+  models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: every running model answers
+        run: |
+          set -uo pipefail
+          # A model is PROVEN by one inference through the runtime, never by a pod that is Running.
+          # `kubectl get pods` says a container exists; this says it can answer.
+          echo "== what the cluster reports =="
+          kubectl get deploy -n edge-runtime \
+            -o custom-columns=NAME:.metadata.name,DESIRED:.spec.replicas,READY:.status.readyReplicas \
+            --no-headers 2>/dev/null || true
+          echo
+          bad=0
+          for d in $(kubectl get deploy -n edge-runtime -o name 2>/dev/null | grep expert-); do
+            model=$(echo "$d" | sed 's|.*expert-||')
+            ready=$(kubectl get "$d" -n edge-runtime -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
+            want=$(kubectl get "$d" -n edge-runtime -o jsonpath='{.spec.replicas}' 2>/dev/null)
+            if [ "${want:-0}" = "0" ]; then
+              printf 'ok    %-22s stopped on purpose\n' "$model"
+              continue
+            fi
+            if [ "${ready:-0}" != "$want" ]; then
+              printf 'FAIL  %-22s %s of %s ready\n' "$model" "${ready:-0}" "$want"
+              echo "      -> the pod has not become Ready. Read its own last line:"
+              kubectl logs -n edge-runtime "$d" --tail=3 2>/dev/null | sed 's/^/         /'
+              echo "      -> if it says 'tokenizer', the artifact is missing one; re-run the fetch button."
+              echo "      -> if it says nothing and the probe fails, the --health flag is absent from the image."
+              bad=$((bad+1))
+              continue
+            fi
+            printf 'ok    %-22s running, %s of %s ready\n' "$model" "$ready" "$want"
+          done
+          echo
+          [ "$bad" -eq 0 ] || { echo "$bad model(s) not answering"; exit 1; }
+
+      - name: every artifact digest still resolves
+        run: |
+          set -uo pipefail
+          bad=0
+          for pkg in $(gh api "users/${{ github.repository_owner }}/packages?package_type=container&per_page=100" --jq '.[].name' 2>/dev/null | grep '^models/'); do
+            task=${pkg#models/}
+            digest=$(gh api "users/${{ github.repository_owner }}/packages/container/models%2F${task}/versions" --jq '[.[]|select(.metadata.container.tags|length>0)][0].name' 2>/dev/null)
+            if [ -z "$digest" ]; then
+              printf 'FAIL  %-22s has no tagged version\n' "$task"
+              echo "      -> only the cosign signature is present; the artifact push did not finish."
+              bad=$((bad+1)); continue
+            fi
+            oras manifest fetch "ghcr.io/${{ github.repository_owner }}/models/${task}@${digest}" >/dev/null 2>&1 \
+              && printf 'ok    %-22s %s resolves\n' "$task" "${digest:0:19}..." \
+              || { printf 'FAIL  %-22s %s does not resolve in the registry\n' "$task" "${digest:0:19}..."; bad=$((bad+1)); }
+          done
+          echo
+          [ "$bad" -eq 0 ] || { echo "$bad artifact(s) bad"; exit 1; }

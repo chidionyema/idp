@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""A pull request that changes what the estate SPENDS must carry a before/after proof.
+
+    bin/idp-cost-proof --pr-body <file>        # grade a pull request body
+    bin/idp-cost-proof --body-text <text>      # grade a body given inline
+    bin/idp-cost-proof --check <pr-number>     # fetch the body from gh and grade it
+
+WHY THIS EXISTS. On 2026-09-12 the estate was spending $11,519/month and nobody could say so.
+The finding only became actionable when two numbers were taken the same way, minutes apart:
+
+    BEFORE  cached=0        prompt=24,012 tokens
+    AFTER   cached=23,808   prompt=24,008 tokens
+
+That pair is the entire value. A green run that says "caching enabled" proves nothing; a measured
+pair proves the thing itself. The founder's words: "from now on it is a required PR artifact".
+
+WHAT IS REFUSED, and what is accepted:
+
+  REFUSED  a cost-touching change whose body has no proof block
+  REFUSED  a proof block with numbers on only ONE side (a before with no after, or the reverse)
+  REFUSED  a block that quotes no measurement command -- a number with no way to re-take it is a
+           remembered number, and remembered numbers are how this estate got a wrong $128 and a
+           wrong $40-60 in one afternoon
+  ACCEPTED a block carrying both sides AND the command that produced them
+
+THE MARKER is a fenced ```cost-proof block, so the gate reads a structure rather than a mood:
+
+    ```cost-proof
+    before: 1685 calls, 5,666,503 input tokens, $0.1177 per 15 minutes
+    after:  166 calls, 17,786,972 input tokens, $0.2909 per 15 minutes
+    command: kubectl logs -n llm job/proof
+    ```
+
+A change that does not touch cost passes without one. The gate decides by the files in the diff,
+never by the author's opinion of what counts.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import pathlib
+import re
+import subprocess
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+# Paths whose change alters what the estate spends. Deliberately a list of REAL places money is
+# configured, not a guess: the router's lanes and keys, the model catalogue, and the expert
+# manifest that decides what runs.
+COST_PATHS = (
+    "platform/llm/",
+    "platform/vendors/",
+    "catalog/ports.yaml",
+    "estate-defaults.yaml",
+    "platform/edge-runtime/deploy/",
+    "experts-generated.yaml",
+    "platform/oci/",
+)
+
+BLOCK = re.compile(r"```cost-proof\s*\n(.*?)```", re.S | re.I)
+NUM = re.compile(r"[$€£]?\s?\d[\d,]*\.?\d*")
+
+
+def touches_cost(files: list[str]) -> list[str]:
+    """The changed files that decide what is spent, proved from the diff itself."""
+    return sorted(f for f in files if any(f.startswith(p) for p in COST_PATHS))
+
+
+def grade(body: str) -> tuple[bool, list[str]]:
+    """Grade a pull-request body. Returns (ok, notes)."""
+    notes: list[str] = []
+    blocks = BLOCK.findall(body)
+    if not blocks:
+        return False, [
+            "no ```cost-proof block in the body",
+            "  -> a change that moves money must carry the measured pair, taken the same way twice",
+        ]
+    text = blocks[0]
+    low = text.lower()
+
+    sides = {}
+    for name in ("before", "after"):
+        m = re.search(rf"^\s*{name}\s*[:\-]\s*(.+)$", text, re.M | re.I)
+        sides[name] = (m.group(1).strip() if m else "")
+
+    if not sides["before"]:
+        notes.append("the proof has no `before:` line")
+    if not sides["after"]:
+        notes.append("the proof has no `after:` line")
+    for name, val in sides.items():
+        if val and not NUM.search(val):
+            notes.append(f"the `{name}:` value carries no number, so nothing was measured")
+
+    m = re.search(r"^\s*(command|cmd|query)\s*[:\-]\s*(.+)$", text, re.M | re.I)
+    if not m or len(m.group(2).strip()) < 4:
+        notes.append(
+            "the proof names no `command:`, so the number cannot be re-taken"
+            "\n  -> a number nobody can reproduce is a remembered number")
+
+    if "after" in low and sides["before"] == sides["after"] and sides["before"]:
+        notes.append("the `before:` and `after:` values are identical, so nothing changed")
+    return (not notes), notes
+
+
+def changed_files(pr: str) -> list[str]:
+    raw = subprocess.run(["gh", "pr", "diff", pr, "--name-only"],
+                         capture_output=True, text=True).stdout
+    return [f.strip() for f in raw.splitlines() if f.strip()]
+
+
+def pr_body(pr: str) -> str:
+    return subprocess.run(["gh", "pr", "view", pr, "--json", "body", "--jq", ".body"],
+                          capture_output=True, text=True).stdout
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--pr-body")
+    ap.add_argument("--body-text")
+    ap.add_argument("--check")
+    ap.add_argument("--files", nargs="*", default=None,
+                    help="override the diff; used by the fixtures and by a session hook")
+    args = ap.parse_args()
+
+    if args.check:
+        body = pr_body(args.check)
+        files = changed_files(args.check)
+    elif args.pr_body:
+        body = pathlib.Path(args.pr_body).read_text()
+        files = args.files if args.files is not None else []
+    elif args.body_text is not None:
+        body = args.body_text
+        files = args.files if args.files is not None else []
+    else:
+        ap.error("one of --check, --pr-body or --body-text is required")
+
+    hot = touches_cost(files)
+    ok, notes = grade(body)
+
+    if not files and not args.check:
+        # No diff to judge. Report what the body proves, never a false refusal.
+        ok, notes = grade(body)
+
+    if hot and not ok:
+        print("FAIL  this pull request moves money and carries no usable proof")
+        print(f"      cost-touching files: {', '.join(hot[:6])}")
+        for n in notes:
+            print(f"      {n}")
+        print()
+        print("      a ```cost-proof block needs a before, an after and the command that took both:")
+        print("      ```cost-proof")
+        print("      before: 1685 calls, 5,666,503 input tokens, $0.1177 / 15 min")
+        print("      after:  166 calls, 17,786,972 input tokens, $0.2909 / 15 min")
+        print("      command: kubectl logs -n llm job/proof")
+        print("      ```")
+        return 1
+
+    if not ok:
+        # No money in the diff, but a proof block was written and is broken: say so, do not fail.
+        for n in notes:
+            print(f"note  {n}")
+        print("ok    no cost-touching file in this change; a cost proof is not required")
+        return 0
+
+    print("ok    cost-proof present and usable"
+          + (f" ({', '.join(hot[:4])})" if hot else " (no cost-touching file in the diff)"))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

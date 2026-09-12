@@ -77,6 +77,11 @@ LAYERS = {
         "Cross-node network drill",
         "Two small canaries, one on each worker, that call each other over the network every few seconds and write down what they saw. It answers the two questions a week-long outage in September 2026 could not: do pods on different machines still reach each other, and does the traffic still arrive under the sender's own address rather than the machine's. If either stops being true it is a red row within the hour instead of a month of unexplained timeouts.",
     ),
+    "router-events": (
+        "model-routing",
+        "Router change events and their backup",
+        "Every change to a model-routing lane announces itself the moment the database commits it, so the estate never holds a belief it stopped being true seconds ago: a listener passes the change to the estate bus and the catalogue is accurate within the second. A second job writes the lanes to git as they change, which is the copy that survives losing the database the lanes live in. The events carry what changed and which lane, never a key, because a database notification is visible to every session on it.",
+    ),
     "crossplane": (
         "delivery",
         "Cloud control loop",

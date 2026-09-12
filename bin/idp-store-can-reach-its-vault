@@ -119,7 +119,23 @@ def wants(store: dict) -> tuple[bool, bool]:
 
 
 def main() -> int:
-    root = sys.argv[1] if len(sys.argv) > 1 else ROOT
+    # `root` is the REPO root, because ALLOWANCES below is a repo-relative path. A session hook
+    # hands this tool the CHANGED FILES instead, so argv[1] was being joined a second time:
+    # 'platform/ns-fences/allowances.yaml/platform/ns-fences/allowances.yaml'. That raised
+    # NotADirectoryError and refused a correct push for a reason unrelated to the change.
+    #
+    # Accepting every form the tool is actually called with is the fix: a file inside the repo
+    # resolves to the repo root above it, a path outside falls back to this checkout. The rule
+    # is never "refuse because the argument looked odd" -- a guard that refuses correct work is
+    # an outage (R38).
+    arg = sys.argv[1] if len(sys.argv) > 1 else ROOT
+    root = os.path.realpath(arg)
+    if os.path.isfile(root):
+        root = os.path.dirname(root)
+    while root != "/" and not os.path.isfile(os.path.join(root, ALLOWANCES)):
+        root = os.path.dirname(root)
+    if not os.path.isfile(os.path.join(root, ALLOWANCES)):
+        root = ROOT
     allow = yaml.safe_load(open(os.path.join(root, ALLOWANCES))) or {}
     flows = (allow.get("flows") or {}).get(controller_namespace(root)) or {}
     ns = controller_namespace(root)

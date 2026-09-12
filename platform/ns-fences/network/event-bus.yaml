@@ -101,4 +101,7 @@ spec:
           kubernetes.io/metadata.name: commerce
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: llm
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: otto-gateway

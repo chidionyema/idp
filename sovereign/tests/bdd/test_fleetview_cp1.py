@@ -300,3 +300,103 @@ def catalogue_not_readable(monkeypatch, tmp_path):
     board -- "no sessions" and "I could not read the sessions" are different facts and the page
     renders them differently."""
     monkeypatch.setenv("ESTATE_CATALOG_PATH", str(tmp_path / "not-here.yaml"))
+
+
+# ---------------------------------------------------------------------------------------------
+# A board worth reading. The estate has 29 session ledgers, each one a different agent session,
+# and the first adapter rendered each as a mangled directory path in BOTH the id and the task --
+# `-Users-chidionyema-dev-code-idp--wt-p0`. Any agent opening the board saw a list of paths.
+#
+# These scenarios are what makes the board useful to every session in the estate rather than to
+# the one that built it: each row says which project, when it was last active, and what the
+# person actually asked for.
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def ledger(tmp_path):
+    """A prompt ledger in the shape the estate writes: one JSON object per line, each with a
+    `session` id, a `ts`, a `source` and the text."""
+    import json
+
+    row = lambda i, ts, src, text: json.dumps(  # noqa: E731 - a fixture-local shorthand
+        {"id": f"id{i}", "session": "abc123", "ts": ts, "source": src, "text": text}
+    )
+    path = tmp_path / "session.jsonl"
+    path.write_text(
+        "\n".join(
+            [
+                row(1, "2026-09-10T10:00:00Z", "queue", "boot"),
+                row(2, "2026-09-10T10:05:00Z", "user", "build the fleet board"),
+                row(3, "2026-09-11T09:30:00Z", "assistant", "working on it"),
+            ]
+        )
+        + "\n"
+    )
+    return path
+
+
+def _row_for(ledger_path, name):
+    """A catalogue row naming one ledger file, as bin/catalog-gen emits it."""
+    return {
+        "apiVersion": "backstage.io/v1alpha1",
+        "kind": "Resource",
+        "metadata": {
+            "name": name,
+            "annotations": {
+                "estate/path": f"@HOME@/.claude/state/prompt-ledger/{ledger_path.name}"
+            },
+        },
+        "spec": {"type": "ledger", "owner": "agents"},
+    }
+
+
+def test_a_session_row_names_its_project_not_a_mangled_path():
+    """`session_id` is an id a person or an agent can say out loud, and the project is named.
+
+    The old adapter put the raw directory slug in both fields, so a board of 29 sessions read as
+    29 paths and no one could tell which was which.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("fv_sessions_readable", PLUGIN)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    row = _row_for(
+        Path("-Users-chidionyema-dev-code-idp--wt-p0.jsonl"),
+        "-Users-chidionyema-dev-code-idp--wt-p0",
+    )
+    s = m.session_from_row(row)
+    assert s["repo"] == "idp", f"the repo is not named: {s}"
+    assert "--" not in s["session_id"], f"the id is a raw path slug: {s['session_id']}"
+    assert s["session_id"], s
+
+
+def test_a_session_row_reports_when_it_was_last_active(ledger, tmp_path):
+    """`updated_at` comes from the ledger's own newest timestamp. Without it the board cannot put
+    the most recent session first, which is the only ordering a reader cares about."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("fv_sessions_time", PLUGIN)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    row = _row_for(ledger, "session")
+    s = m.session_from_row(row, ledger_path=ledger)
+    assert s["updated_at"] == "2026-09-11T09:30:00Z", s
+
+
+def test_a_session_row_carries_what_was_asked_for(ledger):
+    """`task` is the person's own words -- the newest USER prompt in the ledger -- because that is
+    what tells a reader what the session is for. A tool result or a status line is not a task."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("fv_sessions_task", PLUGIN)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    row = _row_for(ledger, "session")
+    s = m.session_from_row(row, ledger_path=ledger)
+    assert s["task"] == "build the fleet board", s
+    assert s["task"] != s["session_id"], "the task is still just the id"

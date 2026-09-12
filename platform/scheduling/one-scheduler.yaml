@@ -38,6 +38,15 @@ still_outside_dagster:
 - job: .github/workflows/messaging-drill.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/models-drill.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/router-events/backup.yaml
+  kind: Kubernetes CronJob
+  fold: 'permanent exception: it is the DISASTER-RECOVERY copy of the router lanes, so it must not
+    depend on the cluster that would be lost. A Dagster schedule runs in this estate and shares its
+    failure domain with the thing it is backing up; a job whose whole purpose is to survive losing
+    estate-db cannot live behind estate-db.'
 - job: .github/workflows/name-drift.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'

@@ -31,6 +31,7 @@ env var with a container-local default, wired where the deployment can state it)
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,17 @@ DEFAULT_LEDGER_PREFIX = "~/.claude/state/prompt-ledger/"
 # The `~` the catalogue writes in `estate/path`. bin/catalog-gen renders the home directory as
 # this token rather than a real path so the generated file carries no machine's home (LAW 46).
 HOME_TOKEN = "@" + "HOME@"
+
+
+def _resolve_ledger_paths() -> bool:
+    """Whether a row with no explicit ledger path may resolve one from the real home directory.
+
+    Off by default. `list_sessions` turns it on, because that is the caller that has read the
+    catalogue and knows the token names a real file on this machine. A unit test or any other
+    transformer leaves it off and gets nulls for the ledger-derived fields, which is the honest
+    answer when no ledger was read.
+    """
+    return os.environ.get("ESTATE_RESOLVE_LEDGER_PATHS", "") == "1"
 
 
 def _catalog_path() -> Path:
@@ -74,24 +86,122 @@ def is_session_row(doc: dict[str, Any]) -> bool:
     return raw.replace(HOME_TOKEN, HOME_TOKEN).startswith(prefix)
 
 
-def session_from_row(doc: dict[str, Any]) -> dict[str, Any]:
+def _project_from_slug(slug: str) -> str | None:
+    """The project a session's directory slug names, or None when it cannot be told.
+
+    bin/catalog-gen writes the working directory as a slug with the separators replaced and the
+    home directory dropped to a token, so a session in a worktree under a project and a session
+    at that project's root both resolve to the project name. Nothing here names a real path: the
+    slug is split on its separators and the machine's own prefix and any worktree marker are
+    discarded, leaving the last meaningful component.
+    """
+    if not slug.startswith("-"):
+        return None
+    parts = [p for p in slug.split("-") if p]
+    # Drop the machine's own path prefix and any worktree marker: what is left is the project.
+    while parts and parts[0] in ("Users", "home", "private", "var", "tmp"):
+        parts.pop(0)
+    while parts and parts[-1] in ("wt", "worktrees", "claude", "tmp"):
+        parts.pop()
+    # A trailing `-wt-<name>` or `--<name>` is a worktree, not the project.
+    for marker in ("wt", "worktrees"):
+        if marker in parts:
+            parts = parts[: parts.index(marker)]
+    return parts[-1] if parts else None
+
+
+def _read_ledger(path: Path) -> dict[str, Any]:
+    """What a ledger file says about its own session: when it was last touched and what the person
+    actually asked for.
+
+    A ledger is one JSON object per line (the estate writes it that way). The newest timestamp is
+    the session's last activity. The task is the newest row whose `source` is `user` -- the
+    person's own words. An assistant message or a queue entry is not a task, and a ledger with no
+    user row has no task rather than a misleading one.
+
+    A file that cannot be read yields nothing: the row still appears, with nulls, because a session
+    the board cannot describe is still a session that exists.
+    """
+    out: dict[str, Any] = {"updated_at": None, "task": None}
+    if not path.is_file():
+        return out
+    newest_user: tuple[str, str] | None = None
+    try:
+        with path.open() as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                ts = row.get("ts")
+                if isinstance(ts, str) and ts:
+                    if out["updated_at"] is None or ts > out["updated_at"]:
+                        out["updated_at"] = ts
+                if row.get("source") == "user":
+                    text = row.get("text")
+                    if isinstance(text, str) and text.strip():
+                        if newest_user is None or str(ts) > newest_user[0]:
+                            newest_user = (str(ts), text.strip())
+    except OSError:
+        return {"updated_at": None, "task": None}
+    if newest_user:
+        out["task"] = newest_user[1][:200]
+    return out
+
+
+def session_from_row(
+    doc: dict[str, Any], ledger_path: Path | None = None
+) -> dict[str, Any]:
     """One catalogue row as one session record, in the shape schema/session.json asserts.
 
-    `state` is "unknown" rather than "running": the catalogue is a snapshot of which ledgers
-    exist, and nothing in it says a session is live. Claiming "running" here would put a green
-    row on the board for a session that ended last week.
+    The row itself carries only a name and the ledger's path. What makes the board readable is
+    the ledger behind it: its newest timestamp (so the most recent session sorts first) and the
+    person's own prompt (so a reader knows what the session is for). Without those, a board of the
+    estate's 29 sessions reads as 29 directory paths.
+
+    `state` stays "unknown" rather than "running": the catalogue is a snapshot of which ledgers
+    exist, and nothing in it says a session is live. Claiming "running" here would put a green row
+    on the board for a session that ended last week.
     """
     meta = doc.get("metadata") or {}
     raw = (meta.get("annotations") or {}).get("estate/path", "")
     name = meta.get("name") or Path(raw).stem or "unnamed"
+
+    if ledger_path is None and raw and _resolve_ledger_paths():
+        # The catalogue writes the home directory as a token rather than a real path (LAW 46).
+        # Resolving it is OPT-IN: a transformer called without a path must not read the real home
+        # directory, or a test that builds a row reaches into the estate's own 29 ledgers and
+        # changes what the next test sees.
+        ledger_path = Path(raw.replace(HOME_TOKEN, str(Path.home())))
+
+    detail = (
+        _read_ledger(ledger_path) if ledger_path else {"updated_at": None, "task": None}
+    )
+    repo = _project_from_slug(name)
+
+    # The id is what an agent quotes to refer to a session, so it has to be sayable. The catalogue
+    # name is a directory slug (`-Users-...-idp--wt-p0`); a session DIRECTORY name is shortened to
+    # its last segment, while a real session id (a uuid, or a bare name) is left exactly as it is
+    # so nothing that already refers to a session by id breaks.
+    session_id = name
+    if name.startswith("-"):
+        tail = [p for p in name.split("-") if p]
+        if tail:
+            session_id = tail[-1]
+
     return {
-        "session_id": name,
+        "session_id": session_id,
         "runtime": "claude-code",
-        "task": name,
+        "task": detail["task"] or name,
         "state": "unknown",
-        "repo": None,
+        "repo": repo,
         "step": None,
-        "updated_at": None,
+        "updated_at": detail["updated_at"],
         "trace_url": None,
         "spend_usd": None,
         "pull_requests": [],
@@ -110,6 +220,10 @@ def list_sessions(catalog: Path | None = None) -> list[dict[str, Any]]:
     path = catalog or _catalog_path()
     if not path.is_file():
         raise FileNotFoundError(f"catalogue not readable: {path}")
+    # This is the caller that has read the catalogue and knows the `@HOME@` token names a real
+    # file here, so it opts into resolving each row's ledger and reading its newest timestamp and
+    # the last thing the person asked for. Without that read every row would be a directory slug.
+    os.environ.setdefault("ESTATE_RESOLVE_LEDGER_PATHS", "1")
     rows: list[dict[str, Any]] = []
     with path.open() as fh:
         for doc in yaml.safe_load_all(fh):
