@@ -60,6 +60,7 @@ nav:
   - How-to:
       - how-to/index.md
       - Bitwarden human vault, the founder's steps: how-to/bitwarden-human-vault.md
+      - Onboarding the evidence layer: how-to/onboarding/evidence.md
       - Boot Dagster and Superset: how-to/boot-dagster-and-superset.md
       - Prove a change in the shadow: how-to/prove-a-change-in-the-shadow.md
   - Reference:
@@ -103,10 +104,11 @@ nav:
       - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
       - Trajectory lock (drift caught): tutorials/demo/trajectory.md
-      - Trajectory lock (script): tutorials/demo/trajectory_lock.md
-      - Trajectory lock (module): tutorials/demo/trajectory_lock.py.md
+      - Epistemic gate (claims proved): tutorials/demo/epistemic.md
+      - Epistemic gate (module): tutorials/demo/epistemic_firewall.py.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
+      - Evidence layer: tutorials/demo/evidence.md
       - Estate next: tutorials/demo/estate-next.md
       - Messaging: tutorials/demo/messaging.md
       - Prose-pin gate: tutorials/demo/test-prose-gate.md
@@ -195,10 +197,8 @@ nav:
       - Merge queue (hands-free landing): onboarding/merge-queue.md
       - Catalogue links: onboarding/catalog-links.md
       - Trajectory lock: onboarding/trajectory.md
-      - Trajectory lock (hyphen): how-to/onboarding/trajectory-lock.md
-      - Trajectory lock (how-to): how-to/onboarding/trajectory.md
-      - Trajectory lock (script): how-to/onboarding/trajectory_lock.md
-      - Trajectory lock (module): how-to/onboarding/trajectory_lock.py.md
+      - Epistemic gate: how-to/onboarding/epistemic.md
+      - Epistemic gate (module): how-to/onboarding/epistemic_firewall.py.md
       - Drill evidence: onboarding/drill-evidence.md
       - Estate compiler recording: onboarding/intent-compiler.md
       - Estate clock recording: onboarding/dagster.md
@@ -297,6 +297,7 @@ nav:
       - Otto homes, grade and deploy: how-to/onboarding/idp-otto-homes.md
   - Gates:
       - What these are: gates/index.md
+      - aevum-evidence: gates/aevum-evidence.md
       - flux-subst: gates/flux-subst.md
       - flux-wait-brake: gates/flux-wait-brake.md
       - probe-host: gates/probe-host.md
@@ -363,7 +364,6 @@ nav:
       - cost-proof: gates/cost-proof.md
       - founder-door: gates/founder-door.md
       - stray: gates/stray-checkout.md
-      - trajectory: gates/trajectory-lock.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md

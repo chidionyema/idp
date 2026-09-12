@@ -1,0 +1,3 @@
+{"type":"message","role":"user","content":[{"type":"text","text":"what were you working on previously"}]}
+{"type":"message","role":"assistant","content":[{"type":"text","text":"I built Mum's Sovereign Concierge. 18 modules, 4313 lines."}]}
+{"type":"message","role":"assistant","content":[{"type":"text","text":"I never worked on the Kaggle door."}]}

@@ -329,7 +329,21 @@ def _declared_subjects(turns: list[dict]) -> set[str]:
 
 _STOPWORDS = frozenset(
     """a an the and or of to in on for with by is are was were be been it its this that these
-    those i my me we our you your they their then than so as at from into over under""".split()
+    those i my me we our you your they their then than so as at from into over under
+    will shall going plan intend need want must should can could may might""".split()
+)
+
+# Verbs of action, not subjects. "wire treewalk into the gates" and "wire rule-guard into pi's
+# extensions" share the verb `wire` and nothing else -- and that shared verb made this gate pass a
+# real drift. Measured: the BDD scenario "an agent acts outside the plan it declared" graded PASS
+# because both sentences contained `wire`. What a plan is ABOUT is its nouns: the things being
+# changed. Matching on verbs is the same mistake as the phrase list this detector replaced.
+_VERBS = frozenset(
+    """wire wired wiring fix fixed fixing add added adding build built building make made making
+    run ran running use used using write wrote written create created creating update updated
+    updating verify verified verifying check checked checking test tested testing
+    implement implemented implementing remove removed removing delete deleted deleting
+    ensure ensured ensuring prove proved proving show showed showing""".split()
 )
 
 
@@ -337,7 +351,7 @@ def _words(text: str) -> set[str]:
     return {
         w
         for w in re.findall(r"[a-z0-9_]+", text.lower())
-        if w not in _STOPWORDS and len(w) > 2
+        if w not in _STOPWORDS and w not in _VERBS and len(w) > 2
     }
 
 

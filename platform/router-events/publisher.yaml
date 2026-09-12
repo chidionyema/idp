@@ -48,6 +48,12 @@ spec:
         runAsNonRoot: true
         runAsUser: 999
         runAsGroup: 999
+        # fsGroup so the mounted Secret is readable by uid 999. Without it the pod died on
+        #   PermissionError: [Errno 13] Permission denied: '/var/run/db/LITELLM_DB_PASSWORD'
+        # because a Secret mounts 0400 owned by root. platform/drills/drill-dispatcher.yaml
+        # carries the same line for the same reason ("the github-app Secret is 0400; owned by the
+        # pod group, readable by uid 1000").
+        fsGroup: 999
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: publisher
