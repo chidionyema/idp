@@ -62,32 +62,6 @@
   "ticket": null
  },
  {
-  "feature": "features/fleetview/cp1_contract.feature",
-  "title": "CP1 the session contract",
-  "scenarios": [
-   "the backend lists sessions from the sovereign engine",
-   "the stream sends a change"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "7bce6f5c",
-  "pr": 2619,
-  "ticket": null
- },
- {
-  "feature": "features/fleetview/cp2_board.feature",
-  "title": "CP2 the board",
-  "scenarios": [
-   "a running session is on the board",
-   "the board updates itself"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "7bce6f5c",
-  "pr": 2619,
-  "ticket": null
- },
- {
   "feature": "features/fleetview/cp3_signals.feature",
   "title": "CP3 the four signals",
   "scenarios": [
@@ -1553,6 +1527,38 @@
   "added_in": "d2ae3603",
   "pr": 243,
   "ticket": "crew#284"
+ },
+ {
+  "feature": "features/fleetview/cp1_contract.feature",
+  "title": "CP1 the session contract",
+  "scenarios": [
+   "the backend lists sessions from the sovereign engine",
+   "the stream sends a change",
+   "the route answers the spec's done-command",
+   "a catalogue that cannot be read is not an empty board"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_fleetview_cp1.py"
+  ],
+  "status": "BOUND",
+  "added_in": "7bce6f5c",
+  "pr": 2619,
+  "ticket": null
+ },
+ {
+  "feature": "features/fleetview/cp2_board.feature",
+  "title": "CP2 the board",
+  "scenarios": [
+   "a running session is on the board",
+   "the board updates itself"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_fleetview_cp2.py"
+  ],
+  "status": "BOUND",
+  "added_in": "7bce6f5c",
+  "pr": 2619,
+  "ticket": null
  },
  {
   "feature": "features/gates/capacity-cap.feature",
