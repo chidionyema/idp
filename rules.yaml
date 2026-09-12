@@ -2010,3 +2010,34 @@ rules:
     were excluded. .gitignore's remedy on 2026-08-29 was the naming convention /.wt-*/, and the
     next checkouts were made as scratchpad/ and idp/, so the pattern missed them. bin/treewalk.py
     stops a walk entering a copy; this rule refuses the copy's presence.
+- id: trajectory
+  label: trajectory
+  gate: null
+  statement: >-
+    An agent's action is refused when it serves no goal the agent itself declared: cognitive drift
+    is bounded by a per-goal budget and a context reset, not by asking the model to stay on topic
+  law: founder 2026-09-12, the Teleological Firewall
+  origin: incident 2026-09-12, a session that spent a third of its turns outside its stated goal
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-trajectory
+  fixtures:
+    must_fail: tests/fixtures/trajectory/bad/session.jsonl
+    must_pass: tests/fixtures/trajectory/good/session.jsonl
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/trajectory/bad/session.jsonl
+  - expect: pass
+    args:
+    - tests/fixtures/trajectory/good/session.jsonl
+  ok: every action a transcript records serves the plan the agent declared
+  fail: >-
+    the agent acted outside its declared plan. Measured 2026-09-12: this session's stated goal was
+    "fix the gates, fix the class they exposed, do no more than that", and a grep of its own
+    1.7MB transcript counts treewalk 169 references (the work) against rule-guard 51,
+    pi/agent/extensions 39 and addopts/-n auto 66 (all drift). The founder stopped it twice by
+    hand. A prompt cannot fix this -- attention weights the most recent tokens, so the newest error
+    out-competes the original objective by construction. The harness must refuse.
