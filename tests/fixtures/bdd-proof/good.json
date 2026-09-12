@@ -1,0 +1,5 @@
+{
+  "title": "platform: raise the gateway memory limit",
+  "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "body": "This raises the gateway memory limit so it stops OOMing.\n\n```\nBDD-PROOF\nhead: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ncommand: npm run bdd\n\n8 features (8 passed)\n31 scenarios (31 passed)\n142 steps (142 passed)\n0m04.512s\nEND-BDD-PROOF\n```\n"
+}
