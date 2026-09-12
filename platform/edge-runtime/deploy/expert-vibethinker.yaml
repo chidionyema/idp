@@ -73,13 +73,18 @@ spec:
             limits:   { cpu: "500m", memory: "320Mi" }
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false   # oras writes the layers into the working directory
+            # KSV-0014 wants this TRUE, and it can be: this container writes to exactly two paths,
+            # both mounted -- /artifact (the emptyDir the layers land in) and /tmp/oras-home (the
+            # explicit HOME, because $HOME is unset in this image). Nothing it does touches the
+            # root filesystem, so declaring it read-only costs nothing and closes the finding.
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 65532
             runAsGroup: 65532
             capabilities: { drop: ["ALL"] }
           volumeMounts:
             - { name: artifact, mountPath: /artifact }
+            - { name: scratch, mountPath: /tmp }
       containers:
         - name: expert
           image: ghcr.io/chidionyema/edge-runtime@sha256:eae0df039b91bd444f0ea23853397d2bc5fddc569e2677e8e79d8e7ccd8c16f8
