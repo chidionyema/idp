@@ -1377,6 +1377,10 @@ rules:
     with no run output is refused, and so is a real run on another commit'
   law: LAW 22, LAW 53
   origin: founder 2026-09-12
+  proved_elsewhere: 'the LIVE case is bin/idp-bdd-proof-gate --live, which reads the most
+    recent pull request on this repository through gh and grades it: run 2026-09-12 it
+    refused PR #3223 for carrying no BDD-PROOF block. It runs in the merge gate on every
+    pull request, where a real PR always exists.'
   planes:
   - ci
   - session
