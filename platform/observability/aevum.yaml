@@ -1,0 +1,322 @@
+# Aevum — the estate's evidence layer.
+#
+# THE FOUNDER'S ORDER, 2026-09-12: "get Aevum wired for all current and future repos."
+#
+# WHY THE LAYER LIVES HERE AND NOWHERE ELSE. Decision 0028: POPDD signs with HMAC, a symmetric
+# key, so only the holder of the signing key can verify a receipt. Aevum signs with Ed25519 AND
+# ML-DSA-65 (post-quantum) by default, wraps each entry in a COSE_Sign1 receipt carrying an
+# RFC 3161 trusted timestamp, and ships aevum-verify — a standalone verifier sharing no code with
+# the runtime.
+#
+# A NEW REPO NEEDS NOTHING. The layer runs on the platform, once. There is no dependency to add,
+# no adapter to write, no copy to drift. A repo created tomorrow has evidence recording for the
+# same reason it has DNS and secrets: it runs on the platform. This is the HEADLINE applied
+# literally — one of each platform layer, in idp, and products onboarded onto it.
+#
+# EVERY FACT BELOW WAS MEASURED, NOT ASSUMED (2026-09-12, throwaway venv):
+#   - There is NO published container. `ghcr.io/aevum-labs/*` returns 404; aevum-server ships to
+#     PyPI only. An earlier draft of this file pointed at an image that does not exist — a
+#     Deployment that merges green, reconciles green, and then fails to pull forever.
+#     So the estate builds it: platform/observability/aevum.Dockerfile.
+#   - `python -m aevum.server` is DEV ONLY and in-memory. Its own docstring says "NOT for
+#     production"; it ignores --host/--port and always binds 0.0.0.0:8000. Production is
+#     `uvicorn aevum.server.app:create_app --factory`, which is what runs here.
+#   - The server wires NO store from the environment. `create_app(engine=...)` and
+#     `Engine(ledger=...)` are explicit, so aevum_factory.py exists to join them to Postgres.
+#     Without it the process starts, reports green, and keeps an in-memory chain that
+#     verify_sigchain() calls valid on an empty ledger.
+#   - Settings keys are AEVUM_-prefixed: HOST, PORT, API_KEY, OPA_URL, RATE_LIMIT_PER_MINUTE,
+#     OTEL_ENABLED, OTEL_SERVICE_NAME. API_KEY defaults to the literal
+#     "dev-insecure-key-change-in-production", which is why it is a Secret here and not a default.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aevum-factory
+  labels:
+    app.kubernetes.io/name: aevum
+    estate.io/component: evidence
+data:
+  # The one file that joins Aevum's server to the estate's Postgres. create_app takes an Engine;
+  # Engine takes a ledger; PostgresLedger takes a connection and the sigchain. Nothing in the
+  # published packages does this join, which is why it is here and not assumed.
+  aevum_factory.py: |
+    """Build the production Aevum app: Postgres ledger, never the in-memory default.
+
+    Aevum's in-memory store reports a VALID empty chain after every restart. It looks present while
+    recording nothing, which is worse than being down -- so this factory refuses to start without a
+    database connection rather than quietly degrading to memory.
+
+    The API here is the MEASURED one (2026-09-12), not the documented one:
+      Sigchain(private_key=<Ed25519PrivateKey>, key_id=...)   -- there is no Sigchain.load_or_create
+      Engine(ledger=<AuditLedgerProtocol>, opa_url=...)
+      PostgresLedger(conn, sigchain, lock)
+      create_app(engine, settings)
+    """
+    import os
+    import threading
+
+    import psycopg
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+
+    from aevum.core.engine import Engine
+    from aevum.core.sigchain import Sigchain
+    from aevum.server.app import create_app
+    from aevum.server.core.config import Settings
+    from aevum.store.postgres import PostgresLedger
+    from aevum.store.postgres.ledger import initialize_ledger_schema
+
+
+    def _private_key(value: str) -> Ed25519PrivateKey:
+        """Load the estate's Ed25519 signing key from its 64-hex-char form, or from PEM."""
+        value = value.strip()
+        if value.startswith("-----BEGIN"):
+            key = serialization.load_pem_private_key(value.encode(), password=None)
+            if not isinstance(key, Ed25519PrivateKey):
+                raise SystemExit("AEVUM_SIGNING_KEY is not an Ed25519 key")
+            return key
+        if len(value) == 64:
+            return Ed25519PrivateKey.from_private_bytes(bytes.fromhex(value))
+        raise SystemExit("AEVUM_SIGNING_KEY is neither 64 hex chars nor PEM")
+
+
+    def _conn():
+        dsn = os.environ.get("AEVUM_POSTGRES_DSN")
+        if not dsn:
+            raise SystemExit("AEVUM_POSTGRES_DSN is unset: refusing to start on the in-memory ledger, "
+                             "which reports a valid chain while recording nothing")
+        return psycopg.connect(dsn, autocommit=True)
+
+
+    def create():
+        settings = Settings()
+        sigchain = Sigchain(
+            private_key=_private_key(os.environ["AEVUM_SIGNING_KEY"]),
+            key_id=os.environ.get("AEVUM_KEY_ID", "estate-evidence"),
+        )
+        conn = _conn()
+        # The store does NOT create its own table: initialize_ledger_schema() must be called, or the
+        # first write fails with UndefinedTable: relation "aevum_ledger" does not exist. Measured
+        # 2026-09-12 -- the DDL constant is in the module but nothing executes it on construction.
+        initialize_ledger_schema(conn)
+        engine = Engine(
+            ledger=PostgresLedger(conn, sigchain, threading.Lock()),
+            # THE SIGCHAIN MUST BE THE SAME OBJECT AS THE LEDGER'S. Engine.verify_sigchain() is
+            # `self._sigchain.verify_chain(self._ledger.all_events())`, so an Engine built without
+            # sigchain= mints its own random one and verifies every stored event against the wrong
+            # keys. It does not raise; it simply reports every chain invalid -- or, on a chain signed
+            # by nothing else, reports a green verdict about the wrong key. Measured 2026-09-12:
+            # omitting this line returned verify=False on a freshly written, untampered ledger.
+            sigchain=sigchain,
+            opa_url=settings.opa_url or None,
+        )
+        return create_app(engine, settings=settings)
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aevum-config
+  labels:
+    app.kubernetes.io/name: aevum
+    estate.io/component: evidence
+data:
+  # Settings keys are AEVUM_-prefixed (measured from aevum/server/core/config.py).
+  AEVUM_HOST: "0.0.0.0"
+  AEVUM_PORT: "8000"
+  # The estate's OTel collector, so Aevum's own server traces land beside everything else's
+  # (LAW 50: every workload emits to the central collector).
+  AEVUM_OTEL_ENABLED: "true"
+  AEVUM_OTEL_SERVICE_NAME: "aevum-server"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aevum
+  labels:
+    app.kubernetes.io/name: aevum
+    estate.io/component: evidence
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aevum
+  labels:
+    app.kubernetes.io/name: aevum
+    estate.io/component: evidence
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aevum
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aevum
+        estate.io/component: evidence
+    spec:
+      serviceAccountName: aevum
+      priorityClassName: infrastructure-critical
+      # Two replicas are not two replicas until something keeps them apart: without this, the
+      # scheduler may put both on one node and a single drain takes the evidence layer offline.
+      # bin/idp-availability-gate refuses the Deployment without it, and it is right to.
+      #
+      # A DoNotSchedule topologySpreadConstraint on kubernetes.io/hostname, which is the shape
+      # ClusterPolicy require-availability accepts verbatim (platform/scheduling/
+      # require-availability.yaml, founder-facing-spreads-across-nodes). A podAntiAffinity with a
+      # labelSelector also spreads, but the policy's anyPattern matches the constraint's exact
+      # fields and refuses the extra selector -- so the constraint is used here.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: aevum
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: aevum
+          # Built by the estate from platform/observability/aevum.Dockerfile. Aevum publishes no
+          # container; the version is the same literal the Dockerfile pins.
+          # Pinned, never untagged: an image with no tag resolves to latest, which
+          # policy disallow-latest-tag refuses. The tag matches aevum.Dockerfile's pin.
+          image: ghcr.io/chidionyema/aevum:0.9.0
+          envFrom:
+            - configMapRef:
+                name: aevum-config
+          env:
+            - name: PYTHONPATH
+              value: /factory
+          # SECRETS ARRIVE AS FILES, NEVER ENV (Kyverno secrets-not-from-env-vars forbids the rest).
+          # The wrapper exports them from the mounted files before exec'ing uvicorn, which is the
+          # same shape platform/hindsight/hindsight.yaml uses for the same policy.
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              # NOTE: no dollar-brace name appears anywhere in this file, comments included --
+              # Flux substitutes them in a reconciled manifest BEFORE the pod runs, comments too,
+              # and its --strict mode treats an unset name as fatal. Shell variables here use
+              # command substitution and plain concatenation for that reason.
+              export AEVUM_SIGNING_KEY="$(cat /run/secrets/aevum/signing-key)"
+              # The DSN is assembled here from the registered password, never a vault property
+              # named aevum_dsn -- no such entry exists, and root-trust refused it.
+              export AEVUM_POSTGRES_DSN="postgresql://aevum_evidence:$(cat /run/secrets/aevum/postgres-password)@estate-db-rw.estate-db.svc.cluster.local:5432/aevum_evidence"
+              exec uvicorn aevum_factory:create --factory --host 0.0.0.0 --port 8000
+          ports:
+            - name: http
+              containerPort: 8000
+          # EXEC, NOT httpGet. httpGet is probed from outside the pod namespace, so a loopback
+          # listener gets connection refused forever while the process is healthy — the defect the
+          # probe-host rule in rules.yaml exists to catch.
+          readinessProbe:
+            exec:
+              command: ["python", "-c",
+                        "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 20
+          livenessProbe:
+            exec:
+              command: ["python", "-c",
+                        "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: factory
+              mountPath: /factory
+            - name: secrets
+              mountPath: /run/secrets/aevum
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: secrets
+          secret:
+            secretName: aevum-evidence
+        - name: factory
+          configMap:
+            name: aevum-factory
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aevum
+  labels:
+    app.kubernetes.io/name: aevum
+    app.kubernetes.io/part-of: idp
+    estate.io/component: evidence
+    # The catalogue entity this port belongs to. Policy require-catalogue-entity refuses a
+    # Service without it, and bin/catalog-platform generates the entity from the Flux row.
+    backstage.io/kubernetes-id: layer-observability
+spec:
+  selector:
+    app.kubernetes.io/name: aevum
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+# ONE ExternalSecret, reading the entry the register names (docs/reference/policy/root-trust.md),
+# whose two keys bin/idp-estate-seed mints. Earlier drafts read three separate vault entries --
+# aevum-postgres, aevum-signing-key and aevum-api-key -- none of which the register knew, which is
+# exactly what the root-trust gate refused: "a credential born nobody knows how".
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: aevum-evidence
+  labels:
+    app.kubernetes.io/name: aevum
+    estate.io/component: evidence
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: estate-vault
+    kind: ClusterSecretStore
+  target:
+    name: aevum-evidence
+    creationPolicy: Owner
+  data:
+    - secretKey: postgres-password
+      remoteRef:
+        key: aevum-evidence
+        property: postgres-password
+    - secretKey: signing-key
+      remoteRef:
+        key: aevum-evidence
+        property: signing-key
+---
+# A drain must never take both replicas. Without this the evidence layer is one eviction from
+# offline, which is the failure the availability standard names.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: aevum
+  labels:
+    app.kubernetes.io/name: aevum
+    estate.io/component: evidence
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aevum

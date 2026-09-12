@@ -1,6 +1,40 @@
 version: 1
 live_gap_budget: 10
 rules:
+- id: aevum-evidence
+  fast: true
+  label: aevum-evidence
+  statement: 'A receipt that does not verify is not evidence: every recorded agent action chains to the previous one and is
+    covered by a signature, and an EMPTY ledger is a fail-closed FAIL rather than a clean bill -- Aevum''s default store is
+    in-memory and verify_sigchain() answers True about a chain with no events, so a misconfigured deployment reports green
+    while recording nothing'
+  law: decision 0028
+  origin: 'Founder, 2026-09-12: "get Aevum wired for all current and future repos." POPDD signs with HMAC, a symmetric key,
+    so only the holder of the signing key can verify a receipt; decision 0028 records the measured comparison and adopts Aevum
+    (Ed25519 + ML-DSA-65, COSE_Sign1, RFC 3161, standalone aevum-verify). The whole value is one property -- an altered record
+    must fail verification -- so the gate is proved both ways and fails closed on an empty ledger, the way
+    bin/idp-calico-deny-log fails closed on an empty deny feed.'
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-evidence-gate
+  cluster:
+    policy: null
+    why: the chain is data in the estate's own Postgres, not a Kubernetes object; admission never sees a receipt
+  fixtures:
+    must_fail: tests/fixtures/aevum-evidence/bad/chain.json
+    must_pass: tests/fixtures/aevum-evidence/good/chain.json
+  live_elsewhere: 'bin/idp-ci:599 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/aevum-evidence/bad/chain.json
+  - expect: pass
+    args:
+    - tests/fixtures/aevum-evidence/good/chain.json
+  ok: a receipt chains to its predecessor and is covered by its signature; an altered record and an empty ledger are both refused
+  fail: an altered record or an empty ledger passes as evidence
 - id: flux-subst
   fast: true
   label: flux-subst
