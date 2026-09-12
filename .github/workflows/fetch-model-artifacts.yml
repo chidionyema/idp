@@ -34,9 +34,13 @@ jobs:
         include:
           - { key: vibethinker-1.5b, repo: "mradermacher/VibeThinker-1.5B-GGUF",    file: "VibeThinker-1.5B.Q4_K_M.gguf" }
           - { key: vibethinker-3b,   repo: "constructai/VibeThinker-3B-GGUF",       file: "" }
-          - { key: twil-lm3,         repo: "NANI-Nithin/TwIL-LM3-GGUF",            file: "" }
-          - { key: nanbeige-4.2-3b,  repo: "Edge-Quant/Nanbeige4.1-3B-Q4_K_M-GGUF", file: "" }
+          - { key: twil-lm3,         repo: "NANI-Nithin/TwIL-LM3-GGUF",            file: "twil-lm3-q4_k_m.gguf" }
+          - { key: nanbeige-4.2-3b,  repo: "Edge-Quant/Nanbeige4.1-3B-Q4_K_M-GGUF", file: "nanbeige4.1-3b-q4_k_m.gguf" }
           - { key: falcon-h1-7b,     repo: "tiiuae/Falcon-H1-7B-Instruct-GGUF",     file: "" }
+          # THE TWO LARGE ONES, both from the founder's list. They need a node each when deployed
+          # (16 GB at Q4), which is what the spare-node capability is for.
+          - { key: qwen3.8-27b,      repo: "unsloth/Qwen3.8-27B-GGUF",              file: "Qwen3.8-27B-UD-Q4_K_M.gguf" }
+          - { key: gemma-4-26b,      repo: "unsloth/gemma-4-26B-A4B-it-GGUF",       file: "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf" }
     steps:
       - uses: actions/checkout@v4
 
@@ -58,7 +62,7 @@ jobs:
           if wanted and wanted in ggufs:
               pick = wanted
           else:
-              q4 = [f for f in ggufs if "Q4_K_M" in f] or [f for f in ggufs if "q4_k_m" in f.lower()]
+              q4 = [f for f in ggufs if "q4_k_m" in f.lower()] or [f for f in ggufs if "q4_k" in f.lower()]
               pick = q4[0] if q4 else ""
           if not pick:
               raise SystemExit(f"FAIL {repo} has no Q4_K_M file. It has: {ggufs[:8]}")
