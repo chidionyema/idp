@@ -16,6 +16,8 @@ customer can be given only their own fleet.
 | the record every runtime must emit | `backstage/plugins/fleetview-backend/schema/session.json` |
 | the adapters and the record builder | `backstage/plugins/fleetview-backend/src/sessions.py` |
 | the routes | `backstage/plugins/fleetview-backend/src/routes.py` |
+| the board page | `backstage/packages/app/src/modules/home/Fleet.tsx` |
+| the board's rules | `backstage/packages/app/src/modules/home/fleetBoard.ts` |
 | the acceptance criteria | `features/fleetview/cp1_contract.feature` … `cp5_offering.feature` |
 
 The routes:
@@ -45,8 +47,17 @@ Write one adapter that emits the record in `schema/session.json` and it appears 
 its trace, spend and pull requests enriched, exactly like the built-in runtimes. The schema is the
 whole integration surface; there is no second API to learn.
 
+## The board
+
+Open `/fleet` on the portal. You will see every agent session: its runtime, its task, whether it is
+running, what it has cost and which pull request it opened. It updates itself — nothing to refresh.
+
+A session whose runtime did not report a state reads **Unknown**. That is deliberate: the page will
+not claim a session is running when nothing told it so.
+
 ## What is not here yet
 
-Checkpoints CP2–CP5 are specified in `docs/specs/2026-09-08-fleetview-backstage-offering.md` and
-not yet built: the `/fleet` page itself, the four signal buttons, the extra runtime adapters, and
-tenant scoping. CP1 is the contract and the routes underneath them.
+CP3 (the stop/approve/deny/steer buttons), CP4 (the remaining runtime adapters and the trace, spend
+and pull-request enrichers) and CP5 (tenant scoping, history and replay) are specified in
+`docs/specs/2026-09-08-fleetview-backstage-offering.md` and not yet built. CP1 is the contract and
+the routes; CP2 is the board that reads them.

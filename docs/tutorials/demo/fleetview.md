@@ -104,3 +104,35 @@ $ pytest sovereign/tests/bdd/test_fleetview_cp1.py -q
 Four scenarios, bound from `features/fleetview/cp1_contract.feature`, including two that drive the
 HTTP route the spec's done-command calls. They fail with the plugin removed and pass with it in the
 same session.
+
+## CP2 — the board itself
+
+The page lives at `/fleet` on the portal. It shows every agent session the estate knows about:
+which runtime, what it is working on, whether it is still running, what it has cost, and which pull
+request it opened. It updates itself; there is nothing to refresh and nothing to poll.
+
+```console
+$ yarn workspace app test Fleet
+Test Suites: 2 passed, 2 total
+Tests:       15 passed, 15 total
+```
+
+The board distinguishes three facts that a lesser dashboard collapses into one:
+
+| what is true | what the page shows |
+|---|---|
+| the source could not be read | **Unavailable**, with the cause in the sentence above |
+| the estate really has nothing running | "No sessions are running." |
+| one runtime did not answer | a live board whose sentence names the gap |
+
+A session whose runtime did not say whether it is running reads **Unknown**, never **Running**. And
+a session nobody measured the cost of shows a dash, not `$0.00` — zero is a measurement, a dash is
+the absence of one.
+
+The whole portal suite, proving the page did not disturb anything else:
+
+```console
+$ yarn workspace app test --watchAll=false
+Test Suites: 27 passed, 27 total
+Tests:       221 passed, 221 total
+```
