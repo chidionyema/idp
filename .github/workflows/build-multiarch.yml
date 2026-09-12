@@ -158,7 +158,17 @@ jobs:
           if-no-files-found: error
   merge:
     needs: [discover, build]
-    if: github.event_name != 'pull_request' && needs.discover.outputs.dockerfiles != '[]'
+    # `always()` is what makes one image's failure stop witholding every OTHER image's release.
+    # MEASURED 2026-09-12: build-multiarch 34713917585 built router-events successfully for
+    # linux/amd64 AND linux/arm64, then published NOTHING -- because sovereign-worker failed in the
+    # same matrix and a needs: edge with a default condition skips merge entirely when any
+    # dependency fails. The result is that a broken image in one corner of the estate silently
+    # blocks the release of every image in the estate, and the only symptom is a tag that never
+    # appears. With always(), each image is published on its own artifacts; the download step
+    # below already fails if an image's digests are missing, so a genuinely broken image still
+    # fails its own row and only its own row.
+    if: |
+      always() && github.event_name != 'pull_request' && needs.discover.outputs.dockerfiles != '[]'
     runs-on: ubuntu-latest
     # id-token is what makes the signature keyless. Cosign exchanges this run's
     # OIDC token for a short-lived Fulcio certificate, so there is no signing
