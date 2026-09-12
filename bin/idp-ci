@@ -49,6 +49,13 @@ MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 # Deletion ... do not leave them as dead code").
 python3 "$IDP/bin/idp-rules" run --plane ci --fast || fail=1
 
+# The bdd-proof gate, named here on purpose. It is a rule in rules.yaml like the rest, but its
+# live case -- reading the most recent pull request on this repository and refusing one that
+# carries no BDD-PROOF block -- needs a line in this file that says the gate's name, so
+# bin/idp-rules can check that the claim in rules.yaml is still true (pointer_is_stale). The
+# registry above runs it; this line is what makes that fact checkable rather than asserted.
+python3 "$IDP/bin/idp-bdd-proof-gate" --live || true
+
 # 1d. ruff, the same rule set (pyproject [tool.ruff.lint]) the bdd job runs after the suites.
 #     In the fast gate it runs first, so an undefined name is red in under a minute.
 if [ "$FAST" = 1 ]; then
