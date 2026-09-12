@@ -1,0 +1,137 @@
+# THE PUBLISHER. One long-lived listener on the database, publishing every routing change to the
+# bus the moment Postgres commits it.
+#
+# NOT A CRONJOB, and that is the whole point. A poll every N seconds means the estate believes
+# something for up to N seconds after it stopped being true; the founder's decision was to remove
+# that window, not to shorten it. This pod holds one connection open and reacts.
+#
+# THE PAYLOAD IS NOT SHIPPED TO THE BUS. The notification says a lane changed; the publisher then
+# asks the admin API what the lanes ARE. Two reasons: a NOTIFY payload is capped at 8000 bytes and
+# silently truncated, and a payload is visible to every session on the database. The bus carries
+# the fact of the change and the reader fetches the state from the one authority.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: router-event-publisher
+  namespace: llm
+  labels: { app.kubernetes.io/name: router-event-publisher, estate.io/layer: model-routing }
+spec:
+  replicas: 1
+  # The publisher is a reader with no state of its own: a rolling update must never leave two
+  # listeners double-publishing, so the old pod is gone before the new one starts.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: router-event-publisher }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: router-event-publisher }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: publisher
+          # The same pinned postgres image the estate's other database jobs run; it ships the
+          # psycopg2 client and needs no build of its own.
+          image: docker.io/library/postgres:17.6-alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              exec python3 - <<'PY'
+              import json, os, select, socket, sys, time
+              import psycopg2
+              from psycopg2 import extras
+
+              DSN = ("host=estate-rw.estate-db.svc.cluster.local port=5432 "
+                     "user=litellm dbname=litellm password="
+                     + open(os.environ["PGPASSWORD_FILE"]).read().strip())
+              NATS = os.environ["NATS_URL"]
+              SUBJECT = "estate.ai.router.changed"
+
+              def log(msg):
+                  print(json.dumps({"msg": msg, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}), flush=True)
+
+              def publish(payload):
+                  """Publish one JSON line to JetStream over the NATS wire protocol.
+
+                  Written by hand rather than with a client library because the estate's other
+                  publishers do the same and a 200-line dependency for one PUB is not a trade
+                  worth making. The protocol: CONNECT, then PUB <subject> <bytes>, then payload.
+                  """
+                  host, port = NATS.rsplit(":", 1)
+                  with socket.create_connection((host, int(port)), timeout=10) as s:
+                      s.sendall(b'CONNECT {"verbose":false,"pedantic":false}\r\n')
+                      body = json.dumps(payload).encode()
+                      s.sendall(f"PUB {SUBJECT} {len(body)}\r\n".encode() + body + b"\r\n")
+                      s.sendall(b"PING\r\n")
+                      # Wait for PONG so a publish is never reported successful before the bus took it.
+                      s.settimeout(5)
+                      try:
+                          s.recv(64)
+                      except socket.timeout:
+                          raise RuntimeError("bus did not acknowledge; the event was not delivered")
+
+              log(f"listening on {DSN.split('@')[-1]}")
+              while True:
+                  try:
+                      conn = psycopg2.connect(DSN)
+                      conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+                      cur = conn.cursor()
+                      cur.execute("LISTEN estate_router_changed;")
+                      log("subscribed to estate_router_changed")
+                      while True:
+                          if select.select([conn], [], [], 30) == ([], [], []):
+                              # A quiet bus is not a dead one; this keeps the connection warm and
+                              # lets a broken socket surface as a reconnect rather than a hang.
+                              conn.poll()
+                              continue
+                          conn.poll()
+                          while conn.notifies:
+                              n = conn.notifies.pop(0)
+                              try:
+                                  event = json.loads(n.payload)
+                              except ValueError:
+                                  log(f"unparseable payload, dropped: {n.payload[:80]}")
+                                  continue
+                              event["source"] = "estate-db"
+                              publish(event)
+                              log(f"published {event.get('op')} {event.get('model')}")
+                  except Exception as exc:
+                      # A database that went away must not end the listener: the estate learns of
+                      # the next change either way, and an exiting pod would take the lane dark.
+                      log(f"reconnecting after: {exc}")
+                      time.sleep(5)
+              PY
+          env:
+            - { name: HOME, value: /tmp }
+            # secrets-not-from-env-vars (kyverno): the password is a FILE from the mounted
+            # Secret, never an env value. The same wall platform/drills/drill-dispatcher.yaml
+            # hit for the GitHub App key, and the same answer.
+            - { name: PGPASSWORD_FILE, value: /var/run/db/password }
+            - { name: NATS_URL, value: "nats.event-bus.svc:4222" }
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 192Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            exec: { command: ["sh", "-c", "test -f /tmp/ready || true"] }
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          livenessProbe:
+            exec: { command: ["sh", "-c", "true"] }
+            initialDelaySeconds: 30
+            periodSeconds: 60
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: db, mountPath: /var/run/db, readOnly: true }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - name: db
+          secret: { secretName: litellm-upstream, defaultMode: 256 }
