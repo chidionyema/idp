@@ -16,9 +16,9 @@ spec:
   - title: Choices for this run
     properties:
       models:
-        title: space-separated keys from the matrix below
+        title: space-separated keys from MODEL_ROWS (blank = every row)
         type: string
-        default: vibethinker-1.5b vibethinker-3b twil-lm3 nanbeige-4.2-3b falcon-h1-7b
+        default: ''
   steps:
   - id: dispatch
     name: Start Fetch open models to the estate

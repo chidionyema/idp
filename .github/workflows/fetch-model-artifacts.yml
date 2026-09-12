@@ -2,48 +2,81 @@
 # founder: Downloads the open-weight models from your list and publishes each one into the estate's own registry, so they can run in the cluster instead of being called over the internet.
 # Pull open-weight models from Hugging Face and publish them as OCI artifacts in GHCR.
 #
-# WHY CI AND NOT A LAPTOP. The models are 1.1 - 4.5 GB each and the founder's machine has 26 GB
-# free of 466. A GitHub runner has its own disk, is free on a public repo, and leaves nothing
-# behind: the artifact lands in GHCR and the runner is destroyed. That is also why the local copies
-# can be deleted once these are up -- GHCR becomes the source.
+# WHY CI AND NOT A LAPTOP. The models are 1.1 - 16 GB each and the founder's machine has 26 GB free
+# of 466. A runner has its own disk, is free on a public repo, and leaves nothing behind.
 #
-# WHY OCI. `platform/edge-runtime` pulls its artifact with an oras init container by DIGEST
-# (spec section 3). A digest is what makes a pod's next restart run the bytes that were tested, and
-# it is the addressing the runtime already speaks.
+# ADDING A MODEL IS ONE LINE: append to MODEL_ROWS below. The `want` job reads that list and the
+# matrix is built from what it returns, so there is no second place to edit.
 name: fetch-model-artifacts
 
 on:
   workflow_dispatch:
     inputs:
       models:
-        description: "space-separated keys from the matrix below"
-        default: "vibethinker-1.5b vibethinker-3b twil-lm3 nanbeige-4.2-3b falcon-h1-7b"
+        description: "space-separated keys from MODEL_ROWS (blank = every row)"
         required: false
+        default: ""
 
 permissions:
   contents: read
   packages: write
 
+env:
+  # THE ROW LIST, IN ONE PLACE.
+  MODEL_ROWS: |
+    - { key: vibethinker-1.5b, repo: "mradermacher/VibeThinker-1.5B-GGUF",    file: "VibeThinker-1.5B.Q4_K_M.gguf" }
+    - { key: vibethinker-3b,   repo: "constructai/VibeThinker-3B-GGUF",       file: "" }
+    - { key: twil-lm3,         repo: "NANI-Nithin/TwIL-LM3-GGUF",            file: "twil-lm3-q4_k_m.gguf" }
+    - { key: nanbeige-4.2-3b,  repo: "Edge-Quant/Nanbeige4.1-3B-Q4_K_M-GGUF", file: "nanbeige4.1-3b-q4_k_m.gguf" }
+    - { key: falcon-h1-7b,     repo: "tiiuae/Falcon-H1-7B-Instruct-GGUF",     file: "" }
+    - { key: qwen3.8-27b,      repo: "unsloth/Qwen3.8-27B-GGUF",              file: "Qwen3.8-27B-UD-Q4_K_M.gguf" }
+    - { key: gemma-4-26b,      repo: "unsloth/gemma-4-26B-A4B-it-GGUF",       file: "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf" }
+
 jobs:
-  fetch:
+  want:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    outputs:
+      rows: ${{ steps.select.outputs.rows }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: select
+        env:
+          WANT: ${{ inputs.models }}
+        run: |
+          set -euo pipefail
+          python3 - "$GITHUB_OUTPUT" <<'PY'
+          import json, os, sys, yaml, pathlib
+          rows = yaml.safe_load(os.environ["MODEL_ROWS"])
+          want = [w for w in (os.environ.get("WANT") or "").split() if w]
+          if want:
+              unknown = [w for w in want if w not in {r["key"] for r in rows}]
+              if unknown:
+                  sys.exit(f"FAIL not in MODEL_ROWS: {unknown}")
+              rows = [r for r in rows if r["key"] in want]
+          with open(sys.argv[1], "a") as fh:
+              fh.write("rows=" + json.dumps(rows) + "\n")
+          print(f"ok      {len(rows)} row(s) selected", file=sys.stderr)
+          PY
+
+  fetch:
+    # A DYNAMIC MATRIX, which is the ONLY thing that filters. A job-level `if` does not: GitHub
+    # materialises every row of a static `include` before evaluating it, so a dispatch naming two
+    # models ran all seven -- TWICE, which is how this was found.
+    needs: want
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { key: vibethinker-1.5b, repo: "mradermacher/VibeThinker-1.5B-GGUF",    file: "VibeThinker-1.5B.Q4_K_M.gguf" }
-          - { key: vibethinker-3b,   repo: "constructai/VibeThinker-3B-GGUF",       file: "" }
-          - { key: twil-lm3,         repo: "NANI-Nithin/TwIL-LM3-GGUF",            file: "" }
-          - { key: nanbeige-4.2-3b,  repo: "Edge-Quant/Nanbeige4.1-3B-Q4_K_M-GGUF", file: "" }
-          - { key: falcon-h1-7b,     repo: "tiiuae/Falcon-H1-7B-Instruct-GGUF",     file: "" }
+        include: ${{ fromJson(needs.want.outputs.rows) }}
     steps:
       - uses: actions/checkout@v4
 
-      # The file name inside each repo is NOT guessed. This lists the repo and picks the Q4_K_M
-      # file, or fails naming what it found. A wrong filename is a 404 that reads like a missing
-      # model.
-      - name: find the quantized file in the repo
+      # The filename is LOOKED UP, not guessed: the repo is listed through the HF API and the
+      # q4_k_m file picked, or the job fails naming what it found. A wrong filename is a 404 that
+      # reads like a missing model. The match is CASE-INSENSITIVE, because two repos on this list
+      # name their file `q4_k_m` in lower case and matched nothing when it was not.
+      - name: find the quantized file
         id: find
         run: |
           set -euo pipefail
@@ -51,19 +84,17 @@ jobs:
           import json, sys, urllib.request
           repo, wanted = sys.argv[1], sys.argv[2]
           d = json.load(urllib.request.urlopen(f"https://huggingface.co/api/models/{repo}", timeout=60))
-          files = [f["rfilename"] for f in d.get("siblings", [])]
-          ggufs = [f for f in files if f.endswith(".gguf")]
+          ggufs = [f["rfilename"] for f in d.get("siblings", []) if f["rfilename"].endswith(".gguf")]
           if not ggufs:
-              raise SystemExit(f"FAIL {repo} has no .gguf file; it has {len(files)} files")
-          if wanted and wanted in ggufs:
-              pick = wanted
-          else:
-              q4 = [f for f in ggufs if "Q4_K_M" in f] or [f for f in ggufs if "q4_k_m" in f.lower()]
+              raise SystemExit(f"FAIL {repo} has no .gguf")
+          pick = wanted if wanted in ggufs else ""
+          if not pick:
+              q4 = [f for f in ggufs if "q4_k_m" in f.lower()] or [f for f in ggufs if "q4_k" in f.lower()]
               pick = q4[0] if q4 else ""
           if not pick:
-              raise SystemExit(f"FAIL {repo} has no Q4_K_M file. It has: {ggufs[:8]}")
-          print(f"ok      {repo} -> {pick} ({len(ggufs)} gguf files)")
-          open("/tmp/pick.txt","w").write(pick)
+              raise SystemExit(f"FAIL {repo} has no q4_k_m file. It has: {ggufs[:8]}")
+          print(f"ok      {repo} -> {pick}")
+          open("/tmp/pick.txt", "w").write(pick)
           PY
           echo "file=$(cat /tmp/pick.txt)" >> "$GITHUB_OUTPUT"
 
@@ -72,55 +103,38 @@ jobs:
           set -euo pipefail
           curl -fL --retry 3 -o model.gguf \
             "https://huggingface.co/${{ matrix.repo }}/resolve/main/${{ steps.find.outputs.file }}"
-          SIZE=$(stat -c%s model.gguf)
-          echo "ok      downloaded $SIZE bytes"
-          # A 9-byte body is Hugging Face's error page, and it would publish as a model that loads
-          # nothing. The same check the concierge deploy makes on its voice model.
-          [ "$SIZE" -gt 500000000 ] || { echo "FAIL model is $SIZE bytes; the URL served an error body"; exit 1; }
+          SIZE=$(stat -c%s model.gguf); echo "ok      downloaded $SIZE bytes"
+          # A 9-byte body is the error page and would publish as a model that loads nothing.
+          [ "$SIZE" -gt 500000000 ] || { echo "FAIL $SIZE bytes; the URL served an error body"; exit 1; }
 
-      # THE TOKENIZER, WHICH THE RUNTIME LOADS AND MY FIRST VERSION DID NOT FETCH.
-      #
-      # engine.rs line 56: `Tokenizer::from_file(dir.join("tokenizer.json"))`. Without it the pod
-      # starts, pulls 1.1 GB, and dies with `tokenizer: No such file or directory` -- a failure that
-      # reads like a corrupt artifact and is a missing file.
-      #
-      # The Forge ships tokenizer.json (modal_app.py:166) because train.py saves it next to the
-      # merged model. This workflow downloads a model somebody else trained, so it has to fetch the
-      # tokenizer from the same repo -- preferring the ORIGINAL repo when the GGUF repo has none,
-      # which is common for quantised repackages.
-      - name: fetch the tokenizer the runtime loads
+      # THE TOKENIZER, WHICH THE RUNTIME LOADS. engine.rs does Tokenizer::from_file("tokenizer.json")
+      # and an artifact without one pulls 1.1 GB and then dies with "tokenizer: No such file".
+      - name: fetch the tokenizer
         run: |
           set -euo pipefail
-          python3 - "${{ matrix.repo }}" <<'PY'
+          python3 - "${{ matrix.repo }}" "${{ matrix.key }}" <<'PY'
           import json, sys, urllib.request
-          repo = sys.argv[1]
-          # base_model in the cardData names the repo the weights came from; that is where the
-          # tokenizer lives when a quantiser did not copy it.
+          repo, key = sys.argv[1], sys.argv[2]
           d = json.load(urllib.request.urlopen(f"https://huggingface.co/api/models/{repo}", timeout=60))
-          files = [f["rfilename"] for f in d.get("siblings", [])]
-          cands = [repo]
           base = (d.get("cardData") or {}).get("base_model") or ""
           if isinstance(base, list): base = base[0] if base else ""
-          if base: cands.append(base)
-          for r in cands:
+          for r in [repo] + ([base] if base else []):
               try:
-                  fs = files if r == repo else [f["rfilename"] for f in json.load(
-                      urllib.request.urlopen(f"https://huggingface.co/api/models/{r}", timeout=60)).get("siblings", [])]
+                  fs = [f["rfilename"] for f in json.load(urllib.request.urlopen(
+                      f"https://huggingface.co/api/models/{r}", timeout=60)).get("siblings", [])]
               except Exception:
                   continue
               if "tokenizer.json" in fs:
-                  print(f"ok      tokenizer.json found in {r}")
-                  open("/tmp/tok_repo.txt", "w").write(r)
-                  raise SystemExit(0)
-          raise SystemExit(f"FAIL no tokenizer.json in {cands}; the runtime cannot load this model")
+                  print(f"ok      tokenizer.json from {r}")
+                  open("/tmp/tok.txt", "w").write(r); raise SystemExit(0)
+          raise SystemExit(f"FAIL no tokenizer.json for {key}; the runtime cannot load it")
           PY
-          REPO=$(cat /tmp/tok_repo.txt)
-          curl -fL --retry 3 -o tokenizer.json "https://huggingface.co/$REPO/resolve/main/tokenizer.json"
-          SIZE=$(stat -c%s tokenizer.json)
-          echo "ok      tokenizer.json $SIZE bytes"
-          [ "$SIZE" -gt 100000 ] || { echo "FAIL tokenizer is $SIZE bytes; the URL served an error body"; exit 1; }
+          curl -fL --retry 3 -o tokenizer.json \
+            "https://huggingface.co/$(cat /tmp/tok.txt)/resolve/main/tokenizer.json"
+          SIZE=$(stat -c%s tokenizer.json); echo "ok      tokenizer.json $SIZE bytes"
+          [ "$SIZE" -gt 100000 ] || { echo "FAIL tokenizer is $SIZE bytes"; exit 1; }
 
-      - name: write the card the runtime requires
+      - name: write the card
         run: |
           set -euo pipefail
           cat > model-card.yaml <<YAML
@@ -134,21 +148,11 @@ jobs:
           abstain_below: 0.0
           eval: { held_out: 0, agreement: 0.0, abstain_rate: 0.0 }
           YAML
-          echo "ok      card written (abstain 0.0 and held_out 0: this is a DOWNLOAD, not a Forge"
-          echo "        artifact, and the card says so rather than claiming a measurement nobody made)"
+          echo "ok      card written (held_out 0: this is a DOWNLOAD, and the card says so rather"
+          echo "        than claiming a measurement nobody made)"
 
-      # ONE PUBLISHER, NAMED BY BOTH THIS WORKFLOW AND THE FORGE.
-      #
-      # The shape of an artifact lives in .github/actions/publish-model-artifact: the oras pin, the
-      # login token, the media types, the versioned tag, and which files ship. This workflow was
-      # first written by COPYING those lines out of forge/modal_app.py, and it got five of them
-      # wrong -- every one a failure at the far end where nobody would look for it.
-      #
-      # The Forge TRAINS a model for a task nobody has solved. This workflow DOWNLOADS a model
-      # somebody else trained. They are different jobs and they write the same artifact, which is
-      # exactly why the writing is not duplicated.
+      # ONE PUBLISHER, SHARED WITH THE FORGE.
       - name: publish the artifact
-        id: publish
         uses: ./.github/actions/publish-model-artifact
         with:
           model_key: ${{ matrix.key }}
