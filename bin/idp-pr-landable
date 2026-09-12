@@ -75,10 +75,40 @@ def verdict(pr, required):
 
     if labels & HOLD:
         return "SKIP", "labelled " + ",".join(sorted(labels & HOLD))
-    if state == "BEHIND":
-        return "UPDATE", "behind main; refresh now, land next tick"
     if state == "DIRTY":
         return "SKIP", "a real conflict; a person has to choose"
+    # Refresh before judging the checks, and on more than GitHub's BEHIND.
+    #
+    # Measured 2026-09-12, and this is the defect this ordering fixes: eight pull requests were
+    # failing their builds because they were behind main and lacked a fix that had already
+    # merged. Here is what GitHub reported for them, and how far behind each was:
+    #
+    #     #3253 UNSTABLE  behind 7      #3254 UNSTABLE  behind 8
+    #     #3243 BLOCKED   behind 14     #3231 behind 2, #3241 behind 19, #3214 behind 21
+    #
+    # Not one reported BEHIND. A branch that is behind main AND carries a failing check reports
+    # UNSTABLE or BLOCKED, so the UPDATE below never fired for exactly the population that
+    # needed it: a red pull request could not pick up the fix that would make it green. That is
+    # a deadlock, and it is why nine pull requests sat red while main was green -- the refresh
+    # waited for the thing only the refresh could produce.
+    #
+    # `behind_by` is the honest signal: it comes from the compare API (main...<branch>), which
+    # answers 9 for a branch nine commits behind and 0 for one that is current. It is supplied
+    # by the caller, because it costs one API call per pull request and gh's `pr list` does not
+    # carry it. `rebaseable` was tried first and is the wrong field: it is true for a current
+    # branch as well, so it reported every pull request as behind.
+    #
+    # DIRTY is handled above and never reaches here, so a real conflict is still a person's to
+    # choose. With no `behind_by` at all the old behaviour stands, which is BEHIND only.
+    behind_by = pr.get("behind_by", 0) or 0
+    behind = state == "BEHIND" or behind_by > 0
+    if behind and state in ("BEHIND", "UNSTABLE", "BLOCKED", "CLEAN"):
+        return "UPDATE", (
+            f"behind main by {behind_by} commit(s); refreshed now, so a check that is red only "
+            f"because main has moved on gets the fix it needs and lands next tick"
+            if behind_by
+            else "behind main; refresh now, land next tick"
+        )
     if state not in ("CLEAN", "UNSTABLE", "BLOCKED"):
         return "SKIP", f"state {state}"
     if not checks:
