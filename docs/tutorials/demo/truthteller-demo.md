@@ -14,6 +14,12 @@ bin/idp-truthteller-demo --honest   # the same run with a claim that matches rea
 
 ## What you see
 
+The recording below is rendered by the machines: `demos/truthteller-demo.tape` is replayed
+against the real `bin/idp-truthteller-demo` by the `demo-render` workflow on every change, so
+it can never show what the tool no longer does (Demo Standard, crew#805).
+
+![The truth-teller catches a fabricated claim, recorded by the machines](../demos/truthteller-demo.gif)
+
 With no sandbox running, the truth-teller refuses to guess — a fail-closed BLIND, exit 2:
 
 ```

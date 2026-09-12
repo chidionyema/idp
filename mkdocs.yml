@@ -88,6 +88,7 @@ nav:
       - Git is the only writer of the cluster (founder lockdown 2026-09-03): explanation/flux-only-writes.md
   - Demo:
       - The Demo Standard: demo/demo-standard.md
+      - The agent that couldn't lie: demo/truthteller.md
       - Buyer sandbox (one hour): demo/demo-sandbox.md
       - Merge queue (hands-free landing): demo/merge-queue.md
       - Catalogue links: demo/catalog-links.md
