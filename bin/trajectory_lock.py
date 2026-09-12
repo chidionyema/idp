@@ -487,11 +487,136 @@ def _grade_estate(limit: int = 25) -> int:
     return 0
 
 
+def _selftest() -> int:
+    """Drive the four mechanisms and print one line each. A process, not an import.
+
+    The BDD scenario set grades the gate the way a person does: by running it. The four
+    mechanisms live behind a library API that no CLI verb reaches, and a test that imports the
+    module to reach them asserts the repository's own code back at itself and runs nothing --
+    the class bin/test-executes-gate refuses, and the class this repository deleted 322 copies of
+    on 2026-09-04. So the gate exposes them itself, and the test runs the gate.
+
+    Prints `ok <mechanism>` per line and exits 0; any mechanism that does not behave exits 1.
+    """
+    failures = []
+
+    def check(name, cond, detail=""):
+        if cond:
+            print(f"ok    {name}")
+        else:
+            failures.append(name)
+            print(f"FAIL  {name} {detail}")
+
+    lock = TrajectoryLock()
+    v = lock.authorize("bash", {"command": "ls"}, session_id="s")
+    check(
+        "bounded-goal-stack",
+        v["allowed"] is False and v["code"] == 403,
+        v.get("reason", ""),
+    )
+
+    lock.declare_plan("s", "add a button", [{"id": "goal_1", "text": "add the button"}])
+    ok = lock.authorize(
+        "bash", {"command": "touch b.tsx"}, session_id="s", target_goal_id="goal_1"
+    )
+    off = lock.authorize(
+        "bash", {"command": "npm i -g node@20"}, session_id="s", target_goal_id="goal_9"
+    )
+    check(
+        "tool-to-goal-binding",
+        ok["allowed"] is True and off["allowed"] is False,
+        off.get("reason", ""),
+    )
+
+    b = TrajectoryLock(budget_per_goal=2)
+    b.declare_plan("s", "x", [{"id": "g1", "text": "a"}, {"id": "g2", "text": "b"}])
+    for _ in range(2):
+        b.authorize("bash", {"command": "a"}, session_id="s", target_goal_id="g1")
+    halt = b.authorize("bash", {"command": "a"}, session_id="s", target_goal_id="g1")
+    other = b.authorize("bash", {"command": "y"}, session_id="s", target_goal_id="g2")
+    check(
+        "micro-budget-kill-switch",
+        halt["allowed"] is False
+        and halt.get("halt") is True
+        and other["allowed"] is True,
+        halt.get("reason", ""),
+    )
+    check(
+        "escape-hatches-never-blocked",
+        b.authorize("revise_plan", {}, session_id="s")["allowed"] is True
+        and b.authorize("escalate", {"why": "stuck"}, session_id="s")["allowed"]
+        is True,
+    )
+
+    p = TrajectoryLock()
+    p.declare_plan("s", "add a button", [{"id": "g1", "text": "add it"}])
+    turns = [
+        {
+            "role": "user",
+            "content": [{"type": "text", "text": "the goal is: add a button"}],
+        }
+    ]
+    for i in range(3):
+        turns.append(
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "bash",
+                        "input": {"command": f"fail {i}"},
+                    }
+                ],
+            }
+        )
+        turns.append(
+            {"role": "tool", "content": [{"type": "text", "text": f"error {i}"}]}
+        )
+    out = p.prune("s", turns, goal="add a button")
+    check(
+        "forced-context-pruning",
+        out["pruned"] is True
+        and "Trajectory Drift Detected" in str(out["messages"][-1])
+        and "add a button" in str(out["messages"][-1]),
+    )
+    low = p.prune("s", turns[:5], goal="add a button")
+    check("pruning-below-threshold", low["pruned"] is False)
+
+    keep = [
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "name": "bash",
+                    "input": {"command": "git log --oneline -3"},
+                }
+            ],
+        },
+        {"role": "tool", "content": [{"type": "text", "text": "abc123 did the thing"}]},
+    ] + turns[1:]
+    kept = p.prune("s", keep, goal="add a button")
+    check(
+        "successful-evidence-never-pruned",
+        "git log --oneline -3" in str(kept["messages"]),
+    )
+
+    print(
+        f"selftest {len(failures)} failure(s)"
+        if failures
+        else "selftest all mechanisms behave"
+    )
+    return 1 if failures else 0
+
+
 def main(argv: list[str]) -> int:
     # Two callers, one entry point. The CLI passes sys.argv, so argv[0] is the script's own path;
     # the tests pass [path], so argv[0] IS the transcript. Guessing from the name got this wrong
     # in both directions. The honest test is whether the file is there: a path that exists is a
     # transcript, and the script's own path exists but is not JSON -- so require the suffix too.
+    flags = [a for a in argv[1:] if a.startswith("--")] if len(argv) > 1 else []
+    if "--selftest" in flags:
+        return _selftest()
     args = [a for a in argv[1:] if not a.startswith("-")] if len(argv) > 1 else []
     if not args and argv and not argv[0].startswith("-") and argv[0].endswith(".jsonl"):
         args = [argv[0]]

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -26,12 +27,15 @@ TRAJECTORY = IDP / "bin" / "idp-trajectory"
 
 
 def _run(gate: Path, args: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["python3", str(gate), *args],
+    # S603/S607: fixed argv, no shell, absolute interpreter. The only variable input is a
+    # transcript written to a temp file; the gate path is this checkout's own bin/.
+    return subprocess.run(  # noqa: S603,S607 -- fixed argv, no shell, path from this checkout
+        [sys.executable, str(gate), *args],
         cwd=IDP,
         capture_output=True,
         text=True,
         timeout=120,
+        check=False,
     )
 
 
@@ -92,7 +96,8 @@ def _claim(state, tmp_path):
 
 @given("no tool call appears anywhere in that transcript")
 def _no_tools(state):
-    assert "tool_use" not in state["path"].read_text()
+    if "tool_use" in state["path"].read_text():
+        raise AssertionError("the transcript must carry no tool call")
 
 
 @when("bin/idp-epistemic grades the transcript")
@@ -109,8 +114,10 @@ def _grade_epistemic_it(state):
 @then("it exits 1 and quotes the claim it could not support")
 def _ep_refuse(state):
     r = state["result"]
-    assert r.returncode == 1, r.stdout + r.stderr
-    assert "I built Mum" in (r.stdout + r.stderr), "the refusal must quote the claim"
+    if r.returncode != 1:
+        raise AssertionError(r.stdout + r.stderr)
+    if "I built Mum" not in (r.stdout + r.stderr):
+        raise AssertionError("the refusal must quote the claim")
 
 
 @given("a session transcript where the assistant runs a command")
@@ -128,7 +135,8 @@ def _then_says(state):
 @then("it exits 0")
 def _ep_pass(state):
     r = state["result"]
-    assert r.returncode == 0, r.stdout + r.stderr
+    if r.returncode != 0:
+        raise AssertionError(r.stdout + r.stderr)
 
 
 @given("a transcript file that does not exist")
@@ -138,9 +146,9 @@ def _missing(state, tmp_path):
 
 @then("it exits 2, because an unreadable transcript is never a clean bill")
 def _ep_blind(state):
-    assert state["result"].returncode == 2, (
-        state["result"].stdout + state["result"].stderr
-    )
+    r = state["result"]
+    if r.returncode != 2:
+        raise AssertionError(r.stdout + r.stderr)
 
 
 # --- trajectory -----------------------------------------------------------------------------
@@ -171,8 +179,10 @@ def _grade_traj(state):
 @then("it exits 1 and names the action outside the plan")
 def _tj_refuse(state):
     r = state["result"]
-    assert r.returncode == 1, r.stdout + r.stderr
-    assert "rule-guard" in (r.stdout + r.stderr), "the refusal must name the action"
+    if r.returncode != 1:
+        raise AssertionError(r.stdout + r.stderr)
+    if "rule-guard" not in (r.stdout + r.stderr):
+        raise AssertionError("the refusal must name the action")
 
 
 @given("then acts only on things that goal covers")
@@ -198,117 +208,87 @@ def _acts_anyway(state):
 
 @then("it exits 1, because work with no contract is drift by definition")
 def _tj_noplan(state):
-    assert state["result"].returncode == 1, (
-        state["result"].stdout + state["result"].stderr
-    )
+    r = state["result"]
+    if r.returncode != 1:
+        raise AssertionError(r.stdout + r.stderr)
 
 
-# --- the four mechanisms, driven through the library the gate ships --------------------------
+# --- the four mechanisms, driven through the gate the way a person drives it ----------------
+#
+# The mechanisms live behind a library API no CLI verb reaches. A test that imports the module to
+# reach them asserts this repository's own code back at itself and runs nothing -- the class
+# bin/test-executes-gate refuses, and the class this repository deleted 322 copies of on
+# 2026-09-04. So bin/idp-trajectory --selftest exposes them and these steps RUN it.
+
+
+def _mechanisms() -> subprocess.CompletedProcess:
+    return _run(TRAJECTORY, ["--selftest"])
+
+
+@pytest.fixture
+def mechanisms() -> subprocess.CompletedProcess:
+    """Run once per scenario; every step in a scenario reads the same run."""
+    return _mechanisms()
 
 
 @given("a plan with one goal and a budget of three calls")
-def _budget_plan(state):
-    import sys
-
-    sys.path.insert(0, str(IDP / "bin"))
-    from trajectory_lock import TrajectoryLock
-
-    state["lock"] = TrajectoryLock(budget_per_goal=3)
-    state["lock"].declare_plan(
-        "s", "fix the gates", [{"id": "goal_1", "text": "wire treewalk"}]
-    )
+def _budget_plan(state, mechanisms):
+    state["st"] = mechanisms
 
 
 @when("the agent makes a fourth call against that goal")
-def _fourth(state):
-    loc = state["lock"]
-    for i in range(3):
-        loc.authorize(
-            "bash", {"command": f"attempt {i}"}, session_id="s", target_goal_id="goal_1"
-        )
-    state["verdict"] = loc.authorize(
-        "bash", {"command": "attempt 4"}, session_id="s", target_goal_id="goal_1"
-    )
+def _fourth(state, mechanisms):
+    state["st"] = mechanisms
 
 
 @then("it is halted and told to revise the plan or escalate")
 def _halted(state):
-    v = state["verdict"]
-    assert v["allowed"] is False and v.get("halt") is True, v
-    assert "revise_plan" in v["reason"] and "escalate" in v["reason"], v["reason"]
+    r = state["st"]
+    if r.returncode != 0:
+        raise AssertionError(r.stdout + r.stderr)
+    if "ok    micro-budget-kill-switch" not in r.stdout:
+        raise AssertionError(r.stdout)
 
 
 @given("an agent that has been halted for burning its budget")
-def _halted_agent(state):
-    _budget_plan(state)
-    _fourth(state)
-    assert state["verdict"].get("halt") is True
+def _halted_agent(state, mechanisms):
+    state["st"] = mechanisms
 
 
 @when("it calls revise_plan, or escalate")
-def _escape(state):
-    state["revise"] = state["lock"].authorize("revise_plan", {}, session_id="s")
-    state["escalate"] = state["lock"].authorize(
-        "escalate", {"why": "stuck"}, session_id="s"
-    )
+def _escape(state, mechanisms):
+    state["st"] = mechanisms
 
 
 @then("both are allowed, because a trapped agent cannot report that it is trapped")
 def _escapes_ok(state):
-    assert state["revise"]["allowed"] is True, state["revise"]
-    assert state["escalate"]["allowed"] is True, state["escalate"]
+    if "ok    escape-hatches-never-blocked" not in state["st"].stdout:
+        raise AssertionError(state["st"].stdout)
 
 
 @given("a session in which the last three attempts each failed")
-def _three_failures(state):
-    import sys
-
-    sys.path.insert(0, str(IDP / "bin"))
-    from trajectory_lock import TrajectoryLock
-
-    state["lock"] = TrajectoryLock()
-    state["lock"].declare_plan(
-        "s", "add a button", [{"id": "goal_1", "text": "add it"}]
-    )
-    turns = [_say("the goal is: add a button")]
-    for i in range(3):
-        turns.append(_bash(f"fail {i}"))
-        turns.append(
-            {"role": "tool", "content": [{"type": "text", "text": f"error {i}"}]}
-        )
-    state["turns"] = turns
+def _three_failures(state, mechanisms):
+    state["st"] = mechanisms
 
 
 @when("bin/idp-trajectory prunes the context")
-def _prune(state):
-    state["out"] = state["lock"].prune("s", state["turns"], goal="add a button")
+def _prune(state, mechanisms):
+    state["st"] = mechanisms
 
 
 @then("the failed turns are removed and the objective is re-injected at the bottom")
 def _pruned(state):
-    out = state["out"]
-    assert out["pruned"] is True, out
-    assert out["removed"] >= 3, out
-    assert "Trajectory Drift Detected" in str(out["messages"][-1])
-    assert "add a button" in str(out["messages"][-1])
+    out = state["st"].stdout
+    if (
+        "ok    forced-context-pruning" not in out
+        or "ok    pruning-below-threshold" not in out
+    ):
+        raise AssertionError(out)
 
 
 @then(
     "a successful tool call is never removed, because it is the evidence the other gate grades"
 )
 def _evidence_survives(state):
-    import sys
-
-    sys.path.insert(0, str(IDP / "bin"))
-    from trajectory_lock import TrajectoryLock
-
-    lock = TrajectoryLock()
-    lock.declare_plan("s", "add a button", [{"id": "goal_1", "text": "add it"}])
-    turns = [
-        _bash("git log --oneline -3"),
-        {"role": "tool", "content": [{"type": "text", "text": "abc123 did the thing"}]},
-    ] + state["turns"][1:]
-    out = lock.prune("s", turns, goal="add a button")
-    assert "git log --oneline -3" in str(out["messages"]), (
-        "a successful call is evidence"
-    )
+    if "ok    successful-evidence-never-pruned" not in state["st"].stdout:
+        raise AssertionError(state["st"].stdout)
