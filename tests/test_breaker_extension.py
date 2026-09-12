@@ -156,3 +156,67 @@ class TestItBlocksProvedRepetition:
             text=True,
         )
         assert json.loads(r.stdout)["block"] is False
+
+
+class TestItIsBlindRatherThanSilent:
+    """A guard that cannot run its check must say so. Measured 2026-09-12.
+
+    The breaker lives in bin/, and this estate runs one session per git worktree: the primary
+    checkout is usually on another branch, so `repoRoot/bin/idp-circuit-breaker` frequently does
+    not exist. The first version of decide.mjs spawned a missing path, got nothing, and answered
+    {"block": false} -- indistinguishable from a clean result. That is the calico lesson: an empty
+    feed is not a clean bill.
+    """
+
+    def test_it_reports_blind_when_the_tool_is_absent(self, node_available, tmp_path):
+        js = ROOT / "extensions" / "breaker" / "decide.mjs"
+        r = subprocess.run(
+            [
+                "node",
+                "--input-type=module",
+                "-e",
+                (
+                    "import { decide } from '" + str(js) + "';"
+                    "const out = decide('/nonexistent-root', {observations:["
+                    "{finding:'x',target:'1'},{finding:'x',target:'2'},{finding:'x',target:'3'}],"
+                    "next:{finding:'x',target:'4'}});"
+                    "process.stdout.write(JSON.stringify(out));"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert r.returncode == 0, r.stderr
+        out = json.loads(r.stdout)
+        assert out.get("blind"), (
+            "a missing tool was reported as a clean result, not BLIND"
+        )
+        assert "idp-circuit-breaker" in out["blind"]
+
+    def test_it_finds_the_tool_in_a_sibling_worktree(self, node_available):
+        """The primary checkout is often on another branch; the tool is in a worktree."""
+        js = ROOT / "extensions" / "breaker" / "decide.mjs"
+        r = subprocess.run(
+            ["node", str(js)],
+            input=json.dumps(
+                {
+                    "observations": [
+                        {"finding": "CVE-2026-13221 CVE-2026-42496", "target": "pr-1"},
+                        {"finding": "CVE-2026-42496 CVE-2026-13221", "target": "pr-2"},
+                        {"finding": "CVE-2026-13221 CVE-2026-42496", "target": "pr-3"},
+                    ],
+                    "next": {
+                        "finding": "CVE-2026-13221 CVE-2026-42496",
+                        "target": "pr-4",
+                    },
+                }
+            ),
+            capture_output=True,
+            text=True,
+            env={**__import__("os").environ, "ESTATE_ROOT": str(ROOT)},
+        )
+        out = json.loads(r.stdout)
+        assert not out.get("blind"), (
+            f"lost the tool despite a worktree holding it: {out}"
+        )
+        assert out["block"] is True
