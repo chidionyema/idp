@@ -2084,3 +2084,28 @@ rules:
     were excluded. .gitignore's remedy on 2026-08-29 was the naming convention /.wt-*/, and the
     next checkouts were made as scratchpad/ and idp/, so the pattern missed them. bin/treewalk.py
     stops a walk entering a copy; this rule refuses the copy's presence.
+
+- id: circuit-breaker
+  label: breaker
+  statement: >-
+    Three targets returning the same finding prove one cause, so the linear action is refused with
+    423 Locked and the fleet lever is named instead. The fingerprint is the stable identity of the
+    finding (a CVE set, order-free), never a raw hash of the output -- the same cause prints
+    different bytes on different targets. The lock is scoped to the finding, so a different finding
+    on a locked target, and nine different findings across nine targets, stay workable (R38)
+  law: founder 2026-09-12, throw the 423 Locked exception at N=3
+  origin: incident 2026-09-12, nine pull requests red on one cause while the agent checked them one at a time
+  planes: [ci]
+  run: [python3, bin/idp-circuit-breaker]
+  fixtures:
+    must_fail: tests/fixtures/circuit-breaker/bad/three-identical.json
+    must_pass: tests/fixtures/circuit-breaker/good/nine-different.json
+  cases:
+    - expect: refuse
+      args: [--replay, tests/fixtures/circuit-breaker/bad/three-identical.json]
+      note: three identical findings across three targets lock the primitive
+    - expect: pass
+      args: [--replay, tests/fixtures/circuit-breaker/good/nine-different.json]
+      note: nine different findings across nine targets are all workable
+  ok: a proved pattern disables the linear path and names the fleet lever
+  fail: an agent repeats a proved diagnosis across targets, and the environment lets it
