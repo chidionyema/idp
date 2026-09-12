@@ -97,6 +97,7 @@ nav:
       - Estate clock recording: demo/dagster.md
       - Dashboards recording: demo/superset.md
       - Portal: tutorials/demo/idp.md
+      - The agent that couldn't lie: tutorials/demo/truthteller-demo.md
       - Estate compiler: tutorials/demo/intent.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
@@ -191,6 +192,7 @@ nav:
       - Dashboards recording: onboarding/superset.md
       - Trace matrix: how-to/onboarding/trace-matrix.md
       - Namespace fences: how-to/onboarding/ns-fence-gate.md
+      - The agent that couldn't lie: how-to/onboarding/truthteller-demo.md
       - Portal: how-to/onboarding/idp.md
       - Estate compiler: how-to/onboarding/intent.md
       - Estate Mac screen: how-to/onboarding/founder-screen-access.md
