@@ -81,7 +81,31 @@ jobs:
         run: |
           set -euo pipefail
           gh pr list --base main --state open --limit 50 \
-            --json number,headRefName,isDraft,mergeStateStatus,labels,statusCheckRollup > open.json
+            --json number,headRefName,isDraft,mergeStateStatus,labels,statusCheckRollup,baseRefName > open.json
+
+          # behind_by, one compare call per pull request. `gh pr list` does not carry it, and it
+          # is the only honest signal that a branch is behind main: GitHub reports UNSTABLE or
+          # BLOCKED, never BEHIND, for a branch that is behind AND has a failing check -- which
+          # is exactly the population that needs refreshing (measured 2026-09-12: eight pull
+          # requests red on a fix that had already merged, none of them reporting BEHIND).
+          #
+          # A call that fails sets 0, which makes the verdict fall back to BEHIND alone: a
+          # refusal to guess, not a pass. It is a read, so it cannot change anything.
+          python3 - <<'PY'
+          import json, subprocess
+          prs = json.load(open("open.json"))
+          for pr in prs:
+              base = pr.get("baseRefName") or "main"
+              try:
+                  out = subprocess.run(
+                      ["gh", "api", f"repos/{__import__('os').environ['GH_REPO']}/compare/"
+                       f"{base}...{pr['headRefName']}", "--jq", ".behind_by"],
+                      capture_output=True, text=True, timeout=15)
+                  pr["behind_by"] = int(out.stdout.strip()) if out.returncode == 0 and out.stdout.strip().isdigit() else 0
+              except Exception:
+                  pr["behind_by"] = 0
+          json.dump(prs, open("open.json", "w"))
+          PY
 
           # One pass, one process: the verdict comes from bin/idp-pr-landable's own function, so
           # the thing the tests grade is the thing that runs here.
