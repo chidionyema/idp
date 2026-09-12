@@ -61,7 +61,7 @@ spec:
               export HOME=/tmp/oras-home
               mkdir -p "$HOME/.docker"
               printf '%s' "$GHCR_TOKEN" > "$HOME/.docker/config.json"
-              oras pull "ghcr.io/chidionyema/models/vibethinker-1.5b@sha256:2e1b11d15982e3d444a53fda7fa81187053acdcabad233cfe5c4e86e7f3c6e19"
+              oras pull "ghcr.io/chidionyema/models/vibethinker-1.5b@sha256:869c10c0f902bce14940836460b176b7fe6c3ac50b755355a0501f79bcb68380"
               ls -la /artifact
           env:
             - { name: GHCR_USER, value: chidionyema }
@@ -94,19 +94,43 @@ spec:
             - { name: RUST_LOG, value: "info" }
           resources:
             # GUARANTEED: request equals limit, because policy/require-priority-class refuses a
-            # container where they differ. 1.6 Gi covers 1.1 GB mmapped plus KV cache and activations.
-            requests: { cpu: "100m", memory: "1600Mi" }
-            limits:   { cpu: "1500m", memory: "1600Mi" }
+            # container where they differ.
+            #
+            # 1.6 Gi WAS NOT ENOUGH AND THE KERNEL SAID SO: OOMKilled, exit 137, eleven seconds
+            # after start. A 1.1 GB model is not 1.1 GB of memory -- candle reads the GGUF and
+            # builds its tensors, so the file AND the loaded weights are resident at once, plus the
+            # KV cache and activations.
+            #
+            # 3 Gi is the measured headroom for a 1.5B on this node: it is what the OOM did not
+            # have. Sizes from `docs/specs/2026-09-06-model-forge-edge-runtime.md` -- "0.6B Q4 is
+            # about 400 MB mmap'd; 1.7B about 1.1 GB" -- describe the FILE, not the process, and
+            # that distinction is what this limit got wrong.
+            requests: { cpu: "100m", memory: "3Gi" }
+            limits:   { cpu: "1500m", memory: "3Gi" }
           ports:
             - { containerPort: 8421, name: health }
+          # AN EXEC PROBE, NOT AN HTTP ONE, AND R20 IS WHY.
+          #
+          # The runtime binds 127.0.0.1 on purpose -- main.rs REFUSES any non-loopback EDGE_BIND
+          # ("EDGE_BIND must be loopback (R20)"), which is the estate's rule that only the gateway
+          # holds a routable address. An httpGet probe is issued by the KUBELET, from outside the
+          # pod's network namespace, so it dialled the pod IP and got "connection refused" forever:
+          # the container was healthy and the probe could never reach it.
+          #
+          # An exec probe runs INSIDE the container, where loopback exists. Same binary, same port,
+          # same refusal to be routable -- only the prober moves.
           readinessProbe:
-            httpGet: { path: /v1/health, port: 8421 }
-            initialDelaySeconds: 5
+            exec:
+              command: ["/edge-runtime", "--health"]
+            initialDelaySeconds: 10
             periodSeconds: 15
+            failureThreshold: 12
           livenessProbe:
-            httpGet: { path: /v1/health, port: 8421 }
-            initialDelaySeconds: 30
+            exec:
+              command: ["/edge-runtime", "--health"]
+            initialDelaySeconds: 60
             periodSeconds: 30
+            failureThreshold: 5
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
