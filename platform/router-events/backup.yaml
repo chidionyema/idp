@@ -47,11 +47,43 @@ spec:
                 - |
                   set -eu
                   exec python3 - <<'PY'
-                  import base64, json, os, subprocess, time, urllib.request
+                  import base64, json, os, subprocess, time, urllib.error, urllib.request
 
                   ROUTER_KEY = open(os.environ["ROUTER_KEY_FILE"]).read().strip()
                   API = "https://api.github.com"
                   REPO = os.environ["GITHUB_REPO"]
+                  APP = os.environ["GITHUB_APP_DIR"]
+
+                  # The App token, MINTED HERE. The first version read /var/run/github-app/token,
+                  # a file that does not exist -- the Secret carries githubAppID,
+                  # githubAppInstallationID and githubAppPrivateKey, and a token is something you
+                  # exchange them for. Copied verbatim from platform/drills/drill-dispatcher.yaml,
+                  # which has done this successfully every hour for weeks.
+                  def b64(b):
+                      return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+                  def app_jwt(app_id, pem):
+                      from cryptography.hazmat.primitives import hashes, serialization
+                      from cryptography.hazmat.primitives.asymmetric import padding
+                      now = int(time.time())
+                      head = b64(json.dumps({"alg": "RS256", "typ": "JWT"}).encode())
+                      body = b64(json.dumps({"iat": now - 60, "exp": now + 540, "iss": app_id}).encode())
+                      key = serialization.load_pem_private_key(pem, password=None)
+                      sig = key.sign(f"{head}.{body}".encode(), padding.PKCS1v15(), hashes.SHA256())
+                      return f"{head}.{body}.{b64(sig)}"
+
+                  def mint():
+                      app_id = open(os.path.join(APP, "githubAppID")).read().strip()
+                      inst = open(os.path.join(APP, "githubAppInstallationID")).read().strip()
+                      pem = open(os.path.join(APP, "githubAppPrivateKey"), "rb").read()
+                      req = urllib.request.Request(
+                          f"{API}/app/installations/{inst}/access_tokens", method="POST",
+                          data=b"{}",
+                          headers={"Authorization": "Bearer " + app_jwt(app_id, pem),
+                                   "Accept": "application/vnd.github+json"})
+                      with urllib.request.urlopen(req, timeout=30) as r:
+                          return json.loads(r.read())["token"]
+
                   PATH_IN_REPO = "platform/llm/lanes.backup.yaml"
                   ROUTER = os.environ["ROUTER_URL"]
 
@@ -83,7 +115,7 @@ spec:
                       lines.append("      api_key: os.environ/" + (os.environ.get("KEY_VAR") or "LITELLM_UPSTREAM_KEY"))
                   body = "\n".join(lines) + "\n"
 
-                  token = open(os.environ["GITHUB_TOKEN_FILE"]).read().strip()
+                  token = mint()
                   print(json.dumps({"msg": "read lanes", "count": len(lanes)}))
 
                   # Read the current file; commit only when the CONTENT changed.
@@ -117,7 +149,9 @@ spec:
                 - { name: HOME, value: /tmp }
                 - { name: GITHUB_REPO, value: "${ESTATE_GITHUB_REPO}" }
                 - { name: ROUTER_URL, value: "http://litellm.llm.svc.cluster.local:4000" }
-                - { name: GITHUB_TOKEN_FILE, value: /var/run/github-app/token }
+                # the App id, installation id and private key, as FILES from the mounted Secret
+                # (kyverno secrets-not-from-env-vars refuses the secretKeyRef form).
+                - { name: GITHUB_APP_DIR, value: /var/run/github-app }
                 # secretKeyRef-in-env is refused by secrets-not-from-env-vars; the key is a file.
                 - { name: ROUTER_KEY_FILE, value: /var/run/router/LITELLM_MASTER_KEY }
               resources:
@@ -130,7 +164,10 @@ spec:
               volumeMounts:
                 - { name: tmp, mountPath: /tmp }
                 - { name: router, mountPath: /var/run/router, readOnly: true }
+                - { name: github-app, mountPath: /var/run/github-app, readOnly: true }
           volumes:
             - { name: tmp, emptyDir: {} }
             - name: router
               secret: { secretName: litellm-upstream, defaultMode: 256 }
+            - name: github-app
+              secret: { secretName: github-app, defaultMode: 256 }
