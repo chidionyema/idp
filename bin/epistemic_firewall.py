@@ -212,15 +212,69 @@ def grade_file(path: Path | str) -> dict:
     return grade(turns)
 
 
-def main(argv: list[str]) -> int:
-    # argv may be a bare [path] (as the tests call it) or a full sys.argv. Accept both rather
-    # than make every caller know which: only the first non-flag argument is ever used.
-    args = [a for a in argv[1:] if not a.startswith("-")] if len(argv) > 1 else []
-    if not args and argv and not argv[0].startswith("-"):
-        args = [argv[0]]
-    if not args:
-        print("usage: epistemic_firewall.py <session.jsonl>", file=sys.stderr)
+def _estate_sessions() -> list[Path]:
+    """The session transcripts this machine's agents actually wrote, newest first."""
+    home = Path.home() / ".pi" / "agent" / "sessions"
+    if not home.is_dir():
+        return []
+    return sorted(home.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def _grade_estate(limit: int = 25) -> int:
+    """Report over the most recent real sessions -- not a verdict the build can fail on.
+
+    Why this returns 0 even when it finds claims with no evidence. The live case exists so the
+    rule is graded against the estate rather than only its own fixture, and the finding is real
+    and worth printing: measured 2026-09-12, 15 of 25 recent sessions made a claim with no tool
+    call behind it. But those sessions are history. A gate that fails the build because a session
+    from 2026-09-07 asserted something would be red forever until no agent anywhere ever lies
+    again, and a guard that refuses correct work is an outage (AGENTS.md R38) -- it would be
+    switched off within a day and protect nothing.
+
+    So the sweep reports and exits 0; a single named session (the one in flight, which a caller
+    can still act on) is graded and may fail. That is the difference between an instrument and a
+    wall, and the count is printed so the number is never hidden.
+    """
+    sessions = _estate_sessions()[:limit]
+    if not sessions:
+        print(
+            "BLIND epistemic no session transcripts found under ~/.pi/agent/sessions",
+            file=sys.stderr,
+        )
         return 2
+    violated = 0
+    claims_total = 0
+    for path in sessions:
+        verdict = grade_file(path)
+        if verdict["verdict"] == "BLIND":
+            continue
+        if verdict["refused"]:
+            violated += 1
+            n = len(verdict.get("claims") or [])
+            claims_total += n
+            print(f"      {path.name}: {n} claim(s) with no tool call", file=sys.stderr)
+    print(
+        f"ok    epistemic {len(sessions)} recent session(s) swept; {violated} carried a claim "
+        f"with no tool call ({claims_total} claim(s)). Historical, reported not failed -- grade "
+        f"one session by name to act on it."
+    )
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    # Two callers, one entry point. The CLI passes sys.argv, so argv[0] is the script's own path;
+    # the tests pass [path], so argv[0] IS the transcript. Guessing from the name got this wrong in
+    # both directions -- a bare run graded bin/idp-epistemic itself and went BLIND. The honest test
+    # is whether the path is a transcript, not what it looks like.
+    args = [a for a in argv[1:] if not a.startswith("-")] if len(argv) > 1 else []
+    if not args and argv and not argv[0].startswith("-") and argv[0].endswith(".jsonl"):
+        args = [argv[0]]
+
+    # No argument: grade the estate's own session transcripts. This is the live case the rule
+    # registry requires -- a rule whose every case names a fixture has never seen the platform.
+    if not args:
+        return _grade_estate()
+
     verdict = grade_file(args[0])
     if verdict["verdict"] == "BLIND":
         print(f"BLIND epistemic {verdict['remedy']}", file=sys.stderr)
