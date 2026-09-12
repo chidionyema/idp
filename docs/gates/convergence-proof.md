@@ -14,7 +14,7 @@ python3 bin/idp-convergence-proof
 
 ## Refused
 
-Fixture: `tests/fixtures/convergence/no-proof.md HEAD`
+Fixture: `tests/fixtures/convergence/no-proof.md aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
 
 Exit code `1` (the registry expects non-zero). ✓
 
@@ -24,7 +24,7 @@ REFUSE    no Proof-of-Convergence block: this change reached no shadow dimension
 
 ## Permitted
 
-Fixture: `tests/fixtures/convergence/proved.md HEAD`
+Fixture: `tests/fixtures/convergence/proved.md aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
 
 Exit code `1` (the registry expects zero). ✗
 

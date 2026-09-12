@@ -352,6 +352,7 @@ nav:
       - simulategrade: gates/simulate-twin.md
       - ottodoorkey: gates/otto-door-key.md
       - grader-exit: gates/grader-exit-gate.md
+      - cost-proof: gates/cost-proof.md
       - founder-door: gates/founder-door.md
       - stray: gates/stray-checkout.md
   - Runbooks:
