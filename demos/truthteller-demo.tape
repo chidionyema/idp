@@ -16,28 +16,28 @@ Enter
 Sleep 1s
 Type "grep -n 'class RogueAgent' bin/idp-truthteller-demo"
 Enter
-Sleep 3s
+Sleep 1s
 
 Type "# The observed state is not an opinion. It is read back from the cluster,"
 Enter
-Sleep 2s
+Sleep 1s
 Type "# and here it is injected the way the tests inject it, so no cluster is needed."
 Enter
-Sleep 2s
+Sleep 1s
 Type "grep -n 'def _shadow_mock' tests/test_truthteller_demo.py"
 Enter
-Sleep 3s
+Sleep 1s
 
 Type "# The moment a buyer is buying: the claim meets the cluster."
 Enter
-Sleep 2s
+Sleep 1s
 Type `python3 -c "import importlib.util,sys; from importlib.machinery import SourceFileLoader; l=SourceFileLoader('tt','bin/idp-truthteller-demo'); s=importlib.util.spec_from_loader('tt',l); m=importlib.util.module_from_spec(s); sys.modules['tt']=m; l.exec_module(m); S=type('S',(),{'get_deployment_state':lambda self,n:{'replicas':1,'status':'CrashLoopBackOff'}}); r=m.run_buyer_demo(shadow=S()); print('claim    ', r['claim']['asserted_status'], r['claim']['asserted_replicas']); print('observed ', r['actual']['status'], r['actual']['replicas']); print('match    ', r['match']); print('signature', r['signature'][:32]); print('impact   ', r['business_impact'])"`
 Enter
-Sleep 8s
+Sleep 4s
 
 Type "# With no sandbox reachable it does not guess. BLIND is a fail-closed FAIL, never a pass."
 Enter
-Sleep 3s
+Sleep 1s
 Type "bin/idp-truthteller-demo; echo exit=$?"
 Enter
-Sleep 5s
+Sleep 3s
