@@ -96,8 +96,13 @@ FROM node:24-trixie-slim
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends libsqlite3-dev python3 python3-pip && \
     rm -rf /var/lib/apt/lists/*
+# The upgrade is not belt-and-braces: on 2026-09-12 this base's perl-base 5.40.1-6 carried three
+# CRITICAL CVEs (CVE-2026-13221, CVE-2026-42496, CVE-2026-8376) and the fix was already
+# published as 5.40.1-6+deb13u1, so every image built after the upstream rebuild failed the
+# "no CRITICAL vulnerability ships" step.
 # TechDocs builds run in this process (techdocs.generator.runIn: local): a pod has no
 # Docker socket, and with runIn: docker every build failed and the docs section was
 # empty (crew#459). One pinned package brings mkdocs and the techdocs-core plugin.

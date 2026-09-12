@@ -15,6 +15,15 @@
 # /app is the working directory; the package imports itself as `sovereign.*`.
 # The same Python CI runs (ci.yml: 3.12). .dockerignore keeps .venv and .git out.
 FROM docker.io/python:3.12-slim
+# The base is a floating Debian tag, so its packages move under the build. On 2026-09-12 an
+# upstream rebuild shipped perl-base 5.40.1-6, which carries three CRITICAL CVEs
+# (CVE-2026-13221, CVE-2026-42496, CVE-2026-8376); the fix is the Debian point release
+# 5.40.1-6+deb13u1, and every image built from this file failed the "no CRITICAL vulnerability
+# ships" step of build-multiarch.yml -- including on branches that changed nothing in it.
+# Upgrade here so the image carries the security pocket of the suite it was built from.
+RUN apt-get update \
+ && apt-get upgrade -y \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY sovereign/requirements.txt sovereign/requirements-dev.txt /app/sovereign/
 RUN pip install --no-cache-dir -r /app/sovereign/requirements-dev.txt \
