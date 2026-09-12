@@ -121,7 +121,9 @@ tries=1; [ "${1:-}" = --check ] || tries=16
 for i in $(seq 1 "$tries"); do
   out=$(oci iam region-subscription list --query 'data[0]."region-name"' --raw-output 2>&1 | grep -v '^Warning' | head -1) && [ "${out#ocid}" = "$out" ] && [[ "$out" =~ ^[a-z]+-[a-z]+-[0-9]$ ]] && break
   [ "$i" = "$tries" ] && { echo "FAIL  oci     identity refused: ${out:0:160}"; exit 1; }
-  echo "wait  oci     401 after a fresh key upload; retry $i/$tries in 30s"; sleep 30
+  # OCI returns 401 for a key that was only just uploaded; the propagation window is on Oracle's
+  # side and there is no event to subscribe to, so the wait is fixed and the retry is bounded.
+  echo "wait  oci     401 after a fresh key upload; retry $i/$tries in 30s"; sleep 30  # sleep-ok: OCI key-propagation window, bounded retry
 done
 AD=$(oci iam availability-domain list --compartment-id "$(vget OCI_TENANCY_OCID)" --query 'data[0].name' --raw-output)
 CORES=$(oci limits resource-availability get --service-name compute --limit-name standard-a1-core-count \
