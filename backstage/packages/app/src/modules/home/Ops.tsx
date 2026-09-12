@@ -32,6 +32,8 @@ import { useOpenReds } from './useOpenReds';
 import { FounderData, receiptsSentence, waitingSentence } from './founder';
 import { useFounder } from './useFounder';
 import { useHealthchecks } from './useHealthchecks';
+import { usePlacement } from './usePlacement';
+import { headroomLabel, placementState, requestLabel } from './placement';
 import { Checks, STATUS_WORD, checksSentence, notUp } from './healthchecks';
 import {
   INVENTORY_TABLE,
@@ -284,6 +286,7 @@ export const Ops = () => {
   const reds = useOpenReds();
   const founder = useFounder();
   const checks = useHealthchecks();
+  const placement = usePlacement();
   const inventory = useInventory();
   const now = Date.now();
   return (
@@ -349,6 +352,71 @@ export const Ops = () => {
               </Unread>
             ))}
             {reds.reds.length > 0 && <RedsTable reds={reds.reds} now={now} />}
+          </>
+        )}
+      </Section>
+      {/* Placement: whether the workloads that run could be placed again.
+          This is the question that had no page. A pod the scheduler refused is NOT RUNNING and
+          comes first; a pinned pod is running but would not come back after one drain, which is
+          the state SigNoz's ClickHouse sat in for eleven days. And when the receipt carries both,
+          the sentence says how much CPU is reserved but idle -- the fact that explains a cluster
+          reading 96% full while using 39%. */}
+      <Section
+        title="Placement"
+        blurb="Whether the workloads that run could be placed on the nodes that exist, and how much of the CPU we reserve is actually used."
+        testId="ops-placement-section"
+      >
+        {placement.state === 'loading' && (
+          <Waiting testId="ops-placement-loading">Reading placement.</Waiting>
+        )}
+        {placement.state === 'error' && (
+          <Unread testId="ops-placement-error" detail={placement.error}>
+            Placement could not be measured, so whether anything could be placed again is
+            unknown.
+          </Unread>
+        )}
+        {placement.state === 'ready' && (
+          <>
+            <Text variant="body-medium" data-testid="ops-placement-sentence">
+              {placement.summary.summary}
+            </Text>
+            {placement.at && (
+              <Text variant="body-small" color="secondary">
+                Measured {ago(placement.at, now) ?? placement.at}
+              </Text>
+            )}
+            {placement.summary.refused.length + placement.summary.pinned.length > 0 && (
+              <Sheet testId="ops-placement">
+                <thead>
+                  <tr>
+                    <th>Workload</th>
+                    <th>Problem</th>
+                    <th>Asks</th>
+                    <th>Best other node</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ...placement.summary.refused,
+                    ...placement.summary.pinned,
+                  ].map(p => (
+                    <tr key={`${p.namespace}/${p.name}`}>
+                      <td>
+                        {p.namespace}/{p.kind ? `${p.kind}/` : ''}
+                        {p.name}
+                      </td>
+                      <td title={p.reason ?? undefined}>
+                        {placementState(p) === 'refused'
+                          ? 'The scheduler refused it'
+                          : 'No other node would take it'}
+                      </td>
+                      <td>{requestLabel(p)}</td>
+                      <td>{headroomLabel(p)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Sheet>
+            )}
           </>
         )}
       </Section>

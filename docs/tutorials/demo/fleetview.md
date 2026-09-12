@@ -136,3 +136,59 @@ $ yarn workspace app test --watchAll=false
 Test Suites: 27 passed, 27 total
 Tests:       221 passed, 221 total
 ```
+
+## Placement: why the cluster can be full and idle at once
+
+The Ops page (`/ops`) now carries a **Placement** section. It answers the question that had no
+page: *could the workloads that run be placed on the nodes that exist, and how much of the CPU we
+reserve is actually used?*
+
+Real output from the cluster on 2026-09-12, when the second catalogue replica would not schedule:
+
+```
+$ kubectl describe pod catalogue-... | grep FailedScheduling
+  0/2 nodes are available: 1 Insufficient cpu, 1 node(s) didn't match pod anti-affinity rules.
+
+$ kubectl top nodes
+NAME           CPU(cores)   CPU(%)
+10.0.148.221   2283m        39%
+10.0.159.197   4974m        85%
+
+$ kubectl describe node 10.0.148.221 | grep -A3 "Allocated resources"
+  Resource           Requests      Limits
+  cpu                5680m (97%)   19885m (342%)
+```
+
+Read those three together and the message `Insufficient cpu` is misleading. The cluster is at
+**97% of CPU requests** and **39% of actual usage**. Requests are reservations. A reservation
+nobody uses is a place no pod can have, so the scheduler refuses a 250m pod on a node that is
+running at 2283m out of 5808m.
+
+The page says exactly that. Its sentence is:
+
+```
+2 pods the scheduler refused · 26 pinned (running, but no other node would take them)
+  · 5089m reserved but idle (49% of all requests)
+```
+
+And the three facts it refuses to collapse into one:
+
+| what is true | what the section shows |
+|---|---|
+| the scheduler refused it | **not running at all** — listed first, because it is an outage, not a risk |
+| it runs but fits no other node | **pinned** — looks fine, and gone after one drain |
+| it could be placed again | healthy |
+
+*Pinned* is the one nobody sees coming. It is the state SigNoz's ClickHouse sat in for eleven days:
+running, apparently healthy, and it would not come back after a node drain.
+
+## Where the numbers come from
+
+Nothing here is a new measurement. The cluster already runs `platform/state/cluster-state.yaml`
+every 15 minutes, computing a `placement` section and the CPU requested/used totals.
+`bin/idp-fits-a-node` already grades it in CI. What was missing was publishing it where a person
+could read it: a job's stdout reaches nobody who is trying to decide whether to buy a node.
+
+So `.github/workflows/oke-check.yml` publishes the placement document to the state branch the
+portal already reads, `bin/catalog-render` carries it forward past each force-push, and `/ops`
+renders it. One measurement, one door.

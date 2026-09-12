@@ -519,6 +519,65 @@ jobs:
             --name state/cluster 2>/dev/null | tail -n +2 > "$RUNNER_TEMP/receipt.json" || true
           bin/idp-fits-a-node --receipt "$RUNNER_TEMP/receipt.json"
 
+      # 2026-09-12: publish the placement measurement so a person can read it.
+      #
+      # The receipt this job just fetched carries the placement section, the cluster's CPU
+      # requested and actually-used totals, and the time it was taken. Until now it reached this
+      # job's output and nothing else, so on 2026-09-12 the cluster sat at 96% of CPU REQUESTS
+      # while using 39%/85% of ACTUAL CPU and the second catalogue replica was Pending -- and the
+      # only place that was written down was a CI log. A measurement nobody reads is not an
+      # instrument.
+      #
+      # The document rides the state branch the portal already reads through /estate-state (ADR
+      # 0006: one door, no second endpoint). bin/catalog-render carries it forward, because that
+      # render force-pushes this branch from origin/main.
+      - name: publish the placement measurement for the Ops page
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          f="$RUNNER_TEMP/receipt.json"
+          if [ ! -s "$f" ]; then
+            echo "BLIND placement-publish: the receipt was not read, so nothing is published."
+            echo "                            A stale document on the branch would be worse than"
+            echo "                            none: the page would show an old cluster as current."
+            exit 0
+          fi
+          # Take the placement section and the CPU totals and nothing else: this is the page's
+          # document, not a second copy of the whole receipt.
+          jq '{at, placement, cpu_requested_m, cpu_used_m, cpu_allocatable_m, nodes}' "$f" \
+            > "$RUNNER_TEMP/placement.json" || {
+              echo "BLIND placement-publish: the receipt carried no placement section."; exit 0; }
+          if git ls-remote --heads origin refs/heads/state/live-diagram | grep -q .; then
+            REF=state/live-diagram
+          else
+            echo "placement-publish: branch absent, bootstrapping from main"
+            REF=main
+          fi
+          git fetch --depth 1 origin "$REF" 2>/dev/null || true
+          git checkout -q -B publish-placement "origin/$REF" 2>/dev/null || git checkout -q -B publish-placement
+          mkdir -p docs
+          cp "$RUNNER_TEMP/placement.json" docs/placement.json
+          git config user.name "estate-oke-check"
+          git config user.email "estate-oke-check@users.noreply.github.com"
+          git add docs/placement.json
+          if git diff --cached --quiet; then
+            echo "ok placement-publish: docs/placement.json is unchanged"
+          else
+            git commit -q -m "state: the cluster's placement measurement $(date -u +%Y-%m-%dT%H:%MZ)"
+            # Two writers can race on this branch; the loop rebases and retries (the same shape
+            # estate-state.yml's publish-reports uses).
+            for i in 1 2 3; do
+              if git push -q origin HEAD:"$REF"; then
+                echo "ok placement-publish: docs/placement.json pushed to $REF"
+                break
+              fi
+              echo "placement-publish: push raced, rebasing (attempt $i)"
+              git pull -q --rebase origin "$REF" || true
+            done
+          fi
+
       # crew#846: the image-vulnerability question estate-security-scan asks is the only one that
       # has nothing to lint in git -- it reads Trivy Operator's VulnerabilityReport objects off the
       # cluster. This job holds the machine identity, so it is where that question is asked;
