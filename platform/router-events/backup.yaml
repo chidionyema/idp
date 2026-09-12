@@ -125,25 +125,44 @@ spec:
                           headers={"Authorization": "Bearer " + token, "Accept": "application/vnd.github+json"})
                       return json.load(urllib.request.urlopen(r, timeout=45))
 
-                  try:
-                      cur = api("GET", f"/repos/{REPO}/contents/{PATH_IN_REPO}")
-                      existing = base64.b64decode(cur["content"]).decode()
-                      sha = cur["sha"]
-                  except Exception:
-                      existing, sha = "", None
+                  # READ, THEN WRITE, AND RETRY WHEN SOMEONE ELSE WROTE IN BETWEEN.
+                  #
+                  # Measured 2026-09-12: the job died on
+                  #   urllib.error.HTTPError: HTTP Error 409: Conflict
+                  # because GitHub's contents API is optimistic concurrency -- you send the sha you
+                  # read, and a sha that is no longer HEAD is refused. Two runs overlap whenever a
+                  # cron fires while an earlier run is retrying (the job showed failed=2 from the
+                  # same run), so a 409 is a NORMAL race, not a failure.
+                  #
+                  # The retry re-reads and re-derives the whole payload rather than reusing the
+                  # stale sha, and it gives up after one attempt so a real conflict still surfaces
+                  # as a failure instead of looping.
+                  for attempt in (1, 2):
+                      try:
+                          cur = api("GET", f"/repos/{REPO}/contents/{PATH_IN_REPO}")
+                          existing = base64.b64decode(cur["content"]).decode()
+                          sha = cur["sha"]
+                      except Exception:
+                          existing, sha = "", None
 
-                  if existing == body:
-                      print(json.dumps({"msg": "unchanged, no commit"}))
-                      raise SystemExit(0)
+                      if existing == body:
+                          print(json.dumps({"msg": "unchanged, no commit"}))
+                          raise SystemExit(0)
 
-                  payload = {"message": "router backup: the lanes the database holds, recorded",
-                             "content": base64.b64encode(body.encode()).decode(),
-                             "committer": {"name": "estate-router-backup",
-                                           "email": "router-backup@users.noreply.github.com"}}
-                  if sha:
-                      payload["sha"] = sha
-                  api("PUT", f"/repos/{REPO}/contents/{PATH_IN_REPO}", payload)
-                  print(json.dumps({"msg": "committed", "path": PATH_IN_REPO}))
+                      payload = {"message": "router backup: the lanes the database holds, recorded",
+                                 "content": base64.b64encode(body.encode()).decode(),
+                                 "committer": {"name": "estate-router-backup",
+                                               "email": "router-backup@users.noreply.github.com"}}
+                      if sha:
+                          payload["sha"] = sha
+                      try:
+                          api("PUT", f"/repos/{REPO}/contents/{PATH_IN_REPO}", payload)
+                          print(json.dumps({"msg": "committed", "path": PATH_IN_REPO, "attempt": attempt}))
+                          raise SystemExit(0)
+                      except urllib.error.HTTPError as exc:
+                          if exc.code != 409 or attempt == 2:
+                              raise
+                          print(json.dumps({"msg": "409 conflict, re-reading and retrying"}))
                   PY
               env:
                 - { name: HOME, value: /tmp }
