@@ -66,6 +66,11 @@ estate-db                 research-password          hex32
 # the read side of the research database: one password, minted once, held by the cluster
 # (as the research_reader role) and by the consumer that reads the evidence.
 estate-db                 research-reader-password   hex32
+# the evidence layer (decision 0028). Aevum's own Postgres role and its Ed25519 signing key.
+# The key is minted here and never leaves the vault: whoever holds it can produce a chain that
+# verifies, so custody is the same problem as every other secret (R52).
+aevum-evidence            postgres-password          hex32
+aevum-evidence            signing-key                ed25519_hex
 hindsight                 HINDSIGHT_API_LLM_BASE_URL  const:https://llm.$ZONE
 mcp-gateway               MCP_GATEWAY_KEY             hex32
 backstage-env             BACKEND_SECRET              urlsafe32
@@ -110,6 +115,9 @@ gen() { # <generator> -> value on stdout
     urlsafe32)   python3 -c 'import secrets; print(secrets.token_urlsafe(32))' ;;
     sk)          python3 -c 'import secrets; print("sk-"+secrets.token_hex(24))' ;;
     rsa_pem_b64) openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null | base64 | tr -d '\n' ;;
+    # The evidence layer's Ed25519 signing key (decision 0028), as 64 hex chars: the shape
+    # aevum_factory._private_key() accepts. Generated here, held in the vault, never printed.
+    ed25519_hex) python3 -c 'import secrets; print(secrets.token_hex(32))' ;;
     const:*)     printf '%s' "${1#const:}" ;;
     copy:*)      local ref=${1#copy:}; "$CLOUD" secret get "${ref%%.*}" 2>/dev/null | jq -r --arg k "${ref#*.}" '.[$k] // empty' ;;
     *)           return 1 ;;
@@ -121,6 +129,7 @@ wellformed() { # <generator> <value> -> 0 when the value has the shape the gener
     urlsafe32)   [[ "$2" =~ ^[A-Za-z0-9_-]{40,}$ ]] ;;
     sk)          [[ "$2" =~ ^sk-[0-9a-f]{48}$ ]] ;;
     rsa_pem_b64) printf '%s' "$2" | base64 -d 2>/dev/null | grep 'BEGIN PRIVATE KEY' >/dev/null ;;
+    ed25519_hex) [[ "$2" =~ ^[0-9a-f]{64}$ ]] ;;
     const:*)     [ "$2" = "${1#const:}" ] ;;
     copy:*)      [ "$2" = "$(gen "$1")" ] ;;
   esac
