@@ -46,15 +46,21 @@ RUN pip install --no-cache-dir "datasette==1.0a38" "datasette-mcp==0.1a0" "pyyam
 # dependency (plistlib is stdlib). It reads a scheduled_job asset's own launchd
 # plist path, which is not mounted into this image; see the plugin's own docstring
 # for the residual.
-COPY plugins /app/plugins
+COPY mcp/plugins /app/plugins
 # The grader programs, their registry, and the trees the graders read by path at run time.
 # ESTATE_REPO_ROOT=/app makes the plugin resolve `/app/bin/...`.
 #
 # `bin/` carries the six grader programs themselves. `rules.yaml` is bin/idp-rules' registry.
 # `policy/fixtures` and `tests/fixtures` are read BY bin/idp-rules when it grades a rule against
 # its two fixtures (a rule row names both), so a laws grade without them is a laws grade that
-# cannot run. These three are the whole of what the graders touch; nothing else in the tree is
-# copied, and each path here is one a grader was observed to open.
+# cannot run. These are the whole of what the graders touch; nothing else in the tree is copied,
+# and each path here is one a grader was observed to open.
+#
+# The build context is this repository's root, not mcp/. The graders live at bin/ and
+# rules.yaml at the root, and a Docker build can only COPY from its own context -- the previous
+# mcp/-rooted context made every one of these COPY lines unresolvable, so the image could not be
+# built at all once the graders were named. estate-scheduler.Dockerfile already builds from the
+# root for the same reason, and that is the row bin/dockerfiles now emits for this file too.
 COPY bin /app/bin
 COPY rules.yaml /app/rules.yaml
 COPY policy/fixtures /app/policy/fixtures

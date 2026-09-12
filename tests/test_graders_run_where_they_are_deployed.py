@@ -172,3 +172,45 @@ def test_a_grader_answering_a_malformed_verdict_is_refused(estate_simulate):
     assert proposal["verdict"] == "UNKNOWN", "a malformed verdict must never yield SAFE"
     detail = proposal["grader_results"]["admission"]["detail"]
     assert "PROBABLY_FINE" in detail, detail
+
+
+def test_the_image_can_actually_copy_every_grader_path():
+    """A Docker build can only COPY from its own context, and bin/dockerfiles decides that
+    context as the Dockerfile's own directory. Naming a file outside the context is not caught
+    by any lint here -- it fails at build time, which is what happened: the graders were named,
+    the context was still mcp/, and every COPY line became unresolvable.
+
+    This test asserts the contract that has to hold: every COPY source in estate-mcp.Dockerfile
+    exists under the context bin/dockerfiles emits for that image. It needs no Docker daemon.
+    """
+    import re
+    import subprocess
+
+    repo = Path(__file__).resolve().parents[1]
+    dockerfile = repo / "estate-mcp.Dockerfile"
+    assert dockerfile.is_file(), (
+        "the estate-mcp Dockerfile must exist at the repository root"
+    )
+
+    rows = subprocess.run(
+        [str(repo / "bin" / "dockerfiles")],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    row = [ln.split() for ln in rows.splitlines() if ln.startswith("estate-mcp ")]
+    assert row, f"bin/dockerfiles does not list estate-mcp. It emits:\n{rows}"
+    _, listed_dockerfile, context = row[0]
+    assert listed_dockerfile == "estate-mcp.Dockerfile", listed_dockerfile
+
+    context_dir = repo / context
+    sources = re.findall(r"^\s*COPY\s+(?!--from=)(\S+)", dockerfile.read_text(), re.M)
+    assert sources, "the Dockerfile copies nothing; the graders cannot be in the image"
+
+    missing = [s for s in sources if not (context_dir / s).exists()]
+    assert not missing, (
+        f"COPY sources outside the build context {context!r}: {missing}. "
+        "The graders live at bin/ and rules.yaml at the repository root, so this image's "
+        "context must be the root."
+    )

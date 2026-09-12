@@ -87,7 +87,7 @@ spec:
             # MUM-288: where the six grader programs live inside this image. The plugin's own
             # default (`parents[2]` of its file) resolves to `/` here, which found nothing and
             # made every grader answer "could not run" -- the door opened and refused everything.
-            # mcp/estate-mcp.Dockerfile copies bin/ and rules.yaml to /app alongside plugins/.
+            # estate-mcp.Dockerfile copies bin/ and rules.yaml to /app alongside mcp/plugins/.
             - { name: ESTATE_REPO_ROOT, value: /app }
             # MUM-288 blast grader: bin/idp-blast-grade walks a DIRECTORY for catalog-info.yaml
             # files (`rglob`), and the estate catalogue is mounted as the single file
