@@ -9,7 +9,6 @@ resources:
   - prospector.yaml
   - lago-api.yaml
   - lago-front.yaml
-  - cyrus.yaml
   - jit.yaml
   - controller.yaml
   - runsc.yaml

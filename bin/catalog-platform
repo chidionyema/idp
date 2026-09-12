@@ -152,11 +152,6 @@ LAYERS = {
         "Vulnerability scanning",
         "What is wrong with the images and nodes already running: the operator that reads every workload and files a vulnerability report the security scan reads.",
     ),
-    "cyrus": (
-        "agents",
-        "Agent orchestration",
-        "The runtime that proves every engine works and publishes what it saw to the central collector.",
-    ),
     "feature-register": (
         "products",
         "Store register",

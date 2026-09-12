@@ -88,7 +88,6 @@ hindsight         HINDSIGHT_API_LLM_API_KEY  minimax
 hermes-agent-env  LITELLM_API_KEY            minimax,gemini,deepseek,embed
 otto-golden       LITELLM_API_KEY            minimax,gemini,deepseek,embed
 agent-workforce   LITELLM_API_KEY            minimax,fast,deepseek,embed
-cyrus             LITELLM_API_KEY            minimax,minimax_m27,gemini,default,fast
 EOF
 )
 
