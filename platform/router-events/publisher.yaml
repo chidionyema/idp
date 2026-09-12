@@ -46,9 +46,15 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: publisher
-          # The same pinned postgres image the estate's other database jobs run; it ships the
-          # psycopg2 client and needs no build of its own.
-          image: docker.io/library/postgres:17.6-alpine
+          # oci-cli, NOT postgres:17.6-alpine. The first draft used the postgres image because the
+          # estate's other database jobs do -- but they run `psql` and this runs PYTHON, and
+          # postgres:17.6-alpine ships no python3. The pod CrashLoopBackOff'd on
+          # "/bin/sh: exec: line 1: python3: not found" and never reached the database.
+          #
+          # oci-cli is the one pinned image every estate CronJob runs (platform/drills/
+          # drill-dispatcher.yaml) and it carries python3 plus the OCI SDK's cryptography, so it
+          # is already pulled on every node and needs no build of its own.
+          image: ghcr.io/oracle/oci-cli:20260826
           command: ["/bin/sh", "-c"]
           args:
             - |
