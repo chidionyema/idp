@@ -357,6 +357,17 @@ spec:
     # Postgres for the estate) -- it must report Ready first or the data would be pruned
     # ahead of being moved.
     - name: estate-db-migrate
+  # ESTATE_ZONE (found live 2026-09-12): platform/llm/litellm.yaml publishes an HTTPRoute whose
+  # hostname is llm.${ESTATE_ZONE}, and without this the literal string reached the API and the
+  # route was refused on EVERY reconcile -- "spec.hostnames[0] in body should match ...". Flux
+  # therefore never reported the llm path ready, which held every Kustomization that dependsOn it
+  # behind a door that could not open. The running pods predated the route and kept serving, so
+  # the only symptom was a dependency that never satisfied -- found only because router-events
+  # dependsOn llm and refused to apply.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
   timeout: 10m
 ---
 # The router's own event wiring (founder decision 2026-09-12: the database is the source of
