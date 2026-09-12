@@ -315,6 +315,11 @@ nav:
       - secrets: gates/static-secret.md
       - owners: gates/owner-account.md
       - binds: gates/bind-audit.md
+      # The estate-twin's three rules. A rule generates docs/gates/<id>.md and
+      # tests/test_gate_demo.py refuses one that is not reachable in the nav.
+      - graphview: gates/estate-graph-view.md
+      - twin: gates/estate-twin.md
+      - bdd-proof: gates/bdd-proof.md
       - ethos: gates/conscience.md
       - describe: gates/job-described.md
       - vmmount: gates/vm-shared-path.md
