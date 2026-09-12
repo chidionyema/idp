@@ -49,7 +49,18 @@ jobs:
           fi
           for tape in demos/*.tape; do
             if [ -f "$tape" ]; then
+              out=$(grep -m1 '^Output ' "$tape" | awk '{print $2}')
               vhs < "$tape"
+              # vhs returns before it has flushed the GIF. A tape that is not the last one gets
+              # slack from the next tape's render, so the race was invisible until the tape
+              # sorted last: measured 2026-09-12, the truthteller tape finished 30ms before the
+              # commit step inspected the tree, and the run went green with no recording.
+              # Wait for the file to appear, and touch nothing else.
+              for _ in $(seq 1 20); do
+                [ -s "$out" ] && break
+                sleep 0.5
+              done
+              [ -s "$out" ] || echo "warn: $tape did not land $out during render (the commit step decides)"
             fi
           done
       - name: commit the rendered demo back
