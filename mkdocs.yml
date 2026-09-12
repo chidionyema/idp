@@ -102,6 +102,7 @@ nav:
       - Portal: tutorials/demo/idp.md
       - The agent that couldn't lie: tutorials/demo/truthteller-demo.md
       - The circuit breaker: tutorials/demo/circuit-breaker.md
+      - Breaker enforcement: tutorials/demo/breaker.md
       - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
       - Conscience: tutorials/demo/conscience.md
@@ -204,6 +205,7 @@ nav:
       - Namespace fences: how-to/onboarding/ns-fence-gate.md
       - The agent that couldn't lie: how-to/onboarding/truthteller-demo.md
       - The circuit breaker: how-to/onboarding/circuit-breaker.md
+      - Breaker enforcement: how-to/onboarding/breaker.md
       - Every gate, with its output: how-to/onboarding/gate-demo.md
       - Portal: how-to/onboarding/idp.md
       - Estate compiler: how-to/onboarding/intent.md

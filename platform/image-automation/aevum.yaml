@@ -1,0 +1,37 @@
+# The evidence layer's image (decision 0028). build-multiarch discovers
+# platform/observability/aevum.Dockerfile on its own -- bin/dockerfiles names it `aevum` from the
+# file stem -- and pushes `main-<run>-<sha>` like every other estate image. This row is what moves
+# platform/observability/kustomization.yaml onto each new one.
+#
+# THE FIRST VERSION OF THIS DEPLOYMENT ASKED FOR `ghcr.io/chidionyema/aevum:0.9.0`, and never
+# pulled: an image whose tag is a version string this repository does not produce. build-multiarch
+# tags by commit sha only (build-multiarch.yml:18, "Tags are the commit sha only. A moving tag
+# (:main, :latest) makes the running") plus `main-<run>-<sha>` for ordering, so `:0.9.0` matched
+# nothing and the pods sat in ImagePullBackOff with "Back-off pulling image
+# ghcr.io/chidionyema/aevum:0.9.0". platform/image-automation/jit.yaml records the same mistake,
+# in the same words, for the same reason -- which is why this file exists rather than a literal.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: aevum
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/aevum
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: aevum
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: aevum
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc
