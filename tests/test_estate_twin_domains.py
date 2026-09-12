@@ -38,7 +38,7 @@ DOMAINS = [
 
 
 def run(args: list[str], timeout: int = 300) -> subprocess.CompletedProcess:
-    return subprocess.run(
+    return subprocess.run(  # noqa: S603 - fixed argv built in this file, no shell
         args, cwd=ROOT, capture_output=True, text=True, timeout=timeout
     )
 
