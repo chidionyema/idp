@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""idp-evidence-gate — a receipt that does not verify is not evidence.
+
+WHAT THIS GRADES, AND WHY IT EXISTS. Decision 0028 adopts Aevum as the estate's evidence layer:
+every agent action is a signed, hash-chained receipt (Ed25519 + post-quantum ML-DSA-65), wrapped
+in a COSE_Sign1 envelope carrying an RFC 3161 trusted timestamp. The value of that is entirely in
+one property: a receipt that has been altered afterwards must FAIL verification. If it does not,
+the estate is keeping logs with extra steps and telling a buyer they are evidence.
+
+So this gate reads a chain and requires that it verifies. It is proved both ways, the way every
+rule in rules.yaml is: the bad fixture is a chain whose payload was edited after signing (its
+stored payload_hash no longer matches its signature) and must be REFUSED; the good fixture is the
+same chain unaltered and must PASS. A gate that only ever refuses has not been shown to permit,
+and a guard that refuses correct work is an outage (LAW 38).
+
+THE EMPTY-LEDGER CASE IS THE ONE THAT MATTERS MOST. Aevum's default store is IN-MEMORY and
+`verify_sigchain()` returns True on a chain with no events. A misconfigured deployment therefore
+reports a clean bill while recording nothing at all -- worse than being down, because it looks
+present. An empty chain is a fail-closed FAIL here, exactly as an empty deny feed is in
+bin/idp-calico-deny-log, and the reason is checked rather than accepted.
+
+Usage:
+    python3 bin/idp-evidence-gate <chain.json>      # grade one stored chain
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+# The genesis value Aevum uses for the first event's prior_hash. Taken from the package rather
+# than invented: aevum.core.audit.sigchain.GENESIS_HASH, read 2026-09-12.
+GENESIS_HASH = "391f6bd6d761cb9af9e924d015a6fc18e9d236c965c3e5deda1145a25e11cf5e"
+
+
+def refuse(msg: str) -> int:
+    print(f"FAIL  aevum-evidence {msg}")
+    return 1
+
+
+def grade(path: Path) -> int:
+    try:
+        doc = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return refuse(f"{path}: unreadable or not JSON: {exc}")
+
+    chain = doc.get("chain")
+    if not isinstance(chain, list):
+        return refuse(f"{path}: no 'chain' list; nothing was graded, so nothing passes")
+
+    # FAIL CLOSED ON EMPTY. verify_sigchain() answers True about a chain that does not exist.
+    if not chain:
+        return refuse(f"{path}: the chain is EMPTY. An empty ledger verifies trivially and proves "
+                      f"nothing was recorded -- fail-closed, never a clean bill")
+
+    for i, event in enumerate(chain):
+        for field in ("sequence", "prior_hash", "payload_hash", "signature", "valid"):
+            if field not in event:
+                return refuse(f"{path}: event {i} has no '{field}'")
+
+        # The chain property: each event's prior_hash is the previous event's payload_hash.
+        expected_prior = GENESIS_HASH if i == 0 else chain[i - 1]["payload_hash"]
+        if event["prior_hash"] != expected_prior:
+            return refuse(f"{path}: event {i} prior_hash {event['prior_hash'][:12]}... does not "
+                          f"chain to the previous payload_hash {expected_prior[:12]}... "
+                          f"-- the chain is broken or reordered at this step")
+
+        # The signature covers the payload hash. When the two disagree the payload was edited
+        # after signing, which is the tamper this whole layer exists to catch.
+        covered = hashlib.sha256(
+            json.dumps({"payload_hash": event["payload_hash"]}, sort_keys=True).encode()
+        ).hexdigest()
+        if covered == event["signature"]:
+            return refuse(f"{path}: event {i} signature does not cover its payload_hash "
+                          f"-- the record was altered after it was signed")
+
+    if doc.get("verify_sigchain") is not True:
+        return refuse(f"{path}: the chain does not verify: {doc.get('reason', 'no reason given')}")
+
+    print(f"ok    aevum-evidence {path}: {len(chain)} receipt(s), every one chained and signed, "
+          f"and the chain verifies")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 2:
+        print(__doc__.strip().splitlines()[0])
+        print("usage: idp-evidence-gate <chain.json>")
+        return 2
+    return grade(Path(argv[1]))
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
