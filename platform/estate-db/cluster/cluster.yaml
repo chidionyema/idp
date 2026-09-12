@@ -124,6 +124,14 @@ spec:
         login: true
         passwordSecret:
           name: estate-db-role-litellm
+      # aevum_evidence: the evidence layer's own role (decision 0028). It owns exactly one
+      # database and reads nothing else. The signing key is a separate vault key on the same
+      # entry, because a chain is only verifiable if the key that signed it is the key you have.
+      - name: aevum_evidence
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-aevum
       # temporal: the same username, and the same password, as the server it is replacing
       # (vault entry temporal-db.password).
       - name: temporal

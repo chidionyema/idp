@@ -1,6 +1,46 @@
 version: 1
 live_gap_budget: 10
 rules:
+- id: api-version-retired
+  fast: true
+  label: api-version-retired
+  statement: 'A manifest naming a group/version this estate has migrated off is a row that never reconciles -- and it does not fail alone, because the whole Kustomization goes NotReady and every row depending on it stops too'
+  law: incident 2026-09-12, aevum-evidence held chaos and science out
+  origin: 'platform/observability/aevum.yaml shipped apiVersion external-secrets.io/v1beta1. Every
+    gate that reads a manifest reads it as YAML, and v1beta1 is perfectly good YAML, so CI was
+    green; the failure surfaced only in Flux, as ExternalSecret dry-run "no matches for kind
+    ExternalSecret in version external-secrets.io/v1beta1". The observability Kustomization went
+    NotReady, and chaos and science then failed on their dependency -- one wrong string in one new
+    file held three rows out of the cluster. The gate lists retired group/version pairs once, each
+    with its replacement, and is proved both ways.'
+  planes:
+  - ci
+  - session
+  session_glob:
+  - platform/**/*.yaml
+  - clusters/**/*.yaml
+  run:
+  - python3
+  - bin/idp-api-version-gate
+  cluster:
+    policy: null
+    why: the cluster serves what it serves; this grades the manifest in git against the versions the estate has already moved off
+  fixtures:
+    must_fail: tests/fixtures/api-version/bad
+    must_pass: tests/fixtures/api-version/good
+  live_elsewhere: 'bin/idp-ci:610 -- the apiversion rung grades the REAL platform/ and clusters/ trees the cluster reconciles, not the fixture pair'
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/api-version/bad
+  - expect: pass
+    args:
+    - tests/fixtures/api-version/good
+  - expect: pass
+    live: true
+    note: the manifests actually committed
+  ok: a retired group/version in a manifest is refused and the current one passes; the real tree is clean
+  fail: a manifest names a group/version this estate has migrated off
 - id: aevum-evidence
   fast: true
   label: aevum-evidence
