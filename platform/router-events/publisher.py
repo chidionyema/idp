@@ -69,7 +69,10 @@ def main() -> int:
     while True:
         try:
             conn = psycopg.connect(DSN)
-            conn.set_isolation_level(psycopg.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+            # psycopg3, not psycopg2: `extensions` does not exist on this module and the pod logged
+            #   "module 'psycopg' has no attribute 'extensions'"
+            # in a loop. LISTEN needs autocommit or the notification is never delivered.
+            conn.autocommit = True
             with conn.cursor() as cur:
                 cur.execute("LISTEN estate_router_changed;")
             log("subscribed to estate_router_changed")
