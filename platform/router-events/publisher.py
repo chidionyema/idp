@@ -65,7 +65,12 @@ def publish(payload: dict) -> None:
 
 
 def main() -> int:
-    log(f"listening on {DSN.split('user=')[-1]}")
+    # NEVER the password. The first version logged DSN.split("user=")[-1] and printed the whole
+    # database credential into the pod's log stream on every restart:
+    #   {"msg": "listening on litellm dbname=litellm password=d2ef475f..."}
+    # A log line is a place credentials leak from, so this names the host and the database and
+    # nothing else (LAW 21).
+    log("listening on estate-rw.estate-db.svc.cluster.local dbname=litellm")
     while True:
         try:
             conn = psycopg.connect(DSN)
@@ -82,14 +87,15 @@ def main() -> int:
             pathlib.Path(HEARTBEAT).touch()
             while True:
                 pathlib.Path(HEARTBEAT).touch()
+                # psycopg3 removed conn.poll(): the socket is drained by iterating notifies(),
+                # which reads whatever the server has sent. select() only decides whether there
+                # is anything to read. Calling poll() raised
+                #   "'Connection' object has no attribute 'poll'"
+                # every 30 seconds and the listener reconnected in a loop -- subscribed, then
+                # dropped, forever.
                 if not select.select([conn], [], [], 30)[0]:
-                    # A quiet bus is not a dead one. This keeps the connection warm and turns a
-                    # broken socket into a reconnect rather than a hang.
-                    conn.poll()
                     continue
-                conn.poll()
-                while conn.notifies:
-                    n = conn.notifies.pop(0)
+                for n in conn.notifies():
                     try:
                         event = json.loads(n.payload)
                     except ValueError:

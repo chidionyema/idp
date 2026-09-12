@@ -11,6 +11,12 @@
 # one every other Python tool in this repo already uses (bin/idp-up validates
 # agentgateway.yaml with it).
 FROM docker.io/python:3.13-slim
+# See sovereign-worker.Dockerfile: the base floats, and on 2026-09-12 an upstream rebuild
+# shipped perl-base 5.40.1-6 with three CRITICAL CVEs (CVE-2026-13221, CVE-2026-42496,
+# CVE-2026-8376) against a fix already published as 5.40.1-6+deb13u1.
+RUN apt-get update \
+ && apt-get upgrade -y \
+ && rm -rf /var/lib/apt/lists/*
 # build-multiarch.yml builds this file for BOTH linux/amd64 and linux/arm64, so the kubectl
 # fetch below is derived from the build's own target architecture rather than typed. TARGETARCH
 # is exported by buildkit on every build, amd64 and arm64 alike.

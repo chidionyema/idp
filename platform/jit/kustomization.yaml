@@ -23,4 +23,4 @@ images:
   # by hand rots: cyrus sat in ImagePullBackOff from the day it was applied because its deployment
   # asked for a `:main` tag that was never pushed (platform/image-automation/cyrus.yaml).
   - name: ghcr.io/chidionyema/jit
-    newTag: main-8566-c1a302cd79a2b754f73232db5e6f7394e32311a2 # {"$imagepolicy": "flux-system:jit:tag"}
+    newTag: main-8777-2fc1392b6a3454e4598f1ab816f47107c333312a # {"$imagepolicy": "flux-system:jit:tag"}
