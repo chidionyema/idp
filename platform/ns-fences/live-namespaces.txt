@@ -7,7 +7,6 @@ chaos-mesh
 commerce
 cross-node-drill
 crossplane-system
-cyrus
 dagster
 default
 demo-sandbox
