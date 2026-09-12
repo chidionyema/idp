@@ -1763,33 +1763,6 @@ spec:
       name: nodesoftware-operator
       namespace: nodesoftware-operator
 ---
-# Cyrus agent orchestration (crew#834): the execution layer that works an issue with any engine --
-# claude, codex, cursor, gemini or opencode -- and answers to both boards, GitHub and Linear.
-# It holds no cluster verbs: its output is an ordinary pull request and Flux reconciles the merge.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: cyrus
-  namespace: flux-system
-spec:
-  interval: 10m
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  path: ./platform/cyrus
-  prune: true
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: estate-config
-      - kind: Secret
-        name: github-app
-  dependsOn:
-    - name: scheduling
-    - name: secret-store
-  wait: true
-  timeout: 10m
----
 # The first RuntimeInstall CR (crew#892 CP4 next phase, goal b9217bea option c).
 # Dark until the operator lands: the CR carries estate.estate.io/suspend: "true"
 # so the operator's reconcile loop leaves it alone. The CRD row (nodesoftware-operator)
