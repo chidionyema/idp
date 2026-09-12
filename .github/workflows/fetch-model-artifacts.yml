@@ -25,12 +25,35 @@ permissions:
   packages: write
 
 jobs:
+  want:
+    runs-on: ubuntu-latest
+    outputs:
+      keys: ${{ steps.want.outputs.keys }}
+    steps:
+      - id: want
+        run: |
+          set -euo pipefail
+          WANT="${{ inputs.models }}"
+          if [ -z "$WANT" ]; then
+            echo 'keys=["vibethinker-1.5b","vibethinker-3b","twil-lm3","nanbeige-4.2-3b","falcon-h1-7b","qwen3.8-27b","gemma-4-26b"]' >> "$GITHUB_OUTPUT"
+          else
+            JSON=$(printf '%s' "$WANT" | tr -s ' ' '\n' | grep -v '^$' | python3 -c 'import json,sys; print(json.dumps(sorted(set(l.strip() for l in sys.stdin if l.strip()))))')
+            echo "keys=$JSON" >> "$GITHUB_OUTPUT"
+          fi
+
   fetch:
+    # THE FILTER, APPLIED TO THE WHOLE JOB. `fromJson(needs.want.outputs.keys)` selects rows by name
+    # only if the matrix carries an `id` per row -- which it does not, so the guard is here.
+    if: ${{ inputs.models == '' || contains(fromJson(needs.want.outputs.keys), matrix.key) }}
+    needs: want
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
+        # `fromJson` over the filtered list, intersected with the rows below, so a name that is not
+        # in the matrix produces NO job rather than an error -- and the run still reports success
+        # for what it was asked to do.
         include:
           - { key: vibethinker-1.5b, repo: "mradermacher/VibeThinker-1.5B-GGUF",    file: "VibeThinker-1.5B.Q4_K_M.gguf" }
           - { key: vibethinker-3b,   repo: "constructai/VibeThinker-3B-GGUF",       file: "" }
