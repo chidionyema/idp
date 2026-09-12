@@ -4,3 +4,12 @@ namespace: llm
 resources:
   - publisher.yaml
   - backup.yaml
+images:
+  # build-multiarch pushes ghcr.io/chidionyema/router-events:main-<run>-<sha> from the Dockerfile in
+  # this directory (bin/dockerfiles discovers it by name: `router-events`). The tag is a commit sha
+  # because a moving tag makes the running version whichever push won the race and leaves a rollback
+  # nothing to roll back to -- the rule prospector's container-images.yml states.
+  # image-automation-controller rewrites the newTag line from ImagePolicy
+  # flux-system/router-events; the marker is how it finds the line.
+  - name: ghcr.io/chidionyema/router-events
+    newTag: main-8793-7f851f20a94db121029e3f9a32d27f1b06de4635 # {"$imagepolicy": "flux-system:router-events:tag"}
