@@ -15,9 +15,26 @@ spec:
   parameters:
   - title: Choices for this run
     properties:
-      replicas:
-        title: how many of each model to run (0 stops them all)
+      action:
+        title: What to do
         type: string
+        enum:
+        - Start every model
+        - Stop every model
+        - Start one model
+        - Stop one model
+        default: Start every model
+      model:
+        title: Which model, for 'one model' above (e.g. falcon-h1-7b)
+        type: string
+        default: ''
+      replicas:
+        title: How many copies of each model to run
+        type: string
+        enum:
+        - '1'
+        - '2'
+        - '3'
         default: '1'
   steps:
   - id: dispatch
@@ -28,6 +45,8 @@ spec:
       workflowId: deploy-models.yml
       branchOrTagName: main
       workflowInputs:
+        action: ${{ parameters.action }}
+        model: ${{ parameters.model }}
         replicas: ${{ parameters.replicas }}
   output:
     links:

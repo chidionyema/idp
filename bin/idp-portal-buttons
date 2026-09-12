@@ -162,6 +162,22 @@ def render(wf, name, description, inputs, results=()):
 
 
 def main(argv):
+    # A PATH IS GRADED ON ITS OWN, so the rule's fixtures prove the gate both ways. Without this the
+    # gate only ever ran over the whole repository, and a fixture case had nothing to refuse -- the
+    # rule would have reported FAIL on its own bad fixture while the gate was working perfectly.
+    paths = [a for a in argv if not a.startswith("--")]
+    if paths:
+        for a in paths:
+            f = pathlib.Path(a)
+            doc = yaml.safe_load(f.read_text())
+            on = doc.get("on") or doc.get(True) or {}
+            if not isinstance(on, dict) or "workflow_dispatch" not in on:
+                print(f"skip    portal-buttons: {a} is not dispatchable")
+                continue
+            _founder_lines(f.read_text(), str(f))
+            print(f"ok      portal-buttons: {a} carries a button and a founder sentence")
+        return 0
+
     check = "--check" in argv
     wanted = {}
     for wf, name, description, inputs, results in dispatchable():
