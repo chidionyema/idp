@@ -281,7 +281,7 @@ spec:
 # whose two keys bin/idp-estate-seed mints. Earlier drafts read three separate vault entries --
 # aevum-postgres, aevum-signing-key and aevum-api-key -- none of which the register knew, which is
 # exactly what the root-trust gate refused: "a credential born nobody knows how".
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: aevum-evidence
