@@ -103,6 +103,8 @@ nav:
       - The agent that couldn't lie: tutorials/demo/truthteller-demo.md
       - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
+      - Epistemic gate (claims proved): tutorials/demo/epistemic.md
+      - Epistemic gate (module): tutorials/demo/epistemic_firewall.py.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
       - Evidence layer: tutorials/demo/evidence.md
@@ -193,6 +195,8 @@ nav:
       - Buyer sandbox (one hour): onboarding/demo-sandbox.md
       - Merge queue (hands-free landing): onboarding/merge-queue.md
       - Catalogue links: onboarding/catalog-links.md
+      - Epistemic gate: how-to/onboarding/epistemic.md
+      - Epistemic gate (module): how-to/onboarding/epistemic_firewall.py.md
       - Drill evidence: onboarding/drill-evidence.md
       - Estate compiler recording: onboarding/intent-compiler.md
       - Estate clock recording: onboarding/dagster.md
