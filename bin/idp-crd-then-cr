@@ -38,6 +38,9 @@ import sys
 
 import yaml
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from treewalk import is_this_tree  # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 FLUX_KUSTOMIZATION = "kustomize.toolkit.fluxcd.io"
@@ -61,6 +64,10 @@ def pruned(root: str, dirpath: str, dirnames: list[str]) -> None:
     for name in dirnames:
         rel = os.path.relpath(os.path.join(dirpath, name), root)
         if name in SKIP or rel in SKIP:
+            continue
+        # A nested checkout of this repository is not part of it; its own clusters/ tree
+        # holds its own Kustomizations (incident 2026-09-10).
+        if not is_this_tree(os.path.join(dirpath, name), root):
             continue
         keep.append(name)
     dirnames[:] = keep

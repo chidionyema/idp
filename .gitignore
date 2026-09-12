@@ -65,6 +65,18 @@ platform/oci/identity/*.tfstate*
 # `FAIL ruff` for three F821s in .wt-keyless, .wt-p0 and .wt-stale -- another session's
 # work-in-progress refusing this session's push, and a red that says nothing about either branch.
 /.wt-*/
+# The convention above is only as good as the naming. Later checkouts were made under other names
+# -- scratchpad/, idp/, wt-mum286-sessions/ (measured 2026-09-10: `git ls-files` empty and
+# `git check-ignore` non-zero for all of them) -- so `/.wt-*/` did not cover them and the same
+# incident repeated: idp-flux-subst-gate, idp-clickhouse-system-log-ttl, idp-crd-then-cr,
+# idp-priority-class-exists, estate-zone-gate, port-gate, multiarch-gate and bin/dockerfiles each
+# read their own fixtures and Dockerfiles back out of a copy and reported them against this
+# branch. Every one returns clean once the copies are excluded.
+# A gate that walks the tree should still filter on `git check-ignore`, which bin/treewalk.py
+# implements; these lines remove the standing harm, the module removes the next silent one.
+/scratchpad/
+/idp/
+/wt-*/
 # generated at docs build by bin/mkdocs_hooks/incident_register.py (crew#679 CP2); never committed, never stale
 docs/reference/incident-register.yaml
 docs/reference/forge/

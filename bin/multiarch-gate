@@ -16,6 +16,9 @@ import sys
 
 import yaml
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from treewalk import walk_tree  # noqa: E402
+
 BOTH = {"linux/amd64", "linux/arm64"}
 SKIP = {".git", "node_modules", ".venv", "dist", "build", "fixtures"}
 RAW = re.compile(r"\bdocker\s+(?:buildx\s+)?build\b")
@@ -75,7 +78,7 @@ def coverage_findings(root):
         if m:
             excluded |= set(m.group(1).split())
     out = []
-    for d, dirs, fs in os.walk(root):
+    for d, dirs, fs in walk_tree(root):
         dirs[:] = [x for x in dirs if x not in SKIP and x != "tests"]
         for f in fs:
             if f == "Dockerfile" or f.startswith("Dockerfile.") or f.endswith(".Dockerfile"):
