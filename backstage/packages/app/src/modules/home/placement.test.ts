@@ -41,7 +41,9 @@ describe('placement tells three different facts apart', () => {
     });
     expect(isPinned(s.pinned[0])).toBe(true);
     expect(s.summary).toContain('pinned');
-    expect(placementState({ cpu_request_m: 250, best_other_cpu_free_m: 72 })).toBe('pinned');
+    expect(
+      placementState(pod({ cpu_request_m: 250, best_other_cpu_free_m: 72 })),
+    ).toBe('pinned');
   });
 
   it('a pod that could be placed again is not a problem', () => {
@@ -86,15 +88,15 @@ describe('the sentence that explains a full cluster that is idle', () => {
 
 describe('cells that must not flatter', () => {
   it('an unmeasured request is a dash, not zero', () => {
-    expect(requestLabel({ namespace: 'x', name: 'y', cpu_request_m: null })).toBe('—');
-    expect(requestLabel({ namespace: 'x', name: 'y', cpu_request_m: 250 })).toBe('250m');
+    expect(requestLabel(pod({ cpu_request_m: null }))).toBe('—');
+    expect(requestLabel(pod({ cpu_request_m: 250 }))).toBe('250m');
   });
 
   it('an unmeasured headroom is a dash, so a pinned pod cannot look fine by accident', () => {
     // If headroom were rendered as 0 a pinned pod would be indistinguishable from one nobody
     // measured; if it were rendered as anything else the pod would look placeable.
-    expect(headroomLabel({ namespace: 'x', name: 'y' })).toBe('—');
-    expect(headroomLabel({ namespace: 'x', name: 'y', best_other_cpu_free_m: 72 })).toBe('72m');
+    expect(headroomLabel(pod({ best_other_cpu_free_m: null }))).toBe('—');
+    expect(headroomLabel(pod({ best_other_cpu_free_m: 72 }))).toBe('72m');
   });
 });
 
