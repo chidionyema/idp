@@ -61,9 +61,6 @@ nav:
       - how-to/index.md
       - Bitwarden human vault, the founder's steps: how-to/bitwarden-human-vault.md
       - Onboarding the evidence layer: how-to/onboarding/evidence.md
-      - Epistemic gate (module): how-to/onboarding/epistemic_firewall.py.md
-      - Trajectory lock (module): how-to/onboarding/trajectory_lock.py.md
-      - Trajectory lock: how-to/onboarding/trajectory.md
       - Boot Dagster and Superset: how-to/boot-dagster-and-superset.md
       - Prove a change in the shadow: how-to/prove-a-change-in-the-shadow.md
   - Reference:
@@ -103,13 +100,15 @@ nav:
       - Estate clock recording: demo/dagster.md
       - Dashboards recording: demo/superset.md
       - Portal: tutorials/demo/idp.md
-      - Epistemic gate (module): tutorials/demo/epistemic_firewall.py.md
-      - Trajectory lock (module): tutorials/demo/trajectory_lock.py.md
       - The agent that couldn't lie: tutorials/demo/truthteller-demo.md
+      - The circuit breaker: tutorials/demo/circuit-breaker.md
+      - Breaker enforcement: tutorials/demo/breaker.md
       - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
-      - Trajectory lock (drift caught): tutorials/demo/trajectory.md
-      - Epistemic gate (claims proved): tutorials/demo/epistemic.md
+      - epistemic: tutorials/demo/epistemic.md
+      - Epistemic gate (module): tutorials/demo/epistemic_firewall.py.md
+      - trajectory: tutorials/demo/trajectory.md
+      - Trajectory lock (module): tutorials/demo/trajectory_lock.py.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
       - Evidence layer: tutorials/demo/evidence.md
@@ -200,7 +199,10 @@ nav:
       - Buyer sandbox (one hour): onboarding/demo-sandbox.md
       - Merge queue (hands-free landing): onboarding/merge-queue.md
       - Catalogue links: onboarding/catalog-links.md
-      - Epistemic gate: how-to/onboarding/epistemic.md
+      - epistemic: how-to/onboarding/epistemic.md
+      - Epistemic gate (module): how-to/onboarding/epistemic_firewall.py.md
+      - trajectory: how-to/onboarding/trajectory.md
+      - Trajectory lock (module): how-to/onboarding/trajectory_lock.py.md
       - Drill evidence: onboarding/drill-evidence.md
       - Estate compiler recording: onboarding/intent-compiler.md
       - Estate clock recording: onboarding/dagster.md
@@ -208,6 +210,8 @@ nav:
       - Trace matrix: how-to/onboarding/trace-matrix.md
       - Namespace fences: how-to/onboarding/ns-fence-gate.md
       - The agent that couldn't lie: how-to/onboarding/truthteller-demo.md
+      - The circuit breaker: how-to/onboarding/circuit-breaker.md
+      - Breaker enforcement: how-to/onboarding/breaker.md
       - Every gate, with its output: how-to/onboarding/gate-demo.md
       - Portal: how-to/onboarding/idp.md
       - Estate compiler: how-to/onboarding/intent.md
@@ -367,8 +371,7 @@ nav:
       - cost-proof: gates/cost-proof.md
       - founder-door: gates/founder-door.md
       - stray: gates/stray-checkout.md
-      - epistemic: gates/epistemic.md
-      - trajectory: gates/trajectory.md
+      - circuit-breaker: gates/circuit-breaker.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md

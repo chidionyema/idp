@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+"""The circuit breaker: three identical findings lock the primitive and force the fleet lever.
+
+Founder, 2026-09-12: "write the interceptor to hash the outputs and throw the 423 Locked
+exception at N=3."
+
+The failure it exists for, measured the same day: nine pull requests were red while main was
+green, one cause across six of them (three perl-base CVEs). An agent checked them one at a time,
+and would have fixed them one at a time, when one lever refreshed all of them. The environment
+should have refused the fourth check.
+
+Two rules keep this from becoming an outage (R38, a guard that refuses correct work is an
+outage):
+
+  A FINGERPRINT, NOT A RAW HASH. The same cause prints different bytes on different targets:
+  the six pull requests carried identical CVE lists at different log positions and different
+  stacks, so hashing the output would never have matched. The fingerprint is the stable identity
+  of the finding -- for that case, the sorted set of CVE ids.
+
+  SCOPED TO THE TARGETS THAT SHOWED IT. The lock binds a finding to the set of targets that
+  produced it, not to a tool. A different finding on the same target is new and stays open, and
+  nine different findings never lock at all. Diagnosis stays free; only proved repetition stops.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+N = 3  # the founder's number: three identical findings prove one cause
+
+# What makes two findings the same cause rather than two shapes of the same log. Order-free,
+# because a set of CVEs prints in whatever order the scanner walked the package list.
+_CVE = re.compile(r"CVE-\d{4}-\d{4,}")
+
+
+def fingerprint(text: str) -> str:
+    """The stable identity of a finding, from whatever a tool printed.
+
+    A CVE list is the measured case and the first thing tried, because it is what the six
+    failing pull requests had in common. Order-free on purpose: the same three CVEs in a
+    different order are one finding, not three.
+
+    Falls back to a digest of the output with the noisy parts removed (line numbers, hex, paths),
+    so a finding with no CVE still gets a fingerprint worth comparing -- a coarse one, and the
+    tests say so rather than pretending it is exact.
+    """
+    cves = sorted(set(_CVE.findall(text or "")))
+    if cves:
+        return "cve:" + ",".join(cves)
+    cleaned = []
+    for line in (text or "").splitlines():
+        line = re.sub(r"0x[0-9a-fA-F]+", "", line)  # addresses
+        line = re.sub(r":\d+:\d+", "", line)  # line:col
+        line = re.sub(r"\b\d{4}-\d{2}-\d{2}T[\d:.]+Z?\b", "", line)  # timestamps
+        line = re.sub(r"\s+", " ", line).strip()
+        if line:
+            cleaned.append(line)
+    body = "\n".join(sorted(set(cleaned)))
+    return "sha:" + hashlib.sha256(body.encode()).hexdigest()[:16]
+
+
+class Breaker:
+    """Record findings per target; refuse the linear path once one is proved.
+
+    In-memory by default, with an append-only record when a store is given, so a reviewer can
+    read what was proved and when. Nothing is rewritten.
+    """
+
+    def __init__(self, store: Path | str | None = None, n: int = N):
+        self.n = n
+        self.store = Path(store) if store else None
+        # fingerprint -> ordered list of targets that produced it
+        self._seen: dict[str, list[str]] = {}
+        self._locked: set[str] = set()
+        if self.store and self.store.is_file():
+            self._replay()
+
+    def _append(self, row: dict) -> None:
+        if not self.store:
+            return
+        self.store.parent.mkdir(parents=True, exist_ok=True)
+        with self.store.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+
+    def _replay(self) -> None:
+        """Rebuild the state from the record, including the lock.
+
+        The lock is DERIVED, never stored as truth: a fresh process must reach the same verdict as
+        the one that recorded the findings, and the only way to guarantee that is to re-derive it
+        from the same observations. Measured 2026-09-12: replaying `observe` rows without re-running
+        the threshold left a new process reporting `locked: false` on a pattern that was already
+        proved, so the enforcement was blind exactly when it mattered -- each CLI invocation is a
+        new process. The tests missed it because they used one Breaker in one process.
+        """
+        for line in self.store.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get("event") == "observe":
+                fp = row["fingerprint"]
+                targets = self._seen.setdefault(fp, [])
+                if row["target"] not in targets:
+                    targets.append(row["target"])
+                if len(targets) >= self.n:
+                    self._locked.add(fp)
+
+    def observe(self, finding: str, target: str) -> dict:
+        """Record that a target produced a finding. Returns the state after recording.
+
+        Idempotent per (finding, target): observing the same target twice is not a second
+        finding, or three re-reads of one PR would trip the breaker.
+        """
+        fp = finding if finding.startswith(("cve:", "sha:")) else fingerprint(finding)
+        targets = self._seen.setdefault(fp, [])
+        if target not in targets:
+            targets.append(target)
+            self._append({"event": "observe", "fingerprint": fp, "target": target})
+        if len(targets) >= self.n and fp not in self._locked:
+            self._locked.add(fp)
+            self._append({"event": "lock", "fingerprint": fp, "targets": targets})
+        return {
+            "fingerprint": fp,
+            "targets": list(targets),
+            "locked": fp in self._locked,
+            "count": len(targets),
+        }
+
+    def check(self, finding: str, target: str) -> dict:
+        """May this action proceed? The primitive is dead once its finding is proved."""
+        fp = finding if finding.startswith(("cve:", "sha:")) else fingerprint(finding)
+        if fp not in self._locked:
+            return {"locked": False, "fingerprint": fp}
+        targets = self._seen.get(fp, [])
+        return {
+            "locked": True,
+            "status": 423,
+            "fingerprint": fp,
+            "targets": list(targets),
+            "message": (
+                f"423 Locked: proven pattern (N={self.n}). {len(targets)} target(s) carry "
+                f"{fp}; the cause is proved, so the linear action is disabled. This is not a "
+                f"refusal of the target -- it is a refusal to repeat the proof."
+            ),
+            "lever": lever_for(fp),
+        }
+
+    def status(self) -> dict:
+        return {
+            "locked": sorted(self._locked),
+            "seen": {k: list(v) for k, v in self._seen.items()},
+        }
+
+
+def lever_for(fp: str) -> str:
+    """The fleet action that replaces the primitive. A wall with no door is an outage.
+
+    For a finding proved across pull requests the lever is the estate's own mechanism:
+    merge-when-green refreshes every branch at once, which is what turned the measured case
+    (six pull requests, one base-image CVE) green without touching a branch by hand.
+    """
+    if fp.startswith("cve:"):
+        return (
+            "the finding is in the image or the base, so it is one fix for every target: "
+            "fix it once on main and refresh the fleet -- `gh workflow run merge-when-green.yml`"
+        )
+    return (
+        "one cause across targets: name the single lever (a fleet command, a shared config, one "
+        "patch on main) and run that, rather than an action per target"
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--finding", help="the tool's output, or a cve:/sha: fingerprint")
+    ap.add_argument(
+        "--target", help="what produced it (a PR number, a host, a resource)"
+    )
+    ap.add_argument(
+        "--check", action="store_true", help="ask whether the action may proceed"
+    )
+    ap.add_argument("--store", help="append-only record of findings")
+    ap.add_argument(
+        "--replay",
+        help="a JSON file of {findings: [{target, log}]} fed through in order; exit 1 if any "
+        "target is refused. This is what the fixtures grade, so the row is proved both ways",
+    )
+    args = ap.parse_args(sys.argv[1:] if argv is None else argv)
+    b = Breaker(store=args.store) if args.store else Breaker()
+    if args.replay:
+        findings = json.loads(Path(args.replay).read_text()).get("findings") or []
+        locked = 0
+        for f in findings:
+            v = b.observe(f["log"], f["target"])
+            if v["locked"]:
+                locked += 1
+        print(f"{len(findings)} finding(s) observed; {locked} locked")
+        if locked:
+            print(json.dumps(b.check(findings[-1]["log"], "next"), indent=2))
+        return 1 if locked else 0
+    if not args.finding or not args.target:
+        print(json.dumps(b.status(), indent=2))
+        return 0
+    r = (
+        b.check(args.finding, args.target)
+        if args.check
+        else b.observe(args.finding, args.target)
+    )
+    print(json.dumps(r, indent=2))
+    return 1 if r.get("locked") else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
