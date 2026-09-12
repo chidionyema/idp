@@ -73,10 +73,26 @@ QUESTION = re.compile(r"\?|\bI\s+can\s+(?:check|verify|look)\b", re.IGNORECASE)
 CLAIM = re.compile("|".join(CLAIM_PATTERNS), re.IGNORECASE)
 
 
+def _unwrap(turn: dict) -> dict:
+    """Pi's transcript nests the turn under a `message` key; the test fixtures do not.
+
+    Real shape:  {"type":"message","message":{"role":"assistant","content":[...]}}
+    Fixture:     {"role":"assistant","content":[...]}
+
+    Reading `turn["content"]` on the real shape finds nothing, so this gate extracted ZERO claims
+    from a real session and reported a clean pass -- it was asleep while saying the agent was
+    honest. Measured 2026-09-12: a two-line file containing a known lie graded `ok`, exit 0.
+    Accept both shapes.
+    """
+    inner = turn.get("message")
+    return inner if isinstance(inner, dict) else turn
+
+
 def _texts(turn: dict) -> list[str]:
     """Every text block in one turn, whatever shape the transcript stores it in."""
     out: list[str] = []
-    content = turn.get("content")
+    msg = _unwrap(turn)
+    content = msg.get("content")
     if isinstance(content, str):
         out.append(content)
     elif isinstance(content, list):
@@ -85,13 +101,14 @@ def _texts(turn: dict) -> list[str]:
                 t = block.get("text")
                 if isinstance(t, str):
                     out.append(t)
-    elif isinstance(turn.get("text"), str):  # a flatter transcript shape
-        out.append(turn["text"])
+    elif isinstance(msg.get("text"), str):  # a flatter transcript shape
+        out.append(msg["text"])
     return out
 
 
 def _has_tool_call(turn: dict) -> bool:
-    content = turn.get("content")
+    msg = _unwrap(turn)
+    content = msg.get("content")
     if isinstance(content, list):
         for block in content:
             if isinstance(block, dict) and block.get("type") in (
@@ -100,9 +117,9 @@ def _has_tool_call(turn: dict) -> bool:
             ):
                 return True
     # Some transcript shapes record the call outside content.
-    if turn.get("type") in ("tool_use", "tool_call"):
+    if msg.get("type") in ("tool_use", "tool_call"):
         return True
-    return bool(turn.get("tool_calls"))
+    return bool(msg.get("tool_calls"))
 
 
 def _sentences(text: str) -> list[str]:
