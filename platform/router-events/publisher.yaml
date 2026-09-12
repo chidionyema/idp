@@ -1,14 +1,24 @@
-# THE PUBLISHER. One long-lived listener on the database, publishing every routing change to the
+# THE PUBLISHER. One long-lived listener on the database, announcing every routing change on the
 # bus the moment Postgres commits it.
 #
 # NOT A CRONJOB, and that is the whole point. A poll every N seconds means the estate believes
 # something for up to N seconds after it stopped being true; the founder's decision was to remove
 # that window, not to shorten it. This pod holds one connection open and reacts.
 #
-# THE PAYLOAD IS NOT SHIPPED TO THE BUS. The notification says a lane changed; the publisher then
-# asks the admin API what the lanes ARE. Two reasons: a NOTIFY payload is capped at 8000 bytes and
-# silently truncated, and a payload is visible to every session on the database. The bus carries
-# the fact of the change and the reader fetches the state from the one authority.
+# WHY THIS IMAGE. Three existing images were tried and all three CrashLoopBackOff'd, which is
+# recorded because each cost a deploy cycle and the next person should not repeat it:
+#
+#   postgres:17.6-alpine         -> "python3: not found"        (a database client, no interpreter)
+#   ghcr.io/oracle/oci-cli       -> "No module named psycopg2"  (python3, no postgres driver)
+#   ghcr.io/berriai/litellm-db   -> "No module named psycopg2"  (uses Prisma, not psycopg2)
+#
+# The requirement is narrow and specific -- python3, a postgres driver that speaks LISTEN, and a
+# socket to NATS -- and no image in the estate happens to carry all three. So the image is built
+# (platform/router-events/Dockerfile) and published by the same workflow that publishes every
+# other estate image. That is cheaper than a fourth guess.
+#
+# THE NOTIFICATION CARRIES NO KEY. pg_notify is visible to every session on the database, so the
+# payload says which lane changed and never what is in it.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,14 +26,10 @@ metadata:
   namespace: llm
   labels: { app.kubernetes.io/name: router-event-publisher, estate.io/layer: model-routing }
 spec:
-  # TWO, and required to sit on DIFFERENT nodes (kyverno require-availability, crew#555). The
-  # first draft was one replica with a Recreate strategy, on the reasoning that two listeners
-  # would double-publish. That reasoning was wrong and the policy caught it: Listener A and
-  # Listener B are separate database sessions, each only sees the notifications that arrive while
-  # IT is connected, and a duplicate message is deduplicated by the consumer keying on the lane
-  # and the timestamp the trigger already carries. Two pods cost a duplicate at worst; ONE POD
-  # costs a silent gap in the feed every time a node event reschedules it -- and this is the feed
-  # the estate is supposed to trust. A gap is not recoverable, a duplicate is.
+  # TWO, on DIFFERENT nodes, as kyverno's require-availability demands (crew#555), and the policy
+  # was right: two listeners are two separate database sessions, and a duplicate is deduplicated
+  # downstream while a node event that reschedules ONE pod is a silent gap in the feed. A gap is
+  # not recoverable. A duplicate is.
   replicas: 2
   selector:
     matchLabels: { app.kubernetes.io/name: router-event-publisher }
@@ -31,7 +37,6 @@ spec:
     metadata:
       labels: { app.kubernetes.io/name: router-event-publisher }
     spec:
-      # founder-facing-spreads-across-nodes: two replicas on one node are one replica.
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -46,91 +51,27 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: publisher
-          # oci-cli, NOT postgres:17.6-alpine. The first draft used the postgres image because the
-          # estate's other database jobs do -- but they run `psql` and this runs PYTHON, and
-          # postgres:17.6-alpine ships no python3. The pod CrashLoopBackOff'd on
-          # "/bin/sh: exec: line 1: python3: not found" and never reached the database.
-          #
-          # oci-cli is the one pinned image every estate CronJob runs (platform/drills/
-          # drill-dispatcher.yaml) and it carries python3 plus the OCI SDK's cryptography, so it
-          # is already pulled on every node and needs no build of its own.
-          image: ghcr.io/oracle/oci-cli:20260826
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              set -eu
-              exec python3 - <<'PY'
-              import json, os, select, socket, sys, time
-              import psycopg2
-              from psycopg2 import extras
-
-              DSN = ("host=estate-rw.estate-db.svc.cluster.local port=5432 "
-                     "user=litellm dbname=litellm password="
-                     + open(os.environ["PGPASSWORD_FILE"]).read().strip())
-              NATS = os.environ["NATS_URL"]
-              SUBJECT = "estate.ai.router.changed"
-
-              def log(msg):
-                  print(json.dumps({"msg": msg, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}), flush=True)
-
-              def publish(payload):
-                  """Publish one JSON line to JetStream over the NATS wire protocol.
-
-                  Written by hand rather than with a client library because the estate's other
-                  publishers do the same and a 200-line dependency for one PUB is not a trade
-                  worth making. The protocol: CONNECT, then PUB <subject> <bytes>, then payload.
-                  """
-                  host, port = NATS.rsplit(":", 1)
-                  with socket.create_connection((host, int(port)), timeout=10) as s:
-                      s.sendall(b'CONNECT {"verbose":false,"pedantic":false}\r\n')
-                      body = json.dumps(payload).encode()
-                      s.sendall(f"PUB {SUBJECT} {len(body)}\r\n".encode() + body + b"\r\n")
-                      s.sendall(b"PING\r\n")
-                      # Wait for PONG so a publish is never reported successful before the bus took it.
-                      s.settimeout(5)
-                      try:
-                          s.recv(64)
-                      except socket.timeout:
-                          raise RuntimeError("bus did not acknowledge; the event was not delivered")
-
-              log(f"listening on {DSN.split('@')[-1]}")
-              while True:
-                  try:
-                      conn = psycopg2.connect(DSN)
-                      conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
-                      cur = conn.cursor()
-                      cur.execute("LISTEN estate_router_changed;")
-                      log("subscribed to estate_router_changed")
-                      while True:
-                          if select.select([conn], [], [], 30) == ([], [], []):
-                              # A quiet bus is not a dead one; this keeps the connection warm and
-                              # lets a broken socket surface as a reconnect rather than a hang.
-                              conn.poll()
-                              continue
-                          conn.poll()
-                          while conn.notifies:
-                              n = conn.notifies.pop(0)
-                              try:
-                                  event = json.loads(n.payload)
-                              except ValueError:
-                                  log(f"unparseable payload, dropped: {n.payload[:80]}")
-                                  continue
-                              event["source"] = "estate-db"
-                              publish(event)
-                              log(f"published {event.get('op')} {event.get('model')}")
-                  except Exception as exc:
-                      # A database that went away must not end the listener: the estate learns of
-                      # the next change either way, and an exiting pod would take the lane dark.
-                      log(f"reconnecting after: {exc}")
-                      time.sleep(5)
-              PY
+          image: ghcr.io/chidionyema/router-events:main
+          command: ["python3", "/app/publisher.py"]
+          # require-pod-probes (kyverno) refused the first draft. The probes are not a formality
+          # here: the pod being Running does NOT mean it is subscribed. publisher.py touches
+          # /tmp/subscribed only AFTER the LISTEN is live and only while the poll keeps returning,
+          # so readiness is the actual claim this pod exists to make. A pod that is up but not
+          # listening is precisely the silent failure this whole design is against.
+          readinessProbe:
+            exec: { command: ["sh", "-c", "test -f /tmp/subscribed"] }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            exec: { command: ["sh", "-c", "test -f /tmp/subscribed"] }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 6
           env:
             - { name: HOME, value: /tmp }
-            # secrets-not-from-env-vars (kyverno): the password is a FILE from the mounted
-            # Secret, never an env value. The same wall platform/drills/drill-dispatcher.yaml
-            # hit for the GitHub App key, and the same answer.
-            - { name: PGPASSWORD_FILE, value: /var/run/db/password }
             - { name: NATS_URL, value: "nats.event-bus.svc:4222" }
+            - { name: PGPASSWORD_FILE, value: /var/run/db/LITELLM_DB_PASSWORD }
           resources:
             requests: { cpu: 20m, memory: 64Mi }
             limits: { cpu: 200m, memory: 192Mi }
@@ -138,18 +79,12 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: { drop: [ALL] }
-          readinessProbe:
-            exec: { command: ["sh", "-c", "test -f /tmp/ready || true"] }
-            initialDelaySeconds: 5
-            periodSeconds: 30
-          livenessProbe:
-            exec: { command: ["sh", "-c", "true"] }
-            initialDelaySeconds: 30
-            periodSeconds: 60
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
             - { name: db, mountPath: /var/run/db, readOnly: true }
       volumes:
         - { name: tmp, emptyDir: {} }
+        # secrets-not-from-env-vars (kyverno): the password is a FILE from the mounted Secret,
+        # never an env value.
         - name: db
           secret: { secretName: litellm-upstream, defaultMode: 256 }
