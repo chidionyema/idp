@@ -16,4 +16,4 @@ images:
   # ImagePolicy flux-system/sovereign-worker; the marker is how it finds the line.
   - name: idp/sovereign-worker
     newName: ghcr.io/chidionyema/sovereign-worker
-    newTag: main-8468-0fe0cf525c18034d09ea3134959d6f31df64172a # {"$imagepolicy": "flux-system:sovereign-worker:tag"}
+    newTag: main-8476-eec26d670e7f9a9999d06611ca92d7979790c2d0 # {"$imagepolicy": "flux-system:sovereign-worker:tag"}
