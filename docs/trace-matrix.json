@@ -1669,6 +1669,23 @@
   "ticket": "crew#284"
  },
  {
+  "feature": "features/gates/placement-published.feature",
+  "title": "placement is measured, published and read on the portal",
+  "scenarios": [
+   "the cluster publishes its placement receipt",
+   "the render carries the placement document forward",
+   "the portal reads it through the proxy it already has",
+   "a cluster at its request ceiling is explained, never just reported"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_placement_published.py"
+  ],
+  "status": "BOUND",
+  "added_in": "d0ffce9f",
+  "pr": 3254,
+  "ticket": null
+ },
+ {
   "feature": "features/gates/plist-gate.feature",
   "title": "A launchd job that backgrounds children declares AbandonProcessGroup",
   "scenarios": [
