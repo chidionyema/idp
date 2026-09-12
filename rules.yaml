@@ -28,7 +28,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/api-version/bad
     must_pass: tests/fixtures/api-version/good
-  live_elsewhere: 'bin/idp-ci:610 -- the apiversion rung grades the REAL platform/ and clusters/ trees the cluster reconciles, not the fixture pair'
+  live_elsewhere: 'bin/idp-ci:625 -- the apiversion rung grades the REAL platform/ and clusters/ trees the cluster reconciles, not the fixture pair'
   cases:
   - expect: refuse
     args:
