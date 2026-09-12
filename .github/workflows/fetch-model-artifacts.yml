@@ -78,6 +78,48 @@ jobs:
           # nothing. The same check the concierge deploy makes on its voice model.
           [ "$SIZE" -gt 500000000 ] || { echo "FAIL model is $SIZE bytes; the URL served an error body"; exit 1; }
 
+      # THE TOKENIZER, WHICH THE RUNTIME LOADS AND MY FIRST VERSION DID NOT FETCH.
+      #
+      # engine.rs line 56: `Tokenizer::from_file(dir.join("tokenizer.json"))`. Without it the pod
+      # starts, pulls 1.1 GB, and dies with `tokenizer: No such file or directory` -- a failure that
+      # reads like a corrupt artifact and is a missing file.
+      #
+      # The Forge ships tokenizer.json (modal_app.py:166) because train.py saves it next to the
+      # merged model. This workflow downloads a model somebody else trained, so it has to fetch the
+      # tokenizer from the same repo -- preferring the ORIGINAL repo when the GGUF repo has none,
+      # which is common for quantised repackages.
+      - name: fetch the tokenizer the runtime loads
+        run: |
+          set -euo pipefail
+          python3 - "${{ matrix.repo }}" <<'PY'
+          import json, sys, urllib.request
+          repo = sys.argv[1]
+          # base_model in the cardData names the repo the weights came from; that is where the
+          # tokenizer lives when a quantiser did not copy it.
+          d = json.load(urllib.request.urlopen(f"https://huggingface.co/api/models/{repo}", timeout=60))
+          files = [f["rfilename"] for f in d.get("siblings", [])]
+          cands = [repo]
+          base = (d.get("cardData") or {}).get("base_model") or ""
+          if isinstance(base, list): base = base[0] if base else ""
+          if base: cands.append(base)
+          for r in cands:
+              try:
+                  fs = files if r == repo else [f["rfilename"] for f in json.load(
+                      urllib.request.urlopen(f"https://huggingface.co/api/models/{r}", timeout=60)).get("siblings", [])]
+              except Exception:
+                  continue
+              if "tokenizer.json" in fs:
+                  print(f"ok      tokenizer.json found in {r}")
+                  open("/tmp/tok_repo.txt", "w").write(r)
+                  raise SystemExit(0)
+          raise SystemExit(f"FAIL no tokenizer.json in {cands}; the runtime cannot load this model")
+          PY
+          REPO=$(cat /tmp/tok_repo.txt)
+          curl -fL --retry 3 -o tokenizer.json "https://huggingface.co/$REPO/resolve/main/tokenizer.json"
+          SIZE=$(stat -c%s tokenizer.json)
+          echo "ok      tokenizer.json $SIZE bytes"
+          [ "$SIZE" -gt 100000 ] || { echo "FAIL tokenizer is $SIZE bytes; the URL served an error body"; exit 1; }
+
       - name: write the card the runtime requires
         run: |
           set -euo pipefail

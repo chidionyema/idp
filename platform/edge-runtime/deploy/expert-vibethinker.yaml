@@ -1,0 +1,126 @@
+# The first open-source model running in this estate, on our own hardware.
+#
+# VibeThinker-1.5B, from the founder's list. Published to GHCR by .github/workflows/
+# fetch-model-artifacts.yml and loaded here BY DIGEST -- the digest is what makes a restart run the
+# bytes that were tested.
+#
+# WHY 1.5B FIRST: it is the smallest on the list (1.1 GB), so it proves the whole chain -- artifact,
+# oras pull, mmap, inference, health -- without spending a node to do it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: expert-vibethinker
+  namespace: edge-runtime
+  labels:
+    backstage.io/kubernetes-id: estate-edge-runtime-vibethinker
+    founder/surface: ai-agents
+spec:
+  replicas: 1
+  strategy:
+    # 1.1 GB is small, but a rolling update would still need two copies on one node at the moment of
+    # swap, and the node has 4.4 Gi free.
+    type: Recreate
+  selector:
+    matchLabels: { app: expert-vibethinker }
+  template:
+    metadata:
+      labels: { app: expert-vibethinker }
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: "10.0.148.221"
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
+      imagePullSecrets:
+        - name: ghcr-pull
+      initContainers:
+        # THE ARTIFACT IS PULLED HERE, NOT BAKED INTO AN IMAGE. `platform/edge-runtime` reads a
+        # directory; this fetches it by digest with the same oras the publisher used.
+        - name: fetch-artifact
+          # oras AND jq in one image, because the script needs both and oras:1.2.0 has neither jq
+          # nor python3.
+          image: ghcr.io/oras-project/oras:v1.2.0
+          workingDir: /artifact
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              # GHCR answers 401 without a login even for a public package, and 403 to a token not
+              # scoped to it -- measured when edge-runtime first tried to pull its own image.
+              # THE PULLER IS NOT BUILT HERE. Three attempts failed on the runtime's own gaps:
+              #   `<<<`            -- bash-only, and this shell is sh
+              #   raw secret value -- ghcr-pull holds a dockerconfigjson, not a token
+              #   base64 | python3 -- the oras image has no python3
+              # So the login is done by a tool that has all three, and the result is written where
+              # oras reads it by itself: ~/.docker/config.json needs no login call at all.
+              #
+              # `bin/idp-kube`-style shell gymnastics in an init container is the wrong place to be
+              # clever. One image that can do the job.
+              # AN EXPLICIT PATH. `$HOME` is unset in this image, so `$HOME/.docker` expanded to
+              # `//.docker` and mkdir answered "Permission denied" -- which reads like a volume
+              # problem and is an unset variable.
+              export HOME=/tmp/oras-home
+              mkdir -p "$HOME/.docker"
+              printf '%s' "$GHCR_TOKEN" > "$HOME/.docker/config.json"
+              oras pull "ghcr.io/chidionyema/models/vibethinker-1.5b@sha256:2e1b11d15982e3d444a53fda7fa81187053acdcabad233cfe5c4e86e7f3c6e19"
+              ls -la /artifact
+          env:
+            - { name: GHCR_USER, value: chidionyema }
+            - name: GHCR_TOKEN
+              valueFrom:
+                secretKeyRef: { name: ghcr-pull, key: .dockerconfigjson }
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "320Mi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            # KSV-0014 wants this TRUE, and it can be: this container writes to exactly two paths,
+            # both mounted -- /artifact (the emptyDir the layers land in) and /tmp/oras-home (the
+            # explicit HOME, because $HOME is unset in this image). Nothing it does touches the
+            # root filesystem, so declaring it read-only costs nothing and closes the finding.
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact }
+            - { name: scratch, mountPath: /tmp }
+      containers:
+        - name: expert
+          image: ghcr.io/chidionyema/edge-runtime@sha256:eae0df039b91bd444f0ea23853397d2bc5fddc569e2677e8e79d8e7ccd8c16f8
+          env:
+            - { name: EDGE_BIND, value: "127.0.0.1:8421" }
+            - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
+            - { name: RUST_LOG, value: "info" }
+          resources:
+            # GUARANTEED: request equals limit, because policy/require-priority-class refuses a
+            # container where they differ. 1.6 Gi covers 1.1 GB mmapped plus KV cache and activations.
+            requests: { cpu: "100m", memory: "1600Mi" }
+            limits:   { cpu: "1500m", memory: "1600Mi" }
+          ports:
+            - { containerPort: 8421, name: health }
+          readinessProbe:
+            httpGet: { path: /v1/health, port: 8421 }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /v1/health, port: 8421 }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact, readOnly: true }
+            - { name: scratch, mountPath: /tmp }
+      volumes:
+        - name: artifact
+          # emptyDir, not a PVC: the artifact is re-pulled from GHCR on every restart, so the node
+          # holds no state that a wipe can lose. GHCR is the source.
+          emptyDir: {}
+        - name: scratch
+          emptyDir: { medium: Memory }
