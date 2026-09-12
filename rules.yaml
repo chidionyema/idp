@@ -441,7 +441,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/migration-not-idempotent
     must_pass: bin/scheduler-migrate
-  live_elsewhere: bin/idp-ci:337 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
+  live_elsewhere: bin/idp-ci:354 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
   cases:
   - expect: refuse
     args:
@@ -1237,7 +1237,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/reloader-blind
     must_pass: tests/fixtures/reloader
-  live_elsewhere: bin/idp-ci:437 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
+  live_elsewhere: bin/idp-ci:454 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
   cases:
   - expect: refuse
     args:
@@ -1370,6 +1370,7 @@ rules:
   ok: the estate's graph knows what the estate is, and no second surface contradicts it (2026-09-12)
   fail: the graph reports a number the catalogue contradicts, or claims freshness it does not have
 - id: bdd-proof
+  fast: true   # cheap: three JSON fixtures, no cluster call
   label: bdd-proof
   statement: 'No pull request opens without BDD proof, across every agent session: the body carries a
     BDD-PROOF block naming the head commit, that block carries a runner''s own passing counts rather than
@@ -1377,10 +1378,9 @@ rules:
     with no run output is refused, and so is a real run on another commit'
   law: LAW 22, LAW 53
   origin: founder 2026-09-12
-  proved_elsewhere: 'the LIVE case is bin/idp-bdd-proof-gate --live, which reads the most
-    recent pull request on this repository through gh and grades it: run 2026-09-12 it
-    refused PR #3223 for carrying no BDD-PROOF block. It runs in the merge gate on every
-    pull request, where a real PR always exists.'
+  live_elsewhere: bin/idp-ci:57 -- the fast plane runs bin/idp-bdd-proof-gate --live, which reads the
+    most recent pull request on this repository and refuses one carrying no BDD-PROOF block on its
+    own head; on 2026-09-12 it refused PR #3223 for exactly that reason
   planes:
   - ci
   - session
@@ -1413,8 +1413,6 @@ rules:
   - expect: refuse
     args:
     - tests/fixtures/bdd-proof/stale-head.json
-  proved_elsewhere: 'bin/idp-bdd-proof-gate --live reads the most recent pull request on this repository
-    and refuses one carrying no proof block; run 2026-09-12 it refused PR #3206 for exactly that reason'
   ok: no pull request opens without a passing BDD run on its own head, in any agent session (LAW 22)
   fail: a pull request could open on a claim that was never proved by a BDD run (LAW 22)
 - id: convergence-proof
@@ -1957,7 +1955,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
     must_pass: tests/fixtures/catalogue-entity-runtime-service
-  live_elsewhere: bin/idp-ci:477 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
+  live_elsewhere: bin/idp-ci:460 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
   cases:
   - expect: refuse
     args:
