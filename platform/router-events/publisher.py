@@ -82,14 +82,15 @@ def main() -> int:
             pathlib.Path(HEARTBEAT).touch()
             while True:
                 pathlib.Path(HEARTBEAT).touch()
+                # psycopg3 removed conn.poll(): the socket is drained by iterating notifies(),
+                # which reads whatever the server has sent. select() only decides whether there
+                # is anything to read. Calling poll() raised
+                #   "'Connection' object has no attribute 'poll'"
+                # every 30 seconds and the listener reconnected in a loop -- subscribed, then
+                # dropped, forever.
                 if not select.select([conn], [], [], 30)[0]:
-                    # A quiet bus is not a dead one. This keeps the connection warm and turns a
-                    # broken socket into a reconnect rather than a hang.
-                    conn.poll()
                     continue
-                conn.poll()
-                while conn.notifies:
-                    n = conn.notifies.pop(0)
+                for n in conn.notifies():
                     try:
                         event = json.loads(n.payload)
                     except ValueError:
