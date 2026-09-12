@@ -30,6 +30,9 @@ import sys
 
 import yaml
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from treewalk import walk_tree  # noqa: E402
+
 # Kubernetes creates these two itself on every cluster; nothing in a tree declares them.
 BUILTIN = {"system-cluster-critical", "system-node-critical"}
 
@@ -43,7 +46,7 @@ YAML_EXT = (".yaml", ".yml")
 
 
 def files(root, keep_fixtures):
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in walk_tree(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP]
         rel = os.path.relpath(dirpath, root)
         if not keep_fixtures and rel.startswith(os.path.join("tests", "fixtures")):

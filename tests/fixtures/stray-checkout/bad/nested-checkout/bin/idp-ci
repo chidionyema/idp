@@ -1,0 +1,1 @@
+# marker only: this fixture exists so bin/idp-stray-checkout has the bin/idp-ci checkout marker it looks for.It is never executed.

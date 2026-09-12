@@ -1924,3 +1924,37 @@ rules:
     note: the workflows and portal templates actually committed
   ok: every dispatchable workflow has a founder-facing button; the gate is proved both ways
   fail: a workflow the founder can dispatch has no button, or the gate is not discriminating
+- id: stray-checkout
+  label: stray
+  statement: >-
+    No untracked, unignored checkout of this repository is nested under its own root: a gate that
+    walks the tree reads the nested copy's own tests/fixtures/*/bad.yaml or Dockerfile and reports
+    it as a defect in the branch under test
+  law: LAW 45, incident 2026-09-10
+  origin: incident 2026-09-10, eight gates red from three nested checkouts
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-stray-checkout
+  fixtures:
+    must_fail: tests/fixtures/stray-checkout/bad/nested-checkout
+    must_pass: tests/fixtures/stray-checkout/good/plain-data
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/stray-checkout/bad/nested-checkout
+  - expect: pass
+    args:
+    - tests/fixtures/stray-checkout/good/plain-data
+  - expect: pass
+    live: true
+    note: this repository's own root
+  ok: no nested checkout of this repository is untracked and unignored under the root
+  fail: >-
+    measured 2026-09-10: idp-flux-subst-gate, idp-clickhouse-system-log-ttl, idp-crd-then-cr,
+    idp-priority-class-exists, estate-zone-gate, port-gate, multiarch-gate and bin/dockerfiles all
+    returned non-zero from a nested copy's own fixtures, and all returned clean once the copies
+    were excluded. .gitignore's remedy on 2026-08-29 was the naming convention /.wt-*/, and the
+    next checkouts were made as scratchpad/ and idp/, so the pattern missed them. bin/treewalk.py
+    stops a walk entering a copy; this rule refuses the copy's presence.

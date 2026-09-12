@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""idp-stray-checkout: a second checkout of this repository inside this repository is refused.
+
+Why this exists (incident 2026-09-10). `.gitignore` already recorded the class on 2026-08-29 --
+sessions work in linked worktrees of this same repository, an untracked and unignored nested
+checkout makes every root-level gate read a copy of itself, and the note ended "another session's
+work-in-progress refusing this session's push, and a red that says nothing about either branch."
+
+The remedy recorded then was the naming convention `/.wt-*/`, and a convention is only as good as
+the naming. The checkouts that caused the repeat were made as `scratchpad/`, `idp/` and
+`wt-mum286-sessions/`. Measured in the primary checkout 2026-09-10, eight gates failed this way:
+`idp-flux-subst-gate`, `idp-clickhouse-system-log-ttl`, `idp-crd-then-cr`,
+`idp-priority-class-exists`, `estate-zone-gate`, `port-gate`, `multiarch-gate` and
+`bin/dockerfiles` -- the last of which is why `sovereign/tests/bdd` cp0b's image-list step failed.
+Every one returns clean once the nested copies are excluded.
+
+`bin/treewalk.py` (this repository, same incident) stops a *walk* from entering a copy. This gate
+is the other half: it refuses the copy's *presence*, so the class cannot silently return under the
+next name somebody picks. A gate that only removes today's harm is a fix; a gate that refuses the
+condition is a guard (LAW 45).
+
+The rule is the property, not the name: a directory under the repository root that is not tracked
+by git, is not ignored by git, and carries the markers of a checkout (`.git`, `CLAUDE.md`,
+`AGENTS.md`, `bin/idp-ci` or a `tests/fixtures` tree) is a stray checkout.
+
+Usage:
+    bin/idp-stray-checkout                # grade this repository
+    bin/idp-stray-checkout <dir> [...]    # grade named directories (the fixtures)
+    bin/idp-stray-checkout --json
+
+Exit 0 when no stray checkout is present, 1 when one is. A repository git cannot answer about is a
+fail-closed FAIL, never a pass.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+# S607/S603: absolute path, fixed argv, no shell. This checkout is the only variable.
+GIT = shutil.which("git")
+
+# A directory holding any of these is a checkout of this repository, not a data directory.
+CHECKOUT_MARKERS = (".git", "CLAUDE.md", "AGENTS.md", "bin/idp-ci", "tests/fixtures")
+
+
+def _tracked_top(root: str) -> set[str] | None:
+    """Top-level names git tracks under `root`, or None when git cannot answer."""
+    if GIT is None:
+        return None
+    try:
+        p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            [GIT, "-C", root, "ls-files", "-z"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if p.returncode != 0:
+        return None
+    tops: set[str] = set()
+    for entry in p.stdout.split("\0"):
+        if entry:
+            tops.add(entry.split("/", 1)[0])
+    return tops
+
+
+def _ignored_top(root: str) -> set[str] | None:
+    """Top-level names git ignores under `root`, or None when git cannot answer."""
+    if GIT is None:
+        return None
+    try:
+        p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            [
+                GIT,
+                "-C",
+                root,
+                "ls-files",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--directory",
+                "--no-empty-directory",
+                "-z",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if p.returncode != 0:
+        return None
+    tops: set[str] = set()
+    for entry in p.stdout.split("\0"):
+        entry = entry.rstrip("/")
+        if entry:
+            tops.add(entry.split("/", 1)[0])
+    return tops
+
+
+def _is_checkout(path: str) -> str | None:
+    """Return the marker that proves `path` is a checkout, or None."""
+    for marker in CHECKOUT_MARKERS:
+        if os.path.exists(os.path.join(path, marker)):
+            return marker
+    return None
+
+
+def _grade_directory(path: str) -> str | None:
+    """The marker that makes `path` a stray checkout, or None when it is fine."""
+    if not os.path.isdir(path):
+        return None
+    return _is_checkout(path)
+
+
+def find_strays(root: str) -> tuple[list[dict], str | None]:
+    """Return (strays, error). A non-None error means the check could not be made."""
+    tracked = _tracked_top(root)
+    if tracked is None:
+        return [], f"git could not list tracked files under {root}"
+    ignored = _ignored_top(root)
+    if ignored is None:
+        return [], f"git could not list ignored files under {root}"
+
+    strays: list[dict] = []
+    try:
+        entries = sorted(
+            e for e in os.listdir(root) if os.path.isdir(os.path.join(root, e))
+        )
+    except OSError as exc:
+        return [], f"{root} could not be listed: {exc}"
+
+    for name in entries:
+        # Part of this tree, or already covered by an ignore rule: the recorded, intended shape.
+        if name in tracked or name in ignored:
+            continue
+        marker = _grade_directory(os.path.join(root, name))
+        if marker:
+            strays.append({"path": name, "marker": marker})
+    return strays, None
+
+
+def main(argv: list[str]) -> int:
+    args = [a for a in argv[1:] if not a.startswith("--")]
+    as_json = "--json" in argv
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    if args:
+        # Fixture mode: grade the named directories directly, one verdict each.
+        strays = []
+        for target in args:
+            path = os.path.abspath(target)
+            if not os.path.isdir(path):
+                print(
+                    f"FAIL  stray-checkout: {target} is not a directory",
+                    file=sys.stderr,
+                )
+                return 1
+            marker = _grade_directory(path)
+            if marker:
+                strays.append({"path": os.path.basename(path), "marker": marker})
+        error = None
+    else:
+        strays, error = find_strays(here)
+        if error:
+            print(f"FAIL  stray-checkout: {error}", file=sys.stderr)
+            return 1
+
+    if as_json:
+        print(json.dumps({"strays": strays}, indent=2))
+
+    if strays:
+        print(
+            "FAIL  stray-checkout: a nested checkout of this repository is present, so every\n"
+            "      root-level gate is reading a copy of itself. Measured 2026-09-10: eight gates\n"
+            "      returned non-zero from a nested copy's own fixtures and Dockerfiles, and every\n"
+            "      one returns clean once the copy is excluded.",
+            file=sys.stderr,
+        )
+        for s in strays:
+            print(f"        {s['path']}  (marker: {s['marker']})", file=sys.stderr)
+        print(
+            "      Move it outside the repository, or name it so `.gitignore` covers it.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(
+        "ok    stray-checkout: no untracked, unignored checkout of this repository is nested under "
+        "the root; no gate is reading a copy of itself"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
