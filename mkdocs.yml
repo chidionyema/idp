@@ -293,6 +293,7 @@ nav:
       - Otto homes, grade and deploy: how-to/onboarding/idp-otto-homes.md
   - Gates:
       - What these are: gates/index.md
+      - api-version-retired: gates/api-version-retired.md
       - aevum-evidence: gates/aevum-evidence.md
       - flux-subst: gates/flux-subst.md
       - flux-wait-brake: gates/flux-wait-brake.md

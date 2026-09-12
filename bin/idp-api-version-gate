@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""idp-api-version-gate — an apiVersion the cluster does not serve is a row that never reconciles.
+
+WHY THIS EXISTS (incident 2026-09-12). platform/observability/aevum.yaml shipped
+`apiVersion: external-secrets.io/v1beta1`. The cluster serves `external-secrets.io/v1`; the estate
+migrated off the beta and this file was written against the old one. Nothing in CI noticed,
+because every gate that reads a manifest reads it as YAML -- and `v1beta1` is perfectly good YAML.
+The failure surfaced only in Flux:
+
+    ExternalSecret/observability/aevum-evidence dry-run failed:
+    no matches for kind "ExternalSecret" in version "external-secrets.io/v1beta1"
+
+and it did not stop there. The whole `observability` Kustomization went NotReady, which made
+`chaos` and `science` fail on their dependency and stop reconciling too. One wrong string in one
+new file held three rows out of the cluster. That is the class this gate closes: a group/version
+this estate has already moved off must not reappear in a new manifest.
+
+WHAT IT KNOWS. The deprecated (group, version) pairs are listed ONCE, below, each with the version
+that replaced it and the migration that moved the estate. The gate scans every YAML document under
+platform/ and clusters/ for an apiVersion naming a listed pair. Both dispositions are graded: a
+retired pair is REFUSED, and the current pair is PASSED -- a gate that only ever refuses has not
+been shown to permit (LAW 38).
+
+WHAT IT DOES NOT DO. It is not a schema validator and it cannot know what the cluster serves. It
+catches the versions this estate has explicitly retired, which is the failure that has actually
+happened. A version nobody has migrated away from yet is not its business.
+
+Usage:
+    python3 bin/idp-api-version-gate [root ...]     # defaults to platform/ and clusters/
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# (group, version) -> (replacement, why). One row per version this estate has moved off, with the
+# migration that did it. Add a row when a migration lands; that is the whole maintenance cost.
+RETIRED = {
+    ("external-secrets.io", "v1beta1"): (
+        "external-secrets.io/v1",
+        "the External Secrets Operator serves v1; the estate migrated and this file was written "
+        "against the beta. On 2026-09-12 this one string made the observability Kustomization "
+        "NotReady and, through it, held chaos and science out of the cluster.",
+    ),
+}
+
+# A YAML document is scanned without a YAML parser on purpose: the gate must read files that a
+# parser would refuse, and find the field wherever it appears, rather than fail on the file and
+# report nothing. It only ever looks for the one key.
+KEY = "apiVersion:"
+
+
+def iter_docs(path: Path):
+    """Yield (line_number, value) for every apiVersion line in a file."""
+    try:
+        text = path.read_text()
+    except (OSError, UnicodeDecodeError):
+        return
+    for i, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith(KEY):
+            yield i, stripped[len(KEY):].strip().strip("'\"")
+
+
+def grade(roots: list[Path]) -> int:
+    findings = []
+    scanned = 0
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*.yaml")):
+            for lineno, value in iter_docs(path):
+                scanned += 1
+                if "/" not in value:
+                    continue
+                group, _, version = value.partition("/")
+                hit = RETIRED.get((group, version))
+                if hit:
+                    replacement, why = hit
+                    findings.append(f"{path}:{lineno} uses {group}/{version}; use {replacement} "
+                                    f"-- {why}")
+
+    if findings:
+        print(f"FAIL  apiversion {len(findings)} manifest(s) name a group/version this estate has "
+              f"migrated off")
+        for f in findings:
+            print(f"      {f}")
+        return 1
+
+    print(f"ok    apiversion {scanned} apiVersion line(s) across {len(roots)} root(s); none names "
+          f"a retired group/version")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    roots = [Path(a) for a in argv[1:]] or [Path("platform"), Path("clusters")]
+    return grade(roots)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
