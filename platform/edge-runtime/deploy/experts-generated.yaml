@@ -1,0 +1,480 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: expert-falcon-h1-7b
+  namespace: edge-runtime
+  labels:
+    backstage.io/kubernetes-id: estate-edge-runtime-falcon-h1-7b
+    founder/surface: ai-agents
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, never RollingUpdate: these hold gigabytes, and a rolling swap needs two copies on
+    # one node at the moment of change.
+    type: Recreate
+  selector:
+    matchLabels: { app: expert-falcon-h1-7b }
+  template:
+    metadata:
+      labels: { app: expert-falcon-h1-7b }
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: "10.0.148.221"
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
+      imagePullSecrets:
+        - name: ghcr-pull
+      initContainers:
+        - name: fetch-artifact
+          image: ghcr.io/oras-project/oras:v1.2.0
+          workingDir: /artifact
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              # GHCR answers 401 without a login even for a public package. The secret is a
+              # dockerconfigjson, so oras reads it from ~/.docker/config.json -- no login call.
+              # $HOME is unset in this image, which is why it is set explicitly: $HOME/.docker
+              # expanded to //.docker and mkdir said "Permission denied".
+              export HOME=/tmp/oras-home
+              mkdir -p "$HOME/.docker"
+              printf '%s' "$GHCR_TOKEN" > "$HOME/.docker/config.json"
+              oras pull "ghcr.io/chidionyema/models/falcon-h1-7b@sha256:5423cbebdad050fddbdc7e289eae5e4c9343f9ee3ab755cc2f3ef2920e08eef8"
+          env:
+            - { name: GHCR_TOKEN, valueFrom: { secretKeyRef: { name: ghcr-pull, key: .dockerconfigjson } } }
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "320Mi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact }
+            - { name: scratch, mountPath: /tmp }
+      containers:
+        - name: expert
+          image: ghcr.io/chidionyema/edge-runtime@sha256:eae0df039b91bd444f0ea23853397d2bc5fddc569e2677e8e79d8e7ccd8c16f8
+          env:
+            - { name: EDGE_BIND, value: "127.0.0.1:8421" }
+            - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
+            - { name: RUST_LOG, value: "info" }
+          resources:
+            requests: { cpu: "100m", memory: "7Gi" }
+            limits:   { cpu: "1500m", memory: "7Gi" }
+          # EXEC, NOT httpGet. The server binds 127.0.0.1 (R20, enforced in main.rs) and the kubelet
+          # probes from outside the pod namespace, so an httpGet gets connection refused forever
+          # while the container is healthy. The image is distroless, so the binary checks itself.
+          readinessProbe:
+            exec: { command: ["/edge-runtime", "--health"] }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 20
+          livenessProbe:
+            exec: { command: ["/edge-runtime", "--health"] }
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            failureThreshold: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact, readOnly: true }
+            - { name: scratch, mountPath: /tmp }
+      volumes:
+        - name: artifact
+          emptyDir: {}
+        - name: scratch
+          emptyDir: { medium: Memory }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: expert-nanbeige-4-2-3b
+  namespace: edge-runtime
+  labels:
+    backstage.io/kubernetes-id: estate-edge-runtime-nanbeige-4-2-3b
+    founder/surface: ai-agents
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, never RollingUpdate: these hold gigabytes, and a rolling swap needs two copies on
+    # one node at the moment of change.
+    type: Recreate
+  selector:
+    matchLabels: { app: expert-nanbeige-4.2-3b }
+  template:
+    metadata:
+      labels: { app: expert-nanbeige-4.2-3b }
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: "10.0.148.221"
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
+      imagePullSecrets:
+        - name: ghcr-pull
+      initContainers:
+        - name: fetch-artifact
+          image: ghcr.io/oras-project/oras:v1.2.0
+          workingDir: /artifact
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              # GHCR answers 401 without a login even for a public package. The secret is a
+              # dockerconfigjson, so oras reads it from ~/.docker/config.json -- no login call.
+              # $HOME is unset in this image, which is why it is set explicitly: $HOME/.docker
+              # expanded to //.docker and mkdir said "Permission denied".
+              export HOME=/tmp/oras-home
+              mkdir -p "$HOME/.docker"
+              printf '%s' "$GHCR_TOKEN" > "$HOME/.docker/config.json"
+              oras pull "ghcr.io/chidionyema/models/nanbeige-4.2-3b@sha256:db1afa685218632fbc3b7e216363106f8235d240723092046014079e26b93b58"
+          env:
+            - { name: GHCR_TOKEN, valueFrom: { secretKeyRef: { name: ghcr-pull, key: .dockerconfigjson } } }
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "320Mi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact }
+            - { name: scratch, mountPath: /tmp }
+      containers:
+        - name: expert
+          image: ghcr.io/chidionyema/edge-runtime@sha256:eae0df039b91bd444f0ea23853397d2bc5fddc569e2677e8e79d8e7ccd8c16f8
+          env:
+            - { name: EDGE_BIND, value: "127.0.0.1:8421" }
+            - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
+            - { name: RUST_LOG, value: "info" }
+          resources:
+            requests: { cpu: "100m", memory: "4Gi" }
+            limits:   { cpu: "1500m", memory: "4Gi" }
+          # EXEC, NOT httpGet. The server binds 127.0.0.1 (R20, enforced in main.rs) and the kubelet
+          # probes from outside the pod namespace, so an httpGet gets connection refused forever
+          # while the container is healthy. The image is distroless, so the binary checks itself.
+          readinessProbe:
+            exec: { command: ["/edge-runtime", "--health"] }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 20
+          livenessProbe:
+            exec: { command: ["/edge-runtime", "--health"] }
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            failureThreshold: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact, readOnly: true }
+            - { name: scratch, mountPath: /tmp }
+      volumes:
+        - name: artifact
+          emptyDir: {}
+        - name: scratch
+          emptyDir: { medium: Memory }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: expert-twil-lm3
+  namespace: edge-runtime
+  labels:
+    backstage.io/kubernetes-id: estate-edge-runtime-twil-lm3
+    founder/surface: ai-agents
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, never RollingUpdate: these hold gigabytes, and a rolling swap needs two copies on
+    # one node at the moment of change.
+    type: Recreate
+  selector:
+    matchLabels: { app: expert-twil-lm3 }
+  template:
+    metadata:
+      labels: { app: expert-twil-lm3 }
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: "10.0.148.221"
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
+      imagePullSecrets:
+        - name: ghcr-pull
+      initContainers:
+        - name: fetch-artifact
+          image: ghcr.io/oras-project/oras:v1.2.0
+          workingDir: /artifact
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              # GHCR answers 401 without a login even for a public package. The secret is a
+              # dockerconfigjson, so oras reads it from ~/.docker/config.json -- no login call.
+              # $HOME is unset in this image, which is why it is set explicitly: $HOME/.docker
+              # expanded to //.docker and mkdir said "Permission denied".
+              export HOME=/tmp/oras-home
+              mkdir -p "$HOME/.docker"
+              printf '%s' "$GHCR_TOKEN" > "$HOME/.docker/config.json"
+              oras pull "ghcr.io/chidionyema/models/twil-lm3@sha256:451211c0cf0105d6fb752f641131361b076b130a8fab3023e474b2ade32b86b5"
+          env:
+            - { name: GHCR_TOKEN, valueFrom: { secretKeyRef: { name: ghcr-pull, key: .dockerconfigjson } } }
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "320Mi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact }
+            - { name: scratch, mountPath: /tmp }
+      containers:
+        - name: expert
+          image: ghcr.io/chidionyema/edge-runtime@sha256:eae0df039b91bd444f0ea23853397d2bc5fddc569e2677e8e79d8e7ccd8c16f8
+          env:
+            - { name: EDGE_BIND, value: "127.0.0.1:8421" }
+            - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
+            - { name: RUST_LOG, value: "info" }
+          resources:
+            requests: { cpu: "100m", memory: "4Gi" }
+            limits:   { cpu: "1500m", memory: "4Gi" }
+          # EXEC, NOT httpGet. The server binds 127.0.0.1 (R20, enforced in main.rs) and the kubelet
+          # probes from outside the pod namespace, so an httpGet gets connection refused forever
+          # while the container is healthy. The image is distroless, so the binary checks itself.
+          readinessProbe:
+            exec: { command: ["/edge-runtime", "--health"] }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 20
+          livenessProbe:
+            exec: { command: ["/edge-runtime", "--health"] }
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            failureThreshold: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact, readOnly: true }
+            - { name: scratch, mountPath: /tmp }
+      volumes:
+        - name: artifact
+          emptyDir: {}
+        - name: scratch
+          emptyDir: { medium: Memory }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: expert-vibethinker-1-5b
+  namespace: edge-runtime
+  labels:
+    backstage.io/kubernetes-id: estate-edge-runtime-vibethinker-1-5b
+    founder/surface: ai-agents
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, never RollingUpdate: these hold gigabytes, and a rolling swap needs two copies on
+    # one node at the moment of change.
+    type: Recreate
+  selector:
+    matchLabels: { app: expert-vibethinker-1.5b }
+  template:
+    metadata:
+      labels: { app: expert-vibethinker-1.5b }
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: "10.0.148.221"
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
+      imagePullSecrets:
+        - name: ghcr-pull
+      initContainers:
+        - name: fetch-artifact
+          image: ghcr.io/oras-project/oras:v1.2.0
+          workingDir: /artifact
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              # GHCR answers 401 without a login even for a public package. The secret is a
+              # dockerconfigjson, so oras reads it from ~/.docker/config.json -- no login call.
+              # $HOME is unset in this image, which is why it is set explicitly: $HOME/.docker
+              # expanded to //.docker and mkdir said "Permission denied".
+              export HOME=/tmp/oras-home
+              mkdir -p "$HOME/.docker"
+              printf '%s' "$GHCR_TOKEN" > "$HOME/.docker/config.json"
+              oras pull "ghcr.io/chidionyema/models/vibethinker-1.5b@sha256:869c10c0f902bce14940836460b176b7fe6c3ac50b755355a0501f79bcb68380"
+          env:
+            - { name: GHCR_TOKEN, valueFrom: { secretKeyRef: { name: ghcr-pull, key: .dockerconfigjson } } }
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "320Mi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact }
+            - { name: scratch, mountPath: /tmp }
+      containers:
+        - name: expert
+          image: ghcr.io/chidionyema/edge-runtime@sha256:eae0df039b91bd444f0ea23853397d2bc5fddc569e2677e8e79d8e7ccd8c16f8
+          env:
+            - { name: EDGE_BIND, value: "127.0.0.1:8421" }
+            - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
+            - { name: RUST_LOG, value: "info" }
+          resources:
+            requests: { cpu: "100m", memory: "3Gi" }
+            limits:   { cpu: "1500m", memory: "3Gi" }
+          # EXEC, NOT httpGet. The server binds 127.0.0.1 (R20, enforced in main.rs) and the kubelet
+          # probes from outside the pod namespace, so an httpGet gets connection refused forever
+          # while the container is healthy. The image is distroless, so the binary checks itself.
+          readinessProbe:
+            exec: { command: ["/edge-runtime", "--health"] }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 20
+          livenessProbe:
+            exec: { command: ["/edge-runtime", "--health"] }
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            failureThreshold: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact, readOnly: true }
+            - { name: scratch, mountPath: /tmp }
+      volumes:
+        - name: artifact
+          emptyDir: {}
+        - name: scratch
+          emptyDir: { medium: Memory }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: expert-vibethinker-3b
+  namespace: edge-runtime
+  labels:
+    backstage.io/kubernetes-id: estate-edge-runtime-vibethinker-3b
+    founder/surface: ai-agents
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, never RollingUpdate: these hold gigabytes, and a rolling swap needs two copies on
+    # one node at the moment of change.
+    type: Recreate
+  selector:
+    matchLabels: { app: expert-vibethinker-3b }
+  template:
+    metadata:
+      labels: { app: expert-vibethinker-3b }
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: "10.0.148.221"
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
+      imagePullSecrets:
+        - name: ghcr-pull
+      initContainers:
+        - name: fetch-artifact
+          image: ghcr.io/oras-project/oras:v1.2.0
+          workingDir: /artifact
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              # GHCR answers 401 without a login even for a public package. The secret is a
+              # dockerconfigjson, so oras reads it from ~/.docker/config.json -- no login call.
+              # $HOME is unset in this image, which is why it is set explicitly: $HOME/.docker
+              # expanded to //.docker and mkdir said "Permission denied".
+              export HOME=/tmp/oras-home
+              mkdir -p "$HOME/.docker"
+              printf '%s' "$GHCR_TOKEN" > "$HOME/.docker/config.json"
+              oras pull "ghcr.io/chidionyema/models/vibethinker-3b@sha256:1d44c7fa609358818d2f96799da7224ca8a8a28016123de44256a5814eb06982"
+          env:
+            - { name: GHCR_TOKEN, valueFrom: { secretKeyRef: { name: ghcr-pull, key: .dockerconfigjson } } }
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "320Mi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact }
+            - { name: scratch, mountPath: /tmp }
+      containers:
+        - name: expert
+          image: ghcr.io/chidionyema/edge-runtime@sha256:eae0df039b91bd444f0ea23853397d2bc5fddc569e2677e8e79d8e7ccd8c16f8
+          env:
+            - { name: EDGE_BIND, value: "127.0.0.1:8421" }
+            - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
+            - { name: RUST_LOG, value: "info" }
+          resources:
+            requests: { cpu: "100m", memory: "4Gi" }
+            limits:   { cpu: "1500m", memory: "4Gi" }
+          # EXEC, NOT httpGet. The server binds 127.0.0.1 (R20, enforced in main.rs) and the kubelet
+          # probes from outside the pod namespace, so an httpGet gets connection refused forever
+          # while the container is healthy. The image is distroless, so the binary checks itself.
+          readinessProbe:
+            exec: { command: ["/edge-runtime", "--health"] }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 20
+          livenessProbe:
+            exec: { command: ["/edge-runtime", "--health"] }
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            failureThreshold: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact, readOnly: true }
+            - { name: scratch, mountPath: /tmp }
+      volumes:
+        - name: artifact
+          emptyDir: {}
+        - name: scratch
+          emptyDir: { medium: Memory }
