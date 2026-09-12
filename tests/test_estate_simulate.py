@@ -101,7 +101,12 @@ def test_a_grader_that_throws_is_unknown_not_a_crash():
     g = {n: (boom if n == "network" else (lambda: SAFE)) for n in sim.GRADER_NAMES}
     p = sim.simulate_change("x", graders=g, now=T0)
     assert p["verdict"] == "UNKNOWN"
-    assert "could not run" in p["grader_results"]["network"]["detail"]
+    # The reason must name the exception and what it said, not just "could not run": an operator
+    # reading the proposal has to be able to tell a grader that crashed from a grader that
+    # answered UNKNOWN because it was not given an input.
+    detail = p["grader_results"]["network"]["detail"]
+    assert "RuntimeError" in detail
+    assert "kubeconfig gone" in detail
 
 
 def test_execute_without_a_simulated_proposal_is_refused():

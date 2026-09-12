@@ -186,14 +186,31 @@ def simulate_change(
         provided += 1
         try:
             res = fn()
-            verdict = res.get("verdict") if isinstance(res, dict) else None
-            if verdict not in ("SAFE", "UNSAFE"):
-                raise ValueError(f"grader {name} did not answer SAFE/UNSAFE")
-            results[name] = {"verdict": verdict, "detail": res.get("detail")}
-        except Exception as exc:  # noqa: BLE001 - a broken grader is UNKNOWN, never a crash
+        except Exception as exc:  # noqa: BLE001 - a grader that raised did not answer
             results[name] = {
                 "verdict": "UNKNOWN",
-                "detail": f"{name} could not run: {exc.__class__.__name__}",
+                "detail": f"{name} raised {exc.__class__.__name__}: {exc}",
+            }
+            continue
+        verdict = res.get("verdict") if isinstance(res, dict) else None
+        # A grader's own UNKNOWN is a real answer -- usually the most useful one, because its
+        # `detail` names the input it was not given ("no shadow observation supplied", "laws
+        # door is off"). It must be carried through verbatim. It used to be converted into
+        # `raise ValueError(f"grader {name} did not answer SAFE/UNSAFE")`, which the except
+        # above then reported as `"<name> could not run: ValueError"` -- so an honest, specific
+        # refusal was replaced by a generic error that reads like a broken program. An operator
+        # following that message goes looking for a missing binary instead of supplying the
+        # input the grader named. Only a grader that answered something other than SAFE,
+        # UNSAFE or UNKNOWN is a malformed answer.
+        if verdict in ("SAFE", "UNSAFE", "UNKNOWN"):
+            results[name] = {"verdict": verdict, "detail": res.get("detail")}
+        else:
+            results[name] = {
+                "verdict": "UNKNOWN",
+                "detail": (
+                    f"{name} answered an unusable verdict {verdict!r}; "
+                    "a grader must answer SAFE, UNSAFE or UNKNOWN"
+                ),
             }
 
     any_unsafe = any(r["verdict"] == "UNSAFE" for r in results.values())
@@ -393,7 +410,16 @@ def _live_graders(source):
     import tempfile
     from pathlib import Path
 
-    base = Path(__file__).resolve().parents[2]
+    # Where the `bin/` grader programs live. The repository layout puts this file at
+    # `<root>/mcp/plugins/estate_simulate.py`, so `parents[2]` is the root -- but in the
+    # estate-mcp image the file is at `/app/plugins/estate_simulate.py`, where `parents[2]`
+    # is `/` and every grader program is missing, so every grader answered "could not run".
+    # The deployment therefore states the root outright (ESTATE_REPO_ROOT) and the computed
+    # default still serves a plain checkout. LAW 46: the path is never typed as a literal
+    # here; it is stated by whoever deploys and defaulted from this file's own location.
+    base = Path(
+        os.environ.get("ESTATE_REPO_ROOT") or Path(__file__).resolve().parents[2]
+    )
     grader = base / "bin" / "idp-admission-dryrun"
     cfg = config()
 

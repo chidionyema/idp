@@ -84,6 +84,17 @@ spec:
             # declared both ways in platform/ns-fences/allowances.yaml.
             - { name: ESTATE_HOLMES_URL, value: "http://robusta-holmes.robusta.svc.cluster.local" }
             - { name: ESTATE_MCP_SIMULATE_GRADERS, value: "1" }   # MUM-288: the world-model door runs the six graders at startup and refuses UNKNOWN
+            # MUM-288: where the six grader programs live inside this image. The plugin's own
+            # default (`parents[2]` of its file) resolves to `/` here, which found nothing and
+            # made every grader answer "could not run" -- the door opened and refused everything.
+            # mcp/estate-mcp.Dockerfile copies bin/ and rules.yaml to /app alongside plugins/.
+            - { name: ESTATE_REPO_ROOT, value: /app }
+            # MUM-288 blast grader: bin/idp-blast-grade walks a DIRECTORY for catalog-info.yaml
+            # files (`rglob`), and the estate catalogue is mounted as the single file
+            # /data/catalog-info.yaml. Pointing it at /data is what lets blast resolve a
+            # proposal's manifest references against the real catalogue graph. Its own default
+            # is the repository's `backstage/` tree, which is not what this image carries.
+            - { name: ESTATE_BLAST_CATALOG_DIR, value: /data }
           volumeMounts:
             - { name: data, mountPath: /data, readOnly: true }
             - { name: tmp, mountPath: /tmp }   # crew#458: python tempfile needs one under readOnlyRootFilesystem
