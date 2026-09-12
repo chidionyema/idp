@@ -1,0 +1,15 @@
+{
+ "chain": [
+  {
+   "sequence": 0,
+   "audit_id": "urn:aevum:audit:01a09615-854f-79e9-a6b8-9a097e928ee4",
+   "actor": "builder-agent",
+   "event_type": "ingest",
+   "prior_hash": "391f6bd6d761cb9af9e924d015a6fc18e9d236c965c3e5deda1145a25e11cf5e",
+   "payload_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "signature": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+   "valid": true
+  }
+ ],
+ "verify_sigchain": true
+}
