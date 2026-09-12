@@ -1971,6 +1971,30 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-router-events
+  title: 'Router change events and their backup'
+  description: 'Every change to a model-routing lane announces itself the moment the database commits it, so the estate never holds a belief it stopped being true seconds ago: a listener passes the change to the estate bus and the catalogue is accurate within the second. A second job writes the lanes to git as they change, which is the copy that survives losing the database the lanes live in. The events carry what changed and which lane, never a key, because a database notification is visible to every session on it.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=router-events'
+    estate/flux-kustomization: 'router-events'
+    estate/path: './platform/router-events'
+    estate/cluster: 'oke'
+  tags: [platform, model-routing]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: model-routing
+  dependsOn:
+    - component:default/layer-llm
+    - component:default/layer-event-bus
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-sandbox-launch
   title: 'Sandbox launcher'
   description: 'The moving lane behind the buyer sandbox: a branch only the founder''s button writes, so a person launches a demo and agents never deploy one.'

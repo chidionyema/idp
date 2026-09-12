@@ -358,6 +358,29 @@ spec:
     # ahead of being moved.
     - name: estate-db-migrate
   timeout: 10m
+---
+# The router's own event wiring (founder decision 2026-09-12: the database is the source of
+# truth and git is its backup, with nothing connected by a poll).
+#
+# dependsOn llm, not the reverse: a listener on a lane table cannot be applied before the
+# router that owns the table exists, or the first reconcile fails and Flux reports a red row
+# for a manifest that is perfectly correct.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: router-events
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/router-events
+  prune: true
+  dependsOn:
+    - name: llm
+    - name: event-bus
+  timeout: 5m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment

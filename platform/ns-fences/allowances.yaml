@@ -224,7 +224,13 @@ flows:
     # crosses its band (platform/llm/spend-breaker-digest.yaml:52). A breaker that cannot reach
     # the notifier is a breaker nobody hears, so the failure mode of leaving this undeclared is
     # silent overspend, not a visible error.
-    egress: [observability, estate-db, notify]
+    # event-bus: the router's own change feed (platform/router-events/publisher.yaml). The
+    # publisher holds one connection to nats.event-bus.svc and publishes every lane change the
+    # moment Postgres commits it. Left undeclared the failure is INVISIBLE by construction: the
+    # trigger still fires, the publisher still starts, and the notification is dropped at the
+    # fence -- so the estate believes it has a live feed while nothing ever arrives. The same
+    # shape as the estate-db row above, and the same reason it is written out rather than assumed.
+    egress: [observability, estate-db, notify, event-bus]
     # The router's whole job is calling a model vendor's API; declared here so the fence
     # still says yes on the day this cluster runs a CNI that enforces it.
     egress_internet: [443]
@@ -423,7 +429,11 @@ flows:
     # a namespace holding a credential and running nothing should do.
     ingress_from: []
   event-bus:
-    ingress_from: [otto-gateway, commerce]
+    # llm: the router's change feed (platform/router-events/publisher.yaml). estate-db already
+    # names it; without llm on this side the door is closed and the publisher's publish is
+    # dropped. A one-sided declaration is a closed door -- the reason is written out in the llm
+    # row above, learned live on 2026-09-07.
+    ingress_from: [otto-gateway, commerce, llm]
   estate-db:
     # Serves an admission webhook, so the control plane calls IN. It is outside the pod
     # network and outside every namespace selector, so default-deny drops it and only an
