@@ -82,6 +82,19 @@ const showcasePage = PageBlueprint.make({
   },
 });
 
+// /fleet (docs/specs/2026-09-08-fleetview-backstage-offering.md CP2): every agent session in
+// the estate on one board, live, with no reload. The data is CP1's session contract behind
+// /api/fleetview/sessions and its event stream; the founder's words for the product were "there
+// was a dashboard screen where I could monitor the agent sessions in real time, that is a super
+// marketable product".
+const fleetPage = PageBlueprint.make({
+  name: 'fleet',
+  params: {
+    path: '/fleet',
+    loader: () => import('./Fleet').then(m => <m.Fleet />),
+  },
+});
+
 export const homeModule = createFrontendModule({
   pluginId: 'home',
   extensions: [
@@ -92,5 +105,6 @@ export const homeModule = createFrontendModule({
     reportsPage,
     investigatePage,
     showcasePage,
+    fleetPage,
   ],
 });

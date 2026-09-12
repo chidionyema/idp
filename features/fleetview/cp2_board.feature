@@ -10,5 +10,7 @@ Feature: CP2 the board
 
   Scenario: the board updates itself
     Given the fleet page is open
+    And a sovereign session is running
     When a session finishes
     Then its state on the page changes within 3 seconds without a reload
+    And the page can reach the estate's own door
