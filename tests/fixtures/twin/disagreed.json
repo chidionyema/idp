@@ -1,0 +1,10 @@
+{
+  "generator": {"stranded_branches": 648, "dead_deployments": 10},
+  "twin": {"stranded_branches": 114},
+  "domains": [
+    {"domain": "runtime", "state": "MEASURED_FAIL", "age_s": 12, "window_s": 180}
+  ],
+  "second_store": false,
+  "second_bus": false,
+  "second_mcp": false
+}

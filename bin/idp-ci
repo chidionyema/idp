@@ -131,6 +131,16 @@ if "$MPY" "$IDP/bin/idp-features" plan --json | diff -q - "$IDP/platform/feature
   say "ok    plan     platform/features/plan.json matches bin/idp-features plan --json"
 else say "FAIL  plan     platform/features/plan.json is stale; run bin/idp-features plan --json > platform/features/plan.json"; fail=1; fi
 
+# 4b4. The catalogue's other half must be fresh too. catalog-info.yaml describes what is
+#      DECLARED; dark-matter.yaml describes what is BUILT and not running (unmerged branches
+#      carrying files absent from main, deployments scaled to zero). The generator is
+#      deterministic, so a stale file is drift and fails here -- which is what stops the
+#      inventory going back to lying by omission, the state measured 2026-09-12: 1,523
+#      unmerged branches and 722 files the catalogue was silent about.
+if "$MPY" "$IDP/bin/catalog-dark-matter" --check >/dev/null 2>&1; then
+  say "ok    darkmatter  backstage/platform/dark-matter.yaml matches a fresh sweep of git and the cluster"
+else say "FAIL  darkmatter  dark-matter.yaml is stale; run bin/catalog-dark-matter"; fail=1; fi
+
 # 4c. The catalogue must carry relationships. An entity list with no edges renders
 #     exactly like a mapped estate and is the failure a peer session named on
 #     2026-08-24: "Backstage doesn't magically discover your architecture". Two

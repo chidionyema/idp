@@ -1,0 +1,97 @@
+# RAW EVIDENCE — estate-twin
+captured: 2026-09-12T11:22:38Z
+host: chidis-MacBook-Pro.local
+commit: 4669a220
+branch: feat/0910-session-7527
+
+===================================================================
+P1. THE BDD SUITE
+    reproduce: python3 -m pytest sovereign/tests/bdd/test_estate_twin.py -v
+===================================================================
+sovereign/tests/bdd/test_estate_twin.py::test_a_dead_agent_is_visible_without_anybody_running_a_command PASSED [ 12%]
+sovereign/tests/bdd/test_estate_twin.py::test_a_deployment_scaled_to_zero_is_dead_not_absent PASSED [ 25%]
+sovereign/tests/bdd/test_estate_twin.py::test_a_capability_stranded_on_a_branch_is_visible PASSED [ 37%]
+sovereign/tests/bdd/test_estate_twin.py::test_a_branch_that_only_edits_existing_files_is_not_stranded PASSED [ 50%]
+sovereign/tests/bdd/test_estate_twin.py::test_the_twin_and_the_catalogue_generator_cannot_disagree PASSED [ 62%]
+sovereign/tests/bdd/test_estate_twin.py::test_a_stopped_emitter_is_visible_as_stale_not_as_healthy PASSED [ 75%]
+sovereign/tests/bdd/test_estate_twin.py::test_replaying_the_same_events_changes_nothing PASSED [ 87%]
+sovereign/tests/bdd/test_estate_twin.py::test_the_twin_adds_no_second_store_bus_or_server PASSED [100%]
+========================= 8 passed in 68.79s (0:01:08) =========================
+
+===================================================================
+P2. G1 — every receipt field reaches the graph
+    reproduce: bin/idp-cloud object get --bucket estate-drill-receipts --name state/cluster
+               sqlite3 catalog/estate.db 'select type,count(*) from nodes group by 1'
+===================================================================
+ok cluster-state at 2026-09-12T11:15:43Z nodes=2 ready=2 pods=368 pods_not_ready=22 flux=317 flux_not_ready=24 ds=14 ds_short=0 deploy_short=2 secret_stale_consumers=7 events_warning=60 hostnames=14 spiffe_ids=3 spiffe_workloads=1 svids=0 spire_agents=2 oci_pods=20 oci_static_key_pods=0 policy_exceptions=31 k8sgpt_findings=45 monitoring_rules=30 alert_watchdog=0 cpu_used_pct=55 mem_used_pct=76 cpu_req_pct=79 mem_req_pct=75 unschedulable=0
+
+-- graph contents by type --
+branch|648
+flux|357
+event|240
+pod|62
+diagnosis|45
+policy|39
+policy-exception|31
+alert|19
+hostname|14
+daemonset|14
+unlisted-service|11
+deployment|10
+secret-staleness|7
+node|2
+identity|2
+summary|1
+monitoring|1
+capacity|1
+
+===================================================================
+P3. G3 — the transition memory
+    reproduce: sqlite3 catalog/estate.db 'select from_status,to_status,count(*) from node_events group by 1,2'
+               bin/estate-twin-runtime --history <node>
+===================================================================
+(first seen)|dead|460
+(first seen)|active|385
+dead|active|26
+active|dead|14
+(first seen)|crashlooping|10
+dead|crashlooping|1
+
+===================================================================
+P4. G4 — dependency edges and blast radius
+    reproduce: sqlite3 catalog/estate.db 'select relation,count(*) from edges group by 1'
+               bin/estate-twin-runtime --blast-radius flux:Kustomization:flux-system/secret-store
+===================================================================
+runs_on|151
+depends_on|144
+about|73
+diagnosed|43
+part_of|19
+stale_secret|7
+
+===================================================================
+P5. G6 — freshness: stale reads UNKNOWN, never MEASURED_OK
+    reproduce: bin/estate-twin-runtime --state
+               sqlite3 catalog/estate.db "update freshness set updated_at=datetime('now','-30 days')"
+               bin/estate-twin-runtime --state
+===================================================================
+-- live --
+  UNKNOWN        code: last read 2592042s ago, window is 180s -- stale, so nothing here may be read as MEASURED_OK
+  UNKNOWN        runtime: last read 206s ago, window is 180s -- stale, so nothing here may be read as MEASURED_OK
+-- aged 30 days --
+  UNKNOWN        code: last read 2592001s ago, window is 180s -- stale, so nothing here may be read as MEASURED_OK
+  UNKNOWN        runtime: last read 2592001s ago, window is 180s -- stale, so nothing here may be read as MEASURED_OK
+-- restored --
+  MEASURED_FAIL  code: 649 of 649 nodes not serving (stranded=649, read 2s ago)
+  MEASURED_FAIL  runtime: 410 of 855 nodes not serving (dead=409, crashlooping=1, read 2s ago)
+
+===================================================================
+P6. Phase 2 — the code domain, and the anti-drift check
+    reproduce: bin/catalog-dark-matter --check
+               sqlite3 catalog/estate.db "select json_extract(metadata,'$.stranded_branches') from nodes where id='git:summary:stranded'"
+===================================================================
+ok      catalog-dark-matter  648 stranded branch(es), 10 dead deployment(s) current
+-- the graph's own count --
+{"at": "2026-09-12", "base": "origin/main", "branches_carried_in_portal_file": 200, "dead_deployments": 10, "dead_names": ["chaos-mesh/chaos-controller-manager", "edge-runtime/edge-runtime", "edge-runtime/resident-brain", "guacamole/guacamole", "hindsight/hindsight-api", "observability/langfuse-web", "observability/langfuse-worker", "observability/superset", "observability/superset-worker", "robusta/robusta-runner"], "files_absent_from_base": 94093, "portal_file_cap": 200, "stranded_branches": 648}
+-- per-branch rows must all be stranded --
+stranded|648

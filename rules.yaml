@@ -1231,6 +1231,114 @@ rules:
     - tests/fixtures/glass-break/good.json
   ok: the broker and its floor cannot land on a green check alone (WJ.8)
   fail: a change to the broker could be auto-merged or self-approved (WJ.8)
+- id: estate-graph-view
+  label: graphview
+  statement: 'The /ops graph section reports the estate''s three-state rule and never renders a stale
+    domain as serving: UNKNOWN leads the sentence when the graph is older than its window, a BLIND graph
+    names why rather than reading as clean, and the section keeps the tool''s own ordering so a dead workload
+    is not buried under warning events'
+  law: LAW 22, LAW 53
+  origin: founder 2026-09-12 (the view must not flatter the estate)
+  planes:
+  - ci
+  run:
+  - node
+  - bin/idp-estate-graph-prove
+  cluster:
+    policy: null
+    why: the subject is a React module, which no admission controller sees
+  fixtures:
+    must_fail: tests/fixtures/graphview/bad.json
+    must_pass: tests/fixtures/graphview/good.json
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/graphview/bad.json
+  - expect: pass
+    args:
+    - tests/fixtures/graphview/good.json
+  - expect: pass
+    args: []
+  ok: the founder's graph view reports the three states honestly and never flatters a stale read (2026-09-12)
+  fail: the view could render a stale or blind graph as healthy
+- id: estate-twin
+  label: twin
+  statement: Every runtime fact the estate reports comes from the estate's own cluster-state receipt into
+    catalog/estate.db, never from a second store, bus or server; a domain not read inside its freshness
+    window reads UNKNOWN and never MEASURED_OK; the twin's stranded-branch count equals the catalogue
+    generator's, so two surfaces cannot tell a founder two different numbers
+  law: LAW 22, LAW 39, THE HEADLINE
+  origin: founder 2026-09-12 ("tired of running my whole estate blind")
+  planes:
+  - ci
+  run:
+  - python3
+  - tests/test_estate_twin_rule.py
+  cluster:
+    policy: null
+    why: the subject is the estate's own asset graph, not a cluster object
+  fixtures:
+    must_fail: tests/fixtures/twin/no-summary.json
+    must_pass: tests/fixtures/twin/agreed.json
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/twin/no-summary.json
+  - expect: refuse
+    args:
+    - tests/fixtures/twin/disagreed.json
+  - expect: pass
+    args:
+    - tests/fixtures/twin/agreed.json
+  - expect: pass
+    args:
+    - --live
+  ok: the estate's graph knows what the estate is, and no second surface contradicts it (2026-09-12)
+  fail: the graph reports a number the catalogue contradicts, or claims freshness it does not have
+- id: bdd-proof
+  label: bdd-proof
+  statement: 'No pull request opens without BDD proof, across every agent session: the body carries a
+    BDD-PROOF block naming the head commit, that block carries a runner''s own passing counts rather than
+    a sentence saying the tests passed, and the named commit is the pull request''s own head -- a claim
+    with no run output is refused, and so is a real run on another commit'
+  law: LAW 22, LAW 53
+  origin: founder 2026-09-12
+  planes:
+  - ci
+  - session
+  run:
+  - python3
+  - bin/idp-bdd-proof-gate
+  cluster:
+    policy: null
+    why: the subject is a pull request body, which no admission controller sees
+  fixtures:
+    must_fail: tests/fixtures/bdd-proof/bad.json
+    must_pass: tests/fixtures/bdd-proof/good.json
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/bdd-proof/bad.json
+  - expect: refuse
+    args:
+    - tests/fixtures/bdd-proof/good.json
+    env:
+      BDD_PR_HEAD: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  - expect: refuse
+    args:
+    - tests/fixtures/bdd-proof/good.json
+    env:
+      BDD_RUN_HEAD: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  - expect: pass
+    args:
+    - tests/fixtures/bdd-proof/good.json
+  - expect: refuse
+    args:
+    - tests/fixtures/bdd-proof/stale-head.json
+  proved_elsewhere: 'bin/idp-bdd-proof-gate --live reads the most recent pull request on this repository
+    and refuses one carrying no proof block; run 2026-09-12 it refused PR #3206 for exactly that reason'
+  ok: no pull request opens without a passing BDD run on its own head, in any agent session (LAW 22)
+  fail: a pull request could open on a claim that was never proved by a BDD run (LAW 22)
 - id: convergence-proof
   label: proof
   statement: An infrastructure pull request reaches the merge gate with a Proof-of-Convergence; a body with no such block, or whose proof's run is not a green run on its own head commit, is refused -- a

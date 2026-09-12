@@ -53,8 +53,12 @@ rules:
   # 2026-08-29, founder: "can Otto use it?" K8sGPT's findings are Result objects in ns healing;
   # they ride the receipt so every reader -- a session, Otto's dispatch, oke-check -- sees the
   # cluster's own diagnosis without a kube login (idp#696 pages on them; this is the read).
+  # The Results are k8sgpt's findings; the k8sgpts CR is the scanner's own configuration --
+  # which resource kinds it covers, on what interval, against which model, and whether a
+  # finding may become an action. Reading only the first answers "what is broken" and leaves
+  # "what did we never look at" unanswerable (2026-09-12).
   - apiGroups: ["core.k8sgpt.ai"]
-    resources: ["results"]
+    resources: ["results", "k8sgpts"]
     verbs: ["get", "list"]
   - apiGroups: ["external-secrets.io"]
     resources: ["externalsecrets", "clustersecretstores"]
@@ -176,6 +180,14 @@ data:
                 out[c["name"]] = f"{t.get('reason', '')} exit={t.get('exitCode')}: {t.get('message') or ''}"[:400]
         return out
     not_ready = [{"ns": p["metadata"]["namespace"], "name": p["metadata"]["name"], "phase": p["status"].get("phase"),
+                  # 2026-09-12: a not-ready pod with no timestamp says WHAT is broken and never
+                  # HOW LONG, so a graph built from this receipt could not answer "when did it
+                  # break" -- the difference between a status page and a memory. The start time
+                  # is the API's own field; the first not-ready condition carries its own.
+                  "since": next((c.get("lastTransitionTime") for c in p["status"].get("conditions", [])
+                                 if c.get("type") == "Ready" and c.get("status") == "False"),
+                                p["status"].get("startTime", "")),
+                  "started": p["status"].get("startTime", ""),
                   "restarts": sum(c.get("restartCount", 0) for c in p["status"].get("containerStatuses", [])),
                   "waiting": waiting(p["status"]),
                   "failed": failed(p["status"]),
@@ -304,6 +316,37 @@ data:
                    # crew#483: when the Ready condition last flipped, so a denial can be dated against
                    # the commit that was meant to fix it instead of read as fresh.
                    "since": c.get("lastTransitionTime")}
+            # 2026-09-12: the dependency graph. A Flux object's own spec says what it waits on
+            # and what it owns. Without these four fields a reader can see that 67 Kustomizations
+            # declare dependsOn and cannot name a single edge, so "what breaks if this stops"
+            # has no answer. This is the estate's REAL ordering: Flux honours dependsOn before
+            # it reconciles, so a failure propagates along exactly these edges.
+            _sp = (o.get("spec") or {})
+            _dep = _sp.get("dependsOn") or []
+            if _dep:
+                row["depends_on"] = [f"{d.get('namespace','flux-system')}/{d.get('name','')}"
+                                     for d in _dep if d.get("name")]
+            if kind == "Kustomization":
+                if _sp.get("path"):
+                    row["path"] = _sp["path"]
+                if _sp.get("prune") is not None:
+                    row["prune"] = _sp["prune"]
+                _src = _sp.get("sourceRef") or {}
+                if _src.get("name"):
+                    row["source"] = f"{_src.get('kind','GitRepository')}/{_src.get('name')}"
+            if kind == "HelmRelease":
+                _ch = _sp.get("chart") or {}
+                _cs = (_ch.get("spec") or {}).get("sourceRef") or {}
+                if _cs.get("name"):
+                    row["chart_source"] = f"{_cs.get('kind','HelmRepository')}/{_cs.get('name')}"
+                _vals = _sp.get("valuesFrom") or []
+                if _vals:
+                    row["values_from"] = [f"{v.get('kind','')}/{v.get('name','')}" for v in _vals]
+            if kind == "ExternalSecret":
+                _t = (_sp.get("secretStoreRef") or {})
+                if _t.get("name"):
+                    row["store"] = f"{_t.get('kind','SecretStore')}/{_t.get('name')}"
+                row["target_secret"] = ((_sp.get("target") or {}).get("name") or "")
             if kind == "HelmRepository" and (o.get("spec") or {}).get("type") == "oci" and not c:
                 # crew#524, 2026-08-27: an OCI HelmRepository is static — source-controller never
                 # reconciles it and it carries no Ready condition (Flux docs, HelmRepository
@@ -391,12 +434,47 @@ data:
     # explanation. The receipt carries kind, namespace/name, the first error line and the
     # details, so "what is broken and why" is one read; a list that fails is a row, not a zero.
     try:
-        k8sgpt = [{"kind": (o.get("spec") or {}).get("kind", ""), "name": (o.get("spec") or {}).get("name", ""),
+        _results = get("/apis/core.k8sgpt.ai/v1alpha1/results")["items"]
+        k8sgpt = [{"kind": (o.get("spec") or {}).get("kind", ""),
+                   "name": (o.get("spec") or {}).get("name", ""),
                    "error": ((((o.get("spec") or {}).get("error") or [{}])[0]).get("text") or "")[:300],
                    "details": ((o.get("spec") or {}).get("details") or "")[:600]}
-                  for o in get("/apis/core.k8sgpt.ai/v1alpha1/results")["items"]]
+                  for o in _results]
+        # The scanner's OWN configuration. A Result list says what k8sgpt found; it does not
+        # say what it looked at, how often, on which model, or whether a finding can become
+        # an action. Without those, "why did nothing catch this" is unanswerable: the kind
+        # may not be in `filters`, the interval may not have elapsed, or remediation may be
+        # off by configuration. One read of the K8sGPT CR carries all of it.
+        _crs = get("/apis/core.k8sgpt.ai/v1alpha1/k8sgpts")["items"]
+        if _crs:
+            _sp = (_crs[0].get("spec") or {})
+            _ai = (_sp.get("ai") or {})
+            _rem = (_ai.get("autoRemediation") or {})
+            _bo = (_ai.get("backOff") or {})
+            k8sgpt_config = {
+                "name": (_crs[0].get("metadata") or {}).get("name", ""),
+                "namespace": (_crs[0].get("metadata") or {}).get("namespace", ""),
+                "enabled": _ai.get("enabled"),
+                "filters": _sp.get("filters") or [],
+                "analysis_interval": (_sp.get("analysis") or {}).get("interval", ""),
+                "backend": _ai.get("backend", ""),
+                "model": _ai.get("model", ""),
+                "base_url": _ai.get("baseUrl", ""),
+                "anonymized": _ai.get("anonymized"),
+                "language": _ai.get("language", ""),
+                "max_tokens": str(_ai.get("maxTokens", "")),
+                "topk": str(_ai.get("topk", "")),
+                "auto_remediation_enabled": _rem.get("enabled"),
+                "auto_remediation_resources": _rem.get("resources") or [],
+                "back_off_enabled": _bo.get("enabled"),
+                "back_off_max_retries": _bo.get("maxRetries"),
+                "results_on_cluster": len(_results),
+            }
+        else:
+            k8sgpt_config = {}
     except Exception as e:
         k8sgpt = [{"kind": "*", "name": "*", "error": f"list failed: {e}"[:300], "details": ""}]
+        k8sgpt_config = {"error": f"K8sGPT CR read failed: {e}"[:300]}
     # crew#320: a DaemonSet with fewer ready pods than desired is invisible to every row above
     # (its pods do not exist, so they are neither Running nor not-ready). k8s-infra-otel-agent
     # ran at 0/1 for a day while telemetry-coverage said seen=0 and nothing said why. The
@@ -773,12 +851,12 @@ data:
             f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} deploy_short={len(deploy_short)} secret_stale_consumers={secret_stale_count} events_warning={len(events)}"
             f" hostnames={len(hostnames or [])} spiffe_ids={len(spiffe['clusterspiffeids'] or [])} spiffe_workloads={len(spiffe['csi_workloads'])}"
             f" svids={sum(len(r['spiffe_ids']) for r in spiffe['svids'])} spire_agents={len(spiffe['agents'])}"
-            f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)} k8sgpt_findings={len(k8sgpt)}"
+            f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)} k8sgpt_findings={len(k8sgpt)} k8sgpt_scans={len((k8sgpt_config or {}).get('filters') or [])} k8sgpt_remediation={(k8sgpt_config or {}).get('auto_remediation_enabled')}"
             f" monitoring_rules={monitoring_rules} alert_watchdog={alert_watchdog}"
             f" cpu_used_pct={cpu_used_pct} mem_used_pct={mem_used_pct} cpu_req_pct={cpu_req_pct} mem_req_pct={mem_req_pct}"
             f" unschedulable={sum(1 for r in placement['pods'] if r['unschedulable'])}")
     body = {"at": at, "placement": placement, "capacity": capacity, "capacity_error": cap_error, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
-            "flux": flux, "flux_not_ready": flux_not_ready, "secret_stale_consumers": secret_stale, "secrets_error": secrets_error, "policy_exceptions": policy_exceptions, "kyverno_policies": kyverno_policies, "k8sgpt": k8sgpt, "daemonsets": ds, "ds_short": ds_short, "deploy_short": deploy_short, "events_warning": events,
+            "flux": flux, "flux_not_ready": flux_not_ready, "secret_stale_consumers": secret_stale, "secrets_error": secrets_error, "policy_exceptions": policy_exceptions, "kyverno_policies": kyverno_policies, "k8sgpt": k8sgpt, "k8sgpt_config": k8sgpt_config, "daemonsets": ds, "ds_short": ds_short, "deploy_short": deploy_short, "events_warning": events,
             "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe,
             "services_unlisted": services_unlisted, "services_unlisted_error": unlisted_error,
             "oci_identity": {"pods": oci_pods, "static_key_pods": oci_static_key_pods,

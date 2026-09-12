@@ -161,6 +161,7 @@ nav:
       - owner-account: tutorials/demo/owner-account.md
       - static-secret: tutorials/demo/static-secret.md
       - Bind audit: tutorials/demo/bind-audit.md
+      - Estate twin: tutorials/demo/estate-twin-runtime.md
       - Node software installs: tutorials/demo/nodesoftware-operator.md
       - Build image: tutorials/demo/build-image.md
       - Catalog: tutorials/demo/catalog.md
@@ -251,6 +252,7 @@ nav:
       - owner-account: how-to/onboarding/owner-account.md
       - static-secret: how-to/onboarding/static-secret.md
       - Bind audit: how-to/onboarding/bind-audit.md
+      - Estate twin: how-to/onboarding/estate-twin-runtime.md
       - Node software installs: how-to/onboarding/nodesoftware-operator.md
       - Build image: how-to/onboarding/build-image.md
       - Catalog: how-to/onboarding/catalog.md
