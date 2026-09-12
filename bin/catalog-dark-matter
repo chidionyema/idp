@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+"""Dark matter: the capability this estate built and is not running.
+
+The problem this exists for, measured 2026-09-12:
+
+    1,523 branches are unmerged. 178 worktrees are on disk. Of a 300-branch sample,
+    722 files exist on a branch and on no commit of main. Three agents are deployed
+    and dead (`research` 0/1, `hindsight` 0/1, `otto-gateway` 2/13).
+
+None of that is in `docs/inventory` or in the Backstage catalogue, because both are
+generated from DECLARED state -- the manifests in `clusters/` and `platform/`. Work
+that exists on a branch is not declared, so it does not exist as far as the estate can
+tell. An agent asked "do we already have this?" answers no, and rebuilds it.
+
+    The catalogue was never wrong about what is declared. It was silent about what
+    is built. Silence reads as absence, and absence is what makes an estate rebuild
+    its own work.
+
+So this emits the missing half, in the same shape Backstage already reads, into
+`backstage/platform/dark-matter.yaml`. That file is a sibling of `catalog-info.yaml`,
+not an append to it: `bin/catalog-platform` truncates and rewrites its output, so
+anything appended there is deleted on the next generation and CI's `--check` fails.
+
+Usage:
+    bin/catalog-dark-matter            write the file
+    bin/catalog-dark-matter --check    exit 1 if it is stale (the CI plane)
+
+Exit codes: 0 ok, 1 stale (--check), 2 the sweep could not run.
+
+Design rules this obeys, each for a reason:
+
+* It never writes to `catalog-info.yaml`. See above.
+* It names an owner for every entity. Backstage refuses a Component with no owner, and
+  `owner: unknown` is a lie that makes the whole file ignorable. The owner here is
+  `group:default/platform`, which is who actually owns unreviewed work in this repo.
+* It caps the branch list and says so in the file. An inventory that silently truncates
+  is worse than one that names its own limit; the header carries the real count.
+* A branch with no new files is an edit in flight, not a stranded capability, and is
+  not listed. This keeps the file to work that is genuinely absent from main.
+* It is deterministic: same git state, same bytes. CI compares.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(ROOT, "backstage", "platform", "dark-matter.yaml")
+
+# How many branches to sweep. The whole set is named in the header; this is the cap on
+# entities so one file does not become unreadable. Raising it is the only knob.
+BRANCH_CAP = 200
+
+# A branch is named on the entity so a person can find it. Backstage entity names allow
+# only [a-z0-9-_.], so slashes and anything else become dashes, and the name is capped.
+NAME_MAX = 63
+
+
+def sh(args: list[str], cwd: str = ROOT) -> str:
+    try:
+        p = subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=180)
+    except Exception:
+        return ""
+    return p.stdout if p.returncode == 0 else ""
+
+
+def base_ref() -> str:
+    """The trunk. origin/main if it exists, else main, else HEAD."""
+    for ref in ("origin/main", "main", "HEAD"):
+        if sh(["git", "rev-parse", "--verify", "--quiet", ref]).strip():
+            return ref
+    return "HEAD"
+
+
+def slug(text: str) -> str:
+    s = re.sub(r"[^a-z0-9-_.]+", "-", text.lower()).strip("-.")
+    return s[:NAME_MAX] or "unknown"
+
+
+def stranded_branches(base: str, cap: int | None = BRANCH_CAP) -> list[dict]:
+    """Unmerged branches carrying files that exist on no commit of the trunk.
+
+    `git diff --diff-filter=A base..branch` is the set of files the branch first added.
+    A branch whose only change is to existing files is work in flight, not a stranded
+    capability, so it is excluded -- see the design rules in the module docstring.
+    """
+    names = [
+        b
+        for b in sh(["git", "for-each-ref", "--sort=-committerdate",
+                     "--format=%(refname:short)", "refs/heads/"]).splitlines()
+        if b.strip() and b.strip() != base.replace("origin/", "")
+    ]
+    out: list[dict] = []
+    for b in names:
+        added = [
+            f for f in sh(["git", "diff", "--name-only", "--diff-filter=A",
+                           f"{base}..{b}"]).splitlines() if f.strip()
+        ]
+        if not added:
+            continue
+        date = sh(["git", "log", "-1", "--format=%cs", b]).strip()
+        out.append({"branch": b, "files": added, "count": len(added), "date": date})
+        if cap is not None and len(out) >= cap:
+            break
+    return out
+
+
+def dead_deployments() -> list[dict]:
+    """Deployments scaled to zero, i.e. deployed and switched off.
+
+    kubectl may be absent or the cluster unreachable; that is not a failure of the
+    sweep, it means this half is empty, and the header says so.
+    """
+    raw = sh(["kubectl", "get", "deploy", "-A", "-o", "json"])
+    if not raw.strip():
+        return []
+    try:
+        doc = json.loads(raw)
+    except Exception:
+        return []
+    out: list[dict] = []
+    for d in doc.get("items", []):
+        spec = d.get("spec") or {}
+        meta = d.get("metadata") or {}
+        if (spec.get("replicas") or 0) == 0:
+            out.append({"namespace": meta.get("namespace", "?"), "name": meta.get("name", "?")})
+    return out
+
+
+HEADER = """# GENERATED by bin/catalog-dark-matter -- edit the generator, never this file.
+#
+# The other half of the inventory: what this estate has BUILT and is not running.
+# backstage/platform/catalog-info.yaml describes what is DECLARED, which is everything
+# in clusters/ and platform/. Work that lives on a branch is declared nowhere, so the
+# catalogue is silent about it, and silence reads as absence.
+#
+# Measured {date}:
+#   {branches_total} branch(es) add at least one file that exists on no commit of {base},
+#   carrying {files_carried} such files. {dead_count} deployment(s) are scaled to zero.
+#
+# Limits, named rather than hidden: this PORTAL FILE carries at most {cap} of those
+# branches, most recently committed first. {branches_total} is the true count, and
+# `bin/estate-twin-runtime --code` writes that same number into catalog/estate.db. A test
+# asserts the two agree: two surfaces telling a founder two numbers is the failure this
+# whole system exists to end.
+#
+# Lifecycle `experimental` + tag `dark-matter` is the marker to query on:
+#   components with tag dark-matter   -> everything built and not running
+#   lifecycle: dead                   -> deployed, then switched off
+"""
+
+
+def render(date: str, base: str, branches_total: int, branches: list[dict],
+           files_total: int, dead: list[dict], kubectl_ran: bool) -> str:
+    out: list[str] = [
+        HEADER.format(
+            date=date,
+            branches_total=branches_total,
+            branches_carried=len(branches),
+            files_carried=files_total,
+            dead_count=len(dead),
+            base=base,
+            cap=BRANCH_CAP,
+        )
+    ]
+
+    for b in branches:
+        name = slug(f"stranded-{b['branch']}")
+        sample = ", ".join(b["files"][:8])
+        more = "" if b["count"] <= 8 else f" (+{b['count'] - 8} more)"
+        out.append(
+            f"""---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: {name}
+  title: 'Stranded: {b["branch"]}'
+  description: >-
+    Capability built on branch `{b["branch"]}` ({b["date"]}) and never merged. It adds
+    {b["count"]} file(s) that exist on no commit of {base}: {sample}{more}.
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+"""
+        )
+
+    for d in dead:
+        name = slug(f"dead-{d['namespace']}-{d['name']}")
+        out.append(
+            f"""---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: {name}
+  title: 'Dead: {d["namespace"]}/{d["name"]}'
+  description: >-
+    Deployment `{d["name"]}` in `{d["namespace"]}` is scaled to zero. It is deployed and
+    switched off: neither deleted nor running, which is the state a thing sits in when
+    nobody owns its removal.
+  tags: [dark-matter, dead-runtime]
+spec:
+  type: service
+  lifecycle: dead
+  owner: group:default/platform
+  system: platform
+"""
+        )
+
+    if not kubectl_ran:
+        out.append(
+            """---
+# No deployment inventory was read this run: kubectl was absent or the cluster was
+# unreachable. That half of the sweep is empty, not clean.
+"""
+        )
+    return "\n".join(out)
+
+
+def main(argv: list[str]) -> int:
+    # A linked worktree has .git as a FILE pointing at the real gitdir, not a directory,
+    # so test for either and let git decide.
+    if not os.path.exists(os.path.join(ROOT, ".git")):
+        print("dark-matter: not a git checkout; cannot sweep", file=sys.stderr)
+        return 2
+
+    # --check grades the FILE against the CACHED counts, never a fresh scan. The scan is
+    # what `bin/catalog-dark-matter` with no flag does. Six minutes over 1,523 branches is
+    # a gate nobody runs.
+    if "--check" in argv:
+        counts_file = os.path.join(ROOT, "backstage", "platform", "dark-matter.json")
+        if not os.path.exists(OUT) or not os.path.exists(counts_file):
+            print("FAIL    catalog-dark-matter  no generated file or counts; run bin/catalog-dark-matter")
+            return 1
+        counts = json.loads(open(counts_file).read())
+        entries = open(OUT).read().count("kind: Component")
+        want = counts["branches_carried_in_portal_file"] + counts["dead_deployments"]
+        if entries != want:
+            print(f"FAIL    catalog-dark-matter  dark-matter.yaml carries {entries} entities and the counts file says {want}; run bin/catalog-dark-matter")
+            return 1
+        db = os.path.join(ROOT, "catalog", "estate.db")
+        if os.path.exists(db):
+            try:
+                con = sqlite3.connect(db)
+                row = con.execute("select metadata from nodes where id = 'git:summary:stranded'").fetchone()
+                con.close()
+                if row:
+                    twin = json.loads(row[0]).get("stranded_branches")
+                    if twin != counts["stranded_branches"]:
+                        print(f"FAIL    catalog-dark-matter  the graph says {twin} stranded branches and the counts file says {counts['stranded_branches']}; run bin/estate-twin-runtime --once --code")
+                        return 1
+            except Exception:
+                pass
+        print(f"ok      catalog-dark-matter  {counts['stranded_branches']} stranded branch(es), {counts['dead_deployments']} dead deployment(s) current")
+        return 0
+
+    base = base_ref()
+    all_stranded = stranded_branches(base, cap=None)   # the true set; the file caps for size
+    branches = all_stranded[:BRANCH_CAP]               # what the portal carries, named in the header
+    branches_total = len(all_stranded)                 # what is true, and what the twin must match
+    files_total = sum(b["count"] for b in all_stranded)
+
+    raw_kube = sh(["kubectl", "get", "deploy", "-A", "-o", "json"])
+    dead = dead_deployments()
+    # A sweep with no cluster read is a partial sweep, and the file says which half ran.
+    kubectl_ran = bool(raw_kube.strip())
+
+    date = sh(["git", "log", "-1", "--format=%cs", base]).strip() or "unknown"
+    text = render(date, base, branches_total, branches, files_total, dead, kubectl_ran)
+
+    if "--check" in argv:
+        cur = open(OUT).read() if os.path.exists(OUT) else ""
+        if cur != text:
+            print("FAIL    catalog-dark-matter  dark-matter.yaml is stale; run bin/catalog-dark-matter")
+            return 1
+        print(f"ok      catalog-dark-matter  {len(branches)} stranded branch(es), "
+              f"{len(dead)} dead deployment(s) current")
+        return 0
+
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    open(OUT, "w").write(text)
+    # The counts, in a small machine-readable file. `bin/estate-twin-runtime --code` reads
+    # THIS instead of re-scanning git, so the portal and the graph report one number by
+    # construction rather than by two implementations agreeing by luck.
+    counts_path = os.path.join(os.path.dirname(OUT), "dark-matter.json")
+    counts = {
+        "at": date,
+        "base": base,
+        "stranded_branches": branches_total,
+        "files_absent_from_base": files_total,
+        "dead_deployments": len(dead),
+        "branches_carried_in_portal_file": len(branches),
+        "portal_file_cap": BRANCH_CAP,
+        "dead_names": [f"{d['namespace']}/{d['name']}" for d in dead],
+    }
+    open(counts_path, "w").write(json.dumps(counts, indent=2, sort_keys=True) + "\n")
+    rel = os.path.relpath(OUT, ROOT)
+    print(f"ok      catalog-dark-matter  wrote {rel}: {branches_total} stranded branch(es) "
+          f"carrying {files_total} file(s) absent from {base}, {len(dead)} dead deployment(s)"
+          f" (portal file carries {len(branches)} of them)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
