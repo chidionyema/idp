@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chidionyema/idp/backstage/plugins/fleetview-backend/schema/session.json",
+  "title": "FleetView session record",
+  "description": "One agent session, whatever runtime produced it. This is the offering's integration surface: a customer with their own runtime writes one adapter that emits this record, and the board, the enrichers and the signals all work. Every adapter's output is validated against this file in CI, so a runtime cannot silently disagree with the others about what a session is.",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["session_id", "runtime", "task", "state"],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Stable across the session's life and unique within its runtime."
+    },
+    "runtime": {
+      "type": "string",
+      "description": "Which adapter produced this record. A board that cannot name the runtime cannot tell an agent session from a batch run.",
+      "enum": ["sovereign", "claude-code", "cyrus", "dagster", "github-actions"]
+    },
+    "task": {
+      "type": "string",
+      "description": "What the session is doing, in the words a person would use."
+    },
+    "state": {
+      "type": "string",
+      "description": "The session's lifecycle state as its runtime reports it. 'unknown' is the honest answer when the runtime did not say, and it is never folded into 'running'.",
+      "enum": ["running", "paused", "stopped", "failed", "unknown"]
+    },
+    "repo": {
+      "type": ["string", "null"],
+      "description": "The repository the session is working in. Null means the runtime did not say -- a ledger row names a directory, not a repo, and inventing one from a path would put a wrong link on the board."
+    },
+    "step": {
+      "type": ["integer", "null"],
+      "description": "Progress within the session's own plan, when the runtime counts one."
+    },
+    "updated_at": {
+      "type": ["string", "null"],
+      "description": "RFC 3339 timestamp of the session's last observed change."
+    },
+    "trace_url": {
+      "type": ["string", "null"],
+      "description": "Enriched from Langfuse by session id."
+    },
+    "spend_usd": {
+      "type": ["number", "null"],
+      "description": "Enriched from the LiteLLM spend log by tag. Null means not measured, never zero."
+    },
+    "pull_requests": {
+      "type": "array",
+      "description": "Enriched by branch. A session that opened no pull request has an empty array, not null.",
+      "items": { "type": "string" }
+    },
+    "ticket": {
+      "type": ["string", "null"],
+      "description": "Enriched from the Linear or GitHub key in the branch name."
+    }
+  },
+  "additionalProperties": true
+}
