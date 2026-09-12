@@ -60,6 +60,7 @@ nav:
   - How-to:
       - how-to/index.md
       - Bitwarden human vault, the founder's steps: how-to/bitwarden-human-vault.md
+      - Onboarding the evidence layer: how-to/onboarding/evidence.md
       - Boot Dagster and Superset: how-to/boot-dagster-and-superset.md
       - Prove a change in the shadow: how-to/prove-a-change-in-the-shadow.md
   - Reference:
@@ -104,6 +105,7 @@ nav:
       - Estate compiler: tutorials/demo/intent.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
+      - Evidence layer: tutorials/demo/evidence.md
       - Estate next: tutorials/demo/estate-next.md
       - Messaging: tutorials/demo/messaging.md
       - Prose-pin gate: tutorials/demo/test-prose-gate.md
