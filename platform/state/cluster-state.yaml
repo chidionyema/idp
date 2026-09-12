@@ -725,7 +725,22 @@ data:
     # algorithm in here -- two copies of one rule is the sprawl we are deleting -- the receipt
     # carries the compact inputs and the gate keeps the single algorithm, reading either a live
     # cluster or these rows.
+    # The cluster's own totals, so a reader can see the gap between what is RESERVED and what is
+    # USED. Requests are reservations, not usage: on 2026-09-12 this cluster was at 96% of CPU
+    # requests while using 39%/85%, and the gap is the whole explanation for a full cluster that
+    # is idle. Without both numbers a page can only say "96% full", which sends a reader looking
+    # for a new node instead of at the reservation that is wrong.
+    _cpu_alloc = sum(int(qty((n["status"].get("allocatable") or {}).get("cpu")) * 1000) for n in nodes)
+    _cpu_req = 0
+    _cpu_used = 0
     placement = {
+        "cpu_allocatable_m": _cpu_alloc,
+        # Requested is summed from the per-node requests metrics.k8s.io section already builds;
+        # used is summed from the same source's live usage. Both are None when that source could
+        # not be read, never 0 -- an unread measurement is not a measurement of zero, and a page
+        # showing 0m used on a busy cluster would be worse than showing nothing.
+        "cpu_requested_m": (int(sum(v["cpu"] for v in req.values()) * 1000) if req else None),
+        "cpu_used_m": (int(sum(v["cpu"] for v in usage.values()) * 1000) if usage else None),
         "nodes": [{"name": n["metadata"]["name"],
                    "cpu_allocatable_m": int(qty((n["status"].get("allocatable") or {}).get("cpu")) * 1000),
                    "memory_allocatable_mi": int(qty((n["status"].get("allocatable") or {}).get("memory")) / 1048576),
@@ -785,6 +800,7 @@ data:
                               "unknown_identity_pods": oci_unknown_identity_pods},
             "monitoring": {"rules": monitoring_rules, "alerts_firing": alert_names, "error": monitoring_error}}
     sys.stdout.write(head + "\n" + json.dumps(body, sort_keys=True) + "\n")
+
 ---
 apiVersion: batch/v1
 kind: CronJob
