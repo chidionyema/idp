@@ -1,0 +1,3 @@
+{"type":"message","role":"user","content":[{"type":"text","text":"what did you find"}]}
+{"type":"message","role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"git log --oneline -3"}}]}
+{"type":"message","role":"assistant","content":[{"type":"text","text":"I built bin/treewalk.py, and the commit is on main."}]}
