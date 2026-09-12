@@ -31,14 +31,17 @@
 name: merge-when-green
 
 on:
-  # Two triggers, no cron of its own. `ci` finishing is the moment a pull request can turn green.
-  # `deploy-when-green` is the backstop: it already carries the estate's one declared ten-minute
-  # tick, so riding it catches a pull request that went green before this file existed, or one
-  # that became mergeable because something else merged -- without declaring a second recurring
-  # job outside Dagster (bin/idp-one-scheduler, founder 2026-09-07: "we should only be using
-  # dagster for scheduling").
+  # `deploy-when-green` is the driver, not the backstop: it already carries the estate's one
+  # declared ten-minute tick, and riding it catches a pull request that went green before this
+  # file existed, or one that became mergeable because something else merged -- without declaring
+  # a second recurring job outside Dagster (bin/idp-one-scheduler, founder 2026-09-07: "we should
+  # only be using dagster for scheduling").
+  #
+  # `ci` used to be listed here too, and that is what caused the storm above: every one of its
+  # many jobs completing fired a pass. A pull request that goes green now waits for the next
+  # ten-minute tick, which is the price of the refresh actually running at all.
   workflow_run:
-    workflows: [ci, deploy-when-green]
+    workflows: [deploy-when-green]
     types: [completed]
   workflow_dispatch:
 
@@ -49,6 +52,21 @@ permissions:
   id-token: write   # traded for the OCI session that reads the App key
 
 concurrency:
+  # `ci` finishing is when a pull request can turn green, but it is not one event: ci has many
+  # jobs and this estate runs it every few minutes for the image-update loop, so
+  # `types: [completed]` fired this workflow on every one of them. Measured 2026-09-12: **60 runs
+  # in one hour**, eight triggered inside the same 30 seconds (21:04:24-21:04:58), and 14 of the
+  # last 19 cancelled.
+  #
+  # `cancel-in-progress: false` protects the run that is executing; it does nothing for the one
+  # QUEUED. GitHub keeps at most one pending run per concurrency group, so each fresh trigger
+  # evicted the queued pass -- and the queued pass was the one that would have refreshed the
+  # branches. So the refresh added in #3262 could not run reliably: the workflow kept shooting
+  # itself, and the red pull requests were the symptom.
+  #
+  # The trigger is narrowed to the ten-minute tick `deploy-when-green` already carries, which is
+  # what the comment above always described it as. The `ci` trigger is dropped because its own
+  # backstop covers the same moment on a schedule this estate can absorb.
   group: merge-when-green
   cancel-in-progress: false
 
