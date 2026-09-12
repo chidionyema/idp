@@ -141,3 +141,40 @@ class TestTheFingerprint:
         """Coarse, and the tests say so: unrelated text must not collide with a CVE finding."""
         assert brk.fingerprint("a git conflict on bin/x").startswith("sha:")
         assert brk.fingerprint("a git conflict on bin/x") != brk.fingerprint(LOG_A)
+
+
+class TestTheTwoBugsEnforcementFound:
+    """Both were found by trying to ENFORCE the breaker, and neither was caught in-process.
+
+    An in-process test builds one Breaker object, so state that fails to persist across processes
+    and a file that cannot be executed both pass. That is the difference between a rule in CI and a
+    guard a session cannot walk past, and it is why enforcement found what the unit tests did not.
+    """
+
+    def test_the_record_rebuilds_the_lock_in_a_fresh_process(self, brk, tmp_path):
+        """Each CLI invocation is a NEW process. The lock is derived from the record, not stored.
+
+        Measured 2026-09-12: replaying observe rows without re-running the threshold left a fresh
+        process reporting locked: false on a pattern that was already proved, so the enforcement
+        was blind exactly when it mattered.
+        """
+        store = tmp_path / "b.jsonl"
+        first = brk.Breaker(store=store)
+        for t in ("pr-1", "pr-2", "pr-3"):
+            first.observe("CVE-2026-13221 CVE-2026-42496", t)
+        # a second object, as a second process would build
+        second = brk.Breaker(store=store)
+        assert second.check("CVE-2026-42496 CVE-2026-13221", "pr-4")["locked"] is True
+
+    def test_the_tool_is_executable(self):
+        """A file with no shebang cannot be run as a program, so a caller silently gets nothing.
+
+        Measured 2026-09-12: bin/idp-circuit-breaker was marked executable and started with a
+        docstring, so spawnSync returned no output and the extension reported "not locked" for a
+        pattern that was proved. The unit tests never ran it as a program.
+        """
+        tool = ROOT / "bin" / "idp-circuit-breaker"
+        assert tool.read_text().startswith("#!"), (
+            "no shebang, so it cannot be executed directly"
+        )
+        assert tool.stat().st_mode & 0o111, "not executable"
