@@ -50,6 +50,7 @@ nav:
       - 0017 Bitwarden is the human door for secrets: decisions/0017-bitwarden-is-the-human-door-for-secrets.md
       - 0018 Superset is the dashboard: decisions/0018-superset-is-the-dashboard-because-it-takes-the-gateways-word.md
       - 0019 Credentials federate, one pasted seed at most: decisions/0019-credentials-federate-a-human-pastes-at-most-one-seed.md
+      - 0028 Aevum replaces POPDD as the evidence layer: decisions/0028-aevum-replaces-popdd-as-the-evidence-layer.md
       - Portal defects fixed in one pass: decisions/portal-defects-crew612.md
   - Specs:
       - KINI.AI master spec: reference/specs/kini-master-spec.md
