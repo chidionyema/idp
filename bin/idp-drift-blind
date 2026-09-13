@@ -46,9 +46,17 @@ BLIND = "BLIND"
 
 
 def grade(reading: Path) -> tuple[bool, str]:
-    """True when the reading distinguishes blind from clean, or refuses without saying so."""
-    exit_file = reading / "exit"
-    out_file = reading / "stdout"
+    """Grade one reading held in a directory, by its path."""
+    return grade_reading(reading / "exit", reading / "stdout", str(reading))
+
+
+def grade_reading(exit_file: Path, out_file: Path, reading: str) -> tuple[bool, str]:
+    """True when the reading distinguishes blind from clean, or refuses without saying so.
+
+    Takes the two files and a label rather than a directory, so the LIVE readings --
+    which are captured into a temp file that no longer exists by the time they are
+    graded -- are graded by this same code and not by a second copy of it.
+    """
     if not exit_file.is_file() or not out_file.is_file():
         return False, f"{reading} holds no reading: both 'exit' and 'stdout' are required"
 
@@ -85,21 +93,88 @@ def grade(reading: Path) -> tuple[bool, str]:
     return True, f"{reading}: exit {code}, {'BLIND' if says_blind else 'a real reading'}"
 
 
+def live_readings() -> list:
+    """Run the real reader and grade what it actually does -- blind and not.
+
+    THE POINT OF THIS FUNCTION IS THAT IT GRADES THE TOOL, NOT AN EXAMPLE OF ONE.
+    A rule whose only cases are checked-in fixtures is a rule about a fixture: it
+    would stay green the day someone changed `bin/idp-gitops-drift` to exit 0 in
+    the blind branch, because the fixture still says 2.
+
+    Two readings are taken from the tool that SHIPS:
+
+      * a real read, against whatever estate this machine can see;
+      * a BLIND read, forced by an empty PATH so `command -v kubectl` fails.
+
+    Neither asserts a particular exit code. A clean cluster answers 0 and a
+    drifting one answers 1, and both are correct. What is asserted is the property
+    that holds in every case: the verdict never says BLIND and 0 at once, and never
+    says 2 without saying BLIND.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    tool = ROOT / "bin" / "idp-gitops-drift"
+    if not tool.is_file():
+        return []
+
+    verdicts = []
+    for label, env in (
+        ("the real estate", dict(os.environ)),
+        ("a blind read", {**os.environ, "PATH": "/usr/bin:/bin"}),
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            exit_file, out_file = d / "exit", d / "stdout"
+            try:
+                r = subprocess.run(
+                    ["bash", str(tool)],
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                    env=env,
+                )
+            except (OSError, subprocess.SubprocessError):
+                continue
+            exit_file.write_text(str(r.returncode))
+            out_file.write_text(r.stdout or "")
+            # Graded INSIDE the lifetime of the capture directory, because the files
+            # are gone the moment this block ends.
+            verdicts.append(grade_reading(exit_file, out_file, label))
+    return verdicts
+
+
 def main(argv: list[str]) -> int:
-    targets = [Path(a) for a in argv[1:]] or [
-        ROOT / "tests/fixtures/drift-blind/bad",
-        ROOT / "tests/fixtures/drift-blind/good",
-    ]
+    explicit = [Path(a) for a in argv[1:]]
+    if explicit:
+        return _grade_all([grade(d) for d in explicit])
+
+    # A bare run grades THE ESTATE'S OWN READER, live. It does not re-grade the bad
+    # fixture: that fixture is this rule's must-fail case and the rules engine runs
+    # it on its own. Grading it here would make a bare invocation always red, which
+    # is a gate that cannot be used.
+    verdicts = live_readings()
+    if not verdicts:
+        print(
+            "FAIL  drift-blind  bin/idp-gitops-drift did not run, so the live half of "
+            "this rule could not be graded. A rule with no live input is the gap this "
+            "check exists to close."
+        )
+        return 1
+    return _grade_all(verdicts)
+
+
+def _grade_all(verdicts: list) -> int:
     failures = 0
-    for target in targets:
-        ok, why = grade(target)
+    for ok, why in verdicts:
         print(f"{'ok  ' if ok else 'FAIL'}  drift-blind  {why}")
         if not ok:
             failures += 1
     if failures:
         print(f"FAIL  drift-blind  {failures} reading(s) cannot tell blind from clean")
         return 1
-    print(f"ok    drift-blind  {len(targets)} reading(s) distinguish blind from clean")
+    print(f"ok    drift-blind  {len(verdicts)} reading(s) distinguish blind from clean")
     return 0
 
 

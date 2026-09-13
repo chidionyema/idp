@@ -2117,5 +2117,7 @@ rules:
     args:
     - tests/fixtures/drift-blind/good
     note: a reader that read every object and found the estate reconciled exits 0
+  - expect: pass
+    note: LIVE -- a bare run invokes bin/idp-gitops-drift twice, once against the estate this machine can see and once with an empty PATH, and grades both verdicts with the same code. It asserts no particular exit code, because a clean cluster answers 0 and a drifting one answers 1 and both are right; it asserts the property -- never BLIND with 0, never 2 without BLIND. This is the case that stays red the day the tool's blind branch is changed, which a fixture-only rule cannot see.
   ok: a reader that cannot see the estate says so and refuses to report a clean one
   fail: a blind reading prints the same thing as a clean estate
