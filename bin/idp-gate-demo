@@ -182,8 +182,29 @@ def _stable(output: str) -> str:
     out = re.sub(
         r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\s*[+-]\d{4})?", "<timestamp>", output
     )
+    # A CPython repr carries the object's address: `<Foo object at 0x111ad3390>`, and pytest dumps
+    # whole reprs of test objects on a failure. The address changes every run.
+    out = re.sub(r"0x[0-9a-fA-F]{6,}", "<addr>", out)
     out = re.sub(r"/(?:private/)?var/folders/\S*?/tmp[0-9A-Za-z_]+", "<tmpdir>", out)
     out = re.sub(r"/tmp/tmp[0-9A-Za-z_]+", "<tmpdir>", out)  # noqa: S108 -- a pattern, not a path
+    # pytest's own temp root is `pytest-of-<user>/pytest-<n>` -- NUMBERED and USER-NAMED, not
+    # `tmp`-prefixed, so the pattern above misses it and both the account name and the session
+    # number leaked into a committed page. Measured on 2026-09-13: with the timestamp, duration
+    # and address scrubs already in place, breaker-enforcement.md was still the one page of 84
+    # that differed between two renders, and this line was in the diff.
+    out = re.sub(
+        r"/(?:private/)?var/folders/\S*?/pytest-of-[^/\s:'\"]+(?:/pytest-[^/\s:'\"]+)?",
+        "/<tmpdir>",
+        out,
+    )
+    # A uuid, e.g. pytest's `garbage-3ac755cf-46dd-4e4b-8a67-66489063ec71` -- the dirs it could
+    # not remove, named per run. Anchored on the 8-4-4-4-12 shape so an ordinary hyphenated word
+    # is untouched.
+    out = re.sub(
+        r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
+        "<uuid>",
+        out,
+    )
     # pytest's summary line: `13 passed in 456.72s (0:07:36)`, `1 failed, 2 passed in 0.31s`.
     # Anchored on `in <n>s` so a finding that merely contains the word "passed" is untouched. The
     # optional space before the bracketed clock form is REQUIRED, not cosmetic: measured here on
