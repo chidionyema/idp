@@ -32,7 +32,6 @@ configMapGenerator:
       - values.yaml=langfuse-values.yaml
     options:
       disableNameSuffixHash: true
-
 # WAVE 1 OF THE ROLL ONTO THE ENFORCING CNI.
 #
 # 10-calico.conflist sorts before 10-flannel.conflist in /etc/cni/net.d, so Calico wins the CNI
@@ -60,11 +59,10 @@ patches:
           metadata:
             annotations:
               idp.internal/cni-generation: "2"
-
 # The tag is moved by Flux image automation (platform/image-automation/aevum.yaml), the same way
 # cyrus, jit and estate-mcp move. It is pinned here rather than in aevum.yaml so the marker sits on
 # one line the automation owns -- and because a literal tag in the Deployment is what put this
 # workload in ImagePullBackOff on 2026-09-12.
 images:
   - name: ghcr.io/chidionyema/aevum
-    newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:aevum:tag"}
+    newTag: main-8995-6a9ee5fb75653528843d08fa535913e61b7d3330 # {"$imagepolicy": "flux-system:aevum:tag"}
