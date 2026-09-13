@@ -2534,7 +2534,7 @@ rules:
     green. This row closes that gap one script at a time; the count may only fall.'
 - id: deterministic-verifier
   label: verifier
-  statement: 'A claim of completed work is not the agent''s to make: the agent may only propose a patch into an ephemeral ledger, three graders the proposer does not control run against the exact bytes -- structural (compile), symbolic (Z3 over the declared guard contract, which refuses to discharge "tests pass"), and execution (a sterile tree whose exit code is the verdict) -- and an attestation is minted only when all three pass, bound to the SHA-256 of the artifact actually verified. Take the claim away from the claimant'
+  statement: 'A claim of completed work is not the agent''s to make: the agent may only propose a patch into an ephemeral ledger, three graders the proposer does not control run against the exact bytes -- structural (the bytes compile), symbolic (Z3 over the guard the patch itself declares, which refuses to discharge "tests pass"), and execution (the SUPPLIED TEST SUITE runs in a throwaway tree and the pytest exit code is the verdict, so a proposal carrying no test is refused) -- and an attestation is minted only when all three pass, bound to the SHA-256 of the artifact actually verified. Take the claim away from the claimant'
   law: founder 2026-09-13 "the fact u are able toi lie eans he his rules isnt operation al and the firs thig we need to addres" / "thats why i dont belive clains without hard prrov 3 different w3ys"
   origin: incident 2026-09-13, an agent's first-person claim of done accepted with no third party behind it; see docs/tickets/2026-09-13-deterministic-verifier.md
   planes:
