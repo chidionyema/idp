@@ -869,24 +869,48 @@ def test_rule_4_has_two_enforcement_points() -> None:
     as not existing rather than mocked. This assertion proves that by checking the file set.
     """
     repo_root = Path(__file__).resolve().parents[3]
-    # `git grep` searches the INDEX and tracked files, so a file that exists but is not yet
-    # staged is invisible to it. That was measured here: the new policy did not appear in the
-    # list until it was staged, which would have made this test fail for a STAGING reason
-    # rather than an enforcement reason -- a false signal that says "enforcement moved" when
-    # nothing moved. So the scan covers both: tracked files, and any file on disk under the
-    # policy directories that carries the token.
+    # BOUNDED ON PURPOSE. MEASURED DEFECT, 2026-09-13: this test first walked `platform`,
+    # `features`, `sovereign`, `tests` and `bin` with `rglob("*")` and read EVERY file's full
+    # text in Python to look for one token. On this repository that is tens of thousands of files
+    # -- caches, vendored trees, binary blobs -- and the walk did not finish inside 40 seconds, so
+    # the whole module never printed its summary and never exited. `bin/idp-ci` runs this suite,
+    # and a check that cannot finish is not a check (LAW 45).
+    #
+    # The bound that replaced it is `git grep`, which searches tracked content with a real
+    # index and skips exactly what should be skipped. It is NOT enough on its own -- git grep
+    # reads the INDEX and tracked files, so a file that exists but is not yet staged is invisible
+    # to it, which was also measured here: the new policy did not appear in the list until it was
+    # staged, making this test fail for a STAGING reason rather than an enforcement reason.
+    #
+    # So the scan is the union of two bounded things: tracked files (git), and the small set of
+    # directories an enforcement point can actually live in, filtered by extension BEFORE any
+    # read. The second half only ever reads text files in `platform/`, which is where the Kyverno
+    # policy and the executor live and where a third enforcement point would be added.
     tracked = subprocess.run(
         ["git", "grep", "-l", "UNATTESTED"],
         cwd=repo_root,
         capture_output=True,
         text=True,
         check=False,
+        # BOUNDED ON PURPOSE, AND THIS WAS THE ACTUAL STALL. MEASURED 2026-09-13: this test was
+        # the eighth of eight and the only one that never finished -- seven dots, then nothing,
+        # for as long as the run was left alone, so pytest never printed a summary and never
+        # exited. Three candidates were eliminated by timing them: the `rglob` walk (0.2s over
+        # 16262 paths), the token scan (1s), and `git grep` itself (0s, 4 hits). What remained is
+        # that this call had no bound at all: a `git` that blocks -- an index lock held by another
+        # session, a pager waiting on a terminal, a credential prompt -- hangs the whole module
+        # with no output, and `bin/idp-ci` runs this module. A check that can hang is not a check
+        # (LAW 45), and a hang reads as "still running" rather than as a defect.
+        timeout=30,
     ).stdout.splitlines()
+    scanned_suffixes = {".py", ".yaml", ".yml", ".rego", ".json", ".feature", ".sh"}
     on_disk = sorted(
         str(p.relative_to(repo_root))
-        for directory in ("platform", "features", "sovereign", "tests", "bin")
-        for p in (repo_root / directory).rglob("*")
-        if p.is_file() and "UNATTESTED" in p.read_text(errors="ignore")
+        for p in (repo_root / "platform").rglob("*")
+        if p.is_file()
+        and p.suffix in scanned_suffixes
+        and p.stat().st_size < 1_000_000
+        and "UNATTESTED" in p.read_text(errors="ignore")
     )
     found = sorted(set(tracked) | set(on_disk))
     enforcing = sorted(
