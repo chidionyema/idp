@@ -2118,6 +2118,9 @@ rules:
     args: ["--state", "tests/fixtures/clean-tree/midmerge.json"]
     note: the exact tree that produced the three false reports
   - expect: pass
+    args: ["--state", "tests/fixtures/clean-tree/noise.json"]
+    note: a per-machine .venv is not a tree state anyone grades; a real change beside it still is
+  - expect: pass
     live: true
     note: a worktree cut from origin/main, which is where work is graded
   ok: the shared checkout mid-merge is refused, and an ordinary dirty worktree is not

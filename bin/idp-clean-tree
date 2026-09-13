@@ -98,9 +98,16 @@ def _ignorable(path: str) -> bool:
 
     A `.venv` or `.agent` is per-machine and gitignored in practice; `.DS_Store` is macOS noise.
     Kept as one list so the rule is visible rather than scattered through the loop above.
+
+    Both the bare directory and anything under it match, because git prints the bare name for an
+    empty or deleted directory -- measured 2026-09-13, when `D .venv` was counted as a change
+    while `.venv/bin/python` was not, which is the same directory judged two ways.
     """
-    noise = (".venv/", ".agent/", ".DS_Store", "__pycache__/", ".pytest_cache/", "node_modules/")
-    return path.startswith(noise)
+    noise = ("node_modules",)
+    prefixes = (".venv", ".agent", "__pycache__", ".pytest_cache")
+    if path in noise or path == ".DS_Store":
+        return True
+    return any(path == p or path.startswith(p + "/") for p in prefixes)
 
 
 def unmerged(root: Path) -> list[str]:
@@ -122,8 +129,14 @@ def grade_state(state: dict, root: Path) -> tuple[int, str]:
 
 
 def _path_of(entry: str) -> str:
-    """The path out of a porcelain entry, whichever way it was written."""
-    return entry[2:].strip() if len(entry) > 3 and entry[1] == " " else entry.strip()
+    """The path out of a porcelain entry.
+
+    git's `status --porcelain` is fixed-width: two status columns then one space, whatever the
+    codes are. "XY path". An earlier version of this guessed at the split by looking at the codes
+    and mis-read half the shapes -- ` D .venv` and `UU AGENTS.md` both came back with the status
+    still attached, so a per-machine directory was counted as a change. Slice at two, always.
+    """
+    return entry[2:].strip()
 
 
 def grade(path: Path) -> tuple[int, str]:
