@@ -131,6 +131,25 @@ class Door:
         )
         self._await_socket()
 
+    # WHY THERE IS NO REAPER THREAD HERE. MEASURED, 2026-09-13.
+    #
+    # A parent-death reaper was written here first and it was WRONG BY CONSTRUCTION: it captured
+    # `os.getpid()` and compared it against `os.getppid()`, which is the pytest process's PARENT,
+    # not pytest itself -- so the condition was true from the first tick and the thread terminated
+    # the daemon while a scenario was using it. The symptom was four scenarios failing with
+    # `JSONDecodeError: Expecting value: line 1 column 1 (char 0)` -- a daemon that had been killed
+    # mid-request, reported as a bad reply rather than as a dead daemon.
+    #
+    # It is not replaced, because the leak it was written for is fixed at its real cause: the
+    # `door` fixture now stops the daemon in a `finally`, so a scenario that FAILS or is interrupted
+    # still reaps it. The two orphaned daemons found today (PPID 1, one 1h21m old) came from runs
+    # that took the bare-`yield` path -- which no longer exists.
+    #
+    # A reaper that kills a live daemon is worse than the leak it prevents: the leak wastes a
+    # process, and the reaper makes every test in the file lie. If a genuine need for one appears,
+    # the condition must be "is my parent gone", and in Python the reliable form of that is
+    # `os.kill(ppid, 0)` raising `ProcessLookupError`, never a getpid/getppid comparison.
+
     def stderr_text(self) -> str:
         """What the daemon itself printed, read from its own file."""
         try:
@@ -241,9 +260,15 @@ def door(tmp_path: Path):
     d = Door(socket_root)
     d.root.mkdir(parents=True, exist_ok=True)
     d.start()
-    yield d
-    d.stop()
-    shutil.rmtree(socket_root, ignore_errors=True)
+    # `try/finally`, not a bare `yield d` followed by `d.stop()`. A bare yield skips every line
+    # after it when the scenario body raises, which is precisely when a daemon gets orphaned:
+    # the two leaked daemons found on 2026-09-13 (PPID 1, one 1h21m old) came from a failing or
+    # interrupted run. Cleanup that only runs on the success path is not cleanup.
+    try:
+        yield d
+    finally:
+        d.stop()
+        shutil.rmtree(socket_root, ignore_errors=True)
 
 
 @pytest.fixture
