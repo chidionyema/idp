@@ -169,3 +169,34 @@ def test_the_db_push_carries_the_graph():
         "the push does not report how many graph nodes it ships, so a graph-less artifact "
         "reads as a success"
     )
+
+
+def test_the_graph_steps_survive_a_failed_render():
+    """The two steps that ship the cluster's database must not be skipped when render fails.
+
+    They sat after `render`, whose last act is arming a pull request against GitHub's API.
+    On 2026-09-13 that API answered 502, `pr-arm` exited 1, `render` stopped, and both steps
+    were skipped: the catalogue shipped and the graph did not, for a reason that had nothing
+    to do with either.
+
+    Both steps carry `always()`. A push to a registry must not depend on GitHub's API
+    answering.
+    """
+    import yaml
+
+    jobs = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "catalog-render.yml").read_text()
+    )
+    steps = jobs["jobs"]["render"]["steps"]
+    named = {s.get("name", ""): s for s in steps}
+    for fragment in ("estate twin", "estate.db to the registry"):
+        step = next((s for n, s in named.items() if fragment in n), None)
+        assert step is not None, (
+            f"no step named like {fragment!r} in catalog-render.yml"
+        )
+        cond = str(step.get("if", ""))
+        assert "always()" in cond, (
+            f"{fragment!r} runs only on success. If the `render` step above it fails -- its "
+            f"last act arms a pull request against GitHub's API -- this step is SKIPPED and "
+            f"the cluster never gets the database. Condition is: {cond!r}"
+        )

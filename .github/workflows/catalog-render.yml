@@ -137,7 +137,13 @@ jobs:
       # It adds no store and no bus. Before this step the graph answers "what is declared";
       # after it, "what is".
       - name: estate twin -- runtime + code into the graph (G1, G3, G4)
-        if: ${{ (inputs.mode || 'commit') == 'commit' }}
+        # always(), and it matters. This step and the push below it ship the database
+        # estate-mcp serves, and both sat after `render`, whose last act is arming a pull
+        # request against GitHub's API. On 2026-09-13 that API answered 502, `pr-arm` exited
+        # 1, `render` stopped, and both steps were skipped -- the catalogue shipped and the
+        # graph did not, for a reason that had nothing to do with either. A push to a
+        # registry must not depend on GitHub's API answering.
+        if: ${{ always() && (inputs.mode || 'commit') == 'commit' }}
         working-directory: idp
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -170,7 +176,7 @@ jobs:
           bin/estate-twin-runtime --state 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
 
       - name: estate.db to the registry (crew#458 row 3; estate-mcp on the cluster pulls it)
-        if: ${{ (inputs.mode || 'commit') == 'commit' }}
+        if: ${{ always() && (inputs.mode || 'commit') == 'commit' }}
         working-directory: idp
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
