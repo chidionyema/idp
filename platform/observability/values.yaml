@@ -106,16 +106,28 @@ clickhouse:
     # still happening -- 49 OOMKilled restarts, `exitCode: 137, reason: OOMKilled`, one every ~30
     # minutes for four and a half days, on a pod whose own tracker reported 1.45 GiB in use.
     #
-    # max_server_memory_usage is pinned EXPLICITLY because the auto-rule is what kills this pod.
-    # `max_server_memory_usage_to_ram_ratio` is 0.9, and ClickHouse correctly reads the 4Gi cgroup
-    # limit -- so it sets its own ceiling to 3.60 GiB and believes the remaining 400 MiB is
-    # headroom. It is not. Measured that day: MemoryResident 3.53 GiB against MemoryTracking
-    # 1.45 GiB, a ratio of 1.9 (upstream's guide calls >1.4 dangerous and sizes max_server_memory_
-    # usage at 80% of the cgroup for exactly this reason). The kernel OOM killer targets RSS, so it
-    # kills the process while ClickHouse's logs show nothing wrong. 80% of 4Gi is 3435973836.
-    # The ratio setting itself cannot be changed at runtime and the chart does not render it; this
-    # achieves the same ceiling and is reloadable.
-    max_server_memory_usage: "3435973836"
+    # max_server_memory_usage is pinned EXPLICITLY, but NOT at the 80% a guide suggests -- that
+    # was the first attempt and it was WRONG, in a way that made the box worse rather than better.
+    #
+    # The reasoning for 80% was that `max_server_memory_usage_to_ram_ratio` 0.9 leaves only 400
+    # MiB for untracked RSS, and upstream's guide calls MemoryResident/MemoryTracking > 1.4
+    # dangerous. True as far as it goes. What it missed is that RSS is ALREADY above the working
+    # set: this pod runs at ~3.25 GiB resident, so a 3.20 GiB ceiling sits UNDER the live footprint
+    # and ClickHouse refuses ordinary work. Measured within the hour:
+    #
+    #   Code: 241 (MEMORY_LIMIT_EXCEEDED): would use 1.65 GiB, current RSS: 3.25 GiB,
+    #   maximum: 3.20 GiB -- while executing AggregatingTransform.
+    #
+    # on `select table, count() parts ... from system.parts group by table`. ClickHouse could not
+    # aggregate over its own part list. A ceiling that blocks the diagnostic query you need in
+    # order to fix the thing is not headroom, it is a second outage.
+    #
+    # The ceiling belongs JUST UNDER the cgroup limit, so the untracked gap is what the ceiling
+    # protects against and the kernel kill is still held off: 3.9 GiB of 4.0 leaves 100 MiB of
+    # slack below memory.max, and the ratio can still climb to ~1.3 before either bound is reached.
+    # The real cure for the ratio is not a lower ceiling, it is fewer resident parts -- which is
+    # what the `_0` twin TTLs below do.
+    max_server_memory_usage: "4187593113"
     # uncompressed_cache_size ships ACTIVELY SET to 8 GiB in ClickHouse's own config.xml -- twice
     # this whole pod -- so it is not a default that could be left alone. It is also not earning
     # its keep: `system.events` reads UncompressedCacheHits 23 against UncompressedCacheMisses
