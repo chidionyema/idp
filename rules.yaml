@@ -52,7 +52,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/aevum-evidence/bad/chain.json
     must_pass: tests/fixtures/aevum-evidence/good/chain.json
-  live_elsewhere: 'bin/idp-ci:606 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
+  live_elsewhere: 'bin/idp-ci:599 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
   cases:
   - expect: refuse
     args:
@@ -422,7 +422,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/migration-not-idempotent
     must_pass: bin/scheduler-migrate
-  live_elsewhere: bin/idp-ci:345 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
+  live_elsewhere: bin/idp-ci:337 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
   cases:
   - expect: refuse
     args:
@@ -1207,7 +1207,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/reloader-blind
     must_pass: tests/fixtures/reloader
-  live_elsewhere: bin/idp-ci:445 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
+  live_elsewhere: bin/idp-ci:437 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
   cases:
   - expect: refuse
     args:
@@ -1796,7 +1796,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
     must_pass: tests/fixtures/catalogue-entity-runtime-service
-  live_elsewhere: bin/idp-ci:445 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
+  live_elsewhere: bin/idp-ci:477 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
   cases:
   - expect: refuse
     args:
@@ -2095,61 +2095,42 @@ rules:
     note: nine different findings across nine targets are all workable
   ok: a proved pattern disables the linear path and names the fleet lever
   fail: an agent repeats a proved diagnosis across targets, and the environment lets it
-- id: healthcheck-names-a-real-object
-  label: healthcheck-exists
-  statement: A Kustomization's health check names an object this tree actually creates. A wait on an object nothing creates reports NotFound forever, holds every row depending on it out of the cluster, and is invisible in CI because the manifest is valid YAML naming a plausible object. An object an operator makes at runtime is ungraded and said to be ungraded, never assumed absent
-  law: LAW 45, incident 2026-09-13 (the tailscale row waited on Deployment/tailscale-operator; the chart emits Deployment/operator, so guacamole and four rows behind it were held out for days)
-  origin: incident 2026-09-13, tailscale
+- id: breaker-enforcement
+  label: breaker-enf
+  statement: >-
+    The breaker's fingerprint is the stable identity of a FINDING, never the bytes a command
+    printed: output carrying no finding -- a successful command, a shell builtin echoing its input,
+    an empty result -- yields no fingerprint and can never lock, however many times it repeats,
+    while three targets carrying the same CVE set still lock. One rule, in bin/idp-circuit-breaker;
+    the extension asks it, so the two cannot drift apart
+  law: R38, incident 2026-09-13
+  origin: incident 2026-09-13, the breaker locked bash and read for hours
   planes:
   - ci
   run:
   - python3
-  - bin/idp-healthcheck-exists
+  - -m
+  - pytest
+  - tests/test_breaker_extension.py
+  - -q
+  - -p
+  - no:xdist
+  - -o
+  - addopts=
   fixtures:
-    must_fail: tests/fixtures/healthcheck-exists/bad
-    must_pass: tests/fixtures/healthcheck-exists/good
+    must_fail: tests/fixtures/breaker-enforcement/bad/noop-repeated.txt
+    must_pass: tests/fixtures/breaker-enforcement/good/real-cves.txt
   cases:
-  - expect: refuse
-    args:
-    - --root
-    - tests/fixtures/healthcheck-exists/bad
-    - tests/fixtures/healthcheck-exists/bad/compiled.json
-    - tests/fixtures/healthcheck-exists/bad/cluster.yaml
-    note: the tailscale defect exactly -- a health check naming a Deployment no chart renders
   - expect: pass
     args:
-    - --root
-    - tests/fixtures/healthcheck-exists/good
-    - tests/fixtures/healthcheck-exists/good/compiled.json
-    - tests/fixtures/healthcheck-exists/good/cluster.yaml
-    note: the same row naming the Deployment the chart does emit
-  ok: every health check names an object this tree creates, or is reported ungraded
-  fail: a health check waits on an object nothing creates, and CI is green
-- id: externalsecret-blockers-are-loud
-  label: secret-blockers
-  statement: An ExternalSecret that cannot sync is named with the vault key it needs and marked FOUNDER ACTION or ESTATE, never left to read as "Reconciliation in progress". A missing entry in the provider is a value only a person can produce, and it is reported as one; any other failure is an estate defect and is reported as that instead
-  law: R47 (a founder blocker is loud and one action), incident 2026-09-13 (cyrus sat HealthCheckFailed for days; the reason was three layers down at ExternalSecret/cyrus/cyrus-linear-oauth, whose vault entries are born in a browser because Linear publishes no create-API for an OAuth application)
-  origin: incident 2026-09-13, cyrus
-  planes:
-  - ci
-  run:
-  - python3
-  - bin/idp-externalsecret-blockers
-  fixtures:
-    must_fail: tests/fixtures/secret-blockers/bad
-    must_pass: tests/fixtures/secret-blockers/good
-  cases:
-  - expect: refuse
-    args:
-    - --from
-    - tests/fixtures/secret-blockers/bad/externalsecrets.json
-    - --fail-on-blocker
-    note: the cyrus blocker exactly -- two vault entries that need a browser, and a row held by them
-  - expect: pass
-    args:
-    - --from
-    - tests/fixtures/secret-blockers/good/externalsecrets.json
-    - --fail-on-blocker
-    note: the same ExternalSecret once a person has typed the pair
-  ok: every ExternalSecret that cannot sync names the vault key it needs and whether a person must produce it
-  fail: a row is held by a missing vault entry and its status reads "Reconciliation in progress"
+    - tests/fixtures/breaker-enforcement/good/real-cves.txt
+    note: >-
+      the good fixture is a real CVE set in two different orders; both must fingerprint to the
+      SAME value so three targets carrying it still lock. The refusing half is the bad fixture and
+      the parametrised no-op tests: repeated no-op output must produce NO finding.
+  ok: a command with no finding cannot lock, and a proved pattern still locks
+  fail: >-
+    output carrying no finding gets a fingerprint, so repeated no-op commands trip N=3 and lock the
+    two tools a session needs to fix anything. Measured 2026-09-13: a session issued the same
+    command repeatedly, the third tripped the lock, and every command that could have cleared it
+    was itself a bash call. R38 -- a guard that refuses correct work is an outage.
