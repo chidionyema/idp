@@ -100,9 +100,31 @@ def verdict(pr, required):
     #
     # DIRTY is handled above and never reaches here, so a real conflict is still a person's to
     # choose. With no `behind_by` at all the old behaviour stands, which is BEHIND only.
+    #
+    # The refresh is refused while any check is still RUNNING, and that ordering is the whole fix.
+    #
+    # Measured 2026-09-13: `update-branch` pushes a merge commit, which starts a new CI run and
+    # CANCELS the one in flight. So a branch that was behind and mid-CI got refreshed, had its own
+    # `bdd-suites` killed, came back as `behind_by > 0` on the next tick, and was refreshed again.
+    # Nine pull requests sat BLOCKED in that loop, each with every job green except the two that
+    # never got to finish: bdd-suites (tests) and bdd-suites (acceptance), cancelled on every run
+    # while `gh run list` showed only the cancellations. The estate's own merge bot was the thing
+    # holding its own merges out.
+    #
+    # A refresh helps exactly one population: a branch whose checks are FINISHED and some of them
+    # are red, where the redness is because main has moved on. A branch whose checks are still
+    # running is not that, and refreshing it destroys the evidence rather than repairing it.
+    # `bin/idp-circuit-breaker` names the same shape: do not repeat a step that is not converging.
     behind_by = pr.get("behind_by", 0) or 0
     behind = state == "BEHIND" or behind_by > 0
     if behind and state in ("BEHIND", "UNSTABLE", "BLOCKED", "CLEAN"):
+        running = [c for c in checks if (c.get("status") or "COMPLETED") != "COMPLETED"]
+        if running:
+            return "SKIP", (
+                f"behind main by {behind_by} commit(s), but {len(running)} check(s) are still "
+                f"running: a refresh now cancels them, and the branch would come back behind with "
+                f"its evidence destroyed. It lands or goes red on this run; the refresh waits"
+            )
         return "UPDATE", (
             f"behind main by {behind_by} commit(s); refreshed now, so a check that is red only "
             f"because main has moved on gets the fix it needs and lands next tick"
@@ -128,14 +150,17 @@ def verdict(pr, required):
     # ordinary green path straight into the cluster. Fail closed: no green shadow check, no merge.
     if "type:auto-remediation" in labels:
         shadow_ok = any(
-            (c.get("name") or "").strip().lower() in ("shadow-verify", "proof-of-convergence")
+            (c.get("name") or "").strip().lower()
+            in ("shadow-verify", "proof-of-convergence")
             and c.get("conclusion") == "SUCCESS"
             for c in done
         )
         if not shadow_ok:
-            return "SKIP", \
-                "labelled type:auto-remediation but has no green shadow-verify/proof-of-convergence " \
-                "check; a label is not a proof (W3.3)"
+            return (
+                "SKIP",
+                "labelled type:auto-remediation but has no green shadow-verify/proof-of-convergence "
+                "check; a label is not a proof (W3.3)",
+            )
     # The draft flag is judged LAST, and only on a pull request that is otherwise finished, so a
     # draft that is red, held or conflicted is never touched. Five green pull requests sat in crew
     # for ten days on nothing but this flag, because the sessions that opened them never came back
