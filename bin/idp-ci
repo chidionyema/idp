@@ -80,10 +80,18 @@ done
 # 2b. The agentgateway config validates against the schema of the pinned release. Same
 
 #     class as the ClickHouse XML: a config nobody checks before its reader starts.
+# BOTH configs, because there are two and they had already diverged. mcp/agentgateway.yaml is the
+# one docker-compose mounts for a local run; platform/mcp/agentgateway.yaml is the one the cluster
+# mounts through the mcp-config ConfigMap and the only one the running gateway has ever read. Until
+# 2026-09-13 only the LOCAL file was checked here, so the file that actually serves was unguarded --
+# measured: platform/mcp/agentgateway.yaml carried a `config.tracing` block with otlpEndpoint 4317,
+# mcp/agentgateway.yaml carried none, and nothing compared them.
 AG_TAG=$(grep -o 'agentgateway/agentgateway:v[0-9.]*' "$IDP/mcp/agentgateway.yml" | cut -d: -f2)
-if check-jsonschema --schemafile "https://raw.githubusercontent.com/agentgateway/agentgateway/$AG_TAG/schema/config.json" \
-     "$IDP/mcp/agentgateway.yaml" >/dev/null 2>&1; then say "ok    schema   mcp/agentgateway.yaml against agentgateway $AG_TAG"
-else say "FAIL  schema   mcp/agentgateway.yaml does not match agentgateway $AG_TAG's config schema"; fail=1; fi
+AG_SCHEMA="https://raw.githubusercontent.com/agentgateway/agentgateway/$AG_TAG/schema/config.json"
+for agcfg in mcp/agentgateway.yaml platform/mcp/agentgateway.yaml; do
+  if check-jsonschema --schemafile "$AG_SCHEMA" "$IDP/$agcfg" >/dev/null 2>&1; then say "ok    schema   $agcfg against agentgateway $AG_TAG"
+  else say "FAIL  schema   $agcfg does not match agentgateway $AG_TAG's config schema"; fail=1; fi
+done
 
 # 4. incident_2026_08_24_dropped_assets: N inventory rows must yield N catalog
 #    entities and N database rows. catalog-gen silently dropped slug-colliding
