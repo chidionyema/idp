@@ -16,6 +16,13 @@ configMapGenerator:
   - name: litellm-config
     files:
       - config.yaml
+  # The per-request ceiling, as a module the router imports. It is a ConfigMap and not a copied
+  # directory because the wheel or directory a ConfigMap generates is what the pod actually runs:
+  # a value typed into a laptop's ~/.pi/agent/models.json stops nothing, which is exactly how
+  # 86,525,924 tokens went through one hour on 2026-09-13 with every existing guard reporting.
+  - name: litellm-request-ceiling
+    files:
+      - request_ceiling.py
 generatorOptions:
   disableNameSuffixHash: false
 
