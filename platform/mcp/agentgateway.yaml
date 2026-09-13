@@ -1,9 +1,27 @@
 # agentgateway config, mounted from the mcp-config ConfigMap. The /estate/mcp route is back now
 # that estate.db has a cluster producer (bin/idp-estate-db-push in the cloud catalog-render,
 # crew#458 row 3). Traces go to the estate collector (LAW 50).
+#
+# THIS BLOCK IS CORRECT AND THE GATEWAY STILL EXPORTS NOTHING. Both statements are true and neither
+# should be read as the other.
+#
+# What is verified 2026-09-13: otlpEndpoint points at the collector's gRPC port; the collector's
+# ConfigMap has an `otlp` receiver on 4317 and a `traces` pipeline wired from it to ClickHouse; the
+# Deployment mounts this file at /config and passes -f /config/agentgateway.yaml, and the mounted
+# copy carries these two lines. Nothing is misconfigured on either side.
+#
+# What is also true: signoz_traces holds 1,213,685 litellm spans and 21,802 agent-workforce spans
+# and ZERO for mcp-agentgateway, and the gateway's own /metrics (13,796 bytes) exposes no otel,
+# trace, export or otlp series at all -- so the tracing pipeline is not merely failing, it is not
+# initialised. `otlpProtocol` defaults to `grpc` in the pinned schema, so naming it here changes no
+# behaviour; it is written down so the next reader does not have to check the default to know.
+#
+# The open question is why a correctly-specified tracing block produces no initialised exporter in
+# agentgateway v1.4.1. That is not answerable from the estate's side and is tracked separately.
 config:
   tracing:
     otlpEndpoint: http://signoz-otel-collector.observability.svc:4317
+    otlpProtocol: grpc
 binds:
 - port: 3000
   listeners:
