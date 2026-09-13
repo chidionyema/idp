@@ -1593,6 +1593,37 @@
   "ticket": "crew#269"
  },
  {
+  "feature": "features/gates/compiled-helm-published.feature",
+  "title": "the compiled estate is published and read on the portal",
+  "scenarios": [
+   "CI compiles the estate on every pull request",
+   "the compiled document reaches the portal",
+   "a disagreement between a claim and a rendered value is visible"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_compiled_helm_published.py"
+  ],
+  "status": "BOUND",
+  "added_in": "4f4a09f6",
+  "pr": 3284,
+  "ticket": null
+ },
+ {
+  "feature": "features/gates/compiled-helm.feature",
+  "title": "the estate is compiled from git before its numbers are believed",
+  "scenarios": [
+   "a rendered workload declares the resources the estate intends",
+   "every release renders, so no chart is a blind spot"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_compiled_helm.py"
+  ],
+  "status": "BOUND",
+  "added_in": "4f4a09f6",
+  "pr": 3284,
+  "ticket": null
+ },
+ {
   "feature": "features/gates/epistemic-and-trajectory.feature",
   "title": "An agent cannot lie about what it sees, and cannot forget what it was told to do",
   "scenarios": [
