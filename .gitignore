@@ -9,6 +9,12 @@ logs/
 *.pid
 
 # Installed, not authored
+# `.venv/` matches a real directory but NOT a symlink or file named `.venv` -- and this
+# repository carried exactly that: a committed blob at `.venv` whose content was the
+# absolute path to itself (commit e48c6919). Every clone therefore got a `.venv` that
+# could not resolve, and `python3 -m venv .venv` could not replace it. Both spellings
+# are listed so the ignore holds whatever `.venv` turns out to be.
+.venv
 .venv/
 node_modules/
 dist-types/
