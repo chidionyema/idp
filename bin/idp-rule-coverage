@@ -38,10 +38,19 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 # 1.9 seconds, because it asks git once instead of per directory.
 from treewalk import is_this_tree, walk_tree
 
+# `RULE_COVERAGE_ROOT` exists so a caller can point this gate at a copy of the tree, and the
+# value it takes is a path a person or a workflow typed -- `tests/fixtures/rule-coverage/good`,
+# relative, is the shape the registry's own case uses. It is resolved to an absolute path here,
+# ONCE, because `walk_tree` resolves its own root before walking: every `dirpath` it yields is
+# therefore absolute, and `relative_to` on an absolute path against a relative root raises
+# ValueError rather than answering. Measured 2026-09-13: the gate crashed on the relative-root
+# case in the registry plane while passing when run by hand from the repository root, so the
+# failure was invisible to the person most likely to hit it. Resolving here keeps the two
+# spellings of the same root equal.
 ROOT = pathlib.Path(
     os.environ.get("RULE_COVERAGE_ROOT")
     or pathlib.Path(__file__).resolve().parents[1]
-)
+).resolve()
 FIXTURE_TREES = ("tests/fixtures", "policy/fixtures")
 LEDGER = "platform/rule-coverage/ungraded.yaml"
 

@@ -317,14 +317,21 @@ def page(rule: dict, engine) -> str:
     ]
 
     if refuse is None or permit is None:
+        # A rule whose refusing case lives on another plane -- a node id under a runner this page
+        # cannot steer, or a script the page is not the runner for -- still prints the case it
+        # CAN run. The heading names the half that is missing rather than the whole rule, because
+        # "nothing here is a pass" printed directly above a passing run reads as a false alarm.
+        absent = "refusing" if refuse is None else "permitting"
+        here = "permitting" if refuse is None else "refusing"
         out += [
-            "## BLIND: this rule names no case this page can run",
+            f"## BLIND to the {absent} direction: this rule names no {absent} case this page can run",
             "",
-            "A rule with no refusing case or no permitting case cannot be shown discriminating "
-            "on this page. Nothing here is a pass.",
+            f"The {absent} half of this rule cannot be shown here. The {here} case this page CAN "
+            f"run is printed below with the gate's own output; it is a real run, not a description. "
+            f"Where the {absent} direction is proved, the registry's `proved_elsewhere` field says.",
             "",
-            f"- refusing case: {'yes' if refuse else 'none with arguments'}",
-            f"- permitting case: {'yes' if permit else 'none with arguments'}",
+            f"- refusing case: {'yes' if refuse else 'none this page can run'}",
+            f"- permitting case: {'yes' if permit else 'none this page can run'}",
             "",
         ]
     for title, case, want in (

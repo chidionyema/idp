@@ -143,6 +143,14 @@ def run_rule(rule: dict) -> int:
         say("BLIND", label, f"{missing} is not available; this rule was not graded")
         _why(rule)
         return 1
+    cited = _cite(rule)
+    if cited:
+        # A case naming something the tree does not contain is not a failing test, it is a rule
+        # that cannot mean anything. Refuse it before it runs, so the answer is never a pytest
+        # traceback a later session might "fix" by relaxing the expectation.
+        say("FAIL", label, f"cites {len(cited)} thing(s) that do not exist: " + "; ".join(cited))
+        _why(rule)
+        return 1
     tail = ""
     echoes: list[str] = []
     for case in rule["cases"]:
@@ -400,6 +408,43 @@ def cmd_render(args) -> int:
         fh.write(fresh)
     print(f"wrote {len(load())} rules into AGENTS.md")
     return 0
+
+
+def _cite(rule: dict) -> list[str]:
+    """The things a rule's cases name that must exist: pytest node ids and fixture files.
+
+    A row that names a case the tree does not contain is worse than a missing test, because it
+    LOOKS like proof. Three of them were written on 2026-09-13 in one sitting: a test class and a
+    script that exist nowhere, and a --replay flag handed to pytest, which is a case whose runner
+    cannot accept it. Every one of them would have reported FAIL forever, and the tempting repair
+    is to flip the expectation -- so the trap is closed at the source instead.
+    """
+    bad = []
+    for case in rule.get("cases", []) or []:
+        for arg in case.get("args", []) or []:
+            if arg.startswith("-"):
+                continue
+            if "::" in arg:
+                path, _, rest = arg.partition("::")
+                if not os.path.exists(os.path.join(ROOT, path)):
+                    bad.append(f"{arg} (no such file {path})")
+                    continue
+                # A node id is class::test, and both halves have to be in the file.
+                parts = [p for p in rest.split("::") if p]
+                body = open(os.path.join(ROOT, path), errors="replace").read()
+                for i, name in enumerate(parts):
+                    word = f"class {name}" if i == 0 and len(parts) > 1 else f"def {name}"
+                    if word not in body:
+                        bad.append(f"{arg} ({word} is not in {path})")
+            elif "/" in arg and not os.path.exists(os.path.join(ROOT, arg)):
+                # A bare path argument, not a flag's value: it must be on disk.
+                prev = case.get("args", [])
+                idx = prev.index(arg)
+                if idx and prev[idx - 1].startswith("-"):
+                    pass  # it is a flag's value, and the flag's own contract decides
+                else:
+                    bad.append(f"{arg} (no such path)")
+    return bad
 
 
 def cmd_cluster(args) -> int:

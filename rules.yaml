@@ -2430,12 +2430,25 @@ rules:
   cases:
   - expect: pass
     args:
-    - tests/test_breaker_extension.py::TestTheFingerprintIsAFindingNotTheBytes::test_a_repeated_noop_is_still_no_finding
+    - tests/test_breaker_extension.py::TestItBlocksProvedRepetition::test_it_never_blocks_nine_different_findings
+    note: 'REFUSING DIRECTION on the extension plane. Nine targets, nine distinct causes: nothing
+      blocks. This is R38 -- a guard that refuses correct work is an outage -- asserted through
+      extensions/breaker/decide.mjs, the module pi actually calls.'
   - expect: pass
     args:
-    - tests/test_breaker_extension.py::TestTheFingerprintIsAFindingNotTheBytes::test_the_same_cve_set_fingerprints_identically_whatever_the_order
+    - tests/test_breaker_extension.py::TestItBlocksProvedRepetition::test_it_blocks_on_the_third_identical_finding
+    note: 'PERMITTING DIRECTION on the extension plane. Three targets carrying the same CVE set in
+      three different orders do block on the fourth, and the block names a lever. The same CVE
+      list reordered must fingerprint identically, or the real 2026-09-12 incident -- six red pull
+      requests, one cause, three different log positions -- would never have been grouped.'
+  - expect: pass
+    args:
+    - tests/test_breaker_extension.py::TestItIsBlindRatherThanSilent::test_it_reports_blind_when_the_tool_is_absent
+    note: 'THE BLIND-OR-SILENT CASE. When the tool cannot be found the extension reports BLIND, never
+      a quiet pass -- a guard that cannot run its check must say so, not read as clean.'
   - expect: pass
     live: true
+    note: the whole breaker test module over the real tree
   fixtures:
     # These two files ARE the two directions the cases above prove: bad/ is a no-op repeated (no
     # finding, so it can never lock) and good/ is one CVE set in two orders (a finding, so it
@@ -2447,7 +2460,7 @@ rules:
     must_pass: tests/fixtures/breaker-enforcement/good
   ok: a command with no finding cannot lock, and a proved pattern still locks
   fail: 'output carrying no finding gets a fingerprint, so repeated no-op commands trip N=3 and lock the two tools a session needs to fix anything. Measured 2026-09-13: a session issued the same command repeatedly, the third tripped the lock, and every command that could have cleared it was itself a bash call. R38 -- a guard that refuses correct work is an outage.'
-  proved_elsewhere: the refusing direction -- a no-op carrying no finding produces no fingerprint, so it can never lock -- is ::test_a_repeated_noop_is_still_no_finding, and the permitting direction -- three targets carrying the same CVE set still lock -- is ::test_the_same_cve_set_fingerprints_identically_whatever_the_order. Both names are read from the file, never guessed.
+  proved_elsewhere: 'the same rule on the CLI plane, where the runner is the script and not pytest. Re-take it with: python3 bin/idp-circuit-breaker --replay tests/fixtures/breaker-enforcement/bad/replay.json (four no-op targets: `0 finding(s) observed; 0 locked`, exit 0) and python3 bin/idp-circuit-breaker --replay tests/fixtures/breaker-enforcement/good/replay.json (three targets carrying one CVE set in three orders: `3 finding(s) observed; 1 locked`, exit 1, with a 423 and a lever naming the single fix). A case cannot change the row''s runner, so this proof cannot be one of the cases above. The refused-vs-locked distinction is the whole rule: a no-op is never observed and can never lock; a real finding locks on the third target.'
 - id: execution-boundary-holds
   label: execution-boundary
   statement: Nothing an agent runs may hold a turn open. The 60-second ceiling is applied by the executor daemon outside the caller's process tree, stated once in the door and imported by the daemon -- a second copy of the number is a second answer, and a daemon that swallows its own door import answers health while unable to run anything
@@ -2516,4 +2529,6 @@ rules:
     real tree, and the 257 scripts still without a self-test are named rather than passed over
   fail: an executable under bin/ has never been executed and nothing refuses it, so a load failure
     reaches a session as a surprise
-  fail: an executable under bin/ has never been executed and nothing refuses it, so a load failure reaches a session as a surprise
+  why: 'Measured 2026-09-13: a bare run over all of bin/ reports `FAIL: 257 of 286 script(s) do not
+    run`. The estate is genuinely short, and the shortfall is stated here rather than asserted
+    green. This row closes that gap one script at a time; the count may only fall.'

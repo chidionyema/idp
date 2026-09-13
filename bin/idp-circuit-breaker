@@ -163,8 +163,21 @@ class Breaker:
 
         Idempotent per (finding, target): observing the same target twice is not a second
         finding, or three re-reads of one PR would trip the breaker.
+
+        A RESULT WITH NO FINDING IS NEVER OBSERVED AND NEVER LOCKS. fingerprint() answers None for
+        output that carries no finding -- a successful command, a shell builtin's echo of its
+        input, an empty result -- and that None must stop here. It did not, until 2026-09-13: the
+        None was used as a dict key like any other, so three unrelated no-op commands accumulated
+        under the key None and tripped N=3, locking bash and read for hours -- the exact misfire
+        fingerprint() was fixed for, still live one layer down. None is an absence, not an
+        identity: two commands that produced no finding are not two targets carrying one cause.
         """
         fp = finding if finding.startswith(("cve:", "sha:")) else fingerprint(finding)
+        if fp is None:
+            # Nothing to group. Report the absence honestly and record nothing, so a repeated
+            # no-op can never reach n and can never lock the primitive.
+            return {"fingerprint": None, "targets": [], "locked": False, "count": 0,
+                    "reason": "no finding: this output is not proof of anything, so it cannot lock"}
         targets = self._seen.setdefault(fp, [])
         if target not in targets:
             targets.append(target)
@@ -182,6 +195,11 @@ class Breaker:
     def check(self, finding: str, target: str) -> dict:
         """May this action proceed? The primitive is dead once its finding is proved."""
         fp = finding if finding.startswith(("cve:", "sha:")) else fingerprint(finding)
+        if fp is None:
+            # A result carrying no finding has no pattern to be proved, so it is never locked.
+            # Without this the None reached lever_for() and raised AttributeError, turning a
+            # diagnostic question into a crash.
+            return {"locked": False, "fingerprint": None}
         if fp not in self._locked:
             return {"locked": False, "fingerprint": fp}
         targets = self._seen.get(fp, [])
@@ -255,11 +273,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.replay:
         findings = json.loads(Path(args.replay).read_text()).get("findings") or []
         locked = 0
+        observed = 0
         for f in findings:
             v = b.observe(f["log"], f["target"])
+            # A target whose output carries no finding is not observed and cannot lock, so it is
+            # not counted as one. The two numbers below are the whole proof: four no-op targets
+            # give `0 observed; 0 locked` and three same-cause targets give `3 observed; 1 locked`.
+            if v["fingerprint"] is not None:
+                observed += 1
             if v["locked"]:
                 locked += 1
-        print(f"{len(findings)} finding(s) observed; {locked} locked")
+        print(f"{observed} finding(s) observed; {locked} locked")
         if locked:
             print(json.dumps(b.check(findings[-1]["log"], "next"), indent=2))
         return 1 if locked else 0
