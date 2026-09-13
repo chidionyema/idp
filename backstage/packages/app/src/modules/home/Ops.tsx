@@ -32,8 +32,6 @@ import { useOpenReds } from './useOpenReds';
 import { FounderData, receiptsSentence, waitingSentence } from './founder';
 import { useFounder } from './useFounder';
 import { useHealthchecks } from './useHealthchecks';
-import { useGuards } from './useGuards';
-import { guardsSentence } from './guards';
 import { usePlacement } from './usePlacement';
 import { useCompiled } from './useCompiled';
 import { cpuLabel, guaranteed } from './compiled';
@@ -48,6 +46,8 @@ import {
   planeSentence,
 } from './inventory';
 import { useInventory } from './useInventory';
+import { useEstateGraph } from './useEstateGraph';
+import { domainRows, graphSentence, worst } from './estateGraph';
 import { ago } from './estate';
 
 /** The page's name, and the word every door to it already uses (nav, app-config, catalogue). */
@@ -287,7 +287,6 @@ const InventoryTile = ({ data, now }: { data: InventoryData; now: number }) => {
 
 export const Ops = () => {
   const loaded = useClusterHealth();
-  const guards = useGuards();
   const reds = useOpenReds();
   const founder = useFounder();
   const checks = useHealthchecks();
@@ -428,56 +427,7 @@ export const Ops = () => {
           </>
         )}
       </Section>
-      <Section
-        title="Guards"
-        blurb="Every guard this estate has, what fires it, what it refused, and what happens next. A guard that has not fired is shown as no evidence -- never as working."
-        testId="ops-guards-section"
-      >
-        {guards.state === 'loading' && (
-          <Waiting testId="ops-guards-loading">Reading the guard inventory.</Waiting>
-        )}
-        {guards.state === 'error' && (
-          <Unread testId="ops-guards-error">
-            The guard inventory could not be read, so the state of every guard is unknown: {guards.error}
-          </Unread>
-        )}
-        {guards.state === 'ready' && (
-          <>
-            <Text variant="body-medium" data-testid="ops-guards-sentence">
-              {guards.total} guards exist. {guardsSentence(guards.rows, 1440)}
-            </Text>
-            {guards.unreadable.map(u => (
-              <Unread key={u} testId="ops-guards-unreadable">
-                Could not be read: {u}
-              </Unread>
-            ))}
-            {guards.rows.length > 0 && (
-              <Sheet testId="ops-guards-table">
-                <thead>
-                  <tr>
-                    <th>Guard</th>
-                    <th>What it does</th>
-                    <th>Fired</th>
-                    <th>Refused</th>
-                    <th>Last</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {guards.rows.map(r => (
-                    <tr key={r.guard} data-testid="ops-guard">
-                      <td>{r.name}</td>
-                      <td>{r.what || '—'}</td>
-                      <td>{r.events}</td>
-                      <td>{r.blocked}</td>
-                      <td>{r.lastAt.replace('T', ' ').replace(/\.\d+/, '')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Sheet>
-            )}
-          </>
-        )}
-      </Section>
+      <GraphSection />
       {/* The compiled estate: what every Helm chart RENDERS, straight from git.
           This is the instrument that closes the five-day gap. A values file, a comment and a
           postRenderer patch are all CLAIMS; the number below is the one the chart decides, which
@@ -549,5 +499,72 @@ export const Ops = () => {
         )}
       </Section>
     </EstatePage>
+  );
+};
+
+/**
+ * The estate's own memory, beside the live probe above.
+ *
+ * The distinction this section exists to hold: everything else on this page asks the cluster
+ * what it is doing now. This asks the estate what it has recorded about itself -- including
+ * the half no probe can reach. 648 branches carrying 94,093 files that exist on no commit of
+ * main are not cluster objects; they are in the graph and nowhere else.
+ *
+ * The three-state rule is rendered, not summarised away. A domain outside its freshness
+ * window leads the sentence, because a graph that has not been read is a memory, and a page
+ * that showed it as healthy would be the exact failure this exists to prevent.
+ */
+const GraphSection = () => {
+  const loaded = useEstateGraph();
+  return (
+    <Section
+      title="What the estate has recorded about itself"
+      blurb="The estate's own graph: what is built, what is running and what is not. Unlike the readings above, this is not a probe of the cluster -- it is what the estate already knows, including work that exists on a branch and on no commit of main."
+      testId="ops-graph-section"
+    >
+      {loaded.state === 'loading' && (
+        <Waiting testId="ops-graph-loading">Reading the estate graph.</Waiting>
+      )}
+      {loaded.state === 'error' && (
+        <Unread testId="ops-graph-error" detail={loaded.error}>
+          The estate graph could not be read, so what the estate has recorded is unknown.
+        </Unread>
+      )}
+      {loaded.state === 'ready' && (
+        <>
+          <Text variant="body-medium" data-testid="ops-graph-sentence">
+            {graphSentence(loaded.graph)}
+          </Text>
+          <Sheet testId="ops-graph-domains">
+            {domainRows(loaded.graph).map(d => (
+              <Fact
+                key={d.domain}
+                label={`${d.domain} — ${d.state.toLowerCase().replace(/_/g, ' ')}`}
+                value={`${d.detail} (${d.age})`}
+              />
+            ))}
+          </Sheet>
+          {loaded.graph.not_serving.length > 0 && (
+            <Sheet testId="ops-graph-worst">
+              <Fact label="Not serving" value={String(loaded.graph.not_serving_total)} />
+              {worst(loaded.graph).map(n => (
+                <Fact key={n.id} label={n.status} value={n.id} />
+              ))}
+            </Sheet>
+          )}
+          {loaded.graph.truncated && loaded.graph.note && (
+            <Text variant="body-small" data-testid="ops-graph-truncated">
+              {loaded.graph.note}
+            </Text>
+          )}
+          {loaded.graph.evidence.length > 0 && (
+            <Text variant="body-small" data-testid="ops-graph-evidence">
+              Also recorded, as evidence rather than failure:{' '}
+              {loaded.graph.evidence.map(e => `${e.n} ${e.type}`).join(', ')}.
+            </Text>
+          )}
+        </>
+      )}
+    </Section>
   );
 };

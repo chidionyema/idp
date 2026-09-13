@@ -1,0 +1,5 @@
+{
+  "domains": [
+    {"domain": "runtime", "state": "MEASURED_OK", "age_s": 86400, "window_s": 180, "nodes": 855}
+  ]
+}

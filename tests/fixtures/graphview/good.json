@@ -1,0 +1,5 @@
+{
+  "domains": [
+    {"domain": "runtime", "state": "MEASURED_FAIL", "age_s": 12, "window_s": 180, "nodes": 855, "not_serving": 21}
+  ]
+}

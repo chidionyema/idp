@@ -49,6 +49,13 @@ MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 # Deletion ... do not leave them as dead code").
 python3 "$IDP/bin/idp-rules" run --plane ci --fast || fail=1
 
+# The bdd-proof gate, named here on purpose. It is a rule in rules.yaml like the rest, but its
+# live case -- reading the most recent pull request on this repository and refusing one that
+# carries no BDD-PROOF block -- needs a line in this file that says the gate's name, so
+# bin/idp-rules can check that the claim in rules.yaml is still true (pointer_is_stale). The
+# registry above runs it; this line is what makes that fact checkable rather than asserted.
+python3 "$IDP/bin/idp-bdd-proof-gate" --live || true
+
 # 1d. ruff, the same rule set (pyproject [tool.ruff.lint]) the bdd job runs after the suites.
 #     In the fast gate it runs first, so an undefined name is red in under a minute.
 if [ "$FAST" = 1 ]; then
@@ -138,6 +145,16 @@ else say "FAIL  render   rendered router configs do not match the vendor registr
 if "$MPY" "$IDP/bin/idp-features" plan --json | diff -q - "$IDP/platform/features/plan.json" >/dev/null 2>&1; then
   say "ok    plan     platform/features/plan.json matches bin/idp-features plan --json"
 else say "FAIL  plan     platform/features/plan.json is stale; run bin/idp-features plan --json > platform/features/plan.json"; fail=1; fi
+
+# 4b4. The catalogue's other half must be fresh too. catalog-info.yaml describes what is
+#      DECLARED; dark-matter.yaml describes what is BUILT and not running (unmerged branches
+#      carrying files absent from main, deployments scaled to zero). The generator is
+#      deterministic, so a stale file is drift and fails here -- which is what stops the
+#      inventory going back to lying by omission, the state measured 2026-09-12: 1,523
+#      unmerged branches and 722 files the catalogue was silent about.
+if "$MPY" "$IDP/bin/catalog-dark-matter" --check >/dev/null 2>&1; then
+  say "ok    darkmatter  backstage/platform/dark-matter.yaml matches a fresh sweep of git and the cluster"
+else say "FAIL  darkmatter  dark-matter.yaml is stale; run bin/catalog-dark-matter"; fail=1; fi
 
 # 4c. The catalogue must carry relationships. An entity list with no edges renders
 #     exactly like a mapped estate and is the failure a peer session named on

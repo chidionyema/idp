@@ -74,6 +74,9 @@ deprecate them. Eradicate them."
 | Reloader is off on a workload a custom resource owns; that operator owns its config rollout, and Reloader on top of an operator is a loop, not a control. A Secret re-minted on a timer says what Reloader does with it (ignore, or a sentence why the roll is wanted); a silent one is refused | crew#684 rung 2 | `kyverno` | tests/fixtures/reloader-blind | tests/fixtures/reloader |
 | Dagster is the estate's one scheduler; a recurring job declared in launchd, a GitHub Actions cron or a Kubernetes CronJob is named here until it is folded in | THE HEADLINE (one platform layer, not a stitched one) | `python3 bin/idp-one-scheduler` | tests/fixtures/one-scheduler/bad | tests/fixtures/one-scheduler/good |
 | The broker, its grant catalogue, the RBAC floor and bin/idp-kube never land on a green check alone: no auto-merge, no self-approval, and the founder's own review or nothing | WJ.8 | `python3 bin/idp-glass-break` | tests/fixtures/glass-break/bad.json | tests/fixtures/glass-break/good.json |
+| The /ops graph section reports the estate's three-state rule and never renders a stale domain as serving: UNKNOWN leads the sentence when the graph is older than its window, a BLIND graph names why rather than reading as clean, and the section keeps the tool's own ordering so a dead workload is not buried under warning events | LAW 22, LAW 53 | `node` | tests/fixtures/graphview/bad.json | tests/fixtures/graphview/good.json |
+| Every runtime fact the estate reports comes from the estate's own cluster-state receipt into catalog/estate.db, never from a second store, bus or server; a domain not read inside its freshness window reads UNKNOWN and never MEASURED_OK; the twin's stranded-branch count equals the catalogue generator's, so two surfaces cannot tell a founder two different numbers | LAW 22, LAW 39, THE HEADLINE | `python3 tests/test_estate_twin_rule.py` | tests/fixtures/twin/no-summary.json | tests/fixtures/twin/agreed.json |
+| No pull request opens without BDD proof, across every agent session: the body carries a BDD-PROOF block naming the head commit, that block carries a runner's own passing counts rather than a sentence saying the tests passed, and the named commit is the pull request's own head -- a claim with no run output is refused, and so is a real run on another commit | LAW 22, LAW 53 | `python3 bin/idp-bdd-proof-gate` | tests/fixtures/bdd-proof/bad.json | tests/fixtures/bdd-proof/good.json |
 | An infrastructure pull request reaches the merge gate with a Proof-of-Convergence; a body with no such block, or whose proof's run is not a green run on its own head commit, is refused -- a missing or unparseable proof is a fail-closed FAIL, never a pass | W2.3 | `python3 bin/idp-convergence-proof` | tests/fixtures/convergence/no-proof.md | tests/fixtures/convergence/proved.md |
 | A Secret cloned into the shadow dimension is a same-shape shell or it is refused; a live value must never survive re-shaping -- a non-shell Secret in a shadow state-set is a fail (secrets are never copied into a vcluster, only keyed dummies so a Deployment mounts) | W2.1 | `python3 bin/idp-shadow-sync` | tests/fixtures/shadow-sync/verbatim | tests/fixtures/shadow-sync/shelled |
 | A change to a workload passes the low-risk lane only when its sole difference is a strict increase of a resources.limits.memory/cpu value on one workload; a request change (which the scheduler counts), a lower limit, or any other edit is refused -- YAML ancestry is read from the full parsed old and new files, never guessed from a git hunk | W3.1 | `python3 bin/idp-limit-raise-only-diff` | tests/fixtures/limit-raise/request | tests/fixtures/limit-raise/good |
@@ -100,7 +103,9 @@ deprecate them. Eradicate them."
 | An agent's first-person claim of completed work is refused when its own session transcript holds no tool call behind it: hallucination is graded deterministically rather than asked of a larger model | founder 2026-09-12 "we will eliminate guessing entirely" | `python3 bin/idp-epistemic` | tests/fixtures/epistemic/bad/session.jsonl | tests/fixtures/epistemic/good/session.jsonl |
 | An agent's action is refused when it serves no goal the agent itself declared: cognitive drift is bounded by a per-goal budget and a context reset, not by asking the model to stay on topic | founder 2026-09-12, the Teleological Firewall | `python3 bin/idp-trajectory` | tests/fixtures/trajectory/bad/session.jsonl | tests/fixtures/trajectory/good/session.jsonl |
 | Three targets returning the same finding prove one cause, so the linear action is refused with 423 Locked and the fleet lever is named instead. The fingerprint is the stable identity of the finding (a CVE set, order-free), never a raw hash of the output -- the same cause prints different bytes on different targets. The lock is scoped to the finding, so a different finding on a locked target, and nine different findings across nine targets, stay workable (R38) | founder 2026-09-12, throw the 423 Locked exception at N=3 | `python3 bin/idp-circuit-breaker` | tests/fixtures/circuit-breaker/bad/three-identical.json | tests/fixtures/circuit-breaker/good/nine-different.json |
-| The breaker's fingerprint is the stable identity of a FINDING, never the bytes a command printed: output carrying no finding -- a successful command, a shell builtin echoing its input, an empty result -- yields no fingerprint and can never lock, however many times it repeats, while three targets carrying the same CVE set still lock. One rule, in bin/idp-circuit-breaker; the extension asks it, so the two cannot drift apart | R38, incident 2026-09-13 | `python3 -m` | tests/fixtures/breaker-enforcement/bad/noop-repeated.txt | tests/fixtures/breaker-enforcement/good/real-cves.txt |
+| A gate's answer is only true for the tree it ran in: grading from the shared checkout while it carries uncommitted work, or from any checkout mid-merge, is refused -- three separate estate defects were reported 2026-09-12 that existed only in another session's half-written tree | LAW 2, docs/policy/no-agent-works-in-the-main-checkout.md | `python3 bin/idp-clean-tree` | tests/fixtures/clean-tree/bad.json | tests/fixtures/clean-tree/good.json |
+| A Kustomization's health check names an object this tree actually creates. A wait on an object nothing creates reports NotFound forever, holds every row depending on it out of the cluster, and is invisible in CI because the manifest is valid YAML naming a plausible object. An object an operator makes at runtime is ungraded and said to be ungraded, never assumed absent | LAW 45, incident 2026-09-13 (the tailscale row waited on Deployment/tailscale-operator; the chart emits Deployment/operator, so guacamole and four rows behind it were held out for days) | `python3 bin/idp-healthcheck-exists` | tests/fixtures/healthcheck-exists/bad | tests/fixtures/healthcheck-exists/good |
+| An ExternalSecret that cannot sync is named with the vault key it needs and marked FOUNDER ACTION or ESTATE, never left to read as "Reconciliation in progress". A missing entry in the provider is a value only a person can produce, and it is reported as one; any other failure is an estate defect and is reported as that instead | R47 (a founder blocker is loud and one action), incident 2026-09-13 (cyrus sat HealthCheckFailed for days; the reason was three layers down at ExternalSecret/cyrus/cyrus-linear-oauth, whose vault entries are born in a browser because Linear publishes no create-API for an OAuth application) | `python3 bin/idp-externalsecret-blockers` | tests/fixtures/secret-blockers/bad | tests/fixtures/secret-blockers/good |
 <!-- END GENERATED RULES TABLE -->
 
 Rules that are already types or tools, and so need no row: compose files must parse
@@ -114,6 +119,46 @@ every entity reference in it must resolve to an entity something defines
 
 Adding a rule: add a row to `rules.yaml`, add both fixtures, run `bin/idp-rules render-agents-md`
 and `bin/idp-ci`. No new rung, no new gate script.
+
+## The estate twin: ask the graph, not the cluster (2026-09-12)
+
+The estate had three inventories and every one reported **declared** state as if it were
+**actual** state. Measured 2026-09-12, none of them could name a single one of: 1,523
+unmerged branches, 722 files that exist on no commit of main, 11 zero-scaled deployments,
+or three agents deployed and dead. A dead pod is declared nowhere.
+
+`bin/estate-twin-runtime` is the other half. It reads what the estate already collects --
+the `cluster-state` receipt every 15 minutes -- and writes it into the estate's existing
+asset database, `catalog/estate.db`. It adds no store, no bus and no MCP server.
+
+**Ask the graph before you touch the cluster.** Every question below is one command and
+five seconds, and each answers from the estate's own state rather than from a fresh probe
+that may fail:
+
+```
+bin/estate-twin-runtime --once --code      # the whole graph: runtime + git
+bin/estate-twin-runtime --dead             # what is broken now, workloads first
+bin/estate-twin-runtime --state            # MEASURED_OK / MEASURED_FAIL / UNKNOWN per domain
+bin/estate-twin-runtime --history <node>   # when it changed, and from what
+bin/estate-twin-runtime --blast-radius <n> # what dies with it, over Flux's own dependsOn
+```
+
+Four rules the twin holds, each for a reason that was measured:
+
+* **A graph is not a second store.** It extends `catalog/estate.db`; a second SQLite file
+  is the stitching THE HEADLINE forbids.
+* **`UNKNOWN` is the default and is not a failure.** A domain not read inside its window
+  reads `UNKNOWN`, never `MEASURED_OK`. A reader that cannot tell a five-minute answer from
+  a five-day one is the failure the twin exists to prevent.
+* **`stranded` is not serving.** 648 branches carry work that runs nowhere; a domain
+  reporting `MEASURED_OK` over them is false comfort.
+* **Two surfaces cannot report two numbers.** `bin/catalog-dark-matter` writes its counts
+  to `backstage/platform/dark-matter.json`; the twin reads that file. The BDD suite asserts
+  they are equal.
+
+Spec: `docs/specs/2026-09-12-estate-twin-complete-spec.md`. Ticket:
+`docs/tickets/2026-09-12-estate-twin.md`. Every claim proved, with the command that proves
+it: `docs/evidence/estate-twin/PROOF-OF-WORK.md`.
 
 ## Platform queries go through the estate MCP server (ADR 0006)
 

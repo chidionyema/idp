@@ -28,6 +28,11 @@ ports:
   - {port: 4318, service: otel-fallback,        compose: observability/langfuse.yml}
   - {port: 5291, service: prospector-store-api, compose: prospector}
   - {port: 6445, service: k3d-estate-server-0, compose: none, bind: 127.0.0.1}
+  # The estate's event bus, reached on the loopback by a port-forward. ESTATE_TWIN reads
+  # the JetStream streams to report stream depth in the graph, and bin/idp-estate-twin
+  # --publish sends to it. Declared because a probe of an undeclared port is exactly what
+  # R22 mechanism 4 refuses -- the gate found this one, which is the gate working.
+  - {port: 4222, service: nats,                 compose: none, bind: 127.0.0.1}
   - {port: 7107, service: backstage-backend,    compose: none, bind: 127.0.0.1}
   - {port: 8000, service: healthchecks,         compose: none, bind: 127.0.0.1}
   - {port: 8080, service: prospector-edge,      compose: prospector, bind: 127.0.0.1}
