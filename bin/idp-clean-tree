@@ -12,8 +12,9 @@ defect in the estate when it was not:
   * `rule-coverage` reported a stale ledger. The ledger on main is accurate; the checkout held
     another session's edit to it.
 
-All three came from one mistake: running a gate in `~/dev/code/idp`, the ONE directory every
-session on this machine shares -- which is by definition the directory most likely to be dirty.
+All three came from one mistake: running a gate in the shared primary checkout -- the ONE
+# directory every session on this machine shares, and therefore the directory most likely to be
+dirty at any moment.
 At the time it was on another session's branch with a conflicted merge staged in it.
 
 docs/policy/no-agent-works-in-the-main-checkout.md has been policy since 2026-09-07 and nothing
@@ -35,9 +36,20 @@ import subprocess
 import sys
 from pathlib import Path
 
-# The one directory every session shares. `bin/idp-repo-root` resolves it; falling back to the
-# conventional path keeps this runnable when that tool is not on PATH.
-PRIMARY = Path(os.environ.get("IDP_PRIMARY_CHECKOUT") or Path.home() / "dev" / "code" / "idp")
+# The one directory every session shares. The path is never written here: `bin/idp-repo-root`
+# exists because every script that typed `$IDP/..` was wrong for a session working in a linked
+# worktree, and LAW 46 forbids a file naming where the checkout lives. An override is kept for
+# tests, which is what the fixtures use.
+def primary_checkout() -> Path | None:
+    override = os.environ.get("IDP_PRIMARY_CHECKOUT")
+    if override:
+        return Path(override)
+    root_tool = Path(__file__).resolve().parent / "idp-repo-root"
+    if root_tool.exists():
+        p = subprocess.run([str(root_tool), str(Path.cwd())], capture_output=True, text=True)
+        if p.returncode == 0 and p.stdout.strip():
+            return Path(p.stdout.strip())
+    return None
 
 # The codes git writes in the first two columns of `status --porcelain` for a file a merge could
 # not reconcile. A tree carrying one is mid-merge: it is on nobody's branch yet, so any gate run
@@ -123,8 +135,16 @@ def grade(path: Path) -> tuple[int, str]:
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")[1] or "(detached)"
     files = dirty_files(root)
     staged = [f for f in files if f[:2] in UNMERGED_CODES]
-    shared = root.resolve() == PRIMARY.resolve()
+    shared = _is_shared(root)
     return _verdict(root, branch, files, staged, shared)
+
+
+def _is_shared(root: Path) -> bool:
+    """Whether this checkout is the one every session on the machine shares."""
+    primary = primary_checkout()
+    if primary is None:
+        return False
+    return root.resolve() == primary.resolve()
 
 
 def _verdict(
