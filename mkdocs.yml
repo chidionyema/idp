@@ -378,6 +378,8 @@ nav:
       - epistemic: gates/epistemic.md
       - trajectory: gates/trajectory.md
       - circuit-breaker: gates/circuit-breaker.md
+      - drift-blind: gates/drift-reads-blind-not-clean.md
+      - healthcheck-exists: gates/healthcheck-names-a-real-object.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
