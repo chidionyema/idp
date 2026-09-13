@@ -63,6 +63,11 @@ nav:
       - Onboarding the evidence layer: how-to/onboarding/evidence.md
       - Boot Dagster and Superset: how-to/boot-dagster-and-superset.md
       - Prove a change in the shadow: how-to/prove-a-change-in-the-shadow.md
+      - Evidence recorder: how-to/onboarding/evidence-recorder.md
+      - Health check names a real object: how-to/onboarding/healthcheck-exists.md
+      - Rails boot window: how-to/onboarding/lago-boot.md
+      - The one door: how-to/onboarding/mcp-door.md
+      - Secret blockers: how-to/onboarding/secret-blockers.md
   - Reference:
       - reference/index.md
       - Oracle tenancy: reference/oci-tenancy.md
@@ -196,6 +201,10 @@ nav:
       - Money: tutorials/demo/commerce.md
       - Customer sign-in: tutorials/demo/customer-identity.md
       - Human secret door: tutorials/demo/human-vault.md
+      - Evidence recorder: tutorials/demo/evidence-recorder.md
+      - Health check names a real object: tutorials/demo/healthcheck-exists.md
+      - The one door: tutorials/demo/mcp-door.md
+      - Secret blockers: tutorials/demo/secret-blockers.md
   - Onboarding:
       - The Demo Standard: onboarding/demo-standard.md
       - FleetView: how-to/onboarding/fleetview.md
