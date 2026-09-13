@@ -2149,6 +2149,27 @@
   "ticket": "crew#299"
  },
  {
+  "feature": "features/twin/estate-twin.feature",
+  "title": "The estate twin knows what the estate actually is",
+  "scenarios": [
+   "A dead agent is visible without anybody running a command",
+   "A deployment scaled to zero is dead, not absent",
+   "A capability stranded on a branch is visible",
+   "A branch that only edits existing files is not stranded",
+   "The twin and the catalogue generator cannot disagree",
+   "A stopped emitter is visible as stale, not as healthy",
+   "Replaying the same events changes nothing",
+   "The twin adds no second store, bus or server"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_estate_twin.py"
+  ],
+  "status": "BOUND",
+  "added_in": "8bc42d1a",
+  "pr": 3364,
+  "ticket": null
+ },
+ {
   "feature": "sovereign/tests/fixtures/bdd/harness_selftest.feature",
   "title": "The acceptance harness itself",
   "scenarios": [
