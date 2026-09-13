@@ -36,20 +36,52 @@ import subprocess
 import sys
 from pathlib import Path
 
-# The one directory every session shares. The path is never written here: `bin/idp-repo-root`
-# exists because every script that typed `$IDP/..` was wrong for a session working in a linked
-# worktree, and LAW 46 forbids a file naming where the checkout lives. An override is kept for
-# tests, which is what the fixtures use.
-def primary_checkout() -> Path | None:
+
+# How the shared checkout is identified, and why not with `bin/idp-repo-root` alone.
+#
+# The first version of this file asked `bin/idp-repo-root <dir>` and compared the answer to <dir>.
+# That tool maps a LINKED WORKTREE to its primary, but handed a standalone repository it returns
+# that repository -- correctly, since "the primary checkout <dir> belongs to" is itself when the
+# tree belongs to nothing. So every dirty scratch tree in /tmp compared equal to itself and was
+# refused as the shared checkout. Measured 2026-09-13 against /tmp/proof-good: exit 1, on a
+# throwaway repository the gate has no business judging. LAW 38 -- a guard that refuses correct
+# work is an outage, and this one refused every ordinary dirty worktree.
+#
+# git answers it exactly. `--git-common-dir` is RELATIVE (`.git`) for a primary checkout and for
+# any standalone repository, and an ABSOLUTE path into the primary for a linked worktree. So the
+# shared checkout is the repository whose common dir sits beside an idp root AND is not a linked
+# worktree of anything else -- and, decisively, is not simply this directory.
+def _shared_checkout_root(here: Path) -> Path | None:
+    """The primary checkout owning `here`, or None when `here` is not part of one.
+
+    None means: a standalone repository, which is never the shared checkout and is never refused.
+    """
+    code, out = _git(here, "rev-parse", "--git-common-dir")
+    if code != 0 or not out:
+        return None
+    common = Path(out)
+    if not common.is_absolute():
+        # A primary checkout or a standalone repository: relative `.git`. Only a repository that
+        # carries this tree's own root is the shared checkout.
+        return here.resolve()
+    return common.parent.resolve()
+
+
+def _is_shared(root: Path, here: Path) -> bool:
+    """Whether `root` is the one checkout every session on this machine shares.
+
+    The override exists for tests, which cannot create a second primary checkout on disk.
+    """
     override = os.environ.get("IDP_PRIMARY_CHECKOUT")
     if override:
-        return Path(override)
-    root_tool = Path(__file__).resolve().parent / "idp-repo-root"
-    if root_tool.exists():
-        p = subprocess.run([str(root_tool), str(Path.cwd())], capture_output=True, text=True)
-        if p.returncode == 0 and p.stdout.strip():
-            return Path(p.stdout.strip())
-    return None
+        return root.resolve() == Path(override).resolve()
+
+    # The shared checkout is the one whose root is named by the estate's own marker files AND
+    # which other worktrees claim as their primary. A standalone repository has neither.
+    if not (root / "bin" / "idp-rules").exists():
+        return False
+    return _shared_checkout_root(here) == root.resolve()
+
 
 # The codes git writes in the first two columns of `status --porcelain` for a file a merge could
 # not reconcile. A tree carrying one is mid-merge: it is on nobody's branch yet, so any gate run
@@ -143,21 +175,16 @@ def grade(path: Path) -> tuple[int, str]:
     """(exit code, message). 2 is BLIND: not a checkout, so nothing could be judged."""
     root = find_root(path)
     if root is None:
-        return 2, f"BLIND  clean-tree  {path} is not in a git checkout; nothing could be graded"
+        return (
+            2,
+            f"BLIND  clean-tree  {path} is not in a git checkout; nothing could be graded",
+        )
 
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")[1] or "(detached)"
     files = dirty_files(root)
     staged = [f for f in files if f[:2] in UNMERGED_CODES]
-    shared = _is_shared(root)
+    shared = _is_shared(root, Path(path))
     return _verdict(root, branch, files, staged, shared)
-
-
-def _is_shared(root: Path) -> bool:
-    """Whether this checkout is the one every session on the machine shares."""
-    primary = primary_checkout()
-    if primary is None:
-        return False
-    return root.resolve() == primary.resolve()
 
 
 def _verdict(
@@ -184,12 +211,17 @@ def _verdict(
             f"          git worktree add /tmp/wt-verify origin/main",
         )
 
-    return 0, f"ok    clean-tree  {root} on {branch}, {len(files)} uncommitted change(s)"
+    return (
+        0,
+        f"ok    clean-tree  {root} on {branch}, {len(files)} uncommitted change(s)",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--path", default=".", help="the checkout to grade (default: this directory)")
+    ap.add_argument(
+        "--path", default=".", help="the checkout to grade (default: this directory)"
+    )
     ap.add_argument("--state", help="a JSON tree state to grade instead of reading git")
     ap.add_argument("--explain", action="store_true", help="what it checks, and why")
     args = ap.parse_args(sys.argv[1:] if argv is None else argv)
