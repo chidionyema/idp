@@ -82,7 +82,7 @@ spec:
                 while [ $i -lt 12 ]; do
                   getent hosts postgres >/dev/null 2>&1 && break
                   i=$((i + 1))
-                  sleep 10
+                  sleep 10   # sleep-ok: DNS propagation is not observable by an API this init container can call; the loop is bounded at 12 attempts and breaks on first success
                 done
                 if ! getent hosts postgres >/dev/null 2>&1; then
                   echo "postgres does not resolve; there is no old server to empty"
@@ -165,7 +165,7 @@ spec:
                 while [ $i -lt 12 ]; do
                   getent hosts healthchecks-db >/dev/null 2>&1 && break
                   i=$((i + 1))
-                  sleep 10
+                  sleep 10   # sleep-ok: DNS propagation is not observable by an API this init container can call; the loop is bounded at 12 attempts and breaks on first success
                 done
                 if ! getent hosts healthchecks-db >/dev/null 2>&1; then
                   echo "healthchecks-db does not resolve; there is no old server to empty"
@@ -248,7 +248,7 @@ spec:
                 while [ $i -lt 12 ]; do
                   getent hosts hindsight-db >/dev/null 2>&1 && break
                   i=$((i + 1))
-                  sleep 10
+                  sleep 10   # sleep-ok: DNS propagation is not observable by an API this init container can call; the loop is bounded at 12 attempts and breaks on first success
                 done
                 if ! getent hosts hindsight-db >/dev/null 2>&1; then
                   echo "hindsight-db does not resolve; there is no old server to empty"
@@ -370,7 +370,7 @@ spec:
                 while [ $i -lt 12 ]; do
                   getent hosts superset-db >/dev/null 2>&1 && break
                   i=$((i + 1))
-                  sleep 10
+                  sleep 10   # sleep-ok: DNS propagation is not observable by an API this init container can call; the loop is bounded at 12 attempts and breaks on first success
                 done
                 if ! getent hosts superset-db >/dev/null 2>&1; then
                   echo "superset-db does not resolve; there is no old server to empty"
@@ -453,7 +453,7 @@ spec:
                 while [ $i -lt 12 ]; do
                   getent hosts litellm-db >/dev/null 2>&1 && break
                   i=$((i + 1))
-                  sleep 10
+                  sleep 10   # sleep-ok: DNS propagation is not observable by an API this init container can call; the loop is bounded at 12 attempts and breaks on first success
                 done
                 if ! getent hosts litellm-db >/dev/null 2>&1; then
                   echo "litellm-db does not resolve; there is no old server to empty"
@@ -536,7 +536,7 @@ spec:
                 while [ $i -lt 12 ]; do
                   getent hosts temporal-db >/dev/null 2>&1 && break
                   i=$((i + 1))
-                  sleep 10
+                  sleep 10   # sleep-ok: DNS propagation is not observable by an API this init container can call; the loop is bounded at 12 attempts and breaks on first success
                 done
                 if ! getent hosts temporal-db >/dev/null 2>&1; then
                   echo "temporal-db does not resolve; there is no old server to empty"
@@ -637,7 +637,7 @@ spec:
                 while [ $i -lt 12 ]; do
                   getent hosts guacamole-db >/dev/null 2>&1 && break
                   i=$((i + 1))
-                  sleep 10
+                  sleep 10   # sleep-ok: DNS propagation is not observable by an API this init container can call; the loop is bounded at 12 attempts and breaks on first success
                 done
                 if ! getent hosts guacamole-db >/dev/null 2>&1; then
                   echo "guacamole-db does not resolve; there is no old server to empty"
@@ -720,7 +720,7 @@ spec:
                 while [ $i -lt 12 ]; do
                   getent hosts otto-gateway-db >/dev/null 2>&1 && break
                   i=$((i + 1))
-                  sleep 10
+                  sleep 10   # sleep-ok: DNS propagation is not observable by an API this init container can call; the loop is bounded at 12 attempts and breaks on first success
                 done
                 if ! getent hosts otto-gateway-db >/dev/null 2>&1; then
                   echo "otto-gateway-db does not resolve; there is no old server to empty"
@@ -810,7 +810,7 @@ spec:
                 while [ $i -lt 12 ]; do
                   getent hosts dagster-postgresql >/dev/null 2>&1 && break
                   i=$((i + 1))
-                  sleep 10
+                  sleep 10   # sleep-ok: DNS propagation is not observable by an API this init container can call; the loop is bounded at 12 attempts and breaks on first success
                 done
                 if ! getent hosts dagster-postgresql >/dev/null 2>&1; then
                   echo "dagster-postgresql does not resolve; there is no old server to empty"
@@ -904,7 +904,7 @@ spec:
                 while [ $i -lt 12 ]; do
                   getent hosts langfuse-postgresql >/dev/null 2>&1 && break
                   i=$((i + 1))
-                  sleep 10
+                  sleep 10   # sleep-ok: DNS propagation is not observable by an API this init container can call; the loop is bounded at 12 attempts and breaks on first success
                 done
                 if ! getent hosts langfuse-postgresql >/dev/null 2>&1; then
                   echo "langfuse-postgresql does not resolve; there is no old server to empty"

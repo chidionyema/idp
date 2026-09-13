@@ -58,8 +58,21 @@ EXEMPT_PARTS = ("/migrations/", "manifests/", "fixtures/")
 SKIP_DIRS = {".git", "node_modules", ".venv", "__pycache__", ".crew", "run", "scratchpad"}
 
 
-def scans(p: pathlib.Path) -> bool:
-    if any(part in SKIP_DIRS or part.startswith("wt-") or part.startswith(".wt-") for part in p.parts):
+def scans(p: pathlib.Path, base: pathlib.Path) -> bool:
+    """Grade p unless it sits inside a worktree parked under the tree being graded.
+
+    `wt-`/`.wt-` is a sibling-checkout name (a git worktree of this same repository, checked
+    out beside it), so the directory must be skipped -- but ONLY where it is reached from
+    above. On 2026-09-13 this predicate matched the grader's own cwd: run from inside
+    `wt-one` every path carried the `wt-` part, every file was skipped, and the gate printed
+    `ok ... 0 file(s) scanned`. A pass over nothing is the failure this rule exists to catch,
+    so the base is stripped before the parts are judged.
+    """
+    try:
+        rel = p.resolve().relative_to(base.resolve()).parts
+    except ValueError:
+        rel = p.parts
+    if any(part in SKIP_DIRS or part.startswith("wt-") or part.startswith(".wt-") for part in rel[:-1]):
         return False
     return not any(x in str(p) for x in EXEMPT_PARTS)
 
@@ -119,7 +132,7 @@ def main() -> int:
         if r.is_file():
             files.append(r)
         elif r.is_dir():
-            files += [f for f in r.rglob("*") if f.is_file() and scans(f)]
+            files += [f for f in r.rglob("*") if f.is_file() and scans(f, r)]
 
     findings: list[str] = []
     for f in sorted(set(files)):
@@ -135,6 +148,14 @@ def main() -> int:
         print("      for anything else the native reconciler is the waiter: Flux, a Kubernetes Job's")
         print("      backoffLimit, a webhook. State the case with `# sleep-ok: <reason>` only when a")
         print("      documented rate limit or protocol heartbeat forces a fixed interval.")
+        return 1
+
+    # A PASS OVER NOTHING IS NOT A PASS. The gate printed `ok` having read zero files when it
+    # was invoked from a worktree whose own name matched the skip list, and a rule that answers
+    # `clean` without looking is indistinguishable from one that has stopped matching.
+    if not files:
+        print("FAIL  sleep-ban: 0 file(s) scanned -- a pass over nothing is not a pass")
+        print("      point the gate at a tree that contains scripts, or say why there are none")
         return 1
 
     print(f"ok    sleep-ban: {len(set(files))} file(s) scanned, no wait on a clock")

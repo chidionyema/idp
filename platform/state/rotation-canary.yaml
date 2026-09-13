@@ -85,7 +85,7 @@ spec:
                   --name state/rotation-canary --file /tmp/receipt --content-type text/plain --force \
                   >/dev/null 2>&1 || true
                 touch /tmp/ok
-                sleep 120
+                sleep 120  # sleep-ok: the canary's cadence -- it re-writes its receipt every 2m so the drill reads staleness from the object's age; there is no event to wait on
               done
           env:
             - { name: HOME, value: /tmp }   # the CLI writes its cache under HOME; the root fs is read-only

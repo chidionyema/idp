@@ -68,6 +68,8 @@ nav:
       - Rails boot window: how-to/onboarding/lago-boot.md
       - The one door: how-to/onboarding/mcp-door.md
       - Secret blockers: how-to/onboarding/secret-blockers.md
+      - Gitops sync: how-to/onboarding/gitops-sync.md
+      - Helmrelease drift: how-to/onboarding/helmrelease-drift.md
   - Reference:
       - reference/index.md
       - Oracle tenancy: reference/oci-tenancy.md
@@ -206,6 +208,8 @@ nav:
       - Health check names a real object: tutorials/demo/healthcheck-exists.md
       - The one door: tutorials/demo/mcp-door.md
       - Secret blockers: tutorials/demo/secret-blockers.md
+      - Gitops sync: tutorials/demo/gitops-sync.md
+      - Helmrelease drift: tutorials/demo/helmrelease-drift.md
   - Onboarding:
       - The Demo Standard: onboarding/demo-standard.md
       - FleetView: how-to/onboarding/fleetview.md

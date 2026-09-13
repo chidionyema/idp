@@ -131,7 +131,7 @@ spec:
                 else
                   echo "estate-state pull failed"
                 fi
-                sleep 600
+                sleep 600  # sleep-ok: ghcr.io publishes no watch/event this refresh can subscribe to, and the value it reads is immutable per tag; the pull above retries
               done
           env:
             - { name: DOCKER_CONFIG, value: /creds }
