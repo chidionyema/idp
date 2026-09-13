@@ -371,6 +371,8 @@ nav:
       - cost-proof: gates/cost-proof.md
       - founder-door: gates/founder-door.md
       - stray: gates/stray-checkout.md
+      - epistemic: gates/epistemic.md
+      - trajectory: gates/trajectory.md
       - circuit-breaker: gates/circuit-breaker.md
   - Runbooks:
       - What these are: runbooks/index.md

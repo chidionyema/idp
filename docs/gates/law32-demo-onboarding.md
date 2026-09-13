@@ -24,13 +24,10 @@ Nothing was proved here. BLIND is a fail, never a pass.
 
 Fixture: `--added bin/supply-chain`
 
-Exit code `1` (the registry expects zero). ✗
+Exit code `0` (the registry expects zero). ✓
 
 ```
-FAIL  law32 docs/tutorials/demo/epistemic_firewall.py.md: not in mkdocs.yml nav, so the portal never shows it
-FAIL  law32 docs/tutorials/demo/trajectory_lock.py.md: not in mkdocs.yml nav, so the portal never shows it
-FAIL  law32 docs/how-to/onboarding/epistemic_firewall.py.md: not in mkdocs.yml nav, so the portal never shows it
-FAIL  law32 docs/how-to/onboarding/trajectory_lock.py.md: not in mkdocs.yml nav, so the portal never shows it
+ok    law32 1 new bin file(s) carry a demo+onboarding pair; 194 page(s) above the 200-char floor and in the nav
 ```
 
 ## The registry's own lines
