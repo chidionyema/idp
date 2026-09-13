@@ -60,11 +60,14 @@ nav:
   - How-to:
       - how-to/index.md
       - Bitwarden human vault, the founder's steps: how-to/bitwarden-human-vault.md
-      - Onboarding the MCP door: how-to/onboarding/mcp-door.md
-      - Onboarding the evidence recorder: how-to/onboarding/evidence-recorder.md
       - Onboarding the evidence layer: how-to/onboarding/evidence.md
       - Boot Dagster and Superset: how-to/boot-dagster-and-superset.md
       - Prove a change in the shadow: how-to/prove-a-change-in-the-shadow.md
+      - Evidence recorder: how-to/onboarding/evidence-recorder.md
+      - Health check names a real object: how-to/onboarding/healthcheck-exists.md
+      - Rails boot window: how-to/onboarding/lago-boot.md
+      - The one door: how-to/onboarding/mcp-door.md
+      - Secret blockers: how-to/onboarding/secret-blockers.md
   - Reference:
       - reference/index.md
       - Oracle tenancy: reference/oci-tenancy.md
@@ -108,16 +111,13 @@ nav:
       - A gate only knows the tree it ran in: tutorials/demo/clean-tree.md
       - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
-      - Secret blockers: tutorials/demo/secret-blockers.md
-      - Health check names a real object: tutorials/demo/healthcheck-exists.md
+      - Retention knob: tutorials/demo/signoz-retention.md
       - epistemic: tutorials/demo/epistemic.md
       - Epistemic gate (module): tutorials/demo/epistemic_firewall.py.md
       - trajectory: tutorials/demo/trajectory.md
       - Trajectory lock (module): tutorials/demo/trajectory_lock.py.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
-      - The MCP door: tutorials/demo/mcp-door.md
-      - The evidence recorder: tutorials/demo/evidence-recorder.md
       - Evidence layer: tutorials/demo/evidence.md
       - Estate next: tutorials/demo/estate-next.md
       - Messaging: tutorials/demo/messaging.md
@@ -199,9 +199,12 @@ nav:
       - Wake blocked: tutorials/demo/wake-blocked.md
       - Founder god's view: tutorials/demo/estate-founder.md
       - Money: tutorials/demo/commerce.md
-      - Rails boot window: tutorials/demo/lago-boot.md
       - Customer sign-in: tutorials/demo/customer-identity.md
       - Human secret door: tutorials/demo/human-vault.md
+      - Evidence recorder: tutorials/demo/evidence-recorder.md
+      - Health check names a real object: tutorials/demo/healthcheck-exists.md
+      - The one door: tutorials/demo/mcp-door.md
+      - Secret blockers: tutorials/demo/secret-blockers.md
   - Onboarding:
       - The Demo Standard: onboarding/demo-standard.md
       - FleetView: how-to/onboarding/fleetview.md
@@ -226,8 +229,7 @@ nav:
       - Every gate, with its output: how-to/onboarding/gate-demo.md
       - Portal: how-to/onboarding/idp.md
       - Estate compiler: how-to/onboarding/intent.md
-      - Secret blockers: how-to/onboarding/secret-blockers.md
-      - Health check names a real object: how-to/onboarding/healthcheck-exists.md
+      - Retention knob: how-to/onboarding/signoz-retention.md
       - Estate Mac screen: how-to/onboarding/founder-screen-access.md
       - Conscience: how-to/onboarding/conscience.md
       - Estate showcase: how-to/onboarding/estate-showcase.md
@@ -241,7 +243,6 @@ nav:
       - Estate inventory: how-to/onboarding/estate-inventory.md
       - Cluster autoscaler: how-to/onboarding/autoscaler.md
       - Money: how-to/onboarding/commerce.md
-      - Rails boot window: how-to/onboarding/lago-boot.md
       - Estate zone: how-to/onboarding/estate-zone.md
       - k8s-infra: how-to/onboarding/k8s-infra.md
       - Langfuse: how-to/onboarding/langfuse.md

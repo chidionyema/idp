@@ -2268,8 +2268,8 @@ rules:
     - bin/idp-circuit-breaker
     note: >-
       the live input is the estate's OWN breaker, graded every run: the file that decides what a
-      finding is must still carry the no-finding rule. If someone removes it, this case stops
-      passing and the misfire is caught in the pull request rather than in a locked session
+      finding is must still carry the no-finding rule. Remove it and this case fails in the pull
+      request, rather than in a session that has already locked itself
   ok: a result carrying no finding cannot lock, and a proved pattern still locks
   fail: >-
     output carrying no finding gets a fingerprint, so repeated no-op commands trip N=3 and lock
