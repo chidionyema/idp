@@ -166,6 +166,26 @@ clickhouse:
     query_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
     metric_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
     asynchronous_metric_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    # 2026-09-13: THE `_0` TWINS, which is what the 49 OOMKilled restarts were actually made of.
+    #
+    # Every table above is set by its BASE name, and ClickHouse keeps the old file open under the
+    # name it already had -- `metric_log_0`, `trace_log_0`, `asynchronous_metric_log_0`. Those
+    # twins carry the OPERATOR's default, 30 days, not the 1-3 days set here, because the key that
+    # would set them was never written. Measured that day: the `system` database held 7.9 GiB
+    # across 393 active parts -- more than every `signoz_*` table combined -- and `metric_log_0`
+    # alone accounted for 222 of those parts at 587 MiB.
+    #
+    # That part count is what the OOM is made of. `background_pool_size` 16 times
+    # `background_merges_mutations_concurrency_ratio` 2 allows 32 concurrent merges, and 12 of the
+    # 27 running were on `metric_log_0`, holding 274 MiB. `MergesMutationsMemoryTracking` read
+    # 1051 MiB against a `MemoryTracking` of 2112 -- half of ClickHouse's tracked memory was
+    # background merges of its own diagnostic logs, and merges are pinned at the 0.3 ratio the
+    # line above sets. Shrinking caches could not fix that; the parts had to stop being made.
+    #
+    # These are ClickHouse's internal telemetry, not customer data. Signoz retention is untouched.
+    metric_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    asynchronous_metric_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    trace_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
     # text_log is the one table the operator gives no <engine>, so the sibling form is correct
     # there and only there.
     text_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
