@@ -1,7 +1,11 @@
 import { cpuLabel, guaranteed, millicores, summariseCompiled } from './compiled';
 import type { CompiledDoc } from './compiled';
 
-const release = (over: Partial<CompiledDoc['releases'][number]> = {}) => ({
+// `CompiledDoc['releases']` is optional, so it cannot be indexed directly. Naming the element
+// type is clearer than the index expression and does not depend on the field being required.
+type Release = NonNullable<CompiledDoc['releases']>[number];
+
+const release = (over: Partial<Release> = {}) => ({
   namespace: 'observability',
   name: 'langfuse',
   chart: 'langfuse',
