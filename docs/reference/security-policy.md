@@ -58,6 +58,7 @@ PR alongside these.
 | `otto-gvisor-admission` | Enforce | otto-gvisor-sandbox requires runtimeClassName:gvisor and no privileged | `edge` | `platform/edge/gvisor-admission.yaml` |
 | `protect-namespaces` | Enforce | A platform namespace cannot be deleted | `edge` | `platform/edge/protect-namespaces.yaml` |
 | `provider-independence` | Enforce | Provider independence (R43) | `edge` | `platform/edge/provider-independence.yaml` |
+| `refuse-unattested-provenance` | Enforce | A payload claiming provenance carries the attestation that covers it | `verification` | `platform/verification/refuse-unattested-provenance.yaml` |
 | `require-auto-reload` | Audit 2, Enforce 2 | Every workload restarts when its config changes | `edge` | `platform/edge/require-auto-reload.yaml` |
 | `require-availability` | Enforce | Founder-facing workloads survive losing one node | `scheduling` | `platform/scheduling/require-availability.yaml` |
 | `require-catalogue-entity` | Enforce | Everything that serves a port names its catalogue entity | `edge` | `platform/edge/require-catalogue-entity.yaml` |
