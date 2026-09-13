@@ -188,10 +188,10 @@ spec:
         images:
           - name: getlago/api
             newName: ghcr.io/chidionyema/lago-api
-            newTag: main-9183-47e9ca244c0efc038d9616798a0f66f650b0118d # {"$imagepolicy": "flux-system:lago-api:tag"}
+            newTag: main-9313-61caf801dc496677ec29a4e58180de02cdad0482 # {"$imagepolicy": "flux-system:lago-api:tag"}
           - name: getlago/front
             newName: ghcr.io/chidionyema/lago-front
-            newTag: main-9231-624f9339f5c7979312678e738ccf1ea42c265945 # {"$imagepolicy": "flux-system:lago-front:tag"}
+            newTag: main-9313-61caf801dc496677ec29a4e58180de02cdad0482 # {"$imagepolicy": "flux-system:lago-front:tag"}
           - name: getlago/lago-events-processor
             newName: docker.io/getlago/lago-events-processor
           - name: getlago/lago-gotenberg
@@ -297,6 +297,83 @@ spec:
               - op: replace
                 path: /spec/template/spec/containers/0/ports/0/containerPort
                 value: 8080
+          # RAILS GETS A BOOT WINDOW, WHICH IT DID NOT HAVE. Measured 2026-09-13 while the
+          # commerce rows were switched on: lago-api, lago-billing-worker, lago-clock-worker and
+          # the other Rails components sat CrashLoopBackOff with 91+ restarts, and their logs
+          # showed the meilisearch warning and nothing else, because Rails in production buffers
+          # and the kubelet SIGKILLed the boot before it could say what went wrong:
+          #
+          #   lago-api: exit=1 reason=Error   (repeatedly, every ~40s)
+          #   Warning  Unhealthy  Readiness probe failed: dial tcp :3000: connection refused
+          #   Warning  Unhealthy  Liveness probe failed:  dial tcp :3000: connection refused
+          #   Normal   Killing    Container lago-api failed liveness probe, will be restarted
+          #
+          # The chart's liveness probe has NO initialDelaySeconds and NO startupProbe: 3 failures
+          # x 10s gives Rails 30 seconds to boot, and `bundle exec` on a cold image does not boot
+          # in 30. So the kubelet killed every boot, forever, and `Failed` on the HelmRelease is
+          # what held the whole commerce Kustomization out. The database was never the problem:
+          # the app's own DATABASE_URL authenticated against estate-rw and `select 1` answered.
+          #
+          # startupProbe is the fence Kubernetes has for exactly this (the same fix langfuse
+          # carries in platform/observability/langfuse.yaml, and for the same reason). Liveness
+          # does not run until startup passes, so a cold boot gets 300 seconds and the steady
+          # state pays nothing. The startup check is `tcpSocket` rather than an HTTP path: these
+          # are several different processes (api plus a Sidekiq worker per queue) and Sidekiq
+          # serves no HTTP at all, so a path probe could never pass for most of them.
+          - target: {kind: Deployment, name: lago-api}
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/startupProbe
+                value:
+                  tcpSocket: { port: 3000 }
+                  periodSeconds: 10
+                  timeoutSeconds: 3
+                  failureThreshold: 30
+          - target: {kind: Deployment, name: lago-worker}
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/startupProbe
+                value:
+                  tcpSocket: { port: 3000 }
+                  periodSeconds: 10
+                  timeoutSeconds: 3
+                  failureThreshold: 30
+          - target: {kind: Deployment, name: lago-clock-worker}
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/startupProbe
+                value:
+                  tcpSocket: { port: 3000 }
+                  periodSeconds: 10
+                  timeoutSeconds: 3
+                  failureThreshold: 30
+          - target: {kind: Deployment, name: lago-billing-worker}
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/startupProbe
+                value:
+                  tcpSocket: { port: 3000 }
+                  periodSeconds: 10
+                  timeoutSeconds: 3
+                  failureThreshold: 30
+          - target: {kind: Deployment, name: lago-webhook-worker}
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/startupProbe
+                value:
+                  tcpSocket: { port: 3000 }
+                  periodSeconds: 10
+                  timeoutSeconds: 3
+                  failureThreshold: 30
+          - target: {kind: Deployment, name: lago-payment-worker}
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/startupProbe
+                value:
+                  tcpSocket: { port: 3000 }
+                  periodSeconds: 10
+                  timeoutSeconds: 3
+                  failureThreshold: 30
           - target: {kind: Service, name: lago-front-svc}
             patch: |
               - op: replace

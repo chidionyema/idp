@@ -1714,6 +1714,40 @@ rules:
     note: this repository's own platform manifests
   ok: every ClickHouse system-log retention is inside its engine string
   fail: a system table the Altinity operator ships an <engine> for also has a sibling <ttl>, which ClickHouse refuses at startup with BAD_ARGUMENTS and exit 36
+- id: clickhouse-twin-ttl
+  label: clickhouse-twin-ttl
+  fast: true
+  statement: A ClickHouse system table this tree configures by its base name also configures its `_0` twin, with a TTL no longer than the base table's; a twin that keeps the operator's 30-day default is a table whose parts the merge pool cannot keep up with
+  law: incident 2026-09-13, signoz-clickhouse 49 OOMKilled restarts
+  origin: 'Every system-log retention in platform/observability/values.yaml is keyed on the BASE table name, and ClickHouse keeps the file it already had open under the name it already had -- metric_log_0, trace_log_0, asynchronous_metric_log_0. A _0 twin is a different table to the settings map, so the base-name key never reaches it and it holds the clickhouse-operator''s 30-day default. Measured: 7.9 GiB across 393 active parts in `system`, more than every signoz_* table combined, with metric_log_0 alone at 222 parts. The operator permits 32 concurrent merges (background_pool_size 16 x ratio 2); 27 were running and 12 were on that one twin, and MergesMutationsMemoryTracking read 1051 MiB against a MemoryTracking of 2112 -- half of ClickHouse''s tracked memory was merges of its own diagnostic logs, pinned at the 0.3 ratio. MemoryResident 3.53 GiB against a 3.60 GiB ceiling, ratio 1.9 where upstream calls 1.4 dangerous. The kernel OOM killer targets RSS, so it killed the pod while ClickHouse''s
+    own logs showed nothing wrong: exitCode 137, one kill every ~30 minutes for four and a half days. Shrinking the caches could not reach it, because the parts are the cause and the caches were only sitting on top.'
+  planes:
+  - ci
+  - session
+  session_glob:
+  - platform/**/*.yaml
+  - platform/**/*.yml
+  run:
+  - python3
+  - bin/idp-clickhouse-twin-ttl
+  cluster:
+    policy: null
+    why: the break is in the chart values; admission never sees the rendered config.d XML
+  fixtures:
+    must_fail: tests/fixtures/clickhouse-twin-ttl/bad.yaml
+    must_pass: tests/fixtures/clickhouse-twin-ttl/good.yaml
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/clickhouse-twin-ttl/bad.yaml
+  - expect: pass
+    args:
+    - tests/fixtures/clickhouse-twin-ttl/good.yaml
+  - expect: pass
+    live: true
+    note: this repository's own platform manifests
+  ok: every system table configured by base name has a matching `_0` twin TTL
+  fail: a base-name system table's `_0` twin is unset or longer-lived, so the twin keeps the operator's 30-day default and its part count drives the merge pool and the OOM
 - id: crd-then-cr
   label: crd-then-cr
   fast: true
