@@ -60,6 +60,7 @@ nav:
   - How-to:
       - how-to/index.md
       - Bitwarden human vault, the founder's steps: how-to/bitwarden-human-vault.md
+      - Onboarding the MCP door: how-to/onboarding/mcp-door.md
       - Onboarding the evidence layer: how-to/onboarding/evidence.md
       - Boot Dagster and Superset: how-to/boot-dagster-and-superset.md
       - Prove a change in the shadow: how-to/prove-a-change-in-the-shadow.md
@@ -113,6 +114,7 @@ nav:
       - Trajectory lock (module): tutorials/demo/trajectory_lock.py.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
+      - The MCP door: tutorials/demo/mcp-door.md
       - Evidence layer: tutorials/demo/evidence.md
       - Estate next: tutorials/demo/estate-next.md
       - Messaging: tutorials/demo/messaging.md
