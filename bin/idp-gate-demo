@@ -85,7 +85,6 @@ def run(engine, rule: dict, case: dict) -> dict:
     run at all, so the page can say BLIND rather than a pass it did not earn.
     """
     argv = engine._argv(rule, case)
-    missing = [a for a in argv if a.endswith(".py") is False and not _exists(argv)]
     if not _exists(argv):
         absent = _absent_binary(argv)
         return {
@@ -107,27 +106,47 @@ def run(engine, rule: dict, case: dict) -> dict:
 
 
 def _exists(argv: list[str]) -> bool:
-    """True when the interpreter and the script it runs both resolve."""
+    """True when the interpreter and the SCRIPT it runs both resolve.
+
+    Only the script counts, never the script's arguments. Measured 2026-09-13 on
+    law32-demo-onboarding: its refusing case is `--added bin/feature-with-no-pages`, and the gate
+    is asked to refuse a NAME that has no demo and onboarding pages -- so no such file exists, and
+    none should. Scanning every argv entry carrying a slash reported
+
+      BLIND -- the gate is not on disk: bin/feature-with-no-pages
+
+    for a rule whose gate, `bin/law32-gate`, was on disk and refusing correctly. BLIND means the
+    GATE could not be run; an argument the gate exists to refuse is the case working, not a case
+    that could not run. A working gate shown blind is the same lie as a pass it did not earn
+    (LAW 15), because on this page a live rule and a dead one looked identical.
+
+    A script path is the first non-flag entry after the interpreter: `python3 bin/gate --added X`.
+    An interpreter such as `python3` carries no slash and is resolved on PATH, and a rule whose
+    argv is a single bare script is covered by the same first-non-flag rule.
+    """
     for part in argv:
         if part.startswith("-"):
             continue
-        if "/" in part and not os.path.exists(os.path.join(str(ROOT), part)):
-            # an interpreter like python3 has no slash; a script path does
-            if not os.path.exists(part):
-                return False
+        if "/" in part:
+            # The script itself: the first path-shaped entry. Everything after it is data.
+            return os.path.exists(os.path.join(str(ROOT), part)) or os.path.exists(part)
     return True
 
 
 def _absent_binary(argv: list[str]) -> str:
-    """Name the argv entry that is missing, for the BLIND line."""
+    """Name the argv entry that is missing, for the BLIND line.
+
+    Only the script can be named here: see `_exists` for why an argument is not evidence that the
+    gate is absent. If the script resolves, there is nothing to name.
+    """
     for part in argv:
         if part.startswith("-"):
             continue
-        if "/" in part and not (
-            os.path.exists(part) or os.path.exists(os.path.join(str(ROOT), part))
-        ):
-            return part
-    return " ".join(argv)
+        if "/" in part:
+            if not (os.path.exists(part) or os.path.exists(os.path.join(str(ROOT), part))):
+                return part
+            return ""
+    return ""
 
 
 def _stable(output: str) -> str:
@@ -150,7 +169,7 @@ def _stable(output: str) -> str:
         r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[+-]\d{4})?", "<timestamp>", output
     )
     out = re.sub(r"/(?:private/)?var/folders/\S*?/tmp[0-9A-Za-z_]+", "<tmpdir>", out)
-    out = re.sub(r"/tmp/tmp[0-9A-Za-z_]+", "<tmpdir>", out)
+    out = re.sub(r"/tmp/tmp[0-9A-Za-z_]+", "<tmpdir>", out)  # noqa: S108 -- a pattern, not a path
     return out
 
 

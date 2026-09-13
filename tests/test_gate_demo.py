@@ -184,6 +184,80 @@ class TestBlindIsNotAPass:
         )
 
 
+class TestABlindPageNamesTheGateNotItsArguments:
+    def test_a_present_gate_with_an_absent_fixture_argument_is_not_blind(self, tmp_path):
+        """A refusing case names something that does not qualify -- that is the point of it.
+
+        Measured 2026-09-13 on law32-demo-onboarding: its refuse case is
+        `--added bin/feature-with-no-pages`, and no such file exists on disk because the gate is
+        asked to refuse a NAME, not to read a file. The BLIND predicate scanned every argv entry
+        carrying a slash, decided the gate was absent, and printed
+
+          BLIND -- the gate is not on disk: bin/feature-with-no-pages
+
+        on a page whose gate was `bin/law32-gate`, on disk and refusing correctly one line
+        earlier. A gate reported blind while working is the same lie as a pass it did not earn:
+        on the estate's own demo page a working rule was indistinguishable from a dead one.
+        """
+        one = tmp_path / "rules.yaml"
+        one.write_text(
+            yaml.safe_dump(
+                {
+                    "version": 1,
+                    "rules": [
+                        {
+                            "id": "present-gate-absent-argument",
+                            "label": "probe",
+                            "statement": "the gate exists and is handed a name that does not",
+                            "law": "test",
+                            "planes": ["ci"],
+                            "run": ["python3", "bin/law32-gate"],
+                            "fixtures": {
+                                "must_fail": "bin/feature-with-no-pages",
+                                "must_pass": "bin/supply-chain",
+                            },
+                            "cases": [
+                                {
+                                    "expect": "refuse",
+                                    "args": ["--added", "bin/feature-with-no-pages"],
+                                },
+                                {
+                                    "expect": "pass",
+                                    "args": ["--added", "bin/supply-chain"],
+                                },
+                            ],
+                            "ok": "never",
+                            "fail": "always",
+                        }
+                    ],
+                }
+            )
+        )
+        out = tmp_path / "pages"
+        proc = run_gen("--rules", str(one), "--out", str(out))
+        page = out / "present-gate-absent-argument.md"
+        assert page.is_file(), f"no page rendered\n{proc.stdout}"
+        text = page.read_text()
+        assert "**BLIND**" not in text, (
+            "a gate on disk was reported blind because its ARGUMENT was absent; "
+            "BLIND must mean the gate could not be run, not that the case names a "
+            "path the gate exists to refuse"
+        )
+
+    def test_the_real_law32_page_is_not_blind(self):
+        """The estate's own page for a working gate must not say BLIND.
+
+        This is the rule the defect was measured on, so it is asserted where it happened rather
+        than only on a synthetic registry.
+        """
+        page = OUT / "law32-demo-onboarding.md"
+        assert page.is_file(), "law32-demo-onboarding has no page"
+        assert "**BLIND**" not in page.read_text(), (
+            "law32-demo-onboarding renders BLIND although bin/law32-gate refuses its "
+            "must-fail case with exit 1"
+        )
+
+
 class TestTheIndexAndTheNav:
     def test_the_index_lists_every_gate(self):
         idx = OUT / "index.md"

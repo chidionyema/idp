@@ -20,7 +20,7 @@ Exit code `1` (the registry expects non-zero). ✓
 
 ```
 FAIL  sleep-ban: 1 wait(s) on a clock instead of an event
-      /Users/chidionyema/dev/code/wt-one/tests/fixtures/sleep-ban/bad.sh:6: sleep 420 -- sleep 420
+      /Users/chidionyema/dev/code/idp/tests/fixtures/sleep-ban/bad.sh:6: sleep 420 -- sleep 420
       a wait longer than 10s is a missing event. The estate's own answer for CI is
       GitHub's merge queue:  gh pr merge <n> --squash --auto
       for anything else the native reconciler is the waiter: Flux, a Kubernetes Job's

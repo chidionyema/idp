@@ -23,9 +23,71 @@ A rule with no refusing case or no permitting case cannot be shown discriminatin
 
 Fixture: `tests/test_breaker_extension.py::TestTheFingerprintIsAFindingNotTheBytes::test_a_repeated_noop_is_still_no_finding`
 
-**BLIND** — the gate is not on disk: tests/test_breaker_extension.py::TestTheFingerprintIsAFindingNotTheBytes::test_a_repeated_noop_is_still_no_finding
+Exit code `0` (the registry expects zero). ✓
 
-Nothing was proved here. BLIND is a fail, never a pass.
+```
+.........................                                                [100%]
+25 passed in 7.48s
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:103: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566/test_every_tool_call_is_record0/tool-calls:
+<class 'PermissionError'>: [Errno 1] Operation not permitted: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566/test_every_tool_call_is_record0/tool-calls'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566/test_every_tool_call_is_record0/tool-calls
+<class 'OSError'>: [Errno 66] Directory not empty: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566/test_every_tool_call_is_record0/tool-calls'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566/test_every_tool_call_is_record0
+<class 'OSError'>: [Errno 66] Directory not empty: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566/test_every_tool_call_is_record0'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:103: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566/test_the_record_is_appendonly0/tool-calls:
+<class 'PermissionError'>: [Errno 1] Operation not permitted: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566/test_the_record_is_appendonly0/tool-calls'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566/test_the_record_is_appendonly0/tool-calls
+<class 'OSError'>: [Errno 66] Directory not empty: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566/test_the_record_is_appendonly0/tool-calls'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566/test_the_record_is_appendonly0
+<class 'OSError'>: [Errno 66] Directory not empty: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566/test_the_record_is_appendonly0'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566
+<class 'OSError'>: [Errno 66] Directory not empty: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-8b127807-7433-486b-9e99-4ef1a078d566'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:103: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4/test_every_tool_call_is_record0/tool-calls:
+<class 'PermissionError'>: [Errno 1] Operation not permitted: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4/test_every_tool_call_is_record0/tool-calls'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4/test_every_tool_call_is_record0/tool-calls
+<class 'OSError'>: [Errno 66] Directory not empty: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4/test_every_tool_call_is_record0/tool-calls'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4/test_every_tool_call_is_record0
+<class 'OSError'>: [Errno 66] Directory not empty: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4/test_every_tool_call_is_record0'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:103: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4/test_the_record_is_appendonly0/tool-calls:
+<class 'PermissionError'>: [Errno 1] Operation not permitted: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4/test_the_record_is_appendonly0/tool-calls'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4/test_the_record_is_appendonly0/tool-calls
+<class 'OSError'>: [Errno 66] Directory not empty: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4/test_the_record_is_appendonly0/tool-calls'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4/test_the_record_is_appendonly0
+<class 'OSError'>: [Errno 66] Directory not empty: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4/test_the_record_is_appendonly0'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4
+<class 'OSError'>: [Errno 66] Directory not empty: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-cd5bfa6e-384b-4ad8-87ee-09ee8b5cfed4'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:103: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-ad572d98-0493-4f25-ad01-03816b25d9fe/test_every_tool_call_is_record0/tool-calls:
+<class 'PermissionError'>: [Errno 1] Operation not permitted: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-ad572d98-0493-4f25-ad01-03816b25d9fe/test_every_tool_call_is_record0/tool-calls'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-ad572d98-0493-4f25-ad01-03816b25d9fe/test_every_tool_call_is_record0/tool-calls
+<class 'OSError'>: [Errno 66] Directory not empty: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-ad572d98-0493-4f25-ad01-03816b25d9fe/test_every_tool_call_is_record0/tool-calls'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-ad572d98-0493-4f25-ad01-03816b25d9fe/test_every_tool_call_is_record0
+<class 'OSError'>: [Errno 66] Directory not empty: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-ad572d98-0493-4f25-ad01-03816b25d9fe/test_every_tool_call_is_record0'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:103: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-ad572d98-0493-4f25-ad01-03816b25d9fe/test_the_record_is_appendonly0/tool-calls:
+<class 'PermissionError'>: [Errno 1] Operation not permitted: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-ad572d98-0493-4f25-ad01-03816b25d9fe/test_the_record_is_appendonly0/tool-calls'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-ad572d98-0493-4f25-ad01-03816b25d9fe/test_the_record_is_appendonly0/tool-calls
+<class 'OSError'>: [Errno 66] Directory not empty: '/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-ad572d98-0493-4f25-ad01-03816b25d9fe/test_the_record_is_appendonly0/tool-calls'
+  warnings.warn(
+/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/garbage-ad572d98-0493-4f25-ad01-03816b25d9fe/test_the_record_is_appendonly0
+… 89 more line(s)
+```
 
 ## The registry's own lines
 
