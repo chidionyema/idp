@@ -408,6 +408,12 @@ nav:
       - secret-blockers: gates/externalsecret-blockers-are-loud.md
       - drift-blind: gates/drift-reads-blind-not-clean.md
       - healthcheck-exists: gates/healthcheck-names-a-real-object.md
+      # 2026-09-13: these two rules and their pages landed with d0a9deb9 and the
+      # pages were never named here, so test_gate_demo's nav case was red --
+      # "generated pages not in the nav". bin/idp-gate-demo writes a page per row
+      # in rules.yaml; the nav has to name each one or the page is unreachable.
+      - clickhouse-twin-ttl: gates/clickhouse-twin-ttl.md
+      - execution-boundary-holds: gates/execution-boundary-holds.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
