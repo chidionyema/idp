@@ -4,15 +4,9 @@ rules:
 - id: api-version-retired
   fast: true
   label: api-version-retired
-  statement: 'A manifest naming a group/version this estate has migrated off is a row that never reconciles -- and it does not fail alone, because the whole Kustomization goes NotReady and every row depending on it stops too'
+  statement: A manifest naming a group/version this estate has migrated off is a row that never reconciles -- and it does not fail alone, because the whole Kustomization goes NotReady and every row depending on it stops too
   law: incident 2026-09-12, aevum-evidence held chaos and science out
-  origin: 'platform/observability/aevum.yaml shipped apiVersion external-secrets.io/v1beta1. Every
-    gate that reads a manifest reads it as YAML, and v1beta1 is perfectly good YAML, so CI was
-    green; the failure surfaced only in Flux, as ExternalSecret dry-run "no matches for kind
-    ExternalSecret in version external-secrets.io/v1beta1". The observability Kustomization went
-    NotReady, and chaos and science then failed on their dependency -- one wrong string in one new
-    file held three rows out of the cluster. The gate lists retired group/version pairs once, each
-    with its replacement, and is proved both ways.'
+  origin: platform/observability/aevum.yaml shipped apiVersion external-secrets.io/v1beta1. Every gate that reads a manifest reads it as YAML, and v1beta1 is perfectly good YAML, so CI was green; the failure surfaced only in Flux, as ExternalSecret dry-run "no matches for kind ExternalSecret in version external-secrets.io/v1beta1". The observability Kustomization went NotReady, and chaos and science then failed on their dependency -- one wrong string in one new file held three rows out of the cluster. The gate lists retired group/version pairs once, each with its replacement, and is proved both ways.
   planes:
   - ci
   - session
@@ -28,7 +22,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/api-version/bad
     must_pass: tests/fixtures/api-version/good
-  live_elsewhere: 'bin/idp-ci:610 -- the apiversion rung grades the REAL platform/ and clusters/ trees the cluster reconciles, not the fixture pair'
+  live_elsewhere: bin/idp-ci:610 -- the apiversion rung grades the REAL platform/ and clusters/ trees the cluster reconciles, not the fixture pair
   cases:
   - expect: refuse
     args:
@@ -44,16 +38,9 @@ rules:
 - id: aevum-evidence
   fast: true
   label: aevum-evidence
-  statement: 'A receipt that does not verify is not evidence: every recorded agent action chains to the previous one and is
-    covered by a signature, and an EMPTY ledger is a fail-closed FAIL rather than a clean bill -- Aevum''s default store is
-    in-memory and verify_sigchain() answers True about a chain with no events, so a misconfigured deployment reports green
-    while recording nothing'
+  statement: 'A receipt that does not verify is not evidence: every recorded agent action chains to the previous one and is covered by a signature, and an EMPTY ledger is a fail-closed FAIL rather than a clean bill -- Aevum''s default store is in-memory and verify_sigchain() answers True about a chain with no events, so a misconfigured deployment reports green while recording nothing'
   law: decision 0028
-  origin: 'Founder, 2026-09-12: "get Aevum wired for all current and future repos." POPDD signs with HMAC, a symmetric key,
-    so only the holder of the signing key can verify a receipt; decision 0028 records the measured comparison and adopts Aevum
-    (Ed25519 + ML-DSA-65, COSE_Sign1, RFC 3161, standalone aevum-verify). The whole value is one property -- an altered record
-    must fail verification -- so the gate is proved both ways and fails closed on an empty ledger, the way
-    bin/idp-calico-deny-log fails closed on an empty deny feed.'
+  origin: 'Founder, 2026-09-12: "get Aevum wired for all current and future repos." POPDD signs with HMAC, a symmetric key, so only the holder of the signing key can verify a receipt; decision 0028 records the measured comparison and adopts Aevum (Ed25519 + ML-DSA-65, COSE_Sign1, RFC 3161, standalone aevum-verify). The whole value is one property -- an altered record must fail verification -- so the gate is proved both ways and fails closed on an empty ledger, the way bin/idp-calico-deny-log fails closed on an empty deny feed.'
   planes:
   - ci
   run:
@@ -65,7 +52,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/aevum-evidence/bad/chain.json
     must_pass: tests/fixtures/aevum-evidence/good/chain.json
-  live_elsewhere: 'bin/idp-ci:599 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
+  live_elsewhere: 'bin/idp-ci:606 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
   cases:
   - expect: refuse
     args:
@@ -110,12 +97,9 @@ rules:
 - id: flux-wait-brake
   fast: true
   label: flux-wait-brake
-  statement: 'A Flux Kustomization never sets both wait: true and healthChecks; wait wins, the checks the author wrote are discarded, and the row then waits on every object in its path -- so one optional
-    Job going Failed holds every change to that path out of the cluster'
+  statement: 'A Flux Kustomization never sets both wait: true and healthChecks; wait wins, the checks the author wrote are discarded, and the row then waits on every object in its path -- so one optional Job going Failed holds every change to that path out of the cluster'
   law: incident 2026-09-10, otto-gateway held out by Job/otto-memory-store-6
-  origin: 'The otto-gateway row named one health check, Deployment/otto-gateway, and set wait: true above it. The Deployment was healthy. A one-shot backfill in the same path timed out reaching the LLM
-    router, went Failed, and the row reported "failed early due to stalled resources" and stopped applying -- including the change that repairs the router path the backfill could not reach. The Job''s own
-    manifest says "If this never runs, nothing breaks". 41 of the estate''s 82 Kustomizations carried the same dead healthChecks list.'
+  origin: 'The otto-gateway row named one health check, Deployment/otto-gateway, and set wait: true above it. The Deployment was healthy. A one-shot backfill in the same path timed out reaching the LLM router, went Failed, and the row reported "failed early due to stalled resources" and stopped applying -- including the change that repairs the router path the backfill could not reach. The Job''s own manifest says "If this never runs, nothing breaks". 41 of the estate''s 82 Kustomizations carried the same dead healthChecks list.'
   planes:
   - ci
   - session
@@ -145,12 +129,9 @@ rules:
 - id: probe-host
   fast: true
   label: probe-host
-  statement: 'No probe or lifecycle handler names a host: PodSecurity restricted refuses the pod at create, not the manifest at apply, so a workload carrying one merges green, reconciles green, and then
-    its ReplicaSet fails to make a pod forever while the old pod keeps serving'
+  statement: 'No probe or lifecycle handler names a host: PodSecurity restricted refuses the pod at create, not the manifest at apply, so a workload carrying one merges green, reconciles green, and then its ReplicaSet fails to make a pod forever while the old pod keeps serving'
   law: incident 2026-09-10, otto-gateway three homes Available=False for hours
-  origin: 'The otto-brain sidecar binds 127.0.0.1 by design (R20, and a lifeboat you reach without crossing a network). Its probes were pointed back at loopback with host: 127.0.0.1, which cannot work anyway
-    -- the kubelet is not in the pod''s network namespace -- and which PodSecurity restricted forbids outright: "probe or lifecycle host (container \"otto-brain\" uses probe or lifecycle host \"127.0.0.1\")".
-    Otto''s three homes merged and never ran. An exec probe runs inside the container, where loopback is the sidecar, and needs no host.'
+  origin: 'The otto-brain sidecar binds 127.0.0.1 by design (R20, and a lifeboat you reach without crossing a network). Its probes were pointed back at loopback with host: 127.0.0.1, which cannot work anyway -- the kubelet is not in the pod''s network namespace -- and which PodSecurity restricted forbids outright: "probe or lifecycle host (container \"otto-brain\" uses probe or lifecycle host \"127.0.0.1\")". Otto''s three homes merged and never ran. An exec probe runs inside the container, where loopback is the sidecar, and needs no host.'
   planes:
   - ci
   - session
@@ -441,7 +422,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/migration-not-idempotent
     must_pass: bin/scheduler-migrate
-  live_elsewhere: bin/idp-ci:337 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
+  live_elsewhere: bin/idp-ci:345 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
   cases:
   - expect: refuse
     args:
@@ -484,8 +465,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/owner-accounts/bad.yaml
     must_pass: tests/fixtures/owner-accounts/good.yaml
-  live_gap: 'chidionyema/idp#2452 -- pointed at docs/reference/owner-accounts.yaml, the file it exists to grade, this gate exits 1: six provider accounts name no second owner. The live case lands with the
-    fix, not before it.'
+  live_gap: 'chidionyema/idp#2452 -- pointed at docs/reference/owner-accounts.yaml, the file it exists to grade, this gate exits 1: six provider accounts name no second owner. The live case lands with the fix, not before it.'
   cases:
   - expect: pass
     args:
@@ -557,8 +537,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/schedule-undescribed.yml
     must_pass: tests/fixtures/schedule-described.yml
-  live_gap: 'chidionyema/idp#2452 -- the selftest grades the describer, not the estate''s schedules. bin/idp-verify:170 runs it for real, and bin/idp-verify is invoked by no workflow: a gate that runs only
-    when somebody types it is not a plane.'
+  live_gap: 'chidionyema/idp#2452 -- the selftest grades the describer, not the estate''s schedules. bin/idp-verify:170 runs it for real, and bin/idp-verify is invoked by no workflow: a gate that runs only when somebody types it is not a plane.'
   cases:
   - expect: pass
   ok: job descriptions derive from the script, and are refused when absent
@@ -688,8 +667,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/tenant-split/bad.yaml
     must_pass: tests/fixtures/tenant-split/good.yaml
-  live_gap: chidionyema/idp#2452 -- a bare run over the repository returns 15 findings, every one of the shape 'no data.seed.sql to grade'. That reads like the gate scanning past its own subject rather
-    than 15 tenant defects, and it wants reading before either is claimed.
+  live_gap: chidionyema/idp#2452 -- a bare run over the repository returns 15 findings, every one of the shape 'no data.seed.sql to grade'. That reads like the gate scanning past its own subject rather than 15 tenant defects, and it wants reading before either is claimed.
   cases:
   - expect: refuse
     args:
@@ -701,8 +679,7 @@ rules:
   fail: idp-tenant-split cannot tell one-secret-one-tenant from a leak (decision 0021)
 - id: jit-grants
   label: jitgrant
-  statement: 'A grant the JIT broker may mint can never be turned into standing access: no token for a verb that rewrites a pod spec, no secrets or RBAC, no core namespace, no wildcard, a TTL under the
-    ceiling and a declared rate'
+  statement: 'A grant the JIT broker may mint can never be turned into standing access: no token for a verb that rewrites a pod spec, no secrets or RBAC, no core namespace, no wildcard, a TTL under the ceiling and a declared rate'
   law: WJ.5
   planes:
   - ci
@@ -764,8 +741,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/calico-denyflow/feed-no-evidence.log
     must_pass: tests/fixtures/calico-denyflow/feed-with-deny.log
-  live_gap: chidionyema/idp#2452 -- no real deny feed is collected anywhere, and worse, bin/idp-calico-deny-log:35 names its own passing fixture as the default input for a rule whose statement is that an
-    empty feed is a fail-closed FAIL.
+  live_gap: chidionyema/idp#2452 -- no real deny feed is collected anywhere, and worse, bin/idp-calico-deny-log:35 names its own passing fixture as the default input for a rule whose statement is that an empty feed is a fail-closed FAIL.
   cases:
   - expect: pass
     args:
@@ -835,8 +811,7 @@ rules:
   fail: bin/gvisor-cell-fence-gate cannot tell a cell fence that leaks to the internet from the default-deny fence (ZT step 6)
 - id: availability
   label: ha
-  statement: Every surface the founder can open survives losing one node, and so does every fail-closed admission webhook -- losing one of those costs not a hostname but the cluster's ability to apply anything,
-    its own repair included
+  statement: Every surface the founder can open survives losing one node, and so does every fail-closed admission webhook -- losing one of those costs not a hostname but the cluster's ability to apply anything, its own repair included
   law: docs/reference/policy/availability-standard.md
   origin: crew#539
   planes:
@@ -901,8 +876,7 @@ rules:
   fixtures:
     must_fail: policy/fixtures/sell-blocking.json
     must_pass: policy/fixtures/clean.json
-  live_gap: chidionyema/idp#2452 -- bin/pr-report writes reports/pr.json and runs conftest over it, and no workflow in .github invokes bin/pr-report. Every conftest rule in this file grades policy/fixtures
-    and nothing else.
+  live_gap: chidionyema/idp#2452 -- bin/pr-report writes reports/pr.json and runs conftest over it, and no workflow in .github invokes bin/pr-report. Every conftest rule in this file grades policy/fixtures and nothing else.
   cases:
   - expect: pass
     args:
@@ -1010,8 +984,7 @@ rules:
   fixtures:
     must_fail: policy/fixtures/opmodel-half-provisioned.json
     must_pass: policy/fixtures/opmodel-ok.json
-  live_elsewhere: 'bin/pr-report:63 -- .githooks/pre-push:33 runs bin/pr-report on every push from this repo, so these rules read a real pull request, not only the fixtures below. The one they cannot read
-    there is founder_denied: the hook runs at push time, before the founder can have commented, and the workflow that re-judged on his word is gone (chidionyema/idp#2452).'
+  live_elsewhere: 'bin/pr-report:63 -- .githooks/pre-push:33 runs bin/pr-report on every push from this repo, so these rules read a real pull request, not only the fixtures below. The one they cannot read there is founder_denied: the hook runs at push time, before the founder can have commented, and the workflow that re-judged on his word is gone (chidionyema/idp#2452).'
   cases:
   - expect: pass
     args:
@@ -1088,8 +1061,7 @@ rules:
   fixtures:
     must_fail: policy/fixtures/conscience-bad.json
     must_pass: policy/fixtures/conscience-clean.json
-  live_elsewhere: bin/pr-report:63 -- .githooks/pre-push:33 runs bin/pr-report on every push from this repo, so what survives here is graded against the real pull request and not only against the fixtures
-    below.
+  live_elsewhere: bin/pr-report:63 -- .githooks/pre-push:33 runs bin/pr-report on every push from this repo, so what survives here is graded against the real pull request and not only against the fixtures below.
   cases:
   - expect: refuse
     args:
@@ -1109,8 +1081,7 @@ rules:
   label: shell
   statement: Every bash script in bin/ passes shellcheck at warning level
   law: LAW 45
-  origin: the rung that graded this was deleted with the fixture-grading rungs in 519d59e8, and the fast gate went on printing the word "shell" in its summary line while nothing ran shellcheck in CI at
-    all -- .pre-commit-config.yaml was the only place left, and a local hook is not a gate
+  origin: the rung that graded this was deleted with the fixture-grading rungs in 519d59e8, and the fast gate went on printing the word "shell" in its summary line while nothing ran shellcheck in CI at all -- .pre-commit-config.yaml was the only place left, and a local hook is not a gate
   requires:
   - shellcheck
   run:
@@ -1223,8 +1194,7 @@ rules:
   fail: a pod cannot be placed on any node, or a workload fits exactly one node and is not in platform/state/pinned-workloads.yaml
 - id: reloader-operator-owned
   label: reloader
-  statement: Reloader is off on a workload a custom resource owns; that operator owns its config rollout, and Reloader on top of an operator is a loop, not a control. A Secret re-minted on a timer says
-    what Reloader does with it (ignore, or a sentence why the roll is wanted); a silent one is refused
+  statement: Reloader is off on a workload a custom resource owns; that operator owns its config rollout, and Reloader on top of an operator is a loop, not a control. A Secret re-minted on a timer says what Reloader does with it (ignore, or a sentence why the roll is wanted); a silent one is refused
   law: crew#684 rung 2
   origin: incident 2026-09-08, SigNoz ClickHouse recreated every ~40s
   planes:
@@ -1237,13 +1207,12 @@ rules:
   fixtures:
     must_fail: tests/fixtures/reloader-blind
     must_pass: tests/fixtures/reloader
-  live_elsewhere: bin/idp-ci:437 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
+  live_elsewhere: bin/idp-ci:445 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
   cases:
   - expect: refuse
     args:
     - tests/fixtures/reloader-blind
-    note: 'the real policy against an expectation that says the loop was never broken, so kyverno test must fail. Perturbing the expectation rather than the rule''s existence is deliberate: an expectation
-      naming a rule kyverno cannot find is scored Pass/Excluded and the patched output is never compared, so deleting the rule proves nothing (2026-09-08).'
+    note: 'the real policy against an expectation that says the loop was never broken, so kyverno test must fail. Perturbing the expectation rather than the rule''s existence is deliberate: an expectation naming a rule kyverno cannot find is scored Pass/Excluded and the patched output is never compared, so deleting the rule proves nothing (2026-09-08).'
   - expect: pass
     args:
     - tests/fixtures/reloader
@@ -1307,8 +1276,7 @@ rules:
   fail: a change to the broker could be auto-merged or self-approved (WJ.8)
 - id: convergence-proof
   label: proof
-  statement: An infrastructure pull request reaches the merge gate with a Proof-of-Convergence; a body with no such block, or whose proof's run is not a green run on its own head commit, is refused -- a
-    missing or unparseable proof is a fail-closed FAIL, never a pass
+  statement: An infrastructure pull request reaches the merge gate with a Proof-of-Convergence; a body with no such block, or whose proof's run is not a green run on its own head commit, is refused -- a missing or unparseable proof is a fail-closed FAIL, never a pass
   law: W2.3
   origin: docs/policy/agent-infra-safety-spec.md
   planes:
@@ -1365,8 +1333,7 @@ rules:
   fail: a change without a green Proof-of-Convergence on its own head could be auto-merged (W2.3)
 - id: shadow-sync
   label: shadow
-  statement: A Secret cloned into the shadow dimension is a same-shape shell or it is refused; a live value must never survive re-shaping -- a non-shell Secret in a shadow state-set is a fail (secrets are
-    never copied into a vcluster, only keyed dummies so a Deployment mounts)
+  statement: A Secret cloned into the shadow dimension is a same-shape shell or it is refused; a live value must never survive re-shaping -- a non-shell Secret in a shadow state-set is a fail (secrets are never copied into a vcluster, only keyed dummies so a Deployment mounts)
   law: W2.1
   origin: docs/policy/agent-infra-safety-spec.md
   planes:
@@ -1394,8 +1361,7 @@ rules:
   fail: a live secret value could reach the shadow dimension (W2.1)
 - id: limit-raise-only
   label: limit
-  statement: A change to a workload passes the low-risk lane only when its sole difference is a strict increase of a resources.limits.memory/cpu value on one workload; a request change (which the scheduler
-    counts), a lower limit, or any other edit is refused -- YAML ancestry is read from the full parsed old and new files, never guessed from a git hunk
+  statement: A change to a workload passes the low-risk lane only when its sole difference is a strict increase of a resources.limits.memory/cpu value on one workload; a request change (which the scheduler counts), a lower limit, or any other edit is refused -- YAML ancestry is read from the full parsed old and new files, never guessed from a git hunk
   law: W3.1
   origin: docs/policy/agent-infra-safety-spec.md
   planes:
@@ -1441,8 +1407,7 @@ rules:
   fail: a request raise, lower limit, or wider edit could pass the low-risk lane (W3.1)
 - id: rollback-only
   label: rollback
-  statement: 'A pull request rolls one workload back only when every changed line is a newTag: whose value that same file has already carried on origin/main; a tag never on main is a forward deploy and
-    waits, and a change that edits anything but a tag is refused -- the prior footprint is proved from history, never assumed from age'
+  statement: 'A pull request rolls one workload back only when every changed line is a newTag: whose value that same file has already carried on origin/main; a tag never on main is a forward deploy and waits, and a change that edits anything but a tag is refused -- the prior footprint is proved from history, never assumed from age'
   law: W3.2
   origin: docs/policy/agent-infra-safety-spec.md
   planes:
@@ -1549,8 +1514,7 @@ rules:
   fail: a fixture pair is graded by nothing and is not on the ledger -- a gate was deleted, or was never wired
 - id: jit-broker-role
   label: jitrole
-  statement: 'The broker mints only what it already holds: its own ClusterRole carries no escalate, no bind, no impersonate, no wildcard and no secrets, and no ClusterRoleBinding names it -- the absence
-    that makes KSV-0050 on that file an accepted risk rather than a defect'
+  statement: 'The broker mints only what it already holds: its own ClusterRole carries no escalate, no bind, no impersonate, no wildcard and no secrets, and no ClusterRoleBinding names it -- the absence that makes KSV-0050 on that file an accepted risk rather than a defect'
   law: WJ.5
   origin: trivy 2026-09-07
   planes:
@@ -1610,8 +1574,7 @@ rules:
   fail: a deck reuses a vendor operator's cluster-scoped name, or the gate is not discriminating
 - id: nodesoftware-operator
   label: nodesoftware
-  statement: A RuntimeInstall CR names a runtime in the closed set the NodeSoftwareOperator knows, requires a canary on ProgressiveCanary rollouts, and rejects pause durations that would make the canary
-    pause a no-op
+  statement: A RuntimeInstall CR names a runtime in the closed set the NodeSoftwareOperator knows, requires a canary on ProgressiveCanary rollouts, and rejects pause durations that would make the canary pause a no-op
   law: NodeSoftwareOperator option c, goal b9217bea
   origin: crew#892 CP4
   planes:
@@ -1695,8 +1658,7 @@ rules:
 - id: mechanism
   label: mechanism
   fast: true
-  statement: 'A mechanism this repository depends on may not be switched off, deleted or unproduced: every `uses:` resolves to a workflow in the tree, and every workflow GitHub is not running is named with
-    a reason in .github/disabled.yaml -- a registry, and never inside .github/workflows/, where GitHub tries to run it'
+  statement: 'A mechanism this repository depends on may not be switched off, deleted or unproduced: every `uses:` resolves to a workflow in the tree, and every workflow GitHub is not running is named with a reason in .github/disabled.yaml -- a registry, and never inside .github/workflows/, where GitHub tries to run it'
   law: incident 2026-09-08, ten days of nothing merging and nothing red
   origin: founder 2026-09-08, "agents should be responsiblefor their own own, all this chasing is fricion"
   planes:
@@ -1724,9 +1686,7 @@ rules:
   fast: true
   statement: A ClickHouse system table the operator gives an <engine> carries its retention inside that engine string, never as a sibling <ttl>; ClickHouse exits 36 on boot when both are present
   law: incident 2026-09-08, signoz-clickhouse CrashLoopBackOff
-  origin: 'One malformed stanza took the estate down: the server exited 36 on every boot, so signoz-clickhouse had no endpoints, so the observability Kustomization hung on its Job/langfuse-clickhouse-database
-    health check, so lastApplied stayed thirty commits back, so langfuse kept the two reserved cores #2429 had already removed in git -- and both nodes went to 91% and 95% CPU requested, evicting flux''s
-    own controllers.'
+  origin: 'One malformed stanza took the estate down: the server exited 36 on every boot, so signoz-clickhouse had no endpoints, so the observability Kustomization hung on its Job/langfuse-clickhouse-database health check, so lastApplied stayed thirty commits back, so langfuse kept the two reserved cores #2429 had already removed in git -- and both nodes went to 91% and 95% CPU requested, evicting flux''s own controllers.'
   planes:
   - ci
   - session
@@ -1757,12 +1717,9 @@ rules:
 - id: crd-then-cr
   label: crd-then-cr
   fast: true
-  statement: A Crossplane Provider and an instance of a kind its package installs never share a Flux Kustomization path; Flux dry-runs the whole path first, so neither the instance nor the Provider ever
-    lands
+  statement: A Crossplane Provider and an instance of a kind its package installs never share a Flux Kustomization path; Flux dry-runs the whole path first, so neither the instance nor the Provider ever lands
   law: incident 2026-09-08, crossplane-providers
-  origin: platform/crossplane/providers held the Provider that installs oci.upbound.io and a ProviderConfig of that group. Flux reported `no matches for kind "ProviderConfig" in version "oci.upbound.io/v1beta1"`,
-    which reads as a missing CRD; the truth was that the apply was refused whole, so the Provider that would have installed the kind was never installed at all -- `kubectl get providers.pkg.crossplane.io`
-    returned "No resources found" for as long as the row had existed. It never fails once and heals.
+  origin: platform/crossplane/providers held the Provider that installs oci.upbound.io and a ProviderConfig of that group. Flux reported `no matches for kind "ProviderConfig" in version "oci.upbound.io/v1beta1"`, which reads as a missing CRD; the truth was that the apply was refused whole, so the Provider that would have installed the kind was never installed at all -- `kubectl get providers.pkg.crossplane.io` returned "No resources found" for as long as the row had existed. It never fails once and heals.
   planes:
   - ci
   - session
@@ -1796,9 +1753,7 @@ rules:
   fast: true
   statement: 'A secret store that authenticates outside the cluster has a fence that lets it get there: egress_internet, and egress_metadata too when its identity is fetched at run time'
   law: incident 2026-09-08, ClusterSecretStore/estate-vault
-  origin: The external-secrets fence allowed egress to the apiserver, kube-dns, the observability namespace and its own pods. ClusterSecretStore/estate-vault authenticates as InstancePrincipal, so it needed
-    169.254.169.254 and an HTTPS route to OCI, and had neither. It reported `unable to create client`, reason InvalidProviderConfig -- a message that names no network -- and every ExternalSecret in the
-    estate then failed with `ClusterSecretStore "estate-vault" is not ready`. Twenty-nine Flux rows waited behind one.
+  origin: The external-secrets fence allowed egress to the apiserver, kube-dns, the observability namespace and its own pods. ClusterSecretStore/estate-vault authenticates as InstancePrincipal, so it needed 169.254.169.254 and an HTTPS route to OCI, and had neither. It reported `unable to create client`, reason InvalidProviderConfig -- a message that names no network -- and every ExternalSecret in the estate then failed with `ClusterSecretStore "estate-vault" is not ready`. Twenty-nine Flux rows waited behind one.
   planes:
   - ci
   - session
@@ -1825,16 +1780,12 @@ rules:
     live: true
     note: this estate's own stores and its fence register
   ok: every store reaching outside the cluster has the egress its provider needs
-  fail: a SecretStore or ClusterSecretStore names a provider outside the cluster that its namespace's fence gives it no route to; the store reports InvalidProviderConfig and every ExternalSecret behind
-    it stops
+  fail: a SecretStore or ClusterSecretStore names a provider outside the cluster that its namespace's fence gives it no route to; the store reports InvalidProviderConfig and every ExternalSecret behind it stops
 - id: catalogue-entity-runtime-service
   label: cat-runtime-svc
   statement: A package manager may mint its own webhook Service without a catalogue label, and an undeclared door in the same namespace still may not
   law: R38 -- a guard that refuses correct work is an outage
-  origin: 'incident 2026-09-08. require-catalogue-entity runs at Enforce, and it refused the Service Crossplane''s package manager creates for each provider revision: `cannot apply provider package service:
-    admission webhook "validate.kyverno.svc-fail" denied the request ... require-catalogue-entity`. No file in this repository renders that Service, so no kustomize label and no Flux postRenderer could
-    ever reach it. Both providers sat at Installed=True, Healthy=False with zero CRDs established, and the crossplane-providerconfig row failed forever with `no matches for kind "ProviderConfig" in version
-    "oci.upbound.io/v1beta1"` -- an error that names the config, never the policy that caused it.'
+  origin: 'incident 2026-09-08. require-catalogue-entity runs at Enforce, and it refused the Service Crossplane''s package manager creates for each provider revision: `cannot apply provider package service: admission webhook "validate.kyverno.svc-fail" denied the request ... require-catalogue-entity`. No file in this repository renders that Service, so no kustomize label and no Flux postRenderer could ever reach it. Both providers sat at Installed=True, Healthy=False with zero CRDs established, and the crossplane-providerconfig row failed forever with `no matches for kind "ProviderConfig" in version "oci.upbound.io/v1beta1"` -- an error that names the config, never the policy that caused it.'
   planes:
   - ci
   requires:
@@ -1845,7 +1796,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
     must_pass: tests/fixtures/catalogue-entity-runtime-service
-  live_elsewhere: bin/idp-ci:477 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
+  live_elsewhere: bin/idp-ci:445 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
   cases:
   - expect: refuse
     args:
@@ -1863,10 +1814,7 @@ rules:
   fast: true
   statement: Every priorityClassName a workload names is a PriorityClass this tree declares or one of the two Kubernetes ships; a class that exists nowhere is refused at admission, not at apply
   law: incident 2026-09-08, nodesoftware-operator
-  origin: 'platform/nodesoftware-operator/deployment.yaml named priorityClassName idp-infrastructure. No such class is declared in this tree and none exists in the cluster, so the apiserver refused every
-    pod the ReplicaSet asked for -- `pods "nodesoftware-operator-6d87fb9cbd-" is forbidden: no PriorityClass with name idp-infrastructure was found`. The Deployment sat at ReplicaFailure/FailedCreate and
-    its Flux row went HealthCheckFailed. The name survived review because the line carried a comment pointing at the directory where the real classes live, which makes a wrong name look checked, and because
-    the failure names a scheduling concept, so it reads like capacity rather than a typo.'
+  origin: 'platform/nodesoftware-operator/deployment.yaml named priorityClassName idp-infrastructure. No such class is declared in this tree and none exists in the cluster, so the apiserver refused every pod the ReplicaSet asked for -- `pods "nodesoftware-operator-6d87fb9cbd-" is forbidden: no PriorityClass with name idp-infrastructure was found`. The Deployment sat at ReplicaFailure/FailedCreate and its Flux row went HealthCheckFailed. The name survived review because the line carried a comment pointing at the directory where the real classes live, which makes a wrong name look checked, and because the failure names a scheduling concept, so it reads like capacity rather than a typo.'
   planes:
   - ci
   - session
@@ -1925,8 +1873,7 @@ rules:
   fail: a mutating estate MCP tool registers with no simulate twin, and the gate cannot tell the breach from the pair
 - id: otto-door-key
   label: ottodoorkey
-  statement: 'Otto''s door presents a key the lifeboat it talks to can validate: when LITELLM_BASE_URL is the loopback otto-brain sidecar, the door derives the same master key from the same Secret the sidecar
-    does. A sidecar with no database cannot look up a virtual key, so it refuses every turn with 400 "No connected db." before any of the three homes is tried'
+  statement: 'Otto''s door presents a key the lifeboat it talks to can validate: when LITELLM_BASE_URL is the loopback otto-brain sidecar, the door derives the same master key from the same Secret the sidecar does. A sidecar with no database cannot look up a virtual key, so it refuses every turn with 400 "No connected db." before any of the three homes is tried'
   law: THE EMPIRICAL PROOF RULE
   origin: incident 2026-09-10, the three homes carried no real turn for a day while every probe stayed green
   planes:
@@ -1955,8 +1902,7 @@ rules:
   fail: the door presents a key the lifeboat cannot validate, so every real turn dies at the lifeboat's door while probes that go around it stay green
 - id: grader-exit-gate
   label: grader-exit
-  statement: 'A grading step whose verdict cannot reach the run is refused: a grader piped into tee/cat with neither pipefail nor -e, a bare grader that is not the last command under a set line without
-    -e, or a grader ending in ''|| true'' with no ''# optional: <reason>'' marker. The step is accepted when the same job asserts the captured verdict in a later step'
+  statement: 'A grading step whose verdict cannot reach the run is refused: a grader piped into tee/cat with neither pipefail nor -e, a bare grader that is not the last command under a set line without -e, or a grader ending in ''|| true'' with no ''# optional: <reason>'' marker. The step is accepted when the same job asserts the captured verdict in a later step'
   law: LAW 28
   origin: incident 2026-09-10, grading steps whose verdict is discarded
   planes:
@@ -2016,6 +1962,7 @@ rules:
   ok: no wait on a clock where an event exists; every fixed interval carries its reason
   fail: a script sleeps 10 seconds or more to wait for state, or a fixed interval is unexplained
   why: 'Founder 2026-09-12: "sleep 420 is a catastrophic failure of engineering... time is not a synchronization primitive. Events are." Measured the same evening: turns blocked for minutes at a time on `sleep 420` waiting for CI, which is why the session looked hung to the person watching it. The estate already owns the event-driven answer for that case -- gh pr merge --squash --auto arms the merge in 200ms and GitHub watches the checks -- and no rule said so.'
+  fail: 'measured 2026-09-10: ''set -u; grader | tee out'' exits 0 while the grader failed, so a run reports green having graded nothing. ''set -o pipefail'' or ''-e'' fixes it; a bare last command propagates without -e, and a later step that tests the captured rc is an assertion'
 - id: cost-proof
   fast: true
   label: cost-proof
@@ -2051,8 +1998,7 @@ rules:
 - id: founder-door
   fast: true
   label: founder-door
-  statement: Every workflow the founder can dispatch carries a '# button:' title and a '# founder:' sentence, and the portal template on disk matches the workflow that generated it. A feature with no door
-    is not finished, and a door nobody regenerated opens onto something else.
+  statement: Every workflow the founder can dispatch carries a '# button:' title and a '# founder:' sentence, and the portal template on disk matches the workflow that generated it. A feature with no door is not finished, and a door nobody regenerated opens onto something else.
   law: LAW 32
   planes:
   - ci
@@ -2070,8 +2016,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/founder-door/bad.yml
     must_pass: .github/workflows/catalog-render.yml
-  why: 'MEASURED 2026-09-12: bin/idp-portal-buttons existed, refused a workflow without the pair, and ran in NO gate -- not in bin/idp-ci, not in rules.yaml. fetch-model-artifacts.yml therefore merged with
-    no button, and the only thing that noticed was a bdd suite nobody reads as a door rule. The tool was built and never wired, which is the same class as every other defect on this page.'
+  why: 'MEASURED 2026-09-12: bin/idp-portal-buttons existed, refused a workflow without the pair, and ran in NO gate -- not in bin/idp-ci, not in rules.yaml. fetch-model-artifacts.yml therefore merged with no button, and the only thing that noticed was a bdd suite nobody reads as a door rule. The tool was built and never wired, which is the same class as every other defect on this page.'
   cases:
   - expect: refuse
     args:
@@ -2086,10 +2031,7 @@ rules:
   fail: a workflow the founder can dispatch has no button, or the gate is not discriminating
 - id: stray-checkout
   label: stray
-  statement: >-
-    No untracked, unignored checkout of this repository is nested under its own root: a gate that
-    walks the tree reads the nested copy's own tests/fixtures/*/bad.yaml or Dockerfile and reports
-    it as a defect in the branch under test
+  statement: 'No untracked, unignored checkout of this repository is nested under its own root: a gate that walks the tree reads the nested copy''s own tests/fixtures/*/bad.yaml or Dockerfile and reports it as a defect in the branch under test'
   law: LAW 45, incident 2026-09-10
   origin: incident 2026-09-10, eight gates red from three nested checkouts
   planes:
@@ -2111,10 +2053,139 @@ rules:
     live: true
     note: this repository's own root
   ok: no nested checkout of this repository is untracked and unignored under the root
-  fail: >-
-    measured 2026-09-10: idp-flux-subst-gate, idp-clickhouse-system-log-ttl, idp-crd-then-cr,
-    idp-priority-class-exists, estate-zone-gate, port-gate, multiarch-gate and bin/dockerfiles all
-    returned non-zero from a nested copy's own fixtures, and all returned clean once the copies
-    were excluded. .gitignore's remedy on 2026-08-29 was the naming convention /.wt-*/, and the
-    next checkouts were made as scratchpad/ and idp/, so the pattern missed them. bin/treewalk.py
-    stops a walk entering a copy; this rule refuses the copy's presence.
+  fail: 'measured 2026-09-10: idp-flux-subst-gate, idp-clickhouse-system-log-ttl, idp-crd-then-cr, idp-priority-class-exists, estate-zone-gate, port-gate, multiarch-gate and bin/dockerfiles all returned non-zero from a nested copy''s own fixtures, and all returned clean once the copies were excluded. .gitignore''s remedy on 2026-08-29 was the naming convention /.wt-*/, and the next checkouts were made as scratchpad/ and idp/, so the pattern missed them. bin/treewalk.py stops a walk entering a copy; this rule refuses the copy''s presence.'
+- id: epistemic
+  label: epistemic
+  statement: 'An agent''s first-person claim of completed work is refused when its own session transcript holds no tool call behind it: hallucination is graded deterministically rather than asked of a larger model'
+  law: founder 2026-09-12 "we will eliminate guessing entirely"
+  origin: incident 2026-09-12, three confident answers to one question and no proof for any
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-epistemic
+  fixtures:
+    must_fail: tests/fixtures/epistemic/bad/session.jsonl
+    must_pass: tests/fixtures/epistemic/good/session.jsonl
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/epistemic/bad/session.jsonl
+  - expect: pass
+    args:
+    - tests/fixtures/epistemic/good/session.jsonl
+  - expect: pass
+    live: true
+    note: the estate's own session transcripts, read from ~/.pi/agent/sessions
+  ok: every first-person claim of completed work has a tool call behind it, or the claim is refused
+  fail: 'a session asserted completed work with no tool call anywhere in its transcript. Measured 2026-09-12: asked what it had been working on, the session claimed another session''s build as its own, then "corrected" that to never having touched it, then "corrected" that back -- three answers, each stated as fact, none provable by anything it had run. The gate is the mechanism that was missing; it grades evidence present in the transcript, never truth, and says so.'
+- id: trajectory
+  label: trajectory
+  gate: null
+  statement: 'An agent''s action is refused when it serves no goal the agent itself declared: cognitive drift is bounded by a per-goal budget and a context reset, not by asking the model to stay on topic'
+  law: founder 2026-09-12, the Teleological Firewall
+  origin: incident 2026-09-12, a session that spent a third of its turns outside its stated goal
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-trajectory
+  fixtures:
+    must_fail: tests/fixtures/trajectory/bad/session.jsonl
+    must_pass: tests/fixtures/trajectory/good/session.jsonl
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/trajectory/bad/session.jsonl
+  - expect: pass
+    args:
+    - tests/fixtures/trajectory/good/session.jsonl
+  - expect: pass
+    live: true
+    note: the estate's own sessions swept from ~/.pi/agent/sessions. This reports rather than fails, because the finding is historical -- 25 of 25 began with no declared plan -- and a gate red until no agent ever drifts again would be switched off and protect nothing (R38). Grading ONE session by name still refuses, and bin/idp-trajectory <a real .jsonl> exits 1.
+  ok: every action a transcript records serves the plan the agent declared
+  fail: 'the agent acted outside its declared plan. Measured 2026-09-12: this session''s stated goal was "fix the gates, fix the class they exposed, do no more than that", and a grep of its own 1.7MB transcript counts treewalk 169 references (the work) against rule-guard 51, pi/agent/extensions 39 and addopts/-n auto 66 (all drift). The founder stopped it twice by hand. A prompt cannot fix this -- attention weights the most recent tokens, so the newest error out-competes the original objective by construction. The harness must refuse.'
+- id: circuit-breaker
+  label: breaker
+  statement: Three targets returning the same finding prove one cause, so the linear action is refused with 423 Locked and the fleet lever is named instead. The fingerprint is the stable identity of the finding (a CVE set, order-free), never a raw hash of the output -- the same cause prints different bytes on different targets. The lock is scoped to the finding, so a different finding on a locked target, and nine different findings across nine targets, stay workable (R38)
+  law: founder 2026-09-12, throw the 423 Locked exception at N=3
+  origin: incident 2026-09-12, nine pull requests red on one cause while the agent checked them one at a time
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-circuit-breaker
+  fixtures:
+    must_fail: tests/fixtures/circuit-breaker/bad/three-identical.json
+    must_pass: tests/fixtures/circuit-breaker/good/nine-different.json
+  cases:
+  - expect: refuse
+    args:
+    - --replay
+    - tests/fixtures/circuit-breaker/bad/three-identical.json
+    note: three identical findings across three targets lock the primitive
+  - expect: pass
+    args:
+    - --replay
+    - tests/fixtures/circuit-breaker/good/nine-different.json
+    note: nine different findings across nine targets are all workable
+  ok: a proved pattern disables the linear path and names the fleet lever
+  fail: an agent repeats a proved diagnosis across targets, and the environment lets it
+- id: healthcheck-names-a-real-object
+  label: healthcheck-exists
+  statement: A Kustomization's health check names an object this tree actually creates. A wait on an object nothing creates reports NotFound forever, holds every row depending on it out of the cluster, and is invisible in CI because the manifest is valid YAML naming a plausible object. An object an operator makes at runtime is ungraded and said to be ungraded, never assumed absent
+  law: LAW 45, incident 2026-09-13 (the tailscale row waited on Deployment/tailscale-operator; the chart emits Deployment/operator, so guacamole and four rows behind it were held out for days)
+  origin: incident 2026-09-13, tailscale
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-healthcheck-exists
+  fixtures:
+    must_fail: tests/fixtures/healthcheck-exists/bad
+    must_pass: tests/fixtures/healthcheck-exists/good
+  cases:
+  - expect: refuse
+    args:
+    - --root
+    - tests/fixtures/healthcheck-exists/bad
+    - tests/fixtures/healthcheck-exists/bad/compiled.json
+    - tests/fixtures/healthcheck-exists/bad/cluster.yaml
+    note: the tailscale defect exactly -- a health check naming a Deployment no chart renders
+  - expect: pass
+    args:
+    - --root
+    - tests/fixtures/healthcheck-exists/good
+    - tests/fixtures/healthcheck-exists/good/compiled.json
+    - tests/fixtures/healthcheck-exists/good/cluster.yaml
+    note: the same row naming the Deployment the chart does emit
+  ok: every health check names an object this tree creates, or is reported ungraded
+  fail: a health check waits on an object nothing creates, and CI is green
+- id: externalsecret-blockers-are-loud
+  label: secret-blockers
+  statement: An ExternalSecret that cannot sync is named with the vault key it needs and marked FOUNDER ACTION or ESTATE, never left to read as "Reconciliation in progress". A missing entry in the provider is a value only a person can produce, and it is reported as one; any other failure is an estate defect and is reported as that instead
+  law: R47 (a founder blocker is loud and one action), incident 2026-09-13 (cyrus sat HealthCheckFailed for days; the reason was three layers down at ExternalSecret/cyrus/cyrus-linear-oauth, whose vault entries are born in a browser because Linear publishes no create-API for an OAuth application)
+  origin: incident 2026-09-13, cyrus
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-externalsecret-blockers
+  fixtures:
+    must_fail: tests/fixtures/secret-blockers/bad
+    must_pass: tests/fixtures/secret-blockers/good
+  cases:
+  - expect: refuse
+    args:
+    - --from
+    - tests/fixtures/secret-blockers/bad/externalsecrets.json
+    - --fail-on-blocker
+    note: the cyrus blocker exactly -- two vault entries that need a browser, and a row held by them
+  - expect: pass
+    args:
+    - --from
+    - tests/fixtures/secret-blockers/good/externalsecrets.json
+    - --fail-on-blocker
+    note: the same ExternalSecret once a person has typed the pair
+  ok: every ExternalSecret that cannot sync names the vault key it needs and whether a person must produce it
+  fail: a row is held by a missing vault entry and its status reads "Reconciliation in progress"

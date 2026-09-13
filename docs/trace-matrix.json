@@ -1593,6 +1593,28 @@
   "ticket": "crew#269"
  },
  {
+  "feature": "features/gates/epistemic-and-trajectory.feature",
+  "title": "An agent cannot lie about what it sees, and cannot forget what it was told to do",
+  "scenarios": [
+   "An agent claims completed work with no tool call behind it",
+   "The same claim, with the tool call behind it",
+   "The transcript cannot be read",
+   "An agent acts outside the plan it declared",
+   "An agent stays inside its declared plan",
+   "An agent begins work with no plan at all",
+   "A goal burns its budget and the agent is halted",
+   "The escape hatches are never blocked",
+   "Four consecutive failed attempts and the context is reset"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_epistemic_and_trajectory.py"
+  ],
+  "status": "BOUND",
+  "added_in": "e48c6919",
+  "pr": 3243,
+  "ticket": null
+ },
+ {
   "feature": "features/gates/estate-zone.feature",
   "title": "The estate zone is one configurable value",
   "scenarios": [

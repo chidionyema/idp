@@ -183,9 +183,11 @@ spec:
         - name: aevum
           # Built by the estate from platform/observability/aevum.Dockerfile. Aevum publishes no
           # container; the version is the same literal the Dockerfile pins.
-          # Pinned, never untagged: an image with no tag resolves to latest, which
-          # policy disallow-latest-tag refuses. The tag matches aevum.Dockerfile's pin.
-          image: ghcr.io/chidionyema/aevum:0.9.0
+          # UNTAGGED ON PURPOSE. Flux image automation moves the tag from
+          # platform/observability/kustomization.yaml ({"$imagepolicy": "flux-system:aevum:tag"}),
+          # which is where the estate keeps every moving image. A literal tag here -- the original
+          # `:0.9.0`, which no build ever produced -- is what left these pods in ImagePullBackOff.
+          image: ghcr.io/chidionyema/aevum
           envFrom:
             - configMapRef:
                 name: aevum-config
@@ -207,7 +209,7 @@ spec:
               export AEVUM_SIGNING_KEY="$(cat /run/secrets/aevum/signing-key)"
               # The DSN is assembled here from the registered password, never a vault property
               # named aevum_dsn -- no such entry exists, and root-trust refused it.
-              export AEVUM_POSTGRES_DSN="postgresql://aevum_evidence:$(cat /run/secrets/aevum/postgres-password)@estate-db-rw.estate-db.svc.cluster.local:5432/aevum_evidence"
+              export AEVUM_POSTGRES_DSN="postgresql://aevum_evidence:$(cat /run/secrets/aevum/postgres-password)@estate-rw.estate-db.svc.cluster.local:5432/aevum_evidence"
               exec uvicorn aevum_factory:create --factory --host 0.0.0.0 --port 8000
           ports:
             - name: http
@@ -218,14 +220,14 @@ spec:
           readinessProbe:
             exec:
               command: ["python", "-c",
-                        "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+                        "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/v1/health', timeout=3)"]
             initialDelaySeconds: 10
             periodSeconds: 15
             failureThreshold: 20
           livenessProbe:
             exec:
               command: ["python", "-c",
-                        "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+                        "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/v1/health', timeout=3)"]
             initialDelaySeconds: 30
             periodSeconds: 30
           resources:
