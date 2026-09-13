@@ -47,11 +47,15 @@ _CVE = re.compile(r"CVE-\d{4}-\d{4,}")
 _SIGNAL = re.compile(
     r"(?i)(?:"
     r"CVE-\d{4}-\d{4,}"
-    r"|\bFAIL(?:ED|URE)?\b"
-    r"|\bERROR\b|\b\w*Exception\b|\b\w*Error\b|\bTraceback\b"
+    r"|\bFAIL(?:ED|URE|ING)?\b"
+    r"|\b\w*Error\b|\b\w*Exception\b|\bTraceback\b"
     r"|\bnot ok\b|\bpanic:\b|\bfatal:\b|\bdenied\b|\brefused\b"
     r"|\bcrash(?:ed|loopbackoff)?\b|\bvulnerab\w*\b|\bseverity\b|\bCRITICAL\b"
     r"|\bexit(?:ed)? (?:code )?[1-9]\d*\b"
+    # A conflict is a finding, and it was the case a real test caught this list missing: a merge
+    # conflict on a file is a cause worth naming once rather than re-discovering per target.
+    r"|\bconflicts?\b|\bmerge conflict\b"
+    r"|\bBREAKING CHANGE\b|\bdeprecat\w*\b"
     r")"
 )
 
