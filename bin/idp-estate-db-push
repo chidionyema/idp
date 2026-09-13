@@ -30,15 +30,47 @@ for t in flux git jq; do command -v "$t" >/dev/null || { echo "BLIND $t missing"
 for f in "$INV" "$CATALOG" "$STATE_MD"; do [ -s "$f" ] || { echo "BLIND $f missing or empty"; exit 2; }; done
 
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-INV="$INV" DB="$T/estate.db" "$IDP/bin/db-gen" >/dev/null
+# Build the graph in THIS checkout's catalog/estate.db, then ship THAT file.
+#
+# Until 2026-09-13 this ran db-gen straight into $T/estate.db, so any other writer that had
+# already put rows in catalog/estate.db -- bin/estate-twin-runtime, which writes the runtime
+# and code halves there -- had its work discarded before the push. The cloud catalog-render
+# run of that day wrote 117 nodes, this line threw them away, and the pod pulled a database
+# with 457 assets and no graph tables at all.
+ESTATE_DB="${ESTATE_DB:-$IDP/catalog/estate.db}"
+INV="$INV" DB="$ESTATE_DB" "$IDP/bin/db-gen" >/dev/null
+cp "$ESTATE_DB" "$T/estate.db"
+
+# The graph is written into the ARTIFACT's database, after db-gen, and it has to be that
+# order. db-gen publishes with SQLite's `.restore`, which replaces the whole file, so any
+# node/edge row already present is destroyed. Measured 2026-09-13 with the real inventory:
+#
+#   the emitter wrote 945 node(s)
+#   db-gen then ran:   NODES GONE   (457 assets)
+#
+# The cloud run wrote its 117 nodes before this script ran, this script's db-gen deleted
+# them, and the pod pulled a database with no graph at all. The emitter reads git and the
+# cluster from this checkout either way, so it runs once, here, against the artifact file.
+ESTATE_DB="$T/estate.db" "$IDP/bin/estate-twin-runtime" --once --code --domains \
+  >/dev/null 2>&1 || true
+
 cp "$CATALOG" "$T/catalog-info.yaml"
 cp "$STATE_MD" "$T/STATE.md"
 rows=$(jq '.rows | length' "$INV")
 REV="$(git -C "$IDP" rev-parse --short HEAD)@$(date -u +%Y%m%dT%H%M%SZ)"
 if [ "$dry" = 1 ]; then
-  echo "dry-run estate-db: $rows assets, would push $ARTIFACT revision $REV"; ls -l "$T"; exit 0
+  # A push that carries no graph is a database the cluster reads blind, so the count is
+  # printed either way and a missing graph half is named.
+  nodes=$(python3 -c "import sqlite3;print(sqlite3.connect('$T/estate.db').execute(\
+    \"select name from sqlite_master where type='table' and name='nodes'\").fetchone() and \
+    sqlite3.connect('$T/estate.db').execute('select count(*) from nodes').fetchone()[0] or 0)" 2>/dev/null || echo 0)
+  echo "dry-run estate-db: $rows assets, $nodes graph node(s), would push $ARTIFACT revision $REV"; ls -l "$T"; exit 0
 fi
 gh auth token >/dev/null 2>&1 || { echo "BLIND gh holds no token"; exit 2; }
 gh auth token | flux push artifact "$ARTIFACT" --path="$T" \
   --source="https://github.com/chidionyema/idp" --revision="$REV" --creds "chidionyema:$(cat)" >/dev/null
-echo "ok      estate-db pushed ($rows assets), revision $REV"
+nodes=$(python3 -c "import sqlite3;print(sqlite3.connect('$T/estate.db').execute(\
+  \"select name from sqlite_master where type='table' and name='nodes'\").fetchone() and \
+  sqlite3.connect('$T/estate.db').execute('select count(*) from nodes').fetchone()[0] or 0)" 2>/dev/null || echo 0)
+echo "ok      estate-db pushed ($rows assets, $nodes graph node(s)), revision $REV"
+[ "$nodes" -gt 0 ] || echo "BLIND estate-db: the pushed database carries no graph -- bin/estate-twin-runtime did not write $ESTATE_DB before this ran"

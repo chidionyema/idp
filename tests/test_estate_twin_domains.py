@@ -136,3 +136,36 @@ def test_the_render_workflow_asks_for_every_domain():
             f"identity, network, certificates, capacity, cost, data, postgres, sessions, "
             f"worktrees, bus -- is never collected: {call.strip()}"
         )
+
+
+def test_the_db_push_carries_the_graph():
+    """The artifact the cluster pulls must carry the graph, not only the declared assets.
+
+    `bin/idp-estate-db-push` ran db-gen straight into the artifact's database, and db-gen
+    publishes with SQLite's `.restore`, which REPLACES the whole file. So any node/edge row
+    written before it was destroyed. Measured 2026-09-13 with the real inventory:
+
+        the emitter wrote 945 node(s)
+        db-gen then ran:   NODES GONE   (457 assets)
+
+    The pod pulled a database with 457 assets and no graph tables at all. This grades the
+    ORDER: the emitter must run against the artifact database after db-gen, and the push must
+    say how many graph nodes it is shipping.
+    """
+    script = (ROOT / "bin" / "idp-estate-db-push").read_text()
+    assert "estate-twin-runtime" in script, (
+        "bin/idp-estate-db-push never runs bin/estate-twin-runtime, so the artifact it pushes "
+        "carries the declared assets and no graph -- estate-mcp then serves a database with "
+        "no nodes table"
+    )
+    gen = script.index("bin/db-gen")
+    twin = script.index("estate-twin-runtime")
+    assert twin > gen, (
+        "the emitter runs BEFORE db-gen in bin/idp-estate-db-push. db-gen publishes with "
+        "SQLite's .restore, which replaces the file, so the graph is destroyed before the "
+        "push -- the order is the defect"
+    )
+    assert "graph node(s)" in script, (
+        "the push does not report how many graph nodes it ships, so a graph-less artifact "
+        "reads as a success"
+    )
