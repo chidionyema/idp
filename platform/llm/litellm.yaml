@@ -99,11 +99,19 @@ spec:
             - { name: GENERIC_TOKEN_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/token" }
             - { name: GENERIC_USERINFO_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/userinfo" }
             - { name: GENERIC_SCOPE, value: "openid email profile" }
+            # The ceiling module lives at /etc/litellm/ceilings/request_ceiling.py. Without this
+            # the router starts, declares the callback in config.yaml, and then fails every
+            # request with a ModuleNotFoundError -- a broken router is worse than an unbounded
+            # one, which is why the path and the callback ship in the same pull request.
+            - { name: PYTHONPATH, value: "/etc/litellm/ceilings" }
             - { name: GENERIC_USER_ID_ATTRIBUTE, value: email }
             - { name: GENERIC_USER_EMAIL_ATTRIBUTE, value: email }
             - { name: PROXY_BASE_URL, value: "https://llm.${ESTATE_ZONE}" }
           volumeMounts:
             - { name: config, mountPath: /etc/litellm, readOnly: true }
+            # The ceiling module, on the path the router imports from. PYTHONPATH above names
+            # this directory, so `request_ceiling.proxy_handler_instance` resolves at start.
+            - { name: request-ceiling, mountPath: /etc/litellm/ceilings, readOnly: true }
             - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }
             - { name: langfuse, mountPath: /run/secrets/litellm/langfuse, readOnly: true }
             - { name: sso, mountPath: /run/secrets/litellm/sso, readOnly: true }
@@ -151,6 +159,8 @@ spec:
       volumes:
         - name: config
           configMap: { name: litellm-config }
+        - name: request-ceiling
+          configMap: { name: litellm-request-ceiling }
         - name: upstream
           secret: { secretName: litellm-upstream }
         - name: langfuse
