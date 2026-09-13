@@ -225,9 +225,20 @@ def pointer_is_stale(rule: dict, where: str) -> str | None:
         return f"live_elsewhere names {head}, past the end of a {len(lines)}-line file"
     token = next((os.path.basename(w) for w in rule["run"] if str(w).startswith("bin/")),
                  str(rule["run"][0]))
-    if token not in lines[int(lineno) - 1]:
-        return f"{head} no longer runs {token}; it reads: {lines[int(lineno) - 1].strip()[:70]}"
-    return None
+    if token in lines[int(lineno) - 1]:
+        return None
+    # A LINE NUMBER IS A CLAIM THAT ROTS. Four of the ten live_elsewhere pointers were stale on
+    # 2026-09-13 -- including one written the same day -- because every unrelated edit above a rung
+    # moves it, and the gate then failed with "no longer runs", which reads as a broken rule rather
+    # than a moved line. So when the named line is wrong but the file DOES still invoke the gate,
+    # say where it moved instead of refusing. A pointer whose file no longer runs the gate at all
+    # is still a real failure, and that is the only case this now rejects.
+    moved = [i for i, ln in enumerate(lines, start=1) if token in ln]
+    if moved:
+        return (f"{head} has moved: {path} line {int(lineno)} reads "
+                f"{lines[int(lineno) - 1].strip()[:60]!r}, and {token} is now invoked on "
+                f"{path}:{moved[0]}. Update the pointer.")
+    return f"{head} no longer runs {token}; it reads: {lines[int(lineno) - 1].strip()[:70]}"
 
 
 def cmd_live(rules: list[dict], budget: int) -> int:

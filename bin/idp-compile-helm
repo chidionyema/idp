@@ -1,0 +1,386 @@
+#!/usr/bin/env python3
+"""Compile the estate's Helm Releases from git, offline, into one document.
+
+WHY. On 2026-09-12 a five-day-old fix (#2429) sat unapplied because the pull request changed a
+COMMENT claiming "cpu 500m" and left the VALUE at 1000m. CI was green: the YAML was valid. The
+cluster kept running 1000m. Nothing in the estate could see it, because nothing rendered what the
+Helm charts would actually produce -- `kustomize build` emits the HelmRelease OBJECT, never the
+Deployments Helm creates from it.
+
+Measured 2026-09-12, from git alone:
+    helm template langfuse/langfuse --version 2.0.2 -f platform/observability/langfuse-values.yaml
+    ->  lf-langfuse-web  requests=1000m
+while the comment beside that value says 500m. One command, no cluster, catches the lie.
+
+WHAT THIS DOES. For every HelmRelease in platform/, resolve its chart and version, find the
+values the release reads (an inline `values:` block or a `valuesFrom` ConfigMap that kustomize
+generates from a file in this tree), render the chart with `helm template`, and write every
+rendered manifest to one JSON document keyed by the release and the object it produced.
+
+WHAT IT IS NOT. It is not a full cluster render: Kustomize-native objects, Crossplane resources
+and CRs an operator would create are outside it. It covers exactly the class of defect that hid
+for five days -- a value the estate believes it set, that a chart actually decides.
+
+CONFIG (LAW 46): every path is derived from this file's own location or passed in. Nothing names
+a checkout, a host or a home directory.
+
+Usage:
+    bin/idp-compile-helm                     # compile, write the document, print a summary
+    bin/idp-compile-helm --out FILE          # write it somewhere specific
+    bin/idp-compile-helm --json              # the document to stdout, nothing else
+    bin/idp-compile-helm --release NS/NAME   # compile one release only
+Exit: 0 ok, 1 a release could not be rendered, 2 BLIND (no helm, or no releases found).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+PLATFORM = ROOT / "platform"
+
+
+def _run(args: list[str], **kw) -> subprocess.CompletedProcess:
+    return subprocess.run(args, capture_output=True, text=True, **kw)  # noqa: S603
+
+
+def _chart_repos() -> dict[str, str]:
+    """Every HelmRepository in the tree: name -> url. The chart's source is named by the
+    HelmRelease, and the repository objects are in this tree alongside it."""
+    repos: dict[str, str] = {}
+    for f in PLATFORM.rglob("*.yaml"):
+        try:
+            for d in yaml.safe_load_all(f.read_text()):
+                if isinstance(d, dict) and d.get("kind") == "HelmRepository":
+                    url = (d.get("spec") or {}).get("url")
+                    name = (d.get("metadata") or {}).get("name")
+                    if name and url:
+                        repos[name] = url
+        except (yaml.YAMLError, OSError):
+            continue
+    return repos
+
+
+def _values_for(release: dict, namespace: str) -> tuple[dict, list[str]]:
+    """The values a HelmRelease hands its chart.
+
+    Two sources, both in git:
+      * an inline `values:` block on the release itself;
+      * a `valuesFrom` ConfigMap that a kustomization generates from a file in this tree. The
+        generated ConfigMap names the file in a `configMapGenerator` entry, so the file is
+        findable here even though the ConfigMap only exists in the cluster.
+    """
+    spec = release.get("spec") or {}
+    chart_spec = (spec.get("chart") or {}).get("spec") or {}
+    values: dict = dict(chart_spec.get("values") or {})
+    sources: list[str] = []
+
+    for ref in spec.get("valuesFrom") or []:
+        if ref.get("kind") != "ConfigMap":
+            continue
+        cm_name = ref.get("name")
+        found = False
+        for kf in PLATFORM.rglob("kustomization.yaml"):
+            try:
+                k = yaml.safe_load(kf.read_text())
+            except (yaml.YAMLError, OSError):
+                continue
+            for gen in (k or {}).get("configMapGenerator") or []:
+                if gen.get("name") != cm_name:
+                    continue
+                for entry in gen.get("files") or []:
+                    # `key=path` or a bare path whose basename is the key
+                    path = entry.split("=", 1)[1] if "=" in entry else entry
+                    target = (kf.parent / path).resolve()
+                    if target.is_file():
+                        try:
+                            loaded = yaml.safe_load(target.read_text()) or {}
+                        except yaml.YAMLError as exc:
+                            print(
+                                f"BLIND  {namespace}/{release['metadata']['name']}: "
+                                f"{target.name} does not parse: {exc}",
+                                file=sys.stderr,
+                            )
+                            continue
+                        if isinstance(loaded, dict):
+                            values.update(loaded)
+                            sources.append(str(target.relative_to(ROOT)))
+                        found = True
+        if not found:
+            sources.append(f"valuesFrom:{cm_name} (no file found in this tree)")
+
+    # Some releases carry a Flux `spec.chart.spec.values` only; others put values under
+    # `spec.values`. Take both, the second winning because that is what the chart sees.
+    if isinstance(spec.get("values"), dict):
+        values.update(spec["values"])
+    return values, sources
+
+
+def _releases() -> list[dict]:
+    out: list[dict] = []
+    for f in PLATFORM.rglob("*.yaml"):
+        try:
+            for d in yaml.safe_load_all(f.read_text()):
+                if isinstance(d, dict) and d.get("kind") == "HelmRelease":
+                    d["__file__"] = str(f.relative_to(ROOT))
+                    out.append(d)
+        except (yaml.YAMLError, OSError):
+            continue
+    return out
+
+
+def _helm_repo_url(repos: dict[str, str], name: str | None, chart: str) -> str | None:
+    """The URL to add for a chart's repository.
+
+    `valuesFrom`-style aliases do not match the upstream name: the HelmRelease names the
+    HelmRepository object in this tree (`stakater`, `loft`), and helm needs a repo added under a
+    name IT knows. So the compiler adds each repository itself, from the URL in the tree, and
+    never assumes one is already configured on the machine running it -- a CI runner has none.
+    """
+    if name and name in repos and repos[name].startswith(("http://", "https://")):
+        return repos[name]
+    return None
+
+
+def _ensure_repo(name: str, url: str) -> None:
+    """Add or refresh a chart repository. Idempotent: `helm repo add` on an existing name with the
+    same URL is a no-op, and a differing URL is replaced so a moved chart still resolves."""
+    _run(["helm", "repo", "add", name, url, "--force-update"])
+
+
+def _namespace_for(rel_file: str | None, declared: str | None) -> str:
+    """The namespace a HelmRelease lands in.
+
+    A HelmRelease file usually declares no `metadata.namespace`: the kustomization that owns it
+    sets one (`namespace: observability`), and Flux applies the whole path with it. Reading only
+    the file therefore reports `default` for every release in the estate, which is wrong and would
+    make a gate look for the wrong object. So: what the file says, else the kustomization's
+    `namespace:`, else `default`.
+    """
+    if declared:
+        return declared
+    if rel_file:
+        d = (ROOT / rel_file).parent
+        for anc in [d, *d.parents]:
+            kf = anc / "kustomization.yaml"
+            if not kf.is_file():
+                continue
+            try:
+                k = yaml.safe_load(kf.read_text()) or {}
+            except (yaml.YAMLError, OSError):
+                continue
+            if isinstance(k, dict) and k.get("namespace"):
+                return str(k["namespace"])
+            # Stop at the repository root; a namespace from outside this tree is not ours.
+            if anc == ROOT:
+                break
+    return "default"
+
+
+def compile_release(release: dict, repos: dict[str, str]) -> dict:
+    """Render one HelmRelease. Returns a record with either `objects` or `error`."""
+    meta = release.get("metadata") or {}
+    name = meta.get("name", "?")
+    ns = _namespace_for(release.get("__file__"), meta.get("namespace"))
+    spec = release.get("spec") or {}
+    cs = (spec.get("chart") or {}).get("spec") or {}
+    chart, version = cs.get("chart"), cs.get("version")
+    source = cs.get("sourceRef") or {}
+    repo_name = source.get("name")
+    repo_url = repos.get(repo_name, "")
+
+    record = {
+        "namespace": ns,
+        "name": name,
+        "file": release.get("__file__"),
+        "chart": chart,
+        "version": version,
+        "repository": repo_url,
+        "values_sources": [],
+        "objects": [],
+        "error": None,
+    }
+    if not chart:
+        record["error"] = "no chart named"
+        return record
+
+    values, sources = _values_for(release, ns)
+    record["values_sources"] = sources
+    if not repo_url:
+        record["error"] = f"no HelmRepository named {repo_name!r} in this tree"
+        return record
+
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
+        yaml.safe_dump(values, fh)
+        vf = fh.name
+    try:
+        # `helm template` takes the chart as `<repo-name>/<chart>` once the repo is added, or an
+        # absolute URL. Add the repo from this tree first, so the runner needs no prior `helm repo
+        # add` -- 11 of 33 releases failed to render without this, and an unrendered chart is
+        # exactly the blind spot this gate exists to close.
+        url = _helm_repo_url(repos, repo_name, chart)
+        if url and repo_name:
+            _ensure_repo(repo_name, url)
+        chart_ref = (
+            f"{repo_name}/{chart}"
+            if (url and repo_name)
+            else f"{repo_url.rstrip('/')}/{chart}"
+        )
+        args = ["helm", "template", name, chart_ref]
+        if version:
+            args += ["--version", str(version)]
+        args += ["-f", vf, "--namespace", ns]
+        proc = _run(args)
+        if proc.returncode != 0:
+            record["error"] = (
+                (proc.stderr or proc.stdout).strip().splitlines()[-1][:300]
+            )
+            return record
+        for d in yaml.safe_load_all(proc.stdout):
+            if not isinstance(d, dict):
+                continue
+            record["objects"].append(
+                {
+                    "apiVersion": d.get("apiVersion"),
+                    "kind": d.get("kind"),
+                    "namespace": (d.get("metadata") or {}).get("namespace", ns),
+                    "name": (d.get("metadata") or {}).get("name"),
+                    "resources": _resources_of(d),
+                }
+            )
+    finally:
+        try:
+            os.unlink(vf)
+        except OSError:
+            pass
+    return record
+
+
+def _resources_of(doc: dict) -> list[dict]:
+    """The container resources a rendered workload declares. This is the field the five-day lie
+    hid in, so it is carried explicitly rather than left for each caller to walk."""
+    out = []
+    spec = doc.get("spec") or {}
+    containers = []
+    if (
+        doc.get("kind") == "Deployment"
+        or doc.get("kind") == "StatefulSet"
+        or doc.get("kind") == "DaemonSet"
+    ):
+        containers = ((spec.get("template") or {}).get("spec") or {}).get(
+            "containers"
+        ) or []
+    elif doc.get("kind") == "Job":
+        containers = ((spec.get("template") or {}).get("spec") or {}).get(
+            "containers"
+        ) or []
+    for c in containers:
+        r = c.get("resources") or {}
+        out.append(
+            {
+                "name": c.get("name"),
+                "requests": r.get("requests") or {},
+                "limits": r.get("limits") or {},
+            }
+        )
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--out", default=str(ROOT / ".estate" / "compiled-helm.json"))
+    ap.add_argument("--json", action="store_true", help="the document to stdout")
+    ap.add_argument("--release", default=None, help="one release as NAMESPACE/NAME")
+    args = ap.parse_args()
+
+    if _run(["helm", "version"]).returncode != 0:
+        print("BLIND compiled-helm: helm is not on PATH", file=sys.stderr)
+        return 2
+
+    # A helm older than the charts need reports a chart as BROKEN when the tool is what is old.
+    # Measured 2026-09-12: the langfuse chart calls `fromToml`, added in Helm 3.17, so under 3.16.4
+    # that release fails with "function fromToml not defined" while every other chart renders. A
+    # gate whose answer depends on which helm the caller happens to have is not a measurement, so
+    # this refuses instead of reporting a false defect.
+    version_out = _run(["helm", "version", "--short"]).stdout.strip()
+    m = re.match(r"v?(\d+)\.(\d+)", version_out)
+    if not m or (int(m.group(1)), int(m.group(2))) < (3, 17):
+        print(
+            f"BLIND compiled-helm: helm {version_out or 'unknown'} is older than 3.17, which the "
+            "estate's charts require (langfuse calls `fromToml`). Install a newer helm; do not "
+            "read this as a chart defect.",
+            file=sys.stderr,
+        )
+        return 2
+
+    repos = _chart_repos()
+    rels = _releases()
+    if not rels:
+        # A tree where the glob finds nothing is a bug in this program, not an empty estate: the
+        # estate has 31 HelmReleases. Say which, so the next reader does not chase the wrong file.
+        root_note = "; PLATFORM=" + str(PLATFORM)
+        print(
+            "BLIND compiled-helm: no HelmRelease found under platform/" + root_note,
+            file=sys.stderr,
+        )
+        return 2
+    if args.release and "/" in args.release:
+        want_ns, want_name = args.release.split("/", 1)
+        # A HelmRelease file often declares no namespace: the kustomization that owns it sets
+        # one. So filter on the name, and only on the namespace when the file actually states it.
+        rels = [
+            r
+            for r in rels
+            if (r.get("metadata") or {}).get("name") == want_name
+            and (r.get("metadata") or {}).get("namespace", want_ns) == want_ns
+        ]
+    if not rels:
+        print(
+            "BLIND compiled-helm: no HelmRelease found under platform/", file=sys.stderr
+        )
+        return 2
+
+    compiled = [compile_release(r, repos) for r in rels]
+    ok = [c for c in compiled if not c["error"]]
+    bad = [c for c in compiled if c["error"]]
+
+    doc = {
+        "releases": compiled,
+        "summary": {
+            "total": len(compiled),
+            "rendered": len(ok),
+            "failed": len(bad),
+            "objects": sum(len(c["objects"]) for c in ok),
+        },
+    }
+
+    if args.json:
+        print(json.dumps(doc, indent=1, sort_keys=True))
+    else:
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(doc, indent=1, sort_keys=True))
+        print(
+            f"ok    compiled-helm {doc['summary']['rendered']}/{doc['summary']['total']} "
+            f"release(s), {doc['summary']['objects']} object(s) -> {out}"
+        )
+        for c in bad:
+            print(f"      FAIL {c['namespace']}/{c['name']}: {c['error']}")
+
+    # A release that could not be rendered is a real failure: the gate exists so that what the
+    # estate believes it set is compared against what the chart decides, and an unrendered chart
+    # is exactly the blind spot it was built to close.
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

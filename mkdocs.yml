@@ -105,6 +105,8 @@ nav:
       - Breaker enforcement: tutorials/demo/breaker.md
       - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
+      - Secret blockers: tutorials/demo/secret-blockers.md
+      - Health check names a real object: tutorials/demo/healthcheck-exists.md
       - epistemic: tutorials/demo/epistemic.md
       - Epistemic gate (module): tutorials/demo/epistemic_firewall.py.md
       - trajectory: tutorials/demo/trajectory.md
@@ -117,6 +119,7 @@ nav:
       - Prose-pin gate: tutorials/demo/test-prose-gate.md
       - Incident register: tutorials/demo/incident-register.md
       - FleetView sessions: tutorials/demo/fleetview.md
+      - Compile the estate: tutorials/demo/compile.md
       - Trace matrix: tutorials/demo/trace-matrix.md
       - Matrix gate: tutorials/demo/matrix.md
       - Plain English: tutorials/demo/plain-english.md
@@ -197,6 +200,7 @@ nav:
   - Onboarding:
       - The Demo Standard: onboarding/demo-standard.md
       - FleetView: how-to/onboarding/fleetview.md
+      - Compile the estate: how-to/onboarding/compile.md
       - Buyer sandbox (one hour): onboarding/demo-sandbox.md
       - Merge queue (hands-free landing): onboarding/merge-queue.md
       - Catalogue links: onboarding/catalog-links.md
@@ -216,6 +220,8 @@ nav:
       - Every gate, with its output: how-to/onboarding/gate-demo.md
       - Portal: how-to/onboarding/idp.md
       - Estate compiler: how-to/onboarding/intent.md
+      - Secret blockers: how-to/onboarding/secret-blockers.md
+      - Health check names a real object: how-to/onboarding/healthcheck-exists.md
       - Estate Mac screen: how-to/onboarding/founder-screen-access.md
       - Conscience: how-to/onboarding/conscience.md
       - Estate showcase: how-to/onboarding/estate-showcase.md
@@ -381,6 +387,9 @@ nav:
       - epistemic: gates/epistemic.md
       - trajectory: gates/trajectory.md
       - circuit-breaker: gates/circuit-breaker.md
+      - secret-blockers: gates/externalsecret-blockers-are-loud.md
+      - drift-blind: gates/drift-reads-blind-not-clean.md
+      - healthcheck-exists: gates/healthcheck-names-a-real-object.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md

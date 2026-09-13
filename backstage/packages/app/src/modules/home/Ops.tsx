@@ -33,6 +33,8 @@ import { FounderData, receiptsSentence, waitingSentence } from './founder';
 import { useFounder } from './useFounder';
 import { useHealthchecks } from './useHealthchecks';
 import { usePlacement } from './usePlacement';
+import { useCompiled } from './useCompiled';
+import { cpuLabel, guaranteed } from './compiled';
 import { headroomLabel, placementState, requestLabel } from './placement';
 import { Checks, STATUS_WORD, checksSentence, notUp } from './healthchecks';
 import {
@@ -289,6 +291,7 @@ export const Ops = () => {
   const founder = useFounder();
   const checks = useHealthchecks();
   const placement = usePlacement();
+  const compiled = useCompiled();
   const inventory = useInventory();
   const now = Date.now();
   return (
@@ -414,6 +417,8 @@ export const Ops = () => {
                       </td>
                       <td>{requestLabel(p)}</td>
                       <td>{headroomLabel(p)}</td>
+                      <td>{requestLabel(p)}</td>
+                      <td>{headroomLabel(p)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -423,6 +428,76 @@ export const Ops = () => {
         )}
       </Section>
       <GraphSection />
+      {/* The compiled estate: what every Helm chart RENDERS, straight from git.
+          This is the instrument that closes the five-day gap. A values file, a comment and a
+          postRenderer patch are all CLAIMS; the number below is the one the chart decides, which
+          is the one the cluster runs. On 2026-09-12 langfuse-web rendered 1000m while the comment
+          beside that value said 500m, and nothing in the estate could see the difference. */}
+      <Section
+        title="What the charts actually render"
+        blurb="Every Helm release compiled from git. The value shown is the one the chart produces, never the one a comment claims."
+        testId="ops-compiled-section"
+      >
+        {compiled.state === 'loading' && (
+          <Waiting testId="ops-compiled-loading">Compiling the estate.</Waiting>
+        )}
+        {compiled.state === 'error' && (
+          <Unread testId="ops-compiled-error" detail={compiled.error}>
+            The compiled estate could not be read, so what the charts will run is unknown.
+          </Unread>
+        )}
+        {compiled.state === 'ready' && (
+          <>
+            <Text variant="body-medium" data-testid="ops-compiled-sentence">
+              {compiled.summary.summary}
+            </Text>
+            {compiled.summary.unrendered.length > 0 && (
+              <Sheet testId="ops-compiled-blind">
+                <thead>
+                  <tr>
+                    <th>Release</th>
+                    <th>Why it did not render</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {compiled.summary.unrendered.map(r => (
+                    <tr key={`${r.namespace}/${r.name}`}>
+                      <td>
+                        {r.namespace}/{r.name}
+                      </td>
+                      <td>{r.error}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Sheet>
+            )}
+            <Sheet testId="ops-compiled">
+              <thead>
+                <tr>
+                  <th>Workload</th>
+                  <th>Container</th>
+                  <th>Rendered cpu</th>
+                  <th>Guaranteed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {compiled.summary.workloads.flatMap(w =>
+                  w.containers.map(c => (
+                    <tr key={`${w.namespace}/${w.name}/${c.name}`}>
+                      <td>
+                        {w.namespace}/{w.kind}/{w.name}
+                      </td>
+                      <td>{c.name}</td>
+                      <td>{cpuLabel(c)}</td>
+                      <td>{guaranteed(c) ? 'yes' : 'no'}</td>
+                    </tr>
+                  )),
+                )}
+              </tbody>
+            </Sheet>
+          </>
+        )}
+      </Section>
     </EstatePage>
   );
 };
