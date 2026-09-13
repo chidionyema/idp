@@ -430,7 +430,7 @@ export const Ops = () => {
         )}
       </Section>
       <GraphSection />
-      <GuardsSection />
+      <GuardsSection now={now} />
       {/* The compiled estate: what every Helm chart RENDERS, straight from git.
           This is the instrument that closes the five-day gap. A values file, a comment and a
           postRenderer patch are all CLAIMS; the number below is the one the chart decides, which
@@ -577,7 +577,7 @@ const GraphSection = () => {
  * nothing is not proof of anything, which is why the sentence carries the total beside the rows:
  * two rows under a heading that says "guards" would otherwise read as the whole fifty-six.
  */
-export const GuardsSection = () => {
+export const GuardsSection = ({ now }: { now: number }) => {
   const loaded = useGuards();
 
   return (
@@ -605,16 +605,13 @@ export const GuardsSection = () => {
               {guardRows(loaded.guards).map(g => (
                 <Fact
                   key={g.id}
-                  label={
-                    <>
-                      {g.title} <span data-testid={`ops-guard-id-${g.id}`}>{g.id}</span>
-                    </>
-                  }
+                  label={g.title}
                   value={
                     <>
-                      fired <b>{g.fired}</b>, refused <b>{g.blocked}</b>
+                      <span data-testid={`ops-guard-id-${g.id}`}>{g.id}</span> — fired{' '}
+                      <b>{g.fired}</b>, refused <b>{g.blocked}</b>
                       {g.last_command ? ` — ${g.last_command}` : ''}
-                      {g.last_at ? ` (${ago(g.last_at)})` : ''}
+                      {g.last_at ? ` (${ago(g.last_at, now)})` : ''}
                     </>
                   }
                   testId={`ops-guard-${g.id}`}
