@@ -19,7 +19,7 @@ Fixture: `/private/tmp`
 Exit code `2` (the registry expects non-zero). ✓
 
 ```
-FAIL  /private/tmp resolves to /private/tmp, outside the VM-shared tree (/Users/chidionyema); the container would see an empty directory
+FAIL  /private/tmp resolves to /private/tmp, outside the VM-shared tree (<home>); the container would see an empty directory
 ```
 
 ## Permitted

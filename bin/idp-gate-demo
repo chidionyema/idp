@@ -35,6 +35,7 @@ import argparse
 import importlib.util
 import os
 import re
+import subprocess
 import sys
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
@@ -154,11 +155,15 @@ def _stable(output: str) -> str:
 
     A generated page is checked in (`bin/idp-gate-demo --check` fails when the page on disk is
     not what a render produces), so a single varying byte makes the check unusable and the
-    idempotency test fail. Three things vary on every run:
+    idempotency test fail. Four things vary between two renders, and the third varies between two
+    MACHINES:
 
       * a timestamp, e.g. `2026-09-12 23:45:29 +0100`
       * a temp directory, e.g. `/var/folders/gq/.../tmp9ufe9b4a`, because a gate that imports
         dagster is handed a fresh one per invocation
+      * the CHECKOUT PATH, e.g. `<somewhere>/tests/fixtures/definitions/relative-import.py`,
+        because a fixture's own traceback names the file it was read from, and the home
+        directory, because a gate that resolves a path reports it as being outside one
       * a pytest DURATION, e.g. `13 passed in 456.72s (0:07:36)`, because seven rules in this
         registry run pytest as their gate and no two runs take the same time
 
@@ -174,14 +179,58 @@ def _stable(output: str) -> str:
     copies each page's exit code the single leak also made `index.md` differ -- seven pages from
     one unscrubbed number.
 
-    All three are replaced with a fixed token so the page records WHAT the gate said, not when
-    the demo happened to run it, and not how long it took. The duration is deliberately NOT kept:
-    it is a property of the machine that ran the demo, not of the gate, and a page that changed
-    when the laptop was busy would make `--check` a coin toss.
+    All four are replaced with a fixed token so the page records WHAT the gate said, not when
+    the demo happened to run it, not where it ran, and not how long it took. The duration is
+    deliberately NOT kept: it is a property of the machine that ran the demo, not of the gate,
+    and a page that changed when the laptop was busy would make `--check` a coin toss.
+
+    Measured 2026-09-13, and this is why the checkout path is scrubbed rather than excused:
+    `--check` FAILED on a clean detached checkout of the same commit it PASSED on in the working
+    tree, naming exactly four pages -- defs-load-by-path, sleep-ban, breaker-enforcement, index.
+    The page was not stale and the gates were not failing; the render had simply happened
+    somewhere else, and `defs-load-by-path.md` carries a fixture's traceback, which prints the
+    path the fixture was READ FROM: the temp checkout in one case, the working checkout in the
+    other. A committed page therefore named the machine of whoever generated it -- LAW 46, in a
+    generated file -- and `--check` could only ever pass on that one machine. CI is a different
+    machine, which is the `bdd-suites (tests)` failure.
     """
     out = re.sub(
         r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\s*[+-]\d{4})?", "<timestamp>", output
     )
+    # The checkout this render ran in. A gate that reads a fixture prints the absolute path it
+    # read, so without this the page is bound to one machine and `--check` is bound with it.
+    # Asked of git rather than guessed, so a worktree, a symlinked /private/tmp on macOS and a
+    # CI runner are all handled by the one answer; the longest root is tried first so a nested
+    # worktree is not half-replaced by its parent's path.
+    roots: list[Path] = []
+    for flag in ("--show-toplevel", "--git-common-dir"):
+        try:
+            proc = subprocess.run(
+                ["git", "rev-parse", flag],
+                cwd=Path(__file__).resolve().parent,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                p = Path(proc.stdout.strip())
+                roots.append(p.resolve() if flag == "--show-toplevel" else p.resolve().parent)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    for root in sorted(set(roots), key=lambda p: len(str(p)), reverse=True):
+        for spelled in (str(root), str(root).replace("/private/", "/")):
+            out = out.replace(spelled, "<checkout>")
+    # The home directory, for the same reason and in the same class of leak: `bin/idp-hardcode-scan`
+    # (LAW 46) refuses a file that names where the checkout, the home directory or the machine
+    # lives, and a gate that resolves a path can print any of the three. Measured 2026-09-13:
+    # docs/gates/vm-shared-path.md carried the literal account name in its refusal -- `the
+    # VM-shared tree (/Users/<person>)` -- which is the home directory, not the checkout, so the
+    # checkout scrub above would have missed it. Scrubbed AFTER the checkout so a checkout that
+    # lives under the home directory yields `<checkout>` rather than `<home>/dev/code/idp`.
+    home = Path(os.path.expanduser("~"))
+    if home != Path("/"):
+        for spelled in (str(home), str(home).replace("/private/", "/")):
+            out = out.replace(spelled, "<home>")
     # A CPython repr carries the object's address: `<Foo object at 0x111ad3390>`, and pytest dumps
     # whole reprs of test objects on a failure. The address changes every run.
     out = re.sub(r"0x[0-9a-fA-F]{6,}", "<addr>", out)
