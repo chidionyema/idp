@@ -512,7 +512,14 @@ router_settings:
   redis_password: os.environ/REDIS_PASSWORD
 
 litellm_settings:
-  callbacks: ["otel"]
+  # `otel` is the existing trace exporter. The second entry is the estate's per-request ceiling:
+  # a call carrying more input tokens than a working turn needs is REFUSED before it is sent.
+  # It is a callback and not a warning because the guard that already graded tokens
+  # (spend-breaker-digest.yaml, 2,000,000 per hour) watched 86,525,924 tokens go through one hour
+  # on 2026-09-13 and did not sever -- it grades the hour's total, so one session at 737,169 per
+  # call is indistinguishable from 200 sessions at 3,700. Its own comment says it:
+  # "It reports and warns; it does not sever the router."
+  callbacks: ["otel", "request_ceiling.proxy_handler_instance"]
   # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
   # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
   # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.
