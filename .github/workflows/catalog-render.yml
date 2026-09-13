@@ -151,12 +151,21 @@ jobs:
           #
           # A sweep that cannot read the runtime must not fail the job it runs inside: the
           # declared half has already shipped, and a BLIND runtime half is named, not fatal.
-          bin/estate-twin-runtime --once --code || true
+          # --code AND --domains. This step called the emitter with --code alone until
+          # 2026-09-13, so the runtime half -- pods, Flux, identity, network, certificates,
+          # capacity, cost, data, postgres, sessions, worktrees, bus -- was never collected,
+          # and the run published a graph of one node while the step printed ok. The emitter
+          # names which halves it read on its own last line, so this reads that line.
+          bin/estate-twin-runtime --once --code --domains || true
           rows=$(python3 -c "import sqlite3;print(sqlite3.connect('catalog/estate.db').execute('select count(*) from nodes').fetchone()[0])" 2>/dev/null || echo 0)
           echo "estate-twin: $rows node(s) in catalog/estate.db after the sweep" | tee -a "$GITHUB_STEP_SUMMARY"
           if [ "$rows" -lt 100 ]; then
-            echo 'BLIND estate-twin: the graph holds almost nothing -- the receipt was not read.' \
-              'The declared half still ships; the runtime half is missing.' | tee -a "$GITHUB_STEP_SUMMARY"
+            # A generator that ran in preview mode is a DIFFERENT graph from the one a
+            # runner builds: preview has the receipt and no cluster session, a runner has
+            # neither unless the OCI step above minted one. So the missing half is named.
+            echo "BLIND estate-twin: the graph holds $rows node(s); at least 100 expected." \
+              'The declared half still ships. The runtime half needs BOTH the OCI session' \
+              '(the `app` step above) and --domains on the emitter.' | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           bin/estate-twin-runtime --state 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
 

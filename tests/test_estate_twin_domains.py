@@ -112,3 +112,27 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_the_render_workflow_asks_for_every_domain():
+    """The sweep that publishes the cluster's graph must collect the runtime half.
+
+    `bin/estate-twin-runtime --once --code` collects the code half only. The 12 runtime
+    domains need `--domains` as well. The workflow called it with `--code` alone until
+    2026-09-13, so the run published a one-node graph and printed ok; only the BLIND line in
+    the step caught it, and only because the node count was under a floor.
+
+    This grades the invocation itself, so the flag cannot go missing again without a failure
+    that names the flag.
+    """
+    wf = ROOT / ".github" / "workflows" / "catalog-render.yml"
+    text = wf.read_text()
+    calls = [ln for ln in text.splitlines() if "estate-twin-runtime --once" in ln]
+    assert calls, f"{wf}: no step runs the emitter at all"
+    for call in calls:
+        assert "--code" in call, f"the emitter runs without --code: {call.strip()}"
+        assert "--domains" in call, (
+            "the emitter runs without --domains, so the runtime half -- pods, Flux, "
+            f"identity, network, certificates, capacity, cost, data, postgres, sessions, "
+            f"worktrees, bus -- is never collected: {call.strip()}"
+        )
