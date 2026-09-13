@@ -41,13 +41,48 @@ def _run(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProces
     )
 
 
-def _db() -> sqlite3.Connection:
-    """The asset database, or a failure that names what is missing."""
+_BUILT = False
+
+
+def _build_graph() -> None:
+    """Build the graph the way the estate does, once per session.
+
+    `catalog/estate.db` is in .gitignore -- it is built, never committed -- so a fresh
+    checkout has no graph and every scenario failed on its absence (CI, 2026-09-13: every
+    test "the estate's asset database is not at catalog/estate.db").
+
+    Two builders, both the estate's own:
+      bin/db-gen                       the declared half, from the inventory
+      bin/estate-twin-runtime --once   the runtime and code halves, from the receipt and git
+
+    Either may legitimately produce nothing (no inventory on a runner, no OCI session), so a
+    missing half is not fatal -- but a graph that cannot be built AT ALL is, and says so.
+    """
+    global _BUILT
+    if _BUILT:
+        return
+    _BUILT = True
+    if ASSET_DB.exists():
+        return
+    ASSET_DB.parent.mkdir(parents=True, exist_ok=True)
+    dbgen = ROOT / "bin" / "db-gen"
+    twin = ROOT / "bin" / "estate-twin-runtime"
+    for cmd in ([str(dbgen)], [str(twin), "--once", "--code", "--domains"]):
+        if not Path(cmd[0]).exists():
+            continue
+        # Best effort by design: each half is optional, and the twin writes its own tables
+        # even when the receipt cannot be read.
+        _run(cmd)  # noqa: S603 - fixed argv, no shell
     if not ASSET_DB.exists():
         pytest.fail(
-            f"the estate's asset database is not at {ASSET_DB.relative_to(ROOT)}; "
-            "run bin/db-gen -- the twin extends this file and must not create a second"
+            f"the estate's graph could not be built at {ASSET_DB.relative_to(ROOT)}; "
+            "bin/db-gen and bin/estate-twin-runtime both ran and neither wrote a database"
         )
+
+
+def _db() -> sqlite3.Connection:
+    """The asset database, built from the estate's own builders if a fresh checkout has none."""
+    _build_graph()
     return sqlite3.connect(ASSET_DB)
 
 
@@ -276,11 +311,15 @@ def _names_file_count() -> None:
     import json as _json
 
     meta = _json.loads(row[0])
-    assert "unmerged_files" in meta, (
+    # One fact, two spellings depending on which node carries it: a per-branch row says
+    # `unmerged_files`, the branch summary says `files_absent_from_base`. The scenario asks
+    # for the value under either name rather than pinning a spelling.
+    count = meta.get("unmerged_files", meta.get("files_absent_from_base"))
+    assert count is not None, (
         f"the stranded branch does not say how many files it adds: {sorted(meta)}"
     )
-    assert isinstance(meta["unmerged_files"], int) and meta["unmerged_files"] > 0, (
-        f"unmerged_files is not a positive count: {meta['unmerged_files']!r}"
+    assert isinstance(count, int) and count > 0, (
+        f"the count of files absent from main is not positive: {count!r}"
     )
 
 
