@@ -86,6 +86,24 @@ def live_summary() -> dict:
     counts = json.loads(counts_path.read_text()) if counts_path.exists() else {}
 
     db = root / "catalog" / "estate.db"
+    # THE GRAPH IS GITIGNORED, SO CI DOES NOT HAVE ONE. catalog/estate.db is a build product (the
+    # sweep is keyed on nodes.id, so it is idempotent), and a fresh checkout -- which is every CI
+    # run -- has no file here at all. Left alone, twin_count stayed None and the rule refused with
+    # "one surface reports no stranded-branch count", which reads on the pull request as a defect
+    # in the branch under test when the only thing missing was the artifact the grade reads.
+    # So build it when it is absent: the grade is then a real grade of a real graph, wherever it
+    # runs, instead of a grade that depends on a developer having run something first.
+    if not db.exists():
+        import subprocess as _sp
+
+        _sp.run(
+            [str(root / "bin" / "estate-twin-runtime"), "--once", "--code"],
+            capture_output=True,
+            text=True,
+            timeout=900,
+            cwd=str(root),
+        )
+
     twin_count = None
     if db.exists():
         con = sqlite3.connect(db)
