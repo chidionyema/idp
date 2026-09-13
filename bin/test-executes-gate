@@ -32,7 +32,22 @@ BASE="${1:-origin/main}"
 # loopback and posts to it is the strongest kind of behavioural test in this repository, and
 # the list did not name it: tests/test_the_jit_ledger_leaves_the_node_it_was_written_on.py
 # drives a real OTLP collector through four failure modes and was refused as reading files.
-EXECUTES='subprocess|requests\.|httpx|socket\.|urllib\.request|http\.server|http\.client|os\.system|pexpect|docker\.|kubernetes\.client|importlib|spec_from_file'
+#
+# `exec(` and `compile(` are here for the third shape, found on chidionyema/idp#3315: a test
+# that lifts a program out of a manifest (a ConfigMap's `apply.py`, a Job's inline script),
+# compiles it and CALLS it. That is the strongest test of a manifest whose code lives in a
+# string -- it grades the exact bytes the cluster will run, not a copy of them -- and it was
+# refused because the test's own file calls `exec` with a variable rather than importing a
+# module by name. A gate that cannot see this shape pushes such a test back to asserting the
+# manifest's TEXT, which is the thing this gate exists to refuse.
+#
+# `ast.parse` IS DELIBERATELY NOT HERE. A test can parse a file and assert its SHAPE without
+# running anything, and that would slip past this gate while still measuring nothing. Measured
+# on the same change: a test whose only work is to parse bin/catalog-render and check a
+# function name passes `ast.parse` and passes bin/test-prose-gate too, so the two gates
+# together would have called it behavioural. `exec(` is the line -- if the string does not run,
+# this pattern does not match.
+EXECUTES='subprocess|requests\.|httpx|socket\.|urllib\.request|http\.server|http\.client|os\.system|pexpect|docker\.|kubernetes\.client|importlib|spec_from_file|exec\(|compile\('
 
 # tests/fixtures/ is excluded because a file there is a fixture, not a test. The pairs this
 # repository grades gates with include python files, and one of them is a test that reads a

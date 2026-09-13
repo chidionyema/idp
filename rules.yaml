@@ -2111,14 +2111,22 @@ rules:
     must_pass: tests/fixtures/clean-tree/good.json
   cases:
   - expect: refuse
-    args: ["--state", "tests/fixtures/clean-tree/bad.json"]
+    args:
+    - --state
+    - tests/fixtures/clean-tree/bad.json
   - expect: pass
-    args: ["--state", "tests/fixtures/clean-tree/good.json"]
+    args:
+    - --state
+    - tests/fixtures/clean-tree/good.json
   - expect: refuse
-    args: ["--state", "tests/fixtures/clean-tree/midmerge.json"]
+    args:
+    - --state
+    - tests/fixtures/clean-tree/midmerge.json
     note: the exact tree that produced the three false reports
   - expect: pass
-    args: ["--state", "tests/fixtures/clean-tree/noise.json"]
+    args:
+    - --state
+    - tests/fixtures/clean-tree/noise.json
     note: a per-machine .venv is not a tree state anyone grades; a real change beside it still is
   - expect: pass
     live: true
