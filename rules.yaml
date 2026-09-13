@@ -2175,3 +2175,25 @@ rules:
   ok: the router refuses a call above the working window, and nothing can unload it silently
   fail: a ceiling exists that nothing registers, nothing mounts, or that sits so high it can never fire
   why: 'FOUNDER 2026-09-13: "fix the probel properly and preven fro re[cur]rinng". Measured that day from LiteLLM_SpendLogs: one key, 439 calls, 86,525,924 input tokens in 60 minutes ($2.63), against 568 tokens from every other key on the estate combined. The largest single call was 737,169 in / 436 out -- 3,685 tokens in for every token out, because a session was re-sending its entire history on every turn. The two guards that existed were read and neither could catch it: the spend breaker grades 2,000,000 tokens PER HOUR as a total across the estate, so one 737k call looks like two hundred 3.7k calls and it notifies without refusing; and a client-side ceiling lives in one laptop''s home directory. Prefix caching was never the problem -- it was on and correct at $0.025/M against $0.150 list. The bill was volume, and volume is refused at the only place every call passes: the router.'
+- id: spend-floor
+  fast: true
+  label: spend-floor
+  statement: Spend is reported PER KEY, naming the biggest single call and the share of budget already spent -- because the estate-total check that already existed cannot see one session sending 737,169 tokens per call, and LiteLLM stops a key at 100% with no warning at all
+  law: LAW 2, incident 2026-09-13
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-spend-floor
+  ok: a key sending or spending out of shape is named, with its number and its next step
+  fail: the shape of the spend is unmeasured, so one runaway session looks like an ordinary hour
+  why: 'FOUNDER 2026-09-13: "fix the probel properly and preven fro re[cur]rinng". Measured from LiteLLM_SpendLogs: one key, 797 calls, 89,900,900 input tokens, largest single call 737,169 in / 242,357 out, $12.46 of a $15.00 budget -- 83.0% spent with no warning delivered. Every other key on the estate, summed, was under 600 tokens. Two existing guards were read and neither could catch it: platform/llm/spend-breaker-digest.yaml grades 2,000,000 tokens per hour as a TOTAL ACROSS THE ESTATE, so a single 737k call is numerically identical to two hundred 3.7k calls, and it notifies without severing; and LiteLLM''s max_budget is a hard stop that fires with no warning, taking every session on that machine down at once. Measured the same hour: agent-workforce-20260905T122110Z sat at 100.1% of a $5.00 budget -- over the cap and still going. Prefix caching was never the problem: it was on and correct at $0.025/M against $0.150/M list.'
+  cases:
+  - expect: refuse
+    args:
+    - --rows
+    - tests/fixtures/spend-floor/bad/rows.json
+  - expect: pass
+    args:
+    - --rows
+    - tests/fixtures/spend-floor/good/rows.json
