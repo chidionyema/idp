@@ -268,9 +268,20 @@ def _not_running() -> None:
 
 @given("a branch is unmerged and adds a file that exists on no commit of main")
 def _stranded_branch() -> None:
+    """A scenario that grades a stranded branch, so one has to exist.
+
+    CI checks out a single branch, so `git branch --no-merged` is empty there and this
+    failed (2026-09-13: 1 failed, 138 passed, "no unmerged branch exists; this scenario
+    needs one to grade"). A precondition a CI checkout cannot satisfy is a skip that names
+    itself, the same rule the cluster steps follow. On a developer machine this estate has
+    1,523 of them and the scenario runs.
+    """
     proc = _run(["git", "branch", "--no-merged", "origin/main"])
     if proc.returncode != 0 or not proc.stdout.strip():
-        pytest.fail("no unmerged branch exists; this scenario needs one to grade")
+        pytest.skip(
+            "no unmerged branch exists in this checkout, and this scenario grades one; "
+            "CI clones a single branch, so it is graded where branches exist"
+        )
 
 
 @given("a branch is unmerged and adds no file that main does not have")
