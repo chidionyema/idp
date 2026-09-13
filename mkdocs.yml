@@ -388,6 +388,7 @@ nav:
       - epistemic: gates/epistemic.md
       - trajectory: gates/trajectory.md
       - circuit-breaker: gates/circuit-breaker.md
+      - clean-tree: gates/clean-tree.md
       - secret-blockers: gates/externalsecret-blockers-are-loud.md
       - drift-blind: gates/drift-reads-blind-not-clean.md
       - healthcheck-exists: gates/healthcheck-names-a-real-object.md
