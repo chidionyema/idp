@@ -59,6 +59,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from pytest_bdd import given, parsers, scenarios, then, when
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -880,18 +881,26 @@ def test_rule_4_has_two_enforcement_points() -> None:
     # The Kyverno half is only real if Flux actually applies it. A policy file that no
     # Kustomization lists is a document, and this estate has deleted that mistake before
     # (see the Unification Move in AGENTS.md: fifteen fixtures named by no runner at all).
-    kustomization = (
-        repo_root / "platform" / "verification" / "kustomization.yaml"
-    ).read_text()
-    assert "refuse-unattested-provenance.yaml" in kustomization, (
-        "the Rule 4 policy is not listed in platform/verification/kustomization.yaml, so "
-        "Flux never applies it and it enforces nothing"
+    # Parsed, not grepped: `resources` is the list Flux acts on (R76).
+    kustomization = yaml.safe_load(
+        (repo_root / "platform" / "verification" / "kustomization.yaml").read_text()
+    )
+    assert "refuse-unattested-provenance.yaml" in kustomization["resources"], (
+        "the Rule 4 policy is not in the parsed resources list of "
+        "platform/verification/kustomization.yaml, so Flux never applies it and it enforces "
+        f"nothing. Listed: {kustomization['resources']!r}"
     )
 
     # A policy whose enforcement mode lets a DENY-able object through is a wish (LAW 44).
-    policy = (
-        repo_root / "platform" / "verification" / "refuse-unattested-provenance.yaml"
-    ).read_text()
-    assert "validationFailureAction: Enforce" in policy, (
+    # Read as YAML so a commented-out or differently-cased value cannot satisfy it.
+    policy = yaml.safe_load(
+        (
+            repo_root
+            / "platform"
+            / "verification"
+            / "refuse-unattested-provenance.yaml"
+        ).read_text()
+    )
+    assert policy["spec"]["validationFailureAction"] == "Enforce", (
         "the policy must enforce, not audit: a refusal that can be ignored is not a refusal"
     )

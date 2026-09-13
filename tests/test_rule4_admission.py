@@ -123,11 +123,24 @@ def test_the_policy_is_applied_by_flux() -> None:
     This estate deleted that exact mistake once already: fifteen fixtures under
     policy/fixtures that no runner named (see the Unification Move in AGENTS.md). A file
     that exists is not a control that runs.
+
+    Graded by PARSING the Kustomization, not by searching its text for a filename (R76). The
+    parsed `resources` list is the thing Flux acts on; a substring check would pass against a
+    comment or a path that is wrong in every way except its spelling.
     """
-    kustomization = (
-        REPO_ROOT / "platform" / "verification" / "kustomization.yaml"
-    ).read_text()
-    assert "refuse-unattested-provenance.yaml" in kustomization, (
-        "the Rule 4 policy is not listed in platform/verification/kustomization.yaml, so "
-        "Flux never applies it and it enforces nothing"
+    kustomization = yaml.safe_load(
+        (REPO_ROOT / "platform" / "verification" / "kustomization.yaml").read_text()
     )
+    resources = kustomization["resources"]
+    assert "refuse-unattested-provenance.yaml" in resources, (
+        "the Rule 4 policy is not in the parsed resources list of "
+        "platform/verification/kustomization.yaml, so Flux never applies it and it enforces "
+        f"nothing. Listed: {resources!r}"
+    )
+
+    # The listed name must be a file that exists and parses, or Flux fails the whole path.
+    policy_path = (
+        REPO_ROOT / "platform" / "verification" / "refuse-unattested-provenance.yaml"
+    )
+    listed = yaml.safe_load(policy_path.read_text())
+    assert listed["kind"] == "ClusterPolicy"
