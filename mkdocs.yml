@@ -105,6 +105,7 @@ nav:
       - Breaker enforcement: tutorials/demo/breaker.md
       - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
+      - Secret blockers: tutorials/demo/secret-blockers.md
       - Health check names a real object: tutorials/demo/healthcheck-exists.md
       - epistemic: tutorials/demo/epistemic.md
       - Epistemic gate (module): tutorials/demo/epistemic_firewall.py.md
@@ -218,6 +219,7 @@ nav:
       - Every gate, with its output: how-to/onboarding/gate-demo.md
       - Portal: how-to/onboarding/idp.md
       - Estate compiler: how-to/onboarding/intent.md
+      - Secret blockers: how-to/onboarding/secret-blockers.md
       - Health check names a real object: how-to/onboarding/healthcheck-exists.md
       - Estate Mac screen: how-to/onboarding/founder-screen-access.md
       - Conscience: how-to/onboarding/conscience.md
@@ -378,6 +380,7 @@ nav:
       - epistemic: gates/epistemic.md
       - trajectory: gates/trajectory.md
       - circuit-breaker: gates/circuit-breaker.md
+      - secret-blockers: gates/externalsecret-blockers-are-loud.md
       - drift-blind: gates/drift-reads-blind-not-clean.md
       - healthcheck-exists: gates/healthcheck-names-a-real-object.md
   - Runbooks:
