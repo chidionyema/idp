@@ -19,6 +19,18 @@ import { Ops } from './Ops';
 import { HELMRELEASES, KUSTOMIZATIONS, NODES, PODS } from './useClusterHealth';
 import { ALERTS } from './useOpenReds';
 
+// A guard inventory shaped exactly as mcp/plugins/estate_guards.py returns it: a total, a map of
+// guards that FIRED, and anything that could not be read. Written with one guard that fired and
+// one that refused, so the table is proved to carry both numbers.
+const GUARDS = {
+  total_guards: 56,
+  fired: {
+    'pre-commit': { fired: 249, blocked: 105, last_at: '2026-09-13T01:40:54Z', last_command: 'exit=1 event=git-hook' },
+    'sleep-ban': { fired: 1, blocked: 1, last_at: '2026-09-13T00:01:41Z', last_command: 'sleep 420' },
+  },
+  unreadable: [],
+};
+
 const entities: Entity[] = [
   {
     apiVersion: 'backstage.io/v1alpha1',
@@ -154,7 +166,9 @@ const render = (lists: Record<string, unknown[]>, fail = false) =>
                     ok: true,
                     status: 200,
                     json: async () =>
-                      url.endsWith(HC_CHECKS)
+                      url.endsWith('/guards')
+                        ? GUARDS
+                        : url.endsWith(HC_CHECKS)
                         ? healthchecks
                         : url.endsWith(INVENTORY_JSON)
                         ? inventory
@@ -311,5 +325,35 @@ describe('Ops', () => {
       'answered 502',
     );
     expect(screen.queryByTestId('ops-inventory')).toBeNull();
+  });
+});
+
+describe('Ops — the guards section', () => {
+  it('draws every guard that fired, with how many it refused', async () => {
+    render({});
+    expect(await screen.findByTestId('ops-guards-table')).toBeInTheDocument();
+    // The guard that refused 105 times is on the page with its own number.
+    // getAllByText: the guard's id appears in the row AND in the sentence above the table, and
+    // getByText throws when a name is legitimately on the page twice.
+    expect(screen.getAllByText('pre-commit').length).toBeGreaterThan(0);
+    expect(screen.getByText('105')).toBeInTheDocument();
+    // The page shows the guard's PLAIN-ENGLISH name, not its id -- a reader should not have to
+    // know that `sleep-ban` means "Sleep ban". Both guards must appear, by the name a person reads.
+    expect(screen.getAllByText('Sleep ban').length).toBeGreaterThan(0);
+  });
+
+  it('states how many guards exist, so a short table is not read as the whole estate', async () => {
+    render({});
+    const sentence = await screen.findByTestId('ops-guards-sentence');
+    // 56 exist, 2 fired: the page must say both, or a reader sees 2 and concludes there are 2.
+    expect(sentence).toHaveTextContent('56');
+    expect(sentence).toHaveTextContent(/2 guards fired/);
+  });
+
+  it('says the guards could not be read instead of showing none', async () => {
+    render({}, true);
+    expect(await screen.findByTestId('ops-guards-error')).toBeInTheDocument();
+    // The distinction this whole estate keeps getting wrong: no evidence is not a green tick.
+    expect(screen.queryByTestId('ops-guards-table')).not.toBeInTheDocument();
   });
 });

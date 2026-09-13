@@ -32,6 +32,8 @@ import { useOpenReds } from './useOpenReds';
 import { FounderData, receiptsSentence, waitingSentence } from './founder';
 import { useFounder } from './useFounder';
 import { useHealthchecks } from './useHealthchecks';
+import { useGuards } from './useGuards';
+import { guardsSentence } from './guards';
 import { usePlacement } from './usePlacement';
 import { headroomLabel, placementState, requestLabel } from './placement';
 import { Checks, STATUS_WORD, checksSentence, notUp } from './healthchecks';
@@ -283,6 +285,7 @@ const InventoryTile = ({ data, now }: { data: InventoryData; now: number }) => {
 
 export const Ops = () => {
   const loaded = useClusterHealth();
+  const guards = useGuards();
   const reds = useOpenReds();
   const founder = useFounder();
   const checks = useHealthchecks();
@@ -412,6 +415,56 @@ export const Ops = () => {
                       </td>
                       <td>{requestLabel(p)}</td>
                       <td>{headroomLabel(p)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Sheet>
+            )}
+          </>
+        )}
+      </Section>
+      <Section
+        title="Guards"
+        blurb="Every guard this estate has, what fires it, what it refused, and what happens next. A guard that has not fired is shown as no evidence -- never as working."
+        testId="ops-guards-section"
+      >
+        {guards.state === 'loading' && (
+          <Waiting testId="ops-guards-loading">Reading the guard inventory.</Waiting>
+        )}
+        {guards.state === 'error' && (
+          <Unread testId="ops-guards-error">
+            The guard inventory could not be read, so the state of every guard is unknown: {guards.error}
+          </Unread>
+        )}
+        {guards.state === 'ready' && (
+          <>
+            <Text variant="body-medium" data-testid="ops-guards-sentence">
+              {guards.total} guards exist. {guardsSentence(guards.rows, 1440)}
+            </Text>
+            {guards.unreadable.map(u => (
+              <Unread key={u} testId="ops-guards-unreadable">
+                Could not be read: {u}
+              </Unread>
+            ))}
+            {guards.rows.length > 0 && (
+              <Sheet testId="ops-guards-table">
+                <thead>
+                  <tr>
+                    <th>Guard</th>
+                    <th>What it does</th>
+                    <th>Fired</th>
+                    <th>Refused</th>
+                    <th>Last</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {guards.rows.map(r => (
+                    <tr key={r.guard} data-testid="ops-guard">
+                      <td>{r.name}</td>
+                      <td>{r.what || '—'}</td>
+                      <td>{r.events}</td>
+                      <td>{r.blocked}</td>
+                      <td>{r.lastAt.replace('T', ' ').replace(/\.\d+/, '')}</td>
                     </tr>
                   ))}
                 </tbody>
