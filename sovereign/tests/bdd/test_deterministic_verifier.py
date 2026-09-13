@@ -670,22 +670,48 @@ def the_patch_passes(context: dict[str, Any]) -> None:
     "the Deterministic Verifier generates a cryptographic attestation signature via Sigstore"
 )
 def the_verifier_attests(context: dict[str, Any]) -> None:
+    """The attestation is what the feature's sentence says: a Sigstore artifact.
+
+    This step used to require a 64-byte Ed25519 signature, because cosign was
+    absent when it was written and the estate key was the only signer. cosign
+    v3.1.3 is now installed, so the sentence "via Sigstore" is true of the code
+    and this step grades BOTH shapes rather than the substitute alone -- a
+    Sigstore bundle where one exists, the Ed25519 envelope where it does not.
+    """
     verdict = context["good"]
     assert verdict.get("ok") is True, (
         f"the correct patch failed verification: {verdict!r}"
     )
+    from sovereign.verifier import verify_attestation
+
     attestation = verdict.get("attestation")
     assert attestation, f"no attestation was minted: {verdict!r}"
-    assert attestation.get("signature"), "the attestation carries no signature"
     assert attestation.get("subject"), "the attestation names no subject"
+    # The signature must cover the artifact, or it attests nothing.
+    assert attestation["subject"] == verdict["subject_digest"], (
+        "the attestation's subject is not the verified artifact's digest"
+    )
+
+    if attestation.get("scheme") == "sigstore-bundle":
+        bundle = attestation["bundle"]
+        assert bundle.get("mediaType") == (
+            "application/vnd.dev.sigstore.bundle.v0.3+json"
+        ), f"not a Sigstore bundle: {bundle.get('mediaType')!r}"
+        signature = bundle.get("messageSignature", {}).get("signature")
+        assert signature, "the Sigstore bundle carries no message signature"
+        material = bundle.get("verificationMaterial", {})
+        assert material.get("tlogEntries"), (
+            "a real Sigstore bundle carries a Rekor transparency log entry"
+        )
+        verified = verify_attestation(attestation, verdict["subject_digest"])
+        assert verified is True, "cosign itself refused the bundle this verifier minted"
+        return
+
+    assert attestation.get("signature"), "the attestation carries no signature"
     signature = base64.b64decode(attestation["signature"])
     assert len(signature) == 64, (
         "an Ed25519 signature is 64 bytes; got "
         f"{len(signature)} -- this is not a real signature"
-    )
-    # The signature must cover the artifact, or it attests nothing.
-    assert attestation["subject"] == verdict["subject_digest"], (
-        "the attestation's subject is not the verified artifact's digest"
     )
 
 
@@ -822,25 +848,75 @@ def the_payload_is_applied(context: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_attestation_is_sigstore_shaped() -> None:
-    """Sigstore is absent on this machine; the attestation must say so.
+def test_the_attestation_reports_what_it_actually_is() -> None:
+    """The attestation says which of the two schemes it used, and why.
 
-    Measured 2026-09-13: `cosign`, `sigstore`, `slsa-verifier` and `rekor-cli`
-    are all absent from PATH. The Verifier therefore signs with the estate's own
-    Ed25519 key and emits a Sigstore-SHAPED envelope, and this test records the
-    fields a real Sigstore bundle would add on the day one exists. It fails if
-    someone changes the envelope to claim more than is true.
+    This test was written to fail the day cosign appeared, and it did: on
+    2026-09-13, with `ABSENT cosign` recorded, the estate key was the only
+    signer. Then `brew install cosign` put v3.1.3 at /usr/local/bin/cosign and
+    this test failed with its own message -- "wire the real Sigstore path" --
+    which is the mechanism working. The real path is now wired, and this test
+    grades BOTH states so neither can be claimed while the other is true.
+
+    Where cosign is present the shape must name the real scheme and the real
+    installed version. Where it is absent the shape must name the three fields
+    a real bundle would add. A shape that reports sigstore_present true while
+    the scheme is the estate key is the half-claim this test exists to refuse.
     """
     from sovereign.verifier import attestation_shape
 
     shape = attestation_shape()
-    assert shape["scheme"] == "estate-ed25519"
-    assert shape["sigstore_present"] is False, (
-        "cosign appeared on this machine: wire the real Sigstore path instead of "
-        "the estate key, and update this test"
+    if shape["sigstore_present"]:
+        assert shape["scheme"] == "sigstore-bundle", (
+            "cosign is present, so the attestation must BE a Sigstore bundle; "
+            f"it reports {shape['scheme']!r}"
+        )
+        assert shape["signed_by"], (
+            "a real Sigstore claim must name the version that made it"
+        )
+        assert shape["has_tlog_entry"] is True, (
+            "a real Sigstore bundle carries a Rekor transparency log entry"
+        )
+        assert "fulcio_certificate" in shape["missing_vs_sigstore"], (
+            "the estate-held key still has no Fulcio identity, and must say so"
+        )
+    else:
+        assert shape["scheme"] == "estate-ed25519"
+        assert "rekor_log_index" in shape["missing_vs_sigstore"], (
+            "the shape must name what a real Sigstore bundle would add"
+        )
+
+
+def test_a_real_sigstore_bundle_verifies_and_a_wrong_subject_does_not() -> None:
+    """The real signing path, exercised end to end.
+
+    Skipped when cosign is absent rather than silently passing, so an absent
+    Sigstore cannot read as a working one.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    import pytest
+
+    from sovereign.verifier import sign, verify_attestation
+
+    if shutil.which("cosign") is None:
+        pytest.skip("cosign is absent; the real Sigstore path cannot be exercised")
+
+    subject = "c0ffee" * 10 + "c0ff"
+    attestation = sign(subject, ledger_root=Path(tempfile.mkdtemp()))
+    assert attestation["scheme"] == "sigstore-bundle", (
+        "cosign is on PATH, so sign() must produce a real bundle"
     )
-    assert "rekor_log_index" in shape["missing_vs_sigstore"], (
-        "the shape must name what a real Sigstore bundle would add"
+    assert attestation["media_type"] == (
+        "application/vnd.dev.sigstore.bundle.v0.3+json"
+    )
+    material = attestation["bundle"]["verificationMaterial"]
+    assert material.get("tlogEntries"), "a real bundle carries a Rekor entry"
+    assert verify_attestation(attestation, subject) is True
+    assert verify_attestation(attestation, "0" * len(subject)) is False, (
+        "a signature over one subject must never admit another"
     )
 
 
