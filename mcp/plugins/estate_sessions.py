@@ -50,6 +50,7 @@ behaviour; every one is an env var with a container-local default, wired in
 from __future__ import annotations
 
 import datetime as dt
+import inspect
 import os
 from typing import Any
 
@@ -265,8 +266,31 @@ def get_session(name: str, cfg: dict | None = None) -> dict:
     return build_envelope(sessions=[session])
 
 
+# Module-level aliases of the two envelope builders. `register_mcp_tools` defines an
+# `async def list_sessions` INSIDE itself which shadows the module-level function of the same name,
+# so the tool bodies call these instead -- a name bound out here, where nothing shadows it.
+_envelope_list_sessions = list_sessions
+_envelope_get_session = get_session
+
+
 @hookimpl
 def register_mcp_tools(datasette, mcp):
+    # The two functions below SHADOW the module-level `list_sessions`/`get_session` of the same
+    # name, so a bare `return list_sessions()` inside one calls ITSELF: the tool answers with the
+    # repr of its own coroutine object instead of the envelope.
+    #
+    # Measured 2026-09-13 against the live door, which is the only place it was visible -- the unit
+    # tests call the module-level functions directly and never touched these wrappers:
+    #
+    #     $ curl -X POST https://mcp.mumchimp.com/estate/mcp -d '{..."tools/call"...'
+    #     "<coroutine object register_mcp_tools.<locals>.list_sessions at 0xffffb7706a40>"
+    #
+    # `_envelope_list_sessions` / `_envelope_get_session` are module-level aliases (defined just
+    # above this function), not locals. A bare `list_sessions` here is the local being defined
+    # below -- Python makes the name local for the whole body -- so even an alias cannot be written
+    # as `envelope_list_sessions = list_sessions` (UnboundLocalError, measured), and reading it out
+    # of `sys.modules[__name__]` fails when the plugin is loaded by path under a different name.
+    # of a module-namespace lookup fails when the plugin is loaded by path under another name.
     @mcp.tool()
     async def list_sessions() -> dict:
         """The sessions the founder has been running: one MCP tool, one envelope.
@@ -279,7 +303,13 @@ def register_mcp_tools(datasette, mcp):
         `count` is the number of session rows; every session carries
         `session_id, name, path, row_count, last_updated, lifecycle`.
         """
-        return list_sessions()
+        result = _envelope_list_sessions()
+        if inspect.isawaitable(result):
+            raise RuntimeError(
+                "list_sessions returned an awaitable: the module-level function is "
+                "shadowed and the tool would answer with a coroutine object"
+            )
+        return result
 
     @mcp.tool()
     async def get_session(name: str) -> dict:
@@ -289,4 +319,10 @@ def register_mcp_tools(datasette, mcp):
         `list_sessions` envelope for the available names). Returns
         `available: false` when the name does not match, never raises.
         """
-        return get_session(name)
+        result = _envelope_get_session(name)
+        if inspect.isawaitable(result):
+            raise RuntimeError(
+                "get_session returned an awaitable: the module-level function is "
+                "shadowed and the tool would answer with a coroutine object"
+            )
+        return result
