@@ -21,14 +21,14 @@ Exit code `1` (the registry expects non-zero). ✓
 ```
 [32m<timestamp> +0100[0m - dagster - [34mWARNING[0m - No dagster instance configuration file (dagster.yaml) found at <tmpdir>. Defaulting to loading and storing all metadata with <tmpdir>. If this is the desired behavior, create an empty dagster.yaml file in <tmpdir>.
 [32m<timestamp> +0100[0m - dagster - [34mERROR[0m - [31mValidation failed for code location relative-import.py:
-dagster._core.errors.DagsterImportError: Encountered ImportError: `attempted relative import with no known parent package` while importing module relative-import from file /private/tmp/ag-otlp/tests/fixtures/definitions/relative-import.py. Consider using the module-based options `-m` for CLI-based targets or the `python_module` workspace target.
+dagster._core.errors.DagsterImportError: Encountered ImportError: `attempted relative import with no known parent package` while importing module relative-import from file /Users/chidionyema/dev/code/wt-one/tests/fixtures/definitions/relative-import.py. Consider using the module-based options `-m` for CLI-based targets or the `python_module` workspace target.
 Stack Trace:
   [7 dagster system frames hidden, run with --verbose to see the full stack trace]
 The above exception was caused by the following exception:
 ImportError: attempted relative import with no known parent package
 Stack Trace:
   [4 dagster system frames hidden, run with --verbose to see the full stack trace]
-  File "/private/tmp/ag-otlp/tests/fixtures/definitions/relative-import.py", line 12, in <module>
+  File "/Users/chidionyema/dev/code/wt-one/tests/fixtures/definitions/relative-import.py", line 12, in <module>
     from .describe import describe  # noqa: F401  -- the break, on purpose
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 [0m

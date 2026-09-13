@@ -52,6 +52,10 @@ _SIGNAL = re.compile(
     r"|\bnot ok\b|\bpanic:\b|\bfatal:\b|\bdenied\b|\brefused\b"
     r"|\bcrash(?:ed|loopbackoff)?\b|\bvulnerab\w*\b|\bseverity\b|\bCRITICAL\b"
     r"|\bexit(?:ed)? (?:code )?[1-9]\d*\b"
+    # A MERGE CONFLICT IS A FINDING, and nothing above matched it: `a git conflict on bin/x`
+    # carries no failing word, so the fingerprint returned None and the breaker stayed quiet on
+    # the one cause this whole engine exists to group. Found by the test, 2026-09-13.
+    r"|\bconflict(?:s|ed|ing)?\b"
     r")"
 )
 

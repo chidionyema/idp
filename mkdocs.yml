@@ -342,6 +342,9 @@ nav:
       - secrets: gates/static-secret.md
       - owners: gates/owner-account.md
       - binds: gates/bind-audit.md
+      - sleep-ban: gates/sleep-ban.md
+      - helmrelease-drift: gates/helmrelease-drift-is-detectable.md
+      - breaker-enforcement: gates/breaker-enforcement.md
       # The estate-twin's three rules. A rule generates docs/gates/<id>.md and
       # tests/test_gate_demo.py refuses one that is not reachable in the nav.
       - graphview: gates/estate-graph-view.md
