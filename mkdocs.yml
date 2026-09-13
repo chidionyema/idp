@@ -60,6 +60,8 @@ nav:
   - How-to:
       - how-to/index.md
       - Bitwarden human vault, the founder's steps: how-to/bitwarden-human-vault.md
+      - Onboarding the MCP door: how-to/onboarding/mcp-door.md
+      - Onboarding the evidence recorder: how-to/onboarding/evidence-recorder.md
       - Onboarding the evidence layer: how-to/onboarding/evidence.md
       - Boot Dagster and Superset: how-to/boot-dagster-and-superset.md
       - Prove a change in the shadow: how-to/prove-a-change-in-the-shadow.md
@@ -105,13 +107,16 @@ nav:
       - Breaker enforcement: tutorials/demo/breaker.md
       - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
-      - HelmRelease drift coverage: tutorials/demo/helmrelease-drift.md
+      - Secret blockers: tutorials/demo/secret-blockers.md
+      - Health check names a real object: tutorials/demo/healthcheck-exists.md
       - epistemic: tutorials/demo/epistemic.md
       - Epistemic gate (module): tutorials/demo/epistemic_firewall.py.md
       - trajectory: tutorials/demo/trajectory.md
       - Trajectory lock (module): tutorials/demo/trajectory_lock.py.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
+      - The MCP door: tutorials/demo/mcp-door.md
+      - The evidence recorder: tutorials/demo/evidence-recorder.md
       - Evidence layer: tutorials/demo/evidence.md
       - Estate next: tutorials/demo/estate-next.md
       - Messaging: tutorials/demo/messaging.md
@@ -218,7 +223,8 @@ nav:
       - Every gate, with its output: how-to/onboarding/gate-demo.md
       - Portal: how-to/onboarding/idp.md
       - Estate compiler: how-to/onboarding/intent.md
-      - HelmRelease drift coverage: how-to/onboarding/helmrelease-drift.md
+      - Secret blockers: how-to/onboarding/secret-blockers.md
+      - Health check names a real object: how-to/onboarding/healthcheck-exists.md
       - Estate Mac screen: how-to/onboarding/founder-screen-access.md
       - Conscience: how-to/onboarding/conscience.md
       - Estate showcase: how-to/onboarding/estate-showcase.md
@@ -378,7 +384,9 @@ nav:
       - epistemic: gates/epistemic.md
       - trajectory: gates/trajectory.md
       - circuit-breaker: gates/circuit-breaker.md
-      - helmrelease-drift: gates/helmrelease-drift-is-detectable.md
+      - secret-blockers: gates/externalsecret-blockers-are-loud.md
+      - drift-blind: gates/drift-reads-blind-not-clean.md
+      - healthcheck-exists: gates/healthcheck-names-a-real-object.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
