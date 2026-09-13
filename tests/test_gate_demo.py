@@ -185,7 +185,9 @@ class TestBlindIsNotAPass:
 
 
 class TestABlindPageNamesTheGateNotItsArguments:
-    def test_a_present_gate_with_an_absent_fixture_argument_is_not_blind(self, tmp_path):
+    def test_a_present_gate_with_an_absent_fixture_argument_is_not_blind(
+        self, tmp_path
+    ):
         """A refusing case names something that does not qualify -- that is the point of it.
 
         Measured 2026-09-13 on law32-demo-onboarding: its refuse case is
