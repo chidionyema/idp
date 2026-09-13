@@ -59,6 +59,13 @@ def document_shape(context):
         )
 
 
+@given("the compiled document is published")
+def document_published(context):
+    """The document reaches the branch the portal reads, which is what makes it visible at all."""
+    assert APP_CONFIG.is_file(), f"{APP_CONFIG} does not exist"
+    context["app_config"] = APP_CONFIG.read_text()
+
+
 @when("a pull request is opened")
 def pr_opened(context):
     context["runs_compiler"] = "idp-compile-helm" in context["ci"]

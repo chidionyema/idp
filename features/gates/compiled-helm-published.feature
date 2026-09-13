@@ -13,12 +13,14 @@ Feature: the compiled estate is published and read on the portal
 
   Scenario: the compiled document reaches the portal
     Given the compiled document is written by CI
+    And the compiled document is published
     When the render force-pushes the estate state
     Then the compiled document is carried with the other rendered state
     And the portal reads it through the proxy it already has
 
   Scenario: a disagreement between a claim and a rendered value is visible
-    Given the compiled document names a workload and its rendered requests
+    Given the compiled document is published
+    And the compiled document names a workload and its rendered requests
     When the portal shows it
     Then a workload whose comment and value disagree appears with the rendered value
     And the number shown is the one the chart renders, never the one the file claims

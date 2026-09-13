@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -303,6 +304,22 @@ def main() -> int:
 
     if _run(["helm", "version"]).returncode != 0:
         print("BLIND compiled-helm: helm is not on PATH", file=sys.stderr)
+        return 2
+
+    # A helm older than the charts need reports a chart as BROKEN when the tool is what is old.
+    # Measured 2026-09-12: the langfuse chart calls `fromToml`, added in Helm 3.17, so under 3.16.4
+    # that release fails with "function fromToml not defined" while every other chart renders. A
+    # gate whose answer depends on which helm the caller happens to have is not a measurement, so
+    # this refuses instead of reporting a false defect.
+    version_out = _run(["helm", "version", "--short"]).stdout.strip()
+    m = re.match(r"v?(\d+)\.(\d+)", version_out)
+    if not m or (int(m.group(1)), int(m.group(2))) < (3, 17):
+        print(
+            f"BLIND compiled-helm: helm {version_out or 'unknown'} is older than 3.17, which the "
+            "estate's charts require (langfuse calls `fromToml`). Install a newer helm; do not "
+            "read this as a chart defect.",
+            file=sys.stderr,
+        )
         return 2
 
     repos = _chart_repos()

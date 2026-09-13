@@ -33,6 +33,8 @@ import { FounderData, receiptsSentence, waitingSentence } from './founder';
 import { useFounder } from './useFounder';
 import { useHealthchecks } from './useHealthchecks';
 import { usePlacement } from './usePlacement';
+import { useCompiled } from './useCompiled';
+import { cpuLabel, guaranteed } from './compiled';
 import { headroomLabel, placementState, requestLabel } from './placement';
 import { Checks, STATUS_WORD, checksSentence, notUp } from './healthchecks';
 import {
@@ -287,6 +289,7 @@ export const Ops = () => {
   const founder = useFounder();
   const checks = useHealthchecks();
   const placement = usePlacement();
+  const compiled = useCompiled();
   const inventory = useInventory();
   const now = Date.now();
   return (

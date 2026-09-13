@@ -174,7 +174,11 @@ jobs:
         if: matrix.suite == 'acceptance'
         uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
-          version: v3.16.4
+          # 4.x, not 3.x. The langfuse chart calls `fromToml`, which 3.16 does not have, so a
+          # 3.x pin fails to render that release with "function fromToml not defined" while every
+          # other chart renders -- a skew between the runner and a developer's machine is exactly
+          # the silent disagreement this gate exists to remove. The pin moves with the charts.
+          version: v4.2.4
       - name: compile the estate's Helm releases (a comment is not a value)
         if: matrix.suite == 'acceptance'
         run: |
