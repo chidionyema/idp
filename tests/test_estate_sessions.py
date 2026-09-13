@@ -17,7 +17,9 @@ shell=True below").
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
+import inspect
 import os
 import pytest
 from pathlib import Path
@@ -26,6 +28,19 @@ from pathlib import Path
 # estate_sessions.py reads ESTATE_CATALOG_PATH from the environment. The fixture path is
 # resolved relative to the test file so a developer running this on a different machine gets the
 # same rows as CI does.
+import importlib.util
+
+# Loaded by file path, which is how this repository loads an MCP plugin (see
+# tests/test_estate_memory_mcp.py): `mcp/` carries no __init__.py, so `from mcp.plugins... import`
+# is a ModuleNotFoundError and this whole file failed to collect. Measured 2026-09-13 on main:
+# 9 of 9 tests errored on that import, which is why nothing here ever reached the tool wrappers.
+SPEC = importlib.util.spec_from_file_location(
+    "estate_sessions",
+    Path(__file__).resolve().parents[1] / "mcp" / "plugins" / "estate_sessions.py",
+)
+sessions_plugin = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(sessions_plugin)
+
 FIXTURE_PATH = (
     Path(__file__).parent / "fixtures" / "sessions" / "catalog-info.yaml"
 ).resolve()
@@ -53,7 +68,7 @@ def test_list_sessions_filters_to_session_paths(fake_catalog_path):
     The non-session row at estate/path =~/.estate/state/other.jsonl must not appear in the
     result even though its kind, type and tags would otherwise match.
     """
-    from mcp.plugins.estate_sessions import list_sessions
+    list_sessions = sessions_plugin.list_sessions
 
     env = list_sessions()
     assert env["available"] is True
@@ -68,7 +83,7 @@ def test_list_sessions_shapes_each_session(fake_catalog_path):
 
     row_count is the integer the catalogue stores as a string in estate/rows.
     """
-    from mcp.plugins.estate_sessions import list_sessions
+    list_sessions = sessions_plugin.list_sessions
 
     env = list_sessions()
     by_name = {s["name"]: s for s in env["sessions"]}
@@ -106,7 +121,7 @@ def test_list_sessions_envelope_when_catalog_missing(monkeypatch, tmp_path):
     fabricated. list_sessions takes the same posture.
     """
     monkeypatch.setenv("ESTATE_CATALOG_PATH", str(tmp_path / "does-not-exist.yaml"))
-    from mcp.plugins.estate_sessions import list_sessions
+    list_sessions = sessions_plugin.list_sessions
 
     env = list_sessions()
     assert env["available"] is False
@@ -117,7 +132,7 @@ def test_list_sessions_envelope_when_catalog_missing(monkeypatch, tmp_path):
 
 def test_get_session_returns_one_row(fake_catalog_path):
     """get_session(name) returns one envelope with one session; unknown names return available:false."""
-    from mcp.plugins.estate_sessions import get_session
+    get_session = sessions_plugin.get_session
 
     env = get_session("claude-state-prompt-ledger-private-tmp-claude-501-Users-chidion")
     assert env["available"] is True
@@ -129,7 +144,7 @@ def test_get_session_returns_one_row(fake_catalog_path):
 
 def test_get_session_unknown_name(fake_catalog_path):
     """A name that doesn't match any row returns available:false without raising."""
-    from mcp.plugins.estate_sessions import get_session
+    get_session = sessions_plugin.get_session
 
     env = get_session("claude-state-prompt-ledger-no-such-row")
     assert env["available"] is False
@@ -142,7 +157,7 @@ def test_get_session_unknown_name(fake_catalog_path):
 
 def test_get_session_rejects_path_traversal(fake_catalog_path):
     """A name with a slash cannot be passed through to the catalogue as a path segment."""
-    from mcp.plugins.estate_sessions import get_session
+    get_session = sessions_plugin.get_session
 
     env = get_session("claude-state-prompt-ledger-../escape")
     assert env["available"] is False
@@ -156,7 +171,7 @@ def test_is_session_row_recognises_only_prompt_ledger_path():
     estate/kind, estate/rows and metadata.name. Filter on the path, never on a tag, because
     earlier catalogues (pre-2026-09-07) render the same rows without the estate-internal tag.
     """
-    from mcp.plugins.estate_sessions import is_session_row
+    is_session_row = sessions_plugin.is_session_row
 
     row = {
         "kind": "Resource",
@@ -196,7 +211,7 @@ def test_is_session_row_recognises_only_prompt_ledger_path():
 
 def test_build_envelope_round_trip(fake_catalog_path):
     """build_envelope is the one constructor for both list and get, so they share the envelope shape."""
-    from mcp.plugins.estate_sessions import build_envelope
+    build_envelope = sessions_plugin.build_envelope
 
     now = dt.datetime(2026, 9, 10, 12, 0, 0, tzinfo=dt.timezone.utc)
     env = build_envelope(
@@ -225,7 +240,8 @@ def test_resolve_session_prefix_uses_env_when_supplied():
     default that resolves through ``$HOME`` at call-time. The proxy door's own plugin
     tests cover the env plumbing; this test exercises the seam the lint would catch.
     """
-    from mcp.plugins.estate_sessions import config, is_session_row
+    config = sessions_plugin.config
+    is_session_row = sessions_plugin.is_session_row
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -261,3 +277,65 @@ def test_resolve_session_prefix_uses_env_when_supplied():
             )
         finally:
             os.environ.pop("ESTATE_PROMPT_LEDGER_PREFIX", None)
+
+
+class TestTheMcpToolWrappers:
+    """The layer the door calls, which nothing tested until it answered with a coroutine object.
+
+    `register_mcp_tools` defines an `async def list_sessions` INSIDE itself, shadowing the
+    module-level function of the same name. A bare `return list_sessions()` there therefore calls
+    the wrapper itself, and the tool answers with the repr of its own coroutine:
+
+        $ curl -X POST https://mcp.mumchimp.com/estate/mcp -d '{... "tools/call" ...}'
+        "<coroutine object register_mcp_tools.<locals>.list_sessions at 0xffffb7706a40>"
+
+    Every test above calls the module-level functions directly, so all of them passed while the
+    live door carried that string. `isError: false` too, so nothing reported it as a fault. The
+    estate's own `bin/idp-mcp-door` passed at the same time because it only calls tools/list.
+
+    These tests register the tools for real and CALL them, which is the only thing that can see it.
+    """
+
+    @staticmethod
+    def _registered_tools():
+        """Run `register_mcp_tools` against a stand-in, capturing what it registers."""
+        mod = sessions_plugin
+        captured = {}
+
+        class FakeMcp:
+            def tool(self):
+                def deco(fn):
+                    captured[fn.__name__] = fn
+                    return fn
+
+                return deco
+
+        mod.register_mcp_tools(object(), FakeMcp())
+        assert set(captured) == {"list_sessions", "get_session"}, sorted(captured)
+        return captured
+
+    def test_list_sessions_tool_returns_the_envelope_not_a_coroutine(
+        self, fake_catalog_path
+    ):
+        tools = self._registered_tools()
+        result = asyncio.run(tools["list_sessions"]())
+        assert not inspect.isawaitable(result), (
+            "the tool returned an awaitable; the live door serialises that as "
+            "'<coroutine object ...>' with isError false, so it reads as success"
+        )
+        assert isinstance(result, dict), type(result)
+        assert "sessions" in result and "count" in result
+        assert result["count"] >= 1, result
+
+    def test_get_session_tool_returns_the_envelope_not_a_coroutine(
+        self, fake_catalog_path
+    ):
+        tools = self._registered_tools()
+        listing = asyncio.run(tools["list_sessions"]())
+        name = listing["sessions"][0]["name"]
+        result = asyncio.run(tools["get_session"](name))
+        assert not inspect.isawaitable(result), (
+            "the tool returned an awaitable rather than the envelope"
+        )
+        assert isinstance(result, dict)
+        assert result["sessions"][0]["name"] == name
