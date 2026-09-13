@@ -246,3 +246,38 @@ def test_drifts_group_by_pull_request_and_unattributed_ones_group_apart() -> Non
     assert sorted(groups) == [0, 3284]
     assert len(groups[3284]) == 2
     assert len(groups[0]) == 1
+
+
+# --- a suspended row is a decision, not a defect -----------------------------
+
+
+def test_a_suspended_object_is_not_a_drift_whatever_its_status_says() -> None:
+    """Measured 2026-09-13: `temporal` carries `spec.suspend: true`.
+
+    The founder suspended it on 2026-08-30 -- "what I spec'd was not what was
+    built" (crew#284) -- so Flux stopped reconciling it. Its last recorded
+    condition stayed `HealthCheckFailed / InProgress` and its old pods kept
+    running, so a reader of the status alone sees a failure that is in fact a
+    decision. Reporting it is how a watcher teaches people to ignore it.
+    """
+    obj = kustomization("temporal", message="timeout waiting for: HelmRelease/temporal")
+    # Flux still holds the stale condition; the spec is what makes it suspended.
+    obj["spec"] = {"suspend": True}
+    assert sync.drifts_from([obj]) == []
+
+
+def test_a_suspended_helmrelease_is_not_a_drift() -> None:
+    obj = helmrelease("lago", message="Helm install failed")
+    obj["spec"] = {"suspend": True}
+    assert sync.drifts_from([obj]) == []
+
+
+def test_suspend_false_is_still_graded() -> None:
+    """`suspend: false` is the estate's switch back on, and it must be watched.
+
+    The commerce rows carry `suspend: false` and Flux applies them, so a failure
+    there is a real failure.
+    """
+    obj = helmrelease("lago", message="Helm install failed")
+    obj["spec"] = {"suspend": False}
+    assert len(sync.drifts_from([obj])) == 1

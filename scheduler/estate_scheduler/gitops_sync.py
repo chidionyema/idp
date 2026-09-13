@@ -65,7 +65,6 @@ HTTP_TIMEOUT_S = int(os.environ.get("ESTATE_GITOPS_HTTP_TIMEOUT_SECONDS", "20"))
 # this is how the sensor updates it instead of adding to it; a thread per poll
 # would bury the cause under its own symptoms.
 COMMENT_MARKER = "<!-- estate-drift -->"
-
 # The flux-system namespace owns the Kustomizations; a HelmRelease lives in the
 # namespace it deploys into. Both are overridable so no file names a machine.
 FLUX_NAMESPACE = os.environ.get("ESTATE_FLUX_NAMESPACE", "flux-system")
@@ -84,7 +83,7 @@ def _ready_condition(obj: dict) -> Optional[dict]:
 def drifts_from(objects: Iterable[dict]) -> List[Dict[str, Any]]:
     """Every object Flux is not happy with, as one flat list of findings.
 
-    Three readings, each deliberate:
+    Four readings, each deliberate:
 
     * A `Ready` condition that is `True` is not a drift. A sensor that reports a
       healthy estate is a sensor nobody reads (LAW 28).
@@ -94,10 +93,20 @@ def drifts_from(objects: Iterable[dict]) -> List[Dict[str, Any]]:
     * NO `Ready` CONDITION AT ALL IS NOT A DRIFT. An object that was just applied
       has not reported yet, and reading that silence as breakage is how a watcher
       pages on every single apply. `UNKNOWN` is not a failure (crew#656 phase 0).
+    * A SUSPENDED OBJECT IS NOT A DRIFT, WHATEVER ITS LAST STATUS SAYS. Measured
+      2026-09-13: `temporal` carries `spec.suspend: true` on the founder's word
+      (crew#284, "what I spec'd was not what was built"), so Flux stopped
+      reconciling it on 2026-08-30 -- while its last recorded condition stayed
+      `HealthCheckFailed / InProgress` and its old pods kept running. Reporting
+      that as a drift is reporting a decision as a defect, which is how a watcher
+      teaches people to ignore it.
     """
     out: List[Dict[str, Any]] = []
     for obj in objects:
         if not isinstance(obj, dict):
+            continue
+        spec = obj.get("spec") or {}
+        if spec.get("suspend") is True:
             continue
         cond = _ready_condition(obj)
         if cond is None or cond.get("status") == "True":
