@@ -2532,3 +2532,36 @@ rules:
   why: 'Measured 2026-09-13: a bare run over all of bin/ reports `FAIL: 257 of 286 script(s) do not
     run`. The estate is genuinely short, and the shortfall is stated here rather than asserted
     green. This row closes that gap one script at a time; the count may only fall.'
+- id: deterministic-verifier
+  label: verifier
+  statement: 'A claim of completed work is not the agent''s to make: the agent may only propose a patch into an ephemeral ledger, three graders the proposer does not control run against the exact bytes -- structural (compile), symbolic (Z3 over the declared guard contract, which refuses to discharge "tests pass"), and execution (a sterile tree whose exit code is the verdict) -- and an attestation is minted only when all three pass, bound to the SHA-256 of the artifact actually verified. Take the claim away from the claimant'
+  law: founder 2026-09-13 "the fact u are able toi lie eans he his rules isnt operation al and the firs thig we need to addres" / "thats why i dont belive clains without hard prrov 3 different w3ys"
+  origin: incident 2026-09-13, an agent's first-person claim of done accepted with no third party behind it; see docs/tickets/2026-09-13-deterministic-verifier.md
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-verifier-oath
+  fixtures:
+    must_fail: tests/fixtures/verifier-oath/no-seal
+    must_pass: tests/fixtures/verifier-oath/sealed
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/verifier-oath/no-seal
+    note: a proposal the execution stage fails -- the seal is never minted, so no claim leaves
+  - expect: pass
+    args:
+    - tests/fixtures/verifier-oath/sealed
+    note: the same proposal with a passing execution stage -- the attestation is bound to the
+      SHA-256 of the exact bytes that were graded, and a byte changed afterwards no longer verifies
+  - expect: pass
+    live: true
+    args: []
+    note: 'LIVE: the three-stage gauntlet is run against the real module in this tree with the
+      binding suite CI runs, so the row grades the estate rather than an example. Named with the
+      cwd it needs -- the binding resolves its .feature through bdd_features_base_dir in
+      sovereign/pytest.ini, and it has to run from sovereign/, which is how .github/workflows/ci.yml
+      line 227 invokes it. A root-cwd run dies on import with IndexError: list index out of range.'
+  ok: a patch is admitted only through the three-stage gauntlet, the ledger is the only place an agent can write, and the seal binds the attestation to the bytes that were actually graded (measured 2026-09-13, 9 passed, PYTEST_RC=0)
+  fail: a claim of completed work reaches the estate on the word of the agent that made it, with no structural, symbolic or execution grader in front of it, or an attestation whose subject is not the SHA-256 of the graded artifact
