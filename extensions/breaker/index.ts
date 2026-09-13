@@ -22,6 +22,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { spawnSync } from "node:child_process";
 import { decide } from "./decide.mjs";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
@@ -35,15 +36,53 @@ const ROOT =
   process.env.ESTATE_ROOT ||
   path.join(process.env.HOME || "~", "dev", "code", "idp");
 
-/** Findings about a target, pulled out of a tool's result. Coarse on purpose: the breaker
- *  fingerprints, so this only has to hand it the text. */
-function findingsFrom(toolName: string, input: unknown, output: unknown): string | null {
-  const text = typeof output === "string" ? output : JSON.stringify(output ?? "");
-  if (!text || text.length < 20) return null;
+/** Findings about a target, pulled out of a tool's result.
+ *
+ *  THE MISFIRE OF 2026-09-13, AND WHY THIS DELEGATES INSTEAD OF DECIDING.
+ *
+ *  Two copies of "what counts as a finding" is how this broke. The library in
+ *  bin/idp-circuit-breaker already knew the rule; this file reimplemented it as "return the tool's
+ *  raw output", so `echo hello` and `cat .git/HEAD` registered as findings, three repeated
+ *  commands tripped N=3, and the guard locked bash and read -- the two tools a session needs to
+ *  investigate or fix anything. It locked a working session for hours and could not be cleared
+ *  from inside, because every clearing command was itself a bash call. R38: a guard that refuses
+ *  correct work is an outage.
+ *
+ *  So there is now ONE rule, in the library, and this asks it. The library returns null when a
+ *  result carries no finding -- a successful command, a shell builtin echoing its input, an empty
+ *  result -- and a fingerprint when it does, and that single answer decides everything here.
+ */
+function findingsFrom(toolName: string, input: unknown, output: unknown): string[] {
   // Only reads and queries produce findings worth counting. A write is a change, not a diagnosis,
   // and counting those would lock the tool an agent needs to fix the thing.
-  if (toolName !== "bash" && toolName !== "read") return null;
-  return text;
+  if (toolName !== "bash" && toolName !== "read") return [];
+  const text = typeof output === "string" ? output : JSON.stringify(output ?? "");
+  if (!text) return [];
+  const fp = fingerprintVia(text);
+  return fp ? [fp] : [];
+}
+
+/** Ask bin/idp-circuit-breaker for the fingerprint of this text.
+ *
+ *  Shelled out rather than reimplemented: the extension cannot import the Python module, and a
+ *  second copy of the rule is exactly the defect being fixed. The call is O(1) and only runs for
+ *  a read/query that produced output at all.
+ */
+function fingerprintVia(text: string): string | null {
+  try {
+    const r = spawnSync("python3", [path.join(ROOT, "bin", "idp-circuit-breaker"), "--fingerprint"], {
+      input: text,
+      encoding: "utf-8",
+      timeout: 5000,
+    });
+    if (r.status !== 0) return null;
+    const out = (r.stdout || "").trim();
+    if (!out || out === "null") return null; // no finding: cannot lock, whatever the bytes
+    return out;
+  } catch {
+    // A guard that cannot ask must not become a guard that blocks. Nothing observed.
+    return null;
+  }
 }
 
 function append(row: Record<string, unknown>): void {
@@ -81,13 +120,14 @@ export default function (pi: ExtensionAPI) {
   // checks nine PRs produces nine targets. One target checked twice is one target, which
   // decide() already handles.
   pi.on("tool_result", async (event, _ctx) => {
-    const finding = findingsFrom(event.toolName, event.input, event.output);
-    if (!finding) return;
+    const findings = findingsFrom(event.toolName, event.input, event.output);
+    if (!findings.length) return; // no finding -> no observation -> cannot lock. The bug, fixed.
     const target =
       (event.input as { command?: string })?.command?.slice(0, 120) ??
       (event.input as { path?: string })?.path ??
       event.toolName;
-    append({ finding, target, at: new Date().toISOString(), tool: event.toolName });
+    const at = new Date().toISOString();
+    append(findings.map((finding) => ({ finding, target, at, tool: event.toolName })));
   });
 
   // THE HARD GATE. Before a read/query runs, ask whether its pattern is already proved. If it is,
