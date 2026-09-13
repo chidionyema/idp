@@ -2131,6 +2131,36 @@ rules:
     note: nine different findings across nine targets are all workable
   ok: a proved pattern disables the linear path and names the fleet lever
   fail: an agent repeats a proved diagnosis across targets, and the environment lets it
+- id: clean-tree
+  label: clean-tree
+  statement: 'A gate''s answer is only true for the tree it ran in: grading from the shared checkout while it carries uncommitted work, or from any checkout mid-merge, is refused -- three separate estate defects were reported 2026-09-12 that existed only in another session''s half-written tree'
+  law: LAW 2, docs/policy/no-agent-works-in-the-main-checkout.md
+  origin: measured 2026-09-12, defs-load-by-path BLIND and sleep-ban 14 violations, neither real on main
+  planes:
+  - ci
+  - session
+  run:
+  - python3
+  - bin/idp-clean-tree
+  fixtures:
+    must_fail: tests/fixtures/clean-tree/bad.json
+    must_pass: tests/fixtures/clean-tree/good.json
+  cases:
+  - expect: refuse
+    args: ["--state", "tests/fixtures/clean-tree/bad.json"]
+  - expect: pass
+    args: ["--state", "tests/fixtures/clean-tree/good.json"]
+  - expect: refuse
+    args: ["--state", "tests/fixtures/clean-tree/midmerge.json"]
+    note: the exact tree that produced the three false reports
+  - expect: pass
+    args: ["--state", "tests/fixtures/clean-tree/noise.json"]
+    note: a per-machine .venv is not a tree state anyone grades; a real change beside it still is
+  - expect: pass
+    live: true
+    note: a worktree cut from origin/main, which is where work is graded
+  ok: the shared checkout mid-merge is refused, and an ordinary dirty worktree is not
+  fail: bin/idp-clean-tree cannot tell a shared checkout or a mid-merge tree from a working one
 - id: healthcheck-names-a-real-object
   label: healthcheck-exists
   statement: A Kustomization's health check names an object this tree actually creates. A wait on an object nothing creates reports NotFound forever, holds every row depending on it out of the cluster, and is invisible in CI because the manifest is valid YAML naming a plausible object. An object an operator makes at runtime is ungraded and said to be ungraded, never assumed absent
