@@ -92,6 +92,16 @@ still_outside_dagster:
 - job: launchd/ai.estate.cockpit.plist.tmpl
   kind: launchd job on the laptop
   fold: 'pending: to be declared as a Dagster schedule'
+- job: launchd/ai.estate.executor.plist.tmpl
+  kind: launchd job on the laptop
+  # Same argument as otto-home3 below: this is the daemon that holds the 60-second
+  # execution ceiling OUTSIDE an agent's own process tree (founder 2026-09-13, "60
+  # secsos is the nnax"). A control that shares an identity with what it controls
+  # cannot deny it, which is why this is a daemon and not a seventh policy -- and why
+  # it cannot be a Dagster schedule. Dagster runs in the cluster; this exists so an
+  # agent still cannot hold a turn open when the cluster or the router is gone. It is
+  # a persistent daemon, not a recurring job.
+  fold: 'never: Dagster runs in the cluster, and this job is the ceiling that must hold when the cluster is gone (THE EXECUTION BOUNDARY). A scheduler that dies with the estate cannot bound the estate''s agents. It is a persistent daemon, not a recurring job.'
 - job: launchd/ai.estate.headlamp.plist.tmpl
   kind: launchd job on the laptop
   fold: 'pending: to be declared as a Dagster schedule'

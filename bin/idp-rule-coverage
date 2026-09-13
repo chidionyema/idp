@@ -27,6 +27,17 @@ import sys
 
 import yaml
 
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+# The one implementation of "this repository, never a nested copy of it". A session works in
+# linked worktrees of this same repository, so a raw rglob here reaches eight complete copies
+# of the tree plus .venv and reads every file in each as text. Measured 2026-09-13: this gate
+# did not finish inside 50 seconds locally, while the same gate on a CI checkout (no nested
+# copies) returned at once -- the two ran on different trees and disagreed about the same
+# branch. bin/treewalk.py is the estate's answer to exactly that (incident 2026-09-10, where
+# eight gates failed this way); the same file records the walker's cost, 1683 directories in
+# 1.9 seconds, because it asks git once instead of per directory.
+from treewalk import is_this_tree, walk_tree
+
 ROOT = pathlib.Path(
     os.environ.get("RULE_COVERAGE_ROOT")
     or pathlib.Path(__file__).resolve().parents[1]
@@ -57,31 +68,41 @@ def claimants(root: pathlib.Path) -> dict[str, set[str]]:
     # of the text and nothing else changes: the question stays "does anything name it".
     joint = re.compile(r"""["']\s*/\s*["']""")
     out: dict[str, set[str]] = {}
-    for f in root.rglob("*"):
-        if not f.is_file() or ".git/" in str(f):
-            continue
-        rel = f.relative_to(root).as_posix()
-        if rel.startswith(FIXTURE_TREES) or rel == LEDGER:
-            # The ledger names every fixture nothing grades; counting it as a grader would make
-            # recording an orphan the act that clears it.
-            continue
-        try:
-            text = f.read_text(errors="ignore")
-        except OSError:
-            continue
-        for m in pat.findall(joint.sub("/", text)):
-            out.setdefault(m, set()).add(rel)
+    for dirpath, _dirnames, filenames in walk_tree(root):
+        for name in filenames:
+            f = pathlib.Path(dirpath) / name
+            rel = f.relative_to(root).as_posix()
+            if rel.startswith(FIXTURE_TREES) or rel == LEDGER:
+                # The ledger names every fixture nothing grades; counting it as a grader would make
+                # recording an orphan the act that clears it.
+                continue
+            try:
+                text = f.read_text(errors="ignore")
+            except OSError:
+                continue
+            for m in pat.findall(joint.sub("/", text)):
+                out.setdefault(m, set()).add(rel)
     return out
 
 
 def entries(root: pathlib.Path) -> list[str]:
-    """Top-level entries of each fixture tree: one directory or one file per rule's pair."""
+    """Top-level entries of each fixture tree: one directory or one file per rule's pair.
+
+    Read through the same walker rather than a bare listing, and each candidate is asked
+    whether it is this tree: a nested checkout carries its own `tests/fixtures`, and counting
+    its entries here reports another session's fixtures as ungraded orphans in this branch.
+    """
     out = []
     for tree in FIXTURE_TREES:
         d = root / tree
         if not d.is_dir():
             continue
-        out += sorted(f"{tree}/{p.name}" for p in d.iterdir() if not p.name.startswith("."))
+        for p in sorted(d.iterdir()):
+            if p.name.startswith("."):
+                continue
+            if not is_this_tree(p, root):
+                continue
+            out.append(f"{tree}/{p.name}")
     return out
 
 

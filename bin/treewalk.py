@@ -45,6 +45,7 @@ from __future__ import annotations
 import functools
 import glob
 import os
+import pathlib
 import shutil
 import subprocess
 
@@ -146,8 +147,20 @@ def walk_tree(root: os.PathLike | str):
     if _ignored(root) is None:
         return
     for dirpath, dirnames, filenames in os.walk(root):
+        # `.git` is pruned by name, not by gitignore: git never lists its own object store as
+        # ignored, so `_is_ignored` answered "no" for it and every walker adopter descended
+        # into the packed objects. Measured 2026-09-13 in the primary checkout: 34,523 of the
+        # 37,862 files a `walk_tree` yielded were under `.git`, and bin/idp-rule-coverage --
+        # which reads every file's bytes -- did not finish inside 50 seconds. This module's own
+        # docstring records the number from 2026-09-10 (1683 directories in 1.9 seconds); that
+        # was before the object store carried this many packs, and the walk has been paying for
+        # it since, in every gate that adopted this walker. The nested-checkout arm is handled
+        # by `_is_ignored` below; `.git` is the other thing a walk over a repository must never
+        # enter, and it is named here once for all nine callers.
         dirnames[:] = sorted(
-            d for d in dirnames if not _is_ignored(os.path.join(dirpath, d), root)
+            d
+            for d in dirnames
+            if d != ".git" and not _is_ignored(os.path.join(dirpath, d), root)
         )
         yield dirpath, dirnames, filenames
 
@@ -156,5 +169,7 @@ def glob_tree(root: os.PathLike | str, *parts: str, recursive: bool = True):
     """glob.glob over THIS repository, dropping any hit inside a nested checkout."""
     root = os.path.abspath(root)
     for f in glob.glob(os.path.join(root, *parts), recursive=recursive):
+        if ".git" in pathlib.PurePath(f).parts:
+            continue
         if is_this_tree(f, root):
             yield f
