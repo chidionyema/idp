@@ -105,6 +105,14 @@ try:
 except ImportError:  # loaded as a file, not as a package member
     from holmes_watch import holmes_alert_sensor, holmes_investigation  # type: ignore[no-redef]
 
+# The GitOps drift sensor (spec 2026-09-13-gitops-sync-engine.md): the estate's
+# Flux drift, carried back to the pull request that last touched the file owning
+# each drifting object. Same by-path fallback as the two above.
+try:
+    from .gitops_drift import gitops_drift_job, gitops_drift_sensor
+except ImportError:  # loaded as a file, not as a package member
+    from gitops_drift import gitops_drift_job, gitops_drift_sensor  # type: ignore[no-redef]
+
 
 def _expand(s: str) -> str:
     return os.path.expandvars(os.path.expanduser(s))
@@ -324,7 +332,14 @@ def estate_failure_log(context):
 
 def build() -> Definitions:
     spec = load_spec()
-    jobs, schedules, sensors = {}, [], [estate_failure_log, holmes_alert_sensor]
+    # gitops_drift_sensor is a second non-schedule sensor for the same reason
+    # holmes_alert_sensor is one: it runs no command from schedule.yml, it reads the
+    # cluster and delivers through apprise. Its poll interval is its own config.
+    jobs, schedules, sensors = (
+        {},
+        [],
+        [estate_failure_log, holmes_alert_sensor, gitops_drift_sensor],
+    )
     # A row graded `runs_on: retire` (crew#516) has left the Mac; it gets no job and no
     # schedule. crew#539: ai.idp.reconcile kept ticking retired and failing exit 2. `retire`
     # matches no runner, so the comparison below covers it and every other value at once: a row
@@ -349,9 +364,13 @@ def build() -> Definitions:
                     )
                 raise ValueError(f"{label}: after={up!r} is not a job in {SCHEDULE_FILE}")
             sensors.append(make_dependency_sensor(label, s, jobs[label], jobs[up]))
-    # holmes_investigation is not a schedule.yml row: it runs no command and is
-    # started by its sensor, never by a clock.
-    return Definitions(jobs=[*jobs.values(), holmes_investigation], schedules=schedules, sensors=sensors)
+    # holmes_investigation and gitops_drift_job are not schedule.yml rows: they run
+    # no command and are started by their sensors, never by a clock.
+    return Definitions(
+        jobs=[*jobs.values(), holmes_investigation, gitops_drift_job],
+        schedules=schedules,
+        sensors=sensors,
+    )
 
 
 defs = build()

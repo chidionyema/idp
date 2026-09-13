@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""A blind reading of the estate is refused; only a real reading may pass.
+
+Rule: drift-reads-blind-not-clean (rules.yaml), spec 2026-09-13-gitops-sync-engine.md
+
+THE DEFECT THIS GRADES. On 2026-09-08 `bin/idp-compile-helm` exited 0 while
+eleven of thirty-three charts had failed to render. A tool that could not see
+eleven releases reported the same thing as an estate with nothing in it, and
+nothing anywhere said which of the two had happened. Every reader added since
+carries the same hazard: `kubectl` missing, a list that failed, a JSON body that
+never parsed -- each of them turns "could not look" into "nothing is wrong".
+
+So the property is mechanical: a reader's exit code must distinguish the two. 2 is
+the estate's existing fail-closed verdict (bin/idp-compile-helm uses it), 1 is a
+real finding worth acting on, and 0 is a real reading with nothing to report.
+
+WHAT THIS GRADES. A directory holding a reading: `exit` (the code the reader
+returned, one integer) and `stdout` (what it printed). The gate refuses:
+
+* exit 0 with a BLIND marker on stdout -- it said it could not read and reported a
+  clean estate anyway, which is the 2026-09-08 defect exactly;
+* exit 2 with no BLIND marker -- it refused without saying what it could not read,
+  so a person reading the log cannot tell what went unmeasured;
+* any code outside {0, 1, 2} -- an invented third answer means the caller cannot
+  branch on it.
+
+The `good` fixture is a reader that read every object, found the estate
+reconciled, printed its summary and exited 0. The `bad` fixture is the same reader
+with no kubectl: it prints BLIND and exits 2, and the gate's job is to accept that
+and refuse its inversion.
+
+    bin/idp-drift-blind <dir>       grade one reading
+    bin/idp-drift-blind            grade both fixtures beside this script
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+
+VALID_CODES = {0, 1, 2}
+BLIND = "BLIND"
+
+
+def grade(reading: Path) -> tuple[bool, str]:
+    """True when the reading distinguishes blind from clean, or refuses without saying so."""
+    exit_file = reading / "exit"
+    out_file = reading / "stdout"
+    if not exit_file.is_file() or not out_file.is_file():
+        return False, f"{reading} holds no reading: both 'exit' and 'stdout' are required"
+
+    raw = exit_file.read_text(encoding="utf-8").strip()
+    try:
+        code = int(raw)
+    except ValueError:
+        return False, f"{reading}/exit is not an integer: {raw!r}"
+
+    if code not in VALID_CODES:
+        return (
+            False,
+            f"{reading}: exit {code} is outside {{0, 1, 2}}. 0 is a real reading with "
+            "nothing to report, 1 is a real finding, 2 is BLIND. A caller cannot branch "
+            "on an answer the estate invented.",
+        )
+
+    text = out_file.read_text(encoding="utf-8", errors="replace")
+    says_blind = BLIND in text.upper()
+
+    if code == 0 and says_blind:
+        return (
+            False,
+            f"{reading}: exit 0 while the output says {BLIND}. A reader that could not "
+            "look reported a clean estate -- this is the 2026-09-08 defect where eleven "
+            "of thirty-three charts failed to render and the tool exited 0.",
+        )
+    if code == 2 and not says_blind:
+        return (
+            False,
+            f"{reading}: exit 2 without saying {BLIND}. Refusing without naming what could "
+            "not be read leaves a person unable to tell what went unmeasured.",
+        )
+    return True, f"{reading}: exit {code}, {'BLIND' if says_blind else 'a real reading'}"
+
+
+def main(argv: list[str]) -> int:
+    targets = [Path(a) for a in argv[1:]] or [
+        ROOT / "tests/fixtures/drift-blind/bad",
+        ROOT / "tests/fixtures/drift-blind/good",
+    ]
+    failures = 0
+    for target in targets:
+        ok, why = grade(target)
+        print(f"{'ok  ' if ok else 'FAIL'}  drift-blind  {why}")
+        if not ok:
+            failures += 1
+    if failures:
+        print(f"FAIL  drift-blind  {failures} reading(s) cannot tell blind from clean")
+        return 1
+    print(f"ok    drift-blind  {len(targets)} reading(s) distinguish blind from clean")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

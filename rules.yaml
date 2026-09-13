@@ -2095,3 +2095,27 @@ rules:
     note: nine different findings across nine targets are all workable
   ok: a proved pattern disables the linear path and names the fleet lever
   fail: an agent repeats a proved diagnosis across targets, and the environment lets it
+- id: drift-reads-blind-not-clean
+  label: drift-blind
+  statement: A tool that could not read the estate exits 2 and prints BLIND, never 0 with an empty result -- "nothing is drifting" and "nothing could be read" must never print the same thing. The rule is proved on a reader whose kubectl is absent and on a clean set of Flux objects, both ways
+  law: LAW 2, incident 2026-09-08 (bin/idp-compile-helm exited 0 while 11 of 33 charts failed to render)
+  origin: spec 2026-09-13-gitops-sync-engine.md
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-drift-blind
+  fixtures:
+    must_fail: tests/fixtures/drift-blind/bad
+    must_pass: tests/fixtures/drift-blind/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/drift-blind/bad
+    note: a reader with no kubectl is BLIND, exit 2, never a clean empty estate
+  - expect: pass
+    args:
+    - tests/fixtures/drift-blind/good
+    note: a reader that read every object and found the estate reconciled exits 0
+  ok: a reader that cannot see the estate says so and refuses to report a clean one
+  fail: a blind reading prints the same thing as a clean estate
