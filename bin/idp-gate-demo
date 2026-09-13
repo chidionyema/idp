@@ -45,6 +45,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RULES = ROOT / "rules.yaml"
 OUT = ROOT / "docs" / "gates"
 
+
 # A case is worth running when it names arguments and is not marked live. A live case runs
 # against the estate, which a page render must not do: it would make the page depend on the
 # cluster's state and two renders would differ.
@@ -129,13 +130,37 @@ def _absent_binary(argv: list[str]) -> str:
     return " ".join(argv)
 
 
+def _stable(output: str) -> str:
+    """Remove what changes between two renders of the same registry.
+
+    A generated page is checked in (`bin/idp-gate-demo --check` fails when the page on disk is
+    not what a render produces), so a single varying byte makes the check unusable and the
+    idempotency test fail. Two things vary on every run:
+
+      * a timestamp, e.g. `2026-09-12 23:45:29 +0100`
+      * a temp directory, e.g. `/var/folders/gq/.../tmp9ufe9b4a`, because a gate that imports
+        dagster is handed a fresh one per invocation
+
+    Measured 2026-09-12: docs/gates/defs-load-by-path.md differed between two consecutive renders
+    on pristine main for exactly these two reasons, and the page could never be current.
+    Both are replaced with a fixed token so the page records WHAT the gate said, not when the
+    demo happened to run it.
+    """
+    out = re.sub(
+        r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[+-]\d{4})?", "<timestamp>", output
+    )
+    out = re.sub(r"/(?:private/)?var/folders/\S*?/tmp[0-9A-Za-z_]+", "<tmpdir>", out)
+    out = re.sub(r"/tmp/tmp[0-9A-Za-z_]+", "<tmpdir>", out)
+    return out
+
+
 def _fence(output: str, limit: int = 60) -> str:
     """The gate's output in a fenced block, trimmed to a readable length.
 
     The first lines carry the verdict; a fixture that lists 400 findings would push the exit
     code off the page. The count of lines dropped is stated, never silently cut.
     """
-    lines = [ln for ln in output.splitlines() if ln.strip()]
+    lines = [ln for ln in _stable(output).splitlines() if ln.strip()]
     if not lines:
         return "```\n(no output)\n```"
     shown = lines[:limit]
@@ -255,9 +280,7 @@ def index(pages: list[tuple[dict, str]]) -> str:
 
 def _exit_from(body: str, section: str) -> str:
     """The exit code recorded under a section heading, or BLIND."""
-    m = re.search(
-        rf"^## {section}\n(.*?)(?=^## |\Z)", body, re.MULTILINE | re.DOTALL
-    )
+    m = re.search(rf"^## {section}\n(.*?)(?=^## |\Z)", body, re.MULTILINE | re.DOTALL)
     if not m:
         return "—"
     if "**BLIND**" in m.group(1):
@@ -301,9 +324,7 @@ def check(rules_path: Path, out_dir: Path) -> int:
         target = out_dir / f"{rule['id']}.md"
         if not target.is_file() or target.read_text(encoding="utf-8") != want:
             stale.append(str(target))
-    want_index = index(
-        [(r, page(r, engine)) for r in registry.get("rules") or []]
-    )
+    want_index = index([(r, page(r, engine)) for r in registry.get("rules") or []])
     idx = out_dir / "index.md"
     if not idx.is_file() or idx.read_text(encoding="utf-8") != want_index:
         stale.append(str(idx))
@@ -313,15 +334,21 @@ def check(rules_path: Path, out_dir: Path) -> int:
             print(f"        {s}")
         print("      run: bin/idp-gate-demo --out docs/gates")
         return 1
-    print(f"ok    gate-demo {len(registry.get('rules') or [])} page(s) match rules.yaml")
+    print(
+        f"ok    gate-demo {len(registry.get('rules') or [])} page(s) match rules.yaml"
+    )
     return 0
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--rules", default=str(RULES), help="the registry (default rules.yaml)")
+    ap.add_argument(
+        "--rules", default=str(RULES), help="the registry (default rules.yaml)"
+    )
     ap.add_argument("--out", default=str(OUT), help="where the pages go")
-    ap.add_argument("--check", action="store_true", help="exit 1 when the pages are stale")
+    ap.add_argument(
+        "--check", action="store_true", help="exit 1 when the pages are stale"
+    )
     ap.add_argument("--only", help="render one rule")
     args = ap.parse_args()
     rules_path = Path(args.rules)

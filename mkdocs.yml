@@ -105,6 +105,10 @@ nav:
       - Breaker enforcement: tutorials/demo/breaker.md
       - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
+      - epistemic: tutorials/demo/epistemic.md
+      - Epistemic gate (module): tutorials/demo/epistemic_firewall.py.md
+      - trajectory: tutorials/demo/trajectory.md
+      - Trajectory lock (module): tutorials/demo/trajectory_lock.py.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
       - Evidence layer: tutorials/demo/evidence.md
@@ -195,6 +199,10 @@ nav:
       - Buyer sandbox (one hour): onboarding/demo-sandbox.md
       - Merge queue (hands-free landing): onboarding/merge-queue.md
       - Catalogue links: onboarding/catalog-links.md
+      - epistemic: how-to/onboarding/epistemic.md
+      - Epistemic gate (module): how-to/onboarding/epistemic_firewall.py.md
+      - trajectory: how-to/onboarding/trajectory.md
+      - Trajectory lock (module): how-to/onboarding/trajectory_lock.py.md
       - Drill evidence: onboarding/drill-evidence.md
       - Estate compiler recording: onboarding/intent-compiler.md
       - Estate clock recording: onboarding/dagster.md
@@ -363,6 +371,8 @@ nav:
       - cost-proof: gates/cost-proof.md
       - founder-door: gates/founder-door.md
       - stray: gates/stray-checkout.md
+      - epistemic: gates/epistemic.md
+      - trajectory: gates/trajectory.md
       - circuit-breaker: gates/circuit-breaker.md
   - Runbooks:
       - What these are: runbooks/index.md
