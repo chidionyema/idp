@@ -383,6 +383,7 @@ nav:
       - split: gates/split-brain.md
       - mechanism: gates/mechanism.md
       - clickhouse-system-log-ttl: gates/clickhouse-system-log-ttl.md
+      - clickhouse-twin-ttl: gates/clickhouse-twin-ttl.md
       - crd-then-cr: gates/crd-then-cr.md
       - store-reach: gates/store-reach.md
       - cat-runtime-svc: gates/catalogue-entity-runtime-service.md
