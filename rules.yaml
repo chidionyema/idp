@@ -2095,3 +2095,33 @@ rules:
     note: nine different findings across nine targets are all workable
   ok: a proved pattern disables the linear path and names the fleet lever
   fail: an agent repeats a proved diagnosis across targets, and the environment lets it
+- id: healthcheck-names-a-real-object
+  label: healthcheck-exists
+  statement: A Kustomization's health check names an object this tree actually creates. A wait on an object nothing creates reports NotFound forever, holds every row depending on it out of the cluster, and is invisible in CI because the manifest is valid YAML naming a plausible object. An object an operator makes at runtime is ungraded and said to be ungraded, never assumed absent
+  law: LAW 45, incident 2026-09-13 (the tailscale row waited on Deployment/tailscale-operator; the chart emits Deployment/operator, so guacamole and four rows behind it were held out for days)
+  origin: incident 2026-09-13, tailscale
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-healthcheck-exists
+  fixtures:
+    must_fail: tests/fixtures/healthcheck-exists/bad
+    must_pass: tests/fixtures/healthcheck-exists/good
+  cases:
+  - expect: refuse
+    args:
+    - --root
+    - tests/fixtures/healthcheck-exists/bad
+    - tests/fixtures/healthcheck-exists/bad/compiled.json
+    - tests/fixtures/healthcheck-exists/bad/cluster.yaml
+    note: the tailscale defect exactly -- a health check naming a Deployment no chart renders
+  - expect: pass
+    args:
+    - --root
+    - tests/fixtures/healthcheck-exists/good
+    - tests/fixtures/healthcheck-exists/good/compiled.json
+    - tests/fixtures/healthcheck-exists/good/cluster.yaml
+    note: the same row naming the Deployment the chart does emit
+  ok: every health check names an object this tree creates, or is reported ungraded
+  fail: a health check waits on an object nothing creates, and CI is green
