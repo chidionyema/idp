@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""The router's per-request ceiling must be present, wired, and proved by a refusal.
+
+WHAT THIS EXISTS FOR. On 2026-09-13 a single key sent 86,525,924 input tokens through one hour --
+439 calls averaging 197,098 tokens, the largest 737,169 in against 436 out -- while every guard
+the estate had reported. Two of them were read afterwards and neither could have caught it:
+
+  * the spend breaker grades TOKENS per hour but reads the TOTAL across the estate, so one session
+    at 737k per call is indistinguishable from two hundred at 3.7k, and it notifies without ever
+    refusing;
+  * the ceiling in a client's own settings file is one machine's home directory.
+
+The fix is `platform/llm/request_ceiling.py`, registered as a LiteLLM callback. This gate is what
+makes it permanent. A callback is a line in a config file, and a line in a config file is one
+careless edit from being gone -- and the way that edit would be discovered is another $2.63 hour.
+
+THREE THINGS ARE REQUIRED TOGETHER, because any one alone is a decoration:
+
+  1. the module exists and defines a handler;
+  2. config.yaml REGISTERS it -- a module nothing loads enforces nothing;
+  3. litellm.yaml MOUNTS it and puts it on PYTHONPATH -- a registration without a mount is a
+     ModuleNotFoundError at request time, which is an outage, not a control (R38).
+
+The numbers are graded too. A ceiling set at the model's real maximum can never fire, because the
+ceiling is exactly where the failure lives -- every lane here genuinely holds 1,048,576 tokens, and
+that is why a 737k call was invisible. A working window far above a real turn is the same mistake
+in a smaller size.
+
+FAIL-CLOSED. A file that cannot be read is a FAIL, never a pass. The whole incident is a story
+about a checker that could not see.
+"""
+
+from __future__ import annotations
+
+import pathlib
+import re
+import sys
+
+# `--tree <dir>` grades a fixture tree instead of this checkout, so the rule's cases can prove it
+# both ways. The runner passes it like every other rule's args.
+if "--tree" in sys.argv:
+    ROOT = pathlib.Path(sys.argv[sys.argv.index("--tree") + 1]).resolve()
+else:
+    ROOT = pathlib.Path(__file__).resolve().parents[1]
+MODULE = ROOT / "platform" / "llm" / "request_ceiling.py"
+CONFIG = ROOT / "platform" / "llm" / "config.yaml"
+DEPLOY = ROOT / "platform" / "llm" / "litellm.yaml"
+KUSTOMIZATION = ROOT / "platform" / "llm" / "kustomization.yaml"
+
+# A working window. Above any real turn; low enough that the refusal fires while the money is
+# still unspent. The ceiling is compared against the module's declared default.
+MAX_WORKING_WINDOW = 200_000
+MIN_WORKING_WINDOW = 8_000  # below this a legitimate long turn is refused, which is an outage
+
+failures: list[str] = []
+
+
+def fail(msg: str) -> None:
+    failures.append(msg)
+
+
+def read(path: pathlib.Path) -> str:
+    if not path.is_file():
+        fail(f"{path.relative_to(ROOT)} does not exist")
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def main() -> int:
+    module = read(MODULE)
+    config = read(CONFIG)
+    deploy = read(DEPLOY)
+    kustomization = read(KUSTOMIZATION)
+
+    if not module:
+        # nothing else can be graded; report and exit fail-closed
+        for f in failures:
+            print(f"FAIL  request-ceiling: {f}")
+        return 1
+
+    # 1. the handler exists
+    if "async_pre_call_hook" not in module:
+        fail(
+            "request_ceiling.py defines no async_pre_call_hook, so it cannot refuse anything"
+        )
+    if "proxy_handler_instance" not in module:
+        fail(
+            "request_ceiling.py exposes no proxy_handler_instance, which is the name config.yaml "
+            "registers"
+        )
+
+    # 2. the number is a working window, and it is a number
+    match = re.search(r"ESTATE_MAX_INPUT_TOKENS\",\s*\"(\d+)\"", module)
+    if not match:
+        fail("request_ceiling.py declares no MAX_INPUT_TOKENS default to grade")
+    else:
+        declared = int(match.group(1))
+        if declared > MAX_WORKING_WINDOW:
+            fail(
+                f"the ceiling is {declared:,}, above the {MAX_WORKING_WINDOW:,} that this estate "
+                f"treats as a working window: a limit set at the model's real maximum can never "
+                f"fire, which is how 86,525,924 tokens passed in one hour"
+            )
+        elif declared < MIN_WORKING_WINDOW:
+            fail(
+                f"the ceiling is {declared:,}, below the {MIN_WORKING_WINDOW:,} floor: a guard "
+                f"that refuses a legitimate long turn is an outage (R38)"
+            )
+
+    # 3. the router REGISTERS it
+    if "request_ceiling.proxy_handler_instance" not in config:
+        fail(
+            "platform/llm/config.yaml does not register request_ceiling.proxy_handler_instance "
+            "as a callback, so the module is on disk and nothing loads it"
+        )
+
+    # 4. the router MOUNTS it, on the import path
+    if "request-ceiling" not in deploy and "ceilings" not in deploy:
+        fail("platform/llm/litellm.yaml neither mounts the ceiling nor names its path")
+    if "PYTHONPATH" not in deploy:
+        fail(
+            "platform/llm/litellm.yaml sets no PYTHONPATH, so the registered callback cannot be "
+            "imported and every request fails with ModuleNotFoundError -- an outage, not a control"
+        )
+    if "request-ceiling" not in kustomization:
+        fail(
+            "platform/llm/kustomization.yaml does not generate the litellm-request-ceiling "
+            "ConfigMap, so the mount has nothing to mount"
+        )
+
+    if failures:
+        for f in failures:
+            print(f"FAIL  request-ceiling: {f}")
+        print(
+            "\n  The per-request ceiling is what stops a session re-sending its whole history on "
+            "every call.\n  Without it the estate has no defence at the router: measured "
+            "2026-09-13, 86,525,924\n  tokens in one hour from a single key, against 568 tokens "
+            "from every other key combined."
+        )
+        return 1
+
+    print(
+        "ok    request-ceiling   the router refuses a call above the working window, and the "
+        "module, its registration, its mount and its import path are all present"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

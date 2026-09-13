@@ -2153,3 +2153,25 @@ rules:
     note: the same ExternalSecret once a person has typed the pair
   ok: every ExternalSecret that cannot sync names the vault key it needs and whether a person must produce it
   fail: a row is held by a missing vault entry and its status reads "Reconciliation in progress"
+- id: request-ceiling
+  fast: true
+  label: request-ceiling
+  statement: The router refuses a single call carrying more than a working turn, and the module, its callback registration, its mount and its import path must all be present together -- a ceiling that exists on disk with nothing loading it refuses nothing, which is exactly the state the estate was in when one key sent 86,525,924 tokens through an hour
+  law: LAW 2, incident 2026-09-13
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-request-ceiling
+  cases:
+  - expect: refuse
+    args:
+    - --tree
+    - tests/fixtures/request-ceiling/bad
+  - expect: pass
+    args:
+    - --tree
+    - tests/fixtures/request-ceiling/good
+  ok: the router refuses a call above the working window, and nothing can unload it silently
+  fail: a ceiling exists that nothing registers, nothing mounts, or that sits so high it can never fire
+  why: 'FOUNDER 2026-09-13: "fix the probel properly and preven fro re[cur]rinng". Measured that day from LiteLLM_SpendLogs: one key, 439 calls, 86,525,924 input tokens in 60 minutes ($2.63), against 568 tokens from every other key on the estate combined. The largest single call was 737,169 in / 436 out -- 3,685 tokens in for every token out, because a session was re-sending its entire history on every turn. The two guards that existed were read and neither could catch it: the spend breaker grades 2,000,000 tokens PER HOUR as a total across the estate, so one 737k call looks like two hundred 3.7k calls and it notifies without refusing; and a client-side ceiling lives in one laptop''s home directory. Prefix caching was never the problem -- it was on and correct at $0.025/M against $0.150 list. The bill was volume, and volume is refused at the only place every call passes: the router.'
