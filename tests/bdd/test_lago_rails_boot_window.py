@@ -35,6 +35,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import shutil
+import subprocess
+import tempfile
+
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
@@ -69,6 +73,78 @@ def postrender_patches() -> list[dict]:
     return out
 
 
+def apply_startup_patch(component: str, patches: list[dict]) -> dict:
+    """APPLY the manifest's own patch, the way Flux does, and return the result.
+
+    This is the difference between grading the file and grading the behaviour. A
+    test that regexes the patch text passes when someone reformats it and fails
+    when someone reorders it, while saying nothing about whether the patch
+    produces a working probe.
+
+    `kustomize build` is run for real, over a tree this function writes: the
+    chart's own Deployment shape, then the manifest's patch, applied by the same
+    binary the estate's postRenderers use. `subprocess` is not incidental here --
+    it is the point: the assertions read what kustomize produced, not what this
+    file believes it would produce.
+    """
+    body = _probe_body(patches, component)
+    if not body:
+        raise AssertionError(f"{component} has no startupProbe patch to apply")
+
+    # A real kustomize tree: the Deployment the chart renders (a container with the
+    # component's name and nothing else enforced), and the manifest's patch beside
+    # it. kustomize applies the JSON-Patch operations, exactly as Flux's
+    # postRenderer does before the object reaches the cluster.
+    work = Path(tempfile.mkdtemp(prefix=f"lago-{component}-"))
+    try:
+        (work / "deployment.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "apiVersion": "apps/v1",
+                    "kind": "Deployment",
+                    "metadata": {"name": component, "namespace": "commerce"},
+                    "spec": {
+                        "template": {"spec": {"containers": [{"name": component}]}}
+                    },
+                }
+            )
+        )
+        (work / "patch.yaml").write_text(body)
+        (work / "kustomization.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "apiVersion": "kustomize.config.k8s.io/v1beta1",
+                    "kind": "Kustomization",
+                    "resources": ["deployment.yaml"],
+                    "patches": [
+                        {
+                            "target": {"kind": "Deployment", "name": component},
+                            "patch": body,
+                        }
+                    ],
+                }
+            )
+        )
+        r = subprocess.run(
+            ["kubectl", "kustomize", str(work)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert r.returncode == 0, (
+            f"the {component} startupProbe patch does not apply: {r.stderr[:400]}"
+        )
+        doc = next(
+            d
+            for d in yaml.safe_load_all(r.stdout)
+            if d and d.get("kind") == "Deployment"
+        )
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+    return doc
+
+
 def _probe_body(postrender_patches: list[dict], name: str) -> str:
     for p in postrender_patches:
         if (
@@ -87,14 +163,17 @@ def _probe_body(postrender_patches: list[dict], name: str) -> str:
 def test_every_rails_component_gets_a_startup_probe(
     postrender_patches, component
 ) -> None:
-    """Liveness does not run until startup passes, so boot gets 300 seconds."""
-    body = _probe_body(postrender_patches, component)
-    assert body, (
-        f"{component} has no startupProbe patch. The chart's liveness probe gives it 30 seconds "
-        f"to boot (3 failures x 10s) and `bundle exec` does not boot in 30, so the kubelet kills "
-        f"every boot and the HelmRelease reports Failed forever."
+    """The applied patch puts a startupProbe on the container.
+
+    Liveness does not run until startup passes, so boot gets 300 seconds.
+    """
+    doc = apply_startup_patch(component, postrender_patches)
+    container = doc["spec"]["template"]["spec"]["containers"][0]
+    assert "startupProbe" in container, (
+        f"{component} has no startupProbe after applying its patch. The chart's liveness "
+        f"probe gives it 30 seconds to boot (3 failures x 10s) and `bundle exec` does not "
+        f"boot in 30, so the kubelet kills every boot and the HelmRelease reports Failed."
     )
-    assert "startupProbe" in body
 
 
 @pytest.mark.parametrize("component", RAILS_COMPONENTS)
@@ -102,13 +181,13 @@ def test_the_startup_probe_allows_a_real_boot_window(
     postrender_patches, component
 ) -> None:
     """30 periods x 10s = 300 seconds, the same window langfuse uses."""
-    body = _probe_body(postrender_patches, component)
-    doc = yaml.safe_load(body)
-    probe = doc[-1]["value"]
+    probe = apply_startup_patch(component, postrender_patches)["spec"]["template"][
+        "spec"
+    ]["containers"][0]["startupProbe"]
     window = probe["periodSeconds"] * probe["failureThreshold"]
     assert window >= 300, (
-        f"{component}'s boot window is {window}s. langfuse carries 300s for a slower process than "
-        f"this one; anything less risks killing a cold boot on a loaded node."
+        f"{component}'s boot window is {window}s. langfuse carries 300s for a slower process "
+        f"than this one; anything less risks killing a cold boot on a loaded node."
     )
 
 
@@ -121,12 +200,12 @@ def test_the_startup_probe_is_a_socket_check_not_an_http_path(
     This is the detail that makes the fix work for all six rather than just the api:
     three of these components are Sidekiq and answer nothing on /health.
     """
-    body = _probe_body(postrender_patches, component)
-    doc = yaml.safe_load(body)
-    probe = doc[-1]["value"]
+    probe = apply_startup_patch(component, postrender_patches)["spec"]["template"][
+        "spec"
+    ]["containers"][0]["startupProbe"]
     assert "tcpSocket" in probe, (
-        f"{component} probes {probe.get('httpGet')} -- a Sidekiq worker serves no HTTP and would "
-        f"never pass an HTTP startup probe. Use tcpSocket on the container port."
+        f"{component} probes {probe.get('httpGet')} -- a Sidekiq worker serves no HTTP and "
+        f"would never pass an HTTP startup probe. Use tcpSocket on the container port."
     )
     assert "httpGet" not in probe
 
