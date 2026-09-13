@@ -160,6 +160,44 @@ jobs:
           # once here, serially, is the fix -- the workers then all find a complete venv.
           bin/sb --help >/dev/null 2>&1 || true
       - uses: ./.github/actions/estate-tools
+      # 2026-09-12: compile the estate's Helm releases from git and grade the numbers they render.
+      # This is the leg that would have caught PR #2429 five days earlier: that pull request
+      # changed a COMMENT claiming "cpu 500m" and left the value at 1000m. The YAML was valid, so
+      # every check was green, and the cluster kept running 1000m until an agent read it by hand.
+      # `kustomize build` cannot see this -- it emits the HelmRelease object, never the Deployments
+      # a chart creates -- so the estate had no way to compare what it believes it set against what
+      # a chart decides. bin/idp-compile-helm renders every release with the chart and version the
+      # release pins, and writes one document; the bdd suite grades that document.
+      # helm is installed here because the manifests are what is under test, not the operator's
+      # machine: a runner that has never run `helm repo add` must still produce the same document.
+      - name: helm (the compiler renders every chart from git)
+        if: matrix.suite == 'acceptance'
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          # 4.x, not 3.x. The langfuse chart calls `fromToml`, which 3.16 does not have, so a
+          # 3.x pin fails to render that release with "function fromToml not defined" while every
+          # other chart renders -- a skew between the runner and a developer's machine is exactly
+          # the silent disagreement this gate exists to remove. The pin moves with the charts.
+          version: v4.2.4
+      - name: compile the estate's Helm releases (a comment is not a value)
+        if: matrix.suite == 'acceptance'
+        run: |
+          set -uo pipefail
+          bin/idp-compile-helm --out "$RUNNER_TEMP/compiled-helm.json"
+          rc=$?
+          # A release that did not render is a BLIND reading, not an empty estate: 11 of 33 charts
+          # failed to render when this was written and nothing said so. 2 is the compiler's own
+          # fail-closed verdict, so it fails here too.
+          if [ "$rc" = 2 ]; then echo "BLIND compiled-helm: helm missing or no release found"; exit 1; fi
+          if [ "$rc" != 0 ]; then echo "FAIL compiled-helm: a release did not render; see above"; exit 1; fi
+          echo "ok    compiled-helm $(jq -r '.summary.rendered' "$RUNNER_TEMP/compiled-helm.json") release(s), $(jq -r '.summary.objects' "$RUNNER_TEMP/compiled-helm.json") object(s)" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: upload the compiled estate (the Ops page reads it)
+        if: matrix.suite == 'acceptance'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v5.0.1
+        with:
+          name: compiled-helm
+          path: ${{ runner.temp }}/compiled-helm.json
+          retention-days: 30
       - name: acceptance suite (strict on PRs to main)
         if: matrix.suite == 'acceptance'
         env:

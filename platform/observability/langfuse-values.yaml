@@ -75,8 +75,8 @@ langfuse:
       # guaranteed rule (crew#539 CP9, Enforce) refuses a split, because Guaranteed QoS is what
       # makes the kubelet evict this workload last -- so the reservation and the boot ceiling are
       # one number. Memory is untouched and genuinely needed: NODE_OPTIONS pins the heap at 1536 MB.
-      requests: { cpu: 1000m, memory: 2Gi }
-      limits: { cpu: 1000m, memory: 2Gi }
+      requests: { cpu: 500m, memory: 2Gi }
+      limits: { cpu: 500m, memory: 2Gi }
     pod:
       labels: { idp.platform/capacity-approved: "true" }   # kept: 500m is still above the fence line
   worker:
@@ -88,8 +88,8 @@ langfuse:
       # both sides (Guaranteed QoS, crew#539 CP9). Measured steady state is 108m. The 134 restarts on 2026-09-06 were ClickHouse
       # refusing inserts at its own 3.60 GiB ceiling until this worker's Node heap died -- a
       # downstream failure, not a CPU one; it has run unbroken for 27 h since.
-      requests: { cpu: 1000m, memory: 1Gi }
-      limits: { cpu: 1000m, memory: 1Gi }
+      requests: { cpu: 500m, memory: 1Gi }
+      limits: { cpu: 500m, memory: 1Gi }
     pod:
       labels: { idp.platform/capacity-approved: "true" }   # kept: 500m is still above the fence line
 postgresql:

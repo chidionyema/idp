@@ -50,6 +50,10 @@ CARRIED += ["docs/reports"]  # crew#684: the Reports page (index.json + one md p
 # force-pushes the branch from origin/main, so a document only the cluster writes is dropped unless
 # it is staged first -- the same reason inventory and reports are carried.
 CARRIED += ["docs/placement.json"]
+# 2026-09-12: the compiled estate -- every HelmRelease rendered from git by bin/idp-compile-helm.
+# The Ops page reads it through /estate-state. This render force-pushes the branch from origin/main,
+# so a document written by CI is dropped unless it is staged first.
+CARRIED += ["docs/compiled-helm.json"]
 INV = Path(os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json"))
 
 

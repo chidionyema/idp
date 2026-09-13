@@ -16,6 +16,8 @@ import { Entity } from '@backstage/catalog-model';
 import { HC_CHECKS } from './healthchecks';
 import { INVENTORY_JSON } from './inventory';
 import { Ops } from './Ops';
+import { PLACEMENT_JSON } from './usePlacement';
+import { COMPILED_JSON } from './useCompiled';
 import { HELMRELEASES, KUSTOMIZATIONS, NODES, PODS } from './useClusterHealth';
 import { ALERTS } from './useOpenReds';
 
@@ -158,6 +160,10 @@ const render = (lists: Record<string, unknown[]>, fail = false) =>
                         ? healthchecks
                         : url.endsWith(INVENTORY_JSON)
                         ? inventory
+                        : url.endsWith(PLACEMENT_JSON)
+                        ? placement
+                        : url.endsWith(COMPILED_JSON)
+                        ? compiled
                         : founder,
                   },
           } as any,
@@ -171,6 +177,37 @@ const render = (lists: Record<string, unknown[]>, fail = false) =>
       <Ops />
     </TestApiProvider>,
   );
+
+// The placement and compiled documents the page reads. Both answer as an honest empty state:
+// a section whose source could not be read renders Unread, which is itself a behaviour under test.
+const placement = {
+  at: '2026-09-12T10:00:00Z',
+  placement: { pods: [] },
+  cpu_requested_m: 10468,
+  cpu_used_m: 5379,
+};
+const compiled = {
+  releases: [
+    {
+      namespace: 'observability',
+      name: 'langfuse',
+      chart: 'langfuse',
+      version: '2.0.2',
+      error: null,
+      objects: [
+        {
+          kind: 'Deployment',
+          namespace: 'observability',
+          name: 'langfuse-web',
+          resources: [
+            { name: 'langfuse-web', requests: { cpu: '500m' }, limits: { cpu: '500m' } },
+          ],
+        },
+      ],
+    },
+  ],
+  summary: { total: 1, rendered: 1, failed: 0, objects: 1 },
+};
 
 describe('Ops', () => {
   it('draws the cluster tile from the four list reads', async () => {
