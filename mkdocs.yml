@@ -104,6 +104,7 @@ nav:
       - The agent that couldn't lie: tutorials/demo/truthteller-demo.md
       - The circuit breaker: tutorials/demo/circuit-breaker.md
       - Breaker enforcement: tutorials/demo/breaker.md
+      - A gate only knows the tree it ran in: tutorials/demo/clean-tree.md
       - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
       - Secret blockers: tutorials/demo/secret-blockers.md
@@ -218,6 +219,7 @@ nav:
       - The agent that couldn't lie: how-to/onboarding/truthteller-demo.md
       - The circuit breaker: how-to/onboarding/circuit-breaker.md
       - Breaker enforcement: how-to/onboarding/breaker.md
+      - Grading from a clean tree: how-to/onboarding/clean-tree.md
       - Every gate, with its output: how-to/onboarding/gate-demo.md
       - Portal: how-to/onboarding/idp.md
       - Estate compiler: how-to/onboarding/intent.md
