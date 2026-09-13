@@ -1926,6 +1926,42 @@ rules:
     - .github/workflows
     note: this repository's own workflows
   ok: every grading step in the tree can fail its run, or a later step asserts the captured verdict
+  fail: 'measured 2026-09-10: ''set -u; grader | tee out'' exits 0 while the grader failed, so a run reports green having graded nothing. ''set -o pipefail'' or ''-e'' fixes it; a bare last command propagates
+    without -e, and a later step that tests the captured rc is an assertion'
+- id: sleep-ban
+  fast: true
+  label: sleep-ban
+  statement: >-
+    No script waits on a clock where an event exists -- a bare sleep of 10 seconds or more is
+    refused, a sleep of 5 or less is a yield and passes, and a longer fixed interval is accepted
+    only with a sleep-ok marker giving the reason: the documented rate limit or protocol
+    heartbeat that forces it.
+  law: LAW 14
+  planes:
+  - ci
+  - session
+  # A session rule grades only the paths it declares (bin/idp-rules, `session`), and without this
+  # the rule graded ZERO files and printed `ok` on a script that sleeps 420 -- measured here
+  # before the glob was added.
+  session_glob:
+  - bin/*
+  - scripts/*
+  - .github/workflows/*.yml
+  - platform/**/*.yaml
+  - platform/**/*.sh
+  run:
+  - python3
+  - bin/idp-sleep-ban
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/sleep-ban/bad.sh
+  - expect: pass
+    args:
+    - tests/fixtures/sleep-ban/good.sh
+  ok: no wait on a clock where an event exists; every fixed interval carries its reason
+  fail: a script sleeps 10 seconds or more to wait for state, or a fixed interval is unexplained
+  why: 'Founder 2026-09-12: "sleep 420 is a catastrophic failure of engineering... time is not a synchronization primitive. Events are." Measured the same evening: turns blocked for minutes at a time on `sleep 420` waiting for CI, which is why the session looked hung to the person watching it. The estate already owns the event-driven answer for that case -- gh pr merge --squash --auto arms the merge in 200ms and GitHub watches the checks -- and no rule said so.'
   fail: 'measured 2026-09-10: ''set -u; grader | tee out'' exits 0 while the grader failed, so a run reports green having graded nothing. ''set -o pipefail'' or ''-e'' fixes it; a bare last command propagates without -e, and a later step that tests the captured rc is an assertion'
 - id: cost-proof
   fast: true

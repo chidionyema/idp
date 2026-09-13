@@ -52,6 +52,12 @@ proxy:
     # crew#684 CP5: the Healthchecks tile on the Ops page. The read-only API key is a mounted file
     # from ExternalSecret healthchecks-ro (platform/backstage/overlays/oke), added here so the
     # browser never holds it. Read only: v3 list checks. The page never names the host.
+    # The guard inventory on the Ops page. The estate MCP server already answers this question
+    # (mcp/plugins/estate_guards.py, ADR 0006: one interface answers questions about the estate),
+    # so the page reads it there rather than growing a second source.
+    '/guards':
+      target: http://estate-mcp.mcp.svc:8001
+      allowedMethods: [GET]
     '/healthchecks':
       target: http://healthchecks.healthchecks.svc:8000/api/v3
       allowedMethods: [GET]
