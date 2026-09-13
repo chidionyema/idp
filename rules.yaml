@@ -2436,6 +2436,15 @@ rules:
     - tests/test_breaker_extension.py::TestTheFingerprintIsAFindingNotTheBytes::test_the_same_cve_set_fingerprints_identically_whatever_the_order
   - expect: pass
     live: true
+  fixtures:
+    # These two files ARE the two directions the cases above prove: bad/ is a no-op repeated (no
+    # finding, so it can never lock) and good/ is one CVE set in two orders (a finding, so it
+    # locks). The row graded them through pytest node ids and named the pair nowhere, so
+    # bin/idp-rule-coverage could not see the link and reported the directory as a fixture graded
+    # by no rule -- the exact orphan shape that gate exists to catch. Declaring the pair here is
+    # the wiring, not an exemption.
+    must_fail: tests/fixtures/breaker-enforcement/bad
+    must_pass: tests/fixtures/breaker-enforcement/good
   ok: a command with no finding cannot lock, and a proved pattern still locks
   fail: 'output carrying no finding gets a fingerprint, so repeated no-op commands trip N=3 and lock the two tools a session needs to fix anything. Measured 2026-09-13: a session issued the same command repeatedly, the third tripped the lock, and every command that could have cleared it was itself a bash call. R38 -- a guard that refuses correct work is an outage.'
   proved_elsewhere: the refusing direction -- a no-op carrying no finding produces no fingerprint, so it can never lock -- is ::test_a_repeated_noop_is_still_no_finding, and the permitting direction -- three targets carrying the same CVE set still lock -- is ::test_the_same_cve_set_fingerprints_identically_whatever_the_order. Both names are read from the file, never guessed.
@@ -2464,3 +2473,47 @@ rules:
     note: the whole boundary, ceiling imported once from the door
   ok: the executor daemon applies one ceiling, imported from the door, and every half of the boundary is present
   fail: a ceiling is restated in the daemon, or the boundary is half built and nothing says so
+- id: a-script-is-not-built-until-it-runs
+  fast: true
+  label: script-compiles
+  statement: 'A script added to bin/ is not built until it has been EXECUTED once: it must answer --self-test, --self-check or --dry-run with exit 0 in bounded time. A parser and a linter both pass a script that has never run, which is exactly how a wrong variable name, a missing command or an unresolvable import reaches a session as a load failure -- so the compile is the run.'
+  law: 'LAW 43 / LAW 45, founder 2026-09-13 (verbatim) "no script shold be built withiut conpiler, enforce it ... aget should not eve have to do it, should be auuto"'
+  origin: 'founder 2026-09-13, after watching a session hot-reload a file nobody had compiled. bin/idp-script-compiles was committed in 8913a251 and reached this branch with NO row in this registry, so it graded nothing on the repository plane: the coverage gate (bin/idp-rule-coverage) named tests/fixtures/script-compiles as a fixture graded by no rule and no test. A rule the agent must remember to follow is a wish (LAW 44); the row below is what makes the caller structural rather than remembered.'
+  planes:
+  - ci
+  - session
+  session_glob:
+  - bin/*
+  run:
+  - python3
+  - bin/idp-script-compiles
+  fixtures:
+    must_fail: tests/fixtures/script-compiles/bad
+    must_pass: tests/fixtures/script-compiles/good
+  cases:
+  - expect: refuse
+    args:
+    - --files
+    - tests/fixtures/script-compiles/bad/never-ran.sh
+    note: a script whose --self-test exits 127 on an undefined command, and which parses and lints clean
+  - expect: pass
+    args:
+    - --files
+    - tests/fixtures/script-compiles/good/runs.sh
+    note: the same script with a --self-test that exercises its real path
+  - expect: pass
+    live: true
+    args:
+    - --files
+    - bin/idp-script-compiles
+    note: 'LIVE, and deliberately narrow: the gate is pointed at ITSELF in the real tree, so this
+      case grades the estate rather than an example and cannot be satisfied by fixtures alone.
+      A bare run over all of bin/ is the honest whole-tree reading and it is RED today -- 257 of
+      286 scripts answer no --self-test, --self-check or --dry-run -- so it is not asserted here
+      as a pass. That number is the gap this row exists to close and it is quoted in `why` below;
+      asserting it green would be the false pass this gate was built to catch.'
+  ok: the gate refuses a script that has never run and passes one that has; it is pointed at the
+    real tree, and the 257 scripts still without a self-test are named rather than passed over
+  fail: an executable under bin/ has never been executed and nothing refuses it, so a load failure
+    reaches a session as a surprise
+  fail: an executable under bin/ has never been executed and nothing refuses it, so a load failure reaches a session as a surprise
