@@ -18,6 +18,27 @@
 #
 # The open question is why a correctly-specified tracing block produces no initialised exporter in
 # agentgateway v1.4.1. That is not answerable from the estate's side and is tracked separately.
+frontendPolicies:
+  logging:
+    otlp:
+      # THE ACCESS LOG GOES TO THE COLLECTOR OVER OTLP. This is the path the tracing block above
+      # did not give us: measured 2026-09-13, the gateway exports no spans at all, but the
+      # collector's `logs` pipeline is healthy -- 7,499,990 rows in ten minutes against the traces
+      # pipeline's silence. A log line carrying protocol=mcp and mcp.method.name is enough to know
+      # an agent called a tool, which is the fact the evidence layer needs.
+      #
+      # THE PLACEMENT IS THE WHOLE TRICK, and it took four refusals to find. `logging` at the config
+      # root takes RawLogging (filter/fields/level only, no exporter). LoggingPolicy -- the type
+      # that owns `otlp` -- is reachable ONLY through the top-level `frontendPolicies`, which is
+      # typed LocalFrontendPolicies. Both facts are in the pinned v1.4.1 schema and neither is
+      # guessable: `check-jsonschema` refused config.logging.otlp, binds[].policies.logging.otlp,
+      # listeners[].policies.logging.otlp and listeners[].policies.accessLog.otlp before this one
+      # validated.
+      #
+      # The port rides on the hostname. `port:` as a sibling is refused because the plain-host arm
+      # of OtlpLoggingConfig's oneOf takes `host` alone.
+      host: signoz-otel-collector.observability.svc.cluster.local:4317
+      protocol: grpc
 config:
   tracing:
     otlpEndpoint: http://signoz-otel-collector.observability.svc:4317
