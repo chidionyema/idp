@@ -48,6 +48,8 @@ import {
 import { useInventory } from './useInventory';
 import { useEstateGraph } from './useEstateGraph';
 import { domainRows, graphSentence, worst } from './estateGraph';
+import { useGuards } from './useGuards';
+import { guardRows, guardsSentence, guardsUnreadable } from './guards';
 import { ago } from './estate';
 
 /** The page's name, and the word every door to it already uses (nav, app-config, catalogue). */
@@ -428,6 +430,7 @@ export const Ops = () => {
         )}
       </Section>
       <GraphSection />
+      <GuardsSection />
       {/* The compiled estate: what every Helm chart RENDERS, straight from git.
           This is the instrument that closes the five-day gap. A values file, a comment and a
           postRenderer patch are all CLAIMS; the number below is the one the chart decides, which
@@ -562,6 +565,62 @@ const GraphSection = () => {
               Also recorded, as evidence rather than failure:{' '}
               {loaded.graph.evidence.map(e => `${e.n} ${e.type}`).join(', ')}.
             </Text>
+          )}
+        </>
+      )}
+    </Section>
+  );
+};
+
+/**
+ * The guards, drawn from what they have actually done. A guard that exists and has been asked
+ * nothing is not proof of anything, which is why the sentence carries the total beside the rows:
+ * two rows under a heading that says "guards" would otherwise read as the whole fifty-six.
+ */
+export const GuardsSection = () => {
+  const loaded = useGuards();
+
+  return (
+    <Section
+      title="The guards, and what they have refused"
+      blurb="Every guard in the estate, with how many times it was consulted and how many commands it refused. A guard that has never refused anything has not yet been tested by a real mistake, so this page separates guards that fired from guards that merely exist."
+      testId="ops-guards-section"
+    >
+      {loaded.state === 'loading' && (
+        <Waiting testId="ops-guards-loading">Reading the guard inventory.</Waiting>
+      )}
+      {loaded.state === 'error' && (
+        <Unread testId="ops-guards-error" detail={loaded.error}>
+          The guard inventory could not be read, so how many guards are in use is unknown.
+        </Unread>
+      )}
+      {loaded.state === 'ready' && (
+        <>
+          <Text variant="body-medium" data-testid="ops-guards-sentence">
+            {guardsSentence(loaded.guards)}
+          </Text>
+          {(guardsUnreadable(loaded.guards) ||
+            guardRows(loaded.guards).length > 0) && (
+            <Sheet testId="ops-guards-table">
+              {guardRows(loaded.guards).map(g => (
+                <Fact
+                  key={g.id}
+                  label={
+                    <>
+                      {g.title} <span data-testid={`ops-guard-id-${g.id}`}>{g.id}</span>
+                    </>
+                  }
+                  value={
+                    <>
+                      fired <b>{g.fired}</b>, refused <b>{g.blocked}</b>
+                      {g.last_command ? ` — ${g.last_command}` : ''}
+                      {g.last_at ? ` (${ago(g.last_at)})` : ''}
+                    </>
+                  }
+                  testId={`ops-guard-${g.id}`}
+                />
+              ))}
+            </Sheet>
           )}
         </>
       )}

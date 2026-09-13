@@ -1,25 +1,30 @@
-// The guard inventory, read from the estate MCP server through the backend proxy.
+// The guard inventory, read through the backend's proxy plugin (app-config
+// proxy.endpoints./estate-state). The same door useFounder.ts, usePlacement.ts and useCompiled.ts
+// use; no host is typed here (LAW 46).
 //
-// Same shape as useHealthchecks: one GET, re-read on the page's own interval, and every failure
-// reported as a failure rather than as an empty list. An empty list and an unreadable endpoint are
-// different answers and the Ops page must never show one as the other.
+// The path is `/guards`, not `/guards.json`: mcp/plugins/estate_guards.py serves it under that
+// name and the ops page reads it through the estate-state proxy beside the other readings.
+//
+// WHY THIS IS A PAGE AND NOT A FILE. Fifty-six guards sit in rules.yaml and every one of them is
+// green in CI, which proves they pass, not that they are asked anything. The inventory the estate
+// MCP server keeps records how many times each guard was consulted and how many commands it
+// refused -- a guard that has refused nothing has never been tested by a real mistake. This hook
+// is what puts that on the ops page beside the cluster readings.
 import { useEffect, useState } from 'react';
-import { discoveryApiRef, fetchApiRef, useApi } from '@backstage/frontend-plugin-api';
-import { GUARD_NAMES, GuardSummary } from './guards';
+import {
+  discoveryApiRef,
+  fetchApiRef,
+  useApi,
+} from '@backstage/frontend-plugin-api';
+import { GuardsDoc } from './guards';
 import { REFRESH_MS } from './useEstate';
 
-const GUARDS = '/guards';
+export const GUARDS_JSON = '/guards';
 
 export type LoadedGuards =
   | { state: 'loading' }
   | { state: 'error'; error: string }
-  | { state: 'ready'; rows: GuardSummary[]; total: number; unreadable: string[] };
-
-type Answer = {
-  total_guards?: number;
-  fired?: Record<string, { fired?: number; blocked?: number; last_at?: string; last_command?: string }>;
-  unreadable?: string[];
-};
+  | { state: 'ready'; guards: GuardsDoc };
 
 export const useGuards = () => {
   const discoveryApi = useApi(discoveryApiRef);
@@ -28,37 +33,22 @@ export const useGuards = () => {
 
   useEffect(() => {
     let cancelled = false;
-    const tick = async () => {
+    const read = async (): Promise<LoadedGuards> => {
       try {
         const base = await discoveryApi.getBaseUrl('proxy');
-        const r = await fetchApi.fetch(`${base}${GUARDS}`);
-        if (!r.ok) throw new Error(`The guard inventory answered ${r.status}`);
-        const body = (await r.json()) as Answer;
-        // The tool returns guards ALREADY AGGREGATED (`fired` is a map of counts), so this
-        // builds the rows directly. The first version fed that map through `summarise`, which
-        // parses LEDGER LINES and filters by timestamp -- so every guard was filtered out and the
-        // page said "no guard has fired" while holding two that had. Measured by the page's own
-        // test: it expected 2 guards and got 0.
-        const rows = Object.entries(body.fired ?? {}).map(([guard, c]) => ({
-          guard,
-          name: GUARD_NAMES[guard]?.name ?? guard,
-          what: GUARD_NAMES[guard]?.what ?? '',
-          events: c.fired ?? 0,
-          blocked: c.blocked ?? 0,
-          lastAt: c.last_at ?? '',
-          lastCommand: c.last_command ?? '',
-        })).sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
-        if (!cancelled) {
-          setLoaded({
-            state: 'ready',
-            rows,
-            total: body.total_guards ?? 0,
-            unreadable: body.unreadable ?? [],
-          });
-        }
+        const r = await fetchApi.fetch(`${base}${GUARDS_JSON}`);
+        if (!r.ok) throw new Error(`${GUARDS_JSON} answered ${r.status}`);
+        const body = (await r.json()) as GuardsDoc;
+        return { state: 'ready', guards: body };
       } catch (e) {
-        if (!cancelled) setLoaded({ state: 'error', error: String((e as Error)?.message ?? e) });
+        // A guard list that cannot be read is an error, never an estate with no guards: saying
+        // "none fired" when the answer is unknown is the exact lie this page exists to end.
+        return { state: 'error', error: String((e as Error)?.message ?? e) };
       }
+    };
+    const tick = async () => {
+      const next = await read();
+      if (!cancelled) setLoaded(next);
     };
     tick();
     const timer = setInterval(tick, REFRESH_MS);
