@@ -5,12 +5,12 @@
 # in clusters/ and platform/. Work that lives on a branch is declared nowhere, so the
 # catalogue is silent about it, and silence reads as absence.
 #
-# Measured 2026-09-12:
-#   648 branch(es) add at least one file that exists on no commit of origin/main,
-#   carrying 94093 such files. 10 deployment(s) are scaled to zero.
+# Measured 2026-09-13:
+#   657 branch(es) add at least one file that exists on no commit of origin/main,
+#   carrying 855 such files. 7 deployment(s) are scaled to zero.
 #
 # Limits, named rather than hidden: this PORTAL FILE carries at most 200 of those
-# branches, most recently committed first. 648 is the true count, and
+# branches, most recently committed first. 657 is the true count, and
 # `bin/estate-twin-runtime --code` writes that same number into catalog/estate.db. A test
 # asserts the two agree: two surfaces telling a founder two numbers is the failure this
 # whole system exists to end.
@@ -23,11 +23,198 @@
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: stranded-fix-nested-checkout-reaches-every-gate
-  title: 'Stranded: fix/nested-checkout-reaches-every-gate'
+  name: stranded-fix-signoz-retention-uses-v2
+  title: 'Stranded: fix/signoz-retention-uses-v2'
   description: >-
-    Capability built on branch `fix/nested-checkout-reaches-every-gate` (2026-09-12) and never merged. It adds
-    5 file(s) that exist on no commit of origin/main: bin/idp-stray-checkout, bin/treewalk.py, tests/fixtures/stray-checkout/bad/nested-checkout/AGENTS.md, tests/fixtures/stray-checkout/bad/nested-checkout/bin/idp-ci, tests/fixtures/stray-checkout/good/plain-data/data.csv.
+    Capability built on branch `fix/signoz-retention-uses-v2` (2026-09-13) and never merged. It adds
+    3 file(s) that exist on no commit of origin/main: docs/how-to/onboarding/signoz-retention.md, docs/tutorials/demo/signoz-retention.md, tests/bdd/test_signoz_retention_ttl_engine.py.
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-fix-chaos-controller-manager-never-ran
+  title: 'Stranded: fix/chaos-controller-manager-never-ran'
+  description: >-
+    Capability built on branch `fix/chaos-controller-manager-never-ran` (2026-09-13) and never merged. It adds
+    7 file(s) that exist on no commit of origin/main: bin/idp-helmrelease-drift-coverage, docs/gates/helmrelease-drift-is-detectable.md, docs/how-to/onboarding/helmrelease-drift.md, docs/tutorials/demo/helmrelease-drift.md, tests/bdd/test_helmrelease_drift_coverage.py, tests/fixtures/helmrelease-drift/bad/helmreleases.json, tests/fixtures/helmrelease-drift/good/helmreleases.json.
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-estate-twin-live
+  title: 'Stranded: estate-twin-live'
+  description: >-
+    Capability built on branch `estate-twin-live` (2026-09-13) and never merged. It adds
+    34 file(s) that exist on no commit of origin/main: backstage/packages/app/src/modules/home/estateGraph.test.ts, backstage/packages/app/src/modules/home/estateGraph.ts, backstage/packages/app/src/modules/home/useEstateGraph.ts, backstage/platform/dark-matter.json, backstage/platform/dark-matter.yaml, bin/catalog-dark-matter, bin/estate-twin-runtime, bin/idp-bdd-proof-gate (+26 more).
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-feat-gitops-sync-engine
+  title: 'Stranded: feat/gitops-sync-engine'
+  description: >-
+    Capability built on branch `feat/gitops-sync-engine` (2026-09-13) and never merged. It adds
+    13 file(s) that exist on no commit of origin/main: bin/idp-drift-blind, bin/idp-gitops-drift, bin/idp-gitops-drift.py, docs/how-to/onboarding/gitops-sync.md, docs/specs/2026-09-13-gitops-sync-engine.md, docs/tutorials/demo/gitops-sync.md, scheduler/estate_scheduler/gitops_drift.py, scheduler/estate_scheduler/gitops_sync.py (+5 more).
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-feat-ops-guards-section
+  title: 'Stranded: feat/ops-guards-section'
+  description: >-
+    Capability built on branch `feat/ops-guards-section` (2026-09-13) and never merged. It adds
+    6 file(s) that exist on no commit of origin/main: backstage/packages/app/src/modules/home/guards.ts, backstage/packages/app/src/modules/home/useGuards.ts, bin/idp-sleep-ban, mcp/plugins/estate_guards.py, tests/fixtures/sleep-ban/bad.sh, tests/fixtures/sleep-ban/good.sh.
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-fix-rule-coverage-ledger-shrinks
+  title: 'Stranded: fix/rule-coverage-ledger-shrinks'
+  description: >-
+    Capability built on branch `fix/rule-coverage-ledger-shrinks` (2026-09-13) and never merged. It adds
+    7 file(s) that exist on no commit of origin/main: bin/idp-clean-tree, docs/how-to/onboarding/clean-tree.md, docs/tutorials/demo/clean-tree.md, tests/fixtures/clean-tree/bad.json, tests/fixtures/clean-tree/good.json, tests/fixtures/clean-tree/midmerge.json, tests/fixtures/clean-tree/noise.json.
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-fix-breaker-is-guarded
+  title: 'Stranded: fix/breaker-is-guarded'
+  description: >-
+    Capability built on branch `fix/breaker-is-guarded` (2026-09-13) and never merged. It adds
+    3 file(s) that exist on no commit of origin/main: docs/gates/breaker-enforcement.md, tests/fixtures/breaker-enforcement/bad/noop-repeated.txt, tests/fixtures/breaker-enforcement/good/real-cves.txt.
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-feat-0910-session-7527
+  title: 'Stranded: feat/0910-session-7527'
+  description: >-
+    Capability built on branch `feat/0910-session-7527` (2026-09-13) and never merged. It adds
+    34 file(s) that exist on no commit of origin/main: backstage/packages/app/src/modules/home/estateGraph.test.ts, backstage/packages/app/src/modules/home/estateGraph.ts, backstage/packages/app/src/modules/home/useEstateGraph.ts, backstage/platform/dark-matter.json, backstage/platform/dark-matter.yaml, bin/catalog-dark-matter, bin/estate-twin-runtime, bin/idp-bdd-proof-gate (+26 more).
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-feat-agentgateway-otlp-evidence
+  title: 'Stranded: feat/agentgateway-otlp-evidence'
+  description: >-
+    Capability built on branch `feat/agentgateway-otlp-evidence` (2026-09-13) and never merged. It adds
+    3 file(s) that exist on no commit of origin/main: bin/idp-sleep-ban, tests/fixtures/sleep-ban/bad.sh, tests/fixtures/sleep-ban/good.sh.
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-feat-no-wait-on-a-clock
+  title: 'Stranded: feat/no-wait-on-a-clock'
+  description: >-
+    Capability built on branch `feat/no-wait-on-a-clock` (2026-09-13) and never merged. It adds
+    3 file(s) that exist on no commit of origin/main: bin/idp-sleep-ban, tests/fixtures/sleep-ban/bad.sh, tests/fixtures/sleep-ban/good.sh.
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-fix-router-backup-needs-its-own-secret
+  title: 'Stranded: fix/router-backup-needs-its-own-secret'
+  description: >-
+    Capability built on branch `fix/router-backup-needs-its-own-secret` (2026-09-12) and never merged. It adds
+    1 file(s) that exist on no commit of origin/main: tests/test_the_twin_is_the_door_not_a_choice.py.
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-feat-epistemic-firewall
+  title: 'Stranded: feat/epistemic-firewall'
+  description: >-
+    Capability built on branch `feat/epistemic-firewall` (2026-09-12) and never merged. It adds
+    1 file(s) that exist on no commit of origin/main: tests/test_epistemic_firewall.py.
     Everything here is work already paid for and not running.
   tags: [dark-matter, unmerged-code]
 spec:
@@ -180,23 +367,6 @@ metadata:
   title: 'Stranded: feat/concierge-card-key'
   description: >-
     Capability built on branch `feat/concierge-card-key` (2026-09-11) and never merged. It adds
-    1 file(s) that exist on no commit of origin/main: mcp/estate-mcp.Dockerfile.
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-fix-convergence-proof-cases-exercise-the-rule
-  title: 'Stranded: fix/convergence-proof-cases-exercise-the-rule'
-  description: >-
-    Capability built on branch `fix/convergence-proof-cases-exercise-the-rule` (2026-09-11) and never merged. It adds
     1 file(s) that exist on no commit of origin/main: mcp/estate-mcp.Dockerfile.
     Everything here is work already paid for and not running.
   tags: [dark-matter, unmerged-code]
@@ -435,23 +605,6 @@ metadata:
   title: 'Stranded: feat/mac-secret-deliver'
   description: >-
     Capability built on branch `feat/mac-secret-deliver` (2026-09-10) and never merged. It adds
-    1 file(s) that exist on no commit of origin/main: mcp/estate-mcp.Dockerfile.
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-feat-0910-session-7527
-  title: 'Stranded: feat/0910-session-7527'
-  description: >-
-    Capability built on branch `feat/0910-session-7527` (2026-09-10) and never merged. It adds
     1 file(s) that exist on no commit of origin/main: mcp/estate-mcp.Dockerfile.
     Everything here is work already paid for and not running.
   tags: [dark-matter, unmerged-code]
@@ -3270,176 +3423,6 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: stranded-fix-every-rule-grades-the-estate
-  title: 'Stranded: fix/every-rule-grades-the-estate'
-  description: >-
-    Capability built on branch `fix/every-rule-grades-the-estate` (2026-09-08) and never merged. It adds
-    19 file(s) that exist on no commit of origin/main: .github/workflows/founder-word.yml, backstage/packages/app/src/modules/home/PairPhone.tsx, bin/idp-drill-names, bin/idp-pr-catalogues, mcp/estate-mcp.Dockerfile, policy/fixtures/opmodel-control-none.json, policy/fixtures/opmodel-drill-added-in-pr.json, policy/fixtures/opmodel-laws-sentence.json (+11 more).
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-feat-nodesoftware-runsc-handler
-  title: 'Stranded: feat/nodesoftware-runsc-handler'
-  description: >-
-    Capability built on branch `feat/nodesoftware-runsc-handler` (2026-09-08) and never merged. It adds
-    19 file(s) that exist on no commit of origin/main: .github/workflows/founder-word.yml, backstage/packages/app/src/modules/home/PairPhone.tsx, bin/idp-drill-names, bin/idp-pr-catalogues, mcp/estate-mcp.Dockerfile, policy/fixtures/opmodel-control-none.json, policy/fixtures/opmodel-drill-added-in-pr.json, policy/fixtures/opmodel-laws-sentence.json (+11 more).
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-rbac-agent-reader-sees-the-crds
-  title: 'Stranded: rbac/agent-reader-sees-the-crds'
-  description: >-
-    Capability built on branch `rbac/agent-reader-sees-the-crds` (2026-09-08) and never merged. It adds
-    19 file(s) that exist on no commit of origin/main: .github/workflows/founder-word.yml, backstage/packages/app/src/modules/home/PairPhone.tsx, bin/idp-drill-names, bin/idp-pr-catalogues, mcp/estate-mcp.Dockerfile, policy/fixtures/opmodel-control-none.json, policy/fixtures/opmodel-drill-added-in-pr.json, policy/fixtures/opmodel-laws-sentence.json (+11 more).
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-fix-agent-workforce-declares-its-internet-hop
-  title: 'Stranded: fix/agent-workforce-declares-its-internet-hop'
-  description: >-
-    Capability built on branch `fix/agent-workforce-declares-its-internet-hop` (2026-09-08) and never merged. It adds
-    19 file(s) that exist on no commit of origin/main: .github/workflows/founder-word.yml, backstage/packages/app/src/modules/home/PairPhone.tsx, bin/idp-drill-names, bin/idp-pr-catalogues, mcp/estate-mcp.Dockerfile, policy/fixtures/opmodel-control-none.json, policy/fixtures/opmodel-drill-added-in-pr.json, policy/fixtures/opmodel-laws-sentence.json (+11 more).
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-feat-nodesoftware-operator-image-automation
-  title: 'Stranded: feat/nodesoftware-operator-image-automation'
-  description: >-
-    Capability built on branch `feat/nodesoftware-operator-image-automation` (2026-09-08) and never merged. It adds
-    19 file(s) that exist on no commit of origin/main: .github/workflows/founder-word.yml, backstage/packages/app/src/modules/home/PairPhone.tsx, bin/idp-drill-names, bin/idp-pr-catalogues, mcp/estate-mcp.Dockerfile, policy/fixtures/opmodel-control-none.json, policy/fixtures/opmodel-drill-added-in-pr.json, policy/fixtures/opmodel-laws-sentence.json (+11 more).
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-feat-intent-secret-capability
-  title: 'Stranded: feat/intent-secret-capability'
-  description: >-
-    Capability built on branch `feat/intent-secret-capability` (2026-09-08) and never merged. It adds
-    19 file(s) that exist on no commit of origin/main: .github/workflows/founder-word.yml, backstage/packages/app/src/modules/home/PairPhone.tsx, bin/idp-drill-names, bin/idp-pr-catalogues, mcp/estate-mcp.Dockerfile, policy/fixtures/opmodel-control-none.json, policy/fixtures/opmodel-drill-added-in-pr.json, policy/fixtures/opmodel-laws-sentence.json (+11 more).
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-fix-calico-node-kubevirt-watch
-  title: 'Stranded: fix/calico-node-kubevirt-watch'
-  description: >-
-    Capability built on branch `fix/calico-node-kubevirt-watch` (2026-09-08) and never merged. It adds
-    19 file(s) that exist on no commit of origin/main: .github/workflows/founder-word.yml, backstage/packages/app/src/modules/home/PairPhone.tsx, bin/idp-drill-names, bin/idp-pr-catalogues, mcp/estate-mcp.Dockerfile, policy/fixtures/opmodel-control-none.json, policy/fixtures/opmodel-drill-added-in-pr.json, policy/fixtures/opmodel-laws-sentence.json (+11 more).
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-wj1-the-agent-identity-is-minted-by-the-broker-not-the
-  title: 'Stranded: wj1/the-agent-identity-is-minted-by-the-broker-not-the-founder'
-  description: >-
-    Capability built on branch `wj1/the-agent-identity-is-minted-by-the-broker-not-the-founder` (2026-09-08) and never merged. It adds
-    19 file(s) that exist on no commit of origin/main: .github/workflows/founder-word.yml, backstage/packages/app/src/modules/home/PairPhone.tsx, bin/idp-drill-names, bin/idp-pr-catalogues, mcp/estate-mcp.Dockerfile, policy/fixtures/opmodel-control-none.json, policy/fixtures/opmodel-drill-added-in-pr.json, policy/fixtures/opmodel-laws-sentence.json (+11 more).
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-fix-signoz-unstall-clickhouse
-  title: 'Stranded: fix/signoz-unstall-clickhouse'
-  description: >-
-    Capability built on branch `fix/signoz-unstall-clickhouse` (2026-09-08) and never merged. It adds
-    19 file(s) that exist on no commit of origin/main: .github/workflows/founder-word.yml, backstage/packages/app/src/modules/home/PairPhone.tsx, bin/idp-drill-names, bin/idp-pr-catalogues, mcp/estate-mcp.Dockerfile, policy/fixtures/opmodel-control-none.json, policy/fixtures/opmodel-drill-added-in-pr.json, policy/fixtures/opmodel-laws-sentence.json (+11 more).
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: dead-chaos-mesh-chaos-controller-manager
-  title: 'Dead: chaos-mesh/chaos-controller-manager'
-  description: >-
-    Deployment `chaos-controller-manager` in `chaos-mesh` is scaled to zero. It is deployed and
-    switched off: neither deleted nor running, which is the state a thing sits in when
-    nobody owns its removal.
-  tags: [dark-matter, dead-runtime]
-spec:
-  type: service
-  lifecycle: dead
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
   name: dead-edge-runtime-edge-runtime
   title: 'Dead: edge-runtime/edge-runtime'
   description: >-
@@ -3474,61 +3457,10 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: dead-guacamole-guacamole
-  title: 'Dead: guacamole/guacamole'
-  description: >-
-    Deployment `guacamole` in `guacamole` is scaled to zero. It is deployed and
-    switched off: neither deleted nor running, which is the state a thing sits in when
-    nobody owns its removal.
-  tags: [dark-matter, dead-runtime]
-spec:
-  type: service
-  lifecycle: dead
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
   name: dead-hindsight-hindsight-api
   title: 'Dead: hindsight/hindsight-api'
   description: >-
     Deployment `hindsight-api` in `hindsight` is scaled to zero. It is deployed and
-    switched off: neither deleted nor running, which is the state a thing sits in when
-    nobody owns its removal.
-  tags: [dark-matter, dead-runtime]
-spec:
-  type: service
-  lifecycle: dead
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: dead-observability-langfuse-web
-  title: 'Dead: observability/langfuse-web'
-  description: >-
-    Deployment `langfuse-web` in `observability` is scaled to zero. It is deployed and
-    switched off: neither deleted nor running, which is the state a thing sits in when
-    nobody owns its removal.
-  tags: [dark-matter, dead-runtime]
-spec:
-  type: service
-  lifecycle: dead
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: dead-observability-langfuse-worker
-  title: 'Dead: observability/langfuse-worker'
-  description: >-
-    Deployment `langfuse-worker` in `observability` is scaled to zero. It is deployed and
     switched off: neither deleted nor running, which is the state a thing sits in when
     nobody owns its removal.
   tags: [dark-matter, dead-runtime]
@@ -3580,6 +3512,23 @@ metadata:
   title: 'Dead: robusta/robusta-runner'
   description: >-
     Deployment `robusta-runner` in `robusta` is scaled to zero. It is deployed and
+    switched off: neither deleted nor running, which is the state a thing sits in when
+    nobody owns its removal.
+  tags: [dark-matter, dead-runtime]
+spec:
+  type: service
+  lifecycle: dead
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: dead-staging-canary
+  title: 'Dead: staging/canary'
+  description: >-
+    Deployment `canary` in `staging` is scaled to zero. It is deployed and
     switched off: neither deleted nor running, which is the state a thing sits in when
     nobody owns its removal.
   tags: [dark-matter, dead-runtime]
