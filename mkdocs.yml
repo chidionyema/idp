@@ -198,6 +198,7 @@ nav:
       - Wake blocked: tutorials/demo/wake-blocked.md
       - Founder god's view: tutorials/demo/estate-founder.md
       - Money: tutorials/demo/commerce.md
+      - Rails boot window: tutorials/demo/lago-boot.md
       - Customer sign-in: tutorials/demo/customer-identity.md
       - Human secret door: tutorials/demo/human-vault.md
   - Onboarding:
@@ -238,6 +239,7 @@ nav:
       - Estate inventory: how-to/onboarding/estate-inventory.md
       - Cluster autoscaler: how-to/onboarding/autoscaler.md
       - Money: how-to/onboarding/commerce.md
+      - Rails boot window: how-to/onboarding/lago-boot.md
       - Estate zone: how-to/onboarding/estate-zone.md
       - k8s-infra: how-to/onboarding/k8s-infra.md
       - Langfuse: how-to/onboarding/langfuse.md
