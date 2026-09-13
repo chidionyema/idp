@@ -183,9 +183,35 @@ clickhouse:
     # line above sets. Shrinking caches could not fix that; the parts had to stop being made.
     #
     # These are ClickHouse's internal telemetry, not customer data. Signoz retention is untouched.
+    #
+    # 2026-09-13, later the same day, and this is the part that matters: the ten twins are not
+    # three. `bin/idp-clickhouse-twin-ttl`, written to refuse this class, found SEVEN more that no
+    # measurement had reached -- query_log_0, part_log_0, session_log_0, zookeeper_log_0,
+    # asynchronous_insert_log_0, processors_profile_log_0 and query_views_log_0 all carry the
+    # operator's default because only their base names are set. Read off the live server:
+    #
+    #   query_log_0 30d   part_log_0 30d   session_log_0 30d   zookeeper_log_0 30d
+    #   asynchronous_insert_log_0 7d   processors_profile_log_0 7d   query_views_log_0 15d
+    #
+    # against 1-3 days declared here for every one of them. The gate catches all ten; this block
+    # is the third of them fixed by hand before the gate existed.
+    #
+    # AND A LIMIT ON WHAT THIS FILE CAN DO: a twin whose table already exists is NOT re-shaped by
+    # a changed <engine>. Proved on the live pod after #3353 applied -- `chop-generated-settings.xml`
+    # carried 3d for metric_log_0 and 1d for trace_log_0, and `system.tables` still reported 30d
+    # and 7d, because ClickHouse attaches the file it already has. These keys stop the twins being
+    # created oversized on a fresh server and keep the declaration honest; they cannot shrink the
+    # parts that already exist, and no config edit can. That needs the tables recreated.
     metric_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
     asynchronous_metric_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
     trace_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    query_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    part_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    session_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    zookeeper_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    asynchronous_insert_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    processors_profile_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    query_views_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
     # text_log is the one table the operator gives no <engine>, so the sibling form is correct
     # there and only there.
     text_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
