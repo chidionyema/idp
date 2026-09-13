@@ -989,10 +989,24 @@ def test_rule_4_has_two_enforcement_points() -> None:
         and "UNATTESTED" in p.read_text(errors="ignore")
     )
     found = sorted(set(tracked) | set(on_disk))
+
+    # An ENFORCEMENT POINT is a file that can refuse a payload: the executor that evaluates
+    # the claim, and the Kyverno policy the cluster's admission controller runs. A test is
+    # not an enforcement point however much of the vocabulary it carries -- it exercises the
+    # two that exist. Measured 2026-09-13: this list is why the suite went red on the branch
+    # that added tests/test_rule4_admission.py, a test written to drive the REAL `kyverno
+    # apply` CLI instead of asserting strings. The old shape excluded exactly one test
+    # filename, so the second test to speak the vocabulary was read as a third enforcement
+    # point and the assertion failed on correct work (R38).
+    #
+    # So the exclusion is the CLASS, not one filename: anything under tests/ or ending
+    # _test.py is a grader. `enforcing` then means what it says.
     enforcing = sorted(
         line
         for line in found
         if not line.endswith(".feature")
+        and not line.startswith("tests/")
+        and not line.endswith("_test.py")
         and not line.endswith("test_deterministic_verifier.py")
     )
     assert enforcing == [
