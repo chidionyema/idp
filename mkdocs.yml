@@ -105,6 +105,7 @@ nav:
       - Breaker enforcement: tutorials/demo/breaker.md
       - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
+      - HelmRelease drift coverage: tutorials/demo/helmrelease-drift.md
       - epistemic: tutorials/demo/epistemic.md
       - Epistemic gate (module): tutorials/demo/epistemic_firewall.py.md
       - trajectory: tutorials/demo/trajectory.md
@@ -217,6 +218,7 @@ nav:
       - Every gate, with its output: how-to/onboarding/gate-demo.md
       - Portal: how-to/onboarding/idp.md
       - Estate compiler: how-to/onboarding/intent.md
+      - HelmRelease drift coverage: how-to/onboarding/helmrelease-drift.md
       - Estate Mac screen: how-to/onboarding/founder-screen-access.md
       - Conscience: how-to/onboarding/conscience.md
       - Estate showcase: how-to/onboarding/estate-showcase.md
@@ -376,6 +378,7 @@ nav:
       - epistemic: gates/epistemic.md
       - trajectory: gates/trajectory.md
       - circuit-breaker: gates/circuit-breaker.md
+      - helmrelease-drift: gates/helmrelease-drift-is-detectable.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
