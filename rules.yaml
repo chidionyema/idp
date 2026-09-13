@@ -2183,31 +2183,29 @@ rules:
     note: the same ExternalSecret once a person has typed the pair
   ok: every ExternalSecret that cannot sync names the vault key it needs and whether a person must produce it
   fail: a row is held by a missing vault entry and its status reads "Reconciliation in progress"
-- id: helmrelease-drift-is-detectable
-  label: helmrelease-drift
-  statement: A HelmRelease reporting Ready while it cannot see the cluster disagree with it is not reconciled -- helm-controller diffs the manifest in Helm storage against the rendered chart and never against the cluster, so a Deployment edited after the apply is invisible to it forever. driftDetection is the fence that compares the two, and a release without it is named, with the number of Ready-and-blind releases reported so the count can be driven down
-  law: LAW 45, incident 2026-09-13 (chaos-controller-manager ran at 0 replicas for 18 days while Ready/UpgradeSucceeded and helm-controller logged "release in-sync with desired state"; 39 fail-closed webhooks then made every chaos-mesh.org object uncreatable estate-wide)
-  origin: incident 2026-09-13, chaos-mesh
+- id: drift-reads-blind-not-clean
+  label: drift-blind
+  statement: A tool that could not read the estate exits 2 and prints BLIND, never 0 with an empty result -- "nothing is drifting" and "nothing could be read" must never print the same thing. The rule is proved on a reader whose kubectl is absent and on a clean set of Flux objects, both ways
+  law: LAW 2, incident 2026-09-08 (bin/idp-compile-helm exited 0 while 11 of 33 charts failed to render)
+  origin: spec 2026-09-13-gitops-sync-engine.md
   planes:
   - ci
   run:
   - python3
-  - bin/idp-helmrelease-drift-coverage
+  - bin/idp-drift-blind
   fixtures:
-    must_fail: tests/fixtures/helmrelease-drift/bad
-    must_pass: tests/fixtures/helmrelease-drift/good
+    must_fail: tests/fixtures/drift-blind/bad
+    must_pass: tests/fixtures/drift-blind/good
   cases:
   - expect: refuse
     args:
-    - --from
-    - tests/fixtures/helmrelease-drift/bad/helmreleases.json
-    - --fail-on-blind-ready
-    note: the chaos defect exactly -- Ready, and driftDetection unset
+    - tests/fixtures/drift-blind/bad
+    note: a reader with no kubectl is BLIND, exit 2, never a clean empty estate
   - expect: pass
     args:
-    - --from
-    - tests/fixtures/helmrelease-drift/good/helmreleases.json
-    - --fail-on-blind-ready
-    note: the same release with the fence switched on
-  ok: a release that cannot see the cluster disagree with it is named; the count is the number to drive down
-  fail: a release reports Ready while a post-apply edit is invisible to it, and nothing says so
+    - tests/fixtures/drift-blind/good
+    note: a reader that read every object and found the estate reconciled exits 0
+  - expect: pass
+    note: LIVE -- a bare run invokes bin/idp-gitops-drift twice, once against the estate this machine can see and once with an empty PATH, and grades both verdicts with the same code. It asserts no particular exit code, because a clean cluster answers 0 and a drifting one answers 1 and both are right; it asserts the property -- never BLIND with 0, never 2 without BLIND. This is the case that stays red the day the tool's blind branch is changed, which a fixture-only rule cannot see.
+  ok: a reader that cannot see the estate says so and refuses to report a clean one
+  fail: a blind reading prints the same thing as a clean estate
