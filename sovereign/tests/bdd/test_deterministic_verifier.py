@@ -217,7 +217,35 @@ class Door:
                     return json.loads(b"".join(chunks).decode())
                 except json.JSONDecodeError:
                     continue  # partial read; keep going until the reply parses
-            return json.loads(b"".join(chunks).decode())
+            # THE PEER CLOSED. MEASURED DEFECT, 2026-09-13 (CI run 34772174167, xdist `gw2`).
+            #
+            # This line used to be `return json.loads(b"".join(chunks).decode())`, and when the
+            # daemon died mid-request it raised
+            # `JSONDecodeError: Expecting value: line 1 column 1 (char 0)` with `s = ''`. Three
+            # scenarios failed on that message. It names a PARSER, so it points at the reply's
+            # shape -- and the actual event, a dead executor, is invisible in it. The read loop
+            # above cannot tell the two apart either: `recv` returning `b""` is the socket
+            # closing, never a short reply.
+            #
+            # The same mistake is already documented twice in this file (the deleted reaper, the
+            # dead-while-`_await_socket` path). It survived here because this is the one path a
+            # HEALTHY daemon never takes, so no green run could catch it -- the guard is the fix,
+            # not the message (LAW 45).
+            reply = b"".join(chunks)
+            if not reply:
+                state = (
+                    f"exited rc={self.proc.returncode}"
+                    if self.proc is not None and self.proc.poll() is not None
+                    else "still running"
+                )
+                raise AssertionError(
+                    f"the executor daemon closed the socket without a reply ({state}); "
+                    f"its stderr was: {self.stderr_text()[-2000:]!r}"
+                )
+            raise AssertionError(
+                f"the executor daemon closed the socket mid-reply; it sent {reply!r}, which is "
+                f"not JSON. Its stderr was: {self.stderr_text()[-2000:]!r}"
+            )
 
     def health(self) -> dict[str, Any]:
         try:

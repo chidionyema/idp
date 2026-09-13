@@ -154,22 +154,47 @@ def _stable(output: str) -> str:
 
     A generated page is checked in (`bin/idp-gate-demo --check` fails when the page on disk is
     not what a render produces), so a single varying byte makes the check unusable and the
-    idempotency test fail. Two things vary on every run:
+    idempotency test fail. Three things vary on every run:
 
       * a timestamp, e.g. `2026-09-12 23:45:29 +0100`
       * a temp directory, e.g. `/var/folders/gq/.../tmp9ufe9b4a`, because a gate that imports
         dagster is handed a fresh one per invocation
+      * a pytest DURATION, e.g. `13 passed in 456.72s (0:07:36)`, because seven rules in this
+        registry run pytest as their gate and no two runs take the same time
 
     Measured 2026-09-12: docs/gates/defs-load-by-path.md differed between two consecutive renders
     on pristine main for exactly these two reasons, and the page could never be current.
-    Both are replaced with a fixed token so the page records WHAT the gate said, not when the
-    demo happened to run it.
+    Measured again 2026-09-13, in CI run 34772174167: SEVEN pages were non-idempotent in one
+    render pair -- availability, breaker-enforcement, execution-boundary-holds, index,
+    licence-policy, placement-policy, rego-unit-tests -- and `--check` refused the committed tree
+    (`tests/test_gate_demo.py:126` `two renders of one registry differ` and `:130` `--check
+    refused a current tree`). Every one of the seven is a rule whose gate is pytest or conftest,
+    so the varying line was the summary pytest prints: `13 passed in 456.72s (0:07:36)`. The
+    earlier pass scrubbed the first two causes and left this one, and because the index page
+    copies each page's exit code the single leak also made `index.md` differ -- seven pages from
+    one unscrubbed number.
+
+    All three are replaced with a fixed token so the page records WHAT the gate said, not when
+    the demo happened to run it, and not how long it took. The duration is deliberately NOT kept:
+    it is a property of the machine that ran the demo, not of the gate, and a page that changed
+    when the laptop was busy would make `--check` a coin toss.
     """
     out = re.sub(
-        r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[+-]\d{4})?", "<timestamp>", output
+        r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\s*[+-]\d{4})?", "<timestamp>", output
     )
     out = re.sub(r"/(?:private/)?var/folders/\S*?/tmp[0-9A-Za-z_]+", "<tmpdir>", out)
     out = re.sub(r"/tmp/tmp[0-9A-Za-z_]+", "<tmpdir>", out)  # noqa: S108 -- a pattern, not a path
+    # pytest's summary line: `13 passed in 456.72s (0:07:36)`, `1 failed, 2 passed in 0.31s`.
+    # Anchored on `in <n>s` so a finding that merely contains the word "passed" is untouched. The
+    # optional space before the bracketed clock form is REQUIRED, not cosmetic: measured here on
+    # the first attempt, without it `456.72s (0:07:36)` scrubbed to `<duration> (0:07:36)` -- the
+    # clock was left behind, the page still differed between two renders, and the fix would have
+    # looked correct while the CI failure it was written for survived.
+    out = re.sub(
+        r"\b(in) \d+(?:\.\d+)?s(?:\s*\(\d+:\d{2}(?::\d{2})?\))?",
+        r"\1 <duration>",
+        out,
+    )
     return out
 
 
