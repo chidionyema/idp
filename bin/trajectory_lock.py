@@ -461,11 +461,13 @@ def _grade_estate(limit: int = 25) -> int:
     """Grade the most recent real sessions. The live case: no fixture is involved."""
     sessions = _estate_sessions()[:limit]
     if not sessions:
+        # Same reasoning as bin/epistemic_firewall.py: a runner has no ~/.pi, and no transcripts
+        # means nothing to grade rather than a blind check. Grading one named session still fails.
         print(
-            "BLIND trajectory no session transcripts found under ~/.pi/agent/sessions",
-            file=sys.stderr,
+            "ok    trajectory no session transcripts on this machine; nothing to grade "
+            "(a named session is still graded, and a missing one is still BLIND)"
         )
-        return 2
+        return 0
     drifted = 0
     for path in sessions:
         verdict = grade_file(path)

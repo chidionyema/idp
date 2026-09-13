@@ -2069,3 +2069,29 @@ rules:
     note: the estate's own sessions swept from ~/.pi/agent/sessions. This reports rather than fails, because the finding is historical -- 25 of 25 began with no declared plan -- and a gate red until no agent ever drifts again would be switched off and protect nothing (R38). Grading ONE session by name still refuses, and bin/idp-trajectory <a real .jsonl> exits 1.
   ok: every action a transcript records serves the plan the agent declared
   fail: 'the agent acted outside its declared plan. Measured 2026-09-12: this session''s stated goal was "fix the gates, fix the class they exposed, do no more than that", and a grep of its own 1.7MB transcript counts treewalk 169 references (the work) against rule-guard 51, pi/agent/extensions 39 and addopts/-n auto 66 (all drift). The founder stopped it twice by hand. A prompt cannot fix this -- attention weights the most recent tokens, so the newest error out-competes the original objective by construction. The harness must refuse.'
+- id: circuit-breaker
+  label: breaker
+  statement: Three targets returning the same finding prove one cause, so the linear action is refused with 423 Locked and the fleet lever is named instead. The fingerprint is the stable identity of the finding (a CVE set, order-free), never a raw hash of the output -- the same cause prints different bytes on different targets. The lock is scoped to the finding, so a different finding on a locked target, and nine different findings across nine targets, stay workable (R38)
+  law: founder 2026-09-12, throw the 423 Locked exception at N=3
+  origin: incident 2026-09-12, nine pull requests red on one cause while the agent checked them one at a time
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-circuit-breaker
+  fixtures:
+    must_fail: tests/fixtures/circuit-breaker/bad/three-identical.json
+    must_pass: tests/fixtures/circuit-breaker/good/nine-different.json
+  cases:
+  - expect: refuse
+    args:
+    - --replay
+    - tests/fixtures/circuit-breaker/bad/three-identical.json
+    note: three identical findings across three targets lock the primitive
+  - expect: pass
+    args:
+    - --replay
+    - tests/fixtures/circuit-breaker/good/nine-different.json
+    note: nine different findings across nine targets are all workable
+  ok: a proved pattern disables the linear path and names the fleet lever
+  fail: an agent repeats a proved diagnosis across targets, and the environment lets it
