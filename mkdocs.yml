@@ -60,6 +60,8 @@ nav:
   - How-to:
       - how-to/index.md
       - Bitwarden human vault, the founder's steps: how-to/bitwarden-human-vault.md
+      - Onboarding the MCP door: how-to/onboarding/mcp-door.md
+      - Onboarding the evidence recorder: how-to/onboarding/evidence-recorder.md
       - Onboarding the evidence layer: how-to/onboarding/evidence.md
       - Boot Dagster and Superset: how-to/boot-dagster-and-superset.md
       - Prove a change in the shadow: how-to/prove-a-change-in-the-shadow.md
@@ -103,20 +105,26 @@ nav:
       - The agent that couldn't lie: tutorials/demo/truthteller-demo.md
       - The circuit breaker: tutorials/demo/circuit-breaker.md
       - Breaker enforcement: tutorials/demo/breaker.md
+      - A gate only knows the tree it ran in: tutorials/demo/clean-tree.md
       - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
+      - Secret blockers: tutorials/demo/secret-blockers.md
+      - Health check names a real object: tutorials/demo/healthcheck-exists.md
       - epistemic: tutorials/demo/epistemic.md
       - Epistemic gate (module): tutorials/demo/epistemic_firewall.py.md
       - trajectory: tutorials/demo/trajectory.md
       - Trajectory lock (module): tutorials/demo/trajectory_lock.py.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
+      - The MCP door: tutorials/demo/mcp-door.md
+      - The evidence recorder: tutorials/demo/evidence-recorder.md
       - Evidence layer: tutorials/demo/evidence.md
       - Estate next: tutorials/demo/estate-next.md
       - Messaging: tutorials/demo/messaging.md
       - Prose-pin gate: tutorials/demo/test-prose-gate.md
       - Incident register: tutorials/demo/incident-register.md
       - FleetView sessions: tutorials/demo/fleetview.md
+      - Compile the estate: tutorials/demo/compile.md
       - Trace matrix: tutorials/demo/trace-matrix.md
       - Matrix gate: tutorials/demo/matrix.md
       - Plain English: tutorials/demo/plain-english.md
@@ -191,11 +199,13 @@ nav:
       - Wake blocked: tutorials/demo/wake-blocked.md
       - Founder god's view: tutorials/demo/estate-founder.md
       - Money: tutorials/demo/commerce.md
+      - Rails boot window: tutorials/demo/lago-boot.md
       - Customer sign-in: tutorials/demo/customer-identity.md
       - Human secret door: tutorials/demo/human-vault.md
   - Onboarding:
       - The Demo Standard: onboarding/demo-standard.md
       - FleetView: how-to/onboarding/fleetview.md
+      - Compile the estate: how-to/onboarding/compile.md
       - Buyer sandbox (one hour): onboarding/demo-sandbox.md
       - Merge queue (hands-free landing): onboarding/merge-queue.md
       - Catalogue links: onboarding/catalog-links.md
@@ -212,9 +222,12 @@ nav:
       - The agent that couldn't lie: how-to/onboarding/truthteller-demo.md
       - The circuit breaker: how-to/onboarding/circuit-breaker.md
       - Breaker enforcement: how-to/onboarding/breaker.md
+      - Grading from a clean tree: how-to/onboarding/clean-tree.md
       - Every gate, with its output: how-to/onboarding/gate-demo.md
       - Portal: how-to/onboarding/idp.md
       - Estate compiler: how-to/onboarding/intent.md
+      - Secret blockers: how-to/onboarding/secret-blockers.md
+      - Health check names a real object: how-to/onboarding/healthcheck-exists.md
       - Estate Mac screen: how-to/onboarding/founder-screen-access.md
       - Conscience: how-to/onboarding/conscience.md
       - Estate showcase: how-to/onboarding/estate-showcase.md
@@ -228,6 +241,7 @@ nav:
       - Estate inventory: how-to/onboarding/estate-inventory.md
       - Cluster autoscaler: how-to/onboarding/autoscaler.md
       - Money: how-to/onboarding/commerce.md
+      - Rails boot window: how-to/onboarding/lago-boot.md
       - Estate zone: how-to/onboarding/estate-zone.md
       - k8s-infra: how-to/onboarding/k8s-infra.md
       - Langfuse: how-to/onboarding/langfuse.md
@@ -376,6 +390,10 @@ nav:
       - epistemic: gates/epistemic.md
       - trajectory: gates/trajectory.md
       - circuit-breaker: gates/circuit-breaker.md
+      - clean-tree: gates/clean-tree.md
+      - secret-blockers: gates/externalsecret-blockers-are-loud.md
+      - drift-blind: gates/drift-reads-blind-not-clean.md
+      - healthcheck-exists: gates/healthcheck-names-a-real-object.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
