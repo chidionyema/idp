@@ -73,46 +73,74 @@ def apply_module(apply_source: str):
     return ns
 
 
-# --- the write target -------------------------------------------------------
+# --- the write target, observed rather than grepped -------------------------
+#
+# These three tests used to assert on the ConfigMap's TEXT: `assert "POST" in
+# apply_source`, a regex over the source, and a substring check for the v1 path.
+# `bin/test-executes-gate` refused them, correctly -- a test that reads this
+# repository's own files and asserts their text back runs nothing, so it cannot
+# fail when the behaviour changes, only when the wording does. They now CALL the
+# module and record where the call went, which is the property that actually
+# broke: the write was refused with `SetTTLV2 only supported`.
 
 
-def test_the_retention_write_goes_to_v2(apply_source: str) -> None:
-    """v1 is refused with `SetTTLV2 only supported`; the write must be v2.
+def test_the_retention_write_goes_to_v2(apply_module) -> None:
+    """A real apply posts to the v2 endpoint. v1 is refused on this deployment.
 
-    This is the line that failed. A job whose write is refused on one signal and
-    never attempted on the other two reports success for days.
+    This is the line that failed in production, every morning, on one signal.
     """
-    assert "POST" in apply_source
-    posts = re.findall(r'http\(\s*"POST",\s*"([^"]+)"', apply_source)
+    seen = []
+
+    def http(method, path, body=None, token=None, params=None):
+        seen.append((method, path))
+        return 200, {"message": "custom retention TTL has been successfully set up"}
+
+    assert apply_module["apply"](http, "tok", 7, [("logs", 15)]) == []
+    posts = [path for method, path in seen if method == "POST"]
     assert posts, "the apply must POST somewhere"
-    # Only the TTL writes are graded here: the job also POSTs to /api/v2/sessions/email_password
-    # to log in, and a login is not a retention change.
-    ttl_posts = [p for p in posts if "settings/ttl" in p]
-    assert ttl_posts, "the apply must write the TTL somewhere"
-    assert all(p.startswith("/api/v2/settings/ttl") for p in ttl_posts), (
-        f"the retention write must go to /api/v2/settings/ttl, found {ttl_posts}. The v1 endpoint "
-        "answers 500 `SetTTLV2 only supported` on this deployment."
+    assert all(p.startswith("/api/v2/settings/ttl") for p in posts), (
+        f"the retention write went to {posts}; v1 answers 500 `SetTTLV2 only supported` "
+        "on this deployment"
     )
 
 
-def test_no_v1_ttl_write_survives_anywhere(apply_source: str) -> None:
-    """A v1 POST left beside the v2 one would keep failing the same way."""
-    assert '"/api/v1/settings/ttl"' not in apply_source.replace(" ", ""), (
-        "a v1 TTL write is still in the job; it is refused on this deployment"
-    )
+def test_no_v1_ttl_write_survives_anywhere(apply_module) -> None:
+    """No path the job can take posts to the v1 endpoint.
 
-
-def test_the_read_uses_the_same_engine_as_the_write(apply_source: str) -> None:
-    """Reading v1 while writing v2 is how a knob lands and the job still reports work daily.
-
-    The two generations disagree about the current value: v1 said `-1` for a logs
-    signal v2 had already set.
+    Exercised over every signal, because the defect reached production on exactly
+    one of the three.
     """
-    gets = re.findall(r'http\(\s*"GET",\s*"([^"]+)"', apply_source)
-    ttl_gets = [g for g in gets if "settings/ttl" in g]
+    seen = []
+
+    def http(method, path, body=None, token=None, params=None):
+        seen.append((method, path))
+        return 200, {"version": "v2", "status": "success"}
+
+    apply_module["apply"](
+        http, "tok", 7, [(sig, -1) for sig in ("traces", "metrics", "logs")]
+    )
+    v1 = [(m, p) for m, p in seen if "api/v1/settings/ttl" in p]
+    assert not v1, f"a v1 TTL write is still reachable: {v1}"
+
+
+def test_the_read_uses_the_same_engine_as_the_write(apply_module) -> None:
+    """Reading v1 while writing v2 is how a knob lands and the job still works daily.
+
+    The two generations disagree about the current value: v1 answered `-1` for a
+    logs signal v2 had already set. Observed, not grepped: the plan step's calls
+    are recorded and checked.
+    """
+    seen = []
+
+    def http(method, path, body=None, token=None, params=None):
+        seen.append((method, path))
+        return 200, {"version": "v2", "status": "success", "default_ttl_days": 7}
+
+    apply_module["plan"](http, "tok", 7)
+    ttl_gets = [p for m, p in seen if "settings/ttl" in p]
     assert ttl_gets, "the plan step must read the current TTL"
-    assert all(g.startswith("/api/v2/settings/ttl") for g in ttl_gets), (
-        f"the TTL read must be v2 like the write, found {ttl_gets}"
+    assert all(p.startswith("/api/v2/settings/ttl") for p in ttl_gets), (
+        f"the TTL read went to {ttl_gets}; the write is v2 and the read must match it"
     )
 
 
