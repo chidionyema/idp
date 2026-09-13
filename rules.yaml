@@ -22,7 +22,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/api-version/bad
     must_pass: tests/fixtures/api-version/good
-  live_elsewhere: bin/idp-ci:610 -- the apiversion rung grades the REAL platform/ and clusters/ trees the cluster reconciles, not the fixture pair
+  live_elsewhere: bin/idp-ci:633 -- the apiversion rung grades the REAL platform/ and clusters/ trees the cluster reconciles, not the fixture pair
   cases:
   - expect: refuse
     args:
@@ -52,7 +52,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/aevum-evidence/bad/chain.json
     must_pass: tests/fixtures/aevum-evidence/good/chain.json
-  live_elsewhere: 'bin/idp-ci:606 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
+  live_elsewhere: 'bin/idp-ci:623 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
   cases:
   - expect: refuse
     args:
@@ -422,7 +422,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/migration-not-idempotent
     must_pass: bin/scheduler-migrate
-  live_elsewhere: bin/idp-ci:345 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
+  live_elsewhere: bin/idp-ci:362 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
   cases:
   - expect: refuse
     args:
@@ -1207,7 +1207,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/reloader-blind
     must_pass: tests/fixtures/reloader
-  live_elsewhere: bin/idp-ci:445 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
+  live_elsewhere: bin/idp-ci:462 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
   cases:
   - expect: refuse
     args:
@@ -1719,7 +1719,8 @@ rules:
   fast: true
   statement: A ClickHouse system table this tree configures by its base name also configures its `_0` twin, with a TTL no longer than the base table's; a twin that keeps the operator's 30-day default is a table whose parts the merge pool cannot keep up with
   law: incident 2026-09-13, signoz-clickhouse 49 OOMKilled restarts
-  origin: 'Every system-log retention in platform/observability/values.yaml is keyed on the BASE table name, and ClickHouse keeps the file it already had open under the name it already had -- metric_log_0, trace_log_0, asynchronous_metric_log_0. A _0 twin is a different table to the settings map, so the base-name key never reaches it and it holds the clickhouse-operator''s 30-day default. Measured: 7.9 GiB across 393 active parts in `system`, more than every signoz_* table combined, with metric_log_0 alone at 222 parts. The operator permits 32 concurrent merges (background_pool_size 16 x ratio 2); 27 were running and 12 were on that one twin, and MergesMutationsMemoryTracking read 1051 MiB against a MemoryTracking of 2112 -- half of ClickHouse''s tracked memory was merges of its own diagnostic logs, pinned at the 0.3 ratio. MemoryResident 3.53 GiB against a 3.60 GiB ceiling, ratio 1.9 where upstream calls 1.4 dangerous. The kernel OOM killer targets RSS, so it killed the pod while ClickHouse''s own logs showed nothing wrong: exitCode 137, one kill every ~30 minutes for four and a half days. Shrinking the caches could not reach it, because the parts are the cause and the caches were only sitting on top.'
+  origin: 'Every system-log retention in platform/observability/values.yaml is keyed on the BASE table name, and ClickHouse keeps the file it already had open under the name it already had -- metric_log_0, trace_log_0, asynchronous_metric_log_0. A _0 twin is a different table to the settings map, so the base-name key never reaches it and it holds the clickhouse-operator''s 30-day default. Measured: 7.9 GiB across 393 active parts in `system`, more than every signoz_* table combined, with metric_log_0 alone at 222 parts. The operator permits 32 concurrent merges (background_pool_size 16 x ratio 2); 27 were running and 12 were on that one twin, and MergesMutationsMemoryTracking read 1051 MiB against a MemoryTracking of 2112 -- half of ClickHouse''s tracked memory was merges of its own diagnostic logs, pinned at the 0.3 ratio. MemoryResident 3.53 GiB against a 3.60 GiB ceiling, ratio 1.9 where upstream calls 1.4 dangerous. The kernel OOM killer targets RSS, so it killed the pod while ClickHouse''s
+    own logs showed nothing wrong: exitCode 137, one kill every ~30 minutes for four and a half days. Shrinking the caches could not reach it, because the parts are the cause and the caches were only sitting on top.'
   planes:
   - ci
   - session
@@ -1829,7 +1830,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
     must_pass: tests/fixtures/catalogue-entity-runtime-service
-  live_elsewhere: bin/idp-ci:445 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
+  live_elsewhere: bin/idp-ci:462 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
   cases:
   - expect: refuse
     args:
@@ -2224,3 +2225,214 @@ rules:
     note: the same ExternalSecret once a person has typed the pair
   ok: every ExternalSecret that cannot sync names the vault key it needs and whether a person must produce it
   fail: a row is held by a missing vault entry and its status reads "Reconciliation in progress"
+- id: estate-graph-view
+  label: graphview
+  statement: 'The /ops graph section reports the estate''s three-state rule and never renders a stale domain as serving: UNKNOWN leads the sentence when the graph is older than its window, a BLIND graph names why rather than reading as clean, and the section keeps the tool''s own ordering so a dead workload is not buried under warning events'
+  law: LAW 22, LAW 53
+  origin: founder 2026-09-12 (the view must not flatter the estate)
+  planes:
+  - ci
+  run:
+  - node
+  - bin/idp-estate-graph-prove
+  cluster:
+    policy: null
+    why: the subject is a React module, which no admission controller sees
+  fixtures:
+    must_fail: tests/fixtures/graphview/bad.json
+    must_pass: tests/fixtures/graphview/good.json
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/graphview/bad.json
+  - expect: pass
+    args:
+    - tests/fixtures/graphview/good.json
+  - expect: pass
+    args: []
+  ok: the founder's graph view reports the three states honestly and never flatters a stale read (2026-09-12)
+  fail: the view could render a stale or blind graph as healthy
+- id: estate-twin
+  label: twin
+  statement: Every runtime fact the estate reports comes from the estate's own cluster-state receipt into catalog/estate.db, never from a second store, bus or server; a domain not read inside its freshness window reads UNKNOWN and never MEASURED_OK; the twin's stranded-branch count equals the catalogue generator's, so two surfaces cannot tell a founder two different numbers
+  law: LAW 22, LAW 39, THE HEADLINE
+  origin: founder 2026-09-12 ("tired of running my whole estate blind")
+  planes:
+  - ci
+  run:
+  - python3
+  - tests/test_estate_twin_rule.py
+  cluster:
+    policy: null
+    why: the subject is the estate's own asset graph, not a cluster object
+  fixtures:
+    must_fail: tests/fixtures/twin/no-summary.json
+    must_pass: tests/fixtures/twin/agreed.json
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/twin/no-summary.json
+  - expect: refuse
+    args:
+    - tests/fixtures/twin/disagreed.json
+  - expect: pass
+    args:
+    - tests/fixtures/twin/agreed.json
+  - expect: pass
+    args:
+    - --live
+  ok: the estate's graph knows what the estate is, and no second surface contradicts it (2026-09-12)
+  fail: the graph reports a number the catalogue contradicts, or claims freshness it does not have
+- id: bdd-proof
+  fast: true
+  label: bdd-proof
+  statement: 'No pull request opens without BDD proof, across every agent session: the body carries a BDD-PROOF block naming the head commit, that block carries a runner''s own passing counts rather than a sentence saying the tests passed, and the named commit is the pull request''s own head -- a claim with no run output is refused, and so is a real run on another commit'
+  law: LAW 22, LAW 53
+  origin: founder 2026-09-12
+  live_elsewhere: bin/idp-ci:57 -- the fast plane runs bin/idp-bdd-proof-gate --live, which reads the most recent pull request on this repository and refuses one carrying no BDD-PROOF block on its own head; on 2026-09-12 it refused PR
+  planes:
+  - ci
+  - session
+  run:
+  - python3
+  - bin/idp-bdd-proof-gate
+  cluster:
+    policy: null
+    why: the subject is a pull request body, which no admission controller sees
+  fixtures:
+    must_fail: tests/fixtures/bdd-proof/bad.json
+    must_pass: tests/fixtures/bdd-proof/good.json
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/bdd-proof/bad.json
+  - expect: refuse
+    args:
+    - tests/fixtures/bdd-proof/good.json
+    env:
+      BDD_PR_HEAD: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  - expect: refuse
+    args:
+    - tests/fixtures/bdd-proof/good.json
+    env:
+      BDD_RUN_HEAD: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  - expect: pass
+    args:
+    - tests/fixtures/bdd-proof/good.json
+  - expect: refuse
+    args:
+    - tests/fixtures/bdd-proof/stale-head.json
+  ok: no pull request opens without a passing BDD run on its own head, in any agent session (LAW 22)
+  fail: a pull request could open on a claim that was never proved by a BDD run (LAW 22)
+- id: sleep-ban
+  fast: true
+  label: sleep-ban
+  statement: 'No script waits on a clock where an event exists -- a bare sleep of 10 seconds or more is refused, a sleep of 5 or less is a yield and passes, and a longer fixed interval is accepted only with a sleep-ok marker giving the reason: the documented rate limit or protocol heartbeat that forces it.'
+  law: LAW 14
+  planes:
+  - ci
+  - session
+  session_glob:
+  - bin/*
+  - scripts/*
+  - .github/workflows/*.yml
+  - platform/**/*.yaml
+  - platform/**/*.sh
+  run:
+  - python3
+  - bin/idp-sleep-ban
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/sleep-ban/bad.sh
+  - expect: pass
+    args:
+    - tests/fixtures/sleep-ban/good.sh
+  - expect: pass
+    live: true
+  ok: 979 files of the estate are scanned and none waits on a clock; a pass over zero files is a FAIL, and a fixed interval carries its reason
+  fail: 'measured 2026-09-10: ''set -u; grader | tee out'' exits 0 while the grader failed, so a run reports green having graded nothing. ''set -o pipefail'' or ''-e'' fixes it; a bare last command propagates without -e, and a later step that tests the captured rc is an assertion'
+  why: 'Founder 2026-09-12: "sleep 420 is a catastrophic failure of engineering... time is not a synchronization primitive. Events are." Measured the same evening: turns blocked for minutes at a time on `sleep 420` waiting for CI, which is why the session looked hung to the person watching it. The estate already owns the event-driven answer for that case -- gh pr merge --squash --auto arms the merge in 200ms and GitHub watches the checks -- and no rule said so.'
+- id: helmrelease-drift-is-detectable
+  label: helmrelease-drift
+  statement: A HelmRelease reporting Ready while it cannot see the cluster disagree with it is not reconciled -- helm-controller diffs the manifest in Helm storage against the rendered chart and never against the cluster, so a Deployment edited after the apply is invisible to it forever. driftDetection is the fence that compares the two, and a release without it is named, with the number of Ready-and-blind releases reported so the count can be driven down
+  law: LAW 45, incident 2026-09-13 (chaos-controller-manager ran at 0 replicas for 18 days while Ready/UpgradeSucceeded and helm-controller logged "release in-sync with desired state"; 39 fail-closed webhooks then made every chaos-mesh.org object uncreatable estate-wide)
+  origin: incident 2026-09-13, chaos-mesh
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-helmrelease-drift-coverage
+  fixtures:
+    must_fail: tests/fixtures/helmrelease-drift/bad
+    must_pass: tests/fixtures/helmrelease-drift/good
+  cases:
+  - expect: refuse
+    args:
+    - --from
+    - tests/fixtures/helmrelease-drift/bad/helmreleases.json
+    - --fail-on-blind-ready
+    note: the chaos defect exactly -- Ready, and driftDetection unset
+  - expect: pass
+    args:
+    - --from
+    - tests/fixtures/helmrelease-drift/good/helmreleases.json
+    - --fail-on-blind-ready
+    note: the same release with the fence switched on
+  ok: a release that cannot see the cluster disagree with it is named; the count is the number to drive down
+  fail: a release reports Ready while a post-apply edit is invisible to it, and nothing says so
+- id: drift-reads-blind-not-clean
+  label: drift-blind
+  statement: A tool that could not read the estate exits 2 and prints BLIND, never 0 with an empty result -- "nothing is drifting" and "nothing could be read" must never print the same thing. The rule is proved on a reader whose kubectl is absent and on a clean set of Flux objects, both ways
+  law: LAW 2, incident 2026-09-08 (bin/idp-compile-helm exited 0 while 11 of 33 charts failed to render)
+  origin: spec 2026-09-13-gitops-sync-engine.md
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-drift-blind
+  fixtures:
+    must_fail: tests/fixtures/drift-blind/bad
+    must_pass: tests/fixtures/drift-blind/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/drift-blind/bad
+    note: a reader with no kubectl is BLIND, exit 2, never a clean empty estate
+  - expect: pass
+    args:
+    - tests/fixtures/drift-blind/good
+    note: a reader that read every object and found the estate reconciled exits 0
+  - expect: pass
+    note: LIVE -- a bare run invokes bin/idp-gitops-drift twice, once against the estate this machine can see and once with an empty PATH, and grades both verdicts with the same code. It asserts no particular exit code, because a clean cluster answers 0 and a drifting one answers 1 and both are right; it asserts the property -- never BLIND with 0, never 2 without BLIND. This is the case that stays red the day the tool's blind branch is changed, which a fixture-only rule cannot see.
+  ok: a reader that cannot see the estate says so and refuses to report a clean one
+  fail: a blind reading prints the same thing as a clean estate
+- id: breaker-enforcement
+  label: breaker-enf
+  statement: 'The breaker''s fingerprint is the stable identity of a FINDING, never the bytes a command printed: output carrying no finding -- a successful command, a shell builtin echoing its input, an empty result -- yields no fingerprint and can never lock, however many times it repeats, while three targets carrying the same CVE set still lock. One rule, in bin/idp-circuit-breaker; the extension asks it, so the two cannot drift apart'
+  law: R38, incident 2026-09-13
+  origin: incident 2026-09-13, the breaker locked bash and read for hours
+  planes:
+  - ci
+  run:
+  - python3
+  - -m
+  - pytest
+  - tests/test_breaker_extension.py
+  - -q
+  - -p
+  - no:xdist
+  - -o
+  - addopts=
+  cases:
+  - expect: pass
+    args:
+    - tests/test_breaker_extension.py::TestTheFingerprintIsAFindingNotTheBytes::test_a_repeated_noop_is_still_no_finding
+  - expect: pass
+    args:
+    - tests/test_breaker_extension.py::TestTheFingerprintIsAFindingNotTheBytes::test_the_same_cve_set_fingerprints_identically_whatever_the_order
+  - expect: pass
+    live: true
+  ok: a command with no finding cannot lock, and a proved pattern still locks
+  fail: 'output carrying no finding gets a fingerprint, so repeated no-op commands trip N=3 and lock the two tools a session needs to fix anything. Measured 2026-09-13: a session issued the same command repeatedly, the third tripped the lock, and every command that could have cleared it was itself a bash call. R38 -- a guard that refuses correct work is an outage.'
+  proved_elsewhere: the refusing direction -- a no-op carrying no finding produces no fingerprint, so it can never lock -- is ::test_a_repeated_noop_is_still_no_finding, and the permitting direction -- three targets carrying the same CVE set still lock -- is ::test_the_same_cve_set_fingerprints_identically_whatever_the_order. Both names are read from the file, never guessed.

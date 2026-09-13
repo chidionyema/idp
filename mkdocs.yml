@@ -68,6 +68,8 @@ nav:
       - Rails boot window: how-to/onboarding/lago-boot.md
       - The one door: how-to/onboarding/mcp-door.md
       - Secret blockers: how-to/onboarding/secret-blockers.md
+      - Gitops sync: how-to/onboarding/gitops-sync.md
+      - Helmrelease drift: how-to/onboarding/helmrelease-drift.md
   - Reference:
       - reference/index.md
       - Oracle tenancy: reference/oci-tenancy.md
@@ -177,6 +179,7 @@ nav:
       - owner-account: tutorials/demo/owner-account.md
       - static-secret: tutorials/demo/static-secret.md
       - Bind audit: tutorials/demo/bind-audit.md
+      - Estate twin: tutorials/demo/estate-twin-runtime.md
       - Node software installs: tutorials/demo/nodesoftware-operator.md
       - Build image: tutorials/demo/build-image.md
       - Catalog: tutorials/demo/catalog.md
@@ -205,6 +208,8 @@ nav:
       - Health check names a real object: tutorials/demo/healthcheck-exists.md
       - The one door: tutorials/demo/mcp-door.md
       - Secret blockers: tutorials/demo/secret-blockers.md
+      - Gitops sync: tutorials/demo/gitops-sync.md
+      - Helmrelease drift: tutorials/demo/helmrelease-drift.md
   - Onboarding:
       - The Demo Standard: onboarding/demo-standard.md
       - FleetView: how-to/onboarding/fleetview.md
@@ -280,6 +285,7 @@ nav:
       - owner-account: how-to/onboarding/owner-account.md
       - static-secret: how-to/onboarding/static-secret.md
       - Bind audit: how-to/onboarding/bind-audit.md
+      - Estate twin: how-to/onboarding/estate-twin-runtime.md
       - Node software installs: how-to/onboarding/nodesoftware-operator.md
       - Build image: how-to/onboarding/build-image.md
       - Catalog: how-to/onboarding/catalog.md
@@ -336,6 +342,14 @@ nav:
       - secrets: gates/static-secret.md
       - owners: gates/owner-account.md
       - binds: gates/bind-audit.md
+      - sleep-ban: gates/sleep-ban.md
+      - helmrelease-drift: gates/helmrelease-drift-is-detectable.md
+      - breaker-enforcement: gates/breaker-enforcement.md
+      # The estate-twin's three rules. A rule generates docs/gates/<id>.md and
+      # tests/test_gate_demo.py refuses one that is not reachable in the nav.
+      - graphview: gates/estate-graph-view.md
+      - twin: gates/estate-twin.md
+      - bdd-proof: gates/bdd-proof.md
       - ethos: gates/conscience.md
       - describe: gates/job-described.md
       - vmmount: gates/vm-shared-path.md

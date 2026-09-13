@@ -11,6 +11,7 @@ third carried the same CVE set as the first two. The fourth check was waste. The
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -169,15 +170,35 @@ class TestItIsBlindRatherThanSilent:
     """
 
     def test_it_reports_blind_when_the_tool_is_absent(self, node_available, tmp_path):
+        """A guard that cannot run its check says so, and never reports clean.
+
+        This test used to pass '/nonexistent-root' and expect BLIND. That stopped being a
+        missing-tool probe the moment findTool() grew a fallback to the estate's home checkout:
+        the tool WAS found there, and the call locked instead. The test asserted a state that
+        could no longer occur on a machine with a normal checkout -- green about nothing.
+
+        BLIND is forced honestly now: HOME and ESTATE_ROOT are pointed at an empty directory and
+        the worktree lookup is given a root that is not a repository, so findTool() has nothing
+        to find and must say so.
+        """
         js = ROOT / "extensions" / "breaker" / "decide.mjs"
-        r = subprocess.run(
+        empty = tmp_path / "empty-home"
+        empty.mkdir()
+        env = {
+            **os.environ,
+            "HOME": str(empty),
+            "ESTATE_ROOT": str(empty / "no-estate"),
+        }
+        r = subprocess.run(  # noqa: S603,S607 -- fixed argv, no shell
             [
                 "node",
                 "--input-type=module",
                 "-e",
                 (
                     "import { decide } from '" + str(js) + "';"
-                    "const out = decide('/nonexistent-root', {observations:["
+                    "const out = decide('"
+                    + str(tmp_path / "not-a-repo")
+                    + "', {observations:["
                     "{finding:'x',target:'1'},{finding:'x',target:'2'},{finding:'x',target:'3'}],"
                     "next:{finding:'x',target:'4'}});"
                     "process.stdout.write(JSON.stringify(out));"
@@ -185,6 +206,7 @@ class TestItIsBlindRatherThanSilent:
             ],
             capture_output=True,
             text=True,
+            env=env,
         )
         assert r.returncode == 0, r.stderr
         out = json.loads(r.stdout)
@@ -192,6 +214,7 @@ class TestItIsBlindRatherThanSilent:
             "a missing tool was reported as a clean result, not BLIND"
         )
         assert "idp-circuit-breaker" in out["blind"]
+        assert out.get("block") is False, "BLIND must never be a block"
 
     def test_it_finds_the_tool_in_a_sibling_worktree(self, node_available):
         """The primary checkout is often on another branch; the tool is in a worktree."""
@@ -220,3 +243,71 @@ class TestItIsBlindRatherThanSilent:
             f"lost the tool despite a worktree holding it: {out}"
         )
         assert out["block"] is True
+
+
+class TestTheFingerprintIsAFindingNotTheBytes:
+    """The misfire of 2026-09-13, and the regression test that would have caught it.
+
+    The extension returned the tool's RAW OUTPUT TEXT as the "finding", so `echo hello` and
+    `cat .git/HEAD` counted, three repeated commands tripped N=3, and the guard locked bash and
+    read -- the two tools a session needs to fix anything. It locked a working session for hours.
+
+    Two lessons are graded here:
+      1. the rule lives in ONE place (bin/idp-circuit-breaker); the extension asks it
+      2. a result with no finding can never lock, however many times it repeats
+    """
+
+    def _ask(self, text: str):
+        """The extension's own question, through the shipped CLI."""
+        r = subprocess.run(  # noqa: S603,S607 -- fixed argv, no shell
+            ["python3", str(ROOT / "bin" / "idp-circuit-breaker"), "--fingerprint"],
+            input=text,
+            capture_output=True,
+            text=True,
+        )
+        assert r.returncode == 0, r.stderr
+        return json.loads(r.stdout)
+
+    @pytest.mark.parametrize(
+        "noise", ["hello", "x", "alive", "ok", "", "   ", "README.md"]
+    )
+    def test_a_result_with_no_finding_produces_none(self, noise):
+        """THE CASE THAT WAS MISSING. Repeating any of these can never lock."""
+        assert self._ask(noise) is None, (
+            f"{noise!r} produced a finding; three repeats of a no-op would lock the session"
+        )
+
+    def test_a_repeated_noop_is_still_no_finding(self):
+        assert self._ask("hello\nhello\nhello") is None
+
+    def test_the_same_cve_set_fingerprints_identically_whatever_the_order(self):
+        a = self._ask("build: CVE-2026-13221 CVE-2026-42496 CVE-2026-8376")
+        b = self._ask("build: CVE-2026-8376 CVE-2026-13221 CVE-2026-42496")
+        assert a == b, "the same CVE set in a different order must fingerprint the same"
+        assert a and a.startswith("cve:"), a
+
+    @pytest.mark.parametrize(
+        "signal",
+        [
+            "FAILED tests/test_x.py::test_y",
+            "ValueError: bad input",
+            "FAIL  port-gate  undeclared bind",
+            "Traceback (most recent call last):",
+        ],
+    )
+    def test_a_real_failure_is_a_finding(self, signal):
+        assert self._ask(signal) is not None, signal
+
+    def test_the_extension_delegates_instead_of_deciding(self):
+        """One rule, one place. A second copy is how this broke."""
+        src = EXT.read_text()
+        assert "idp-circuit-breaker" in src, "the extension must ask the library"
+        assert "--fingerprint" in src, (
+            "the extension must use the library's fingerprint"
+        )
+
+    def test_the_extension_no_longer_returns_raw_output(self):
+        src = EXT.read_text()
+        assert "return text;" not in src, (
+            "the raw-text return is the bug; it must not come back"
+        )

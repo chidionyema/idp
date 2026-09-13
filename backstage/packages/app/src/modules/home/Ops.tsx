@@ -46,6 +46,10 @@ import {
   planeSentence,
 } from './inventory';
 import { useInventory } from './useInventory';
+import { useEstateGraph } from './useEstateGraph';
+import { domainRows, graphSentence, worst } from './estateGraph';
+import { useGuards } from './useGuards';
+import { guardRows, guardsSentence, guardsUnreadable } from './guards';
 import { ago } from './estate';
 
 /** The page's name, and the word every door to it already uses (nav, app-config, catalogue). */
@@ -425,6 +429,8 @@ export const Ops = () => {
           </>
         )}
       </Section>
+      <GraphSection />
+      <GuardsSection now={now} />
       {/* The compiled estate: what every Helm chart RENDERS, straight from git.
           This is the instrument that closes the five-day gap. A values file, a comment and a
           postRenderer patch are all CLAIMS; the number below is the one the chart decides, which
@@ -496,5 +502,125 @@ export const Ops = () => {
         )}
       </Section>
     </EstatePage>
+  );
+};
+
+/**
+ * The estate's own memory, beside the live probe above.
+ *
+ * The distinction this section exists to hold: everything else on this page asks the cluster
+ * what it is doing now. This asks the estate what it has recorded about itself -- including
+ * the half no probe can reach. 648 branches carrying 94,093 files that exist on no commit of
+ * main are not cluster objects; they are in the graph and nowhere else.
+ *
+ * The three-state rule is rendered, not summarised away. A domain outside its freshness
+ * window leads the sentence, because a graph that has not been read is a memory, and a page
+ * that showed it as healthy would be the exact failure this exists to prevent.
+ */
+const GraphSection = () => {
+  const loaded = useEstateGraph();
+  return (
+    <Section
+      title="What the estate has recorded about itself"
+      blurb="The estate's own graph: what is built, what is running and what is not. Unlike the readings above, this is not a probe of the cluster -- it is what the estate already knows, including work that exists on a branch and on no commit of main."
+      testId="ops-graph-section"
+    >
+      {loaded.state === 'loading' && (
+        <Waiting testId="ops-graph-loading">Reading the estate graph.</Waiting>
+      )}
+      {loaded.state === 'error' && (
+        <Unread testId="ops-graph-error" detail={loaded.error}>
+          The estate graph could not be read, so what the estate has recorded is unknown.
+        </Unread>
+      )}
+      {loaded.state === 'ready' && (
+        <>
+          <Text variant="body-medium" data-testid="ops-graph-sentence">
+            {graphSentence(loaded.graph)}
+          </Text>
+          <Sheet testId="ops-graph-domains">
+            {domainRows(loaded.graph).map(d => (
+              <Fact
+                key={d.domain}
+                label={`${d.domain} — ${d.state.toLowerCase().replace(/_/g, ' ')}`}
+                value={`${d.detail} (${d.age})`}
+              />
+            ))}
+          </Sheet>
+          {loaded.graph.not_serving.length > 0 && (
+            <Sheet testId="ops-graph-worst">
+              <Fact label="Not serving" value={String(loaded.graph.not_serving_total)} />
+              {worst(loaded.graph).map(n => (
+                <Fact key={n.id} label={n.status} value={n.id} />
+              ))}
+            </Sheet>
+          )}
+          {loaded.graph.truncated && loaded.graph.note && (
+            <Text variant="body-small" data-testid="ops-graph-truncated">
+              {loaded.graph.note}
+            </Text>
+          )}
+          {loaded.graph.evidence.length > 0 && (
+            <Text variant="body-small" data-testid="ops-graph-evidence">
+              Also recorded, as evidence rather than failure:{' '}
+              {loaded.graph.evidence.map(e => `${e.n} ${e.type}`).join(', ')}.
+            </Text>
+          )}
+        </>
+      )}
+    </Section>
+  );
+};
+
+/**
+ * The guards, drawn from what they have actually done. A guard that exists and has been asked
+ * nothing is not proof of anything, which is why the sentence carries the total beside the rows:
+ * two rows under a heading that says "guards" would otherwise read as the whole fifty-six.
+ */
+export const GuardsSection = ({ now }: { now: number }) => {
+  const loaded = useGuards();
+
+  return (
+    <Section
+      title="The guards, and what they have refused"
+      blurb="Every guard in the estate, with how many times it was consulted and how many commands it refused. A guard that has never refused anything has not yet been tested by a real mistake, so this page separates guards that fired from guards that merely exist."
+      testId="ops-guards-section"
+    >
+      {loaded.state === 'loading' && (
+        <Waiting testId="ops-guards-loading">Reading the guard inventory.</Waiting>
+      )}
+      {loaded.state === 'error' && (
+        <Unread testId="ops-guards-error" detail={loaded.error}>
+          The guard inventory could not be read, so how many guards are in use is unknown.
+        </Unread>
+      )}
+      {loaded.state === 'ready' && (
+        <>
+          <Text variant="body-medium" data-testid="ops-guards-sentence">
+            {guardsSentence(loaded.guards)}
+          </Text>
+          {(guardsUnreadable(loaded.guards) ||
+            guardRows(loaded.guards).length > 0) && (
+            <Sheet testId="ops-guards-table">
+              {guardRows(loaded.guards).map(g => (
+                <Fact
+                  key={g.id}
+                  label={g.title}
+                  value={
+                    <>
+                      <span data-testid={`ops-guard-id-${g.id}`}>{g.id}</span> — fired{' '}
+                      <b>{g.fired}</b>, refused <b>{g.blocked}</b>
+                      {g.last_command ? ` — ${g.last_command}` : ''}
+                      {g.last_at ? ` (${ago(g.last_at, now)})` : ''}
+                    </>
+                  }
+                  testId={`ops-guard-${g.id}`}
+                />
+              ))}
+            </Sheet>
+          )}
+        </>
+      )}
+    </Section>
   );
 };

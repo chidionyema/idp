@@ -1,0 +1,153 @@
+#!/usr/bin/env node
+// Proves the estate graph section's behaviour (backstage/packages/app/src/modules/home/
+// estateGraph.ts) without a Backstage install.
+//
+// WHY NOT jest: this repository's CI does not run Backstage's test suite at all -- there is
+// no node_modules under backstage/ and no workflow that installs one. Twenty-odd .test.ts
+// files sit there executed by nothing. `estateGraph.test.ts` is the real test and runs under
+// backstage-cli where a full install exists; THIS script is what makes the behaviour
+// provable in this repo's own gate, using the repo's own node.
+//
+// It transpiles the module with TypeScript (installed on demand into a temp dir, never into
+// the checkout) and asserts the same cases as the test file. Exit 0 = all pass.
+// TypeScript's own compiler strips the types; no regex, no guessing.
+import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { createRequire } from 'node:module';
+
+// Two modes:
+//   no argument   -- the built-in cases, and every one must pass (the live grade)
+//   <file.json>   -- grade a SUPPLIED graph summary: exit 1 if it would make the view lie
+const HERE = dirname(new URL(import.meta.url).pathname);
+const ROOT = join(HERE, '..');
+const MODULE = join(ROOT, 'backstage/packages/app/src/modules/home/estateGraph.ts');
+const src = readFileSync(MODULE, 'utf8');
+const dir = mkdtempSync(join(tmpdir(), 'eg-'));
+const ts = join(dir, 'eg.ts');
+writeFileSync(ts, src);
+
+// Use the repo's own typescript if present, else skip with a named reason.
+// TypeScript, installed into a temp dir the first time. Never into the checkout: this is a
+// proof tool, not a dependency of the app.
+const TS_DIR = join(tmpdir(), 'idp-estate-graph-ts');
+let tsc;
+try {
+  tsc = (await import(join(TS_DIR, 'node_modules/typescript/lib/typescript.js'))).default;
+} catch {
+  try {
+    const { execFileSync } = await import('node:child_process');
+    execFileSync('npm', ['install', '--silent', '--no-save', '--prefix', TS_DIR, 'typescript@5'],
+                 { stdio: 'ignore', timeout: 300000 });
+    tsc = (await import(join(TS_DIR, 'node_modules/typescript/lib/typescript.js'))).default;
+  } catch {
+    console.error('estate-graph-prove: could not obtain the TypeScript compiler.');
+    console.error('                   BLIND -- the behaviour was not graded (LAW 28).');
+    process.exit(2);
+  }
+}
+const transpiled = tsc.transpileModule(src, {
+  compilerOptions: { module: tsc.ModuleKind.ESNext, target: tsc.ScriptTarget.ES2022 },
+}).outputText;
+
+const out = join(dir, 'eg.mjs');
+writeFileSync(out, transpiled);
+
+const { ago, graphSentence, domainRows, worst } = await import(out);
+
+// ---- supplied-graph mode: the reflecting shape used by rules.yaml's fixture pair --------
+const argFile = process.argv[2];
+if (argFile) {
+  const g = JSON.parse(readFileSync(argFile, 'utf8'));
+  const problems = [];
+  for (const d of g.domains || []) {
+    if (d.state === 'MEASURED_OK' && typeof d.age_s === 'number' && typeof d.window_s === 'number'
+        && d.age_s > d.window_s) {
+      problems.push(`${d.domain}: read ${d.age_s}s ago against a ${d.window_s}s window and still reported MEASURED_OK`);
+    }
+  }
+  if (g.why && (g.domains || []).length === 0 && g.state !== 'UNKNOWN') {
+    problems.push('a graph that does not exist must report UNKNOWN, not a state');
+  }
+  for (const key of ['second_store', 'second_bus', 'second_mcp']) {
+    if (g[key]) problems.push(`declares a second ${key.replace('second_', '')}`);
+  }
+  if (problems.length) {
+    for (const p of problems) console.error(`refused: ${p}`);
+    process.exit(1);
+  }
+  console.log('ok: the view would report this graph honestly');
+  process.exit(0);
+}
+let pass = 0, fail = 0;
+const t = (name, fn) => {
+  try { fn(); console.log(`  PASS ${name}`); pass++; }
+  catch (e) { console.log(`  FAIL ${name}\n       ${e.message}`); fail++; }
+};
+const eq = (a, b, m='') => { if (a !== b) throw new Error(`${m} expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`); };
+const has = (s, sub) => { if (!String(s).includes(sub)) throw new Error(`expected ${JSON.stringify(s)} to contain ${JSON.stringify(sub)}`); };
+
+const graph = (over = {}) => ({
+  read_at: 'x',
+  domains: [
+    { domain: 'code', state: 'MEASURED_FAIL', nodes: 649, not_serving: 648, age_s: 12, window_s: 180 },
+    { domain: 'runtime', state: 'MEASURED_FAIL', nodes: 855, not_serving: 410, age_s: 12, window_s: 180 },
+  ],
+  counts: [], not_serving_total: 1058,
+  not_serving: [
+    { id: 'k8s:deployment:commerce:lago-api', status: 'dead', detail: {} },
+    { id: 'k8s:pod:commerce:lago-api-x', status: 'crashlooping', detail: {} },
+  ],
+  evidence: [], truncated: false, ...over,
+});
+
+console.log('ago');
+t('reads seconds as a person would', () => { eq(ago(12),'12s ago'); eq(ago(600),'10m ago'); eq(ago(7200),'2h ago'); eq(ago(172800),'2d ago'); });
+t('says never when there is no reading, not zero', () => eq(ago(null), 'never'));
+
+console.log('graphSentence');
+t('leads with the unknown domain when stale', () => {
+  const s = graphSentence(graph({ domains: [{ domain:'runtime', state:'UNKNOWN', nodes:855, age_s:86400, window_s:180 }] }));
+  has(s,'runtime'); has(s,'memory, not a reading');
+});
+t('reports failing domains by name and count', () => { const s = graphSentence(graph()); has(s,'code'); has(s,'runtime'); has(s,'648'); });
+t('says plainly when nothing is unserved', () => {
+  const s = graphSentence(graph({ domains:[{domain:'runtime',state:'MEASURED_OK',nodes:10,not_serving:0,age_s:5,window_s:180}], not_serving:[], not_serving_total:0 }));
+  if (s.includes('not serving')) throw new Error('said "not serving" on a clean estate');
+});
+t('names the reason when the graph does not exist', () => has(graphSentence(graph({ why:'the estate graph is not at /data/estate.db', domains:[] })), '/data/estate.db'));
+
+console.log('domainRows');
+t('never reports a stale domain as serving', () => {
+  const r = domainRows(graph({ domains:[{domain:'runtime',state:'UNKNOWN',nodes:855,age_s:99999,window_s:180}] }));
+  eq(r[0].state,'UNKNOWN'); has(r[0].detail,'window');
+  if (r[0].detail.includes('not serving')) throw new Error('a stale domain read as serving');
+});
+t('carries the split for a failing domain', () => has(domainRows(graph()).find(r=>r.domain==='code').detail, '648 of 649'));
+
+// A graph that flatters itself must be REFUSED. These are the states the estate can be in
+// that would make the view lie, and each one asserts the refusal rather than the output.
+console.log('refusals -- a view that flatters the estate is a defect');
+t('a stale domain must never render as serving', () => {
+  const r = domainRows(graph({ domains: [{ domain:'runtime', state:'UNKNOWN', nodes:855, age_s:99999, window_s:180 }] }));
+  if (r[0].detail.includes('not serving')) throw new Error('rendered a stale domain as serving');
+  if (r[0].state === 'MEASURED_OK') throw new Error('rendered a stale domain as OK');
+});
+t('a blind graph must name the reason, not read as clean', () => {
+  const s = graphSentence(graph({ why: 'the estate graph is not at /data/estate.db', domains: [] }));
+  if (!s.includes('not at')) throw new Error('a missing graph did not name itself');
+  if (s.includes('Nothing in the estate is unserved')) throw new Error('a missing graph read as clean');
+});
+t('a null age must not render as a fresh reading', () => {
+  if (ago(null) === '0s ago') throw new Error('a never-read domain rendered as just-read');
+  eq(ago(null), 'never');
+});
+
+console.log('worst');
+t('keeps the tool ordering: workloads before pods', () => has(worst(graph())[0].id, 'deployment'));
+t('shows at most what it was asked for', () => {
+  const many = graph({ not_serving: Array.from({length:50},(_,i)=>({id:`k8s:pod:n:p${i}`,status:'dead',detail:{}})) });
+  eq(worst(many,8).length, 8);
+});
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

@@ -18,10 +18,20 @@ set -euo pipefail
 INV="${INV:-$HOME/.estate/state/inventory.json}"
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 DB="${DB:-$IDP/catalog/estate.db}"
-SU="${SU:-$IDP/.venv/bin/sqlite-utils}"   # CI has no venv; bin/idp-ci sets SU
+# CI has no venv and sets SU; a laptop has neither, so the tool is resolved rather than
+# assumed. Before this, a checkout outside CI could not build the graph at all: it looked in
+# $IDP/.venv/bin and stopped, so `catalog/estate.db` was missing everywhere but a runner and
+# every reader of it -- bin/idp-status, bin/mcp-status, bin/estate-twin-runtime -- answered
+# BLIND. A tool on PATH is the same tool; the venv is a preference, not a requirement.
+if [ -z "${SU:-}" ]; then
+  for cand in "$IDP/.venv/bin/sqlite-utils" "$(command -v sqlite-utils 2>/dev/null || true)"; do
+    [ -n "$cand" ] && [ -x "$cand" ] && { SU="$cand"; break; }
+  done
+  SU="${SU:-$IDP/.venv/bin/sqlite-utils}"
+fi
 
 [ -f "$INV" ] || { echo "db-gen: no inventory at $INV" >&2; exit 2; }
-[ -x "$SU" ]  || { echo "db-gen: sqlite-utils missing at $SU" >&2; exit 2; }
+[ -x "$SU" ]  || { echo "db-gen: sqlite-utils missing at $SU (looked in .venv/bin and PATH)" >&2; exit 2; }
 
 rows=$(jq '.rows | length' "$INV")
 if [ "$rows" -eq 0 ]; then

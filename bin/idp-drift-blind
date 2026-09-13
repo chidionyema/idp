@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""A blind reading of the estate is refused; only a real reading may pass.
+
+Rule: drift-reads-blind-not-clean (rules.yaml), spec 2026-09-13-gitops-sync-engine.md
+
+THE DEFECT THIS GRADES. On 2026-09-08 `bin/idp-compile-helm` exited 0 while
+eleven of thirty-three charts had failed to render. A tool that could not see
+eleven releases reported the same thing as an estate with nothing in it, and
+nothing anywhere said which of the two had happened. Every reader added since
+carries the same hazard: `kubectl` missing, a list that failed, a JSON body that
+never parsed -- each of them turns "could not look" into "nothing is wrong".
+
+So the property is mechanical: a reader's exit code must distinguish the two. 2 is
+the estate's existing fail-closed verdict (bin/idp-compile-helm uses it), 1 is a
+real finding worth acting on, and 0 is a real reading with nothing to report.
+
+WHAT THIS GRADES. A directory holding a reading: `exit` (the code the reader
+returned, one integer) and `stdout` (what it printed). The gate refuses:
+
+* exit 0 with a BLIND marker on stdout -- it said it could not read and reported a
+  clean estate anyway, which is the 2026-09-08 defect exactly;
+* exit 2 with no BLIND marker -- it refused without saying what it could not read,
+  so a person reading the log cannot tell what went unmeasured;
+* any code outside {0, 1, 2} -- an invented third answer means the caller cannot
+  branch on it.
+
+The `good` fixture is a reader that read every object, found the estate
+reconciled, printed its summary and exited 0. The `bad` fixture is the same reader
+with no kubectl: it prints BLIND and exits 2, and the gate's job is to accept that
+and refuse its inversion.
+
+    bin/idp-drift-blind <dir>       grade one reading
+    bin/idp-drift-blind            grade both fixtures beside this script
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+
+VALID_CODES = {0, 1, 2}
+BLIND = "BLIND"
+
+
+def grade(reading: Path) -> tuple[bool, str]:
+    """Grade one reading held in a directory, by its path."""
+    return grade_reading(reading / "exit", reading / "stdout", str(reading))
+
+
+def grade_reading(exit_file: Path, out_file: Path, reading: str) -> tuple[bool, str]:
+    """True when the reading distinguishes blind from clean, or refuses without saying so.
+
+    Takes the two files and a label rather than a directory, so the LIVE readings --
+    which are captured into a temp file that no longer exists by the time they are
+    graded -- are graded by this same code and not by a second copy of it.
+    """
+    if not exit_file.is_file() or not out_file.is_file():
+        return False, f"{reading} holds no reading: both 'exit' and 'stdout' are required"
+
+    raw = exit_file.read_text(encoding="utf-8").strip()
+    try:
+        code = int(raw)
+    except ValueError:
+        return False, f"{reading}/exit is not an integer: {raw!r}"
+
+    if code not in VALID_CODES:
+        return (
+            False,
+            f"{reading}: exit {code} is outside {{0, 1, 2}}. 0 is a real reading with "
+            "nothing to report, 1 is a real finding, 2 is BLIND. A caller cannot branch "
+            "on an answer the estate invented.",
+        )
+
+    text = out_file.read_text(encoding="utf-8", errors="replace")
+    says_blind = BLIND in text.upper()
+
+    if code == 0 and says_blind:
+        return (
+            False,
+            f"{reading}: exit 0 while the output says {BLIND}. A reader that could not "
+            "look reported a clean estate -- this is the 2026-09-08 defect where eleven "
+            "of thirty-three charts failed to render and the tool exited 0.",
+        )
+    if code == 2 and not says_blind:
+        return (
+            False,
+            f"{reading}: exit 2 without saying {BLIND}. Refusing without naming what could "
+            "not be read leaves a person unable to tell what went unmeasured.",
+        )
+    return True, f"{reading}: exit {code}, {'BLIND' if says_blind else 'a real reading'}"
+
+
+def live_readings() -> list:
+    """Run the real reader and grade what it actually does -- blind and not.
+
+    THE POINT OF THIS FUNCTION IS THAT IT GRADES THE TOOL, NOT AN EXAMPLE OF ONE.
+    A rule whose only cases are checked-in fixtures is a rule about a fixture: it
+    would stay green the day someone changed `bin/idp-gitops-drift` to exit 0 in
+    the blind branch, because the fixture still says 2.
+
+    Two readings are taken from the tool that SHIPS:
+
+      * a real read, against whatever estate this machine can see;
+      * a BLIND read, forced by an empty PATH so `command -v kubectl` fails.
+
+    Neither asserts a particular exit code. A clean cluster answers 0 and a
+    drifting one answers 1, and both are correct. What is asserted is the property
+    that holds in every case: the verdict never says BLIND and 0 at once, and never
+    says 2 without saying BLIND.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    tool = ROOT / "bin" / "idp-gitops-drift"
+    if not tool.is_file():
+        return []
+
+    verdicts = []
+    for label, env in (
+        ("the real estate", dict(os.environ)),
+        ("a blind read", {**os.environ, "PATH": "/usr/bin:/bin"}),
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            exit_file, out_file = d / "exit", d / "stdout"
+            try:
+                r = subprocess.run(
+                    ["bash", str(tool)],
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                    env=env,
+                )
+            except (OSError, subprocess.SubprocessError):
+                continue
+            exit_file.write_text(str(r.returncode))
+            out_file.write_text(r.stdout or "")
+            # Graded INSIDE the lifetime of the capture directory, because the files
+            # are gone the moment this block ends.
+            verdicts.append(grade_reading(exit_file, out_file, label))
+    return verdicts
+
+
+def main(argv: list[str]) -> int:
+    explicit = [Path(a) for a in argv[1:]]
+    if explicit:
+        return _grade_all([grade(d) for d in explicit])
+
+    # A bare run grades THE ESTATE'S OWN READER, live. It does not re-grade the bad
+    # fixture: that fixture is this rule's must-fail case and the rules engine runs
+    # it on its own. Grading it here would make a bare invocation always red, which
+    # is a gate that cannot be used.
+    verdicts = live_readings()
+    if not verdicts:
+        print(
+            "FAIL  drift-blind  bin/idp-gitops-drift did not run, so the live half of "
+            "this rule could not be graded. A rule with no live input is the gap this "
+            "check exists to close."
+        )
+        return 1
+    return _grade_all(verdicts)
+
+
+def _grade_all(verdicts: list) -> int:
+    failures = 0
+    for ok, why in verdicts:
+        print(f"{'ok  ' if ok else 'FAIL'}  drift-blind  {why}")
+        if not ok:
+            failures += 1
+    if failures:
+        print(f"FAIL  drift-blind  {failures} reading(s) cannot tell blind from clean")
+        return 1
+    print(f"ok    drift-blind  {len(verdicts)} reading(s) distinguish blind from clean")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
