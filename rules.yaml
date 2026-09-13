@@ -22,7 +22,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/api-version/bad
     must_pass: tests/fixtures/api-version/good
-  live_elsewhere: bin/idp-ci:633 -- the apiversion rung grades the REAL platform/ and clusters/ trees the cluster reconciles, not the fixture pair
+  live_elsewhere: bin/idp-ci:647 -- the apiversion rung grades the REAL platform/ and clusters/ trees the cluster reconciles, not the fixture pair
   cases:
   - expect: refuse
     args:
@@ -52,7 +52,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/aevum-evidence/bad/chain.json
     must_pass: tests/fixtures/aevum-evidence/good/chain.json
-  live_elsewhere: 'bin/idp-ci:623 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
+  live_elsewhere: 'bin/idp-ci:637 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
   cases:
   - expect: refuse
     args:
@@ -422,7 +422,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/migration-not-idempotent
     must_pass: bin/scheduler-migrate
-  live_elsewhere: bin/idp-ci:362 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
+  live_elsewhere: bin/idp-ci:376 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
   cases:
   - expect: refuse
     args:
@@ -1207,7 +1207,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/reloader-blind
     must_pass: tests/fixtures/reloader
-  live_elsewhere: bin/idp-ci:462 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
+  live_elsewhere: bin/idp-ci:476 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
   cases:
   - expect: refuse
     args:
@@ -1830,7 +1830,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
     must_pass: tests/fixtures/catalogue-entity-runtime-service
-  live_elsewhere: bin/idp-ci:462 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
+  live_elsewhere: bin/idp-ci:476 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
   cases:
   - expect: refuse
     args:
@@ -2289,7 +2289,7 @@ rules:
   statement: 'No pull request opens without BDD proof, across every agent session: the body carries a BDD-PROOF block naming the head commit, that block carries a runner''s own passing counts rather than a sentence saying the tests passed, and the named commit is the pull request''s own head -- a claim with no run output is refused, and so is a real run on another commit'
   law: LAW 22, LAW 53
   origin: founder 2026-09-12
-  live_elsewhere: bin/idp-ci:57 -- the fast plane runs bin/idp-bdd-proof-gate --live, which reads the most recent pull request on this repository and refuses one carrying no BDD-PROOF block on its own head; on 2026-09-12 it refused PR
+  live_elsewhere: bin/idp-ci:71 -- the fast plane runs bin/idp-bdd-proof-gate --live, which reads the most recent pull request on this repository and refuses one carrying no BDD-PROOF block on its own head; on 2026-09-12 it refused PR
   planes:
   - ci
   - session
