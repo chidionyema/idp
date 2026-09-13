@@ -1,0 +1,23 @@
+{
+ "items": [
+  {
+   "metadata": {
+    "namespace": "chaos-mesh",
+    "name": "chaos-mesh"
+   },
+   "spec": {
+    "driftDetection": {
+     "mode": "enabled"
+    }
+   },
+   "status": {
+    "conditions": [
+     {
+      "type": "Ready",
+      "status": "True"
+     }
+    ]
+   }
+  }
+ ]
+}

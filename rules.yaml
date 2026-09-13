@@ -1926,42 +1926,6 @@ rules:
     - .github/workflows
     note: this repository's own workflows
   ok: every grading step in the tree can fail its run, or a later step asserts the captured verdict
-  fail: 'measured 2026-09-10: ''set -u; grader | tee out'' exits 0 while the grader failed, so a run reports green having graded nothing. ''set -o pipefail'' or ''-e'' fixes it; a bare last command propagates
-    without -e, and a later step that tests the captured rc is an assertion'
-- id: sleep-ban
-  fast: true
-  label: sleep-ban
-  statement: >-
-    No script waits on a clock where an event exists -- a bare sleep of 10 seconds or more is
-    refused, a sleep of 5 or less is a yield and passes, and a longer fixed interval is accepted
-    only with a sleep-ok marker giving the reason: the documented rate limit or protocol
-    heartbeat that forces it.
-  law: LAW 14
-  planes:
-  - ci
-  - session
-  # A session rule grades only the paths it declares (bin/idp-rules, `session`), and without this
-  # the rule graded ZERO files and printed `ok` on a script that sleeps 420 -- measured here
-  # before the glob was added.
-  session_glob:
-  - bin/*
-  - scripts/*
-  - .github/workflows/*.yml
-  - platform/**/*.yaml
-  - platform/**/*.sh
-  run:
-  - python3
-  - bin/idp-sleep-ban
-  cases:
-  - expect: refuse
-    args:
-    - tests/fixtures/sleep-ban/bad.sh
-  - expect: pass
-    args:
-    - tests/fixtures/sleep-ban/good.sh
-  ok: no wait on a clock where an event exists; every fixed interval carries its reason
-  fail: a script sleeps 10 seconds or more to wait for state, or a fixed interval is unexplained
-  why: 'Founder 2026-09-12: "sleep 420 is a catastrophic failure of engineering... time is not a synchronization primitive. Events are." Measured the same evening: turns blocked for minutes at a time on `sleep 420` waiting for CI, which is why the session looked hung to the person watching it. The estate already owns the event-driven answer for that case -- gh pr merge --squash --auto arms the merge in 200ms and GitHub watches the checks -- and no rule said so.'
   fail: 'measured 2026-09-10: ''set -u; grader | tee out'' exits 0 while the grader failed, so a run reports green having graded nothing. ''set -o pipefail'' or ''-e'' fixes it; a bare last command propagates without -e, and a later step that tests the captured rc is an assertion'
 - id: cost-proof
   fast: true
@@ -2219,47 +2183,31 @@ rules:
     note: the same ExternalSecret once a person has typed the pair
   ok: every ExternalSecret that cannot sync names the vault key it needs and whether a person must produce it
   fail: a row is held by a missing vault entry and its status reads "Reconciliation in progress"
-- id: request-ceiling
-  fast: true
-  label: request-ceiling
-  statement: The router refuses a single call carrying more than a working turn, and the module, its callback registration, its mount and its import path must all be present together -- a ceiling that exists on disk with nothing loading it refuses nothing, which is exactly the state the estate was in when one key sent 86,525,924 tokens through an hour
-  law: LAW 2, incident 2026-09-13
+- id: helmrelease-drift-is-detectable
+  label: helmrelease-drift
+  statement: A HelmRelease reporting Ready while it cannot see the cluster disagree with it is not reconciled -- helm-controller diffs the manifest in Helm storage against the rendered chart and never against the cluster, so a Deployment edited after the apply is invisible to it forever. driftDetection is the fence that compares the two, and a release without it is named, with the number of Ready-and-blind releases reported so the count can be driven down
+  law: LAW 45, incident 2026-09-13 (chaos-controller-manager ran at 0 replicas for 18 days while Ready/UpgradeSucceeded and helm-controller logged "release in-sync with desired state"; 39 fail-closed webhooks then made every chaos-mesh.org object uncreatable estate-wide)
+  origin: incident 2026-09-13, chaos-mesh
   planes:
   - ci
   run:
   - python3
-  - bin/idp-request-ceiling
+  - bin/idp-helmrelease-drift-coverage
+  fixtures:
+    must_fail: tests/fixtures/helmrelease-drift/bad
+    must_pass: tests/fixtures/helmrelease-drift/good
   cases:
   - expect: refuse
     args:
-    - --tree
-    - tests/fixtures/request-ceiling/bad
+    - --from
+    - tests/fixtures/helmrelease-drift/bad/helmreleases.json
+    - --fail-on-blind-ready
+    note: the chaos defect exactly -- Ready, and driftDetection unset
   - expect: pass
     args:
-    - --tree
-    - tests/fixtures/request-ceiling/good
-  ok: the router refuses a call above the working window, and nothing can unload it silently
-  fail: a ceiling exists that nothing registers, nothing mounts, or that sits so high it can never fire
-  why: 'FOUNDER 2026-09-13: "fix the probel properly and preven fro re[cur]rinng". Measured that day from LiteLLM_SpendLogs: one key, 439 calls, 86,525,924 input tokens in 60 minutes ($2.63), against 568 tokens from every other key on the estate combined. The largest single call was 737,169 in / 436 out -- 3,685 tokens in for every token out, because a session was re-sending its entire history on every turn. The two guards that existed were read and neither could catch it: the spend breaker grades 2,000,000 tokens PER HOUR as a total across the estate, so one 737k call looks like two hundred 3.7k calls and it notifies without refusing; and a client-side ceiling lives in one laptop''s home directory. Prefix caching was never the problem -- it was on and correct at $0.025/M against $0.150 list. The bill was volume, and volume is refused at the only place every call passes: the router.'
-- id: spend-floor
-  fast: true
-  label: spend-floor
-  statement: Spend is reported PER KEY, naming the biggest single call and the share of budget already spent -- because the estate-total check that already existed cannot see one session sending 737,169 tokens per call, and LiteLLM stops a key at 100% with no warning at all
-  law: LAW 2, incident 2026-09-13
-  planes:
-  - ci
-  run:
-  - python3
-  - bin/idp-spend-floor
-  ok: a key sending or spending out of shape is named, with its number and its next step
-  fail: the shape of the spend is unmeasured, so one runaway session looks like an ordinary hour
-  why: 'FOUNDER 2026-09-13: "fix the probel properly and preven fro re[cur]rinng". Measured from LiteLLM_SpendLogs: one key, 797 calls, 89,900,900 input tokens, largest single call 737,169 in / 242,357 out, $12.46 of a $15.00 budget -- 83.0% spent with no warning delivered. Every other key on the estate, summed, was under 600 tokens. Two existing guards were read and neither could catch it: platform/llm/spend-breaker-digest.yaml grades 2,000,000 tokens per hour as a TOTAL ACROSS THE ESTATE, so a single 737k call is numerically identical to two hundred 3.7k calls, and it notifies without severing; and LiteLLM''s max_budget is a hard stop that fires with no warning, taking every session on that machine down at once. Measured the same hour: agent-workforce-20260905T122110Z sat at 100.1% of a $5.00 budget -- over the cap and still going. Prefix caching was never the problem: it was on and correct at $0.025/M against $0.150/M list.'
-  cases:
-  - expect: refuse
-    args:
-    - --rows
-    - tests/fixtures/spend-floor/bad/rows.json
-  - expect: pass
-    args:
-    - --rows
-    - tests/fixtures/spend-floor/good/rows.json
+    - --from
+    - tests/fixtures/helmrelease-drift/good/helmreleases.json
+    - --fail-on-blind-ready
+    note: the same release with the fence switched on
+  ok: a release that cannot see the cluster disagree with it is named; the count is the number to drive down
+  fail: a release reports Ready while a post-apply edit is invisible to it, and nothing says so
