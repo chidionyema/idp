@@ -2436,3 +2436,28 @@ rules:
   ok: a command with no finding cannot lock, and a proved pattern still locks
   fail: 'output carrying no finding gets a fingerprint, so repeated no-op commands trip N=3 and lock the two tools a session needs to fix anything. Measured 2026-09-13: a session issued the same command repeatedly, the third tripped the lock, and every command that could have cleared it was itself a bash call. R38 -- a guard that refuses correct work is an outage.'
   proved_elsewhere: the refusing direction -- a no-op carrying no finding produces no fingerprint, so it can never lock -- is ::test_a_repeated_noop_is_still_no_finding, and the permitting direction -- three targets carrying the same CVE set still lock -- is ::test_the_same_cve_set_fingerprints_identically_whatever_the_order. Both names are read from the file, never guessed.
+- id: execution-boundary-holds
+  label: execution-boundary
+  statement: Nothing an agent runs may hold a turn open. The 60-second ceiling is applied by the executor daemon outside the caller's process tree, stated once in the door and imported by the daemon -- a second copy of the number is a second answer, and a daemon that swallows its own door import answers health while unable to run anything
+  law: founder 2026-09-13 (verbatim) "60 secsos is the nnax" / "it should not even get bera teh" / "a breach of law or gaurd is a security breach" -- after the cap was breached six times; "find where we have done this, operationalise it, make sure every agent session is aware, and remove bash access afterward"
+  origin: founder 2026-09-13, the execution boundary
+  planes:
+  - ci
+  - session
+  run:
+  - python3
+  - bin/idp-execution-boundary
+  fixtures:
+    must_fail: tests/fixtures/execution-boundary/bad
+    must_pass: tests/fixtures/execution-boundary/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/execution-boundary/bad
+    note: a door with no daemon, no entry point, no status tool and no launchd job -- the shape of every one of the six failed attempts
+  - expect: pass
+    args:
+    - tests/fixtures/execution-boundary/good
+    note: the whole boundary, ceiling imported once from the door
+  ok: the executor daemon applies one ceiling, imported from the door, and every half of the boundary is present
+  fail: a ceiling is restated in the daemon, or the boundary is half built and nothing says so

@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""idp-exec -- run a command through the executor daemon, never from this process's own tree.
+
+ORDER (founder, 2026-09-13): "find where we have done this, operationalise it, make sure every
+agent session is aware, and remove bash access afterward."
+
+This is the client half. An agent (or a person) that has this script does not need to be able to
+spawn a shell: it posts a JSON payload to the daemon, which bounds the command and runs it
+detached. The command never runs inside the caller's process tree, so the caller cannot hold a
+turn open with it.
+
+  idp-exec <command...>          submit; prints the job id and returns immediately
+  idp-exec --simulate <cmd...>   what the executor WOULD do, running nothing (the propose twin)
+  idp-exec --read <job-id>       one job's state, exit code and output
+  idp-exec --health              is the daemon answering, and at what ceiling
+  idp-exec --status              the whole boundary, via bin/idp-executor-status
+  idp-exec --check               prove this file runs
+
+It never waits for the command. That is the point of it.
+
+THE DAEMON, NOT THE CLIENT, DOES THE CEILING CHECK (LAW 44). A second copy of the number here
+would be a second answer, and the two would drift -- so this client refuses nothing on its own and
+sends what it was given. A refusal can only come from the one place that owns the ceiling.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+SOCKET = Path(
+    os.environ.get("IDP_EXECUTOR_SOCKET", Path.home() / ".estate/executor.sock")
+)
+IDP = Path(os.environ.get("IDP_ROOT", Path.home() / "dev/code/idp"))
+
+USAGE = __doc__
+
+
+def call(payload: dict) -> dict:
+    """One request, one response, then close. Never waits on the command itself."""
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(10)
+    try:
+        sock.connect(str(SOCKET))
+        sock.sendall((json.dumps(payload) + "\n").encode())
+        raw = sock.recv(1 << 20).decode().strip()
+    except OSError as exc:
+        return {
+            "ok": False,
+            "error": f"the executor is not answering on {SOCKET}: {exc}",
+        }
+    finally:
+        sock.close()
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return {
+            "ok": False,
+            "error": f"the daemon answered something that is not JSON: {raw}",
+        }
+
+
+def check() -> int:
+    """A script is not built until it has been executed once (LAW 45)."""
+    if not str(SOCKET):
+        print("FAIL the socket path is empty")
+        return 1
+    json.dumps({"command": "echo ok", "verb": "execute"})
+    print(f"ok   idp-exec --check (client for {SOCKET})")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if not argv:
+        print(USAGE)
+        return 2
+
+    head, rest = argv[0], argv[1:]
+    if head in ("-h", "--help"):
+        print(USAGE)
+        return 0
+    if head == "--check":
+        return check()
+    if head == "--health":
+        result = call({"verb": "health"})
+    elif head == "--read":
+        if not rest:
+            print("REFUSED: --read needs a job id", file=sys.stderr)
+            return 2
+        result = call({"verb": "read", "job_id": rest[0]})
+    elif head == "--simulate":
+        if not rest:
+            print("REFUSED: --simulate needs a command", file=sys.stderr)
+            return 2
+        result = call({"verb": "simulate", "command": " ".join(rest)})
+    elif head == "--status":
+        return subprocess.call([str(IDP / "bin/idp-executor-status")])
+    elif head.startswith("-"):
+        # An unknown flag is REFUSED, never ignored. Silently treating it as a command is how a
+        # caller discovers the difference only after the wrong thing has run.
+        print(
+            f"REFUSED: unknown option {head}. Use --simulate, --read, --health, --status or --check.",
+            file=sys.stderr,
+        )
+        return 2
+    else:
+        result = call({"verb": "execute", "command": " ".join(argv)})
+
+    print(json.dumps(result, indent=None))
+    return 0 if result.get("ok") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

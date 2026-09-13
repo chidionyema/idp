@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""idp-executor-status -- report which half of the execution boundary is actually in place.
+
+WHY THIS EXISTS. Founder, 2026-09-13: "we should alreay habe this , we alreadfy solbve thing nbut
+nnothing gets opertionnal". The failure mode being fixed is not a missing control, it is a control
+that exists in a checkout and was never switched on. This prints, in one screen, what is live:
+
+  * the daemon: is it answering on its socket, and at what ceiling
+  * the boundary: is the daemon or its plist writable BY THE AGENT (if so, it is not a boundary)
+  * the work: what the executor has actually run, with the newest log
+
+It reports the second one as UNKNOWN when it cannot answer, never as OK. A status tool that passes
+when it could not measure is the defect this estate keeps finding (LAW 2, R38).
+
+Written in Python, not bash, because the estate's own shell standard refuses a new shell file over
+100 lines -- and this is 100 lines of comparison and JSON, which is what Python is for.
+
+  idp-executor-status            report
+  idp-executor-status --check    prove this file runs, and that the daemon it grades parses
+"""
+
+from __future__ import annotations
+
+import ast
+import json
+import os
+import socket
+import sys
+from pathlib import Path
+
+SOCKET = Path(
+    os.environ.get("IDP_EXECUTOR_SOCKET", Path.home() / ".estate/executor.sock")
+)
+HOME = Path.home()
+IDP = Path(os.environ.get("IDP_ROOT", HOME / "dev/code/idp"))
+RUNS = HOME / ".estate/runs"
+
+
+def say(*parts: object) -> None:
+    print(*parts)
+
+
+def check() -> int:
+    """A script is not built until it has been executed once (LAW 45, bin/idp-script-compiles).
+
+    Measured 2026-09-13: `python3 bin/plist-gate` caught a malformed plist, an XML defect no
+    parser-free review would have found. This does the same job for this file: it parses the
+    daemon it grades, so a typo is a build failure rather than a status line that says nothing.
+    """
+    daemon = IDP / "platform/executor/daemon.py"
+    try:
+        ast.parse(daemon.read_text())
+    except OSError as exc:
+        say(f"FAIL the daemon is not readable at {daemon}: {exc}")
+        return 1
+    except SyntaxError as exc:
+        say(f"FAIL the daemon does not parse: {exc}")
+        return 1
+    if not str(SOCKET):
+        say("FAIL the socket path is empty")
+        return 1
+    say(f"ok   the daemon this grades parses ({daemon})")
+    say(f"ok   idp-executor-status --check (socket {SOCKET})")
+    return 0
+
+
+def ask_daemon() -> tuple[bool, str, str]:
+    """Returns (answered, summary, ceiling). A failure to reach the daemon is a FAIL, never OK."""
+    if not SOCKET.exists() or not SOCKET.is_socket():
+        return False, f"MEASURED_FAIL no socket at {SOCKET}", "?"
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(4)
+    try:
+        sock.connect(str(SOCKET))
+        sock.sendall(b'{"verb":"health"}\n')
+        raw = sock.recv(65536).decode().strip()
+    except OSError as exc:
+        return (
+            False,
+            f"MEASURED_FAIL the socket exists but nothing answered: {exc}",
+            "?",
+        )
+    finally:
+        sock.close()
+    try:
+        health = json.loads(raw)
+    except ValueError:
+        return (
+            False,
+            f"MEASURED_FAIL the daemon answered something that is not JSON: {raw}",
+            "?",
+        )
+    if not health.get("ok"):
+        return False, f"MEASURED_FAIL the daemon refused its own health: {raw}", "?"
+    return True, f"MEASURED_OK   listening on {SOCKET}", str(health.get("ceiling_sec"))
+
+
+def writable_by_agent(path: Path) -> bool:
+    """The question is not 'does the file exist' but 'can the AGENT rewrite it'.
+
+    Compared against the agent's own uid, so the answer is measured rather than assumed.
+    """
+    return (
+        path.exists() and os.access(path, os.W_OK) and path.stat().st_uid == os.getuid()
+    )
+
+
+def main() -> int:
+    if "--check" in sys.argv[1:]:
+        return check()
+
+    status = 0
+
+    # --- 1. the daemon -------------------------------------------------------------------------
+    answered, summary, ceiling = ask_daemon()
+    say(f"daemon:        {summary}{f', ceiling {ceiling}s' if answered else ''}")
+    if not answered:
+        status = 1
+
+    # --- 2. the boundary -----------------------------------------------------------------------
+    guard_paths = [
+        HOME / ".pi/agent/extensions/pi-governance/index.ts",
+        HOME / ".pi/agent/bin/bash",
+        IDP / "platform/executor/daemon.py",
+        IDP / "bin/exec-daemon",
+        HOME / "Library/LaunchAgents/ai.estate.executor.plist",
+    ]
+    unguarded = [p for p in guard_paths if writable_by_agent(p)]
+    if unguarded:
+        say("boundary:      UNKNOWN       the agent's own uid can still rewrite:")
+        for path in unguarded:
+            st = path.stat()
+            say(f"    {str(path):<58} owner={st.st_uid} mode={oct(st.st_mode)[-4:]}")
+        say(
+            "                             Losing bash to a real uid is what closes this, and that is a"
+        )
+        say(
+            "                             LaunchDaemon step requiring the founder (LAW 54). Until then this is"
+        )
+        say(
+            "                             a MOVE of the execution plane, not a lock on it."
+        )
+        status = 1
+    else:
+        say(
+            f"boundary:      MEASURED_OK   none of the guard paths is writable by uid {os.getuid()}"
+        )
+
+    # --- 3. the work ---------------------------------------------------------------------------
+    logs = (
+        sorted(RUNS.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if RUNS.is_dir()
+        else []
+    )
+    if not logs:
+        say(f"executions:    none yet ({RUNS} is empty)")
+    else:
+        say(f"executions:    {len(logs)} logged in {RUNS}")
+        newest = logs[0]
+        say(f"newest:        {newest.name}")
+        say("--- its output ---")
+        try:
+            for line in newest.read_text(errors="replace").splitlines()[:20]:
+                say(f"               {line}")
+        except OSError as exc:
+            say(f"               (unreadable: {exc})")
+
+    return status
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
