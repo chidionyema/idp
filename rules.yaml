@@ -2122,3 +2122,61 @@ rules:
     note: a worktree cut from origin/main, which is where work is graded
   ok: the shared checkout mid-merge is refused, and an ordinary dirty worktree is not
   fail: bin/idp-clean-tree cannot tell a shared checkout or a mid-merge tree from a working one
+- id: healthcheck-names-a-real-object
+  label: healthcheck-exists
+  statement: A Kustomization's health check names an object this tree actually creates. A wait on an object nothing creates reports NotFound forever, holds every row depending on it out of the cluster, and is invisible in CI because the manifest is valid YAML naming a plausible object. An object an operator makes at runtime is ungraded and said to be ungraded, never assumed absent
+  law: LAW 45, incident 2026-09-13 (the tailscale row waited on Deployment/tailscale-operator; the chart emits Deployment/operator, so guacamole and four rows behind it were held out for days)
+  origin: incident 2026-09-13, tailscale
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-healthcheck-exists
+  fixtures:
+    must_fail: tests/fixtures/healthcheck-exists/bad
+    must_pass: tests/fixtures/healthcheck-exists/good
+  cases:
+  - expect: refuse
+    args:
+    - --root
+    - tests/fixtures/healthcheck-exists/bad
+    - tests/fixtures/healthcheck-exists/bad/compiled.json
+    - tests/fixtures/healthcheck-exists/bad/cluster.yaml
+    note: the tailscale defect exactly -- a health check naming a Deployment no chart renders
+  - expect: pass
+    args:
+    - --root
+    - tests/fixtures/healthcheck-exists/good
+    - tests/fixtures/healthcheck-exists/good/compiled.json
+    - tests/fixtures/healthcheck-exists/good/cluster.yaml
+    note: the same row naming the Deployment the chart does emit
+  ok: every health check names an object this tree creates, or is reported ungraded
+  fail: a health check waits on an object nothing creates, and CI is green
+- id: externalsecret-blockers-are-loud
+  label: secret-blockers
+  statement: An ExternalSecret that cannot sync is named with the vault key it needs and marked FOUNDER ACTION or ESTATE, never left to read as "Reconciliation in progress". A missing entry in the provider is a value only a person can produce, and it is reported as one; any other failure is an estate defect and is reported as that instead
+  law: R47 (a founder blocker is loud and one action), incident 2026-09-13 (cyrus sat HealthCheckFailed for days; the reason was three layers down at ExternalSecret/cyrus/cyrus-linear-oauth, whose vault entries are born in a browser because Linear publishes no create-API for an OAuth application)
+  origin: incident 2026-09-13, cyrus
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-externalsecret-blockers
+  fixtures:
+    must_fail: tests/fixtures/secret-blockers/bad
+    must_pass: tests/fixtures/secret-blockers/good
+  cases:
+  - expect: refuse
+    args:
+    - --from
+    - tests/fixtures/secret-blockers/bad/externalsecrets.json
+    - --fail-on-blocker
+    note: the cyrus blocker exactly -- two vault entries that need a browser, and a row held by them
+  - expect: pass
+    args:
+    - --from
+    - tests/fixtures/secret-blockers/good/externalsecrets.json
+    - --fail-on-blocker
+    note: the same ExternalSecret once a person has typed the pair
+  ok: every ExternalSecret that cannot sync names the vault key it needs and whether a person must produce it
+  fail: a row is held by a missing vault entry and its status reads "Reconciliation in progress"
