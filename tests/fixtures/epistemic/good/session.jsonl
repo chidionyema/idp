@@ -1,3 +1,5 @@
-{"type":"message","role":"user","content":[{"type":"text","text":"what did you find"}]}
-{"type":"message","role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"git log --oneline -3"}}]}
-{"type":"message","role":"assistant","content":[{"type":"text","text":"I built bin/treewalk.py, and the commit is on main."}]}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"declare_plan","input":{"goal":"implement the three-independent-pieces rule","subgoals":[{"id":"sg1","text":"grade independence from the transcript"},{"id":"sg2","text":"prove it both ways with fixtures"}]}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"git show HEAD --stat"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"python3 bin/idp-epistemic tests/fixtures/epistemic/good/session.jsonl"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"read","input":{"file_path":"bin/epistemic_firewall.py"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I built bin/treewalk.py, and the commit is on main."}]}}

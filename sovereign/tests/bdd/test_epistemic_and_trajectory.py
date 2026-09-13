@@ -120,8 +120,8 @@ def _ep_refuse(state):
         raise AssertionError("the refusal must quote the claim")
 
 
-@given("a session transcript where the assistant runs a command")
-def _with_tool(state, tmp_path):
+@given("a session transcript where the assistant runs one command")
+def _one_command(state, tmp_path):
     state["turns"] = [_bash("git log --oneline -3")]
     state["dir"] = tmp_path
 
@@ -134,9 +134,77 @@ def _then_says(state):
 
 @then("it exits 0")
 def _ep_pass(state):
+    """Shared by the trajectory scenario that stays inside its declared plan."""
     r = state["result"]
     if r.returncode != 0:
         raise AssertionError(r.stdout + r.stderr)
+
+
+@then("it exits 1, because one reading is not three independent pieces of evidence")
+def _ep_one_reading(state):
+    r = state["result"]
+    if r.returncode != 1:
+        raise AssertionError(r.stdout + r.stderr)
+    if "independent" not in (r.stdout + r.stderr):
+        raise AssertionError("the refusal must name the independence rule")
+
+
+@given("a session that reads committed history, runs the gate against a fixture")
+def _three_sources(state, tmp_path):
+    state["turns"] = [
+        _bash("git show HEAD --stat"),
+        _bash("bin/idp-epistemic tests/fixtures/epistemic/good/session.jsonl"),
+    ]
+    state["dir"] = tmp_path
+
+
+@given("reads the gate's own source, three sources that share nothing")
+def _third_source(state):
+    state["turns"].append(
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "name": "read",
+                    "input": {"file_path": "bin/epistemic_firewall.py"},
+                }
+            ],
+        }
+    )
+    state["path"] = _write(state["dir"], state["turns"])
+
+
+@given("then claims the work is done")
+def _claims_done(state):
+    state["turns"].append(_say("I built the gate, and I verified it three ways."))
+    state["path"] = _write(state["dir"], state["turns"])
+
+
+@then("it exits 0, because three independent pieces of evidence make the claim valid")
+def _ep_three_pass(state):
+    r = state["result"]
+    if r.returncode != 0:
+        raise AssertionError(r.stdout + r.stderr)
+
+
+@given("a session that runs the same command three times against one source")
+def _same_command(state, tmp_path):
+    state["turns"] = [_bash("git log --oneline -1") for _ in range(3)]
+    state["dir"] = tmp_path
+    state["path"] = _write(tmp_path, state["turns"])
+
+
+@then(
+    "it exits 1 and names the count, because three readings of one source are one piece"
+)
+def _ep_one_source(state):
+    r = state["result"]
+    out = r.stdout + r.stderr
+    if r.returncode != 1:
+        raise AssertionError(out)
+    if "independent piece" not in out:
+        raise AssertionError("the refusal must name the count: " + out)
 
 
 @given("a transcript file that does not exist")
