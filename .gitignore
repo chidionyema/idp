@@ -93,3 +93,7 @@ styles/Microsoft/
 !.crew/graphs/
 !.crew/artifacts/.gitkeep
 !.crew/graphs/.gitkeep
+# Delegate-job scratch: cost.json, status.json and log.ndjson are machine-local, carry the
+# absolute path of the checkout that produced them, and tripped bin/idp-hardcode-scan on
+# 2026-09-13 after a `git add -A` swept them in. They are not repository content.
+.agent/
