@@ -1,14 +1,31 @@
 # The feature registry (platform/features/features.yaml, logs-metrics-store/enterprise)
 # promises `knobs: { retention_days: 7 }` and says "retention is a tier knob, not a hand edit".
 # The SigNoz chart has no retention value (only ClickHouse system-log TTLs) and the docs point at
-# Settings -> Retention Controls, a hand edit; the same setting is the admin API
-# `POST /api/v1/settings/ttl?type=<traces|metrics|logs>&duration=<Go duration>` (SigNoz v0.138.0,
-# pkg/query-service/app/http_handler.go:430). Once a day this Job logs in as the root user the
-# estate already holds (ExternalSecret signoz-root, mounted as files), reads the current TTL of each
-# signal and sets the knob's value where it differs. Same pod shape as telemetry-coverage.yaml.
+# Settings -> Retention Controls, a hand edit; the same setting is the admin API. Once a day this Job
+# logs in as the root user the estate already holds (ExternalSecret signoz-root, mounted as files),
+# reads the current TTL of each signal and sets the knob's value where it differs. Same pod shape as
+# telemetry-coverage.yaml.
 #
-# The knob lives in the ConfigMap below; tests/test_incident_crew584_retention_knob_was_never_applied.py
-# pins it to the registry so the two cannot drift.
+# V2 IS THE WRITE PATH, MEASURED 2026-09-13. The job ran for days and failed every morning on ONE
+# signal:
+#
+#   FAIL signoz-retention logs 500 {"errors":[{"code":500,"msg":"SetTTLV2 only supported"}]}
+#
+# traces and metrics were already at 168h so the job never had to write them, and the v1 GET still
+# answers 200 for all three -- so the defect hid behind a job that looked like it worked. The v1
+# POST is refused because this deployment is on the v2 TTL engine. Measured on the live estate:
+#
+#   GET  /api/v1/settings/ttl?type=logs -> 200, logs_ttl_duration_hrs: -1   (unset)
+#   GET  /api/v2/settings/ttl?type=logs -> 200, default_ttl_days: 15
+#   POST /api/v2/settings/ttl {"type":"logs","duration":"168h"}
+#        -> 200 {"message":"custom retention TTL has been successfully set up"}
+#
+# The two API generations do not agree about the current value, so the v2 READ is what this job
+# grades against: reading v1 while writing v2 is how a knob lands and a job still reports a change
+# every single day.
+#
+# The knob lives in the ConfigMap below; the test in tests/bdd pins it to the registry so the two
+# cannot drift.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -49,28 +66,45 @@ data:
         if status != 200 or not tok.get("data", {}).get("accessToken"):
             raise SystemExit(f"FAIL signoz-retention login {status}: {json.dumps(tok)[:200]}")
         return tok["data"]["accessToken"]
+    def current_days(http, token, sig):
+        """The signal's retention in DAYS as the v2 engine reports it, or None when unreadable.
+
+        v2 is read because v2 is written. The two generations disagree -- measured 2026-09-13, v1
+        answered `logs_ttl_duration_hrs: -1` for a signal v2 had already set -- and a job that
+        reads one engine while writing the other reports a change every morning forever.
+        `default_ttl_days` is absent once a custom TTL is in force, which is not a failure: it
+        means the apply took, so it is read as the knob and not as "unreadable".
+        """
+        status, cur = http("GET", "/api/v2/settings/ttl", token=token, params={"type": sig})
+        if status != 200:
+            return None
+        if "default_ttl_days" not in cur:
+            return "custom"
+        return cur.get("default_ttl_days")
     def plan(http, token, days):
-        """Return [(signal, current_hours)] whose TTL is not the knob, reading the API first so a
-        run that finds the knob already applied writes nothing (ALTER TABLE ... MODIFY TTL is not free)."""
-        want = days * 24
+        """The signals whose TTL is not the knob, read before any write so a run that finds the
+        estate already correct writes nothing -- ALTER TABLE ... MODIFY TTL is not free."""
         todo = []
         for sig in SIGNALS:
-            status, cur = http("GET", "/api/v1/settings/ttl", token=token, params={"type": sig})
-            have = cur.get(f"{sig}_ttl_duration_hrs", -1) if status == 200 else -1
-            if have != want:
+            have = current_days(http, token, sig)
+            if have is None:
+                todo.append((sig, "unreadable"))
+            elif have != "custom" and have != days:
                 todo.append((sig, have))
         return todo
     def apply(http, token, days, todo):
         failed = []
         for sig, have in todo:
-            status, out = http("POST", "/api/v1/settings/ttl", token=token,
-                               params={"type": sig, "duration": f"{days * 24}h"})
-            if status == 409:  # a previous TTL change is still running in ClickHouse; next run finishes it
-                print(f"pending {sig}: {have}h -> {days * 24}h (previous change still in progress)")
-            elif status == 200:
-                print(f"set {sig}: {have}h -> {days * 24}h")
+            # The v2 write: a JSON body, because this deployment's v1 query-parameter POST is
+            # refused with `SetTTLV2 only supported`.
+            status, out = http("POST", "/api/v2/settings/ttl", token=token,
+                               body={"type": sig, "duration": f"{days * 24}h"})
+            if status == 200:
+                print(f"set {sig}: {have} -> {days}d")
+            elif status == 409:  # a previous change is still running in ClickHouse; the next run finishes it
+                print(f"pending {sig}: {have} -> {days}d (previous change still in progress)")
             else:
-                failed.append(f"{sig} {status} {json.dumps(out)[:120]}")
+                failed.append(f"{sig} {status} {json.dumps(out)[:140]}")
         return failed
     def main(http=http):
         days = int(open("/config/retention_days").read().strip())
