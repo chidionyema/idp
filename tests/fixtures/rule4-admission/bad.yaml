@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: claims-provenance-with-nothing-behind-it
+  namespace: default
+  annotations:
+    estate.io/provenance-verified: "true"
+spec:
+  containers:
+    - name: c
+      image: busybox
