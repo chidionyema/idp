@@ -75,9 +75,8 @@ if [ -n "$kyv_base" ]; then
 		esac
 	fi
 fi
-shared="$(git config --get core.hooksPath 2>/dev/null || true)/law32-default"
 # Deterministic Verifier gate (founder 2026-09-13, "no unverified change can land"). The lint
-# gates above and law32-default below are fast and catch most defects; this rung mints a
+# gates above and law32-gate below are fast and catch most defects; this rung mints a
 # Sigstore-attested verifier receipt for the push diff and refuses the push unless that
 # receipt carries claim_verdict=VERIFIED. R58 says hooks stay lint-only under 5s; this rung
 # adds 5-10s because cosign + Sigstore are unavoidable. The MCP endpoint is the one named
