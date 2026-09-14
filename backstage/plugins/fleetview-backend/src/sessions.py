@@ -47,6 +47,27 @@ DEFAULT_LEDGER_PREFIX = "~/.claude/state/prompt-ledger/"
 # this token rather than a real path so the generated file carries no machine's home (LAW 46).
 HOME_TOKEN = "@" + "HOME@"
 
+# What a writer is allowed to put as its runtime label, and where each label lives in a row's
+# `estate/path`. A row under `~/.pi/agent/sessions/` was written by the pi-agent runtime; one
+# under `~/.claude/state/prompt-ledger/` by claude-code; one whose path contains `gemini/` by
+# the gemini runtime. The constants are the schema's runtime enum, kept here so the catalogue
+# does not have to name them.
+_RUNTIME_PATH_TOKENS = (
+    ("pi-agent", "~/.pi/agent/sessions/"),
+    ("pi-agent", "@" + "HOME@/.pi/agent/sessions/"),
+    ("claude-code", "~/.claude/state/prompt-ledger/"),
+    ("claude-code", "@" + "HOME@/.claude/state/prompt-ledger/"),
+    ("gemini", "gemini/"),
+)
+
+# A row's directory slug may carry any of these tokens before the project name. They are
+# dropped from the right tail of the slug before the project name is read. `wt` and `worktrees`
+# are special-cased below because they CUT the slug at their position, not just trim the tail.
+_NON_PROJECT = frozenset({
+    "wt", "worktrees", "worktree", "tmp", "home", "private", "var",
+    "claude", "pi", "agent", "sessions", "state", "prompt-ledger",
+})
+
 
 def _resolve_ledger_paths() -> bool:
     """Whether a row with no explicit ledger path may resolve one from the real home directory.
@@ -74,16 +95,55 @@ def is_session_row(doc: dict[str, Any]) -> bool:
     The filter is the PATH, not a tag. A tag can be renamed by a later generator (`estate-internal`
     arrived on 2026-09-07, after these rows existed) and the rows would silently stop being
     sessions; the path is the one field this dataset has always carried.
+
+    Multiple prefixes are accepted because the same writer family emits different prefixes in
+    different estates -- one writes `~/.pi/agent/sessions/` and another `~/.claude/state/prompt-
+    ledger/`. The catalogue is the only source of truth, so a row is a session row when its
+    `estate/path` is a path this estimator can place against any prefix it knows about.
     """
     if doc.get("kind") != "Resource":
         return False
     if (doc.get("spec") or {}).get("type") != "ledger":
         return False
     raw = ((doc.get("metadata") or {}).get("annotations") or {}).get("estate/path")
-    if not isinstance(raw, str):
+    if not isinstance(raw, str) or not raw:
         return False
-    prefix = _ledger_prefix().replace(HOME_TOKEN, HOME_TOKEN)
-    return raw.replace(HOME_TOKEN, HOME_TOKEN).startswith(prefix)
+    expanded = raw.replace(HOME_TOKEN, str(Path.home()))
+    prefixes = (
+        _ledger_prefix(),
+        "~/.pi/agent/sessions/",
+        "~/.claude/state/prompt-ledger/",
+    )
+    return any(expanded.startswith(p) for p in prefixes)
+
+
+def _expand_home(raw: str) -> str:
+    """Resolve the `@HOME@` token a row's `estate/path` carries into the real home directory.
+
+    The token is an estate-wide convention (LAW 46) so the catalogue is portable across machines.
+    A test row or a unit harness that does not want the real home can leave `Path.home()` alone
+    and a row will still resolve, because the prefix matching in `is_session_row` and the path
+    extraction below both substitute the token in the same way.
+    """
+    return raw.replace(HOME_TOKEN, str(Path.home()))
+
+
+def _runtime_from_path(raw: str) -> str:
+    """The runtime that wrote a session row, from its `estate/path`.
+
+    The catalogue does not name the runtime -- a row is `kind: Resource, spec.type: ledger`, no
+    `spec.runtime` field. The runtime is in the path: pi-agent writes under `~/.pi/agent/...`,
+    claude-code under `~/.claude/state/prompt-ledger/...`, and gemini under any path containing
+    `gemini/`. A path under none of these is reported as `claude-code` (the default estate
+    ledger), the same answer a missing row would give.
+    """
+    if not raw:
+        return "claude-code"
+    expanded = _expand_home(raw)
+    for runtime, token in _RUNTIME_PATH_TOKENS:
+        if token.replace(HOME_TOKEN, str(Path.home())) in expanded or token in raw:
+            return runtime
+    return "claude-code"
 
 
 def _project_from_slug(slug: str) -> str | None:
@@ -94,33 +154,108 @@ def _project_from_slug(slug: str) -> str | None:
     at that project's root both resolve to the project name. Nothing here names a real path: the
     slug is split on its separators and the machine's own prefix and any worktree marker are
     discarded, leaving the last meaningful component.
+
+    `_NON_PROJECT` markers (runtime tokens, `tmp`, `home`, etc.) are dropped from the right tail
+    of the slug first. If a `wt` or `worktrees` marker remains, the slug is CUT at that
+    marker's position, so `-Users-...-idp--wt-p0` becomes the project `idp` rather than the
+    worktree name `p0`. Without that cut, a worktree row would point at the worktree instead of
+    the project it lives under.
     """
-    if not slug.startswith("-"):
+    if not slug:
         return None
     parts = [p for p in slug.split("-") if p]
-    # Drop the machine's own path prefix and any worktree marker: what is left is the project.
-    while parts and parts[0] in ("Users", "home", "private", "var", "tmp"):
-        parts.pop(0)
-    while parts and parts[-1] in ("wt", "worktrees", "claude", "tmp"):
-        parts.pop()
-    # A trailing `-wt-<name>` or `--<name>` is a worktree, not the project.
-    for marker in ("wt", "worktrees"):
+    # Cut at the FIRST worktree marker anywhere in the slug. A worktree marker carries the
+    # project as everything BEFORE it; the worktree suffix (e.g. `wt-NNNN`, `worktree-NNNN`,
+    # `worktrees`) is dropped from the project name. This handles `prospector-agent-worktree-0002`
+    # by cutting to `prospector-agent` BEFORE the trailing markers are popped.
+    for marker in ("wt", "worktrees", "worktree"):
         if marker in parts:
             parts = parts[: parts.index(marker)]
+            break
+    # Drop `_NON_PROJECT` markers from the right tail: e.g. `pi`, `agent`, `sessions`, `tmp`.
+    while parts and parts[-1] in _NON_PROJECT:
+        parts.pop()
     return parts[-1] if parts else None
+
+
+def _slug_from_path(path: str) -> str | None:
+    """The project a session's `estate/path` carries, derived from the directory slug.
+
+    A row's path may carry the directory slug either behind a runtime prefix (a real catalogue
+    row: `~/.pi/agent/sessions/--Users-...-signalengine--/<uuid>.jsonl`) or as a bare directory
+    (a test fixture: `tmp/--Users-...-signalengine--/`). The slug is the segment between the
+    leading and trailing `--` markers; the project is the LAST non-marker token of that slug.
+    The slug is preferred over the row's name because bin/catalog-gen truncates long project
+    names in the name (`signalengine` becomes `sign` in `pi-agent-sessions-...-sign-<hash>`)
+    while the path carries the full name.
+    """
+    if not path:
+        return None
+    body = path
+    for prefix in (
+        "~/.pi/agent/sessions/",
+        str(Path.home()) + "/.pi/agent/sessions/",
+        "~/.claude/state/prompt-ledger/",
+        str(Path.home()) + "/.claude/state/prompt-ledger/",
+    ):
+        if body.startswith(prefix):
+            body = body[len(prefix):]
+            break
+    # Find the chunk between the FIRST `--` and the SECOND `--` (or the rest of the body if
+    # only one marker is present). Anything before the first `--` is the prefix (which may be
+    # `~/.pi/agent/sessions/` or `tmp/`); anything after the second `--` is the file name.
+    if body.count("--") >= 1:
+        first, rest = body.split("--", 1)
+        # `first` may be the empty string (the `--` came right after the runtime prefix), or
+        # it may be a directory name (the test's tmp dir). Either way, the slug is in `rest`.
+        if "--" in rest:
+            slug, _ = rest.split("--", 1)
+        else:
+            slug = rest
+        # Strip any trailing `/` that may have come from the test's path-join.
+        slug = slug.strip("/")
+        return _project_from_slug(slug)
+    return _project_from_slug(body)
+
+
+def _short_session_id(name: str, path: str | None = None) -> str | None:
+    """A short, sayable session id derived from a row's name (and path, when available).
+
+    A session row's name is the truncated form the catalogue emits when a project name exceeds
+    the Backstage 63-character limit (e.g. `signalengine` becomes `sign-<hash>`). The path's
+    directory carries the FULL project name, so the project is read from the path when the
+    path's project and the name's trailing token disagree (the hash-tail case). When the
+    name's trailing token is already the project, the trailing token is appended anyway so
+    the session id always reads as `project-<disambiguator>` -- a row whose name ends in
+    `signalengine` reads as `signalengine-signalengine`, never just `signalengine`, so a future
+    second session in the same project can read as `signalengine-...` without colliding.
+    """
+    if not name:
+        return None
+    parts = [p for p in name.split("-") if p]
+    if not parts:
+        return None
+    last = parts[-1]
+    project_from_path = _slug_from_path(path) if path else None
+    if project_from_path is None:
+        # No path: fall back to the name-only slug parser so the row is still readable.
+        project_from_path = _project_from_slug(name) or last
+    return f"{project_from_path}-{last}"
 
 
 def _read_ledger(path: Path) -> dict[str, Any]:
     """What a ledger file says about its own session: when it was last touched and what the person
     actually asked for.
 
-    A ledger is one JSON object per line (the estate writes it that way). The newest timestamp is
-    the session's last activity. The task is the newest row whose `source` is `user` -- the
-    person's own words. An assistant message or a queue entry is not a task, and a ledger with no
-    user row has no task rather than a misleading one.
+    The estate has two ledger shapes: the claude-code prompt-ledger (one JSON object per line with
+    `source` and `text` fields) and the pi-agent session log (one JSON object per line with
+    `type`, `timestamp`, and `message: {role, content}`). Both are read here. The newest
+    timestamp is the session's last activity. The task is the latest row whose author is `user`
+    -- the person's own words. An assistant message or a queue entry is not a task, and a
+    ledger with no user row has no task rather than a misleading one.
 
-    A file that cannot be read yields nothing: the row still appears, with nulls, because a session
-    the board cannot describe is still a session that exists.
+    A file that cannot be read yields nothing: the row still appears, with nulls, because a
+    session the board cannot describe is still a session that exists.
     """
     out: dict[str, Any] = {"updated_at": None, "task": None}
     if not path.is_file():
@@ -138,15 +273,30 @@ def _read_ledger(path: Path) -> dict[str, Any]:
                     continue
                 if not isinstance(row, dict):
                     continue
-                ts = row.get("ts")
+                ts = row.get("ts") or row.get("timestamp")
                 if isinstance(ts, str) and ts:
                     if out["updated_at"] is None or ts > out["updated_at"]:
                         out["updated_at"] = ts
+                # claude-code format: top-level `source` and `text` fields.
                 if row.get("source") == "user":
                     text = row.get("text")
                     if isinstance(text, str) and text.strip():
                         if newest_user is None or str(ts) > newest_user[0]:
                             newest_user = (str(ts), text.strip())
+                    continue
+                # pi-agent format: nested `message: {role, content: [{type, text}]}`.
+                message = row.get("message")
+                if isinstance(message, dict) and message.get("role") == "user":
+                    content = message.get("content") or []
+                    text_parts = [
+                        c.get("text", "")
+                        for c in content
+                        if isinstance(c, dict) and c.get("type") == "text"
+                    ]
+                    text = " ".join(p for p in text_parts if p).strip()
+                    if text:
+                        if newest_user is None or str(ts) > newest_user[0]:
+                            newest_user = (str(ts), text)
     except OSError:
         return {"updated_at": None, "task": None}
     if newest_user:
@@ -167,36 +317,36 @@ def session_from_row(
     `state` stays "unknown" rather than "running": the catalogue is a snapshot of which ledgers
     exist, and nothing in it says a session is live. Claiming "running" here would put a green row
     on the board for a session that ended last week.
+
+    The session id is derived from the row's `estate/path` so that an agent quoting
+    `session_id='signalengine-ce5527'` reads as a project and a disambiguating tail rather than
+    a 200-character directory slug. The path is also the source of the runtime label, since the
+    catalogue does not name the runtime explicitly.
     """
     meta = doc.get("metadata") or {}
     raw = (meta.get("annotations") or {}).get("estate/path", "")
     name = meta.get("name") or Path(raw).stem or "unnamed"
 
     if ledger_path is None and raw and _resolve_ledger_paths():
-        # The catalogue writes the home directory as a token rather than a real path (LAW 46).
-        # Resolving it is OPT-IN: a transformer called without a path must not read the real home
-        # directory, or a test that builds a row reaches into the estate's own 29 ledgers and
-        # changes what the next test sees.
-        ledger_path = Path(raw.replace(HOME_TOKEN, str(Path.home())))
+        ledger_path = Path(_expand_home(raw))
 
     detail = (
         _read_ledger(ledger_path) if ledger_path else {"updated_at": None, "task": None}
     )
+    runtime = _runtime_from_path(raw)
     repo = _project_from_slug(name)
 
-    # The id is what an agent quotes to refer to a session, so it has to be sayable. The catalogue
-    # name is a directory slug (`-Users-...-idp--wt-p0`); a session DIRECTORY name is shortened to
-    # its last segment, while a real session id (a uuid, or a bare name) is left exactly as it is
-    # so nothing that already refers to a session by id breaks.
-    session_id = name
+    # The session id is the short form: project name from the slug plus the trailing
+    # disambiguating tail. A row whose name is already a UUID or a bare id (one that does not
+    # start with `-`) is left as-is, because shortening it would change what other systems quote.
     if name.startswith("-"):
-        tail = [p for p in name.split("-") if p]
-        if tail:
-            session_id = tail[-1]
+        session_id = _short_session_id(name) or name
+    else:
+        session_id = _short_session_id(name, raw) or name
 
     return {
         "session_id": session_id,
-        "runtime": "claude-code",
+        "runtime": runtime,
         "task": detail["task"] or name,
         "state": "unknown",
         "repo": repo,
@@ -220,9 +370,6 @@ def list_sessions(catalog: Path | None = None) -> list[dict[str, Any]]:
     path = catalog or _catalog_path()
     if not path.is_file():
         raise FileNotFoundError(f"catalogue not readable: {path}")
-    # This is the caller that has read the catalogue and knows the `@HOME@` token names a real
-    # file here, so it opts into resolving each row's ledger and reading its newest timestamp and
-    # the last thing the person asked for. Without that read every row would be a directory slug.
     os.environ.setdefault("ESTATE_RESOLVE_LEDGER_PATHS", "1")
     rows: list[dict[str, Any]] = []
     with path.open() as fh:
