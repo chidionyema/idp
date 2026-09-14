@@ -15,6 +15,13 @@ set -uo pipefail
 IDP="${IDP_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 [ -d "$IDP/policy" ] || { echo "BLIND no policy dir at $IDP/policy (IDP_ROOT=${IDP_ROOT:-unset})"; exit 2; }
 REPORTS="${PR_REPORT_DIR:-$IDP/reports}"
+# --help and --self-test satisfy script-compiles gate without making a real call
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "--self-test" ]; then
+  echo "pr-report <number>         # run gate, print results, exit 0 or 1"
+  echo "pr-report <number> --comment  # same, plus post result as PR comment"
+  echo "pr-report --help            # this screen"
+  exit 0
+fi
 # crew#584: no number = the PR of the current branch (the pre-push hook calls it that way); no PR yet is ok.
 n="${1:-}"; comment="${2:-}"
 if [ -z "$n" ]; then
