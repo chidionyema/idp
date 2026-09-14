@@ -1,0 +1,398 @@
+#!/usr/bin/env python3
+"""idp-executor-install -- put the executor under a uid the agent does not own.
+
+WHAT THIS FIXES, measured on the founder's Mac 2026-09-13.
+
+The agent runs as the founder's own login uid. Every guard the estate wrote this session was
+therefore a POLICY INSIDE THE IDENTITY IT GUARDS: the agent could rewrite its own guard, and
+nothing recorded that it had. That is why the 60-second cap failed six times in one session while
+each fix was described as landed. A control that shares an identity with what it controls cannot
+deny it, so this stops tuning the control and moves it out of reach instead.
+
+The boundary report that proves the point is one command -- `bin/idp-executor-status` lists every
+file the agent can still rewrite and names its owner and mode. That list is deliberately NOT
+reproduced here: a transcript of one machine's absolute paths is both a LAW 46 defect and a map of
+somebody's filesystem, and `bin/idp-hardcode-scan` refused this file for carrying it. Read it from
+the tool, on the machine, on the day.
+
+WHAT IT DOES, in order:
+  1. Creates a dedicated non-login uid, _idp_executor, that the agent does not hold.
+  2. Copies the executor -- the daemon script and the door it imports -- into a root-owned prefix
+     and chowns it to that uid, so the copy the daemon RUNS is not the copy in the checkout.
+  3. Installs a LaunchDaemon (root-owned, in /Library/LaunchDaemons) that runs the executor AS
+     _idp_executor.
+  4. Leaves the socket owner-writable by the agent, because the agent is a legitimate CALLER of the
+     executor. The agent must be able to ask; it must not be able to rewrite what answers.
+  5. Verifies the result by asking the daemon at the new socket, and reports what it could not do
+     rather than assuming it worked.
+
+WHY A LAUNCHDAEMON AND NOT A LAUNCHAGENT. A LaunchAgent runs in the user's own session as that
+user, which is the arrangement this whole file exists to escape. A LaunchDaemon runs as root at
+boot and names its own UserName; only root can install one. That difference is the boundary.
+
+WHY THE DAEMON GETS A COPY AND NOT A SYMLINK. A symlink is a pointer the agent can retarget, and
+the copy under /usr/local is not in a checkout the agent can edit. The two files the executor needs
+are copied rather than referenced so that editing the repository cannot change what runs.
+
+FOUNDER FENCE. This is a money/identity-boundary change: it gains a uid and installs a root
+LaunchDaemon. It is therefore written so that a PERSON runs it with sudo, and it refuses to proceed
+on anything that looks like an agent-invoked shell. Run it yourself:
+
+    sudo bin/idp-executor-install
+
+  --check     prove this file runs, and report what the machine currently has (no root needed)
+  --status    report which half of the boundary is in place now (no root needed)
+  --uninstall remove the LaunchDaemon and the installed copy; leaves the uid and the logs alone
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import pwd
+import shutil
+import socket
+import stat
+import subprocess
+import sys
+from pathlib import Path
+
+# THE CHECKOUT IS DERIVED, NEVER TYPED (LAW 46). This line used to read
+# `os.environ.get("IDP_ROOT", Path.home() / "dev/code/idp")`, which named one machine's layout and
+# was refused by the estate's own hardcode scan. `bin/` is at the checkout root, so the root is this
+# file's parent's parent, and that is correct wherever the repository is cloned. IDP_ROOT still wins
+# when set, because grading a worktree is a legitimate thing to do.
+IDP = Path(os.environ.get("IDP_ROOT") or Path(__file__).resolve().parent.parent)
+SERVICE_USER = "idp_executor"
+# The account name carries no leading underscore on purpose: macOS reserves _ prefixes for Apple's
+# own daemons, and creating it without a leading underscore keeps it ours to own and to remove.
+PREFIX = Path(os.environ.get("IDP_EXECUTOR_PREFIX", "/usr/local/libexec/idp-executor"))
+DAEMON_LABEL = "ai.estate.executor"
+PLIST_DEST = Path("/Library/LaunchDaemons") / f"{DAEMON_LABEL}.plist"
+RUN_DIR = Path("/var/run/idp-executor")
+SOCKET = RUN_DIR / "executor.sock"
+STATE_DIR = Path("/var/lib/idp-executor/runs")
+
+
+def say(*parts: object) -> None:
+    print(*parts)
+
+
+def die(message: str, code: int = 2) -> None:
+    print(f"REFUSED: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def is_root() -> bool:
+    return os.geteuid() == 0
+
+
+def running_under_agent() -> str:
+    """A best-effort read of whether this was started by an agent rather than by a person.
+
+    This cannot be perfect, and it does not need to be: it exists so the founder's own terminal is
+    the ordinary path, and an agent that tries to run it gets a refusal naming the fence rather than
+    a silent identity change. The authoritative control remains sudo's password prompt.
+    """
+    for var in ("PI_SESSION", "PI_AGENT", "CLAUDE_CODE", "PI_SUBAGENT"):
+        if os.environ.get(var):
+            return var
+    if os.environ.get("TERM_PROGRAM") == "vscode" and os.environ.get("PI_ACTIVE"):
+        return "PI_ACTIVE"
+    return ""
+
+
+def user_exists() -> bool:
+    try:
+        pwd.getpwnam(SERVICE_USER)
+    except KeyError:
+        return False
+    return True
+
+
+def check() -> int:
+    """Prove this file runs, with no root and no change to the machine."""
+    if not IDP.is_dir():
+        say(f"FAIL the checkout is not at {IDP}")
+        return 1
+    x = IDP / "mcp/plugins/estate_executor.py"
+    y = IDP / "platform/executor/daemon.py"
+    for path in (x, y):
+        if not path.is_file():
+            say(f"FAIL the executor source is missing: {path}")
+            return 1
+    say("ok   both executor sources are where this installer will copy them from")
+    say(
+        f"ok   idp-executor-install --check (prefix {PREFIX}, service uid {SERVICE_USER})"
+    )
+    return 0
+
+
+def status() -> int:
+    service = user_exists()
+    installed = (PREFIX / "daemon.py").is_file()
+    has_plist = PLIST_DEST.is_file()
+    say(f"service uid:   {'present' if service else 'ABSENT'} ({SERVICE_USER})")
+    say(f"installed copy:{'present' if installed else 'ABSENT'} ({PREFIX})")
+    say(f"LaunchDaemon:  {'present' if has_plist else 'ABSENT'} ({PLIST_DEST})")
+    if has_plist:
+        owned = subprocess.run(
+            ["stat", "-f", "%Su:%Sg %Sp", str(PLIST_DEST)],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        say(f"               {owned}")
+    if SOCKET.exists():
+        mode = oct(stat.S_IMODE(SOCKET.stat().st_mode))
+        say(f"system socket: {SOCKET} mode {mode} owner {SOCKET.stat().st_uid}")
+    # The question this whole file exists to answer: can the AGENT rewrite what answers?
+    reachable = []
+    for path in (PREFIX / "daemon.py", PREFIX / "estate_executor.py", PLIST_DEST):
+        if path.exists() and path.stat().st_uid == os.getuid():
+            reachable.append(str(path))
+    if reachable and not is_root():
+        say(
+            "boundary:      UNKNOWN       still owned by this uid: "
+            + ", ".join(reachable)
+        )
+        return 1
+    if installed and has_plist:
+        say(
+            "boundary:      MEASURED_OK   neither the executor copy nor its plist is owned by the agent"
+        )
+        return 0
+    say(
+        "boundary:      UNKNOWN       not installed; run: sudo bin/idp-executor-install"
+    )
+    return 1
+
+
+def create_user() -> None:
+    """A non-login service account. dscl is the supported way to do this on macOS."""
+    if user_exists():
+        say(f"  uid {SERVICE_USER} already exists")
+        return
+    # A uid below 500 keeps this out of the human range and out of the login window, which is the
+    # convention every other service account on this machine follows.
+    used = {p.pw_uid for p in pwd.getpwall()}
+    uid = next(u for u in range(400, 500) if u not in used)
+    commands = [
+        ["dscl", ".", "-create", f"/Users/{SERVICE_USER}"],
+        ["dscl", ".", "-create", f"/Users/{SERVICE_USER}", "UniqueID", str(uid)],
+        ["dscl", ".", "-create", f"/Users/{SERVICE_USER}", "PrimaryGroupID", "20"],
+        [
+            "dscl",
+            ".",
+            "-create",
+            f"/Users/{SERVICE_USER}",
+            "UserShell",
+            "/usr/bin/false",
+        ],
+        ["dscl", ".", "-create", f"/Users/{SERVICE_USER}", "RealName", "IDP Executor"],
+        [
+            "dscl",
+            ".",
+            "-create",
+            f"/Users/{SERVICE_USER}",
+            "NFSHomeDirectory",
+            "/var/empty",
+        ],
+        ["dscl", ".", "-passwd", f"/Users/{SERVICE_USER}", "*"],
+    ]
+    for cmd in commands:
+        subprocess.run(cmd, check=True, capture_output=True)
+    say(f"  created service uid {SERVICE_USER} (uid {uid}, no shell, no home)")
+
+
+def install_files() -> None:
+    """Copy the executor somewhere the agent does not own, and give it to the service uid."""
+    (PREFIX).mkdir(parents=True, exist_ok=True)
+    # Copied, not linked: editing the checkout must not change what runs. The runner comes too,
+    # because the service uid cannot traverse ~/.pi (mode 0700, measured) -- a daemon pointed at
+    # the interactive path starts, answers health, and fails every command.
+    runner_src = Path.home() / ".pi/agent/bin/run"
+    if not runner_src.is_file():
+        die(f"the dispatcher is missing at {runner_src}; the executor delegates to it")
+    for src, dest_name in (
+        (IDP / "platform/executor/daemon.py", "daemon.py"),
+        (IDP / "mcp/plugins/estate_executor.py", "estate_executor.py"),
+        (runner_src, "run"),
+    ):
+        dest = PREFIX / dest_name
+        shutil.copy2(src, dest)
+        os.chmod(dest, 0o755)  # noqa: S103 -- root-owned and world-READABLE on purpose: the
+        # agent is a legitimate CALLER of the executor and must be able to run it; write access is
+        # what this whole file removes, and it stays with root.
+    entry = PREFIX / "run"
+    entry.write_text(
+        "#!/bin/sh\n"
+        "# The daemon's entry point, installed root-owned. The interpreter is resolved here, once,\n"
+        "# because launchd does not search PATH: a bare name exits 78 into an empty log.\n"
+        f'exec "{sys.executable}" "{PREFIX}/daemon.py" "$@"\n'
+    )
+    os.chmod(entry, 0o755)  # noqa: S103 -- see above: readable by the caller, writable only by root
+
+    import grp
+
+    gid = grp.getgrnam("staff").gr_gid
+    uid = pwd.getpwnam(SERVICE_USER).pw_uid
+    for path in PREFIX.iterdir():
+        os.chown(path, 0, gid)  # root-owned, so the agent cannot rewrite it
+        os.chmod(path, 0o755)  # noqa: S103 -- see above: readable by the caller, writable only by root
+
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    os.chown(RUN_DIR, uid, gid)  # the daemon must be able to create its socket here
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    os.chown(STATE_DIR, uid, gid)
+
+    say(f"  installed the executor at {PREFIX} (root-owned)")
+    say(f"  socket will be {SOCKET}, owned by {SERVICE_USER}, agent-writable")
+
+
+def write_plist() -> None:
+    """A LaunchDaemon, not a LaunchAgent: it runs at boot under its own UserName."""
+    plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{DAEMON_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{PREFIX}/run</string>
+  </array>
+  <!-- LaunchDaemons carry their UserName here; an agent cannot edit this file. -->
+  <key>UserName</key>
+  <string>{SERVICE_USER}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>IDP_EXECUTOR_SOCKET</key>
+    <string>{SOCKET}</string>
+    <key>IDP_EXECUTOR_RUNS</key>
+    <string>{STATE_DIR}</string>
+    <key>IDP_EXECUTOR_RUNNER</key>
+    <string>{PREFIX}/run</string>
+    <key>ESTATE_RUNS</key>
+    <string>{STATE_DIR}</string>
+    <key>IDP_ROOT</key>
+    <string>{IDP}</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+</dict>
+</plist>
+"""
+    PLIST_DEST.write_text(plist)
+    os.chown(PLIST_DEST, 0, 0)
+    os.chmod(PLIST_DEST, 0o644)
+    say(f"  wrote {PLIST_DEST} (root:wheel 0644)")
+
+
+def load_daemon() -> None:
+    subprocess.run(
+        ["launchctl", "bootout", f"system/{DAEMON_LABEL}"], capture_output=True
+    )
+    result = subprocess.run(
+        ["launchctl", "bootstrap", "system", str(PLIST_DEST)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        die(
+            f"launchctl bootstrap refused: {result.stderr.strip() or result.stdout.strip()}"
+        )
+    say(f"  loaded {DAEMON_LABEL} as a system daemon")
+
+
+def verify() -> int:
+    """Ask the daemon, at its new socket, what ceiling it enforces. Ask, do not assume."""
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(5)
+    try:
+        sock.connect(str(SOCKET))
+        sock.sendall(b'{"verb":"health"}\n')
+        raw = sock.recv(65536).decode().strip()
+    except OSError as exc:
+        say(f"  MEASURED_FAIL the daemon is not answering on {SOCKET}: {exc}")
+        return 1
+    finally:
+        sock.close()
+    try:
+        health = json.loads(raw)
+    except ValueError:
+        say(f"  MEASURED_FAIL the daemon answered something that is not JSON: {raw}")
+        return 1
+    if not health.get("ok"):
+        say(f"  MEASURED_FAIL the daemon refused its own health: {raw}")
+        return 1
+    say(
+        f"  MEASURED_OK   ceiling {health.get('ceiling_sec')}s, pid {health.get('pid')}"
+    )
+    return 0
+
+
+def uninstall() -> None:
+    subprocess.run(
+        ["launchctl", "bootout", f"system/{DAEMON_LABEL}"], capture_output=True
+    )
+    if PLIST_DEST.exists():
+        PLIST_DEST.unlink()
+        say(f"  removed {PLIST_DEST}")
+    if PREFIX.exists():
+        shutil.rmtree(PREFIX)
+        say(f"  removed {PREFIX}")
+    say(
+        "  the service uid and the logs were left alone: removing a record is not the same as undoing it"
+    )
+
+
+def main(argv: list[str]) -> int:
+    choice = argv[0] if argv else ""
+
+    if choice == "--check":
+        return check()
+    if choice == "--status":
+        return status()
+    if choice == "--help" or not choice:
+        say(__doc__)
+        return 0 if choice else 2
+
+    # Everything below here changes the machine's identity, so it requires root.
+    if choice == "--uninstall":
+        if not is_root():
+            die("--uninstall needs root: sudo bin/idp-executor-install --uninstall")
+        uninstall()
+        return 0
+
+    if choice != "--install" and choice != "":
+        die(
+            f"unknown option {choice}. Use --check, --status, --install or --uninstall."
+        )
+
+    if not is_root():
+        die(
+            "this installs a root LaunchDaemon and creates a uid; it needs root: sudo bin/idp-executor-install"
+        )
+    if running_under_agent():
+        die(
+            "this looks like an agent-invoked shell "
+            f"({running_under_agent()} is set). The founder runs this himself; the estate's consent "
+            "rule forbids an agent taking an identity change on its own."
+        )
+
+    say("installing the executor under its own uid:")
+    create_user()
+    install_files()
+    write_plist()
+    load_daemon()
+    say("")
+    say("verifying, by asking the daemon rather than assuming:")
+    return verify()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

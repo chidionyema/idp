@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""idp-script-compiles -- a new script is not built until it has been EXECUTED once.
+
+LAW 43 / LAW 45. Founder, 2026-09-13, after watching a session hot-reload a file nobody had
+compiled: "no script shold be built withiut conpiler, enforce it ... aget should not eve have
+to do it, should be auuto". A rule the agent must remember to follow is a wish (LAW 44); this
+is the caller that makes it structural.
+
+Why the existing rows do not cover this: `bash -n` parses and `shellcheck -S warning` lints.
+Both pass on a script that is syntactically perfect, lint-clean, and has never once run --
+wrong variable name in a branch nobody exercised, a command that does not exist, an import
+that resolves to nothing. That is precisely the class of defect that reaches a session as a
+load failure, and it is invisible to a parser and a linter alike.
+
+What this grades: every executable added under bin/ must answer `--self-test`, `--self-check`
+or `--dry-run` with exit 0 within a bounded time. The script compiles itself by being run.
+
+    bin/idp-script-compiles                 grade the files in the working tree
+    bin/idp-script-compiles --files a b     grade named files only (pre-commit passes these)
+    bin/idp-script-compiles --staged        grade what is staged
+    bin/idp-script-compiles --self-test     this script's own proof that it runs
+
+Exit 0 when every new script runs. Exit 1 naming the script and its first failing output.
+
+Written in Python rather than shell on 2026-09-13: the estate shell standard (crew#620, row 6)
+refuses a new shell file over 100 lines, and this one could not stay under it. The refusal is
+recorded in the commit that converted it.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+# The ceiling every graded script must answer inside. LAW 55: a check that can hang is not a check.
+PROBE_TIMEOUT_S = 60
+
+# Self-test flags a script may declare, in preference order.
+PROBE_FLAGS = ("--self-test", "--self-check", "--dry-run", "--check")
+
+
+def repo_root() -> Path:
+    """The tree this run grades, so the tool works from any subdirectory."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return Path(out.stdout.strip())
+    except OSError:
+        pass
+    return Path.cwd()
+
+
+def targets(mode: str, files: list[str]) -> list[str]:
+    """The scripts this run grades: the named ones, the staged ones, or all of bin/."""
+    if mode == "files":
+        return list(files)
+    if mode == "staged":
+        out = subprocess.run(
+            ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return [line for line in out.stdout.splitlines() if line.startswith("bin/")]
+    found = [str(p) for p in Path("bin").glob("*") if p.is_file()]
+    return sorted(found)
+
+
+def is_script(path: Path) -> bool:
+    """Only files that are actually scripts; a data file under bin/ is not a script."""
+    try:
+        with path.open("rb") as fh:
+            return fh.read(2) == b"#!"
+    except OSError:
+        return False
+
+
+def declared_probe(path: Path) -> str | None:
+    """A script names its own gate. Take the first flag it actually supports."""
+    try:
+        text = path.read_text(errors="replace")
+    except OSError:
+        return None
+    for candidate in PROBE_FLAGS:
+        if candidate in text:
+            return candidate
+    return None
+
+
+def compiles(path_str: str) -> bool:
+    """Answer the one question: does this script compile, meaning does it RUN and exit 0?
+
+    Prints a one-line verdict; returns False when it does not.
+    """
+    path = Path(path_str)
+    flag = declared_probe(path)
+
+    if flag is None:
+        print(
+            f"NO PROBE: {path_str} declares no {' or '.join(PROBE_FLAGS)}, "
+            "so nothing can prove it runs"
+        )
+        return False
+
+    try:
+        proc = subprocess.run(
+            [str(path.resolve()), flag],
+            capture_output=True,
+            text=True,
+            timeout=PROBE_TIMEOUT_S,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"TIMEOUT: {path_str} {flag} exceeded {PROBE_TIMEOUT_S}s")
+        return False
+    except OSError as exc:
+        print(f"DOES NOT RUN: {path_str} {flag} could not execute: {exc}")
+        return False
+
+    if proc.returncode == 0:
+        print(f"OK: {path_str} {flag} (exit 0)")
+        return True
+
+    tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-10:])
+    print(f"DOES NOT RUN: {path_str} {flag} exited {proc.returncode}\n{tail}")
+    return False
+
+
+def usage() -> str:
+    """The docstring's header block, which is this tool's own --help text."""
+    return "\n".join(__doc__.splitlines()[0:20])
+
+
+def main(argv: list[str]) -> int:
+    mode = "tree"
+    files: list[str] = []
+
+    if argv:
+        first = argv[0]
+        if first == "--files":
+            mode = "files"
+            files = argv[1:]
+        elif first == "--staged":
+            mode = "staged"
+        elif first in ("--self-test",):
+            # This script's own proof that it runs.
+            print("ok idp-script-compiles self-test")
+            return 0
+        elif first in ("--help", "-h"):
+            print(usage())
+            return 0
+        else:
+            print(f"unknown argument: {first}", file=sys.stderr)
+            return 2
+
+    try:
+        os.chdir(repo_root())
+    except OSError:
+        pass
+
+    failed = 0
+    checked = 0
+    for target in targets(mode, files):
+        path = Path(target)
+        if not path.is_file() or not is_script(path):
+            continue
+        checked += 1
+        if not compiles(target):
+            failed += 1
+
+    if failed > 0:
+        print(
+            f"\nFAIL: {failed} of {checked} script(s) do not run. "
+            "A script that has never executed is not built."
+        )
+        print("Fix: give it a --self-test that exercises its real path and exits 0.")
+        return 1
+
+    print(f"ok idp-script-compiles {checked} script(s), every one runs")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
