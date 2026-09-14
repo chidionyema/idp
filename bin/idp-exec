@@ -35,7 +35,13 @@ from pathlib import Path
 SOCKET = Path(
     os.environ.get("IDP_EXECUTOR_SOCKET", Path.home() / ".estate/executor.sock")
 )
-IDP = Path(os.environ.get("IDP_ROOT", Path.home() / "dev/code/idp"))
+# The checkout is DERIVED from this file's own location, never typed (LAW 46): `bin/idp-exec`
+# lives in `<checkout>/bin/`, so its parent's parent IS the checkout, wherever that is. The
+# previous fallback named `~dev/code/idp`, which is one machine's answer -- it passed on the
+# author's laptop and would be wrong on every other checkout, and `bin/idp-hardcode-scan`
+# refused the push for exactly that line. IDP_ROOT stays as the explicit override for a caller
+# that has already resolved it.
+IDP = Path(os.environ.get("IDP_ROOT") or Path(__file__).resolve().parent.parent)
 
 USAGE = __doc__
 

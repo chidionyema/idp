@@ -32,7 +32,10 @@ SOCKET = Path(
     os.environ.get("IDP_EXECUTOR_SOCKET", Path.home() / ".estate/executor.sock")
 )
 HOME = Path.home()
-IDP = Path(os.environ.get("IDP_ROOT", HOME / "dev/code/idp"))
+# Derived, never typed (LAW 46): this file lives in `<checkout>/bin/`, so the checkout is its
+# parent's parent. The previous `HOME / "dev/code/idp"` was one machine's layout, refused by
+# `bin/idp-hardcode-scan` at the pre-push gate. IDP_ROOT remains the explicit override.
+IDP = Path(os.environ.get("IDP_ROOT") or Path(__file__).resolve().parent.parent)
 RUNS = HOME / ".estate/runs"
 
 
