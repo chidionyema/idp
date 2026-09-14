@@ -219,10 +219,47 @@ def grade_file(path: Path | str) -> dict:
     return grade(turns)
 
 
+def _usage() -> str:
+    return "usage: idp-prm --grade <session.jsonl>\n       idp-prm --self-test\n       idp-prm --help"
+
+
+def _self_test() -> int:
+    """LAW 45 (bin/idp-script-compiles): a script under bin/ is not built until it has run.
+
+    Runs the real grade() path against the two fixtures this gate's own rules.yaml row
+    names (tests/fixtures/prm/{bad,good}/session.jsonl), so this is the same proof the
+    rules.yaml `cases` already assert -- not a second, looser check.
+    """
+    root = Path(__file__).resolve().parent.parent
+    bad = root / "tests/fixtures/prm/bad/session.jsonl"
+    good = root / "tests/fixtures/prm/good/session.jsonl"
+    if not bad.exists() or not good.exists():
+        print(
+            f"SKIP prm --self-test: fixtures not found under {root}/tests/fixtures/prm"
+        )
+        return 0
+    bad_verdict = grade_file(bad)
+    good_verdict = grade_file(good)
+    if not bad_verdict["refused"]:
+        print(f"FAIL prm --self-test: {bad} should have been refused and was not")
+        return 1
+    if good_verdict["refused"]:
+        print(f"FAIL prm --self-test: {good} should have passed and was refused")
+        return 1
+    print("ok   prm --self-test: bad fixture refused, good fixture passed")
+    return 0
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) > 1 and argv[1] in ("--help", "-h"):
+        print(_usage())
+        return 0
+    if len(argv) > 1 and argv[1] == "--self-test":
+        return _self_test()
+
     args = [a for a in argv[1:] if a != "--grade"]
     if not args:
-        print("usage: idp-prm --grade <session.jsonl>", file=sys.stderr)
+        print(_usage(), file=sys.stderr)
         return 2
 
     verdict = grade_file(args[0])
