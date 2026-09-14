@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+# bin/idp-install-verifier-hooks: copy pre-commit and pre-push wrappers
+# from this directory into .git/hooks/. The wrappers exec the scripts
+# in bin/, so a change there is picked up the next time the hook
+# fires without needing to re-run this installer.
+#
+# Run from anywhere inside the checkout; the script finds .git/ by
+# walking upward.
+
+from __future__ import annotations
+
+import argparse
+import os
+import stat
+import sys
+from pathlib import Path
+
+
+def find_git_dir(start: Path) -> Path:
+    cur = start.resolve()
+    while True:
+        candidate = cur / ".git"
+        if candidate.is_dir():
+            return candidate
+        if cur.parent == cur:
+            raise SystemExit(f"no .git/ above {start}")
+        cur = cur.parent
+
+
+def install(wrapper: Path, target: Path) -> None:
+    body = f"#!/usr/bin/env bash\nexec {wrapper} \"$@\"\n"
+    target.write_text(body)
+    target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    sys.stderr.write(f"installed: {target}\n")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--uninstall", action="store_true")
+    args = ap.parse_args()
+
+    bin_dir = Path(__file__).resolve().parent
+    git_dir = find_git_dir(bin_dir)
+
+    hooks = git_dir / "hooks"
+    hooks.mkdir(exist_ok=True)
+
+    if args.uninstall:
+        for name in ("pre-commit", "pre-push"):
+            tgt = hooks / name
+            if tgt.exists() and tgt.read_text().startswith("#!/usr/bin/env bash\nexec"):
+                tgt.unlink()
+                sys.stderr.write(f"removed: {tgt}\n")
+        return 0
+
+    install((bin_dir / "idp-precommit-verify").resolve(), hooks / "pre-commit")
+    install((bin_dir / "idp-prepush-verify").resolve(), hooks / "pre-push")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

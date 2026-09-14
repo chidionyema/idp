@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+# bin/idp-verifier-curl: small client for the verifier MCP verbs.
+#
+# One verb per subcommand. The MCP endpoint is on loopback
+# (127.0.0.1:8001/-/mcp). The session is per-invocation: initialize,
+# notifications/initialized, tools/call, drop. That is enough for a
+# git hook because the hook runs once per commit/push.
+#
+# LAW 43: the verifier is loaded by the daemon. This client is only a
+# transport. The receipt is in the daemon's ledger, not here.
+#
+# Failure modes are print-to-stderr + non-zero exit. A hook that lets
+# a failed call silently pass is indistinguishable from no hook.
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import urllib.request
+import urllib.error
+
+MCP_URL = os.environ.get("IDP_MCP_URL", "http://127.0.0.1:8001/-/mcp")
+DAEMON_TIMEOUT = int(os.environ.get("IDP_VERIFIER_TIMEOUT", "55"))
+
+
+def _rpc(method: str, params: dict, sid: str | None = None) -> tuple[dict, dict]:
+    """Send one JSON-RPC request; return (parsed_envelope_dict, response_headers)."""
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
+    req = urllib.request.Request(
+        MCP_URL,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            **({"Mcp-Session-Id": sid} if sid else {}),
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=DAEMON_TIMEOUT) as r:
+            raw = r.read().decode()
+            headers = {k: v for k, v in r.headers.items()}
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode() if e.fp else ""
+        headers = {k: v for k, v in (e.headers.items() if e.headers else [])}
+    # StreamableHTTP returns a SSE "data: {...}" envelope; peel it.
+    parsed: dict = {}
+    for line in raw.splitlines():
+        if line.startswith("data:"):
+            payload = line[5:].strip()
+            if payload:
+                try:
+                    parsed = json.loads(payload)
+                    break
+                except json.JSONDecodeError:
+                    pass
+    if not parsed:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = {"raw": raw}
+    return parsed, headers
+
+
+def _session() -> str:
+    init, headers = _rpc(
+        "initialize",
+        {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "idp-verifier-curl", "version": "1"},
+        },
+    )
+    # StreamableHTTP returns the session id in the Mcp-Session-Id response
+    # header; some servers also embed it in the body. Look in both places.
+    sid = (
+        init.get("session")
+        or init.get("sessionId")
+        or headers.get("Mcp-Session-Id")
+        or headers.get("mcp-session-id")
+    )
+    if not sid:
+        raise SystemExit(f"mcp: no session id in initialize reply (headers={list(headers.keys())[:5]})")
+    _rpc("notifications/initialized", {}, sid=sid)
+    return sid
+
+
+def _call(sid: str, tool: str, arguments: dict) -> dict:
+    reply, _ = _rpc(
+        "tools/call",
+        {"name": tool, "arguments": arguments},
+        sid=sid,
+    )
+    result = reply.get("result", {})
+    text = ""
+    content = result.get("content") or []
+    if content:
+        text = content[0].get("text", "") if isinstance(content[0], dict) else str(content[0])
+    payload = {}
+    if text:
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            payload = {"raw_text": text}
+    return {"ok": not result.get("isError"), "payload": payload, "raw": reply}
+
+
+def simulate_patch(args: argparse.Namespace) -> int:
+    sid = _session()
+    out = _call(sid, "simulate_patch", {"patch": args.patch, "summary": args.summary})
+    print(json.dumps(out, indent=2))
+    return 0 if out["ok"] and out["payload"].get("would_accept") else 2
+
+
+def propose_patch(args: argparse.Namespace) -> int:
+    sid = _session()
+    out = _call(sid, "propose_patch", {"patch": args.patch, "summary": args.summary})
+    print(json.dumps(out, indent=2))
+    return 0 if out["ok"] else 2
+
+
+def verify(args: argparse.Namespace) -> int:
+    sid = _session()
+    out = _call(
+        sid,
+        "verify",
+        {
+            "ledger_id": args.ledger_id,
+            "test_paths": args.test_path or [],
+        },
+    )
+    print(json.dumps(out, indent=2))
+    payload = out["payload"]
+    return 0 if payload.get("claim_verdict") == "PASSED" else 2
+
+
+def seal(args: argparse.Namespace) -> int:
+    sid = _session()
+    out = _call(sid, "seal", {"ledger_id": args.ledger_id})
+    print(json.dumps(out, indent=2))
+    return 0 if out["ok"] else 2
+
+
+def admit(args: argparse.Namespace) -> int:
+    sid = _session()
+    out = _call(sid, "admit", {"ledger_id": args.ledger_id})
+    print(json.dumps(out, indent=2))
+    return 0 if out["ok"] and out["payload"].get("ok") else 2
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="verb", required=True)
+    p_sim = sub.add_parser("simulate_patch")
+    p_sim.add_argument("--patch", required=True)
+    p_sim.add_argument("--summary", default="")
+    p_sim.set_defaults(func=simulate_patch)
+
+    p_prop = sub.add_parser("propose_patch")
+    p_prop.add_argument("--patch", required=True)
+    p_prop.add_argument("--summary", default="")
+    p_prop.set_defaults(func=propose_patch)
+
+    p_ver = sub.add_parser("verify")
+    p_ver.add_argument("--ledger-id", required=True)
+    p_ver.add_argument("--test-path", action="append", default=[])
+    p_ver.set_defaults(func=verify)
+
+    p_seal = sub.add_parser("seal")
+    p_seal.add_argument("--ledger-id", required=True)
+    p_seal.set_defaults(func=seal)
+
+    p_adm = sub.add_parser("admit")
+    p_adm.add_argument("--ledger-id", required=True)
+    p_adm.set_defaults(func=admit)
+
+    args = ap.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

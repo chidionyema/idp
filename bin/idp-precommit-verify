@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+# bin/idp-precommit-verify: pre-commit gate.
+#
+# Reads the staged diff and calls simulate_patch on the verifier MCP
+# endpoint. Refuses the commit if would_accept is false.
+#
+# This is a SOFT gate: simulate_patch does not write to the ledger.
+# The hard gate lives in idp-prepush-verify, which seals the patch
+# and asks the daemon to admit it before push.
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+VERIFIER_CURL = os.path.join(HERE, "idp-verifier-curl")
+
+
+def staged_diff() -> str:
+    out = subprocess.run(
+        ["git", "diff", "--cached", "--diff-algorithm=myers", "--binary"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=os.getcwd(),
+    )
+    return out.stdout
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--summary", default="pre-commit gate")
+    args, _unknown = ap.parse_known_args()
+
+    diff = staged_diff()
+    if not diff.strip():
+        # Nothing staged; nothing to verify.
+        return 0
+
+    proc = subprocess.run(
+        [sys.executable, VERIFIER_CURL, "simulate_patch", "--patch", diff, "--summary", args.summary],
+        capture_output=True,
+        text=True,
+        timeout=55,
+    )
+    if proc.returncode == 0:
+        sys.stderr.write("verifier: simulate_patch OK\n")
+        return 0
+    sys.stderr.write(
+        "verifier: simulate_patch refused the commit. "
+        "See /tmp/ops4/sim.json (or run `bin/idp-verifier-curl simulate_patch` "
+        "against your diff manually).\n"
+    )
+    sys.stderr.write(proc.stdout)
+    sys.stderr.write(proc.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
