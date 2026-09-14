@@ -48,6 +48,23 @@ PROBE_TIMEOUT_S = 60
 PROBE_FLAGS = ("--self-test", "--self-check", "--dry-run", "--check")
 
 
+# A script that declines to start because the thing it would start is ALREADY RUNNING has
+# proved that it loads, resolves its imports and reached the code that checks. Measured
+# 2026-09-14, the push-blocker: `bin/exec-daemon --help` has no --help, so it fell through to
+# `exec python3 daemon.py`, which answered `refused: another executor is already answering on
+# .../executor.sock` and exited 2. The gate read that refusal as "this script does not run" and
+# stopped the push. The verdict was exactly inverted: the refusal is only sayable by a process
+# that ran. Refusing CORRECT work is an outage (LAW 38), so a self-refusal is graded as the
+# weaker proof it is -- LOADS -- and never as a failure.
+SELF_REFUSAL = ("another executor is already answering", "already listening")
+
+
+def _refused_because_already_running(text: str) -> bool:
+    """Did this script decline because its own service is already up?"""
+    low = text.lower()
+    return any(marker.lower() in low for marker in SELF_REFUSAL)
+
+
 def repo_root() -> Path:
     """The tree this run grades, so the tool works from any subdirectory."""
     try:
@@ -134,6 +151,27 @@ def declared_probe(path: Path) -> str | None:
     for candidate in PROBE_FLAGS:
         if candidate in block:
             return candidate
+
+    # The usage block named none of PROBE_FLAGS, which is not the same as the script having
+    # none: `bin/idp-agent-no-bash` dispatches its flags with `if choice == "--self-test"` and
+    # no argparse at all, so its usage prints a state line and documents nothing to scan. Ask
+    # it --self-test directly. A script that implements it exits 0 and that is the STRONGER
+    # proof this gate exists to take; a script that does not answers "unknown option" and is
+    # reported as declaring no probe, which is its real, honest state. Measured 2026-09-14:
+    # refusing that script (its own --self-test passes) blocked the push for correct work
+    # (LAW 38).
+    try:
+        probe = subprocess.run(
+            [str(path.resolve()), "--self-test"],
+            capture_output=True,
+            text=True,
+            timeout=PROBE_TIMEOUT_S,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if probe.returncode == 0:
+        return "--self-test"
     return None
 
 
@@ -174,6 +212,12 @@ def compiles(path_str: str) -> bool:
             )
             return True
         tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-10:])
+        if _refused_because_already_running(proc.stdout + proc.stderr):
+            print(
+                f"LOADS: {path_str} runs and refuses a second instance "
+                "(its own service is already answering)"
+            )
+            return True
         print(f"DOES NOT RUN: {path_str} --help exited {proc.returncode}\n{tail}")
         return False
 
@@ -197,6 +241,12 @@ def compiles(path_str: str) -> bool:
         return True
 
     tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-10:])
+    if _refused_because_already_running(proc.stdout + proc.stderr):
+        print(
+            f"LOADS: {path_str} {flag} runs and refuses a second instance "
+            "(its own service is already answering)"
+        )
+        return True
     print(f"DOES NOT RUN: {path_str} {flag} exited {proc.returncode}\n{tail}")
     return False
 
