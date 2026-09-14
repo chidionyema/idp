@@ -1,7 +1,7 @@
 // FleetView CP2: the board. Every agent session in the estate on one page, live, no reload.
 //
-// The data comes from the backend CP1 ships (`GET /api/fleetview/sessions`) and its event stream
-// (`GET /api/fleetview/stream`). Everything that decides WHAT the page says lives in `fleet.ts`,
+// The data comes from the backend CP1 ships (`GET /api/proxy/fleetview/sessions`) and its event stream
+// (`GET /api/proxy/fleetview/stream`). Everything that decides WHAT the page says lives in `fleet.ts`,
 // which is pure and tested; this file draws it.
 //
 // Three states are drawn differently on purpose (see fleet.ts): an unavailable source is an
@@ -33,7 +33,7 @@ export function Fleet() {
 
     const read = async () => {
       try {
-        const res = await fetchApi.fetch('/api/fleetview/sessions');
+        const res = await fetchApi.fetch('/api/proxy/fleetview/sessions');
         const envelope = (await res.json()) as SessionsEnvelope;
         if (!cancelled) setBoard(summarise(envelope));
       } catch (err) {
@@ -57,7 +57,7 @@ export function Fleet() {
     let source: EventSource | undefined;
     if (typeof EventSource !== 'undefined') {
       try {
-        source = new EventSource('/api/fleetview/stream');
+        source = new EventSource('/api/proxy/fleetview/stream');
         source.onmessage = event => {
           try {
             const frame = JSON.parse(event.data);

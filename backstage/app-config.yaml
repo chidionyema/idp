@@ -192,6 +192,19 @@ proxy:
       changeOrigin: true
       allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
 
+    # FleetView CP1 (docs/specs/2026-09-08-fleetview-backstage-offering.md). The Python
+    # service at 127.0.0.1:18790 serves the session envelope and SSE stream; the plugin
+    # source is backstage/plugins/fleetview-backend/src/{routes.py,sessions.py}, and the
+    # launcher is /tmp/serve_fv.py. Backstage's proxy plugin prepends `/api/proxy/` to the
+    # key, so the browser-facing URL is `/api/proxy/fleetview/<...>`; the plugin's default
+    # pathRewrite strips that and the Python service hears `/sessions` and `/stream`.
+    # GET only: CP1 is read; the buttons (CP3) are a separate route set behind the same
+    # proxy when they land.
+    '/fleetview':
+      target: 'http://127.0.0.1:18790'
+      changeOrigin: true
+      allowedMethods: ['GET']
+
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
 # Note: After experimenting with basic setup, use CI/CD to generate docs
 # and an external cloud storage when deploying TechDocs for production use-case.
