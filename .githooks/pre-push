@@ -75,6 +75,10 @@ if [ -n "$kyv_base" ]; then
 		esac
 	fi
 fi
-shared="$(git config --get core.hooksPath 2>/dev/null || true)/law32-default"
-if [ -x "$shared" ]; then exec "$shared" "$@"; fi
+set +e
+law32_out="$(python3 "$IDP/bin/law32-gate" 2>&1)"
+law32_rc=$?
+set -e
+echo "$law32_out"
+[ "$law32_rc" = 1 ] && exit 1
 exit 0
