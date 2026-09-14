@@ -41,6 +41,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
 from dataclasses import dataclass, field
 
@@ -353,6 +354,108 @@ def register_mcp_tools(
         },
     )(read_job)
 
+    # The Deterministic Verifier's four verbs, on the same one interface (ADR 0006).
+    #
+    # These reached the socket on 2026-09-14 and stopped there: `mcp/plugins/estate_executor.py`
+    # exposed execute/simulate/read and nothing else, so the only way to propose, verify, seal or
+    # admit a patch was to hand-roll a JSON request onto `~/.estate/executor.sock`. A capability
+    # reachable only by writing your own client is not a capability an agent has -- which is the
+    # exact form of "built, not operational" this estate keeps catching.
+    #
+    # `propose_patch` is state-changing (it opens a ledger), so the simulate gate
+    # (`bin/idp-simulate-gate`) requires a propose twin under this module: `simulate_patch` is it.
+    # It runs the same parser and the same refusal ladder as the door and runs nothing.
+    #
+    # The other three are not state-changing in that sense -- `verify` reads a ledger and relays a
+    # verdict, `seal` mints over bytes it is handed, `admit` only ever writes into the ledger's own
+    # admitted directory, never the live tree -- so they carry no twin.
+    server.tool(
+        name="propose_patch",
+        description=(
+            "Propose a unified diff to an ephemeral ledger instead of writing it into the tree. "
+            "Answers the ledger id; the agent is suspended pending deterministic verification. "
+            "Then call verify with that ledger id."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "patch": {"type": "string", "description": "a unified diff"},
+                "tests": {
+                    "type": "string",
+                    "description": "the test suite the execution stage will run, as source",
+                },
+                "claim": {"type": "string", "description": "what the proposer claims"},
+            },
+            "required": ["patch"],
+        },
+    )(propose_patch)
+
+    server.tool(
+        name="simulate_patch",
+        description=(
+            "Answer what propose_patch would do with this payload -- whether the diff parses, to "
+            "how many files, under which ledger root -- without opening a ledger."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "patch": {"type": "string"},
+                "tests": {"type": "string"},
+                "claim": {"type": "string"},
+            },
+            "required": ["patch"],
+        },
+    )(simulate_patch)
+
+    server.tool(
+        name="verify",
+        description=(
+            "Run the three-stage gauntlet over a proposed ledger: structural (the bytes compile), "
+            "symbolic (Z3 over the patch's own guard) and execution (the supplied tests in a "
+            "throwaway tree). The verdict is a function of the bytes. claim_verdict is VERIFIED "
+            "or FAILED; the ledger is destroyed either way."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {"ledger_id": {"type": "string"}},
+            "required": ["ledger_id"],
+        },
+    )(verify_patch)
+
+    server.tool(
+        name="seal",
+        description=(
+            "Mint a Sigstore attestation over the exact bytes of a payload. The subject is the "
+            "SHA-256 of the artifact, never of a description of it."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "payload_path": {"type": "string"},
+                "tests": {"type": "string"},
+                "claim": {"type": "string"},
+            },
+            "required": ["payload_path"],
+        },
+    )(seal_payload)
+
+    server.tool(
+        name="admit",
+        description=(
+            "Admit a sealed payload into the estate. A payload carrying no attestation from the "
+            "Deterministic Verifier is intercepted with violation_code UNATTESTED and is not "
+            "admitted; nothing enters without the seal."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "payload_path": {"type": "string"},
+                "attestation": {"type": "object"},
+            },
+            "required": ["payload_path"],
+        },
+    )(admit_payload)
+
 
 def simulate_command(
     command: str,
@@ -377,6 +480,169 @@ def simulate_command(
         "cwd": cwd or os.getcwd(),
         "note": "nothing was run; this is the executor's answer to the payload",
     }
+
+
+def _verifier_call(payload: dict) -> dict:
+    """One request, one reply, to the verifier verbs on the executor's own socket.
+
+    There is no second transport and no second daemon: the four verbs are branches in
+    `platform/executor/daemon.py`'s `Handler.handle`, reachable the same way `execute` is. This
+    function is the client half, in the same shape `bin/idp-exec` uses, so the MCP surface and the
+    command line cannot disagree about where the door is.
+
+    A failure to reach the daemon is reported as an unread answer, never as a verdict: "the
+    verifier refused this patch" and "the verifier could not be reached" must never print the same
+    thing (LAW 2 -- a row that passes while grading nothing is the defect).
+    """
+    import json as _json
+    import socket as _socket
+
+    try:
+        sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        sock.settimeout(55)
+        sock.connect(str(_verifier_socket()))
+        sock.sendall((_json.dumps(payload) + "\n").encode())
+        raw = b""
+        while b"\n" not in raw:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            raw += chunk
+        sock.close()
+    except OSError as exc:
+        return {
+            "ok": False,
+            "error": f"the executor is not answering on {_verifier_socket()}: {exc}",
+            "unread": True,
+        }
+    try:
+        return _json.loads(raw.decode().splitlines()[0])
+    except (ValueError, IndexError):
+        return {
+            "ok": False,
+            "error": "the daemon answered something that is not JSON",
+            "unread": True,
+        }
+
+
+def _verifier_socket():
+    """The executor's socket. One path, read from the environment, never a literal (LAW 46)."""
+    from pathlib import Path as _Path
+
+    return _Path(
+        os.environ.get(
+            "IDP_EXECUTOR_SOCKET", str(_Path.home() / ".estate" / "executor.sock")
+        )
+    )
+
+
+def propose_patch(
+    patch: str,
+    tests: str = "",
+    claim: str = "",
+) -> dict:
+    """Propose a unified diff to an ephemeral ledger; never write it into the tree.
+
+    Rule 2 of `features/gates/deterministic-verifier.feature`: a patch reaches this estate as a
+    proposal into a ledger outside the live worktree, and is suspended there until the Deterministic
+    Verifier has answered.
+    """
+    return _verifier_call(
+        {"verb": "propose_patch", "patch": patch, "tests": tests, "claim": claim}
+    )
+
+
+def simulate_patch(
+    patch: str,
+    tests: str = "",
+    claim: str = "",
+) -> dict:
+    """The propose twin: what propose_patch would do, opening no ledger.
+
+    It runs the SAME parser the door runs rather than a description of it -- a twin that
+    paraphrases the thing it mirrors is a second answer, and the two drift.
+    """
+    try:
+        sys.path.insert(0, str(_VERIFIER_ROOT() / "sovereign"))
+        from verifier import parse_unified_diff  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001 - any import failure is the answer, not a crash
+        return {
+            "ok": False,
+            "would_accept": False,
+            "error": f"the verifier cannot be imported, so nothing can be proposed: {exc}",
+            "unread": True,
+        }
+    try:
+        files = parse_unified_diff(patch)
+    except Exception as exc:  # noqa: BLE001 - a diff that does not parse is the refusal
+        return {
+            "ok": True,
+            "would_accept": False,
+            "error": f"the patch does not parse: {exc}",
+            "refused": True,
+        }
+    if not files:
+        return {
+            "ok": True,
+            "would_accept": False,
+            "error": "the patch parses to no files; there is nothing to verify",
+            "refused": True,
+        }
+    return {
+        "ok": True,
+        "would_accept": True,
+        "files": [f.path for f in files],
+        "ledger_root": str(_ledger_root()),
+        "tests_supplied": bool(tests and tests.strip()),
+        "claim": claim,
+        "note": (
+            "a ledger would be opened under ledger_root, outside the live worktree, and the agent "
+            "suspended pending verification"
+        ),
+    }
+
+
+def _ledger_root():
+    """Where ledgers live, from the environment, never a literal (LAW 46)."""
+    from pathlib import Path as _Path
+
+    return (
+        _Path(
+            os.environ.get("IDP_EXECUTOR_RUNS", str(_Path.home() / ".estate" / "runs"))
+        )
+        / "ledgers"
+    )
+
+
+def _VERIFIER_ROOT():
+    """The checkout root, derived from this file's own location (LAW 46).
+
+    `sovereign/verifier.py` is imported BY PATH, never as a package (LAW 43): it is a module in a
+    directory, not an installed distribution, and the two callers that already load it this way
+    both append the `sovereign` directory itself to `sys.path` before importing `verifier`.
+    """
+    from pathlib import Path as _Path
+
+    return _Path(__file__).resolve().parent.parent.parent
+
+
+def verify_patch(ledger_id: str) -> dict:
+    """Ask the Deterministic Verifier for its verdict on a proposed ledger."""
+    return _verifier_call({"verb": "verify", "ledger_id": ledger_id})
+
+
+def seal_payload(payload_path: str, tests: str = "", claim: str = "") -> dict:
+    """Mint a Sigstore attestation over the exact bytes at payload_path."""
+    return _verifier_call(
+        {"verb": "seal", "payload_path": payload_path, "tests": tests, "claim": claim}
+    )
+
+
+def admit_payload(payload_path: str, attestation: dict | None = None) -> dict:
+    """Admit a sealed payload. A payload without the seal is intercepted, never admitted."""
+    return _verifier_call(
+        {"verb": "admit", "payload_path": payload_path, "attestation": attestation}
+    )
 
 
 def _refusals_for(
