@@ -33,6 +33,9 @@ ports:
   # --publish sends to it. Declared because a probe of an undeclared port is exactly what
   # R22 mechanism 4 refuses -- the gate found this one, which is the gate working.
   - {port: 4222, service: nats,                 compose: none, bind: 127.0.0.1}
+  # The estate MCP server (ADR 0006, one interface): datasette-mcp bound to loopback,
+  # reached by bin/idp-verifier-curl and the verifier daemon. mcp/agentgateway.yml:117.
+  - {port: 8001, service: estate-mcp,           compose: mcp/agentgateway.yml, bind: 127.0.0.1}
   - {port: 7107, service: backstage-backend,    compose: none, bind: 127.0.0.1}
   - {port: 8000, service: healthchecks,         compose: none, bind: 127.0.0.1}
   - {port: 8080, service: prospector-edge,      compose: prospector, bind: 127.0.0.1}
