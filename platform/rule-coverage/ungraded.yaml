@@ -21,10 +21,6 @@
 # guessing at one.
 version: 1
 ungraded:
-  - path: tests/fixtures/describe
-    what: a documented and an undocumented Dagster job definition, plus the HTML one renders to
-    grader: "estate_scheduler.describe --selftest, which derives a description through a wrapper -- it embeds its own cases and reads neither of these files"
-
   - path: tests/fixtures/kyverno-rollout
     what: seven Deployments -- the incident, the fix, and five shapes around them (percent-zero, Recreate, no strategy, no hard anti-affinity, zonal spread)
     grader: "none in the tree. The Kyverno policy these were built against is not in platform/edge, and `kyverno test` has no test file naming them"

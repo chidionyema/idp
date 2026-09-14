@@ -75,6 +75,65 @@ def refusals(doc: dict) -> list[str]:
     return bad
 
 
+def _has_nodes(db) -> bool:
+    """Whether the database carries the graph half at all."""
+    import sqlite3
+
+    try:
+        con = sqlite3.connect(db)
+        try:
+            return bool(
+                con.execute(
+                    "select name from sqlite_master where type='table' and name='nodes'"
+                ).fetchone()
+            )
+        finally:
+            con.close()
+    except Exception:
+        return False
+
+
+def _build_graph(root) -> None:
+    """Build the graph the way the estate does, so a fresh checkout can be graded.
+
+    Two builders, both the estate's own: `bin/db-gen` for the declared half, and
+    `bin/estate-twin-runtime` for the runtime and code halves. Either may produce nothing on
+    a runner with no inventory and no OCI session; that is a partial graph, and the rule
+    grades what is there rather than inventing it.
+    """
+    import subprocess
+
+    for cmd in (
+        [str(root / "bin" / "db-gen")],
+        [str(root / "bin" / "estate-twin-runtime"), "--once", "--code", "--domains"],
+    ):
+        if not Path(cmd[0]).exists():
+            continue
+        try:
+            subprocess.run(
+                cmd, cwd=str(root), capture_output=True, timeout=600, check=False
+            )
+        except Exception:
+            continue
+
+
+def _yaml_stranded(root) -> int | None:
+    """The stranded-branch count the PORTAL reports, read from the file it renders.
+
+    Two surfaces telling a founder two numbers is the failure this rule exists to catch, so
+    the comparison must read the surface the founder reads, not an intermediate.
+    """
+    import re
+
+    path = root / "backstage" / "platform" / "dark-matter.yaml"
+    if not path.exists():
+        return None
+    # The portal file carries the number in the prose it renders to a founder:
+    #   "661 branch(es) add at least one file that exists on no commit of origin/main"
+    m = re.search(r"(\d+)\s+branch\(es\)\s+add", path.read_text())
+    return int(m.group(1)) if m else None
+
+
 def live_summary() -> dict:
     """The summary as the ESTATE reports it: the real graph, the real counts file, the real
     --state output. This is what makes the rule a live grade rather than a fixture pair."""
@@ -83,11 +142,21 @@ def live_summary() -> dict:
 
     root = Path(__file__).resolve().parents[1]
     counts_path = root / "backstage" / "platform" / "dark-matter.json"
+    # The counts file used to be the comparison's other half, and refreshing it inside this
+    # gate made the gate take over ten minutes and time out (2026-09-13). It is not the
+    # other half any more: `bin/estate-twin-runtime` counts the stranded branches from git
+    # itself, so the graph carries the number it scanned and this file is context only.
     counts = json.loads(counts_path.read_text()) if counts_path.exists() else {}
 
     db = root / "catalog" / "estate.db"
     twin_count = None
-    if db.exists():
+    # `catalog/estate.db` is in .gitignore -- it is built, never committed -- so on a runner
+    # it does not exist and this raised `no such table: nodes`, which the gate reported as
+    # BLIND and the rung as FAIL (2026-09-13). Build the graph here, with the estate's own
+    # emitter, rather than requiring a file a fresh checkout cannot have.
+    if not db.exists() or not _has_nodes(db):
+        _build_graph(root)
+    if db.exists() and _has_nodes(db):
         con = sqlite3.connect(db)
         row = con.execute(
             "select metadata from nodes where id = 'git:summary:stranded'"
@@ -119,8 +188,10 @@ def live_summary() -> dict:
             )
 
     return {
+        # The portal's own file, the one a founder reads. The JSON is an intermediate the
+        # twin now overwrites with its own git scan; the YAML is the surface that ships.
         "generator": {
-            "stranded_branches": counts.get("stranded_branches"),
+            "stranded_branches": _yaml_stranded(root),
             "dead_deployments": counts.get("dead_deployments"),
         },
         "twin": {"stranded_branches": twin_count},

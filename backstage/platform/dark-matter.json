@@ -12,8 +12,8 @@
     "robusta/robusta-runner",
     "staging/canary"
   ],
-  "files_absent_from_base": 855,
-  "files_added_across_branches": 94199,
+  "files_absent_from_base": 879,
+  "files_added_across_branches": 94376,
   "portal_file_cap": 200,
-  "stranded_branches": 657
+  "stranded_branches": 661
 }

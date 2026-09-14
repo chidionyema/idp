@@ -1058,7 +1058,17 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
     if counts_file.exists():
         try:
             counts = json.loads(counts_file.read_text())
-            stranded = int(counts.get("stranded_branches") or 0)
+            # Count the branches here, from git, rather than echoing the file. Reading the
+            # file made the graph a mirror of a sweep taken at some other moment: on
+            # 2026-09-13 it reported 657 while the catalogue generator, sweeping the same
+            # tree seconds later, reported 661 -- and the gate refused it, correctly. The
+            # file's own comment says one scan must serve both surfaces; this is that claim
+            # made true, by making the graph do the scan.
+            # The count is NOT taken from this file. It is counted below, from git, and
+            # written back here so the two surfaces report one number. Reading it made the
+            # graph a mirror of a sweep taken at another moment: on 2026-09-13 it said 657
+            # while the catalogue generator, sweeping the same tree, said 661.
+            stranded = None
             con.execute(
                 "INSERT INTO nodes (id, domain, type, status, metadata, last_seen) "
                 "VALUES ('git:summary:stranded', 'code', 'summary', 'stranded', ?, ?) "
@@ -1069,6 +1079,7 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
                     datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                 ),
             )
+            # ... and the count is corrected to the real scan once the scan has run (below).
             # Every per-branch row this file knows about is stranded: it adds a file main
             # does not have. Rows left `active` here are stale state from an earlier run's
             # rule, which is the exact failure this system exists to catch -- a graph
@@ -1090,15 +1101,17 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
                 ),
             )
             con.commit()
-            return {
-                "branches": stranded,
-                "files_absent": counts.get("files_absent_from_base"),
-                "source": "dark-matter.json",
-            }
+            # NOTE: no early return. The file is read for the fields this function does not
+            # compute -- `files_absent_from_base` among them -- but the branch count is
+            # taken from git, below, because a count read from a file written at another
+            # moment is exactly the drift this system exists to catch.
+            file_counts = counts
         except (OSError, ValueError, TypeError):
             # The counts file is an optimisation: if it is unreadable or malformed, fall
             # through to a real git scan rather than reporting nothing.
-            pass
+            file_counts = {}
+    else:
+        file_counts = {}
 
     names = [
         b
@@ -1172,8 +1185,28 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
             datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         ),
     )
+    # Write the scanned count back over the summary row, so the graph and the catalogue
+    # generator cannot report two different numbers for one tree state.
+    row = con.execute(
+        "select metadata from nodes where id = 'git:summary:stranded'"
+    ).fetchone()
+    if row is not None:
+        merged = dict(json.loads(row[0] or "{}") or {})
+        merged["stranded_branches"] = stranded
+        con.execute(
+            "update nodes set metadata = ?, last_seen = ? where id = 'git:summary:stranded'",
+            (
+                json.dumps(merged, sort_keys=True),
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
     con.commit()
-    return {"branches": stranded, "unmerged_total": len(names)}
+    return {
+        "branches": stranded,
+        "unmerged_total": len(names),
+        "files_absent": file_counts.get("files_absent_from_base"),
+        "source": "git",
+    }
 
 
 def _git(args: list[str]) -> str:

@@ -6,11 +6,11 @@
 # catalogue is silent about it, and silence reads as absence.
 #
 # Measured 2026-09-13:
-#   657 branch(es) add at least one file that exists on no commit of origin/main,
-#   carrying 855 such files. 7 deployment(s) are scaled to zero.
+#   661 branch(es) add at least one file that exists on no commit of origin/main,
+#   carrying 879 such files. 7 deployment(s) are scaled to zero.
 #
 # Limits, named rather than hidden: this PORTAL FILE carries at most 200 of those
-# branches, most recently committed first. 657 is the true count, and
+# branches, most recently committed first. 661 is the true count, and
 # `bin/estate-twin-runtime --code` writes that same number into catalog/estate.db. A test
 # asserts the two agree: two surfaces telling a founder two numbers is the failure this
 # whole system exists to end.
@@ -23,11 +23,11 @@
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: stranded-fix-signoz-retention-uses-v2
-  title: 'Stranded: fix/signoz-retention-uses-v2'
+  name: stranded-feat-async-dispatch
+  title: 'Stranded: feat/async-dispatch'
   description: >-
-    Capability built on branch `fix/signoz-retention-uses-v2` (2026-09-13) and never merged. It adds
-    3 file(s) that exist on no commit of origin/main: docs/how-to/onboarding/signoz-retention.md, docs/tutorials/demo/signoz-retention.md, tests/bdd/test_signoz_retention_ttl_engine.py.
+    Capability built on branch `feat/async-dispatch` (2026-09-13) and never merged. It adds
+    19 file(s) that exist on no commit of origin/main: bin/exec-daemon, bin/idp-agent-no-bash, bin/idp-continuity-lane, bin/idp-exec, bin/idp-execution-boundary, bin/idp-executor-install, bin/idp-executor-status, launchd/ai.estate.executor.plist.tmpl (+11 more).
     Everything here is work already paid for and not running.
   tags: [dark-matter, unmerged-code]
 spec:
@@ -40,11 +40,28 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: stranded-fix-chaos-controller-manager-never-ran
-  title: 'Stranded: fix/chaos-controller-manager-never-ran'
+  name: stranded-one-everything
+  title: 'Stranded: one/everything'
   description: >-
-    Capability built on branch `fix/chaos-controller-manager-never-ran` (2026-09-13) and never merged. It adds
-    7 file(s) that exist on no commit of origin/main: bin/idp-helmrelease-drift-coverage, docs/gates/helmrelease-drift-is-detectable.md, docs/how-to/onboarding/helmrelease-drift.md, docs/tutorials/demo/helmrelease-drift.md, tests/bdd/test_helmrelease_drift_coverage.py, tests/fixtures/helmrelease-drift/bad/helmreleases.json, tests/fixtures/helmrelease-drift/good/helmreleases.json.
+    Capability built on branch `one/everything` (2026-09-13) and never merged. It adds
+    78 file(s) that exist on no commit of origin/main: backstage/packages/app/src/modules/home/estateGraph.test.ts, backstage/packages/app/src/modules/home/estateGraph.ts, backstage/packages/app/src/modules/home/guards.ts, backstage/packages/app/src/modules/home/useEstateGraph.ts, backstage/packages/app/src/modules/home/useGuards.ts, backstage/platform/dark-matter.json, backstage/platform/dark-matter.yaml, bin/catalog-dark-matter (+70 more).
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-fix-sessions-all-agents
+  title: 'Stranded: fix/sessions-all-agents'
+  description: >-
+    Capability built on branch `fix/sessions-all-agents` (2026-09-13) and never merged. It adds
+    1 file(s) that exist on no commit of origin/main: tests/test_sessions_are_not_claude_only.py.
     Everything here is work already paid for and not running.
   tags: [dark-matter, unmerged-code]
 spec:
@@ -74,11 +91,45 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: stranded-feat-gitops-sync-engine
-  title: 'Stranded: feat/gitops-sync-engine'
+  name: stranded-merge-all-in-one
+  title: 'Stranded: merge/all-in-one'
   description: >-
-    Capability built on branch `feat/gitops-sync-engine` (2026-09-13) and never merged. It adds
-    13 file(s) that exist on no commit of origin/main: bin/idp-drift-blind, bin/idp-gitops-drift, bin/idp-gitops-drift.py, docs/how-to/onboarding/gitops-sync.md, docs/specs/2026-09-13-gitops-sync-engine.md, docs/tutorials/demo/gitops-sync.md, scheduler/estate_scheduler/gitops_drift.py, scheduler/estate_scheduler/gitops_sync.py (+5 more).
+    Capability built on branch `merge/all-in-one` (2026-09-13) and never merged. It adds
+    63 file(s) that exist on no commit of origin/main: backstage/packages/app/src/modules/home/estateGraph.test.ts, backstage/packages/app/src/modules/home/estateGraph.ts, backstage/packages/app/src/modules/home/guards.ts, backstage/packages/app/src/modules/home/useEstateGraph.ts, backstage/packages/app/src/modules/home/useGuards.ts, backstage/platform/dark-matter.json, backstage/platform/dark-matter.yaml, bin/catalog-dark-matter (+55 more).
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-feat-ceiling-is-permanent
+  title: 'Stranded: feat/ceiling-is-permanent'
+  description: >-
+    Capability built on branch `feat/ceiling-is-permanent` (2026-09-13) and never merged. It adds
+    15 file(s) that exist on no commit of origin/main: bin/idp-request-ceiling, bin/idp-spend-floor, tests/fixtures/request-ceiling/bad/bin/idp-request-ceiling, tests/fixtures/request-ceiling/bad/platform/llm/config.yaml, tests/fixtures/request-ceiling/bad/platform/llm/kustomization.yaml, tests/fixtures/request-ceiling/bad/platform/llm/litellm.yaml, tests/fixtures/request-ceiling/bad/platform/llm/request_ceiling.py, tests/fixtures/request-ceiling/good/bin/idp-request-ceiling (+7 more).
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-feat-request-ceiling
+  title: 'Stranded: feat/request-ceiling'
+  description: >-
+    Capability built on branch `feat/request-ceiling` (2026-09-13) and never merged. It adds
+    11 file(s) that exist on no commit of origin/main: bin/idp-request-ceiling, tests/fixtures/request-ceiling/bad/bin/idp-request-ceiling, tests/fixtures/request-ceiling/bad/platform/llm/config.yaml, tests/fixtures/request-ceiling/bad/platform/llm/kustomization.yaml, tests/fixtures/request-ceiling/bad/platform/llm/litellm.yaml, tests/fixtures/request-ceiling/bad/platform/llm/request_ceiling.py, tests/fixtures/request-ceiling/good/bin/idp-request-ceiling, tests/fixtures/request-ceiling/good/platform/llm/config.yaml (+3 more).
     Everything here is work already paid for and not running.
   tags: [dark-matter, unmerged-code]
 spec:
@@ -96,23 +147,6 @@ metadata:
   description: >-
     Capability built on branch `feat/ops-guards-section` (2026-09-13) and never merged. It adds
     6 file(s) that exist on no commit of origin/main: backstage/packages/app/src/modules/home/guards.ts, backstage/packages/app/src/modules/home/useGuards.ts, bin/idp-sleep-ban, mcp/plugins/estate_guards.py, tests/fixtures/sleep-ban/bad.sh, tests/fixtures/sleep-ban/good.sh.
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-fix-rule-coverage-ledger-shrinks
-  title: 'Stranded: fix/rule-coverage-ledger-shrinks'
-  description: >-
-    Capability built on branch `fix/rule-coverage-ledger-shrinks` (2026-09-13) and never merged. It adds
-    7 file(s) that exist on no commit of origin/main: bin/idp-clean-tree, docs/how-to/onboarding/clean-tree.md, docs/tutorials/demo/clean-tree.md, tests/fixtures/clean-tree/bad.json, tests/fixtures/clean-tree/good.json, tests/fixtures/clean-tree/midmerge.json, tests/fixtures/clean-tree/noise.json.
     Everything here is work already paid for and not running.
   tags: [dark-matter, unmerged-code]
 spec:
@@ -147,6 +181,40 @@ metadata:
   description: >-
     Capability built on branch `feat/0910-session-7527` (2026-09-13) and never merged. It adds
     34 file(s) that exist on no commit of origin/main: backstage/packages/app/src/modules/home/estateGraph.test.ts, backstage/packages/app/src/modules/home/estateGraph.ts, backstage/packages/app/src/modules/home/useEstateGraph.ts, backstage/platform/dark-matter.json, backstage/platform/dark-matter.yaml, bin/catalog-dark-matter, bin/estate-twin-runtime, bin/idp-bdd-proof-gate (+26 more).
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-fix-chaos-controller-manager-never-ran
+  title: 'Stranded: fix/chaos-controller-manager-never-ran'
+  description: >-
+    Capability built on branch `fix/chaos-controller-manager-never-ran` (2026-09-13) and never merged. It adds
+    7 file(s) that exist on no commit of origin/main: bin/idp-helmrelease-drift-coverage, docs/gates/helmrelease-drift-is-detectable.md, docs/how-to/onboarding/helmrelease-drift.md, docs/tutorials/demo/helmrelease-drift.md, tests/bdd/test_helmrelease_drift_coverage.py, tests/fixtures/helmrelease-drift/bad/helmreleases.json, tests/fixtures/helmrelease-drift/good/helmreleases.json.
+    Everything here is work already paid for and not running.
+  tags: [dark-matter, unmerged-code]
+spec:
+  type: experimental
+  lifecycle: experimental
+  owner: group:default/platform
+  system: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: stranded-feat-gitops-sync-engine
+  title: 'Stranded: feat/gitops-sync-engine'
+  description: >-
+    Capability built on branch `feat/gitops-sync-engine` (2026-09-13) and never merged. It adds
+    13 file(s) that exist on no commit of origin/main: bin/idp-drift-blind, bin/idp-gitops-drift, bin/idp-gitops-drift.py, docs/how-to/onboarding/gitops-sync.md, docs/specs/2026-09-13-gitops-sync-engine.md, docs/tutorials/demo/gitops-sync.md, scheduler/estate_scheduler/gitops_drift.py, scheduler/estate_scheduler/gitops_sync.py (+5 more).
     Everything here is work already paid for and not running.
   tags: [dark-matter, unmerged-code]
 spec:
@@ -3343,74 +3411,6 @@ metadata:
   description: >-
     Capability built on branch `guard/freeze-is-measured` (2026-09-08) and never merged. It adds
     9 file(s) that exist on no commit of origin/main: backstage/packages/app/src/modules/home/PairPhone.tsx, bin/idp-freeze, docs/how-to/onboarding/idp-freeze.md, docs/tutorials/demo/idp-freeze.md, mcp/estate-mcp.Dockerfile, tests/fixtures/freeze/breached.json, tests/fixtures/freeze/honoured.json, tests/fixtures/freeze/names-nothing.json (+1 more).
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-chore-eradicate-pr-prose-gates
-  title: 'Stranded: chore/eradicate-pr-prose-gates'
-  description: >-
-    Capability built on branch `chore/eradicate-pr-prose-gates` (2026-09-08) and never merged. It adds
-    2 file(s) that exist on no commit of origin/main: backstage/packages/app/src/modules/home/PairPhone.tsx, mcp/estate-mcp.Dockerfile.
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-audit-2026-09-07-product-audit
-  title: 'Stranded: audit/2026-09-07-product-audit'
-  description: >-
-    Capability built on branch `audit/2026-09-07-product-audit` (2026-09-08) and never merged. It adds
-    19 file(s) that exist on no commit of origin/main: .github/workflows/founder-word.yml, backstage/packages/app/src/modules/home/PairPhone.tsx, bin/idp-drill-names, bin/idp-pr-catalogues, mcp/estate-mcp.Dockerfile, policy/fixtures/opmodel-control-none.json, policy/fixtures/opmodel-drill-added-in-pr.json, policy/fixtures/opmodel-laws-sentence.json (+11 more).
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-fix-runsc-handler-builds-under-bash
-  title: 'Stranded: fix/runsc-handler-builds-under-bash'
-  description: >-
-    Capability built on branch `fix/runsc-handler-builds-under-bash` (2026-09-08) and never merged. It adds
-    19 file(s) that exist on no commit of origin/main: .github/workflows/founder-word.yml, backstage/packages/app/src/modules/home/PairPhone.tsx, bin/idp-drill-names, bin/idp-pr-catalogues, mcp/estate-mcp.Dockerfile, policy/fixtures/opmodel-control-none.json, policy/fixtures/opmodel-drill-added-in-pr.json, policy/fixtures/opmodel-laws-sentence.json (+11 more).
-    Everything here is work already paid for and not running.
-  tags: [dark-matter, unmerged-code]
-spec:
-  type: experimental
-  lifecycle: experimental
-  owner: group:default/platform
-  system: platform
-
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: stranded-feat-crossplane-under-flux
-  title: 'Stranded: feat/crossplane-under-flux'
-  description: >-
-    Capability built on branch `feat/crossplane-under-flux` (2026-09-08) and never merged. It adds
-    19 file(s) that exist on no commit of origin/main: .github/workflows/founder-word.yml, backstage/packages/app/src/modules/home/PairPhone.tsx, bin/idp-drill-names, bin/idp-pr-catalogues, mcp/estate-mcp.Dockerfile, policy/fixtures/opmodel-control-none.json, policy/fixtures/opmodel-drill-added-in-pr.json, policy/fixtures/opmodel-laws-sentence.json (+11 more).
     Everything here is work already paid for and not running.
   tags: [dark-matter, unmerged-code]
 spec:
