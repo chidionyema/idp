@@ -121,6 +121,7 @@ nav:
       - PRM gate (module): tutorials/demo/prm_grader.py.md
       - Budget gate (module): tutorials/demo/budget_governor.py.md
       - Contract gate (module): tutorials/demo/contract_executor.py.md
+      - Reasoning Gateway end-to-end: tutorials/demo/reasoning-gateway-end-to-end.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
       - Evidence layer: tutorials/demo/evidence.md
