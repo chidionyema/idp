@@ -173,7 +173,6 @@ def execute_command(
     *,
     cwd: str | None = None,
     ceiling_sec: int = CEILING_SEC,
-    executor: Executor | None = None,
     mutates_live_worktree: bool = False,
 ) -> dict:
     """The one door. Accept a command, bound it, hand it to the detached executor.
@@ -186,7 +185,7 @@ def execute_command(
     a state change on the cluster, so it is one call -- but it is refused for the same family of
     reasons: anything the executor cannot bound is not run.
     """
-    executor = executor or _REGISTRY
+    executor = _REGISTRY
 
     # 0. RULE 1 OF features/gates/deterministic-verifier.feature, AND IT IS CHECKED FIRST.
     #
@@ -273,9 +272,9 @@ def execute_command(
     }
 
 
-def read_job(job_id: str, *, executor: Executor | None = None) -> dict:
+def read_job(job_id: str) -> dict:
     """Read one job's outcome. Never waits -- a door that waits is the thing this replaces."""
-    executor = executor or _REGISTRY
+    executor = _REGISTRY
     job = executor.get(job_id)
     if job is None:
         return {"found": False, "error": "no job with that id"}
@@ -292,8 +291,8 @@ def read_job(job_id: str, *, executor: Executor | None = None) -> dict:
 
 @hookimpl
 def register_mcp_tools(
-    server,
-) -> None:  # pragma: no cover - exercised by the estate MCP server
+    mcp,
+) -> None:  # datasette-mcp hookspec signature: (datasette, mcp)
     """Register the pair on the estate MCP server (ADR 0006: one interface, never a second).
 
     `execute_command` is the state-changing verb, so the simulate gate (`bin/idp-simulate-gate`)
@@ -301,7 +300,7 @@ def register_mcp_tools(
     what the executor would do with the payload -- accept or refuse, at which ceiling, from which
     directory -- without running anything.
     """
-    server.tool(
+    mcp.tool(
         name="execute_command",
         description=(
             "Run a command through the estate executor. Returns a job id in milliseconds; the turn "
@@ -309,90 +308,36 @@ def register_mcp_tools(
             "this call. Read the outcome later with read_job. A payload that declares it mutates "
             "the live worktree is refused, fatally."
         ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "description": "the command to run"},
-                "cwd": {"type": "string", "description": "absolute working directory"},
-                "ceiling_sec": {
-                    "type": "integer",
-                    "description": f"seconds; clamped to the estate ceiling of {CEILING_SEC}",
-                },
-                "mutates_live_worktree": {
-                    "type": "boolean",
-                    "description": (
-                        "set when the invocation targets the tree that is running; such a call "
-                        "is refused fatally (Rule 1 of deterministic-verifier.feature)"
-                    ),
-                },
-            },
-            "required": ["command"],
-        },
     )(execute_command)
 
-    server.tool(
+    mcp.tool(
         name="simulate_command",
         description="Answer what execute_command would do with this payload, without running it.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "command": {"type": "string"},
-                "cwd": {"type": "string"},
-                "ceiling_sec": {"type": "integer"},
-            },
-            "required": ["command"],
-        },
     )(simulate_command)
 
-    server.tool(
+    mcp.tool(
         name="read_job",
         description="Read one job's state, exit code and log. Never waits.",
-        parameters={
-            "type": "object",
-            "properties": {"job_id": {"type": "string"}},
-            "required": ["job_id"],
-        },
     )(read_job)
 
-    server.tool(
+    mcp.tool(
         name="propose_patch",
         description=(
             "Propose a unified diff to an ephemeral ledger instead of writing it into the tree. "
             "Answers the ledger id; the agent is suspended pending deterministic verification. "
             "Then call verify with that ledger id."
         ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "patch": {"type": "string", "description": "a unified diff"},
-                "tests": {
-                    "type": "string",
-                    "description": "the test suite the execution stage will run, as source",
-                },
-                "claim": {"type": "string", "description": "what the proposer claims"},
-            },
-            "required": ["patch"],
-        },
     )(propose_patch)
 
-    server.tool(
+    mcp.tool(
         name="simulate_patch",
         description=(
             "Answer what propose_patch would do with this payload -- whether the diff parses, to "
             "how many files, under which ledger root -- without opening a ledger."
         ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "patch": {"type": "string"},
-                "tests": {"type": "string"},
-                "claim": {"type": "string"},
-            },
-            "required": ["patch"],
-        },
     )(simulate_patch)
 
-    server.tool(
+    mcp.tool(
         name="verify",
         description=(
             "Run the three-stage gauntlet over a proposed ledger: structural (the bytes compile), "
@@ -400,45 +345,23 @@ def register_mcp_tools(
             "throwaway tree). The verdict is a function of the bytes. claim_verdict is VERIFIED "
             "or FAILED; the ledger is destroyed either way."
         ),
-        parameters={
-            "type": "object",
-            "properties": {"ledger_id": {"type": "string"}},
-            "required": ["ledger_id"],
-        },
     )(verify_patch)
 
-    server.tool(
+    mcp.tool(
         name="seal",
         description=(
             "Mint a Sigstore attestation over the exact bytes of a payload. The subject is the "
             "SHA-256 of the artifact, never of a description of it."
         ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "payload_path": {"type": "string"},
-                "tests": {"type": "string"},
-                "claim": {"type": "string"},
-            },
-            "required": ["payload_path"],
-        },
     )(seal_payload)
 
-    server.tool(
+    mcp.tool(
         name="admit",
         description=(
             "Admit a sealed payload into the estate. A payload carrying no attestation from the "
             "Deterministic Verifier is intercepted with violation_code UNATTESTED and is not "
             "admitted; nothing enters without the seal."
         ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "payload_path": {"type": "string"},
-                "attestation": {"type": "object"},
-            },
-            "required": ["payload_path"],
-        },
     )(admit_payload)
 
 
