@@ -41,9 +41,17 @@ no `rules.yaml` row, so nothing in the estate runs it.
 does not control run against it; the verdict is a function of the bytes, and the
 attestation's subject is the SHA-256 of the exact verified artifact.
 
-## What is built (measured 2026-09-13)
+## What is built (measured 2026-09-13; STATUS re-measured 2026-09-14 below)
 
-`sovereign/verifier.py`, 667 lines, tracked, committed `4cfcc74b` at 17:46.
+`sovereign/verifier.py`. **745 lines** as of 2026-09-14; it was 667 lines when this summary was
+written (`git show origin/main:sovereign/verifier.py | wc -l`), committed `4cfcc74b` at 17:46.
+
+**STATUS 2026-09-14: operational, merged to `main` in `65588127` (PR #3376).** Every entry point
+below is reachable from the live daemon over `~/.estate/executor.sock`, and all four door verbs
+(`propose_patch`, `verify`, `seal`, `admit`) were exercised from the command line with their
+replies quoted in `docs/specs/2026-09-13-deterministic-verifier-door.md`. Acceptance suite:
+`9 passed in 12.90s`, exit 0. The `sovereign/verifier.py` line count above is the only number in
+this section that has moved.
 
 The API exists and is real, not a stub:
 

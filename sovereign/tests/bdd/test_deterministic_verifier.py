@@ -1039,11 +1039,26 @@ def test_rule_4_has_two_enforcement_points() -> None:
     # evaluated can. The exclusion below is therefore stated over extensions rather than over the
     # one filename this suite happened to add, so the next doc to quote the vocabulary is not
     # read as infrastructure either.
+    #
+    # WIDENED AGAIN 2026-09-14 to the third member of the class: a TRANSPORT about a code is not a
+    # place that raises it either. The four verifier verbs were put on the one MCP interface
+    # (ADR 0006) -- mcp/plugins/estate_executor.py now registers `admit` and names the code it
+    # forwards -- and this assertion went red on correct work for the third time (R38): the file
+    # that CARRIES the refusal to an agent was counted as a file that DECIDES it. It does not.
+    # `admit_payload` opens a unix socket and hands the payload to the executor; every verdict,
+    # including UNATTESTED, is reached behind that socket in platform/executor/daemon.py. A relay
+    # cannot refuse anything -- deleting it removes reach, not enforcement, and this test is about
+    # enforcement.
+    #
+    # Stated as the PROPERTY rather than as the path, so the next transport is not read as
+    # infrastructure either: a file under mcp/ is an interface, and an interface decides nothing.
+    TRANSPORT_PREFIXES = ("mcp/",)
     NON_EXECUTABLE_SUFFIXES = (".md", ".txt", ".rst", ".feature")
     enforcing = sorted(
         line
         for line in found
         if not line.endswith(NON_EXECUTABLE_SUFFIXES)
+        and not line.startswith(TRANSPORT_PREFIXES)
         and not line.startswith("tests/")
         and not line.endswith("_test.py")
         and not line.endswith("test_deterministic_verifier.py")
