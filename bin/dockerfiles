@@ -38,7 +38,8 @@ fi
 sources() {  # sources <dockerfile> <context>: the context paths the image copies in
   # Every COPY/ADD source that is not another stage (--from=) or a heredoc,
   # resolved against the context. `.` is the whole context. A Dockerfile that
-  # copies nothing falls back to its whole context (crew#584 CP-G).
+  # copies nothing falls back to its whole context (crew#584 CP-G) -- but only
+  # when it might still read the context another way (see touched() below).
   local ctx=$2 line s
   grep -iE '^[[:space:]]*(COPY|ADD)[[:space:]]' "$1" | grep -viE -- '--from=' | while IFS= read -r line; do
     set -- $line; shift
@@ -54,10 +55,23 @@ touched() {  # touched <dockerfile> <context>: does the diff reach this image?
   [ -z "$since" ] && return 0
   local f s srcs
   srcs=$(sources "$1" "$2")
-  [ -z "$srcs" ] && srcs=$2
+  if [ -z "$srcs" ]; then
+    # CP-G's whole-context fallback exists for a Dockerfile whose real context
+    # dependency this grep can't see, e.g. `RUN --mount=type=bind`. A
+    # Dockerfile with neither a static COPY/ADD source nor a bind mount
+    # cannot read the context at all by Docker's own semantics, so treating
+    # it as touched by every unrelated file in its directory is a false
+    # positive, not caution: lago-api.Dockerfile has zero COPY/ADD, and
+    # platform/commerce/app/lago.yaml -- the file the image-bump automation
+    # edits, not a build input -- shares its directory, so every tag bump
+    # rebuilt lago-api and lago-front on both archs for nothing (PR #3470,
+    # 2026-09-14: 33 CI jobs for a 3-line tag diff).
+    grep -qiE -- '--mount=type=bind' "$1" && srcs=$2
+  fi
   while IFS= read -r f; do
     [ -z "$f" ] && continue
     [ "$f" = "$1" ] && return 0
+    [ -z "$srcs" ] && continue
     while IFS= read -r s; do
       [ "$s" = . ] && return 0
       # shellcheck disable=SC2254  # unquoted on purpose: a COPY glob like app-config*.yaml must match
