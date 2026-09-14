@@ -1,104 +1,72 @@
 # Flux: what is applied
 
-Read from the cluster receipt taken at 2026-09-14T20:00:21Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
+Read from the cluster receipt taken at 2026-09-14T20:30:20Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
 
-**116 objects: 70 ready, 44 not ready, 0 unknown, 2 suspended.**
+**116 objects: 86 ready, 28 not ready, 0 unknown, 2 suspended.**
 
 ## Not ready right now
 
-- **HelmRelease commerce/lago** since 2026-09-14T19:51:16Z: Running 'install' action with timeout of 15m0s
-- **Kustomization flux-system/agent-workforce** since 2026-09-14T19:57:09Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/alerts** since 2026-09-14T19:57:18Z: dependency 'flux-system/alerts-secret' is not ready
-- **Kustomization flux-system/alerts-github** since 2026-09-14T19:57:21Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/alerts-secret** since 2026-09-14T19:57:10Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/autoscaler** since 2026-09-14T19:57:23Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/backstage** since 2026-09-14T19:57:23Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/chaos** since 2026-09-14T19:58:13Z: dependency 'flux-system/observability' is not ready
-- **Kustomization flux-system/commerce** since 2026-09-14T19:51:15Z: Reconciliation in progress
-- **Kustomization flux-system/commerce-data** since 2026-09-14T19:57:02Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/concierge** since 2026-09-14T19:56:11Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/dagster** since 2026-09-14T19:57:22Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/dns** since 2026-09-14T19:56:42Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/drills** since 2026-09-14T19:57:40Z: dependency 'flux-system/alerts-github' is not ready
-- **Kustomization flux-system/estate-db** since 2026-09-14T19:56:17Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/estate-db-migrate** since 2026-09-14T19:57:10Z: dependency 'flux-system/estate-db' is not ready
-- **Kustomization flux-system/flux-webhook** since 2026-09-14T19:56:23Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/guacamole** since 2026-09-14T19:57:13Z: dependency 'flux-system/identity' is not ready
-- **Kustomization flux-system/healing-k8sgpt** since 2026-09-14T19:57:47Z: dependency 'flux-system/llm' is not ready
-- **Kustomization flux-system/healthchecks** since 2026-09-14T19:57:10Z: dependency 'flux-system/identity' is not ready
-- **Kustomization flux-system/hermes-agent** since 2026-09-14T19:57:19Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/hindsight** since 2026-09-14T19:57:57Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/human-vault** since 2026-09-14T19:57:17Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/human-vault-bridge** since 2026-09-14T19:57:30Z: dependency 'flux-system/human-vault' is not ready
-- **Kustomization flux-system/identity** since 2026-09-14T19:56:34Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/image-automation** since 2026-09-14T19:56:13Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/llm** since 2026-09-14T19:57:15Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/mcp** since 2026-09-14T19:57:12Z: health check failed after 10m0.025617077s: timeout waiting for: [Deployment/mcp/estate-mcp status: 'InProgress']
-- **Kustomization flux-system/monitoring** since 2026-09-14T19:56:52Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/monitoring-rules** since 2026-09-14T19:45:40Z: dependency 'flux-system/monitoring' is not ready
-- **Kustomization flux-system/nodesoftware-operator** since 2026-09-14T19:56:43Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/notify** since 2026-09-14T19:56:57Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/observability** since 2026-09-14T19:57:44Z: dependency 'flux-system/estate-db-migrate' is not ready
-- **Kustomization flux-system/otto-gateway** since 2026-09-14T19:57:28Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/otto-golden** since 2026-09-14T19:57:25Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/otto-golden-secret** since 2026-09-14T19:56:56Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/reloader** since 2026-09-14T19:57:04Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/research-engine** since 2026-09-14T19:57:44Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/robusta** since 2026-09-14T19:57:04Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/router-events** since 2026-09-14T19:57:24Z: dependency 'flux-system/llm' is not ready
-- **Kustomization flux-system/science** since 2026-09-14T19:57:50Z: dependency 'flux-system/observability' is not ready
-- **Kustomization flux-system/secret-store** since 2026-09-14T19:56:11Z: ClusterSecretStore/estate-vault dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.clustersecretstore.external-secrets.io": failed to call webhook: Post "https://external-secrets-webhook.external-secrets.svc:443/validate-external-secrets-io-v1-clustersecretstore?timeout=5s": context deadline exceeded 
-- **Kustomization flux-system/tailscale** since 2026-09-14T19:56:59Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/verification** since 2026-09-14T19:56:47Z: dependency 'flux-system/secret-store' is not ready
+- **HelmRelease commerce/lago** since 2026-09-14T20:18:26Z: Running 'install' action with timeout of 20m0s
+- **Kustomization flux-system/agent-workforce** since 2026-09-14T20:25:53Z: dependency 'flux-system/llm' is not ready
+- **Kustomization flux-system/backstage** since 2026-09-14T20:25:51Z: dependency 'flux-system/estate-db-migrate' is not ready
+- **Kustomization flux-system/chaos** since 2026-09-14T20:25:53Z: dependency 'flux-system/observability' is not ready
+- **Kustomization flux-system/commerce** since 2026-09-14T20:18:25Z: Reconciliation in progress
+- **Kustomization flux-system/dagster** since 2026-09-14T20:25:49Z: dependency 'flux-system/estate-db-migrate' is not ready
+- **Kustomization flux-system/estate-db-migrate** since 2026-09-14T20:25:51Z: ExternalSecret/healthchecks/estate-db-role-healthchecks dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.external-secrets.io": failed to call webhook: Post "https://external-secrets-webhook.external-secrets.svc:443/validate-external-secrets-io-v1-externalsecret?timeout=15s": context deadline exceeded 
+- **Kustomization flux-system/guacamole** since 2026-09-14T20:25:53Z: dependency 'flux-system/estate-db-migrate' is not ready
+- **Kustomization flux-system/gvisor-runtime** since 2026-09-14T20:02:12Z: dependency 'flux-system/nodesoftware-operator' is not ready
+- **Kustomization flux-system/healing-analyzer** since 2026-09-14T20:24:13Z: dependency 'flux-system/healing-k8sgpt' is not ready
+- **Kustomization flux-system/healing-k8sgpt** since 2026-09-14T20:25:53Z: dependency 'flux-system/llm' is not ready
+- **Kustomization flux-system/healthchecks** since 2026-09-14T20:25:49Z: dependency 'flux-system/estate-db-migrate' is not ready
+- **Kustomization flux-system/hindsight** since 2026-09-14T20:25:53Z: dependency 'flux-system/llm' is not ready
+- **Kustomization flux-system/human-vault-bridge** since 2026-09-14T20:26:02Z: ExternalSecret/concierge/human-twilio dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.external-secrets.io": failed to call webhook: Post "https://external-secrets-webhook.external-secrets.svc:443/validate-external-secrets-io-v1-externalsecret?timeout=15s": context deadline exceeded 
+- **Kustomization flux-system/image-automation** since 2026-09-14T20:25:43Z: ExternalSecret/flux-system/flux-writer dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.external-secrets.io": failed to call webhook: Post "https://external-secrets-webhook.external-secrets.svc:443/validate-external-secrets-io-v1-externalsecret?timeout=15s": context deadline exceeded 
+- **Kustomization flux-system/jit** since 2026-09-14T20:24:14Z: ExternalSecret/jit/jit-broker dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.external-secrets.io": failed to call webhook: Post "https://external-secrets-webhook.external-secrets.svc:443/validate-external-secrets-io-v1-externalsecret?timeout=5s": context deadline exceeded 
+- **Kustomization flux-system/llm** since 2026-09-14T20:25:53Z: dependency 'flux-system/estate-db-migrate' is not ready
+- **Kustomization flux-system/mcp** since 2026-09-14T20:25:51Z: Reconciliation in progress
+- **Kustomization flux-system/monitoring** since 2026-09-14T20:25:38Z: ExternalSecret/monitoring/alertmanager-telegram dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.external-secrets.io": failed to call webhook: Post "https://external-secrets-webhook.external-secrets.svc:443/validate-external-secrets-io-v1-externalsecret?timeout=15s": context deadline exceeded 
+- **Kustomization flux-system/monitoring-rules** since 2026-09-14T20:24:11Z: dependency 'flux-system/monitoring' is not ready
+- **Kustomization flux-system/nodesoftware-operator** since 2026-09-14T20:26:00Z: dependency 'flux-system/image-automation' is not ready
+- **Kustomization flux-system/notify** since 2026-09-14T20:25:49Z: ExternalSecret/notify/notify-channels dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.external-secrets.io": failed to call webhook: Post "https://external-secrets-webhook.external-secrets.svc:443/validate-external-secrets-io-v1-externalsecret?timeout=15s": net/http: TLS handshake timeout 
+- **Kustomization flux-system/observability** since 2026-09-14T20:25:51Z: dependency 'flux-system/estate-db-migrate' is not ready
+- **Kustomization flux-system/rbac** since 2026-09-14T20:24:05Z: dependency 'flux-system/rbac-identity' is not ready
+- **Kustomization flux-system/rbac-identity** since 2026-09-14T20:24:02Z: ExternalSecret/flux-system/bridge-identity dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.external-secrets.io": failed to call webhook: Post "https://external-secrets-webhook.external-secrets.svc:443/validate-external-secrets-io-v1-externalsecret?timeout=5s": context deadline exceeded 
+- **Kustomization flux-system/research-engine** since 2026-09-14T20:25:53Z: dependency 'flux-system/llm' is not ready
+- **Kustomization flux-system/router-events** since 2026-09-14T20:24:12Z: dependency 'flux-system/llm' is not ready
+- **Kustomization flux-system/science** since 2026-09-14T20:24:12Z: dependency 'flux-system/observability' is not ready
 
 ## Every row
 
 | Kind | Namespace | Name | State | Applied revision | Since | Message |
 |---|---|---|---|---|---|---|
-| HelmRelease | commerce | lago | Not ready | 1.28.0 | 2026-09-14T19:51:16Z | Running 'install' action with timeout of 15m0s |
-| Kustomization | flux-system | agent-workforce | Not ready | main@ee608dd | 2026-09-14T19:57:09Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | alerts | Not ready | main@ee608dd | 2026-09-14T19:57:18Z | dependency 'flux-system/alerts-secret' is not ready |
-| Kustomization | flux-system | alerts-github | Not ready | main@ee608dd | 2026-09-14T19:57:21Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | alerts-secret | Not ready | main@ee608dd | 2026-09-14T19:57:10Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | autoscaler | Not ready | main@ee608dd | 2026-09-14T19:57:23Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | backstage | Not ready | main@ee608dd | 2026-09-14T19:57:23Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | chaos | Not ready | main@e497116 | 2026-09-14T19:58:13Z | dependency 'flux-system/observability' is not ready |
-| Kustomization | flux-system | commerce | Not ready | main@abea14d | 2026-09-14T19:51:15Z | Reconciliation in progress |
-| Kustomization | flux-system | commerce-data | Not ready | main@ee608dd | 2026-09-14T19:57:02Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | concierge | Not ready | main@ee608dd | 2026-09-14T19:56:11Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | dagster | Not ready | main@ee608dd | 2026-09-14T19:57:22Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | dns | Not ready | main@ee608dd | 2026-09-14T19:56:42Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | drills | Not ready | main@ee608dd | 2026-09-14T19:57:40Z | dependency 'flux-system/alerts-github' is not ready |
-| Kustomization | flux-system | estate-db | Not ready | main@ee608dd | 2026-09-14T19:56:17Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | estate-db-migrate | Not ready | main@ee608dd | 2026-09-14T19:57:10Z | dependency 'flux-system/estate-db' is not ready |
-| Kustomization | flux-system | flux-webhook | Not ready | main@ee608dd | 2026-09-14T19:56:23Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | guacamole | Not ready | main@ee608dd | 2026-09-14T19:57:13Z | dependency 'flux-system/identity' is not ready |
-| Kustomization | flux-system | healing-k8sgpt | Not ready | main@ee608dd | 2026-09-14T19:57:47Z | dependency 'flux-system/llm' is not ready |
-| Kustomization | flux-system | healthchecks | Not ready | main@ee608dd | 2026-09-14T19:57:10Z | dependency 'flux-system/identity' is not ready |
-| Kustomization | flux-system | hermes-agent | Not ready | main@ee608dd | 2026-09-14T19:57:19Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | hindsight | Not ready | main@ee608dd | 2026-09-14T19:57:57Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | human-vault | Not ready | main@ee608dd | 2026-09-14T19:57:17Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | human-vault-bridge | Not ready | main@ee608dd | 2026-09-14T19:57:30Z | dependency 'flux-system/human-vault' is not ready |
-| Kustomization | flux-system | identity | Not ready | main@ee608dd | 2026-09-14T19:56:34Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | image-automation | Not ready | main@ee608dd | 2026-09-14T19:56:13Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | llm | Not ready | main@ee608dd | 2026-09-14T19:57:15Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | mcp | Not ready | main@6558812 | 2026-09-14T19:57:12Z | health check failed after 10m0.025617077s: timeout waiting for: [Deployment/mcp/estate-mcp status: 'InProgress'] |
-| Kustomization | flux-system | monitoring | Not ready | main@e497116 | 2026-09-14T19:56:52Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | monitoring-rules | Not ready | main@e497116 | 2026-09-14T19:45:40Z | dependency 'flux-system/monitoring' is not ready |
-| Kustomization | flux-system | nodesoftware-operator | Not ready | main@ee608dd | 2026-09-14T19:56:43Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | notify | Not ready | main@ee608dd | 2026-09-14T19:56:57Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | observability | Not ready | main@ee608dd | 2026-09-14T19:57:44Z | dependency 'flux-system/estate-db-migrate' is not ready |
-| Kustomization | flux-system | otto-gateway | Not ready | main@e497116 | 2026-09-14T19:57:28Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | otto-golden | Not ready | main@e497116 | 2026-09-14T19:57:25Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | otto-golden-secret | Not ready | main@ee608dd | 2026-09-14T19:56:56Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | reloader | Not ready | main@ee608dd | 2026-09-14T19:57:04Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | research-engine | Not ready | main@e497116 | 2026-09-14T19:57:44Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | robusta | Not ready | main@ee608dd | 2026-09-14T19:57:04Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | router-events | Not ready | main@ee608dd | 2026-09-14T19:57:24Z | dependency 'flux-system/llm' is not ready |
-| Kustomization | flux-system | science | Not ready | main@ee608dd | 2026-09-14T19:57:50Z | dependency 'flux-system/observability' is not ready |
-| Kustomization | flux-system | secret-store | Not ready | main@ee608dd | 2026-09-14T19:56:11Z | ClusterSecretStore/estate-vault dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.clustersecretstore.external-secrets.io |
-| Kustomization | flux-system | tailscale | Not ready | main@ee608dd | 2026-09-14T19:56:59Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | verification | Not ready | main@ee608dd | 2026-09-14T19:56:47Z | dependency 'flux-system/secret-store' is not ready |
+| HelmRelease | commerce | lago | Not ready | 1.28.0 | 2026-09-14T20:18:26Z | Running 'install' action with timeout of 20m0s |
+| Kustomization | flux-system | agent-workforce | Not ready | main@7235fe0 | 2026-09-14T20:25:53Z | dependency 'flux-system/llm' is not ready |
+| Kustomization | flux-system | backstage | Not ready | main@7235fe0 | 2026-09-14T20:25:51Z | dependency 'flux-system/estate-db-migrate' is not ready |
+| Kustomization | flux-system | chaos | Not ready | main@7235fe0 | 2026-09-14T20:25:53Z | dependency 'flux-system/observability' is not ready |
+| Kustomization | flux-system | commerce | Not ready | main@abea14d | 2026-09-14T20:18:25Z | Reconciliation in progress |
+| Kustomization | flux-system | dagster | Not ready | main@7235fe0 | 2026-09-14T20:25:49Z | dependency 'flux-system/estate-db-migrate' is not ready |
+| Kustomization | flux-system | estate-db-migrate | Not ready | main@7235fe0 | 2026-09-14T20:25:51Z | ExternalSecret/healthchecks/estate-db-role-healthchecks dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret |
+| Kustomization | flux-system | guacamole | Not ready | main@7235fe0 | 2026-09-14T20:25:53Z | dependency 'flux-system/estate-db-migrate' is not ready |
+| Kustomization | flux-system | gvisor-runtime | Not ready | main@ee608dd | 2026-09-14T20:02:12Z | dependency 'flux-system/nodesoftware-operator' is not ready |
+| Kustomization | flux-system | healing-analyzer | Not ready | main@7235fe0 | 2026-09-14T20:24:13Z | dependency 'flux-system/healing-k8sgpt' is not ready |
+| Kustomization | flux-system | healing-k8sgpt | Not ready | main@7235fe0 | 2026-09-14T20:25:53Z | dependency 'flux-system/llm' is not ready |
+| Kustomization | flux-system | healthchecks | Not ready | main@7235fe0 | 2026-09-14T20:25:49Z | dependency 'flux-system/estate-db-migrate' is not ready |
+| Kustomization | flux-system | hindsight | Not ready | main@7235fe0 | 2026-09-14T20:25:53Z | dependency 'flux-system/llm' is not ready |
+| Kustomization | flux-system | human-vault-bridge | Not ready | main@7235fe0 | 2026-09-14T20:26:02Z | ExternalSecret/concierge/human-twilio dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.external-secrets. |
+| Kustomization | flux-system | image-automation | Not ready | main@ee608dd | 2026-09-14T20:25:43Z | ExternalSecret/flux-system/flux-writer dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.external-secrets |
+| Kustomization | flux-system | jit | Not ready | main@4d9683a | 2026-09-14T20:24:14Z | ExternalSecret/jit/jit-broker dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.external-secrets.io": fai |
+| Kustomization | flux-system | llm | Not ready | main@7235fe0 | 2026-09-14T20:25:53Z | dependency 'flux-system/estate-db-migrate' is not ready |
+| Kustomization | flux-system | mcp | Not ready | main@6558812 | 2026-09-14T20:25:51Z | Reconciliation in progress |
+| Kustomization | flux-system | monitoring | Not ready | main@7235fe0 | 2026-09-14T20:25:38Z | ExternalSecret/monitoring/alertmanager-telegram dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.externa |
+| Kustomization | flux-system | monitoring-rules | Not ready | main@7235fe0 | 2026-09-14T20:24:11Z | dependency 'flux-system/monitoring' is not ready |
+| Kustomization | flux-system | nodesoftware-operator | Not ready | main@ee608dd | 2026-09-14T20:26:00Z | dependency 'flux-system/image-automation' is not ready |
+| Kustomization | flux-system | notify | Not ready | main@7235fe0 | 2026-09-14T20:25:49Z | ExternalSecret/notify/notify-channels dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.external-secrets. |
+| Kustomization | flux-system | observability | Not ready | main@7235fe0 | 2026-09-14T20:25:51Z | dependency 'flux-system/estate-db-migrate' is not ready |
+| Kustomization | flux-system | rbac | Not ready | main@7235fe0 | 2026-09-14T20:24:05Z | dependency 'flux-system/rbac-identity' is not ready |
+| Kustomization | flux-system | rbac-identity | Not ready | main@7235fe0 | 2026-09-14T20:24:02Z | ExternalSecret/flux-system/bridge-identity dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.external-sec |
+| Kustomization | flux-system | research-engine | Not ready | main@7235fe0 | 2026-09-14T20:25:53Z | dependency 'flux-system/llm' is not ready |
+| Kustomization | flux-system | router-events | Not ready | main@7235fe0 | 2026-09-14T20:24:12Z | dependency 'flux-system/llm' is not ready |
+| Kustomization | flux-system | science | Not ready | main@7235fe0 | 2026-09-14T20:24:12Z | dependency 'flux-system/observability' is not ready |
 | HelmRelease | tigera-operator | tigera-operator | Suspended | v3.32.2 | 2026-09-06T19:38:02Z |  |
 | Kustomization | flux-system | temporal | Suspended | main@1b323ac | 2026-09-08T20:23:54Z |  |
 | HelmRelease | cert-manager | cert-manager | Ready | v1.21.1 | 2026-09-08T11:56:22Z |  |
@@ -109,7 +77,7 @@ Read from the cluster receipt taken at 2026-09-14T20:00:21Z. Every Kustomization
 | HelmRelease | edge | traefik | Ready | 41.3.0 | 2026-09-06T19:35:13Z |  |
 | HelmRelease | estate-db | cloudnative-pg | Ready | 0.29.0 | 2026-09-06T19:45:25Z |  |
 | HelmRelease | event-bus | nats | Ready | 2.14.6 | 2026-09-06T19:39:37Z |  |
-| HelmRelease | external-secrets | external-secrets | Ready | 2.9.0 | 2026-09-08T11:57:40Z |  |
+| HelmRelease | external-secrets | external-secrets | Ready | 2.9.0 | 2026-09-14T20:24:54Z |  |
 | HelmRelease | healing | descheduler | Ready | 0.36.0 | 2026-09-08T10:45:39Z |  |
 | HelmRelease | healing | k8sgpt-operator | Ready | 0.2.29 | 2026-09-08T12:01:53Z |  |
 | HelmRelease | hindsight | hindsight | Ready | 0.9.2 | 2026-09-08T18:46:49Z |  |
@@ -132,42 +100,58 @@ Read from the cluster receipt taken at 2026-09-14T20:00:21Z. Every Kustomization
 | HelmRelease | temporal | temporal | Ready | 1.6.0 | 2026-09-08T23:12:29Z |  |
 | HelmRelease | trivy-system | trivy-operator | Ready | 0.36.0 | 2026-09-06T20:26:45Z |  |
 | HelmRelease | weave-gitops | weave-gitops | Ready | 4.0.36 | 2026-09-06T20:26:45Z |  |
-| Kustomization | flux-system | backstage-namespace | Ready | main@ee608dd | 2026-09-14T19:55:51Z |  |
-| Kustomization | flux-system | calico | Ready | main@ee608dd | 2026-09-14T19:55:32Z |  |
-| Kustomization | flux-system | chaos-mesh | Ready | main@ee608dd | 2026-09-14T19:56:13Z |  |
-| Kustomization | flux-system | cluster-state | Ready | main@ee608dd | 2026-09-14T19:56:20Z |  |
-| Kustomization | flux-system | cross-node-drill | Ready | main@ee608dd | 2026-09-14T19:56:02Z |  |
-| Kustomization | flux-system | crossplane | Ready | main@ee608dd | 2026-09-14T19:56:18Z |  |
-| Kustomization | flux-system | crossplane-providerconfig | Ready | main@ee608dd | 2026-09-14T19:57:17Z |  |
-| Kustomization | flux-system | crossplane-providers | Ready | main@ee608dd | 2026-09-14T19:57:11Z |  |
-| Kustomization | flux-system | edge | Ready | main@ee608dd | 2026-09-14T19:55:55Z |  |
-| Kustomization | flux-system | estate-catalog | Ready | latest@sha256:c7d6047f10973294dd3de3b9ac | 2026-09-14T19:51:41Z |  |
-| Kustomization | flux-system | estate-db-operator | Ready | main@ee608dd | 2026-09-14T19:56:26Z |  |
-| Kustomization | flux-system | event-bus | Ready | main@ee608dd | 2026-09-14T19:56:10Z |  |
-| Kustomization | flux-system | external-secrets | Ready | main@ee608dd | 2026-09-14T19:56:43Z |  |
-| Kustomization | flux-system | feature-register | Ready | main@ee608dd | 2026-09-14T19:55:53Z |  |
-| Kustomization | flux-system | flux-system | Ready | main@ee608dd | 2026-09-14T19:56:25Z |  |
-| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-09-14T19:55:57Z |  |
-| Kustomization | flux-system | gvisor-runtime | Ready | main@ee608dd | 2026-09-14T19:56:29Z |  |
-| Kustomization | flux-system | healing | Ready | main@ee608dd | 2026-09-14T19:56:49Z |  |
-| Kustomization | flux-system | healing-analyzer | Ready | main@ee608dd | 2026-09-14T19:57:22Z |  |
-| Kustomization | flux-system | jit | Ready | main@ee608dd | 2026-09-14T19:56:05Z |  |
-| Kustomization | flux-system | keda | Ready | main@ee608dd | 2026-09-14T19:56:59Z |  |
-| Kustomization | flux-system | kyverno | Ready | main@ee608dd | 2026-09-14T19:55:24Z |  |
-| Kustomization | flux-system | metrics-server | Ready | main@ee608dd | 2026-09-14T19:56:20Z |  |
-| Kustomization | flux-system | ns-fences | Ready | main@ee608dd | 2026-09-14T19:56:47Z |  |
-| Kustomization | flux-system | observability-collector | Ready | main@ee608dd | 2026-09-14T19:57:02Z |  |
-| Kustomization | flux-system | priority-classes | Ready | main@ee608dd | 2026-09-14T19:55:41Z |  |
-| Kustomization | flux-system | prospector | Ready | main@7453d76 | 2026-09-14T19:57:53Z |  |
-| Kustomization | flux-system | prospector-platform | Ready | main@ee608dd | 2026-09-14T19:57:41Z |  |
-| Kustomization | flux-system | rbac | Ready | main@ee608dd | 2026-09-14T19:55:41Z |  |
-| Kustomization | flux-system | rbac-floor | Ready | main@ee608dd | 2026-09-14T19:56:25Z |  |
-| Kustomization | flux-system | rbac-identity | Ready | main@ee608dd | 2026-09-14T19:55:56Z |  |
-| Kustomization | flux-system | sandbox-launch | Ready | main@ee608dd | 2026-09-14T19:56:03Z |  |
-| Kustomization | flux-system | sandbox-live | Ready | sandbox/launch@4830a6e | 2026-09-14T19:59:26Z |  |
-| Kustomization | flux-system | scheduling | Ready | main@ee608dd | 2026-09-14T19:56:42Z |  |
-| Kustomization | flux-system | searxng | Ready | main@ee608dd | 2026-09-14T19:56:19Z |  |
-| Kustomization | flux-system | spire | Ready | main@ee608dd | 2026-09-14T19:57:05Z |  |
-| Kustomization | flux-system | staging | Ready | main@ee608dd | 2026-09-14T19:56:23Z |  |
-| Kustomization | flux-system | trivy | Ready | main@ee608dd | 2026-09-14T19:55:54Z |  |
-| Kustomization | flux-system | weave-gitops | Ready | main@ee608dd | 2026-09-14T19:56:30Z |  |
+| Kustomization | flux-system | alerts | Ready | main@a1e387a | 2026-09-14T20:25:46Z |  |
+| Kustomization | flux-system | alerts-github | Ready | main@a1e387a | 2026-09-14T20:25:22Z |  |
+| Kustomization | flux-system | alerts-secret | Ready | main@a1e387a | 2026-09-14T20:25:21Z |  |
+| Kustomization | flux-system | autoscaler | Ready | main@a1e387a | 2026-09-14T20:25:24Z |  |
+| Kustomization | flux-system | backstage-namespace | Ready | main@a1e387a | 2026-09-14T20:23:58Z |  |
+| Kustomization | flux-system | calico | Ready | main@a1e387a | 2026-09-14T20:24:01Z |  |
+| Kustomization | flux-system | chaos-mesh | Ready | main@a1e387a | 2026-09-14T20:25:14Z |  |
+| Kustomization | flux-system | cluster-state | Ready | main@a1e387a | 2026-09-14T20:25:19Z |  |
+| Kustomization | flux-system | commerce-data | Ready | main@a1e387a | 2026-09-14T20:25:44Z |  |
+| Kustomization | flux-system | concierge | Ready | main@a1e387a | 2026-09-14T20:25:21Z |  |
+| Kustomization | flux-system | cross-node-drill | Ready | main@a1e387a | 2026-09-14T20:24:02Z |  |
+| Kustomization | flux-system | crossplane | Ready | main@a1e387a | 2026-09-14T20:25:15Z |  |
+| Kustomization | flux-system | crossplane-providerconfig | Ready | main@a1e387a | 2026-09-14T20:25:53Z |  |
+| Kustomization | flux-system | crossplane-providers | Ready | main@a1e387a | 2026-09-14T20:25:18Z |  |
+| Kustomization | flux-system | dns | Ready | main@a1e387a | 2026-09-14T20:26:02Z |  |
+| Kustomization | flux-system | drills | Ready | main@a1e387a | 2026-09-14T20:25:34Z |  |
+| Kustomization | flux-system | edge | Ready | main@a1e387a | 2026-09-14T20:24:29Z |  |
+| Kustomization | flux-system | estate-catalog | Ready | latest@sha256:0236c7086c505c1fbe232cb327 | 2026-09-14T20:27:30Z |  |
+| Kustomization | flux-system | estate-db | Ready | main@a1e387a | 2026-09-14T20:25:26Z |  |
+| Kustomization | flux-system | estate-db-operator | Ready | main@a1e387a | 2026-09-14T20:24:04Z |  |
+| Kustomization | flux-system | event-bus | Ready | main@a1e387a | 2026-09-14T20:24:07Z |  |
+| Kustomization | flux-system | external-secrets | Ready | main@a1e387a | 2026-09-14T20:24:59Z |  |
+| Kustomization | flux-system | feature-register | Ready | main@a1e387a | 2026-09-14T20:24:00Z |  |
+| Kustomization | flux-system | flux-system | Ready | main@a1e387a | 2026-09-14T20:24:10Z |  |
+| Kustomization | flux-system | flux-webhook | Ready | main@a1e387a | 2026-09-14T20:25:32Z |  |
+| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-09-14T20:24:05Z |  |
+| Kustomization | flux-system | healing | Ready | main@a1e387a | 2026-09-14T20:25:12Z |  |
+| Kustomization | flux-system | hermes-agent | Ready | main@a1e387a | 2026-09-14T20:26:00Z |  |
+| Kustomization | flux-system | human-vault | Ready | main@a1e387a | 2026-09-14T20:25:29Z |  |
+| Kustomization | flux-system | identity | Ready | main@a1e387a | 2026-09-14T20:25:24Z |  |
+| Kustomization | flux-system | keda | Ready | main@a1e387a | 2026-09-14T20:25:13Z |  |
+| Kustomization | flux-system | kyverno | Ready | main@a1e387a | 2026-09-14T20:23:58Z |  |
+| Kustomization | flux-system | metrics-server | Ready | main@a1e387a | 2026-09-14T20:25:16Z |  |
+| Kustomization | flux-system | ns-fences | Ready | main@a1e387a | 2026-09-14T20:24:21Z |  |
+| Kustomization | flux-system | observability-collector | Ready | main@a1e387a | 2026-09-14T20:25:13Z |  |
+| Kustomization | flux-system | otto-gateway | Ready | main@a1e387a | 2026-09-14T20:25:57Z |  |
+| Kustomization | flux-system | otto-golden | Ready | main@a1e387a | 2026-09-14T20:25:51Z |  |
+| Kustomization | flux-system | otto-golden-secret | Ready | main@a1e387a | 2026-09-14T20:25:26Z |  |
+| Kustomization | flux-system | priority-classes | Ready | main@a1e387a | 2026-09-14T20:23:57Z |  |
+| Kustomization | flux-system | prospector | Ready | main@7453d76 | 2026-09-14T20:28:39Z |  |
+| Kustomization | flux-system | prospector-platform | Ready | main@a1e387a | 2026-09-14T20:25:17Z |  |
+| Kustomization | flux-system | rbac-floor | Ready | main@a1e387a | 2026-09-14T20:24:05Z |  |
+| Kustomization | flux-system | reloader | Ready | main@a1e387a | 2026-09-14T20:25:19Z |  |
+| Kustomization | flux-system | robusta | Ready | main@a1e387a | 2026-09-14T20:25:23Z |  |
+| Kustomization | flux-system | sandbox-launch | Ready | main@a1e387a | 2026-09-14T20:24:39Z |  |
+| Kustomization | flux-system | sandbox-live | Ready | sandbox/launch@4830a6e | 2026-09-14T20:29:56Z |  |
+| Kustomization | flux-system | scheduling | Ready | main@a1e387a | 2026-09-14T20:24:56Z |  |
+| Kustomization | flux-system | searxng | Ready | main@a1e387a | 2026-09-14T20:23:57Z |  |
+| Kustomization | flux-system | secret-store | Ready | main@a1e387a | 2026-09-14T20:25:16Z |  |
+| Kustomization | flux-system | spire | Ready | main@a1e387a | 2026-09-14T20:25:14Z |  |
+| Kustomization | flux-system | staging | Ready | main@a1e387a | 2026-09-14T20:24:07Z |  |
+| Kustomization | flux-system | tailscale | Ready | main@a1e387a | 2026-09-14T20:25:20Z |  |
+| Kustomization | flux-system | trivy | Ready | main@a1e387a | 2026-09-14T20:24:00Z |  |
+| Kustomization | flux-system | verification | Ready | main@a1e387a | 2026-09-14T20:25:28Z |  |
+| Kustomization | flux-system | weave-gitops | Ready | main@a1e387a | 2026-09-14T20:25:31Z |  |
