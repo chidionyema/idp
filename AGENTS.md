@@ -130,52 +130,16 @@ and `bin/idp-ci`. No new rung, no new gate script.
 
 ## The estate twin: ask the graph, not the cluster (2026-09-12)
 
-The estate had three inventories and every one reported **declared** state as if it were
-**actual** state. Measured 2026-09-12, none of them could name a single one of: 1,523
-unmerged branches, 722 files that exist on no commit of main, 11 zero-scaled deployments,
-or three agents deployed and dead. A dead pod is declared nowhere.
-
-`bin/estate-twin-runtime` is the other half. It reads what the estate already collects --
-the `cluster-state` receipt every 15 minutes -- and writes it into the estate's existing
-asset database, `catalog/estate.db`. It adds no store, no bus and no MCP server.
-
-**Ask the graph before you touch the cluster.** Every question below is one command and
-five seconds, and each answers from the estate's own state rather than from a fresh probe
-that may fail:
-
-```
-bin/estate-twin-runtime --once --code      # the whole graph: runtime + git
-bin/estate-twin-runtime --dead             # what is broken now, workloads first
-bin/estate-twin-runtime --state            # MEASURED_OK / MEASURED_FAIL / UNKNOWN per domain
-bin/estate-twin-runtime --history <node>   # when it changed, and from what
-bin/estate-twin-runtime --blast-radius <n> # what dies with it, over Flux's own dependsOn
-```
-
-Four rules the twin holds, each for a reason that was measured:
-
-* **A graph is not a second store.** It extends `catalog/estate.db`; a second SQLite file
-  is the stitching THE HEADLINE forbids.
-* **`UNKNOWN` is the default and is not a failure.** A domain not read inside its window
-  reads `UNKNOWN`, never `MEASURED_OK`. A reader that cannot tell a five-minute answer from
-  a five-day one is the failure the twin exists to prevent.
-* **`stranded` is not serving.** 648 branches carry work that runs nowhere; a domain
-  reporting `MEASURED_OK` over them is false comfort.
-* **Two surfaces cannot report two numbers.** `bin/catalog-dark-matter` writes its counts
-  to `backstage/platform/dark-matter.json`; the twin reads that file. The BDD suite asserts
-  they are equal.
-
-Spec: `docs/specs/2026-09-12-estate-twin-complete-spec.md`. Ticket:
-`docs/tickets/2026-09-12-estate-twin.md`. Every claim proved, with the command that proves
-it: `docs/evidence/estate-twin/PROOF-OF-WORK.md`.
+Ask before you touch the cluster: `bin/estate-twin-runtime --once --code|--dead|--state|--history <node>|--blast-radius <n>`.
+Extends `catalog/estate.db` (no second store/bus/MCP server, per THE HEADLINE). `UNKNOWN` is
+the default, not a failure; `stranded` is not serving. Full spec, rules and proof:
+`docs/specs/2026-09-12-estate-twin-complete-spec.md`, `docs/evidence/estate-twin/PROOF-OF-WORK.md`.
 
 ## Platform queries go through the estate MCP server (ADR 0006)
 
-Founder, 2026-08-25: the platform is self-aware; one interface answers questions about it. So: a
-question about estate state is one `mcp__estate__*` tool call, not a shell recon. A new query tool
-summarises by default and drills only on request, under a byte ceiling. Any tool that changes state
-is two calls, propose then execute, and execute refuses when the state hash in the proposal no longer
-matches. Events reach agents debounced through the Sovereign Bus, never raw. Extend `mcp/`; never add
-a second server. Full text: `docs/decisions/0006-the-platform-answers-for-itself-over-one-mcp.md`.
+A question about estate state is one `mcp__estate__*` call, never a shell recon. A state-changing
+tool is two calls (propose, execute), execute refusing on a stale state hash. Extend `mcp/`; never
+add a second server. Full text: `docs/decisions/0006-the-platform-answers-for-itself-over-one-mcp.md`.
 
 ## Living policy (crew#219 R38): the block below is code, not prose
 
@@ -226,25 +190,13 @@ contract_max_usd_month = 150
 days_per_month = 31   # the longest month, so a sum under the cap holds in every month
 
 [routing]
-# 2026-09-08, the founder's cost mandate. `default` and `cheap` both named `deepseek`, an
-# account at $0 that has answered 401 since 2026-09-04 -- so the estate's default model and
-# its cheap model were the same dead lane, and test_cp30 enforced that every fallback chain
-# ended there. They moved to the one lane measured answering from inside the router pod that
-# day, with the note that this was "a stopgap, not the destination: `cheap` belongs on a FREE
-# lane, and becomes `groq` the moment SEED_GROQ_API_KEY exists".
-#
-# 2026-09-10, that condition is met and this is the destination. Secret/litellm-upstream in
-# namespace `llm` carries GROQ_API_KEY (key names read that day), platform/vendors/consoles.yaml
-# now renders a `groq` model row, and every fallback chain ends on it. So `cheap` is a lane that
-# costs nothing per token and is metered in requests per day that reset -- which is the point:
-# a prepaid balance can reach zero and stay there, and a daily meter cannot. `default` stays
-# on minimax, because the floor is a floor and never a routing choice.
+# default=minimax (floor, never a routing choice); cheap=groq (free, request-metered, since
+# SEED_GROQ_API_KEY landed 2026-09-10 -- deepseek was the prior cheap lane, dead since 2026-09-04,
+# history in ~/AGENTS-FULL.md). deepseek stays a consensus voter only (rejoins default/cheap the
+# moment its key returns, no PR needed).
 default = "minimax"
 vision = "vision"
 cheap = "groq"
-# deepseek stays a voter: the lane is console-owned, so it rejoins the moment its key is added
-# without a pull request. Until then quorum needs both minimax and gemini, and gemini is
-# rate-limited -- consensus is one refusal from failing. The third live voter is groq.
 consensus = ["deepseek", "minimax", "gemini"]
 
 [merge]
@@ -264,13 +216,5 @@ pending_owner_required_on = ["main"]
 ```
 
 
-## THE EMPIRICAL PROOF RULE (founder 2026-09-05, verbatim; record: `~/.claude/docs/founder/2026-09-05T1415Z-he-generalized-rule-empirical-proof-over-synthetic-probes-a79801e5.md`)
-
-NEVER declare a system "WORKING" or "MEASURED_OK" based solely on synthetic probes, CI gates, or HTTP 200 health checks. Synthetic checks lie.
-
-Before claiming a fix is successful, you MUST prove it empirically:
-1. **Read live traffic:** Fetch the actual pod logs (`kubectl logs --tail=100`) and quote a real, end-to-end user transaction completing successfully.
-2. **Check for silent failures:** Look at the most recent cluster events (`kubectl get events`) to ensure the pod isn't crashing or OOMing immediately after answering a probe.
-3. **Verify the critical path:** If it's a bot, verify the upstream webhook and LLM generation path. If it's a database, verify a real row was written.
-
-If you cannot quote a successful production log line, the system is NOT working.
+THE EMPIRICAL PROOF RULE binds here too, verbatim, inherited from `~/AGENTS.md` — not repeated
+below to avoid loading the same block twice in one context (measured duplicate, 2026-09-14).
