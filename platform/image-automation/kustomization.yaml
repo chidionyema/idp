@@ -14,3 +14,4 @@ resources:
   - jit.yaml
   - controller.yaml
   - runsc.yaml
+  - epistemic-ingest.yaml

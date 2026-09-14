@@ -7,7 +7,7 @@
 Feature: Ingestion — GitHub, Slack, CI/CD and incident feeds land in event-bus streams
 
   Scenario: Four JetStream streams receive real events
-    Given the epistemic-fabric-ingest namespace with its default-deny NetworkPolicy, ResourceQuota and LimitRange
+    Given the epistemic-fabric namespace with its default-deny NetworkPolicy, ResourceQuota and LimitRange
     When a GitHub webhook, a Slack export, a CI/CD telemetry event and an incident log are each sent once
     Then the epistemic.github, epistemic.slack, epistemic.cicd and epistemic.incidents streams each carry at least one message
     And no stream is created outside those four without a matching ingestion source

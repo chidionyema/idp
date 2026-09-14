@@ -251,6 +251,11 @@ LAYERS = {
         "Event bus",
         "Carries 'this customer paid' to whatever needs to know, so nothing waits on the payment provider to answer. Not switched on yet.",
     ),
+    "epistemic-fabric": (
+        "data",
+        "Estate memory ingestion",
+        "Four small pollers that watch GitHub, Slack, CI/CD and the incident log and drop what they see onto the estate's existing event bus, so later work can ask what actually happened instead of guessing from what shipped.",
+    ),
     "research-engine": (
         "agents",
         "Research department",
