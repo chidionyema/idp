@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 # bin/idp-prepush-verify: pre-push gate.
 #
-# The full pipeline: propose_patch -> verify -> seal -> admit. Each
-# step is a separate MCP call. The hook refuses push if any step
-# fails, with a printout naming the failing stage.
+# The pipeline: propose_patch -> verify. The verify stage runs the
+# full three-stage gauntlet (structural compile, Z3 symbolic proof,
+# pytest execution against the supplied tests) AND mints the Sigstore
+# attestation. A VERIFIED verdict with `admissible: true` IS the
+# admission; the separate seal/admit verbs are for callers that
+# bypass verify. The hook refuses push otherwise.
 
 from __future__ import annotations
 
@@ -18,7 +21,6 @@ VERIFIER_CURL = os.path.join(HERE, "idp-verifier-curl")
 
 
 def push_diff(remote: str, branch: str) -> str:
-    # include --binary so file additions survive; --diff-algorithm=myers matches the verifier
     out = subprocess.run(
         [
             "git",
@@ -57,17 +59,43 @@ def main() -> int:
     ap.add_argument("--remote", required=True)
     ap.add_argument("--branch", required=True)
     ap.add_argument("--summary", default="pre-push gate")
+    ap.add_argument(
+        "--test-path",
+        action="append",
+        default=None,
+        help="pytest test file whose contents grade the proposal "
+             "(repeatable). Default: tests/test_verifier_hooks.py",
+    )
     args = ap.parse_args()
 
     diff = push_diff(args.remote, args.branch)
     if not diff.strip():
         return 0
 
-    # Step 1: propose_patch
+    test_paths = args.test_path
+    if not test_paths:
+        candidate = os.path.join(os.getcwd(), "tests", "test_verifier_hooks.py")
+        if os.path.exists(candidate):
+            test_paths = [candidate]
+        else:
+            test_paths = []
+
+    # The verifier expects TEST SOURCE, not a path. Read the file from
+    # disk; if multiple are supplied, concatenate them.
+    test_source = ""
+    if test_paths:
+        bodies = []
+        for tp in test_paths:
+            with open(tp, "r", encoding="utf-8") as f:
+                bodies.append(f.read())
+        test_source = "\n\n".join(bodies)
+
+    # Step 1: propose_patch (tests must ride here, not at verify)
     proposal = call(
         "propose_patch",
         patch=diff,
         summary=args.summary,
+        test=test_source,
     )
     ledger_id = proposal.get("payload", {}).get("ledger_id")
     if not ledger_id:
@@ -75,27 +103,16 @@ def main() -> int:
         return 1
     sys.stderr.write(f"verifier: proposed {ledger_id}\n")
 
-    # Step 2: verify
+    # Step 2: verify -- the only adjudication step. A VERIFIED verdict
+    # with `admissible: true` admits the proposal; nothing else is needed.
     verdict = call("verify", ledger_id=ledger_id)
-    cv = verdict.get("payload", {}).get("claim_verdict", "FAILED")
-    if cv != "PASSED":
+    payload = verdict.get("payload", {})
+    cv = payload.get("claim_verdict", "FAILED")
+    admissible = payload.get("admissible", False)
+    if cv not in ("PASSED", "VERIFIED") or not admissible:
         sys.stderr.write(f"verifier: verify FAILED on {ledger_id}: {json.dumps(verdict)}\n")
         return 1
-    sys.stderr.write(f"verifier: {ledger_id} PASSED\n")
-
-    # Step 3: seal
-    sealed = call("seal", ledger_id=ledger_id)
-    if not sealed.get("ok"):
-        sys.stderr.write(f"verifier: seal refused: {json.dumps(sealed)}\n")
-        return 1
-    sys.stderr.write(f"verifier: {ledger_id} sealed\n")
-
-    # Step 4: admit
-    admitted = call("admit", ledger_id=ledger_id)
-    if not admitted.get("payload", {}).get("ok"):
-        sys.stderr.write(f"verifier: admit refused: {json.dumps(admitted)}\n")
-        return 1
-    sys.stderr.write(f"verifier: {ledger_id} admitted; push allowed\n")
+    sys.stderr.write(f"verifier: {ledger_id} {cv}; push allowed\n")
     return 0
 
 

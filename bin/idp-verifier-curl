@@ -116,7 +116,16 @@ def simulate_patch(args: argparse.Namespace) -> int:
 
 def propose_patch(args: argparse.Namespace) -> int:
     sid = _session()
-    out = _call(sid, "propose_patch", {"patch": args.patch, "summary": args.summary})
+    out = _call(
+        sid,
+        "propose_patch",
+        {
+            "patch": args.patch,
+            "summary": args.summary,
+            "tests": args.test or "",
+            "claim": args.claim or "",
+        },
+    )
     print(json.dumps(out, indent=2))
     return 0 if out["ok"] else 2
 
@@ -126,10 +135,7 @@ def verify(args: argparse.Namespace) -> int:
     out = _call(
         sid,
         "verify",
-        {
-            "ledger_id": args.ledger_id,
-            "test_paths": args.test_path or [],
-        },
+        {"ledger_id": args.ledger_id},
     )
     print(json.dumps(out, indent=2))
     payload = out["payload"]
@@ -161,6 +167,8 @@ def main() -> int:
     p_prop = sub.add_parser("propose_patch")
     p_prop.add_argument("--patch", required=True)
     p_prop.add_argument("--summary", default="")
+    p_prop.add_argument("--test", default="")
+    p_prop.add_argument("--claim", default="")
     p_prop.set_defaults(func=propose_patch)
 
     p_ver = sub.add_parser("verify")
