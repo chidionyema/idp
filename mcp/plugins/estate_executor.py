@@ -299,58 +299,42 @@ def register_mcp_tools(
     what the executor would do with the payload -- accept or refuse, at which ceiling, from which
     directory -- without running anything.
     """
-    mcp.tool(
-        name="execute_command",
-        description=(
-            "Run a command through the estate executor. Returns a job id in milliseconds; the turn "
-            f"ends. Every command is bounded to {CEILING_SEC}s by the executor, on the far side of "
-            "this call. Read the outcome later with read_job. A payload that declares it mutates "
-            "the live worktree is refused, fatally."
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "description": "the command to run"},
-                "cwd": {"type": "string", "description": "absolute working directory"},
-                "ceiling_sec": {
-                    "type": "integer",
-                    "description": f"seconds; clamped to the estate ceiling of {CEILING_SEC}",
-                },
-                "mutates_live_worktree": {
-                    "type": "boolean",
-                    "description": (
-                        "set when the invocation targets the tree that is running; such a call "
-                        "is refused fatally (Rule 1 of deterministic-verifier.feature)"
-                    ),
-                },
-            },
-            "required": ["command"],
-        },
-    )(execute_command)
 
+    # datasette-mcp's MCPServer.tool() (mcp==2.2.0) takes no `parameters=` kwarg: the JSON
+    # schema is derived from the registered callable's own type hints (func_metadata.py), the
+    # way FastMCP does it. `execute_command` and `read_job` take an injected `executor=` for
+    # testability (tests/test_executor_mcp.py passes a fake); that parameter's type (`Executor`)
+    # has no JSON schema, so registering those two directly makes schema generation raise at
+    # import time -- the same class of crash this function is being fixed for, one call deeper.
+    # These thin wrappers expose only the public, JSON-safe surface; the real functions (with
+    # `executor=`) stay the ones under test.
+    def execute_command_tool(
+        command: str,
+        cwd: str | None = None,
+        ceiling_sec: int = CEILING_SEC,
+        mutates_live_worktree: bool = False,
+    ) -> dict:
+        """Run a command through the estate executor. Returns a job id in milliseconds; the turn
+        ends. Every command is bounded to the estate ceiling by the executor, on the far side of
+        this call. Read the outcome later with read_job. A payload that declares it mutates the
+        live worktree is refused, fatally."""
+        return execute_command(
+            command,
+            cwd=cwd,
+            ceiling_sec=ceiling_sec,
+            mutates_live_worktree=mutates_live_worktree,
+        )
+
+    def read_job_tool(job_id: str) -> dict:
+        """Read one job's state, exit code and log. Never waits."""
+        return read_job(job_id)
+
+    mcp.tool(name="execute_command")(execute_command_tool)
     mcp.tool(
         name="simulate_command",
         description="Answer what execute_command would do with this payload, without running it.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "command": {"type": "string"},
-                "cwd": {"type": "string"},
-                "ceiling_sec": {"type": "integer"},
-            },
-            "required": ["command"],
-        },
     )(simulate_command)
-
-    mcp.tool(
-        name="read_job",
-        description="Read one job's state, exit code and log. Never waits.",
-        parameters={
-            "type": "object",
-            "properties": {"job_id": {"type": "string"}},
-            "required": ["job_id"],
-        },
-    )(read_job)
+    mcp.tool(name="read_job")(read_job_tool)
 
     mcp.tool(
         name="propose_patch",
@@ -359,18 +343,6 @@ def register_mcp_tools(
             "Answers the ledger id; the agent is suspended pending deterministic verification. "
             "Then call verify with that ledger id."
         ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "patch": {"type": "string", "description": "a unified diff"},
-                "tests": {
-                    "type": "string",
-                    "description": "the test suite the execution stage will run, as source",
-                },
-                "claim": {"type": "string", "description": "what the proposer claims"},
-            },
-            "required": ["patch"],
-        },
     )(propose_patch)
 
     mcp.tool(
@@ -379,15 +351,6 @@ def register_mcp_tools(
             "Answer what propose_patch would do with this payload -- whether the diff parses, to "
             "how many files, under which ledger root -- without opening a ledger."
         ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "patch": {"type": "string"},
-                "tests": {"type": "string"},
-                "claim": {"type": "string"},
-            },
-            "required": ["patch"],
-        },
     )(simulate_patch)
 
     mcp.tool(
@@ -398,11 +361,6 @@ def register_mcp_tools(
             "throwaway tree). The verdict is a function of the bytes. claim_verdict is VERIFIED "
             "or FAILED; the ledger is destroyed either way."
         ),
-        parameters={
-            "type": "object",
-            "properties": {"ledger_id": {"type": "string"}},
-            "required": ["ledger_id"],
-        },
     )(verify_patch)
 
     mcp.tool(
@@ -411,15 +369,6 @@ def register_mcp_tools(
             "Mint a Sigstore attestation over the exact bytes of a payload. The subject is the "
             "SHA-256 of the artifact, never of a description of it."
         ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "payload_path": {"type": "string"},
-                "tests": {"type": "string"},
-                "claim": {"type": "string"},
-            },
-            "required": ["payload_path"],
-        },
     )(seal_payload)
 
     mcp.tool(
@@ -429,14 +378,6 @@ def register_mcp_tools(
             "Deterministic Verifier is intercepted with violation_code UNATTESTED and is not "
             "admitted; nothing enters without the seal."
         ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "payload_path": {"type": "string"},
-                "attestation": {"type": "object"},
-            },
-            "required": ["payload_path"],
-        },
     )(admit_payload)
 
 
