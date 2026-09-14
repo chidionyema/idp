@@ -682,6 +682,7 @@ def admit_payload(payload_path: str, attestation: dict | None = None) -> dict:
         {"verb": "admit", "payload_path": payload_path, "attestation": attestation}
     )
 
+
 if __name__ == "__main__":  # pragma: no cover - a human reading the door
     # A tiny self-check a person can run: `python3 mcp/plugins/estate_executor.py`.
     import sys
