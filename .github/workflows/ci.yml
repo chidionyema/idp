@@ -182,7 +182,7 @@ jobs:
       # machine: a runner that has never run `helm repo add` must still produce the same document.
       - name: helm (the compiler renders every chart from git)
         if: matrix.suite == 'acceptance'
-        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           # 4.x, not 3.x. The langfuse chart calls `fromToml`, which 3.16 does not have, so a
           # 3.x pin fails to render that release with "function fromToml not defined" while every

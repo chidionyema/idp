@@ -38,7 +38,7 @@ jobs:
     outputs:
       rows: ${{ steps.select.outputs.rows }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: select
         env:
           WANT: ${{ inputs.models }}
@@ -70,7 +70,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.want.outputs.rows) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The filename is LOOKED UP, not guessed: the repo is listed through the HF API and the
       # q4_k_m file picked, or the job fails naming what it found. A wrong filename is a 404 that
