@@ -41,6 +41,9 @@ import pathlib
 import re
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from treewalk import walk_tree  # noqa: E402  -- this repo's one walk-over-the-estate
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 # The largest gap that is a yield rather than a wait.
@@ -132,7 +135,19 @@ def main() -> int:
         if r.is_file():
             files.append(r)
         elif r.is_dir():
-            files += [f for f in r.rglob("*") if f.is_file() and scans(f, r)]
+            # `walk_tree` is this repository's one walk: it prunes `.git` by name and every
+            # gitignored directory by `git check-ignore`, so a walk grades the estate and not
+            # whatever a vendor left on disk. A bare `rglob` here descended into
+            # platform/oci/.terraform/ (`.gitignore:51`) and reported its vendored Terraform
+            # module's `sleep 30` -- an await_node_readiness helper that is not this estate's
+            # code and not this estate's defect. Measured 2026-09-13 in the primary checkout:
+            # the gate claimed "979 files scanned" from a clean worktree while scanning 1468
+            # here, and the 489 extra files were all under the ignored tree.
+            for dirpath, _dirnames, filenames in walk_tree(r):
+                for name in filenames:
+                    f = pathlib.Path(dirpath) / name
+                    if scans(f, r):
+                        files.append(f)
 
     findings: list[str] = []
     for f in sorted(set(files)):

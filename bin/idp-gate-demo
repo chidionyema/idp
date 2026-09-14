@@ -35,6 +35,7 @@ import argparse
 import importlib.util
 import os
 import re
+import subprocess
 import sys
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
@@ -85,7 +86,6 @@ def run(engine, rule: dict, case: dict) -> dict:
     run at all, so the page can say BLIND rather than a pass it did not earn.
     """
     argv = engine._argv(rule, case)
-    missing = [a for a in argv if a.endswith(".py") is False and not _exists(argv)]
     if not _exists(argv):
         absent = _absent_binary(argv)
         return {
@@ -107,27 +107,47 @@ def run(engine, rule: dict, case: dict) -> dict:
 
 
 def _exists(argv: list[str]) -> bool:
-    """True when the interpreter and the script it runs both resolve."""
+    """True when the interpreter and the SCRIPT it runs both resolve.
+
+    Only the script counts, never the script's arguments. Measured 2026-09-13 on
+    law32-demo-onboarding: its refusing case is `--added bin/feature-with-no-pages`, and the gate
+    is asked to refuse a NAME that has no demo and onboarding pages -- so no such file exists, and
+    none should. Scanning every argv entry carrying a slash reported
+
+      BLIND -- the gate is not on disk: bin/feature-with-no-pages
+
+    for a rule whose gate, `bin/law32-gate`, was on disk and refusing correctly. BLIND means the
+    GATE could not be run; an argument the gate exists to refuse is the case working, not a case
+    that could not run. A working gate shown blind is the same lie as a pass it did not earn
+    (LAW 15), because on this page a live rule and a dead one looked identical.
+
+    A script path is the first non-flag entry after the interpreter: `python3 bin/gate --added X`.
+    An interpreter such as `python3` carries no slash and is resolved on PATH, and a rule whose
+    argv is a single bare script is covered by the same first-non-flag rule.
+    """
     for part in argv:
         if part.startswith("-"):
             continue
-        if "/" in part and not os.path.exists(os.path.join(str(ROOT), part)):
-            # an interpreter like python3 has no slash; a script path does
-            if not os.path.exists(part):
-                return False
+        if "/" in part:
+            # The script itself: the first path-shaped entry. Everything after it is data.
+            return os.path.exists(os.path.join(str(ROOT), part)) or os.path.exists(part)
     return True
 
 
 def _absent_binary(argv: list[str]) -> str:
-    """Name the argv entry that is missing, for the BLIND line."""
+    """Name the argv entry that is missing, for the BLIND line.
+
+    Only the script can be named here: see `_exists` for why an argument is not evidence that the
+    gate is absent. If the script resolves, there is nothing to name.
+    """
     for part in argv:
         if part.startswith("-"):
             continue
-        if "/" in part and not (
-            os.path.exists(part) or os.path.exists(os.path.join(str(ROOT), part))
-        ):
-            return part
-    return " ".join(argv)
+        if "/" in part:
+            if not (os.path.exists(part) or os.path.exists(os.path.join(str(ROOT), part))):
+                return part
+            return ""
+    return ""
 
 
 def _stable(output: str) -> str:
@@ -135,22 +155,116 @@ def _stable(output: str) -> str:
 
     A generated page is checked in (`bin/idp-gate-demo --check` fails when the page on disk is
     not what a render produces), so a single varying byte makes the check unusable and the
-    idempotency test fail. Two things vary on every run:
+    idempotency test fail. Four things vary between two renders, and the third varies between two
+    MACHINES:
 
       * a timestamp, e.g. `2026-09-12 23:45:29 +0100`
       * a temp directory, e.g. `/var/folders/gq/.../tmp9ufe9b4a`, because a gate that imports
         dagster is handed a fresh one per invocation
+      * the CHECKOUT PATH, e.g. `<somewhere>/tests/fixtures/definitions/relative-import.py`,
+        because a fixture's own traceback names the file it was read from, and the home
+        directory, because a gate that resolves a path reports it as being outside one
+      * a pytest DURATION, e.g. `13 passed in 456.72s (0:07:36)`, because seven rules in this
+        registry run pytest as their gate and no two runs take the same time
 
     Measured 2026-09-12: docs/gates/defs-load-by-path.md differed between two consecutive renders
     on pristine main for exactly these two reasons, and the page could never be current.
-    Both are replaced with a fixed token so the page records WHAT the gate said, not when the
-    demo happened to run it.
+    Measured again 2026-09-13, in CI run 34772174167: SEVEN pages were non-idempotent in one
+    render pair -- availability, breaker-enforcement, execution-boundary-holds, index,
+    licence-policy, placement-policy, rego-unit-tests -- and `--check` refused the committed tree
+    (`tests/test_gate_demo.py:126` `two renders of one registry differ` and `:130` `--check
+    refused a current tree`). Every one of the seven is a rule whose gate is pytest or conftest,
+    so the varying line was the summary pytest prints: `13 passed in 456.72s (0:07:36)`. The
+    earlier pass scrubbed the first two causes and left this one, and because the index page
+    copies each page's exit code the single leak also made `index.md` differ -- seven pages from
+    one unscrubbed number.
+
+    All four are replaced with a fixed token so the page records WHAT the gate said, not when
+    the demo happened to run it, not where it ran, and not how long it took. The duration is
+    deliberately NOT kept: it is a property of the machine that ran the demo, not of the gate,
+    and a page that changed when the laptop was busy would make `--check` a coin toss.
+
+    Measured 2026-09-13, and this is why the checkout path is scrubbed rather than excused:
+    `--check` FAILED on a clean detached checkout of the same commit it PASSED on in the working
+    tree, naming exactly four pages -- defs-load-by-path, sleep-ban, breaker-enforcement, index.
+    The page was not stale and the gates were not failing; the render had simply happened
+    somewhere else, and `defs-load-by-path.md` carries a fixture's traceback, which prints the
+    path the fixture was READ FROM: the temp checkout in one case, the working checkout in the
+    other. A committed page therefore named the machine of whoever generated it -- LAW 46, in a
+    generated file -- and `--check` could only ever pass on that one machine. CI is a different
+    machine, which is the `bdd-suites (tests)` failure.
     """
     out = re.sub(
-        r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[+-]\d{4})?", "<timestamp>", output
+        r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\s*[+-]\d{4})?", "<timestamp>", output
     )
+    # The checkout this render ran in. A gate that reads a fixture prints the absolute path it
+    # read, so without this the page is bound to one machine and `--check` is bound with it.
+    # Asked of git rather than guessed, so a worktree, a symlinked /private/tmp on macOS and a
+    # CI runner are all handled by the one answer; the longest root is tried first so a nested
+    # worktree is not half-replaced by its parent's path.
+    roots: list[Path] = []
+    for flag in ("--show-toplevel", "--git-common-dir"):
+        try:
+            proc = subprocess.run(
+                ["git", "rev-parse", flag],
+                cwd=Path(__file__).resolve().parent,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                p = Path(proc.stdout.strip())
+                roots.append(p.resolve() if flag == "--show-toplevel" else p.resolve().parent)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    for root in sorted(set(roots), key=lambda p: len(str(p)), reverse=True):
+        for spelled in (str(root), str(root).replace("/private/", "/")):
+            out = out.replace(spelled, "<checkout>")
+    # The home directory, for the same reason and in the same class of leak: `bin/idp-hardcode-scan`
+    # (LAW 46) refuses a file that names where the checkout, the home directory or the machine
+    # lives, and a gate that resolves a path can print any of the three. Measured 2026-09-13:
+    # docs/gates/vm-shared-path.md carried the literal account name in its refusal -- `the
+    # VM-shared tree (/Users/<person>)` -- which is the home directory, not the checkout, so the
+    # checkout scrub above would have missed it. Scrubbed AFTER the checkout so a checkout that
+    # lives under the home directory yields `<checkout>` rather than `<home>/dev/code/idp`.
+    home = Path(os.path.expanduser("~"))
+    if home != Path("/"):
+        for spelled in (str(home), str(home).replace("/private/", "/")):
+            out = out.replace(spelled, "<home>")
+    # A CPython repr carries the object's address: `<Foo object at 0x111ad3390>`, and pytest dumps
+    # whole reprs of test objects on a failure. The address changes every run.
+    out = re.sub(r"0x[0-9a-fA-F]{6,}", "<addr>", out)
     out = re.sub(r"/(?:private/)?var/folders/\S*?/tmp[0-9A-Za-z_]+", "<tmpdir>", out)
-    out = re.sub(r"/tmp/tmp[0-9A-Za-z_]+", "<tmpdir>", out)
+    out = re.sub(r"/tmp/tmp[0-9A-Za-z_]+", "<tmpdir>", out)  # noqa: S108 -- a pattern, not a path
+    # pytest's own temp root is `pytest-of-<user>/pytest-<n>` -- NUMBERED and USER-NAMED, not
+    # `tmp`-prefixed, so the pattern above misses it and both the account name and the session
+    # number leaked into a committed page. Measured on 2026-09-13: with the timestamp, duration
+    # and address scrubs already in place, breaker-enforcement.md was still the one page of 84
+    # that differed between two renders, and this line was in the diff.
+    out = re.sub(
+        r"/(?:private/)?var/folders/\S*?/pytest-of-[^/\s:'\"]+(?:/pytest-[^/\s:'\"]+)?",
+        "/<tmpdir>",
+        out,
+    )
+    # A uuid, e.g. pytest's `garbage-3ac755cf-46dd-4e4b-8a67-66489063ec71` -- the dirs it could
+    # not remove, named per run. Anchored on the 8-4-4-4-12 shape so an ordinary hyphenated word
+    # is untouched.
+    out = re.sub(
+        r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
+        "<uuid>",
+        out,
+    )
+    # pytest's summary line: `13 passed in 456.72s (0:07:36)`, `1 failed, 2 passed in 0.31s`.
+    # Anchored on `in <n>s` so a finding that merely contains the word "passed" is untouched. The
+    # optional space before the bracketed clock form is REQUIRED, not cosmetic: measured here on
+    # the first attempt, without it `456.72s (0:07:36)` scrubbed to `<duration> (0:07:36)` -- the
+    # clock was left behind, the page still differed between two renders, and the fix would have
+    # looked correct while the CI failure it was written for survived.
+    out = re.sub(
+        r"\b(in) \d+(?:\.\d+)?s(?:\s*\(\d+:\d{2}(?::\d{2})?\))?",
+        r"\1 <duration>",
+        out,
+    )
     return out
 
 
@@ -203,14 +317,21 @@ def page(rule: dict, engine) -> str:
     ]
 
     if refuse is None or permit is None:
+        # A rule whose refusing case lives on another plane -- a node id under a runner this page
+        # cannot steer, or a script the page is not the runner for -- still prints the case it
+        # CAN run. The heading names the half that is missing rather than the whole rule, because
+        # "nothing here is a pass" printed directly above a passing run reads as a false alarm.
+        absent = "refusing" if refuse is None else "permitting"
+        here = "permitting" if refuse is None else "refusing"
         out += [
-            "## BLIND: this rule names no case this page can run",
+            f"## BLIND to the {absent} direction: this rule names no {absent} case this page can run",
             "",
-            "A rule with no refusing case or no permitting case cannot be shown discriminating "
-            "on this page. Nothing here is a pass.",
+            f"The {absent} half of this rule cannot be shown here. The {here} case this page CAN "
+            f"run is printed below with the gate's own output; it is a real run, not a description. "
+            f"Where the {absent} direction is proved, the registry's `proved_elsewhere` field says.",
             "",
-            f"- refusing case: {'yes' if refuse else 'none with arguments'}",
-            f"- permitting case: {'yes' if permit else 'none with arguments'}",
+            f"- refusing case: {'yes' if refuse else 'none this page can run'}",
+            f"- permitting case: {'yes' if permit else 'none this page can run'}",
             "",
         ]
     for title, case, want in (

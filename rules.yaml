@@ -22,7 +22,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/api-version/bad
     must_pass: tests/fixtures/api-version/good
-  live_elsewhere: bin/idp-ci:633 -- the apiversion rung grades the REAL platform/ and clusters/ trees the cluster reconciles, not the fixture pair
+  live_elsewhere: bin/idp-ci:647 -- the apiversion rung grades the REAL platform/ and clusters/ trees the cluster reconciles, not the fixture pair
   cases:
   - expect: refuse
     args:
@@ -52,7 +52,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/aevum-evidence/bad/chain.json
     must_pass: tests/fixtures/aevum-evidence/good/chain.json
-  live_elsewhere: 'bin/idp-ci:623 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
+  live_elsewhere: 'bin/idp-ci:637 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
   cases:
   - expect: refuse
     args:
@@ -422,7 +422,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/migration-not-idempotent
     must_pass: bin/scheduler-migrate
-  live_elsewhere: bin/idp-ci:362 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
+  live_elsewhere: bin/idp-ci:376 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
   cases:
   - expect: refuse
     args:
@@ -551,7 +551,7 @@ rules:
   run:
   - bin/vm-shared-path
   fixtures:
-    must_fail: /private/tmp
+    must_fail: $OUTSIDE
     must_pass: $HOME
   cases:
   - expect: pass
@@ -559,11 +559,36 @@ rules:
       VM_SHARED_ROOTS: $HOME
     args:
     - $HOME
+  # The refused argument is spelled `$OUTSIDE`, not a literal absolute path.
+  #
+  # WHY (incident 2026-09-13, CI run 34796984403). This case named
+  # `/private/tmp` as its argument, and the `vmmount` row went red on the Linux
+  # runner with `cites 1 thing(s) that do not exist: /private/tmp (no such
+  # path)`. `/private/tmp` is real on macOS -- it is what `/tmp` resolves to --
+  # and it does not exist on the runner, so the fixture was a claim about the
+  # machine the row was written on rather than about the gate.
+  #
+  # That reading also hid the more interesting half. `bin/vm-shared-path` reads
+  # `real=$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)/$(basename "$p")`, so
+  # when the parent does not exist the `cd` is swallowed and the refusal that
+  # follows is the refusal of a path that does not exist -- true, but not the
+  # property this row claims to grade. The run would have passed while grading
+  # nothing, which is the shape LAW 2 forbids. So the row now proves the gate
+  # with a path that exists on EVERY platform and is genuinely outside the
+  # shared root:
+  #
+  #   $OUTSIDE expands to `/` -- exists on macOS and on Linux, is not under
+  #   `$HOME`, and is named `..` from the shared root. The gate must refuse it
+  #   for being outside the tree.
+  #
+  # `$OUTSIDE` is resolved by bin/idp-rules at grade time, next to the existing
+  # `$HOME` expansion, so the row never carries a machine's own path in its text.
   - expect: refuse
     env:
       VM_SHARED_ROOTS: $HOME
+      OUTSIDE: /
     args:
-    - /private/tmp
+    - $OUTSIDE
   ok: vm-shared-path permits a path under the shared root and refuses one outside it
   fail: bin/vm-shared-path selftest
 - id: ns-fence
@@ -1207,7 +1232,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/reloader-blind
     must_pass: tests/fixtures/reloader
-  live_elsewhere: bin/idp-ci:462 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
+  live_elsewhere: bin/idp-ci:476 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
   cases:
   - expect: refuse
     args:
@@ -1830,7 +1855,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
     must_pass: tests/fixtures/catalogue-entity-runtime-service
-  live_elsewhere: bin/idp-ci:462 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
+  live_elsewhere: bin/idp-ci:476 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
   cases:
   - expect: refuse
     args:
@@ -2054,29 +2079,32 @@ rules:
   fail: 'measured 2026-09-10: idp-flux-subst-gate, idp-clickhouse-system-log-ttl, idp-crd-then-cr, idp-priority-class-exists, estate-zone-gate, port-gate, multiarch-gate and bin/dockerfiles all returned non-zero from a nested copy''s own fixtures, and all returned clean once the copies were excluded. .gitignore''s remedy on 2026-08-29 was the naming convention /.wt-*/, and the next checkouts were made as scratchpad/ and idp/, so the pattern missed them. bin/treewalk.py stops a walk entering a copy; this rule refuses the copy''s presence.'
 - id: epistemic
   label: epistemic
-  statement: 'An agent''s first-person claim of completed work is refused when its own session transcript holds no tool call behind it: hallucination is graded deterministically rather than asked of a larger model'
-  law: founder 2026-09-12 "we will eliminate guessing entirely"
-  origin: incident 2026-09-12, three confident answers to one question and no proof for any
+  statement: 'An agent''s first-person claim of completed work is refused unless THREE INDEPENDENT pieces of evidence back it: independence is judged on the transcript''s own tool calls (distinct tool:target pairs), never on a declaration the agent writes, and at least one piece must read state the agent did not author in the session. Hallucination is graded deterministically rather than asked of a larger model'
+  law: founder 2026-09-13 "i said 3 there u go again alterning ny words"
+  origin: incident 2026-09-13, a false green accepted on one command; see docs/specs/2026-09-13-three-independent-pieces-of-evidence.md
   planes:
   - ci
   run:
   - python3
   - bin/idp-epistemic
   fixtures:
-    must_fail: tests/fixtures/epistemic/bad/session.jsonl
-    must_pass: tests/fixtures/epistemic/good/session.jsonl
+    must_fail: tests/fixtures/epistemic/one-source-three-times/session.jsonl
+    must_pass: tests/fixtures/epistemic/three-independent/session.jsonl
   cases:
   - expect: refuse
     args:
     - tests/fixtures/epistemic/bad/session.jsonl
+  - expect: refuse
+    args:
+    - tests/fixtures/epistemic/one-source-three-times/session.jsonl
   - expect: pass
     args:
-    - tests/fixtures/epistemic/good/session.jsonl
+    - tests/fixtures/epistemic/three-independent/session.jsonl
   - expect: pass
     live: true
     note: the estate's own session transcripts, read from ~/.pi/agent/sessions
-  ok: every first-person claim of completed work has a tool call behind it, or the claim is refused
-  fail: 'a session asserted completed work with no tool call anywhere in its transcript. Measured 2026-09-12: asked what it had been working on, the session claimed another session''s build as its own, then "corrected" that to never having touched it, then "corrected" that back -- three answers, each stated as fact, none provable by anything it had run. The gate is the mechanism that was missing; it grades evidence present in the transcript, never truth, and says so.'
+  ok: every first-person claim of completed work has three independent pieces of evidence behind it, at least one of which reads state the agent did not author, or the claim is refused
+  fail: 'a session asserted completed work on fewer than three independent pieces of evidence. Measured 2026-09-13: the agent ran ./bin/idp-gate-demo --check inside a working tree it had just rendered into, read rc=0, and reported the doc-render red closed; a clean detached checkout of the same commit exits 1 naming three stale pages. A tool call existed, and it was the agent''s own draft -- which is exactly why independence, and not mere existence, is what the gate counts. Measured 2026-09-12 as well: three answers to one question, each stated as fact, none provable by anything the session had run. The gate grades evidence present in the transcript, never truth, and says so.'
 - id: trajectory
   label: trajectory
   gate: null
@@ -2289,7 +2317,7 @@ rules:
   statement: 'No pull request opens without BDD proof, across every agent session: the body carries a BDD-PROOF block naming the head commit, that block carries a runner''s own passing counts rather than a sentence saying the tests passed, and the named commit is the pull request''s own head -- a claim with no run output is refused, and so is a real run on another commit'
   law: LAW 22, LAW 53
   origin: founder 2026-09-12
-  live_elsewhere: bin/idp-ci:57 -- the fast plane runs bin/idp-bdd-proof-gate --live, which reads the most recent pull request on this repository and refuses one carrying no BDD-PROOF block on its own head; on 2026-09-12 it refused PR
+  live_elsewhere: bin/idp-ci:71 -- the fast plane runs bin/idp-bdd-proof-gate --live, which reads the most recent pull request on this repository and refuses one carrying no BDD-PROOF block on its own head; on 2026-09-12 it refused PR
   planes:
   - ci
   - session
@@ -2427,12 +2455,147 @@ rules:
   cases:
   - expect: pass
     args:
-    - tests/test_breaker_extension.py::TestTheFingerprintIsAFindingNotTheBytes::test_a_repeated_noop_is_still_no_finding
+    - tests/test_breaker_extension.py::TestItBlocksProvedRepetition::test_it_never_blocks_nine_different_findings
+    note: 'REFUSING DIRECTION on the extension plane. Nine targets, nine distinct causes: nothing
+      blocks. This is R38 -- a guard that refuses correct work is an outage -- asserted through
+      extensions/breaker/decide.mjs, the module pi actually calls.'
   - expect: pass
     args:
-    - tests/test_breaker_extension.py::TestTheFingerprintIsAFindingNotTheBytes::test_the_same_cve_set_fingerprints_identically_whatever_the_order
+    - tests/test_breaker_extension.py::TestItBlocksProvedRepetition::test_it_blocks_on_the_third_identical_finding
+    note: 'PERMITTING DIRECTION on the extension plane. Three targets carrying the same CVE set in
+      three different orders do block on the fourth, and the block names a lever. The same CVE
+      list reordered must fingerprint identically, or the real 2026-09-12 incident -- six red pull
+      requests, one cause, three different log positions -- would never have been grouped.'
+  - expect: pass
+    args:
+    - tests/test_breaker_extension.py::TestItIsBlindRatherThanSilent::test_it_reports_blind_when_the_tool_is_absent
+    note: 'THE BLIND-OR-SILENT CASE. When the tool cannot be found the extension reports BLIND, never
+      a quiet pass -- a guard that cannot run its check must say so, not read as clean.'
   - expect: pass
     live: true
+    note: the whole breaker test module over the real tree
+  fixtures:
+    # These two files ARE the two directions the cases above prove: bad/ is a no-op repeated (no
+    # finding, so it can never lock) and good/ is one CVE set in two orders (a finding, so it
+    # locks). The row graded them through pytest node ids and named the pair nowhere, so
+    # bin/idp-rule-coverage could not see the link and reported the directory as a fixture graded
+    # by no rule -- the exact orphan shape that gate exists to catch. Declaring the pair here is
+    # the wiring, not an exemption.
+    must_fail: tests/fixtures/breaker-enforcement/bad
+    must_pass: tests/fixtures/breaker-enforcement/good
   ok: a command with no finding cannot lock, and a proved pattern still locks
   fail: 'output carrying no finding gets a fingerprint, so repeated no-op commands trip N=3 and lock the two tools a session needs to fix anything. Measured 2026-09-13: a session issued the same command repeatedly, the third tripped the lock, and every command that could have cleared it was itself a bash call. R38 -- a guard that refuses correct work is an outage.'
-  proved_elsewhere: the refusing direction -- a no-op carrying no finding produces no fingerprint, so it can never lock -- is ::test_a_repeated_noop_is_still_no_finding, and the permitting direction -- three targets carrying the same CVE set still lock -- is ::test_the_same_cve_set_fingerprints_identically_whatever_the_order. Both names are read from the file, never guessed.
+  proved_elsewhere: 'the same rule on the CLI plane, where the runner is the script and not pytest. Re-take it with: python3 bin/idp-circuit-breaker --replay tests/fixtures/breaker-enforcement/bad/replay.json (four no-op targets: `0 finding(s) observed; 0 locked`, exit 0) and python3 bin/idp-circuit-breaker --replay tests/fixtures/breaker-enforcement/good/replay.json (three targets carrying one CVE set in three orders: `3 finding(s) observed; 1 locked`, exit 1, with a 423 and a lever naming the single fix). A case cannot change the row''s runner, so this proof cannot be one of the cases above. The refused-vs-locked distinction is the whole rule: a no-op is never observed and can never lock; a real finding locks on the third target.'
+- id: execution-boundary-holds
+  label: execution-boundary
+  statement: Nothing an agent runs may hold a turn open. The 60-second ceiling is applied by the executor daemon outside the caller's process tree, stated once in the door and imported by the daemon -- a second copy of the number is a second answer, and a daemon that swallows its own door import answers health while unable to run anything
+  law: founder 2026-09-13 (verbatim) "60 secsos is the nnax" / "it should not even get bera teh" / "a breach of law or gaurd is a security breach" -- after the cap was breached six times; "find where we have done this, operationalise it, make sure every agent session is aware, and remove bash access afterward"
+  origin: founder 2026-09-13, the execution boundary
+  planes:
+  - ci
+  - session
+  run:
+  - python3
+  - bin/idp-execution-boundary
+  fixtures:
+    must_fail: tests/fixtures/execution-boundary/bad
+    must_pass: tests/fixtures/execution-boundary/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/execution-boundary/bad
+    note: a door with no daemon, no entry point, no status tool and no launchd job -- the shape of every one of the six failed attempts
+  - expect: pass
+    args:
+    - tests/fixtures/execution-boundary/good
+    note: the whole boundary, ceiling imported once from the door
+  - expect: pass
+    live: true
+    args:
+    - --check
+    note: 'LIVE: the boundary is graded on THIS repository rather than on an example of one, so
+      the row fails the day the daemon restates the ceiling, the door loses its entry point or
+      the launchd job goes missing on the machine that is actually running agents. Two fixture
+      cases alone graded a tree that never moves: every one of the six real breaches this rule
+      was written for would have passed them.'
+  ok: the executor daemon applies one ceiling, imported from the door, and every half of the boundary is present -- and the boundary holds on this repository, not only on an example of one
+  fail: a ceiling is restated in the daemon, or the boundary is half built and nothing says so
+- id: a-script-is-not-built-until-it-runs
+  fast: true
+  label: script-compiles
+  statement: 'A script added to bin/ is not built until it has been EXECUTED once: it must answer --self-test, --self-check or --dry-run with exit 0 in bounded time. A parser and a linter both pass a script that has never run, which is exactly how a wrong variable name, a missing command or an unresolvable import reaches a session as a load failure -- so the compile is the run.'
+  law: 'LAW 43 / LAW 45, founder 2026-09-13 (verbatim) "no script shold be built withiut conpiler, enforce it ... aget should not eve have to do it, should be auuto"'
+  origin: 'founder 2026-09-13, after watching a session hot-reload a file nobody had compiled. bin/idp-script-compiles was committed in 8913a251 and reached this branch with NO row in this registry, so it graded nothing on the repository plane: the coverage gate (bin/idp-rule-coverage) named tests/fixtures/script-compiles as a fixture graded by no rule and no test. A rule the agent must remember to follow is a wish (LAW 44); the row below is what makes the caller structural rather than remembered.'
+  planes:
+  - ci
+  - session
+  session_glob:
+  - bin/*
+  run:
+  - python3
+  - bin/idp-script-compiles
+  fixtures:
+    must_fail: tests/fixtures/script-compiles/bad
+    must_pass: tests/fixtures/script-compiles/good
+  cases:
+  - expect: refuse
+    args:
+    - --files
+    - tests/fixtures/script-compiles/bad/never-ran.sh
+    note: a script whose --self-test exits 127 on an undefined command, and which parses and lints clean
+  - expect: pass
+    args:
+    - --files
+    - tests/fixtures/script-compiles/good/runs.sh
+    note: the same script with a --self-test that exercises its real path
+  - expect: pass
+    live: true
+    args:
+    - --files
+    - bin/idp-script-compiles
+    note: 'LIVE, and deliberately narrow: the gate is pointed at ITSELF in the real tree, so this
+      case grades the estate rather than an example and cannot be satisfied by fixtures alone.
+      A bare run over all of bin/ is the honest whole-tree reading and it is RED today -- 257 of
+      286 scripts answer no --self-test, --self-check or --dry-run -- so it is not asserted here
+      as a pass. That number is the gap this row exists to close and it is quoted in `why` below;
+      asserting it green would be the false pass this gate was built to catch.'
+  ok: the gate refuses a script that has never run and passes one that has; it is pointed at the
+    real tree, and the 257 scripts still without a self-test are named rather than passed over
+  fail: an executable under bin/ has never been executed and nothing refuses it, so a load failure
+    reaches a session as a surprise
+  why: 'Measured 2026-09-13: a bare run over all of bin/ reports `FAIL: 257 of 286 script(s) do not
+    run`. The estate is genuinely short, and the shortfall is stated here rather than asserted
+    green. This row closes that gap one script at a time; the count may only fall.'
+- id: deterministic-verifier
+  label: verifier
+  statement: 'A claim of completed work is not the agent''s to make: the agent may only propose a patch into an ephemeral ledger, three graders the proposer does not control run against the exact bytes -- structural (the bytes compile), symbolic (Z3 over the guard the patch itself declares, which refuses to discharge "tests pass"), and execution (the SUPPLIED TEST SUITE runs in a throwaway tree and the pytest exit code is the verdict, so a proposal carrying no test is refused) -- and an attestation is minted only when all three pass, bound to the SHA-256 of the artifact actually verified. Take the claim away from the claimant'
+  law: founder 2026-09-13 "the fact u are able toi lie eans he his rules isnt operation al and the firs thig we need to addres" / "thats why i dont belive clains without hard prrov 3 different w3ys"
+  origin: incident 2026-09-13, an agent's first-person claim of done accepted with no third party behind it; see docs/tickets/2026-09-13-deterministic-verifier.md
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-verifier-oath
+  fixtures:
+    must_fail: tests/fixtures/verifier-oath/no-seal
+    must_pass: tests/fixtures/verifier-oath/sealed
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/verifier-oath/no-seal
+    note: a proposal the execution stage fails -- the seal is never minted, so no claim leaves
+  - expect: pass
+    args:
+    - tests/fixtures/verifier-oath/sealed
+    note: the same proposal with a passing execution stage -- the attestation is bound to the
+      SHA-256 of the exact bytes that were graded, and a byte changed afterwards no longer verifies
+  - expect: pass
+    live: true
+    args: []
+    note: 'LIVE: the three-stage gauntlet is run against the real module in this tree with the
+      binding suite CI runs, so the row grades the estate rather than an example. Named with the
+      cwd it needs -- the binding resolves its .feature through bdd_features_base_dir in
+      sovereign/pytest.ini, and it has to run from sovereign/, which is how .github/workflows/ci.yml
+      line 227 invokes it. A root-cwd run dies on import with IndexError: list index out of range.'
+  ok: a patch is admitted only through the three-stage gauntlet, the ledger is the only place an agent can write, and the seal binds the attestation to the bytes that were actually graded (measured 2026-09-13, 9 passed, PYTEST_RC=0)
+  fail: a claim of completed work reaches the estate on the word of the agent that made it, with no structural, symbolic or execution grader in front of it, or an attestation whose subject is not the SHA-256 of the graded artifact

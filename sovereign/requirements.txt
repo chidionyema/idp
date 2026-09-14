@@ -2,3 +2,25 @@ temporalio==1.32.0
 httpx>=0.27
 langfuse>=2.0,<3
 tomli>=2.0; python_version < "3.11"
+# sovereign/verifier.py mints the attestation's Ed25519 signature from this
+# library. Declared here rather than left to whatever the developer's machine
+# happened to carry: it was UNDECLARED until 2026-09-13, and CI run 34796984403
+# is what that cost. The seal is not an optional path -- `sign()` is called by
+# every successful `verify()` and by `seal` -- so this is a runtime dependency
+# and not a dev one. The failure it caused is recorded on `_signing_key`
+# itself: three BDD scenarios and the offline-gate's `verifier` row all read
+# `ModuleNotFoundError: No module named 'cryptography'` at the point of
+# signing, hundreds of lines after the module had loaded clean.
+cryptography>=42
+# Stage 2 of the gauntlet, `stage_symbolic`, asks Z3 for a counterexample to the
+# guard a patch declares. Declared here for the same reason as `cryptography`
+# above, and found the same way -- CI run 34798223412, one commit later:
+# `z3` was present on the developer's machine (5.1.0) and absent on the runner,
+# so the stage took its `ImportError` branch and returned `True, ""`. A stage
+# that cannot run was reporting `passed: True`, and
+# `test_a_proposed_patch_contains_structural_symbolic_or_execution_flaws`
+# refused it: "a broken patch verified at symbolic". That assertion is right
+# and the branch is wrong -- declaring the dependency keeps the solver in the
+# loop, and `stage_symbolic` now also fails closed when it is genuinely absent,
+# because a proof that did not run is never a proof that held (LAW 2).
+z3-solver>=4.12

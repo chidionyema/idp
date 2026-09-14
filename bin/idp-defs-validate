@@ -17,6 +17,41 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 
+def _can_import_dagster(python: str) -> bool:
+    """True when `python` can import dagster.
+
+    An existing .venv is not proof of a usable one: on 2026-09-13 this checkout held a hollow
+    .venv (Python 3.14.7, no dagster) while the system interpreter carried dagster 1.13.22. The
+    old code preferred .venv merely because the directory existed, so the validator ran under an
+    interpreter that could not import dagster and returned rc=1 -- which the doc-render gate read
+    as a defect in the page rather than a defect in this script.
+    """
+    try:
+        proc = subprocess.run([python, "-c", "import dagster"],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0
+
+
+def _interpreter_with_dagster() -> str:
+    """The interpreter to run `dagster definitions validate` under.
+
+    Preference order: the running interpreter, then the checkout's .venv -- each accepted only
+    after proving it can import dagster. When neither can, the running interpreter is returned so
+    the failure is reported by dagster's own missing-module error rather than by a silent choice.
+    """
+    candidates = [sys.executable, os.path.join(ROOT, ".venv", "bin", "python")]
+    seen = set()
+    for python in candidates:
+        if python in seen or not os.path.exists(python):
+            continue
+        seen.add(python)
+        if _can_import_dagster(python):
+            return python
+    return sys.executable
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -24,8 +59,7 @@ def main() -> int:
     target = sys.argv[1]
     if not os.path.isabs(target):
         target = os.path.join(ROOT, target)
-    venv = os.path.join(ROOT, ".venv", "bin", "python")
-    python = venv if os.path.exists(venv) else sys.executable
+    python = _interpreter_with_dagster()
     env = dict(os.environ, DAGSTER_HOME=tempfile.mkdtemp())
     proc = subprocess.run([python, "-m", "dagster", "definitions", "validate",
                            "-f", os.path.basename(target)],

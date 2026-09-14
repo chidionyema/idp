@@ -16,9 +16,11 @@ python3 bin/law32-gate
 
 Fixture: `--added bin/feature-with-no-pages`
 
-**BLIND** — the gate is not on disk: bin/feature-with-no-pages
+Exit code `1` (the registry expects non-zero). ✓
 
-Nothing was proved here. BLIND is a fail, never a pass.
+```
+FAIL  law32 bin/feature-with-no-pages: no docs/tutorials/demo/<n>.md + docs/how-to/onboarding/<n>.md for a feature named <n> where <n> is 'feature-with-no-pages' or a hyphen-prefix of it
+```
 
 ## Permitted
 
@@ -27,7 +29,7 @@ Fixture: `--added bin/supply-chain`
 Exit code `0` (the registry expects zero). ✓
 
 ```
-ok    law32 1 new bin file(s) carry a demo+onboarding pair; 214 page(s) above the 200-char floor and in the nav
+ok    law32 1 new bin file(s) carry a demo+onboarding pair; 216 page(s) above the 200-char floor and in the nav
 ```
 
 ## The registry's own lines

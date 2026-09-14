@@ -9,11 +9,41 @@ set -euo pipefail
 IDP="${IDP_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 case "$IDP" in /tmp/*|/private/tmp/*|/var/folders/*|*/.wt-*) echo "refusing: $IDP is a temporary checkout; set IDP_ROOT to the permanent one (LAW 46)"; exit 2;; esac
 ONLY=("$@")
+
+# A script is not built until it has been executed once (LAW 45, bin/idp-script-compiles).
+# --check renders every template into a scratch directory and lints the result WITHOUT touching
+# $HOME/Library/LaunchAgents and WITHOUT loading a single job, so the render path -- envsubst's
+# variable list, plutil, and every ProgramArguments[0] the plist gate grades -- is exercised on
+# the machine that will run it, and a broken template is a build failure rather than a job that
+# silently fails to start at login. This is the dry run that stands in for `load it`.
+if [ "${1:-}" = "--check" ]; then
+  TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+  command -v envsubst >/dev/null || { echo "FAIL envsubst missing"; exit 1; }
+  TEMPORAL_BIN="$(command -v temporal || true)"
+  PYTHON_BIN="$(command -v python3 || true)"
+  n=0
+  for t in "$IDP"/launchd/*.plist.tmpl; do
+    name="$(basename "${t%.tmpl}")"
+    IDP="$IDP" HOME="$HOME" PATH="$PATH" TEMPORAL_BIN="$TEMPORAL_BIN" PYTHON_BIN="$PYTHON_BIN" \
+      envsubst '${IDP} ${HOME} ${PATH} ${TEMPORAL_BIN} ${PYTHON_BIN}' < "$t" > "$TMP/$name" \
+      || { echo "FAIL envsubst on $name"; exit 1; }
+    plutil -lint "$TMP/$name" >/dev/null || { echo "FAIL $name does not lint"; exit 1; }
+    n=$((n + 1))
+  done
+  [ "$n" -gt 0 ] || { echo "FAIL no templates found under $IDP/launchd"; exit 1; }
+  echo "ok   idp-install-launchd --check ($n template(s) render and lint; nothing loaded)"
+  exit 0
+fi
 command -v envsubst >/dev/null || { echo "envsubst missing -- brew install gettext"; exit 2; }
 DEST="$HOME/Library/LaunchAgents"; mkdir -p "$DEST"
 # launchd does not search PATH for ProgramArguments[0]; a bare name exits 78 with an empty
 # log (2026-08-25, ai.estate.temporal). Binaries are resolved here, once, per machine.
 TEMPORAL_BIN="$(command -v temporal || true)"
+# The executor daemon needs an interpreter launchd can exec directly. launchd does not search
+# PATH for ProgramArguments[0], and the plist gate refuses a non-absolute path there (measured
+# 2026-09-13: '${PYTHON}' is not an absolute path). Resolved here, once, per machine, the same
+# way TEMPORAL_BIN is -- a bare `python3` would exit 78 with an empty log.
+PYTHON_BIN="$(command -v python3 || true)"
 # crew#396: ai.estate.temporal.plist.tmpl is retired; the engine is platform/temporal on the cluster.
 for t in "$IDP"/launchd/*.plist.tmpl; do
   name="$(basename "${t%.tmpl}")"
@@ -21,7 +51,7 @@ for t in "$IDP"/launchd/*.plist.tmpl; do
     keep=0; for o in "${ONLY[@]}"; do [ "$name" = "ai.estate.$o.plist" ] && keep=1; done
     [ "$keep" = 1 ] || continue
   fi
-  IDP="$IDP" HOME="$HOME" PATH="$PATH" TEMPORAL_BIN="$TEMPORAL_BIN" envsubst '${IDP} ${HOME} ${PATH} ${TEMPORAL_BIN}' < "$t" > "$DEST/$name"
+  IDP="$IDP" HOME="$HOME" PATH="$PATH" TEMPORAL_BIN="$TEMPORAL_BIN" PYTHON_BIN="$PYTHON_BIN" envsubst '${IDP} ${HOME} ${PATH} ${TEMPORAL_BIN} ${PYTHON_BIN}' < "$t" > "$DEST/$name"
   plutil -lint "$DEST/$name" >/dev/null
   label="${name%.plist}"
   launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true

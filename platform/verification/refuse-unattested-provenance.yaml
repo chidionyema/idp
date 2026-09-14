@@ -1,0 +1,80 @@
+# RULE 4 of features/gates/deterministic-verifier.feature: "an unattested payload is refused
+# at the Kyverno Admission Controller or a Git pre-receive hook".
+#
+# That sentence named two gates the estate did not have. Measured with `git grep -l UNATTESTED`:
+# the refusal was real but it lived in exactly one place, platform/executor/daemon.py:_admit(),
+# which answers {"ok": false, "intercepted": true, "violation_code": "UNATTESTED"} when the
+# Verifier's signature does not verify over the exact bytes of the payload. That is enforcement
+# at the point of proposal, and it is worth having -- but a commit that never goes through the
+# executor reached the remote unchecked, and a green run of the scenario could be read as "the
+# cluster enforces this" when the cluster enforced nothing.
+#
+# This file is the half that was missing, and it is the half the sentence asked for. It makes
+# the Kyverno half true rather than renaming it away: a workload that carries the Verifier's
+# provenance label without the attestation annotation beside it is refused at admission.
+#
+# WHY A LABEL AND NOT THE ARTIFACT. This policy cannot see a payload -- the payload is a file in
+# a checkout, and admission sees API objects. What admission can see is the claim the object
+# makes about itself. So the rule enforces the shape the estate's own tooling writes: the
+# Verifier stamps provenance, and a workload that asserts provenance must also name the
+# attestation that covers it. An object that claims provenance with no attestation to point at
+# is exactly the untrusted proposer asking to be believed, which is the thing being refused.
+#
+# THE HONEST LIMIT, stated rather than implied: this is defence in depth, not the primary
+# control. The signature check that actually verifies bytes is verify_attestation() in the
+# executor. This policy catches the case where that check was never reached -- an object applied
+# by hand, by a human with kubectl, or by a pipeline that skipped the executor. It is the
+# second gate, which is what "or" in the spec's sentence means.
+#
+# It validates on admission and never mutates, so it cannot change an object into a compliant
+# one and then pass it. A refusal is a refusal.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: refuse-unattested-provenance
+  annotations:
+    policies.kyverno.io/title: A payload claiming provenance carries the attestation that covers it
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Refuses any object that declares estate.io/provenance-verified without also declaring
+      estate.io/attestation. Rule 4's Kyverno half: the executor refuses an unsigned payload at
+      the point of proposal, and this refuses a claim of provenance that reached the cluster
+      without passing through it.
+spec:
+  background: false
+  # Reports the failure rather than silently allowing a DENY-able object through. A policy whose
+  # enforcement mode lets the refusal be ignored is a wish (LAW 44).
+  validationFailureAction: Enforce
+  rules:
+    - name: provenance-requires-an-attestation
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+                - Job
+                - CronJob
+      preconditions:
+        all:
+          # Only objects that make the claim are examined, so a workload that says nothing about
+          # provenance is untouched. A guard that refuses correct work is an outage (R38).
+          - key: "{{ request.object.metadata.annotations.\"estate.io/provenance-verified\" || '' }}"
+            operator: Equals
+            value: "true"
+      validate:
+        message: >-
+          UNATTESTED: this object claims estate.io/provenance-verified but names no
+          estate.io/attestation. The Verifier refuses an unattested payload at the executor
+          (platform/executor/daemon.py:_admit); an object carrying the claim without the
+          attestation never passed through it. Add the attestation the Verifier minted, or
+          remove the provenance claim.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.metadata.annotations.\"estate.io/attestation\" || '' }}"
+                operator: Equals
+                value: ""

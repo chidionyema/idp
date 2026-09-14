@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""idp-continuity-lane -- can the key we hold reach the lane every chain ends on?
+
+WHY THIS EXISTS. Measured 2026-09-13T12:42Z: every fallback chain in
+platform/llm/config.yaml ended in `groq`, the free floor, and the laptop key
+could not call it. `POST model=groq` answered HTTP 403 `key_model_access_denied`
+while the chain's earlier hops answered 200 or a paid 402/429. The guarantee the
+founder ordered FIRST -- when paid tokens die, free lanes take over -- was
+present in the config and unreachable with the credential, and nothing in the
+estate could see it. A chain whose last hop is refused is not a chain; it is a
+list of lanes that all fail, with a refusal at the end that looks like a
+different failure from the ones before it.
+
+WHY IT IS ASKED OF THE ROUTER AND NOT OF A FILE. The estate's own file says
+`@router` (vault-seed.yml:126); the key in the hand said sixteen lanes and no
+groq. A check that reads the file would have agreed with the file and passed.
+This asks the thing that decides -- the router -- which is the only place that
+can answer.
+
+EXIT CODES
+  0  MEASURED_OK   -- the free floor is reachable with the key in hand
+  1  MEASURED_FAIL -- the floor is declared in the chains and refused by the key
+  2  BLIND         -- the question could not be asked; never a pass, never a fail
+
+A BLIND result is deliberately not a pass. `curl` missing, no key, no network --
+each of those means the estate does not know, and an estate that does not know
+must not report green. (LAW 45: a check that can hang is not a check -- so every
+network call below carries a hard timeout, and the whole script is bounded.)
+
+Usage:
+  idp-continuity-lane                     # grade the key the environment holds
+  idp-continuity-lane --lane groq         # grade a different tail lane
+  idp-continuity-lane --chains platform/llm/config.yaml
+  idp-continuity-lane --check             # config-only self-test; prints usage, exits 0
+  idp-continuity-lane --help
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+# Bounded hard. The founder's order is that no agent call blocks: 60s is the
+# ceiling for an execution, and this is a check, so it aims well under it.
+CURL_TIMEOUT_SEC = 20
+DEFAULT_LANE = "groq"
+DEFAULT_CHAINS = os.path.join("platform", "llm", "config.yaml")
+
+# THE ZONE IS READ, NEVER TYPED (LAW 46, and bin/estate-zone-gate refused this file for it). The
+# first draft of this script carried the router's hostname as a literal default. The zone is
+# declared once, in clusters/<cluster>/estate-config.yaml, and every hostname in the estate is
+# <service>.${ESTATE_ZONE} -- so a second copy would be a second answer that drifts (LAW 44).
+# IDP_ROUTER_URL always wins, because a caller pointing at a staging router is legitimate.
+ROUTER_SERVICE = "llm"
+
+
+def _declared_zone() -> str:
+    """The estate's DNS zone, from the one file that declares it.
+
+    Searched upward from this script rather than from the cwd, so the gate answers the same
+    question wherever it is invoked -- the same derivation bin/idp-executor-status uses for the
+    checkout. Returns "" when no cluster config is readable, and the caller then reports BLIND
+    rather than guessing a hostname.
+    """
+    here = Path(__file__).resolve().parent
+    for root in (here.parent, *here.parents):
+        for cfg in sorted((root / "clusters").glob("*/estate-config.yaml")):
+            try:
+                for line in cfg.read_text().splitlines():
+                    if line.strip().startswith("ESTATE_ZONE:"):
+                        return line.split(":", 1)[1].strip().strip("\"'")
+            except OSError:
+                continue
+    return ""
+
+
+def router_url() -> tuple[str, str]:
+    """(url, how) -- the router's base URL, and where it came from."""
+    override = os.environ.get("IDP_ROUTER_URL", "").strip()
+    if override:
+        return override.rstrip("/"), "$IDP_ROUTER_URL"
+    zone = _declared_zone()
+    if zone:
+        return f"https://{ROUTER_SERVICE}.{zone}", "clusters/*/estate-config.yaml"
+    return "", "no zone declared"
+
+USAGE = """idp-continuity-lane -- can the key we hold reach the lane every chain ends on?
+
+  idp-continuity-lane [--lane NAME] [--chains PATH] [--key-env VAR] [--check]
+
+Reads /v1/models with the key in hand and fails when the lane every fallback
+chain ends on is not in it. Exit 0 ok, 1 fail, 2 blind.
+
+Options:
+  --lane NAME     the tail lane to look for (default: groq)
+  --chains PATH   the router config whose chains are read (default: platform/llm/config.yaml)
+  --key-env VAR   environment variable holding the router key (default: LITELLM_API_KEY)
+  --key-cmd CMD   print the key with this shell command instead of reading the environment
+  --check         print this usage and the resolved paths; mint nothing, call nothing
+  --help          print this usage
+"""
+
+
+def _default_key_cmd() -> list[str] | None:
+    """The Mac reads the router key as LITELLM_API_KEY; the keychain holds it too.
+
+    Named here rather than inlined so the one place the key is fetched can be
+    changed without hunting for it. `security` is absent off macOS, and that is
+    fine: the environment is tried first and this is only the fallback.
+    """
+    return ["security", "find-generic-password", "-s", "LITELLM_API_KEY", "-w"]
+
+
+def read_key(env_var: str, key_cmd: str | None) -> tuple[str | None, str]:
+    """Return (key, how). Never raises: a missing key is BLIND, not a crash."""
+    if key_cmd:
+        try:
+            out = subprocess.run(  # noqa: S602 -- the operator's own command, by design
+                key_cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=CURL_TIMEOUT_SEC,
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            return None, f"--key-cmd failed: {exc}"
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip(), "--key-cmd"
+        return None, f"--key-cmd exited {out.returncode}"
+
+    val = os.environ.get(env_var, "").strip()
+    if val:
+        return val, f"environment ${env_var}"
+
+    fallback = _default_key_cmd()
+    if fallback:
+        try:
+            out = subprocess.run(  # noqa: S603 -- argv is a list
+                fallback, capture_output=True, text=True, timeout=CURL_TIMEOUT_SEC
+            )
+            if out.returncode == 0 and out.stdout.strip():
+                return out.stdout.strip(), "keychain LITELLM_API_KEY"
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+
+    return None, f"no key in ${env_var}, in the keychain, or from --key-cmd"
+
+
+def chains_tail(chains_path: str) -> tuple[set[str], str]:
+    """Every lane named at the END of a text fallback chain.
+
+    This reads the file to learn which lane the chains depend on -- it does NOT
+    decide whether the key can reach it, which is the whole point. pyyaml is
+    imported here rather than at module scope so that a machine without it can
+    still ask the router directly with --lane.
+    """
+    try:
+        import yaml
+    except ImportError:
+        return set(), "pyyaml absent; pass --lane to name the tail directly"
+
+    if not os.path.exists(chains_path):
+        return set(), f"no chains file at {chains_path}"
+
+    try:
+        with open(chains_path) as fh:
+            doc = yaml.safe_load(fh) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        return set(), f"could not parse {chains_path}: {exc}"
+
+    tails: set[str] = set()
+    for row in doc.get("router_settings", {}).get("fallbacks", []) or []:
+        if not isinstance(row, dict):
+            continue
+        for chain in row.values():
+            if isinstance(chain, list) and chain:
+                tails.add(str(chain[-1]))
+    if not tails:
+        return set(), f"{chains_path} declares no fallback chains"
+    return tails, "read from " + chains_path
+
+
+def listed_models(key: str, base: str) -> tuple[set[str] | None, str]:
+    """Ask the router which lanes this key may call. Bounded, and never a shell.
+
+    `base` is passed in rather than read from a module constant, so there is exactly one place
+    that decides which router this gate asks -- and that place reads the zone instead of typing
+    it (LAW 46).
+    """
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(  # noqa: S310 -- https, no user input
+        f"{base}/v1/models",
+        headers={"Authorization": f"Bearer {key}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=CURL_TIMEOUT_SEC) as resp:  # noqa: S310
+            body = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        return None, f"the router answered HTTP {exc.code} to /v1/models"
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        return None, f"could not reach {base}: {exc}"
+    ids = {str(m.get("id")) for m in body.get("data", []) if isinstance(m, dict)}
+    return (ids or None), f"{len(ids)} lanes listed by the router"
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(add_help=False)
+    ap.add_argument("--lane", default=DEFAULT_LANE)
+    ap.add_argument("--chains", default=DEFAULT_CHAINS)
+    ap.add_argument("--key-env", default="LITELLM_API_KEY")
+    ap.add_argument("--key-cmd")
+    ap.add_argument("--check", action="store_true")
+    ap.add_argument("--help", "-h", action="store_true")
+    args, unknown = ap.parse_known_args(argv)
+
+    if unknown:
+        print(f"BLIND   continuity-lane   unknown option {unknown[0]}")
+        print(USAGE)
+        return 2
+    if args.help or args.check:
+        if args.check:
+            base, how = router_url()
+            if not base:
+                print("BLIND   continuity-lane   --check: no zone declared, so no router to ask")
+                return 1
+            print(f"ok      continuity-lane   --check: router {base} (from {how})")
+            print(f"ok      continuity-lane   --check: chains {args.chains}")
+            print(f"ok      continuity-lane   --check: lane   {args.lane}")
+        print(USAGE)
+        return 0
+
+    base, how_base = router_url()
+    if not base:
+        print("BLIND   continuity-lane   FAIL: no ESTATE_ZONE readable, so there is no router to ask")
+        print("        set IDP_ROUTER_URL, or run from inside the checkout")
+        return 1
+    print(f"        continuity-lane   asking {base} (from {how_base})")
+
+    tails, how_tails = chains_tail(args.chains)
+    wanted = {args.lane} | tails if tails else {args.lane}
+    if tails:
+        print(
+            f"        continuity-lane   chains end on: {', '.join(sorted(tails))} ({how_tails})"
+        )
+
+    key, how_key = read_key(args.key_env, args.key_cmd)
+    if not key:
+        print(f"BLIND   continuity-lane   {how_key}")
+        print(
+            "        continuity-lane   cannot ask which lanes the key reaches; not a pass"
+        )
+        return 2
+
+    models, how_models = listed_models(key, base)
+    if models is None:
+        print(f"BLIND   continuity-lane   {how_models} (key from {how_key})")
+        return 2
+
+    print(f"        continuity-lane   {how_models} (key from {how_key})")
+    missing = sorted(m for m in wanted if m not in models)
+    if missing:
+        print(f"FAIL    continuity-lane   the key cannot call: {', '.join(missing)}")
+        for m in missing:
+            print(
+                f"        continuity-lane   every chain ending in '{m}' ends in a refusal"
+            )
+        print(
+            "        continuity-lane   re-mint the key for every lane the router serves: "
+            "bin/idp-router-key <consumer> @router"
+        )
+        return 1
+
+    print(
+        f"MEASURED_OK continuity-lane   the key reaches every tail: {', '.join(sorted(wanted))}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

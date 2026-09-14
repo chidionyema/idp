@@ -54,6 +54,20 @@ python3 "$IDP/bin/idp-rules" run --plane ci --fast || fail=1
 # carries no BDD-PROOF block -- needs a line in this file that says the gate's name, so
 # bin/idp-rules can check that the claim in rules.yaml is still true (pointer_is_stale). The
 # registry above runs it; this line is what makes that fact checkable rather than asserted.
+#
+# THE `|| true` IS LOAD-BEARING AND MUST NOT BE REMOVED UNTIL live_pr() CHANGES (measured
+# 2026-09-13, the reason this comment is here rather than a second silent exception). The gate's
+# live_pr() runs `gh pr list --state all --limit 1` with no reference to the branch under test,
+# so on this repository it grades THE NEWEST PULL REQUEST ANY SESSION OPENED, not this run's.
+# Called during CI for branch feat/async-dispatch it answered about PR #3398 flux/image-updates
+# -- another session's work. Making this line fail the run would therefore fail a correct branch
+# for a foreign pull request's missing proof block, which is precisely the guard-that-refuses-
+# correct-work defect (R38). The suppression stays until live_pr() takes the PR under test
+# (GitHub exposes it as the pull_request payload; see bin/idp-bdd-proof-gate, input named in
+# its own docstring as "a pull request as JSON on stdin"). The BLIND that made this line look
+# broken was itself only a symptom of the missing token: with GH_TOKEN set the gate reads a pull
+# request and returns a real verdict, so the line is no longer blind -- it is simply aimed at the
+# wrong pull request, which no change to this file can fix.
 python3 "$IDP/bin/idp-bdd-proof-gate" --live || true
 
 # 1d. ruff, the same rule set (pyproject [tool.ruff.lint]) the bdd job runs after the suites.

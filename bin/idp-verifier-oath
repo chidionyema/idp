@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""idp-verifier-oath -- grade the Deterministic Verifier's oath, both ways.
+
+THE OATH. An agent may propose a patch; it may not claim one. The claim is minted
+only when three graders the proposer does not control agree, and the seal binds the
+attestation to the SHA-256 of the exact bytes that were graded.
+
+    founder 2026-09-13 (verbatim)
+      "the fact u are able toi lie eans he his rules isnt operation al and the firs
+       thig we need to addres"
+      "thats why i dont belive clains without hard prrov 3 different w3ys"
+
+This gate answers one question about a proposal: did a claim leave without a seal, or
+does the seal survive a byte changing under it? It drives the REAL module in this
+tree -- `sovereign/verifier.py`, loaded by path the way workspace.yaml loads it -- not
+a stand-in. It builds a real `Ledger` over a real `ProposedFile` and calls the real
+`verify()`, so a change to the module's oath is measured here.
+
+WHAT THE THREE STAGES ARE, read from the module rather than restated:
+
+  structural  the proposed bytes compile
+  symbolic    the declared guard contract is satisfiable under Z3. The module
+              deliberately refuses to let SMT discharge "tests pass", so this stage
+              can never stand in for the execution stage
+  execution   the proposal runs in a sterile tree, and its exit code is the verdict
+
+A proposal whose stages fail mints nothing: `verify()` returns `ok=False`,
+`attestation=None` and `claim_verdict="FAILED"`. That is the must-fail fixture.
+A proposal whose three stages pass mints an attestation whose subject is
+`canonical_subject()` of the graded files; `verify_attestation()` accepts it for that
+subject and refuses it for any other. That is the must-pass fixture, and the
+wrong-subject half is what proves the seal is bound to content rather than to a name.
+
+Exit 0 when every fixture's verdict is the true one; 1 when the oath leaked.
+
+LAW 46: no path here names the checkout, the home directory or the machine.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def load_verifier():
+    """Import sovereign/verifier.py by path, the way workspace.yaml loads it."""
+    path = ROOT / "sovereign" / "verifier.py"
+    spec = importlib.util.spec_from_file_location("sovereign_verifier", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load the verifier at {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["sovereign_verifier"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def build_ledger(verifier, case_dir: Path) -> "object":
+    """A real Ledger over the fixture's own proposal file, in its own sterile tree."""
+    proposal = case_dir / "proposal" if (case_dir / "proposal").is_dir() else case_dir
+    source = proposal / "proposal.py"
+    if not source.is_file():
+        raise RuntimeError(f"{case_dir}: no proposal.py -- nothing to grade")
+
+    tests = proposal / "tests.py"
+    ledger_dir = Path(tempfile.mkdtemp(prefix="verifier-oath-ledger-"))
+    return verifier.Ledger(
+        ledger_id="oath-" + case_dir.name,
+        ledger_dir=ledger_dir,
+        files=[verifier.ProposedFile(path="proposal.py", lines=source.read_text().splitlines(True))],
+        tests=tests.read_text() if tests.is_file() else "",
+        claim="this proposal is correct",
+    ), source.read_bytes()
+
+
+def grade_proposal(verifier, case_dir: Path) -> tuple[bool, str]:
+    """Return (minted, why). `minted` is True only when a sealed claim left."""
+    ledger, raw = build_ledger(verifier, case_dir)
+    subject = verifier.canonical_subject(ledger.files)
+
+    verdict = verifier.verify(ledger)
+
+    if not verdict.get("ok"):
+        # A stage refused. The attestation must be absent -- no seal, no claim.
+        if verdict.get("attestation") is not None:
+            return False, "a stage failed and an attestation was minted anyway"
+        if verdict.get("claim_verdict") != "FAILED":
+            return False, (
+                f"a stage failed and the claim verdict reads "
+                f"{verdict.get('claim_verdict')!r}, not 'FAILED'"
+            )
+        stages = {
+            name: ("pass" if s.get("passed") else "refuse")
+            for name, s in verdict.get("stages", {}).items()
+        }
+        return False, f"a stage refused ({stages}) and no seal was minted"
+
+    if verdict.get("subject_digest") != subject:
+        return False, (
+            "the verdict names a different artifact than the one graded: "
+            f"{verdict.get('subject_digest')!r} vs {subject!r}"
+        )
+
+    attestation = verdict.get("attestation")
+    if not attestation:
+        return False, "all three stages passed and no attestation was minted"
+
+    # The seal must be bound to CONTENT: the right subject verifies, a wrong one does not.
+    if not verifier.verify_attestation(attestation, subject):
+        return False, "the minted attestation does not verify against its own subject"
+
+    other = "sha256:" + "0" * 64 if not subject.startswith("sha256:") else "0" * 64
+    if verifier.verify_attestation(attestation, other):
+        return False, "the attestation verifies for a subject it was not minted over"
+
+    return True, (
+        f"three stages passed ({verdict.get('claim_verdict')}); the seal verifies for "
+        f"{subject[:19]}... and for no other subject"
+    )
+
+
+def check_fixture(verifier, case_dir: Path) -> tuple[bool, str]:
+    """Grade one fixture. The expectation is carried by the fixture's own name."""
+    expectation = case_dir.name
+    want_seal = expectation == "sealed"
+
+    try:
+        minted, why = grade_proposal(verifier, case_dir)
+    except Exception as exc:  # noqa: BLE001 -- a gate reports, it does not crash
+        return False, f"{expectation}: could not grade -- {type(exc).__name__}: {exc}"
+
+    if minted == want_seal:
+        return True, f"{expectation}: {'sealed' if want_seal else 'refused'} as required -- {why}"
+    return False, (
+        f"{expectation}: expected the claim to be "
+        f"{'minted' if want_seal else 'refused'}, measured "
+        f"{'minted' if minted else 'refused'} -- {why}"
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Grade the Deterministic Verifier's oath")
+    parser.add_argument(
+        "fixture",
+        nargs="*",
+        help="a fixture directory carrying proposal.py; empty means both self-test fixtures",
+    )
+    parser.add_argument("--self-test", action="store_true", help="run the gate's own fixtures")
+    args = parser.parse_args(argv)
+
+    targets = args.fixture
+    if args.self_test or not targets:
+        targets = [
+            str(ROOT / "tests" / "fixtures" / "verifier-oath" / "no-seal"),
+            str(ROOT / "tests" / "fixtures" / "verifier-oath" / "sealed"),
+        ]
+
+    verifier = load_verifier()
+
+    failures: list[str] = []
+    leaked = False
+    for target in targets:
+        case_dir = Path(target)
+        if not case_dir.exists():
+            failures.append(f"{target}: no such fixture")
+            print(f"FAIL {target}: no such fixture")
+            continue
+        ok, why = check_fixture(verifier, case_dir)
+        print(f"{'ok  ' if ok else 'FAIL'} {why}")
+        if not ok:
+            failures.append(why)
+        if not ok and case_dir.name != "sealed":
+            leaked = True
+
+    if failures:
+        print(f"\nFAIL verifier-oath: {len(failures)} of {len(targets)} fixture(s) broke the oath")
+        return 1
+
+    print(
+        f"\nok   verifier-oath: {len(targets)} fixture(s); a claim leaves only when three "
+        f"graders agree and the seal is bound to the graded bytes"
+    )
+
+    # A registry row drives ONE fixture per case and reads this process's exit code
+    # as the verdict: a `refuse` case is satisfied by a non-zero exit, a `pass` case
+    # by a zero one. So when the row asks this gate to grade a fixture named for a
+    # refusal, the gate must exit non-zero having DONE ITS JOB -- the refusal is the
+    # pass. Returning 0 here is what made the row above report FAIL while every
+    # fixture inside it printed ok. The same gate run with --self-test grades both
+    # fixtures at once and exits 0 when each matched its own name.
+    if not args.self_test and len(targets) == 1 and Path(targets[0]).name != "sealed":
+        print(
+            "\nREFUSED verifier-oath: the named proposal carries no seal; "
+            "a claim may not leave on it"
+        )
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

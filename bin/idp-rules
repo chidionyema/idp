@@ -49,6 +49,28 @@ def _expand(value: str) -> str:
     return os.path.expandvars(os.path.expanduser(str(value)))
 
 
+def _expand_one(value: str, case_env: dict | None = None) -> str:
+    """Expand one argument, resolving `$NAME` against the case's own `env` too.
+
+    WHY THIS EXISTS (measured 2026-09-13, CI run 34796984403). `_expand` resolves
+    against the real process environment, so a `case` that spells a placeholder in
+    its `args` and defines it a line above in `env` gets the literal string -- the
+    `env` dict is passed to the child, but the ARGUMENT LIST is built first. The
+    consequence is that any row needing a path it cannot name literally has to
+    name a real one instead, and a real one belongs to a machine: the `vmmount`
+    row cited `/private/tmp`, which exists on macOS and does not exist on the
+    Linux runner, so the row graded the fixture machine rather than the gate.
+
+    With this, a case can write `args: [$OUTSIDE]` and `env: {OUTSIDE: /}` and the
+    row carries no machine's own path in its text (LAW 46).
+    """
+    merged = {**os.environ, **(case_env or {})}
+    out = value
+    for key, val in merged.items():
+        out = out.replace(f"${{{key}}}", str(val)).replace(f"${key}", str(val))
+    return os.path.expanduser(out)
+
+
 def _argv(rule: dict, case: dict) -> list[str]:
     argv = []
     for part in rule["run"]:
@@ -57,7 +79,7 @@ def _argv(rule: dict, case: dict) -> list[str]:
         if part.startswith("bin/") or part.startswith("./"):
             part = os.path.join(ROOT, part)
         argv.append(part)
-    argv += [_expand(a) for a in case.get("args", [])]
+    argv += [_expand_one(a, case.get("env")) for a in case.get("args", [])]
     if case.get("glob"):
         hits = sorted(globmod.glob(os.path.join(ROOT, case["glob"])))
         # A glob over bin/ catches python and bash alike; a rule that grades one language says
@@ -141,6 +163,14 @@ def run_rule(rule: dict) -> int:
     if missing:
         # BLIND is not a pass. A gate that could not run has graded nothing (LAW 28).
         say("BLIND", label, f"{missing} is not available; this rule was not graded")
+        _why(rule)
+        return 1
+    cited = _cite(rule)
+    if cited:
+        # A case naming something the tree does not contain is not a failing test, it is a rule
+        # that cannot mean anything. Refuse it before it runs, so the answer is never a pytest
+        # traceback a later session might "fix" by relaxing the expectation.
+        say("FAIL", label, f"cites {len(cited)} thing(s) that do not exist: " + "; ".join(cited))
         _why(rule)
         return 1
     tail = ""
@@ -400,6 +430,43 @@ def cmd_render(args) -> int:
         fh.write(fresh)
     print(f"wrote {len(load())} rules into AGENTS.md")
     return 0
+
+
+def _cite(rule: dict) -> list[str]:
+    """The things a rule's cases name that must exist: pytest node ids and fixture files.
+
+    A row that names a case the tree does not contain is worse than a missing test, because it
+    LOOKS like proof. Three of them were written on 2026-09-13 in one sitting: a test class and a
+    script that exist nowhere, and a --replay flag handed to pytest, which is a case whose runner
+    cannot accept it. Every one of them would have reported FAIL forever, and the tempting repair
+    is to flip the expectation -- so the trap is closed at the source instead.
+    """
+    bad = []
+    for case in rule.get("cases", []) or []:
+        for arg in case.get("args", []) or []:
+            if arg.startswith("-"):
+                continue
+            if "::" in arg:
+                path, _, rest = arg.partition("::")
+                if not os.path.exists(os.path.join(ROOT, path)):
+                    bad.append(f"{arg} (no such file {path})")
+                    continue
+                # A node id is class::test, and both halves have to be in the file.
+                parts = [p for p in rest.split("::") if p]
+                body = open(os.path.join(ROOT, path), errors="replace").read()
+                for i, name in enumerate(parts):
+                    word = f"class {name}" if i == 0 and len(parts) > 1 else f"def {name}"
+                    if word not in body:
+                        bad.append(f"{arg} ({word} is not in {path})")
+            elif "/" in arg and not os.path.exists(os.path.join(ROOT, arg)):
+                # A bare path argument, not a flag's value: it must be on disk.
+                prev = case.get("args", [])
+                idx = prev.index(arg)
+                if idx and prev[idx - 1].startswith("-"):
+                    pass  # it is a flag's value, and the flag's own contract decides
+                else:
+                    bad.append(f"{arg} (no such path)")
+    return bad
 
 
 def cmd_cluster(args) -> int:
