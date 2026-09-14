@@ -39,7 +39,14 @@ metadata:
   namespace: commerce
 spec:
   interval: 10m
-  timeout: 15m
+  # 20m, not the chart-typical 15m: the migrate hook (~100-150s measured 2026-09-14) plus the
+  # 600s startupProbe window below (the widest single component's own budget) already sums to
+  # ~750s: 900s left only ~150s of margin for scheduling and image pull under the same
+  # CPU-saturated node (`bin/idp-kube describe node`: 90% cpu requested) that pushed the boot
+  # past its probe window in the first place. 1200s keeps the whole install action, including
+  # every hook and every one of the six Rails/Sidekiq Deployments, inside one Helm timeout
+  # rather than being cut off mid-boot by the outer action instead of the probe.
+  timeout: 20m
   chart:
     spec:
       chart: lago
@@ -188,10 +195,10 @@ spec:
         images:
           - name: getlago/api
             newName: ghcr.io/chidionyema/lago-api
-            newTag: main-9644-ee608ddbbadd0f2afa425b358d7836d10ef5dc73 # {"$imagepolicy": "flux-system:lago-api:tag"}
+            newTag: main-9650-ad137cb2ecedcc9c3dc58cd9dafb56dc282a6d00 # {"$imagepolicy": "flux-system:lago-api:tag"}
           - name: getlago/front
             newName: ghcr.io/chidionyema/lago-front
-            newTag: main-9644-ee608ddbbadd0f2afa425b358d7836d10ef5dc73 # {"$imagepolicy": "flux-system:lago-front:tag"}
+            newTag: main-9650-ad137cb2ecedcc9c3dc58cd9dafb56dc282a6d00 # {"$imagepolicy": "flux-system:lago-front:tag"}
           - name: getlago/lago-events-processor
             newName: docker.io/getlago/lago-events-processor
           - name: getlago/lago-gotenberg
@@ -320,6 +327,35 @@ spec:
           # state pays nothing. The startup check is `tcpSocket` rather than an HTTP path: these
           # are several different processes (api plus a Sidekiq worker per queue) and Sidekiq
           # serves no HTTP at all, so a path probe could never pass for most of them.
+          #
+          # 300 SECONDS STOPPED BEING ENOUGH. Measured 2026-09-14, HelmRelease/lago False for
+          # ~9 days: `bin/idp-kube get deployment lago-billing-worker -n commerce` read
+          # `0/1 ... AVAILABLE 0`, and events showed the same shape as above one probe higher --
+          # `Startup probe failed: dial tcp :3000: connect: connection refused` on every one of
+          # lago-api/-worker/-clock-worker/-billing-worker/-webhook-worker/-payment-worker,
+          # each killed at ~320-340s (just past the 300s window), forever. Not a hang: caught a
+          # fresh install and watched it boot --
+          #   `bin/idp-kube top pod -n commerce` mid-boot: lago-api 200m/200m cpu (at its limit),
+          #   lago-webhook-worker 100m/100m cpu (at its limit), memory still climbing -- both
+          #   pegged at their ceiling and still making progress, not deadlocked.
+          #   `bin/idp-kube describe node 10.0.148.221`: `Allocated resources: cpu 5275m (90%)
+          #   requests, 19560m (336%) limits` -- the node is already CPU-saturated and heavily
+          #   overcommitted on limits.
+          # Root cause: this chart's install brings up all six Rails/Sidekiq Deployments and the
+          # migrate hook at once (a thundering herd), each capped at 100-200m cpu; migrate alone
+          # (no contention) boots in ~100s, but six of them competing for slices of an
+          # already-90%-requested node pushes real boot past 300s, HelmRelease calls the
+          # Deployment `Failed`, `upgrade.remediation.strategy: uninstall` (this file, above)
+          # tears it down, and the next 10m reconcile repeats the same herd. `lago-api` alone
+          # reached Ready at 2m15s once the herd thinned; 600s gives the same boot roughly 2x
+          # the margin already observed necessary under this contention, inside the 900s
+          # `spec.timeout` on this HelmRelease (migrate's ~100s plus scheduling leaves headroom).
+          # What this does NOT fix: the node is the actual ceiling (90% cpu requested, 336%
+          # limits overcommitted) -- raising cpu requests/limits on these containers, or the
+          # node's own budget, is a capacity increase against a budget already at its cap
+          # (comment above: "a standing total already at 5.00 of a 5.0 budget"), which is a
+          # founder/engineering call, not a probe threshold. This buys the existing boot the
+          # time it has already been observed to need; it does not make the boot faster.
           - target: {kind: Deployment, name: lago-api}
             patch: |
               - op: add
@@ -328,7 +364,7 @@ spec:
                   tcpSocket: { port: 3000 }
                   periodSeconds: 10
                   timeoutSeconds: 3
-                  failureThreshold: 30
+                  failureThreshold: 60
           - target: {kind: Deployment, name: lago-worker}
             patch: |
               - op: add
@@ -337,7 +373,7 @@ spec:
                   tcpSocket: { port: 3000 }
                   periodSeconds: 10
                   timeoutSeconds: 3
-                  failureThreshold: 30
+                  failureThreshold: 60
           - target: {kind: Deployment, name: lago-clock-worker}
             patch: |
               - op: add
@@ -346,7 +382,7 @@ spec:
                   tcpSocket: { port: 3000 }
                   periodSeconds: 10
                   timeoutSeconds: 3
-                  failureThreshold: 30
+                  failureThreshold: 60
           - target: {kind: Deployment, name: lago-billing-worker}
             patch: |
               - op: add
@@ -355,7 +391,7 @@ spec:
                   tcpSocket: { port: 3000 }
                   periodSeconds: 10
                   timeoutSeconds: 3
-                  failureThreshold: 30
+                  failureThreshold: 60
           - target: {kind: Deployment, name: lago-webhook-worker}
             patch: |
               - op: add
@@ -364,7 +400,7 @@ spec:
                   tcpSocket: { port: 3000 }
                   periodSeconds: 10
                   timeoutSeconds: 3
-                  failureThreshold: 30
+                  failureThreshold: 60
           - target: {kind: Deployment, name: lago-payment-worker}
             patch: |
               - op: add
@@ -373,7 +409,7 @@ spec:
                   tcpSocket: { port: 3000 }
                   periodSeconds: 10
                   timeoutSeconds: 3
-                  failureThreshold: 30
+                  failureThreshold: 60
           - target: {kind: Service, name: lago-front-svc}
             patch: |
               - op: replace

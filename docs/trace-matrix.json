@@ -12,6 +12,117 @@
   "ticket": "crew#292"
  },
  {
+  "feature": "features/cognitive-stack/cp0_gpu_capacity_and_decision.feature",
+  "title": "GPU capacity is a named FOUNDER ACTION, and the graph-of-record decision is recorded",
+  "scenarios": [
+   "A GPU node pool request above the budget cap is refused without founder sign-off",
+   "The Memgraph-vs-estate.db decision is recorded, not assumed"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "141b68f7",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/cognitive-stack/cp1_ingestion_topics.feature",
+  "title": "Ingestion \u2014 GitHub, Slack, CI/CD and incident feeds land in event-bus streams",
+  "scenarios": [
+   "Four JetStream streams receive real events",
+   "The row reconciles and its healthcheck names a real object",
+   "The door shows live stream stats"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "141b68f7",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/cognitive-stack/cp2_memgraph_causal_edges.feature",
+  "title": "Storage \u2014 Memgraph holds every ingested fact as a node with a causal edge",
+  "scenarios": [
+   "A consumed topic message becomes a node with a causal edge",
+   "The graph is queryable from its own door",
+   "The namespace is fenced like every other workload"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "141b68f7",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/cognitive-stack/cp3_auto_healer.feature",
+  "title": "Auto-Healer \u2014 an uncorroborated edge is deleted, never left as a human claim",
+  "scenarios": [
+   "A manufactured false edge is deleted within one healer cycle",
+   "A corroborated edge survives",
+   "The healer's own workload is fenced and health-checked like every other"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "141b68f7",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/cognitive-stack/cp4_ray_trigger.feature",
+  "title": "Neural Compiler trigger \u2014 a major graph node change kicks off a Ray job",
+  "scenarios": [
+   "A core API schema node change submits a Ray job",
+   "A minor node change does not trigger training",
+   "The trigger's own workload is fenced and health-checked"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "141b68f7",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/cognitive-stack/cp5_lora_output.feature",
+  "title": "Neural Compiler output \u2014 Unsloth trains a named Rank-16 LoRA adapter from the graph delta",
+  "scenarios": [
+   "A triggered job produces a rank-16 adapter named after its trigger",
+   "The adapter is provider/model agnostic",
+   "The door shows the new artifact"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "141b68f7",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/cognitive-stack/cp6_kv_cache_pinned.feature",
+  "title": "Inference Engine setup \u2014 the enterprise-constraints prefix is computed once and pinned",
+  "scenarios": [
+   "Deploy computes and pins the constraints prefix exactly once",
+   "Prefix cache hit rate is observable from the door",
+   "The engine stays provider/model agnostic"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "141b68f7",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/cognitive-stack/cp7_uuid_pointer_and_lora_mount.feature",
+  "title": "Inference Engine execution \u2014 UUID cache inheritance and dynamic LoRA mount/unmount",
+  "scenarios": [
+   "A new agent inherits the pinned cache at zero input-token cost",
+   "The relevant LoRA mounts, executes one patch, and unmounts",
+   "The trace is visible from the door"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "141b68f7",
+  "pr": null,
+  "ticket": null
+ },
+ {
   "feature": "features/drills/chaos-drill.feature",
   "title": "The weekly pod-kill experiment is graded from outside the cluster",
   "scenarios": [
