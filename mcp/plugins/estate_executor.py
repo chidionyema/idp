@@ -292,7 +292,7 @@ def read_job(job_id: str, *, executor: Executor | None = None) -> dict:
 
 @hookimpl
 def register_mcp_tools(
-    server,
+    datasette, mcp
 ) -> None:  # pragma: no cover - exercised by the estate MCP server
     """Register the pair on the estate MCP server (ADR 0006: one interface, never a second).
 
@@ -301,7 +301,7 @@ def register_mcp_tools(
     what the executor would do with the payload -- accept or refuse, at which ceiling, from which
     directory -- without running anything.
     """
-    server.tool(
+    mcp.tool(
         name="execute_command",
         description=(
             "Run a command through the estate executor. Returns a job id in milliseconds; the turn "
@@ -330,7 +330,7 @@ def register_mcp_tools(
         },
     )(execute_command)
 
-    server.tool(
+    mcp.tool(
         name="simulate_command",
         description="Answer what execute_command would do with this payload, without running it.",
         parameters={
@@ -344,7 +344,7 @@ def register_mcp_tools(
         },
     )(simulate_command)
 
-    server.tool(
+    mcp.tool(
         name="read_job",
         description="Read one job's state, exit code and log. Never waits.",
         parameters={
@@ -354,7 +354,7 @@ def register_mcp_tools(
         },
     )(read_job)
 
-    server.tool(
+    mcp.tool(
         name="propose_patch",
         description=(
             "Propose a unified diff to an ephemeral ledger instead of writing it into the tree. "
@@ -375,7 +375,7 @@ def register_mcp_tools(
         },
     )(propose_patch)
 
-    server.tool(
+    mcp.tool(
         name="simulate_patch",
         description=(
             "Answer what propose_patch would do with this payload -- whether the diff parses, to "
@@ -392,7 +392,7 @@ def register_mcp_tools(
         },
     )(simulate_patch)
 
-    server.tool(
+    mcp.tool(
         name="verify",
         description=(
             "Run the three-stage gauntlet over a proposed ledger: structural (the bytes compile), "
@@ -407,7 +407,7 @@ def register_mcp_tools(
         },
     )(verify_patch)
 
-    server.tool(
+    mcp.tool(
         name="seal",
         description=(
             "Mint a Sigstore attestation over the exact bytes of a payload. The subject is the "
@@ -424,7 +424,7 @@ def register_mcp_tools(
         },
     )(seal_payload)
 
-    server.tool(
+    mcp.tool(
         name="admit",
         description=(
             "Admit a sealed payload into the estate. A payload carrying no attestation from the "
