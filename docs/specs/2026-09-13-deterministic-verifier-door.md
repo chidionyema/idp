@@ -1,20 +1,55 @@
 # Spec — the door onto the Deterministic Verifier
 
-**Why.** `sovereign/verifier.py` (667 lines) is built, green and green-proved. The daemon
-(`platform/executor/daemon.py`) exposes four verbs: `execute`, `simulate`, `read`, `health`.
+**STATUS: OPERATIONAL, measured 2026-09-14.** This spec was written 2026-09-13 as the plan for
+work that did not exist yet, and everything below was true of the tree that day. It is kept
+because it is the contract the door was built to, not because it describes a gap. Read the
+status block immediately after this paragraph before acting on any sentence in this file.
+
+**Why it was written.** `sovereign/verifier.py` was built, green and green-proved, and the daemon
+(`platform/executor/daemon.py`) exposed only four verbs: `execute`, `simulate`, `read`, `health`.
 The feature `features/gates/deterministic-verifier.feature` drives four more -- `propose_patch`,
-`verify`, `seal`, `admit` -- so Rules 2, 3 and 4 stop at `unknown verb` and the verifier is
+`verify`, `seal`, `admit` -- so Rules 2, 3 and 4 stopped at `unknown verb` and the verifier was
 unreachable from the agent's own door. Built, not operational.
 
-**Acceptance test (the ONLY definition of done).** Every scenario in the existing, already
-written and already failing suite:
+---
+
+## STATUS, measured 2026-09-14 (supersedes every baseline in the text below)
+
+Merged to `main` in `65588127` (PR #3376). Re-measured, not remembered:
+
+| claim in this spec | measured 2026-09-14 |
+|---|---|
+| `sovereign/verifier.py` is 667 lines | **745** (`git show origin/main:sovereign/verifier.py \| wc -l`) |
+| acceptance suite is 6 failed, 3 passed | **9 passed in 12.90s**, exit 0 |
+| the four verbs stop at `unknown verb` | **all four answer** -- see the replies below |
+| built, not operational | **operational** |
+
+The four verbs were then driven from the command line against the LIVE daemon (not the test
+handler), and these are the daemon's own replies:
+
+* `propose_patch` -> `ok: true`, `ledger_id: ldg-749c76da706c`, `suspended: true`, ledger under
+  `~/.estate/runs/ledgers/` -- outside the live worktree, as the boundary requires.
+* `verify` on a refutable patch -> `ok: false`, `claim_verdict: "FAILED"`, `attestation: null`,
+  ledger destroyed, and the stage's own real message:
+  ``greeting.py:2: guard `assert n >= 0` does not hold for all inputs; counterexample n = -1``
+* `verify` on a provable patch -> `ok: true`, all three stages passed, `claim_verdict: "VERIFIED"`,
+  `receipt: "VERIFIED"`, `staged_path` present, `admissible: true`.
+* `seal` -> `ok: true`, `scheme: sigstore-bundle`. The bundle is a REAL Sigstore bundle with a
+  Rekor transparency-log entry (logIndex 2825089704, kind hashedrekord, treeSize 2703185443) and
+  an RFC-3161 signed timestamp from rekor.sigstore.dev -- not a local stub.
+* `admit` with no attestation -> `ok: false`, `intercepted: true`, `violation_code: "UNATTESTED"`,
+  no `admitted_path`. With the seal -> `ok: true`, `validated: true`, `admitted_path` present and
+  its bytes equal to the sealed payload's.
+* `health` after -> `ledgers_pending: 0`.
+
+**Acceptance test (the ONLY definition of done).** Every scenario in the suite:
 
 ```
 cd sovereign && python3 -m pytest tests/bdd/test_deterministic_verifier.py -q -p no:cacheprovider
 ```
 
-must exit 0. Measured baseline 2026-09-13: **6 failed, 3 passed.** The three that pass are the
-module's own honesty assertions and must STAY passing. The six red are the acceptance test.
+must exit 0. Measured 2026-09-14: **9 passed in 12.90s.** The three honesty assertions that were
+green at baseline must STAY passing.
 
 **Boundary.** Do not edit `sovereign/tests/bdd/test_deterministic_verifier.py`. Do not edit
 `sovereign/verifier.py` unless a step genuinely cannot be satisfied by wiring, and say so in
