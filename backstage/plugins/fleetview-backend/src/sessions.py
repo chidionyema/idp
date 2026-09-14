@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 # The route CP1's done-command names.
 SESSIONS_ROUTE = "/api/fleetview/sessions"
@@ -67,23 +67,50 @@ def _ledger_prefix() -> str:
     return os.environ.get("ESTATE_STATE_PATH_PREFIX", DEFAULT_LEDGER_PREFIX)
 
 
-def is_session_row(doc: dict[str, Any]) -> bool:
-    """A catalogue document is a session row when it is a ledger whose file lives under the
-    prompt ledger.
+def _is_claude_code_row(doc: dict[str, Any]) -> bool:
+    """A ledger row whose path lives under the prompt ledger (claude-code's session store).
 
-    The filter is the PATH, not a tag. A tag can be renamed by a later generator (`estate-internal`
-    arrived on 2026-09-07, after these rows existed) and the rows would silently stop being
-    sessions; the path is the one field this dataset has always carried.
+    The trailing slash on either side is normalized before comparison: the catalogue generator
+    writes paths without a slash and the env var defaults to WITH one, so a naive `startswith`
+    would silently hide every row.
+    """
+    raw = ((doc.get("metadata") or {}).get("annotations") or {}).get("estate/path")
+    if not isinstance(raw, str):
+        return False
+    prefix = _ledger_prefix().rstrip("/")
+    return raw.rstrip("/").startswith(prefix)
+
+
+# A runtime registers its session-row filter here. The dispatcher accepts a catalogue row when
+# ANY runtime's filter accepts it, so the fleet page is not pinned to one runtime's data and
+# adding a runtime is one registry entry, not a rewrite of the filter. The first runtime in the
+# registry wins when more than one accepts a row -- a row that genuinely belongs to two runtimes
+# is a generator bug we want surfaced, not papered over.
+_RUNTIME_REGISTRY: list[tuple[str, Callable[[dict[str, Any]], bool]]] = [
+    ("claude-code", _is_claude_code_row),
+]
+
+
+def register_runtime(name: str, row_filter: Callable[[dict[str, Any]], bool]) -> None:
+    """Add a new runtime's session-row filter. Idempotent on (name, filter) so an adapter can
+    register itself on every import without duplicating entries.
+    """
+    if not any(n == name and f is row_filter for n, f in _RUNTIME_REGISTRY):
+        _RUNTIME_REGISTRY.append((name, row_filter))
+
+
+def is_session_row(doc: dict[str, Any]) -> bool:
+    """A catalogue document is a session row when at least one runtime's filter accepts it.
+
+    The filter is a dispatcher, not a single hardcoded rule, so the page accepts sessions from
+    every runtime the estate runs. The common shape (Resource / spec.type=ledger) is checked
+    once here; the per-runtime detail lives in each filter.
     """
     if doc.get("kind") != "Resource":
         return False
     if (doc.get("spec") or {}).get("type") != "ledger":
         return False
-    raw = ((doc.get("metadata") or {}).get("annotations") or {}).get("estate/path")
-    if not isinstance(raw, str):
-        return False
-    prefix = _ledger_prefix().replace(HOME_TOKEN, HOME_TOKEN)
-    return raw.replace(HOME_TOKEN, HOME_TOKEN).startswith(prefix)
+    return any(fn(doc) for _name, fn in _RUNTIME_REGISTRY)
 
 
 def _project_from_slug(slug: str) -> str | None:
@@ -209,6 +236,105 @@ def session_from_row(
     }
 
 
+def list_claude_code_sessions(prefix: str | None = None) -> list[dict[str, Any]]:
+    """Every unique session across all prompt-ledger JSONL files, newest first.
+
+    A single JSONL file holds many sessions (each row's `session` field names one); this
+    function groups rows by session id and returns one record per unique session, ordered by
+    newest timestamp descending. The catalogue only carries rollup rows that point at the
+    directory, so without this enumerator the page shows the two directory entries and nothing
+    else.
+
+    A missing or unreadable directory is the empty list -- the page is honest about "no data
+    here" rather than returning a placeholder.
+    """
+    if prefix is None:
+        prefix = _ledger_prefix()
+    # The prefix may be HOME_TOKEN-relative (when the catalogue stores it that way) OR may use
+    # a literal `~` (the default). Both must resolve to the same on-disk directory, so we
+    # substitute HOME_TOKEN first and then expanduser for the literal `~`.
+    expanded = os.path.expanduser(prefix.replace(HOME_TOKEN, str(Path.home())))
+    base = Path(expanded)
+    if not base.is_dir():
+        return []
+    sessions_by_id: dict[str, list[dict[str, Any]]] = {}
+    file_for_session: dict[str, Path] = {}
+    for f in base.glob("*.jsonl"):
+        try:
+            with f.open() as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except ValueError:
+                        continue
+                    if not isinstance(row, dict):
+                        continue
+                    sid = row.get("session")
+                    if not isinstance(sid, str) or not sid:
+                        continue
+                    if sid not in sessions_by_id:
+                        sessions_by_id[sid] = []
+                        file_for_session[sid] = f
+                    sessions_by_id[sid].append(row)
+        except OSError:
+            continue
+    out = [
+        _session_record_from_rows(sid, rows, file_for_session[sid])
+        for sid, rows in sessions_by_id.items()
+    ]
+    out.sort(
+        key=lambda r: (r.get("updated_at") or "", r.get("session_id") or ""),
+        reverse=True,
+    )
+    return out
+
+
+def _session_record_from_rows(
+    sid: str, rows: list[dict[str, Any]], file: Path
+) -> dict[str, Any]:
+    """Build a session record from the rows of one JSONL file that share a session id.
+
+    `task` is the newest user prompt (a person speaking, not an assistant reply). `state` is
+    derived from the file's mtime: a write in the last five minutes is the one real signal the
+    file carries that something is alive; older than that we say "unknown" rather than guess.
+    """
+    import time as _time
+
+    newest_user: tuple[str, str] | None = None
+    newest_ts: str | None = None
+    for row in rows:
+        ts = row.get("ts")
+        if isinstance(ts, str) and ts:
+            if newest_ts is None or ts > newest_ts:
+                newest_ts = ts
+        if row.get("source") == "user":
+            text = row.get("text")
+            if isinstance(text, str) and text.strip():
+                if newest_user is None or str(ts) > newest_user[0]:
+                    newest_user = (str(ts), text.strip())
+    try:
+        age_s = _time.time() - file.stat().st_mtime
+        state = "running" if age_s < 300 else "unknown"
+    except OSError:
+        state = "unknown"
+    return {
+        "session_id": sid,
+        "runtime": "claude-code",
+        "task": (newest_user[1] if newest_user else file.stem)[:200],
+        "state": state,
+        "repo": _project_from_slug(file.stem) or file.parent.name,
+        "step": None,
+        "updated_at": newest_ts,
+        "trace_url": None,
+        "spend_usd": None,
+        "pull_requests": [],
+        "ticket": None,
+    }
+
+
 def list_sessions(catalog: Path | None = None) -> list[dict[str, Any]]:
     """Every session row in the catalogue, as session records.
 
@@ -315,6 +441,14 @@ def list_all_sessions(catalog: Path | None = None) -> list[dict[str, Any]]:
     estate names everywhere else, and a bare `except: pass` here would be exactly that.
     """
     sessions = list_sessions(catalog)
+    cat_ids = {s.get("session_id") for s in sessions if s.get("session_id")}
+    try:
+        for rec in list_claude_code_sessions():
+            if rec["session_id"] not in cat_ids:
+                sessions.append(rec)
+                cat_ids.add(rec["session_id"])
+    except Exception:  # noqa: BLE001, S110 - an unreadable ledger dir contributes no rows
+        pass
     unreachable: list[str] = []
     for name, fn in (("sovereign", list_sovereign_sessions),):
         try:
