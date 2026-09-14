@@ -15,6 +15,7 @@ resources:
 - dagster.yaml
 - demo-sandbox.yaml
 - edge.yaml
+- epistemic-fabric.yaml
 - estate-db.yaml
 - event-bus.yaml
 - external-secrets.yaml

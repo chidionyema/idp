@@ -1,0 +1,279 @@
+# idp#3448 CP1: the four ingestion connectors, one image
+# (platform/messaging/epistemic-ingest.Dockerfile), four Deployments -- one per
+# source, selected by the one argv element platform/messaging/cmd/epistemic-ingest
+# reads (github|slack|cicd|incidents), the same "one binary, mode picks the
+# path" shape platform/messaging/cmd/demo already uses (`demo basic|advanced`).
+#
+# Not founder-facing (platform/scheduling/require-availability.yaml scopes on the
+# `availability.idp/tier: founder-facing` namespace label, which epistemic-fabric's
+# namespace.yaml does not carry): one replica each is the right size for an
+# internal ingestion tap, not a public-facing surface with an uptime standard.
+#
+# Every credential is a file mount, never a pod env value (Kyverno
+# secrets-not-from-env-vars; tests/fixtures/kyverno-secrets/*). NATS_URL is a
+# plain, non-secret value naming the in-cluster service, the same line
+# platform/router-events/publisher.yaml already carries.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: epistemic-ingest-github
+  namespace: epistemic-fabric
+  labels: { app.kubernetes.io/name: epistemic-ingest-github, estate.io/layer: epistemic-fabric }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: epistemic-ingest-github }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: epistemic-ingest-github }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: github
+          image: ghcr.io/chidionyema/epistemic-ingest:main
+          args: ["github"]
+          readinessProbe:
+            httpGet: { path: /healthz, port: health }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: health }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 6
+          env:
+            - { name: NATS_URL, value: "nats.event-bus.svc:4222" }
+            - { name: PORT, value: "8080" }
+            - { name: HEALTH_PORT, value: "8081" }
+            - { name: GITHUB_WEBHOOK_SECRET_FILE, value: /var/run/secrets/epistemic-fabric-github/webhook_secret }
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: health, containerPort: 8081 }
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: github-secret, mountPath: /var/run/secrets/epistemic-fabric-github, readOnly: true }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - name: github-secret
+          secret: { secretName: epistemic-fabric-github, defaultMode: 256 }
+---
+# ClusterIP only: no public HTTPRoute in this checkpoint. Registering a real
+# GitHub App webhook URL against this door is a founder decision
+# (platform/ns-fences/allowances.yaml's own note on epistemic-fabric), not a
+# manifest a session writes for him. CP1's own acceptance path reaches this pod
+# by port-forward, same as the NATS door already does.
+apiVersion: v1
+kind: Service
+metadata:
+  name: epistemic-ingest-github
+  namespace: epistemic-fabric
+  labels:
+    app.kubernetes.io/name: epistemic-ingest-github
+    backstage.io/kubernetes-id: epistemic-fabric-ingest
+spec:
+  selector: { app.kubernetes.io/name: epistemic-ingest-github }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: epistemic-ingest-slack
+  namespace: epistemic-fabric
+  labels: { app.kubernetes.io/name: epistemic-ingest-slack, estate.io/layer: epistemic-fabric }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: epistemic-ingest-slack }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: epistemic-ingest-slack }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: slack
+          image: ghcr.io/chidionyema/epistemic-ingest:main
+          args: ["slack"]
+          readinessProbe:
+            httpGet: { path: /healthz, port: health }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: health }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 6
+          ports:
+            - { name: health, containerPort: 8081 }
+          env:
+            - { name: NATS_URL, value: "nats.event-bus.svc:4222" }
+            - { name: HEALTH_PORT, value: "8081" }
+            - { name: SLACK_BOT_TOKEN_FILE, value: /var/run/secrets/epistemic-fabric-slack/bot_token }
+            - { name: SLACK_CHANNEL_ID, valueFrom: { configMapKeyRef: { name: epistemic-fabric-config, key: SLACK_CHANNEL_ID } } }
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: slack-secret, mountPath: /var/run/secrets/epistemic-fabric-slack, readOnly: true }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - name: slack-secret
+          secret: { secretName: epistemic-fabric-slack, defaultMode: 256 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: epistemic-ingest-cicd
+  namespace: epistemic-fabric
+  labels: { app.kubernetes.io/name: epistemic-ingest-cicd, estate.io/layer: epistemic-fabric }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: epistemic-ingest-cicd }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: epistemic-ingest-cicd }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: cicd
+          image: ghcr.io/chidionyema/epistemic-ingest:main
+          args: ["cicd"]
+          readinessProbe:
+            httpGet: { path: /healthz, port: health }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: health }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 6
+          ports:
+            - { name: health, containerPort: 8081 }
+          env:
+            - { name: NATS_URL, value: "nats.event-bus.svc:4222" }
+            - { name: HEALTH_PORT, value: "8081" }
+            - { name: GITHUB_TOKEN_FILE, value: /var/run/secrets/epistemic-fabric-github-api/token }
+            - { name: GITHUB_REPO, valueFrom: { configMapKeyRef: { name: epistemic-fabric-config, key: GITHUB_REPO } } }
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: github-api-secret, mountPath: /var/run/secrets/epistemic-fabric-github-api, readOnly: true }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - name: github-api-secret
+          secret: { secretName: epistemic-fabric-github-api, defaultMode: 256 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: epistemic-ingest-incidents
+  namespace: epistemic-fabric
+  labels: { app.kubernetes.io/name: epistemic-ingest-incidents, estate.io/layer: epistemic-fabric }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: epistemic-ingest-incidents }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: epistemic-ingest-incidents }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: incidents
+          image: ghcr.io/chidionyema/epistemic-ingest:main
+          args: ["incidents"]
+          readinessProbe:
+            httpGet: { path: /healthz, port: health }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: health }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 6
+          ports:
+            - { name: health, containerPort: 8081 }
+          env:
+            - { name: NATS_URL, value: "nats.event-bus.svc:4222" }
+            - { name: HEALTH_PORT, value: "8081" }
+            - { name: GITHUB_TOKEN_FILE, value: /var/run/secrets/epistemic-fabric-github-api/token }
+            - { name: GITHUB_REPO, valueFrom: { configMapKeyRef: { name: epistemic-fabric-config, key: GITHUB_REPO } } }
+            - { name: INCIDENT_LABEL, valueFrom: { configMapKeyRef: { name: epistemic-fabric-config, key: INCIDENT_LABEL } } }
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: github-api-secret, mountPath: /var/run/secrets/epistemic-fabric-github-api, readOnly: true }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - name: github-api-secret
+          secret: { secretName: epistemic-fabric-github-api, defaultMode: 256 }
+---
+# GITHUB_REPO/SLACK_CHANNEL_ID/INCIDENT_LABEL are not secret -- a repo slug and
+# a channel id are addresses, not credentials -- so a ConfigMap, not a vault
+# entry. The founder still has to choose them (which repo, which channel);
+# left unset here rather than guessed, so a wrong value is never applied
+# without a person naming it (postBuild.substituteFrom in
+# clusters/oke/platform.yaml's epistemic-fabric row fills GITHUB_REPO from
+# estate-config once he has).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: epistemic-fabric-config
+  namespace: epistemic-fabric
+data:
+  GITHUB_REPO: "chidionyema/idp"
+  SLACK_CHANNEL_ID: ""
+  INCIDENT_LABEL: "incident"
