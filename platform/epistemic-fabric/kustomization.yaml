@@ -1,0 +1,19 @@
+# idp#3448 CP1 (Layer 1: Epistemic Fabric, ingestion). Four connectors, one image
+# (platform/messaging/epistemic-ingest.Dockerfile, discovered by bin/dockerfiles under the
+# name `epistemic-ingest`), publishing onto the estate's existing NATS event-bus -- not a
+# new broker (founder, 2026-09-14: "dont use kakfa we have etsrean").
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: epistemic-fabric
+resources:
+  - namespace.yaml
+  - external-secret.yaml
+  - ingest.yaml
+images:
+  # No image has been built yet -- this PR is what makes build-multiarch discover
+  # `epistemic-ingest` for the first time (bin/dockerfiles). newTag is git's own null object id,
+  # not a real commit; the one ImageUpdateAutomation (platform/image-automation/backstage.yaml)
+  # overwrites this line with the real main-<run>-<sha> the first time CI pushes the image,
+  # the same way it already does for router-events and every other row here.
+  - name: ghcr.io/chidionyema/epistemic-ingest
+    newTag: main-9684-d67d13935993278da1dfb4efd27de615ec00db20 # {"$imagepolicy": "flux-system:epistemic-ingest:tag"}

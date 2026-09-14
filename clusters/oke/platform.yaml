@@ -402,6 +402,42 @@ spec:
       - kind: ConfigMap
         name: estate-config
 ---
+# idp#3448 CP1 (Layer 1: Epistemic Fabric, ingestion). Four connectors publishing onto the
+# existing NATS event-bus -- not a new broker (founder, 2026-09-14: "dont use kakfa we have
+# etsrean"; docs/specs/issue-3448.md). Not founder-facing (platform/scheduling/
+# require-availability.yaml scopes on the founder-facing tier label, which this namespace does
+# not carry), so no dependency on edge/scheduling beyond the vault and the bus itself.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: epistemic-fabric
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/epistemic-fabric
+  prune: true
+  postBuild:
+    substituteFrom:
+      # The estate-agents App's id and installation id for the GithubAccessToken generator that
+      # mints the cicd/incidents token; rendered into flux-system by
+      # platform/alerts-github/github-app.yaml from the vault -- same road as platform/mcp.
+      - kind: Secret
+        name: github-app
+  dependsOn:
+    - name: secret-store
+    - name: event-bus
+    # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
+    - name: alerts-github
+  timeout: 5m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: epistemic-ingest-github
+      namespace: epistemic-fabric
+---
 # The Architect row (crew#516 CP4): the hermes-agent gateway (Telegram + a2a) on the cluster,
 # the Mac's ai.architect.gateway leaving the laptop. After secret-store (the vault entry
 # hermes-agent-env); no edge dependency, Telegram polls out and a2a stays in-cluster.
