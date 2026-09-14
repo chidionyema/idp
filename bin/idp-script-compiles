@@ -12,8 +12,15 @@ wrong variable name in a branch nobody exercised, a command that does not exist,
 that resolves to nothing. That is precisely the class of defect that reaches a session as a
 load failure, and it is invisible to a parser and a linter alike.
 
-What this grades: every executable added under bin/ must answer `--self-test`, `--self-check`
-or `--dry-run` with exit 0 within a bounded time. The script compiles itself by being run.
+What this grades: every executable under bin/ must RUN and exit 0 within a bounded time --
+through its own `--self-test`, `--self-check` or `--dry-run` when it declares one, and through
+its own `--help` when it does not. The script compiles itself by being run.
+
+That second case is the weaker proof and is printed as the weaker proof (`LOADS:`), never as
+the stronger one. It proves the script loads, resolves its imports and reaches its argument
+parser; it does not prove its main path. It exists because most scripts in bin/ predate this
+rule: refusing all of them for lacking a flag they were never meant to carry is a guard
+refusing correct work (LAW 38), measured 2026-09-13 when fourteen such scripts blocked a push.
 
     bin/idp-script-compiles                 grade the files in the working tree
     bin/idp-script-compiles --files a b     grade named files only (pre-commit passes these)
@@ -139,10 +146,35 @@ def compiles(path_str: str) -> bool:
     flag = declared_probe(path)
 
     if flag is None:
-        print(
-            f"NO PROBE: {path_str} declares no {' or '.join(PROBE_FLAGS)}, "
-            "so nothing can prove it runs"
-        )
+        # No probe flag. This is not a defect and must not be reported as one: most scripts
+        # in bin/ predate this rule and were never meant to carry a self-test, and refusing
+        # all fourteen of them blocked a push for correct work (LAW 38). But the law's whole
+        # point is that a parser and a linter both pass a script that cannot load, so the
+        # script is still EXECUTED -- run its own --help -- and refused only when running it
+        # fails. That proves it loads, resolves its imports and reaches its argument parser.
+        # It does not prove its main path, and the verdict says exactly that, so the weaker
+        # proof is never read as the stronger one.
+        try:
+            proc = subprocess.run(
+                [str(path.resolve()), "--help"],
+                capture_output=True,
+                text=True,
+                timeout=PROBE_TIMEOUT_S,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            print(f"TIMEOUT: {path_str} --help exceeded {PROBE_TIMEOUT_S}s")
+            return False
+        except OSError as exc:
+            print(f"DOES NOT RUN: {path_str} could not execute: {exc}")
+            return False
+        if proc.returncode == 0:
+            print(
+                f"LOADS: {path_str} runs and reaches its usage (no probe flag to go further)"
+            )
+            return True
+        tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-10:])
+        print(f"DOES NOT RUN: {path_str} --help exited {proc.returncode}\n{tail}")
         return False
 
     try:
@@ -192,6 +224,15 @@ def main(argv: list[str]) -> int:
         elif first in ("--help", "-h"):
             print(usage())
             return 0
+        elif not first.startswith("-"):
+            # Bare paths are the calling convention idp-rules uses: a rule's case argv appends
+            # the changed file positionally, with no flag in front of it. Refusing that shape
+            # refused correct work -- measured 2026-09-13, when `idp-rules session` handed this
+            # tool fourteen `bin/<script>` paths and every one of them came back as
+            # `unknown argument: bin/<script>`, blocking a push for files that run fine.
+            # A path is a file to grade, exactly as if it had been passed to --files.
+            mode = "files"
+            files = [a for a in argv if not a.startswith("-")]
         else:
             print(f"unknown argument: {first}", file=sys.stderr)
             return 2
