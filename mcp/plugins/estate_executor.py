@@ -36,8 +36,6 @@ Pure by construction: no subprocess and no shell in the grading path. The execut
 (`runner=`), so every edge case is proved offline in `tests/test_executor_mcp.py` with no daemon.
 """
 
-from __future__ import annotations
-
 import json
 import os
 import re
