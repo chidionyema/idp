@@ -168,9 +168,6 @@ spec:
           kubernetes.io/metadata.name: crossplane-system
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: cyrus
-    - namespaceSelector:
-        matchLabels:
           kubernetes.io/metadata.name: dagster
     - namespaceSelector:
         matchLabels:

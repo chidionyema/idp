@@ -220,14 +220,14 @@ spec:
           readinessProbe:
             exec:
               command: ["python", "-c",
-                        "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+                        "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/v1/health', timeout=3)"]
             initialDelaySeconds: 10
             periodSeconds: 15
             failureThreshold: 20
           livenessProbe:
             exec:
               command: ["python", "-c",
-                        "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+                        "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/v1/health', timeout=3)"]
             initialDelaySeconds: 30
             periodSeconds: 30
           resources:

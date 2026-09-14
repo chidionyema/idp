@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# exec-daemon -- the entry point launchd execs directly, so ProgramArguments[0] is an absolute
+# path under ${IDP} rather than a bare interpreter name.
+#
+# WHY THIS FILE EXISTS. Measured 2026-09-13: `python3 bin/plist-gate` refused a plist whose
+# ProgramArguments[0] was `${PYTHON_BIN}`, because the gate grades the TEMPLATE and a variable
+# there is not an absolute path. Every other job in launchd/ points [0] at a script under
+# ${IDP} -- headlamp, scheduler, kubeapi all do it this way. So this is not a workaround for the
+# gate; it is the shape the estate already uses, and the gate is what surfaced the difference.
+#
+# launchd does not search PATH, so the interpreter is resolved HERE, once, at run time.
+set -euo pipefail
+# Standard row 2: a trap. This script is `exec`ed by launchd at login, so it never returns --
+# but a trap declared before the exec means a signal arriving during the interpreter lookup
+# above takes the standard exit path instead of leaving a half-started job behind.
+trap 'exit 143' TERM INT
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHON_BIN="$(command -v python3 || true)"
+
+# A script is not built until it has been executed once (LAW 45). --check proves the two things a
+# launchd job dies on, both measured on this machine: no interpreter on PATH, and a daemon file
+# that cannot be parsed. Catching them here means the job never starts into an empty log.
+if [ "${1:-}" = "--check" ]; then
+	[ -n "$PYTHON_BIN" ] || {
+		echo "FAIL no python3 on PATH; launchd would exit 78"
+		exit 1
+	}
+	[ -f "$IDP/platform/executor/daemon.py" ] || {
+		echo "FAIL the daemon is not at $IDP/platform/executor/daemon.py"
+		exit 1
+	}
+	"$PYTHON_BIN" -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$IDP/platform/executor/daemon.py" ||
+		{
+			echo "FAIL the daemon does not parse"
+			exit 1
+		}
+	echo "ok   exec-daemon --check ($PYTHON_BIN -> $IDP/platform/executor/daemon.py)"
+	exit 0
+fi
+[ -n "$PYTHON_BIN" ] || {
+	echo "no python3 on PATH; the executor cannot start" >&2
+	exit 78
+}
+exec "$PYTHON_BIN" "$IDP/platform/executor/daemon.py" "$@"

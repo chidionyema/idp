@@ -37,21 +37,58 @@ N = 3  # the founder's number: three identical findings prove one cause
 # because a set of CVEs prints in whatever order the scanner walked the package list.
 _CVE = re.compile(r"CVE-\d{4}-\d{4,}")
 
+# WHAT MAKES A LINE A FINDING. This is the guard against the 2026-09-13 misfire: a result is only
+# a finding if it carries one of these signals -- a failure, a vulnerability, a refusal, an error.
+# `echo hello`, `ls`, `pwd`, `git status` and a green test run match none of them and so produce
+# NO fingerprint, which is what stops a repeated no-op from proving anything.
+#
+# Deliberately broad on the failure words and narrow on everything else: a false NEGATIVE only
+# means the breaker stays quiet, which is the safe direction. A false POSITIVE locks a session.
+_SIGNAL = re.compile(
+    r"(?i)(?:"
+    r"CVE-\d{4}-\d{4,}"
+    r"|\bFAIL(?:ED|URE)?\b"
+    r"|\bERROR\b|\b\w*Exception\b|\b\w*Error\b|\bTraceback\b"
+    r"|\bnot ok\b|\bpanic:\b|\bfatal:\b|\bdenied\b|\brefused\b"
+    r"|\bcrash(?:ed|loopbackoff)?\b|\bvulnerab\w*\b|\bseverity\b|\bCRITICAL\b"
+    r"|\bexit(?:ed)? (?:code )?[1-9]\d*\b"
+    # A MERGE CONFLICT IS A FINDING, and nothing above matched it: `a git conflict on bin/x`
+    # carries no failing word, so the fingerprint returned None and the breaker stayed quiet on
+    # the one cause this whole engine exists to group. Found by the test, 2026-09-13.
+    r"|\bconflict(?:s|ed|ing)?\b"
+    r")"
+)
 
-def fingerprint(text: str) -> str:
-    """The stable identity of a finding, from whatever a tool printed.
+
+def fingerprint(text: str) -> str | None:
+    """The stable identity of a finding, from whatever a tool printed, or None if there is none.
 
     A CVE list is the measured case and the first thing tried, because it is what the six
     failing pull requests had in common. Order-free on purpose: the same three CVEs in a
     different order are one finding, not three.
 
-    Falls back to a digest of the output with the noisy parts removed (line numbers, hex, paths),
-    so a finding with no CVE still gets a fingerprint worth comparing -- a coarse one, and the
-    tests say so rather than pretending it is exact.
+    THE MISFIRE OF 2026-09-13. This function used to fall back to a digest of ANY text, so
+    `echo hello` had a fingerprint, three repeated commands were "the same finding on three
+    targets", and the breaker locked bash and read -- the two tools a session needs to
+    investigate or fix anything. It locked a working session for hours and could not be cleared
+    from inside, because every clearing command was itself a bash call. R38: a guard that
+    refuses correct work is an outage.
+
+    A FINDING IS SOMETHING A DIAGNOSTIC PRODUCED. Nothing below is a finding, however many times
+    it repeats, and returning None is what makes that true:
+
+        a command that succeeded           (no error, no failing test, no gate verdict)
+        a shell builtin's echo of its input
+        a blank or near-blank result
+
+    Anything else keeps a coarse digest with the noisy parts removed (addresses, line:col,
+    timestamps), sorted, so the same failure on two machines still compares equal. The tests say
+    it is coarse rather than pretending it is exact.
     """
     cves = sorted(set(_CVE.findall(text or "")))
     if cves:
         return "cve:" + ",".join(cves)
+
     cleaned = []
     for line in (text or "").splitlines():
         line = re.sub(r"0x[0-9a-fA-F]+", "", line)  # addresses
@@ -60,7 +97,16 @@ def fingerprint(text: str) -> str:
         line = re.sub(r"\s+", " ", line).strip()
         if line:
             cleaned.append(line)
+    if not cleaned:
+        return None
+
     body = "\n".join(sorted(set(cleaned)))
+
+    # A SUCCESSFUL COMMAND IS NOT A FINDING. Without this, `echo alive` and `ls` carry a digest,
+    # and repeating one three times locks the session -- which is exactly what happened.
+    if not _SIGNAL.search(body):
+        return None
+
     return "sha:" + hashlib.sha256(body.encode()).hexdigest()[:16]
 
 
@@ -117,8 +163,21 @@ class Breaker:
 
         Idempotent per (finding, target): observing the same target twice is not a second
         finding, or three re-reads of one PR would trip the breaker.
+
+        A RESULT WITH NO FINDING IS NEVER OBSERVED AND NEVER LOCKS. fingerprint() answers None for
+        output that carries no finding -- a successful command, a shell builtin's echo of its
+        input, an empty result -- and that None must stop here. It did not, until 2026-09-13: the
+        None was used as a dict key like any other, so three unrelated no-op commands accumulated
+        under the key None and tripped N=3, locking bash and read for hours -- the exact misfire
+        fingerprint() was fixed for, still live one layer down. None is an absence, not an
+        identity: two commands that produced no finding are not two targets carrying one cause.
         """
         fp = finding if finding.startswith(("cve:", "sha:")) else fingerprint(finding)
+        if fp is None:
+            # Nothing to group. Report the absence honestly and record nothing, so a repeated
+            # no-op can never reach n and can never lock the primitive.
+            return {"fingerprint": None, "targets": [], "locked": False, "count": 0,
+                    "reason": "no finding: this output is not proof of anything, so it cannot lock"}
         targets = self._seen.setdefault(fp, [])
         if target not in targets:
             targets.append(target)
@@ -136,6 +195,11 @@ class Breaker:
     def check(self, finding: str, target: str) -> dict:
         """May this action proceed? The primitive is dead once its finding is proved."""
         fp = finding if finding.startswith(("cve:", "sha:")) else fingerprint(finding)
+        if fp is None:
+            # A result carrying no finding has no pattern to be proved, so it is never locked.
+            # Without this the None reached lever_for() and raised AttributeError, turning a
+            # diagnostic question into a crash.
+            return {"locked": False, "fingerprint": None}
         if fp not in self._locked:
             return {"locked": False, "fingerprint": fp}
         targets = self._seen.get(fp, [])
@@ -181,6 +245,12 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--finding", help="the tool's output, or a cve:/sha: fingerprint")
     ap.add_argument(
+        "--fingerprint",
+        action="store_true",
+        help="print the fingerprint of stdin, or null if it carries no finding (the extension "
+        "asks this, so the rule lives in one place instead of two)",
+    )
+    ap.add_argument(
         "--target", help="what produced it (a PR number, a host, a resource)"
     )
     ap.add_argument(
@@ -193,15 +263,27 @@ def main(argv: list[str] | None = None) -> int:
         "target is refused. This is what the fixtures grade, so the row is proved both ways",
     )
     args = ap.parse_args(sys.argv[1:] if argv is None else argv)
+    if args.fingerprint:
+        # The extension's question: does this output carry a finding, and if so which one?
+        # "null" means no -- and a result with no finding can never lock anything.
+        print(json.dumps(fingerprint(sys.stdin.read())))
+        return 0
+
     b = Breaker(store=args.store) if args.store else Breaker()
     if args.replay:
         findings = json.loads(Path(args.replay).read_text()).get("findings") or []
         locked = 0
+        observed = 0
         for f in findings:
             v = b.observe(f["log"], f["target"])
+            # A target whose output carries no finding is not observed and cannot lock, so it is
+            # not counted as one. The two numbers below are the whole proof: four no-op targets
+            # give `0 observed; 0 locked` and three same-cause targets give `3 observed; 1 locked`.
+            if v["fingerprint"] is not None:
+                observed += 1
             if v["locked"]:
                 locked += 1
-        print(f"{len(findings)} finding(s) observed; {locked} locked")
+        print(f"{observed} finding(s) observed; {locked} locked")
         if locked:
             print(json.dumps(b.check(findings[-1]["log"], "next"), indent=2))
         return 1 if locked else 0

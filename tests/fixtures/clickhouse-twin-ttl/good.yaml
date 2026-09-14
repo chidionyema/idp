@@ -1,0 +1,13 @@
+# The passing fixture: every base-name system table carries its `_0` twin, and no
+# twin outlives the base it belongs to.
+clickhouse:
+  settings:
+    metric_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    metric_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    asynchronous_metric_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    asynchronous_metric_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    trace_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    trace_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    # A table TTL'd inline by the operator and never configured here, so it has no twin
+    # to miss. The gate grades what this file asserts, not what ClickHouse ships.
+    text_log/ttl: "event_date + INTERVAL 1 DAY DELETE"

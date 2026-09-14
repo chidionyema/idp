@@ -19,17 +19,36 @@ Fixture: `tests/fixtures/definitions/relative-import.py`
 Exit code `1` (the registry expects non-zero). ✓
 
 ```
-/usr/local/opt/python@3.14/bin/python3.14: No module named dagster
+[32m<timestamp>[0m - dagster - [34mWARNING[0m - No dagster instance configuration file (dagster.yaml) found at <tmpdir>. Defaulting to loading and storing all metadata with <tmpdir>. If this is the desired behavior, create an empty dagster.yaml file in <tmpdir>.
+[32m<timestamp>[0m - dagster - [34mERROR[0m - [31mValidation failed for code location relative-import.py:
+dagster._core.errors.DagsterImportError: Encountered ImportError: `attempted relative import with no known parent package` while importing module relative-import from file <checkout>/tests/fixtures/definitions/relative-import.py. Consider using the module-based options `-m` for CLI-based targets or the `python_module` workspace target.
+Stack Trace:
+  [7 dagster system frames hidden, run with --verbose to see the full stack trace]
+The above exception was caused by the following exception:
+ImportError: attempted relative import with no known parent package
+Stack Trace:
+  [4 dagster system frames hidden, run with --verbose to see the full stack trace]
+  File "<checkout>/tests/fixtures/definitions/relative-import.py", line 12, in <module>
+    from .describe import describe  # noqa: F401  -- the break, on purpose
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[0m
+[32m<timestamp>[0m - dagster - [34mERROR[0m - [31mValidation for 1 code locations failed.[0m
+/usr/local/lib/python3.14/site-packages/click/core.py:788: SupersessionWarning: Function `definitions_validate_command` is superseded and its usage is discouraged. Use 'dg check defs' instead.
+  return __callback(*args, **kwargs)
 ```
 
 ## Permitted
 
 Fixture: `tests/fixtures/definitions/loads-by-path.py`
 
-Exit code `1` (the registry expects zero). ✗
+Exit code `0` (the registry expects zero). ✓
 
 ```
-/usr/local/opt/python@3.14/bin/python3.14: No module named dagster
+[32m<timestamp>[0m - dagster - [34mWARNING[0m - No dagster instance configuration file (dagster.yaml) found at <tmpdir>. Defaulting to loading and storing all metadata with <tmpdir>. If this is the desired behavior, create an empty dagster.yaml file in <tmpdir>.
+[32m<timestamp>[0m - dagster - [34mINFO[0m - Validation successful for code location loads-by-path.py.
+[32m<timestamp>[0m - dagster - [34mINFO[0m - All code locations passed validation.
+/usr/local/lib/python3.14/site-packages/click/core.py:788: SupersessionWarning: Function `definitions_validate_command` is superseded and its usage is discouraged. Use 'dg check defs' instead.
+  return __callback(*args, **kwargs)
 ```
 
 ## The registry's own lines

@@ -1,38 +1,18 @@
-# Fixture pairs that exist and are graded by nothing, as of 2026-09-07.
-#
-# Correction, 2026-09-07 21:xxZ: the first version of this file said of the two pipefail-verdict
-# fixtures "grader: none in the tree", and that was false. pipeverdict_scan was alive in bin/idp-ci
-# and scanned bin/* on every fast gate; what 519d59e8 deleted was only the rung that fed it these
-# two files, which is exactly the self-grading the founder called stupid. bin/idp-rule-coverage was
-# right that nothing NAMED the paths -- the `grader:` field beside it was hand-written and stated
-# something nobody had measured, which is the failure this whole file exists to count. The scan is
-# now bin/idp-pipeverdict, a registry row that names both fixtures, so the two entries are gone.
-#
-# Every `grader:` line below has since been checked by opening the tree, not by remembering it.
-#
-# Each of these is a rule someone wrote, built a bad case and a good case for, and either never
-# wired or wired into something since deleted. A gate that does not run produces no output, so
-# none of them ever went red -- the fixtures are the only trace left that the rule was meant to
-# exist. bin/idp-rule-coverage counts them; the count is allowed to fall and never to rise, the
-# same ratchet platform/scheduling/one-scheduler.yaml holds over the schedulers.
-#
-# `what` is read from the fixture files themselves. `grader` names what would have to run for the
-# entry to leave this list; where nothing in the tree implements it, the field says so rather than
-# guessing at one.
 version: 1
 ungraded:
-  - path: tests/fixtures/describe
-    what: a documented and an undocumented Dagster job definition, plus the HTML one renders to
-    grader: "estate_scheduler.describe --selftest, which derives a description through a wrapper -- it embeds its own cases and reads neither of these files"
-
-  - path: tests/fixtures/kyverno-rollout
-    what: seven Deployments -- the incident, the fix, and five shapes around them (percent-zero, Recreate, no strategy, no hard anti-affinity, zonal spread)
-    grader: "none in the tree. The Kyverno policy these were built against is not in platform/edge, and `kyverno test` has no test file naming them"
-
-  - path: tests/fixtures/no-token
-    what: a bad.yaml and a good.yaml pair about a workload holding a token
-    grader: "none in the tree"
-
-  - path: tests/fixtures/vault-refs
-    what: a bad and a good tree of vault references
-    grader: "bin/idp-vault-refs, which exists; it takes no fixture root, so these two trees reach it through nothing"
+- path: tests/fixtures/describe
+  what: a documented and an undocumented Dagster job definition, plus the HTML one renders to
+  grader: estate_scheduler.describe --selftest, which derives a description through a wrapper -- it embeds its own cases and reads neither of these files
+- path: tests/fixtures/kyverno-rollout
+  what: seven Deployments -- the incident, the fix, and five shapes around them (percent-zero, Recreate, no strategy, no hard anti-affinity, zonal spread)
+  grader: none in the tree. The Kyverno policy these were built against is not in platform/edge, and `kyverno test` has no test file naming them
+- path: tests/fixtures/no-token
+  what: a bad.yaml and a good.yaml pair about a workload holding a token
+  grader: none in the tree
+- path: tests/fixtures/vault-refs
+  what: a bad and a good tree of vault references
+  grader: bin/idp-vault-refs, which exists; it takes no fixture root, so these two trees reach it through nothing
+- path: tests/fixtures/request-ceiling
+  why: 'pending: the ceiling and the spend floor are graded by sovereign/tests, not by a bin/ gate'
+- path: tests/fixtures/spend-floor
+  why: 'pending: the ceiling and the spend floor are graded by sovereign/tests, not by a bin/ gate'

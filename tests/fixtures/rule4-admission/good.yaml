@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: carries-its-attestation
+  namespace: default
+  annotations:
+    estate.io/provenance-verified: "true"
+    estate.io/attestation: "sha256:abc123"
+spec:
+  containers:
+    - name: c
+      image: busybox

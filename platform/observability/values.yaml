@@ -102,6 +102,49 @@ clickhouse:
     mark_cache_size: "536870912"
     index_mark_cache_size: "134217728"
     merges_mutations_memory_usage_to_ram_ratio: "0.3"
+    # 2026-09-13: THE TWO SETTINGS crew#483 DID NOT REACH, and the OOM it was meant to stop is
+    # still happening -- 49 OOMKilled restarts, `exitCode: 137, reason: OOMKilled`, one every ~30
+    # minutes for four and a half days, on a pod whose own tracker reported 1.45 GiB in use.
+    #
+    # max_server_memory_usage is pinned EXPLICITLY, but NOT at the 80% a guide suggests -- that
+    # was the first attempt and it was WRONG, in a way that made the box worse rather than better.
+    #
+    # The reasoning for 80% was that `max_server_memory_usage_to_ram_ratio` 0.9 leaves only 400
+    # MiB for untracked RSS, and upstream's guide calls MemoryResident/MemoryTracking > 1.4
+    # dangerous. True as far as it goes. What it missed is that RSS is ALREADY above the working
+    # set: this pod runs at ~3.25 GiB resident, so a 3.20 GiB ceiling sits UNDER the live footprint
+    # and ClickHouse refuses ordinary work. Measured within the hour:
+    #
+    #   Code: 241 (MEMORY_LIMIT_EXCEEDED): would use 1.65 GiB, current RSS: 3.25 GiB,
+    #   maximum: 3.20 GiB -- while executing AggregatingTransform.
+    #
+    # on `select table, count() parts ... from system.parts group by table`. ClickHouse could not
+    # aggregate over its own part list. A ceiling that blocks the diagnostic query you need in
+    # order to fix the thing is not headroom, it is a second outage.
+    #
+    # The ceiling belongs JUST UNDER the cgroup limit, so the untracked gap is what the ceiling
+    # protects against and the kernel kill is still held off: 3.9 GiB of 4.0 leaves 100 MiB of
+    # slack below memory.max, and the ratio can still climb to ~1.3 before either bound is reached.
+    # The real cure for the ratio is not a lower ceiling, it is fewer resident parts -- which is
+    # what the `_0` twin TTLs below do.
+    max_server_memory_usage: "4187593113"
+    # uncompressed_cache_size ships ACTIVELY SET to 8 GiB in ClickHouse's own config.xml -- twice
+    # this whole pod -- so it is not a default that could be left alone. It is also not earning
+    # its keep: `system.events` reads UncompressedCacheHits 23 against UncompressedCacheMisses
+    # 11,726, a 0.2% hit rate, and UncompressedCacheWeightLost 204,366,029 has already been
+    # thrown away. The modern codecs this schema uses mostly skip the path it serves. It is set to
+    # zero, which disables the cache rather than shrinking it, because 0.2% does not pay for any
+    # reservation inside a 4 GiB pod. MarkCache, by contrast, reads 364,954 hits against 15,826
+    # misses -- 96% -- which is why its 512 MiB stays.
+    uncompressed_cache_size: "0"
+    uncompressed_cache_size_ratio: "0"
+    # The other three large defaults are also live and also larger than the pod. text_index_
+    # postings 2 GiB and text_index_header 1 GiB serve full-text indexes this schema does not
+    # build; vector_similarity_index 5 GiB serves vector search it does not use. Bounded to 64 MiB
+    # each so a future index cannot quietly re-create this incident.
+    vector_similarity_index_cache_size: "67108864"
+    text_index_header_cache_size: "67108864"
+    text_index_postings_cache_size: "67108864"
     # 2026-09-08: ClickHouse's own system logs default to no TTL, so on a 20Gi volume they grew to
     # 23.0 GiB and pushed the server onto its memory ceiling merging them (see the resources block
     # above for the measurement). Nothing here touches a signoz_* table -- telemetry retention is
@@ -135,6 +178,52 @@ clickhouse:
     query_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
     metric_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
     asynchronous_metric_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    # 2026-09-13: THE `_0` TWINS, which is what the 49 OOMKilled restarts were actually made of.
+    #
+    # Every table above is set by its BASE name, and ClickHouse keeps the old file open under the
+    # name it already had -- `metric_log_0`, `trace_log_0`, `asynchronous_metric_log_0`. Those
+    # twins carry the OPERATOR's default, 30 days, not the 1-3 days set here, because the key that
+    # would set them was never written. Measured that day: the `system` database held 7.9 GiB
+    # across 393 active parts -- more than every `signoz_*` table combined -- and `metric_log_0`
+    # alone accounted for 222 of those parts at 587 MiB.
+    #
+    # That part count is what the OOM is made of. `background_pool_size` 16 times
+    # `background_merges_mutations_concurrency_ratio` 2 allows 32 concurrent merges, and 12 of the
+    # 27 running were on `metric_log_0`, holding 274 MiB. `MergesMutationsMemoryTracking` read
+    # 1051 MiB against a `MemoryTracking` of 2112 -- half of ClickHouse's tracked memory was
+    # background merges of its own diagnostic logs, and merges are pinned at the 0.3 ratio the
+    # line above sets. Shrinking caches could not fix that; the parts had to stop being made.
+    #
+    # These are ClickHouse's internal telemetry, not customer data. Signoz retention is untouched.
+    #
+    # 2026-09-13, later the same day, and this is the part that matters: the ten twins are not
+    # three. `bin/idp-clickhouse-twin-ttl`, written to refuse this class, found SEVEN more that no
+    # measurement had reached -- query_log_0, part_log_0, session_log_0, zookeeper_log_0,
+    # asynchronous_insert_log_0, processors_profile_log_0 and query_views_log_0 all carry the
+    # operator's default because only their base names are set. Read off the live server:
+    #
+    #   query_log_0 30d   part_log_0 30d   session_log_0 30d   zookeeper_log_0 30d
+    #   asynchronous_insert_log_0 7d   processors_profile_log_0 7d   query_views_log_0 15d
+    #
+    # against 1-3 days declared here for every one of them. The gate catches all ten; this block
+    # is the third of them fixed by hand before the gate existed.
+    #
+    # AND A LIMIT ON WHAT THIS FILE CAN DO: a twin whose table already exists is NOT re-shaped by
+    # a changed <engine>. Proved on the live pod after #3353 applied -- `chop-generated-settings.xml`
+    # carried 3d for metric_log_0 and 1d for trace_log_0, and `system.tables` still reported 30d
+    # and 7d, because ClickHouse attaches the file it already has. These keys stop the twins being
+    # created oversized on a fresh server and keep the declaration honest; they cannot shrink the
+    # parts that already exist, and no config edit can. That needs the tables recreated.
+    metric_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    asynchronous_metric_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    trace_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    query_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    part_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    session_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    zookeeper_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    asynchronous_insert_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    processors_profile_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    query_views_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
     # text_log is the one table the operator gives no <engine>, so the sibling form is correct
     # there and only there.
     text_log/ttl: "event_date + INTERVAL 1 DAY DELETE"

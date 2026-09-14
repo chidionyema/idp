@@ -1,0 +1,8 @@
+{
+  "_comment": "The PERMITTING direction of the breaker rule: three targets carrying the SAME CVE set in three DIFFERENT orders on three different log lines. This is the estate's real incident of 2026-09-12 -- nine red pull requests, one cause across six of them, identical CVE lists at different log positions. The fingerprint is the sorted set of CVE ids, so all three collapse to one string and the third trips the lock. bin/idp-circuit-breaker --replay exits 1 because a finding was observed and locked. Hashing the raw output would have matched nothing here.",
+  "findings": [
+    {"target": "pr-1", "log": "perl-base CVE-2026-13221 CVE-2026-42496 CVE-2026-8376\nE: Sub-process /usr/bin/dpkg returned an error code (1)"},
+    {"target": "pr-2", "log": "The following packages have unmet dependencies:\nperl-base CVE-2026-8376 CVE-2026-13221 CVE-2026-42496"},
+    {"target": "pr-3", "log": "CVE-2026-42496 perl-base CVE-2026-8376 CVE-2026-13221"}
+  ]
+}

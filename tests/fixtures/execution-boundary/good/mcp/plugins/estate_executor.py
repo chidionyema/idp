@@ -1,0 +1,1 @@
+CEILING_SEC = 60

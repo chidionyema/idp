@@ -80,6 +80,31 @@ spec:
                     annotations:
                       platform.idp/cni-cutover: "2026-09-08T09:30:00Z"
   interval: 10m
+  # THE CONTROLLER-MANAGER NEVER RAN, AND READY SAID OTHERWISE. Measured 2026-09-13:
+  #
+  #   chaos-mesh-controller-manager   Service   443/TCP   endpoints: NONE
+  #   chaos-controller-manager        0/0       0   0   18d
+  #   Helm storage: replicas: 1     live Deployment: replicas: 0
+  #   helm-controller log: "release in-sync with desired state"
+  #
+  # helm-controller diffs the manifest in HELM STORAGE against the rendered chart, never
+  # against the cluster, so a Deployment edited after the apply is invisible to it forever.
+  # The HelmRelease reports Ready / UpgradeSucceeded and the estate never notices. Because
+  # chaos-mesh ships 39 webhooks with `failurePolicy: Fail` pointing at that Service, every
+  # object under chaos-mesh.org/* is UNCREATABLE estate-wide -- and a Service with no
+  # endpoints answers EOF, which is what the chaos Kustomization has been reporting:
+  #
+  #   Workflow/backstage/backstage-pod-kill-first-run dry-run failed (InternalError):
+  #     failed calling webhook "mworkflow.kb.io": ... Post https://...:443/...: EOF
+  #
+  # driftDetection compares the Helm storage against the resources ACTUALLY IN THE CLUSTER
+  # and re-applies the difference on every reconcile. It is the fence for exactly this, and
+  # this estate already uses it for exactly this: platform/observability-collector/k8s-infra.yaml
+  # carries `mode: enabled` after the same defect left that release "Ready with an empty
+  # namespace" and telemetry-coverage at seen=2/97 (crew#584). It should not have taken a
+  # second incident to notice the other 32 releases had it switched off.
+  driftDetection:
+    mode: enabled
   chart:
     spec:
       chart: chaos-mesh

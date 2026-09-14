@@ -133,7 +133,9 @@ while :; do
   [ "$missing" -eq 0 ] && break
   [ "$(date +%s)" -ge "$deadline" ] && break
   say "          waiting: $missing of $want not ingested yet"
-  sleep 15
+  # The loop has a deadline and breaks on it, so this interval is the poll rate rather than a
+  # guess at how long the work takes -- the sleep-ban rule and this marker exist for exactly this.
+  sleep 15  # sleep-ok: poll interval inside a loop that breaks on its own deadline
 done
 
 if [ "$missing" -eq 0 ]; then

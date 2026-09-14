@@ -33,6 +33,8 @@ import { FounderData, receiptsSentence, waitingSentence } from './founder';
 import { useFounder } from './useFounder';
 import { useHealthchecks } from './useHealthchecks';
 import { usePlacement } from './usePlacement';
+import { useCompiled } from './useCompiled';
+import { cpuLabel, guaranteed } from './compiled';
 import { headroomLabel, placementState, requestLabel } from './placement';
 import { Checks, STATUS_WORD, checksSentence, notUp } from './healthchecks';
 import {
@@ -44,6 +46,10 @@ import {
   planeSentence,
 } from './inventory';
 import { useInventory } from './useInventory';
+import { useEstateGraph } from './useEstateGraph';
+import { domainRows, graphSentence, worst } from './estateGraph';
+import { useGuards } from './useGuards';
+import { guardRows, guardsSentence, guardsUnreadable } from './guards';
 import { ago } from './estate';
 
 /** The page's name, and the word every door to it already uses (nav, app-config, catalogue). */
@@ -287,6 +293,7 @@ export const Ops = () => {
   const founder = useFounder();
   const checks = useHealthchecks();
   const placement = usePlacement();
+  const compiled = useCompiled();
   const inventory = useInventory();
   const now = Date.now();
   return (
@@ -412,6 +419,8 @@ export const Ops = () => {
                       </td>
                       <td>{requestLabel(p)}</td>
                       <td>{headroomLabel(p)}</td>
+                      <td>{requestLabel(p)}</td>
+                      <td>{headroomLabel(p)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -420,6 +429,198 @@ export const Ops = () => {
           </>
         )}
       </Section>
+      <GraphSection />
+      <GuardsSection now={now} />
+      {/* The compiled estate: what every Helm chart RENDERS, straight from git.
+          This is the instrument that closes the five-day gap. A values file, a comment and a
+          postRenderer patch are all CLAIMS; the number below is the one the chart decides, which
+          is the one the cluster runs. On 2026-09-12 langfuse-web rendered 1000m while the comment
+          beside that value said 500m, and nothing in the estate could see the difference. */}
+      <Section
+        title="What the charts actually render"
+        blurb="Every Helm release compiled from git. The value shown is the one the chart produces, never the one a comment claims."
+        testId="ops-compiled-section"
+      >
+        {compiled.state === 'loading' && (
+          <Waiting testId="ops-compiled-loading">Compiling the estate.</Waiting>
+        )}
+        {compiled.state === 'error' && (
+          <Unread testId="ops-compiled-error" detail={compiled.error}>
+            The compiled estate could not be read, so what the charts will run is unknown.
+          </Unread>
+        )}
+        {compiled.state === 'ready' && (
+          <>
+            <Text variant="body-medium" data-testid="ops-compiled-sentence">
+              {compiled.summary.summary}
+            </Text>
+            {compiled.summary.unrendered.length > 0 && (
+              <Sheet testId="ops-compiled-blind">
+                <thead>
+                  <tr>
+                    <th>Release</th>
+                    <th>Why it did not render</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {compiled.summary.unrendered.map(r => (
+                    <tr key={`${r.namespace}/${r.name}`}>
+                      <td>
+                        {r.namespace}/{r.name}
+                      </td>
+                      <td>{r.error}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Sheet>
+            )}
+            <Sheet testId="ops-compiled">
+              <thead>
+                <tr>
+                  <th>Workload</th>
+                  <th>Container</th>
+                  <th>Rendered cpu</th>
+                  <th>Guaranteed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {compiled.summary.workloads.flatMap(w =>
+                  w.containers.map(c => (
+                    <tr key={`${w.namespace}/${w.name}/${c.name}`}>
+                      <td>
+                        {w.namespace}/{w.kind}/{w.name}
+                      </td>
+                      <td>{c.name}</td>
+                      <td>{cpuLabel(c)}</td>
+                      <td>{guaranteed(c) ? 'yes' : 'no'}</td>
+                    </tr>
+                  )),
+                )}
+              </tbody>
+            </Sheet>
+          </>
+        )}
+      </Section>
     </EstatePage>
+  );
+};
+
+/**
+ * The estate's own memory, beside the live probe above.
+ *
+ * The distinction this section exists to hold: everything else on this page asks the cluster
+ * what it is doing now. This asks the estate what it has recorded about itself -- including
+ * the half no probe can reach. 648 branches carrying 94,093 files that exist on no commit of
+ * main are not cluster objects; they are in the graph and nowhere else.
+ *
+ * The three-state rule is rendered, not summarised away. A domain outside its freshness
+ * window leads the sentence, because a graph that has not been read is a memory, and a page
+ * that showed it as healthy would be the exact failure this exists to prevent.
+ */
+const GraphSection = () => {
+  const loaded = useEstateGraph();
+  return (
+    <Section
+      title="What the estate has recorded about itself"
+      blurb="The estate's own graph: what is built, what is running and what is not. Unlike the readings above, this is not a probe of the cluster -- it is what the estate already knows, including work that exists on a branch and on no commit of main."
+      testId="ops-graph-section"
+    >
+      {loaded.state === 'loading' && (
+        <Waiting testId="ops-graph-loading">Reading the estate graph.</Waiting>
+      )}
+      {loaded.state === 'error' && (
+        <Unread testId="ops-graph-error" detail={loaded.error}>
+          The estate graph could not be read, so what the estate has recorded is unknown.
+        </Unread>
+      )}
+      {loaded.state === 'ready' && (
+        <>
+          <Text variant="body-medium" data-testid="ops-graph-sentence">
+            {graphSentence(loaded.graph)}
+          </Text>
+          <Sheet testId="ops-graph-domains">
+            {domainRows(loaded.graph).map(d => (
+              <Fact
+                key={d.domain}
+                label={`${d.domain} — ${d.state.toLowerCase().replace(/_/g, ' ')}`}
+                value={`${d.detail} (${d.age})`}
+              />
+            ))}
+          </Sheet>
+          {loaded.graph.not_serving.length > 0 && (
+            <Sheet testId="ops-graph-worst">
+              <Fact label="Not serving" value={String(loaded.graph.not_serving_total)} />
+              {worst(loaded.graph).map(n => (
+                <Fact key={n.id} label={n.status} value={n.id} />
+              ))}
+            </Sheet>
+          )}
+          {loaded.graph.truncated && loaded.graph.note && (
+            <Text variant="body-small" data-testid="ops-graph-truncated">
+              {loaded.graph.note}
+            </Text>
+          )}
+          {loaded.graph.evidence.length > 0 && (
+            <Text variant="body-small" data-testid="ops-graph-evidence">
+              Also recorded, as evidence rather than failure:{' '}
+              {loaded.graph.evidence.map(e => `${e.n} ${e.type}`).join(', ')}.
+            </Text>
+          )}
+        </>
+      )}
+    </Section>
+  );
+};
+
+/**
+ * The guards, drawn from what they have actually done. A guard that exists and has been asked
+ * nothing is not proof of anything, which is why the sentence carries the total beside the rows:
+ * two rows under a heading that says "guards" would otherwise read as the whole fifty-six.
+ */
+export const GuardsSection = ({ now }: { now: number }) => {
+  const loaded = useGuards();
+
+  return (
+    <Section
+      title="The guards, and what they have refused"
+      blurb="Every guard in the estate, with how many times it was consulted and how many commands it refused. A guard that has never refused anything has not yet been tested by a real mistake, so this page separates guards that fired from guards that merely exist."
+      testId="ops-guards-section"
+    >
+      {loaded.state === 'loading' && (
+        <Waiting testId="ops-guards-loading">Reading the guard inventory.</Waiting>
+      )}
+      {loaded.state === 'error' && (
+        <Unread testId="ops-guards-error" detail={loaded.error}>
+          The guard inventory could not be read, so how many guards are in use is unknown.
+        </Unread>
+      )}
+      {loaded.state === 'ready' && (
+        <>
+          <Text variant="body-medium" data-testid="ops-guards-sentence">
+            {guardsSentence(loaded.guards)}
+          </Text>
+          {(guardsUnreadable(loaded.guards) ||
+            guardRows(loaded.guards).length > 0) && (
+            <Sheet testId="ops-guards-table">
+              {guardRows(loaded.guards).map(g => (
+                <Fact
+                  key={g.id}
+                  label={g.title}
+                  value={
+                    <>
+                      <span data-testid={`ops-guard-id-${g.id}`}>{g.id}</span> — fired{' '}
+                      <b>{g.fired}</b>, refused <b>{g.blocked}</b>
+                      {g.last_command ? ` — ${g.last_command}` : ''}
+                      {g.last_at ? ` (${ago(g.last_at, now)})` : ''}
+                    </>
+                  }
+                  testId={`ops-guard-${g.id}`}
+                />
+              ))}
+            </Sheet>
+          )}
+        </>
+      )}
+    </Section>
   );
 };

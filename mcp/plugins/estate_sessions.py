@@ -41,15 +41,18 @@ behaviour; every one is an env var with a container-local default, wired in
 `platform/mcp/estate-mcp.yaml` so the *host* path never appears here):
   ESTATE_CATALOG_PATH      the generated Backstage catalogue
                             (default /data/catalog-info.yaml)
-  ESTATE_STATE_PATH_PREFIX the directory the catalogue names under `~`. The
-                            default matches the path bin/catalog-gen writes
-                            (`{@HOME@}/.claude/state/prompt-ledger/`); a future
-                            generator that writes `/var/log/...` overrides it.
+  ESTATE_STATE_PATH_PREFIX  the directory the catalogue names under `~`, comma
+                            separated. The default is SESSION_STORE_ROOTS, the
+                            session store of every harness the estate runs, so
+                            a sixth harness is a row in that list rather than an
+                            edit to a filter. A future generator that writes
+                            `/var/log/...` overrides it.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import inspect
 import os
 from typing import Any
 
@@ -70,15 +73,70 @@ except ImportError:  # pragma: no cover -- exercised only in the datasette-less 
         return fn
 
 
+# The session store of every harness the estate runs, measured on this machine
+# 2026-09-13. This list is the one place the layout is declared; `is_session_row`
+# reads it rather than spelling an agent's name into an expression.
+#
+# Founder, 2026-09-13: "this as ~/.claude/state/prompt-ledger/ should be from all
+# agents no claude only". Before this list the sessions path spelled `claude` at
+# every layer, so the estate's pi and gemini sessions had no row a founder could
+# open even though hundreds were running.
+#
+# Each entry is a store, and a store is a directory whose descendants are
+# transcripts. The trailing item is the bare directory the live generator emits
+# (`~/.claude/state/prompt-ledger`), which carries no trailing slash.
+SESSION_STORE_ROOTS = (
+    "~/.claude/state/prompt-ledger",
+    "~/.pi/agent/sessions",
+    "~/.gemini/tmp",
+)
+
+# Codex (`~/.codex`) and Cursor (`~/.cursor`) keep no transcript on disk, so
+# they have no row here and this file does not pretend otherwise. When one of
+# them starts writing transcripts, it is one line in SESSION_STORE_ROOTS.
+
+
+def _default_prefixes() -> tuple[str, ...]:
+    """Every declared session store, in both spellings the catalogue uses.
+
+    `bin/catalog-gen` writes the founder's home as a literal `~`; the estate's
+    law prohibits spelling it out. Older rows used a `{@HOME@}` token, and
+    `_row_to_session` still resolves that spelling, so both are accepted here --
+    a filter that only knew one of them is what emptied the page.
+    """
+    # The token as the generated catalogue writes it, braces included. Assembled
+    # rather than typed out so no reader mistakes it for a shell expansion this
+    # file means to perform.
+    home_token = "{" + "@" + "HOME@}"
+    out: list[str] = []
+    for root in SESSION_STORE_ROOTS:
+        out.append(root)
+        out.append(root.replace("~", home_token, 1))
+    return tuple(out)
+
+
 def config() -> dict[str, str]:
     return {
         "catalog_path": os.environ.get(
             "ESTATE_CATALOG_PATH", "/data/catalog-info.yaml"
         ),
-        "prompt_ledger_prefix": os.environ.get(
-            "ESTATE_PROMPT_LEDGER_PREFIX", "{@HOME@}/.claude/state/prompt-ledger/"
-        ),
+        "prompt_ledger_prefix": os.environ.get("ESTATE_PROMPT_LEDGER_PREFIX", ""),
     }
+
+
+def session_prefixes(prefix: str | None = None) -> tuple[str, ...]:
+    """The prefixes a session row's estate/path may start with.
+
+    An operator override is honoured whole: `ESTATE_PROMPT_LEDGER_PREFIX` set to
+    one path means exactly that path, so a deployment pointing somewhere else is
+    never quietly widened by the defaults.
+    """
+    if prefix:
+        return tuple(p.strip() for p in prefix.split(",") if p.strip())
+    cfg_prefix = config()["prompt_ledger_prefix"]
+    if cfg_prefix:
+        return tuple(p.strip() for p in cfg_prefix.split(",") if p.strip())
+    return _default_prefixes()
 
 
 # "experimental" is the Backstage vocabulary for `dev` env. The catalog
@@ -97,7 +155,7 @@ def is_session_row(row: dict, prefix: str | None = None) -> bool:
     not by a kind/type check (which would mistake every state-ledger for a
     session).
     """
-    cfg_prefix = prefix or config()["prompt_ledger_prefix"]
+    prefixes = session_prefixes(prefix)
     if not isinstance(row, dict):
         return False
     if str(row.get("kind") or "") != "Resource":
@@ -113,7 +171,11 @@ def is_session_row(row: dict, prefix: str | None = None) -> bool:
     if str(ann.get("estate/kind") or "") != "ledger":
         return False
     path = str(ann.get("estate/path") or "")
-    return path.startswith(cfg_prefix)
+    # A store root matches the directory itself and anything beneath it; a bare
+    # `startswith` would also accept a sibling named `prompt-ledger-old`.
+    return any(
+        path == p.rstrip("/") or path.startswith(p.rstrip("/") + "/") for p in prefixes
+    )
 
 
 def _row_to_session(row: dict, base_dir: str | None) -> dict[str, Any]:
@@ -143,8 +205,8 @@ def _row_to_session(row: dict, base_dir: str | None) -> dict[str, Any]:
         base_dir = os.environ.get("HOME", "")
     resolved = path
     _HOME_TOKEN = (
-        "@" + "HOME@"
-    )  # see config(): the literal name compiled out of the source
+        "{" + "@" + "HOME@}"
+    )  # see config(): the literal name, braces as the catalogue writes it
     if resolved.startswith(_HOME_TOKEN + "/"):
         suffix = resolved[len(_HOME_TOKEN) + 1 :]
         if base_dir:
@@ -265,8 +327,31 @@ def get_session(name: str, cfg: dict | None = None) -> dict:
     return build_envelope(sessions=[session])
 
 
+# Module-level aliases of the two envelope builders. `register_mcp_tools` defines an
+# `async def list_sessions` INSIDE itself which shadows the module-level function of the same name,
+# so the tool bodies call these instead -- a name bound out here, where nothing shadows it.
+_envelope_list_sessions = list_sessions
+_envelope_get_session = get_session
+
+
 @hookimpl
 def register_mcp_tools(datasette, mcp):
+    # The two functions below SHADOW the module-level `list_sessions`/`get_session` of the same
+    # name, so a bare `return list_sessions()` inside one calls ITSELF: the tool answers with the
+    # repr of its own coroutine object instead of the envelope.
+    #
+    # Measured 2026-09-13 against the live door, which is the only place it was visible -- the unit
+    # tests call the module-level functions directly and never touched these wrappers:
+    #
+    #     $ curl -X POST https://mcp.mumchimp.com/estate/mcp -d '{..."tools/call"...'
+    #     "<coroutine object register_mcp_tools.<locals>.list_sessions at 0xffffb7706a40>"
+    #
+    # `_envelope_list_sessions` / `_envelope_get_session` are module-level aliases (defined just
+    # above this function), not locals. A bare `list_sessions` here is the local being defined
+    # below -- Python makes the name local for the whole body -- so even an alias cannot be written
+    # as `envelope_list_sessions = list_sessions` (UnboundLocalError, measured), and reading it out
+    # of `sys.modules[__name__]` fails when the plugin is loaded by path under a different name.
+    # of a module-namespace lookup fails when the plugin is loaded by path under another name.
     @mcp.tool()
     async def list_sessions() -> dict:
         """The sessions the founder has been running: one MCP tool, one envelope.
@@ -279,7 +364,13 @@ def register_mcp_tools(datasette, mcp):
         `count` is the number of session rows; every session carries
         `session_id, name, path, row_count, last_updated, lifecycle`.
         """
-        return list_sessions()
+        result = _envelope_list_sessions()
+        if inspect.isawaitable(result):
+            raise RuntimeError(
+                "list_sessions returned an awaitable: the module-level function is "
+                "shadowed and the tool would answer with a coroutine object"
+            )
+        return result
 
     @mcp.tool()
     async def get_session(name: str) -> dict:
@@ -289,4 +380,10 @@ def register_mcp_tools(datasette, mcp):
         `list_sessions` envelope for the available names). Returns
         `available: false` when the name does not match, never raises.
         """
-        return get_session(name)
+        result = _envelope_get_session(name)
+        if inspect.isawaitable(result):
+            raise RuntimeError(
+                "get_session returned an awaitable: the module-level function is "
+                "shadowed and the tool would answer with a coroutine object"
+            )
+        return result

@@ -1,0 +1,281 @@
+#!/usr/bin/env python3
+"""A Kustomization's health check must name an object the estate can actually create.
+
+Rule: healthcheck-names-a-real-object (rules.yaml). Incident: 2026-09-13, tailscale.
+
+THE DEFECT THIS GRADES. The `tailscale` Kustomization waited on
+
+    Deployment/tailscale/tailscale-operator
+
+and no such Deployment has ever existed. The release is named `tailscale-operator`,
+but the chart it pins emits `Deployment/operator`, so the wait could never be
+satisfied. The row sat `HealthCheckFailed` for days:
+
+    health check failed after 10m0.026651003s: timeout waiting for:
+      [Deployment/tailscale/tailscale-operator status: 'NotFound']
+
+`NotFound` is the tell. A health check on an object that is merely unhealthy
+reports that object's status; a health check on an object that does not exist
+reports `NotFound` and does so forever. The four objects depending on `tailscale`
+-- guacamole and its Postgres migration among them -- were held out of the cluster
+the entire time, and nothing in CI could see it, because the manifest was valid
+YAML naming a plausible-looking object.
+
+So this gate compares a health check against the object list the estate's own
+compiler renders from git. It is the same comparison `bin/idp-compile-helm` makes
+possible: the compiled document is the only place, outside the running cluster,
+where the real name exists.
+
+WHAT IT DOES NOT GRADE. Only `Deployment` and `HelmRelease` checks whose owning
+Kustomization points at a path this tree renders. A check on a cluster-scoped
+custom resource (a `ClusterPolicy`, a `Provider`, a `Cluster`) is skipped, and
+skipped is REPORTED -- an ungraded check is not a passing one.
+
+    bin/idp-healthcheck-exists <compiled.json> <clusters/*.yaml> ...
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
+
+import yaml
+
+# Only these kinds are compared
+#   * `HelmRelease` -- satisfied when that release rendered from git.
+#   * `Deployment`/`ServiceAccount` -- satisfied when a rendered release contains it.
+#     A Deployment written as a plain manifest in this tree is NOT graded here: it
+#     does not pass through a chart, so the compiled document never mentions it and
+#     this gate would be measuring its own blind spot. That is why otto-gateway,
+#     estate-mcp, apprise and the rest are absent from the report rather than
+#     counted as missing -- they exist in the cluster and in the tree, and a
+#     different reader (the plain-manifest walker) is what would judge them.
+GRADED = {"Deployment", "HelmRelease", "ServiceAccount"}
+
+# Kinds whose absence from the compiled document means "not a chart", not "not real".
+# Any Deployment the compiler did not render is skipped with a count, so the number of
+# checks this gate did NOT make is always printed beside the number it did.
+PLAIN_MANIFEST_KINDS = {"Deployment", "ServiceAccount", "Service", "ConfigMap"}
+
+
+def rendered_objects(compiled: Path) -> Tuple[set, set]:
+    """Two sets, because the compiled document answers two different questions.
+
+    * `rendered` -- every object a chart PRODUCED, from `release.objects`. Its
+      entries carry `kind`, `name` and `namespace` when the compiler filled them
+      in.
+    * `releases` -- every (namespace, name) of a HelmRelease that RENDERED, from
+      the release list itself. A health check on a HelmRelease is a wait on the
+      release object, which a chart never emits, so it can only be answered here:
+      the release rendered, so the object exists.
+    """
+    try:
+        doc = json.loads(compiled.read_text())
+    except (OSError, ValueError) as exc:
+        raise SystemExit(
+            f"BLIND healthcheck-exists: {compiled} is unreadable: {exc}"
+        ) from exc
+
+    rendered = set()
+    releases = set()
+    for release in doc.get("releases") or []:
+        rns = release.get("namespace") or ""
+        rname = release.get("name") or ""
+        if rname:
+            releases.add((rns, rname))
+        for obj in release.get("objects") or []:
+            kind = obj.get("kind")
+            name = obj.get("name")
+            if not kind or not name:
+                # A document the compiler listed but did not decompose. Reported as
+                # unread rather than counted as absent -- the distinction this whole
+                # gate exists to keep.
+                continue
+            rendered.add((kind, name, obj.get("namespace") or rns))
+    return rendered, releases
+
+
+def health_checks(cluster_files: List[Path]) -> List[Dict[str, Any]]:
+    """Every healthCheck in every Kustomization, with the row that declares it."""
+    out: List[Dict[str, Any]] = []
+    for path in cluster_files:
+        try:
+            docs = [d for d in yaml.safe_load_all(path.read_text()) if d]
+        except (OSError, ValueError) as exc:
+            raise SystemExit(
+                f"BLIND healthcheck-exists: {path} is unreadable: {exc}"
+            ) from exc
+        for d in docs:
+            if d.get("kind") != "Kustomization":
+                continue
+            kname = (d.get("metadata") or {}).get("name") or "?"
+            spec = d.get("spec") or {}
+            for hc in spec.get("healthChecks") or []:
+                out.append(
+                    {
+                        "kustomization": kname,
+                        "kind": hc.get("kind"),
+                        "name": hc.get("name"),
+                        "namespace": hc.get("namespace") or "",
+                        "file": str(path),
+                    }
+                )
+    return out
+
+
+def object_is_runtime_created(root: Path, hc: Dict[str, Any]) -> bool:
+    """Is there a custom resource in this tree that feeds the operator making this object?
+
+    Read, never assumed. For `Deployment/healing/estate` there is a K8sGPT object named
+    `estate` in the tree; for the tailscale defect there was nothing at all, which is the
+    distinction the whole gate turns on.
+    """
+    name = hc.get("name") or ""
+    if not name:
+        return False
+    for path in sorted(root.glob("platform/**/*.yaml")):
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        if "k8sgpt" not in text.lower() and "K8sGPT" not in text:
+            continue
+        for line in text.splitlines():
+            s = line.strip()
+            # The operator's input names the object it will create.
+            if (
+                s.startswith("name:")
+                and s.split("name:", 1)[1].strip().strip('"') == name
+            ):
+                return True
+    return False
+
+
+def plain_manifest_objects(root: Path) -> set:
+    """(kind, name, namespace) for Deployments and ServiceAccounts written as YAML.
+
+    A plain manifest never passes through a chart, so the compiled document does not
+    mention it. Without this the gate reports every hand-written Deployment as
+    missing -- 34 false failures on the first run, which is a guard that refuses
+    correct work (LAW 38). Namespace comes from the document, falling back to the
+    directory the Kustomization points at.
+    """
+    out = set()
+    for path in sorted(root.glob("platform/**/*.yaml")):
+        try:
+            docs = [d for d in yaml.safe_load_all(path.read_text()) if d]
+        except (OSError, ValueError):
+            continue
+        for d in docs:
+            kind = d.get("kind")
+            if kind not in PLAIN_MANIFEST_KINDS:
+                continue
+            meta = d.get("metadata") or {}
+            name = meta.get("name")
+            if not name:
+                continue
+            out.add((kind, name, meta.get("namespace") or ""))
+    return out
+
+
+def operator_created_kinds(root: Path) -> set:
+    """(kind) that an operator in this tree creates at runtime from a custom resource.
+
+    A Deployment the k8sgpt operator makes from a K8sGPT object, or that the Crossplane
+    provider makes from a claim, is real and is named by no chart. Those are the ONLY
+    objects this gate may call ungraded rather than missing -- and the list is read from
+    the tree, never assumed, because "an operator probably makes it" is the exact excuse
+    that would have hidden the tailscale defect.
+    """
+    kinds = set()
+    for path in sorted(root.glob("platform/**/*.yaml")):
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        # A CR whose name matches the health check's object name, in the same namespace,
+        # is the operator's input. k8sgpt.yaml declares the K8sGPT object the operator
+        # turns into Deployment/estate.
+        if "k8sgpt" in text.lower():
+            kinds.add("Deployment")
+    return kinds
+
+
+def grade(compiled: Path, cluster_files: List[Path], root: Path) -> int:
+    rendered, releases = rendered_objects(compiled)
+    plain = plain_manifest_objects(root)
+    checks = health_checks(cluster_files)
+    runtime_kinds = operator_created_kinds(root)
+
+    missing: List[Dict[str, Any]] = []
+    ungraded: List[Dict[str, Any]] = []
+    for hc in checks:
+        if hc["kind"] == "HelmRelease":
+            # A wait on a HelmRelease is a wait on the release object, which a chart
+            # never emits. It is satisfied when that release rendered from git.
+            if (hc["namespace"], hc["name"]) not in releases:
+                missing.append(hc)
+            continue
+        if hc["kind"] not in GRADED:
+            ungraded.append(hc)
+            continue
+        if any(
+            k == hc["kind"]
+            and n == hc["name"]
+            and (not hc["namespace"] or not ns or ns == hc["namespace"])
+            for k, n, ns in rendered | plain
+        ):
+            continue
+        # Not rendered and not written. An operator may still make it -- but only the kind
+        # this tree's operators are known to make, and the object must exist as a custom
+        # resource feeding one. Anything else is a name nothing creates, which is the
+        # tailscale defect: `Deployment/tailscale-operator` was never in the tree and no
+        # operator could ever make it. Ungraded would have hidden it.
+        if hc["kind"] in runtime_kinds and object_is_runtime_created(root, hc):
+            ungraded.append(hc)
+            continue
+        missing.append(hc)
+
+    for hc in missing:
+        print(
+            f"FAIL  healthcheck-exists  {hc['kustomization']} waits on "
+            f"{hc['kind']}/{hc['namespace']}/{hc['name']}, which no release and no plain "
+            f"manifest in this tree declares. A wait on an object that nothing creates "
+            f"reports NotFound forever, holds every row depending on it out of the "
+            f"cluster, and is invisible in CI because the manifest is valid YAML naming "
+            f"a plausible object. ({hc['file']})"
+        )
+    if missing:
+        print(
+            f"FAIL  healthcheck-exists  {len(missing)} health check(s) name an object "
+            f"nothing in this tree creates"
+        )
+        return 1
+    print(
+        f"ok    healthcheck-exists  {len(checks) - len(ungraded)} checked health check(s) "
+        f"name an object this tree creates; {len(ungraded)} ungraded (created at runtime by "
+        f"an operator, or a kind this gate does not compare)"
+    )
+    return 0
+
+
+def main(argv: List[str]) -> int:
+    args = [a for a in argv[1:]]
+    root = Path.cwd()
+    if args and args[0] == "--root":
+        root = Path(args[1]).resolve()
+        args = args[2:]
+    if len(args) < 2:
+        print(
+            "usage: bin/idp-healthcheck-exists [--root <repo>] <compiled.json> <cluster yaml> ...\n"
+            "       (the compiled document comes from bin/idp-compile-helm)",
+            file=sys.stderr,
+        )
+        return 2
+    return grade(Path(args[0]), [Path(a) for a in args[1:]], root)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

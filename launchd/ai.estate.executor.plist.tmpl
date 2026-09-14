@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The agent's execution plane, outside the agent's process tree.
+
+  Founder, 2026-09-13: "the agent shouldn't have raw, unrestricted bash spawned directly from its
+  own process tree anyway. It should request execution from an isolated daemon." This is that
+  daemon's launchd job.
+
+  WHY IT IS SAFE TO LEAVE RUNNING, and why that is a design choice rather than an oversight:
+  a port raised the cost to this machine's disk (measured 18.06 GiB, 5.6 GiB free) and the number
+  the job service actually has is 60. So the daemon listens on a UNIX domain socket, is O(n) in the
+  command, and costs nothing while idle: launchd starts it, and it blocks on accept().
+
+  RunAtLoad brings it back after a reboot. KeepAlive restarts it if it dies, which is correct here
+  and was correct to omit from ai.estate.idp: this process does NOT fork and exit; it serves, so
+  a non-zero exit really is a death.
+
+  What makes the boundary real is ownership: the agent must not be able to edit this file or the
+  daemon it names. It runs as the same uid today, so this is the half that can be built now, and
+  `bin/idp-executor-status` reports which half is actually in place rather than leaving a
+  half-boundary to read as a whole one.
+
+  Install:    bin/idp-executor-install
+  Remove:     launchctl bootout gui/$(id -u)/ai.estate.executor
+  Check:      bin/idp-executor-status
+-->
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>${PATH}</string>
+		<key>HOME</key>
+		<string>${HOME}</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.estate.executor</string>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>Nice</key>
+	<integer>5</integer>
+	<key>ProgramArguments</key>
+	<array>
+		<string>${IDP}/bin/exec-daemon</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<!-- This process serves rather than forks, so a death is a death. -->
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>StandardOutPath</key>
+	<string>${HOME}/.estate/executor.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>${HOME}/.estate/executor.err.log</string>
+	<!-- The execution plane never needs a shell of its own: it is handed a command and it bounds
+	     that command. Launching it in a login shell would give it exactly the surface this
+	     design exists to remove. -->
+	<key>ProcessType</key>
+	<string>Interactive</string>
+</dict>
+</plist>

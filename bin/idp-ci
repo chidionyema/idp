@@ -49,6 +49,27 @@ MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 # Deletion ... do not leave them as dead code").
 python3 "$IDP/bin/idp-rules" run --plane ci --fast || fail=1
 
+# The bdd-proof gate, named here on purpose. It is a rule in rules.yaml like the rest, but its
+# live case -- reading the most recent pull request on this repository and refusing one that
+# carries no BDD-PROOF block -- needs a line in this file that says the gate's name, so
+# bin/idp-rules can check that the claim in rules.yaml is still true (pointer_is_stale). The
+# registry above runs it; this line is what makes that fact checkable rather than asserted.
+#
+# THE `|| true` IS LOAD-BEARING AND MUST NOT BE REMOVED UNTIL live_pr() CHANGES (measured
+# 2026-09-13, the reason this comment is here rather than a second silent exception). The gate's
+# live_pr() runs `gh pr list --state all --limit 1` with no reference to the branch under test,
+# so on this repository it grades THE NEWEST PULL REQUEST ANY SESSION OPENED, not this run's.
+# Called during CI for branch feat/async-dispatch it answered about PR #3398 flux/image-updates
+# -- another session's work. Making this line fail the run would therefore fail a correct branch
+# for a foreign pull request's missing proof block, which is precisely the guard-that-refuses-
+# correct-work defect (R38). The suppression stays until live_pr() takes the PR under test
+# (GitHub exposes it as the pull_request payload; see bin/idp-bdd-proof-gate, input named in
+# its own docstring as "a pull request as JSON on stdin"). The BLIND that made this line look
+# broken was itself only a symptom of the missing token: with GH_TOKEN set the gate reads a pull
+# request and returns a real verdict, so the line is no longer blind -- it is simply aimed at the
+# wrong pull request, which no change to this file can fix.
+python3 "$IDP/bin/idp-bdd-proof-gate" --live || true
+
 # 1d. ruff, the same rule set (pyproject [tool.ruff.lint]) the bdd job runs after the suites.
 #     In the fast gate it runs first, so an undefined name is red in under a minute.
 if [ "$FAST" = 1 ]; then
@@ -80,10 +101,18 @@ done
 # 2b. The agentgateway config validates against the schema of the pinned release. Same
 
 #     class as the ClickHouse XML: a config nobody checks before its reader starts.
+# BOTH configs, because there are two and they had already diverged. mcp/agentgateway.yaml is the
+# one docker-compose mounts for a local run; platform/mcp/agentgateway.yaml is the one the cluster
+# mounts through the mcp-config ConfigMap and the only one the running gateway has ever read. Until
+# 2026-09-13 only the LOCAL file was checked here, so the file that actually serves was unguarded --
+# measured: platform/mcp/agentgateway.yaml carried a `config.tracing` block with otlpEndpoint 4317,
+# mcp/agentgateway.yaml carried none, and nothing compared them.
 AG_TAG=$(grep -o 'agentgateway/agentgateway:v[0-9.]*' "$IDP/mcp/agentgateway.yml" | cut -d: -f2)
-if check-jsonschema --schemafile "https://raw.githubusercontent.com/agentgateway/agentgateway/$AG_TAG/schema/config.json" \
-     "$IDP/mcp/agentgateway.yaml" >/dev/null 2>&1; then say "ok    schema   mcp/agentgateway.yaml against agentgateway $AG_TAG"
-else say "FAIL  schema   mcp/agentgateway.yaml does not match agentgateway $AG_TAG's config schema"; fail=1; fi
+AG_SCHEMA="https://raw.githubusercontent.com/agentgateway/agentgateway/$AG_TAG/schema/config.json"
+for agcfg in mcp/agentgateway.yaml platform/mcp/agentgateway.yaml; do
+  if check-jsonschema --schemafile "$AG_SCHEMA" "$IDP/$agcfg" >/dev/null 2>&1; then say "ok    schema   $agcfg against agentgateway $AG_TAG"
+  else say "FAIL  schema   $agcfg does not match agentgateway $AG_TAG's config schema"; fail=1; fi
+done
 
 # 4. incident_2026_08_24_dropped_assets: N inventory rows must yield N catalog
 #    entities and N database rows. catalog-gen silently dropped slug-colliding
@@ -130,6 +159,16 @@ else say "FAIL  render   rendered router configs do not match the vendor registr
 if "$MPY" "$IDP/bin/idp-features" plan --json | diff -q - "$IDP/platform/features/plan.json" >/dev/null 2>&1; then
   say "ok    plan     platform/features/plan.json matches bin/idp-features plan --json"
 else say "FAIL  plan     platform/features/plan.json is stale; run bin/idp-features plan --json > platform/features/plan.json"; fail=1; fi
+
+# 4b4. The catalogue's other half must be fresh too. catalog-info.yaml describes what is
+#      DECLARED; dark-matter.yaml describes what is BUILT and not running (unmerged branches
+#      carrying files absent from main, deployments scaled to zero). The generator is
+#      deterministic, so a stale file is drift and fails here -- which is what stops the
+#      inventory going back to lying by omission, the state measured 2026-09-12: 1,523
+#      unmerged branches and 722 files the catalogue was silent about.
+if "$MPY" "$IDP/bin/catalog-dark-matter" --check >/dev/null 2>&1; then
+  say "ok    darkmatter  backstage/platform/dark-matter.yaml matches a fresh sweep of git and the cluster"
+else say "FAIL  darkmatter  dark-matter.yaml is stale; run bin/catalog-dark-matter"; fail=1; fi
 
 # 4c. The catalogue must carry relationships. An entity list with no edges renders
 #     exactly like a mapped estate and is the failure a peer session named on

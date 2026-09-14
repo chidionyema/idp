@@ -8,6 +8,32 @@
 #
 # One bind, one route per backend, stateless MCP so a plain HTTP request is a complete
 # call and nothing has to hold a session id. Tool names are prefixed with the target name.
+#
+# WHY THERE IS A `config.tracing` BLOCK AT ALL.
+# The Deployment already sets OTEL_EXPORTER_OTLP_ENDPOINT, and that variable alone emits nothing.
+# Measured 2026-09-13: signoz_traces held 1,213,685 litellm spans and 21,802 agent-workforce spans,
+# and ZERO for mcp-agentgateway. An endpoint with no tracing config is a wish -- the estate had set
+# the variable and exported nothing. This block is what makes every MCP call a span, which is the
+# traffic the evidence layer records.
+# TRACING, under the top-level `config:` key, and three earlier placements were refused by the
+# pinned schema before this one was accepted. Finding the right one is what the schema check is for:
+#   listeners[0].policies.logging -> additional properties are not allowed
+#   logging at the root           -> additional properties are not allowed
+#   config.logging.otlp           -> additional properties are not allowed (RawLogging takes
+#                                    filter/fields/level and no otlp)
+# The root's `config` references RawConfig, whose `tracing` (RawTracing) takes otlpEndpoint and
+# otlpProtocol. Spans are also the right shape for this: a request span is the record of an MCP
+# call, and the evidence layer's job is to hold one per real action.
+config:
+  tracing:
+    # The endpoint is REFERENCED, not repeated: the Deployment already sets
+    # OTEL_EXPORTER_OTLP_ENDPOINT to this collector's OTLP/HTTP port, and agentgateway expands
+    # dollar-brace names from its environment (the file's own header records both facts, and that
+    # an unset name is fatal). One value, one place (LAW 46). That port is the one litellm --
+    # 1,213,685 spans -- and agent-workforce -- 21,802 -- already reach, so no new route and no
+    # new fence is opened to export here.
+    otlpEndpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+    otlpProtocol: http
 binds:
 - port: 3000
   listeners:

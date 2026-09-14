@@ -21,10 +21,19 @@ import * as path from "node:path";
  * Candidates, in order: the path given, then any worktree of the same repository, then the estate's
  * home checkout. The first one that holds the tool wins. Nothing is guessed: a miss returns null and
  * the caller reports BLIND.
+ *
+ * A root the caller NAMED but which does not exist is not a candidate at all, and it stops the
+ * search -- it is not a checkout, so no other checkout may answer for it. Measured 2026-09-13:
+ * passing '/nonexistent-root' fell through to the home checkout, found the tool there, replayed the
+ * observations and returned 423 Locked, so a caller asking about a root that is not there was
+ * answered with a DIFFERENT root's verdict. Silence is not the only way to lie about a missing
+ * tool; answering from somewhere else is the same defect wearing a result.
  */
 function findTool(repoRoot) {
   const rel = path.join("bin", "idp-circuit-breaker");
   const seen = new Set();
+  // A named root that is not on disk ends the search: BLIND, and never another checkout's answer.
+  if (repoRoot && !fs.existsSync(repoRoot)) return null;
   const roots = [repoRoot, process.env.ESTATE_ROOT, path.join(process.env.HOME || "~", "dev", "code", "idp")];
   for (const r of roots) {
     if (r) seen.add(path.resolve(r));
