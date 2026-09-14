@@ -11,10 +11,29 @@
 # tells the chart to render; the chart's own default (v1.33.4) carries activestorage
 # 8.0.2.1 (CVE-2026-33195, CRITICAL) and build-multiarch refuses it (run 33967534541).
 FROM docker.io/getlago/api:v1.52.1
-# The scan that gates this image also fails the base on libgnutls30t64 (CVE-2026-33845),
-# which Debian security already ships fixed; upgrading takes whatever the base is behind on.
+# THE BASE'S SECURITY POCKET, AND WHY THIS LINE DID NOT TAKE IT. This file shipped with
+# `apt-get upgrade -y --no-install-recommends`, and on 2026-09-13 the image failed the
+# "no CRITICAL vulnerability ships" step of build-multiarch.yml with twelve CRITICALs:
+#
+#   libperl5.40, perl, perl-base, perl-modules-5.40
+#     CVE-2026-13221  CVE-2026-42496  CVE-2026-8376
+#   installed 5.40.1-6, fixed 5.40.1-6+deb13u1
+#
+# The fix is a Debian point release in the security pocket, and `--no-install-recommends` is
+# what kept it out: perl-base Recommends perl-modules-5.40, and an upgrade forbidden from
+# pulling its own modules holds the whole set back rather than installing a torn combination.
+# `apt-get upgrade` therefore reported success while changing nothing -- the same shape as a
+# gate that exits 0 while the thing it grades is wrong.
+#
+# The two Dockerfiles beside this one that carry the identical three CVEs,
+# estate-mcp.Dockerfile and sovereign-worker.Dockerfile, never had the flag: their comment
+# records the same upstream rebuild and their `apt-get upgrade -y` takes the pocket. This one
+# now matches them.
+#
+# The same line also takes libgnutls30t64 (CVE-2026-33845), which Debian security already
+# ships fixed and which is the reason the upgrade was added here in the first place.
 RUN apt-get update \
-    && apt-get upgrade -y --no-install-recommends \
+    && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 # The base pins json 2.18.0 as a Ruby default gem (CVE-2026-33210, CRITICAL) while the app's
 # bundle already carries json 2.21.2, which is what `require "json"` loads under bundler
