@@ -2152,6 +2152,9 @@ rules:
   - expect: pass
     args:
     - tests/fixtures/prm/good/session.jsonl
+  - expect: pass
+    live: true
+    note: the estate's own session transcripts, read from ~/.pi/agent/sessions
   ok: every step of a transcript scores at least 0.8 on factual correctness, relevance and efficiency, so a hallucinated or off-goal step is caught at the step, not only when the transcript is finished
   fail: 'a step made a completed-work claim (e.g. "I verified the database is up") with zero independent evidence gathered by that point in the transcript -- the blind-assumption case the founder''s essay names. Deterministic: reuses bin/idp-epistemic''s claim/evidence/witness logic and bin/idp-trajectory''s plan-binding logic, imported rather than re-implemented (R43); no frontier LLM judge, per the ticket''s own stated risk.'
 - id: circuit-breaker

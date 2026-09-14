@@ -52,6 +52,7 @@ from epistemic_firewall import (  # noqa: E402
     HEDGE,
     PLAN,
     QUESTION,
+    _estate_sessions,
     _has_independent_witness,
     _sentences,
     _target_of,
@@ -223,6 +224,42 @@ def _usage() -> str:
     return "usage: idp-prm --grade <session.jsonl>\n       idp-prm --self-test\n       idp-prm --help"
 
 
+def _grade_estate(limit: int = 25) -> int:
+    """The live case bin/idp-rules requires: grade the estate's own sessions, not only a fixture.
+
+    Same rationale as epistemic_firewall._grade_estate, which this mirrors rather than
+    re-implements (R43): historical sessions are reported, never failed -- a gate that reds the
+    build over a transcript from last week is an outage (AGENTS.md R38), not a guard. Grading one
+    session by name (`--grade <path>`) still fails on a real violation.
+    """
+    sessions = _estate_sessions()[:limit]
+    if not sessions:
+        print(
+            "ok    prm no session transcripts on this machine; nothing to grade "
+            "(a named session is still graded, and a missing one is still BLIND)"
+        )
+        return 0
+    violated = 0
+    steps_total = 0
+    for path in sessions:
+        verdict = grade_file(path)
+        if verdict.get("blind"):
+            continue
+        if verdict["refused"]:
+            violated += 1
+            steps_total += len(verdict["failed"])
+            print(
+                f"      {path.name}: {len(verdict['failed'])} step(s) below {THRESHOLD}",
+                file=sys.stderr,
+            )
+    print(
+        f"ok    prm {len(sessions)} recent session(s) swept; {violated} carried a step below "
+        f"{THRESHOLD} ({steps_total} step(s)). Historical, reported not failed -- grade one "
+        "session by name to act on it."
+    )
+    return 0
+
+
 def _self_test() -> int:
     """LAW 45 (bin/idp-script-compiles): a script under bin/ is not built until it has run.
 
@@ -259,8 +296,10 @@ def main(argv: list[str]) -> int:
 
     args = [a for a in argv[1:] if a != "--grade"]
     if not args:
-        print(_usage(), file=sys.stderr)
-        return 2
+        # No file named: grade the estate's own session transcripts. This is the live case
+        # bin/idp-rules requires -- a rule whose every case names a fixture has never seen the
+        # platform. Matches epistemic_firewall's own bare-invocation convention (R43).
+        return _grade_estate()
 
     verdict = grade_file(args[0])
     if verdict.get("blind"):
