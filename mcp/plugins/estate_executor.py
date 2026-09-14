@@ -40,6 +40,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -129,30 +130,40 @@ class Executor:
     def __init__(self) -> None:
         self._jobs: dict[str, Job] = {}
         self._seq = 0
+        # `daemon.py` serves each connection on its own thread (ThreadingUnixStreamServer,
+        # daemon_threads=True), and this registry is one shared instance across all of them.
+        # Measured 2026-09-14: `self._seq += 1` is LOAD/ADD/STORE, not one bytecode, so two
+        # threads can read the same value before either writes it back. 3,200 concurrent
+        # `execute_command` calls against the unlocked version produced 2,779 unique job ids --
+        # 421 jobs silently overwrote a sibling job in `self._jobs` and vanished. A lock around
+        # the id mint plus the dict write is the whole fix; no new store, no new id scheme.
+        self._lock = threading.Lock()
 
     def submit(
         self, command: str, cwd: str | None = None, ceiling_sec: int = CEILING_SEC
     ) -> Job:
-        self._seq += 1
-        job = Job(
-            job_id=f"exec-{int(time.time())}-{self._seq}",
-            command=command,
-            ceiling_sec=ceiling_sec,
-            cwd=cwd,
-        )
-        self._jobs[job.job_id] = job
+        with self._lock:
+            self._seq += 1
+            job = Job(
+                job_id=f"exec-{int(time.time())}-{self._seq}",
+                command=command,
+                ceiling_sec=ceiling_sec,
+                cwd=cwd,
+            )
+            self._jobs[job.job_id] = job
         return job
 
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
 
     def finish(self, job_id: str, exit_code: int, log: str = "") -> Job | None:
-        job = self._jobs.get(job_id)
-        if job is None:
-            return None
-        job.state = "finished"
-        job.exit_code = exit_code
-        job.log = log
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return None
+            job.state = "finished"
+            job.exit_code = exit_code
+            job.log = log
         return job
 
 
@@ -271,12 +282,46 @@ def execute_command(
     }
 
 
+def _runs_root():
+    """Where the detached runner writes `<job_id>.log/.pid/.exit` -- read from the environment,
+    never a literal (LAW 46). The same variable `platform/executor/run.py` itself reads
+    (`ESTATE_RUNS`), so this reads the one file format that module already owns, rather than a
+    second one invented for the MCP surface (LAW 43)."""
+    from pathlib import Path as _Path
+
+    return _Path(os.environ.get("ESTATE_RUNS") or (_Path.home() / ".estate" / "runs"))
+
+
+def _sync_from_disk(job: Job, executor: Executor) -> None:
+    """Bridge the detached runner's real exit file into this in-memory Job.
+
+    Measured 2026-09-14: `Job.finish()` had no caller anywhere in this file, so `read_job`
+    reported every job as `state: "accepted"` forever, with an empty log and a null exit code,
+    no matter how long the real detached process the daemon started had already finished --
+    the exact symptom `exec-*` job ids showed against a plain `echo`. This does not re-implement
+    completion detection: it reads the SAME `<job_id>.exit` / `<job_id>.log` files
+    `platform/executor/run.py`'s own `status()` already reads.
+    """
+    exit_path = _runs_root() / f"{job.job_id}.exit"
+    if not exit_path.exists():
+        return
+    try:
+        code = int(exit_path.read_text().strip() or 0)
+    except (OSError, ValueError):
+        return
+    log_path = _runs_root() / f"{job.job_id}.log"
+    log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
+    executor.finish(job.job_id, code, log_text)
+
+
 def read_job(job_id: str, *, executor: Executor | None = None) -> dict:
     """Read one job's outcome. Never waits -- a door that waits is the thing this replaces."""
     executor = executor or _REGISTRY
     job = executor.get(job_id)
     if job is None:
         return {"found": False, "error": "no job with that id"}
+    if job.state == "accepted":
+        _sync_from_disk(job, executor)
     return {
         "found": True,
         "job_id": job.job_id,
@@ -317,17 +362,50 @@ def register_mcp_tools(
         """Run a command through the estate executor. Returns a job id in milliseconds; the turn
         ends. Every command is bounded to the estate ceiling by the executor, on the far side of
         this call. Read the outcome later with read_job. A payload that declares it mutates the
-        live worktree is refused, fatally."""
-        return execute_command(
-            command,
-            cwd=cwd,
-            ceiling_sec=ceiling_sec,
-            mutates_live_worktree=mutates_live_worktree,
+        live worktree is refused, fatally.
+
+        Measured 2026-09-14: this used to call `execute_command()` in this process -- the MCP
+        server's own interpreter, a different process than `platform/executor/daemon.py`'s, each
+        with its own `_REGISTRY` in its own memory. The call minted a job id and stopped: nothing
+        told the daemon to run anything, so `~/.pi/agent/bin/run`/`run.py` never started and no
+        `<job_id>.exit` was ever going to appear, however long `read_job` waited. Every job the
+        MCP surface accepted was structurally unable to finish. Routed onto the same socket
+        `bin/idp-exec` and the verifier tools already use (`_verifier_call`, generic despite its
+        name -- one request, one reply, to any verb `Handler.handle` answers) so the MCP surface
+        and the command line cannot disagree about where the door is (LAW 43).
+        """
+        result = _verifier_call(
+            {
+                "verb": "execute",
+                "command": command,
+                "cwd": cwd,
+                "ceiling_sec": ceiling_sec,
+                "mutates_live_worktree": mutates_live_worktree,
+            }
         )
+        if result.get("unread"):
+            return {
+                "accepted": False,
+                "error": result.get("error", "executor unreachable"),
+            }
+        if not result.get("ok", True) and "accepted" not in result:
+            return {"accepted": False, "error": result.get("error", "refused")}
+        return result
 
     def read_job_tool(job_id: str) -> dict:
-        """Read one job's state, exit code and log. Never waits."""
-        return read_job(job_id)
+        """Read one job's state, exit code and log. Never waits.
+
+        Reads through the daemon socket (same fix as execute_command_tool): the job this process
+        would look up locally was minted in a different process's registry and would never be
+        found here.
+        """
+        result = _verifier_call({"verb": "read", "job_id": job_id})
+        if result.get("unread"):
+            return {
+                "found": False,
+                "error": result.get("error", "executor unreachable"),
+            }
+        return result.get("result", result)
 
     mcp.tool(name="execute_command")(execute_command_tool)
     mcp.tool(

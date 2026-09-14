@@ -8,7 +8,7 @@ ORDER (founder, 2026-09-13, verbatim):
 
 WHAT THIS IS, and what it deliberately is not:
   It is the thin transport between the agent and the detached runner this estate ALREADY built
-  and proved -- `~/.pi/agent/bin/run`, which starts a command with nohup in its own session,
+  and proved -- `run.py`, beside this file, which starts a command detached in its own session,
   writes `~/.estate/runs/<id>.log`, records the pid, and returns in milliseconds. Nothing here
   re-implements that (LAW 43: never reinvent a wheel a mature tool already does).
 
@@ -114,11 +114,20 @@ def _runner_argv(
 
     `timeout` wraps the command so the bound is enforced by the kernel, not by this loop watching a
     clock (LAW 43). `run` starts it detached so this daemon is never the thing holding a turn open.
+
+    Measured 2026-09-14: this called the shell `~/.pi/agent/bin/run`, a hardcoded path outside this
+    checkout (LAW 46) to the OLD implementation `platform/executor/run.py`'s own docstring names as
+    replaced 2026-09-13 -- `--cwd` word-splitting sent a job named "--cwd" to disk instead of running
+    in the given directory. `run.py` sits beside this file, its `--cwd` handling ordered to match
+    this exact argv ("consumed BEFORE the name, because that is the order the daemon passes it"),
+    and was never actually wired in. This derives its path from `__file__`, never typed.
     """
+    runner = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run.py")
+    run_argv = [sys.executable, runner]
     inner = [TIMEOUT_BIN, "--signal=TERM", f"{ceiling_sec}s", "bash", "-lc", command]
-    argv = [os.path.expanduser("~/.pi/agent/bin/run"), job_id, *inner]
+    argv = [*run_argv, job_id, *inner]
     if cwd:
-        argv = [os.path.expanduser("~/.pi/agent/bin/run"), "--cwd", cwd, job_id, *inner]
+        argv = [*run_argv, "--cwd", cwd, job_id, *inner]
     return argv
 
 
