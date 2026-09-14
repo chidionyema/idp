@@ -13,6 +13,30 @@
 # directory. build-multiarch.yml builds this list and bin/multiarch-gate checks
 # that nothing Dockerfile-shaped in the tree is missing from it, so an image can
 # not escape R24 by its file name (found by chidionyema-b0, 2026-08-25).
+case "${1:-}" in
+  --help|-h)
+    cat <<'USAGE'
+usage: dockerfiles [--json] [--changed-since <ref>]
+
+List every Dockerfile-shaped image in this repository: name, dockerfile, context.
+
+options:
+  --json            emit as a JSON array of objects
+  --changed-since   only images whose context (or Dockerfile) differs from <ref>
+  --self-test       prove this script runs: lists images, touches no network
+  --help, -h        this message
+USAGE
+    exit 0
+    ;;
+  --self-test)
+    for t in git grep jq; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 1; }; done
+    bash -n "$0"
+    n=$("$0" --json | jq 'length')
+    [ "${n:-0}" -gt 0 ] || { echo "FAIL dockerfiles --self-test: --json listed 0 images"; exit 1; }
+    echo "ok dockerfiles self-test ($n images)"
+    exit 0
+    ;;
+esac
 set -euo pipefail
 cd "$(dirname "$0")/.."
 json=0; since=
