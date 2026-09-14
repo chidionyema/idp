@@ -187,19 +187,43 @@ def stage_structural(files: list[ProposedFile]) -> tuple[bool, str]:
 def stage_symbolic(files: list[ProposedFile]) -> tuple[bool, str]:
     """Look for an `assert` guard on a parameter and ask Z3 whether it holds.
 
-    The property proved is the one the patch itself declares -- an `assert`
-    statement naming a parameter -- so the proof is about the function's own
-    contract, not a property this module invented. A patch that declares no such
-    contract has nothing to prove symbolically and passes this stage, which is
-    stated rather than hidden: stage 2 is a proof of DECLARED properties.
+        The property proved is the one the patch itself declares -- an `assert`
+        statement naming a parameter -- so the proof is about the function's own
+        contract, not a property this module invented. A patch that declares no such
+        contract has nothing to prove symbolically and passes this stage, which is
+        stated rather than hidden: stage 2 is a proof of DECLARED properties.
 
-    A patch whose guard is refutable -- "assert n >= 0" on a function that any
-    caller may hand a negative -- is reported with the counterexample Z3 found.
+        A patch whose guard is refutable -- "assert n >= 0" on a function that any
+        caller may hand a negative -- is reported with the counterexample Z3 found.
+
+        A MISSING SOLVER IS A FAILURE, NOT A PASS. This returned `True, ""` on
+        `ImportError` until 2026-09-13, and that branch was the same defect as the
+        `_guard` bug documented below, one level up: the stage advertised itself as a
+        mathematical proof while proving nothing at all. It was invisible on this
+        machine because `z3` is installed here (5.1.0) and absent on the CI runner,
+        so the only place the lie could surface was the place it did -- CI run
+        34798223412 reported `symbolic: {'passed': True, 'stderr': ''}` for a patch
+        the scenario declares broken, and
+        `test_a_proposed_patch_contains_structural_symbolic_or_execution_flaws`
+        caught it with "a broken patch verified at symbolic".
+
+        The two halves of the fix are deliberately separate. `z3-solver` is now
+        declared in `sovereign/requirements.txt`, which is what makes the stage
+        actually run on CI; this branch is what makes its absence LOUD on the next
+        runner that lacks it. Declaring a dependency does not license a silent pass,
+        because a claim of verified bytes is the one thing this module exists to
+    take away from the claimant -- and "nothing could be read" must never print
+        the same thing as "nothing was wrong" (LAW 2).
     """
     try:
         import z3  # noqa: PLC0415 - optional at import time, required to disprove
-    except ImportError:  # pragma: no cover - z3 is present, measured 2026-09-13
-        return True, ""  # nothing to refute with; stage 3 still has to pass
+    except ImportError as exc:  # pragma: no cover - declared in requirements.txt
+        return False, (
+            "symbolic stage could not run: z3 is not installed, so this patch "
+            "was NOT proven and must not be admitted. Install it from "
+            "sovereign/requirements.txt (`pip install z3-solver`). A stage that "
+            f"could not read its input is a fail, never a pass ({exc})."
+        )
 
     counterexamples: list[str] = []
     for proposed in files:
