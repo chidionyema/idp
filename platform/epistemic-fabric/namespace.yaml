@@ -1,0 +1,24 @@
+# idp#3448 CP1 (the cognitive stack, Layer 1: Epistemic Fabric). Ingestion connectors that
+# turn GitHub webhooks, Slack exports, CI/CD telemetry and incident logs into CloudEvents on
+# the estate's existing NATS JetStream event-bus (platform/event-bus) -- not a new broker
+# (founder, 2026-09-14: "dont use kakfa we have etsrean"; docs/specs/issue-3448.md CP1).
+#
+# One namespace for the whole Layer 1 Kustomization row (`epistemic-fabric`): this
+# checkpoint's four ingestion connectors, and CP2's Memgraph store lands in a `memgraph/`
+# subdirectory under the same row rather than a namespace of its own, per the spec's own
+# gate commands (both CP1 and CP2 name the same Kustomization and namespace).
+#
+# Restricted profile, default-deny NetworkPolicy + ResourceQuota + LimitRange from
+# platform/ns-fences (bin/idp-ns-fence-gen, allowances.yaml), the same pattern every other
+# namespace in platform/ carries -- not hand-written here (crew#839, "one shot").
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    # Never garbage-collected by Flux (idp#648): a namespace dropped from git stays, with
+    # everything in it, and the next reconcile reads as a portability break.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: epistemic-fabric
+  labels:
+    app.kubernetes.io/part-of: idp
+    pod-security.kubernetes.io/enforce: restricted
