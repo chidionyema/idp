@@ -1,0 +1,31 @@
+# idp#3448 CP1: the four ingestion connectors' one image rolls on every main build, the same
+# wiring router-events.yaml uses. build-multiarch pushes
+# ghcr.io/chidionyema/epistemic-ingest:main-<run>-<sha>; the policy picks the highest run and
+# the one ImageUpdateAutomation (backstage.yaml, path ./) writes it into
+# platform/epistemic-fabric/kustomization.yaml on flux/image-updates. Two automations on one
+# push branch collide (crew#406), so there is exactly one, shared by every image.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: epistemic-ingest
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/epistemic-ingest
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: epistemic-ingest
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: epistemic-ingest
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc
