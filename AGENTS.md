@@ -25,96 +25,10 @@ another, and listed a third. Fifteen fixtures under `policy/fixtures` were named
 all. Founder, the Unification Move: "Ruthless Deletion ... Do not leave them as dead code. Do not
 deprecate them. Eradicate them."
 
-
-<!-- BEGIN GENERATED RULES TABLE (bin/idp-rules render-agents-md) -->
-| rule | law | gate | must-fail | must-pass |
-|---|---|---|---|---|
-| A manifest naming a group/version this estate has migrated off is a row that never reconciles -- and it does not fail alone, because the whole Kustomization goes NotReady and every row depending on it stops too | incident 2026-09-12, aevum-evidence held chaos and science out | `python3 bin/idp-api-version-gate` | tests/fixtures/api-version/bad | tests/fixtures/api-version/good |
-| A receipt that does not verify is not evidence: every recorded agent action chains to the previous one and is covered by a signature, and an EMPTY ledger is a fail-closed FAIL rather than a clean bill -- Aevum's default store is in-memory and verify_sigchain() answers True about a chain with no events, so a misconfigured deployment reports green while recording nothing | decision 0028 | `python3 bin/idp-evidence-gate` | tests/fixtures/aevum-evidence/bad/chain.json | tests/fixtures/aevum-evidence/good/chain.json |
-| No shell parameter expansion (${NAME:-...} and kin) in a Flux-reconciled manifest; Flux substitution rewrites it before the pod runs it | incident 2026-09-06, otto-gateway | `python3 bin/idp-flux-subst-gate` | tests/fixtures/flux-subst/bad.yaml | tests/fixtures/flux-subst/good.yaml |
-| A Flux Kustomization never sets both wait: true and healthChecks; wait wins, the checks the author wrote are discarded, and the row then waits on every object in its path -- so one optional Job going Failed holds every change to that path out of the cluster | incident 2026-09-10, otto-gateway held out by Job/otto-memory-store-6 | `python3 bin/idp-flux-wait-brake` | tests/fixtures/flux-wait-brake/bad.yaml | tests/fixtures/flux-wait-brake/good.yaml |
-| No probe or lifecycle handler names a host: PodSecurity restricted refuses the pod at create, not the manifest at apply, so a workload carrying one merges green, reconciles green, and then its ReplicaSet fails to make a pod forever while the old pod keeps serving | incident 2026-09-10, otto-gateway three homes Available=False for hours | `python3 bin/idp-probe-host` | tests/fixtures/probe-host/bad.yaml | tests/fixtures/probe-host/good.yaml |
-| No provider-specific annotation or Service outside the compute provisioner | R36 | `python3 bin/cloud-agnostic-gate` | tests/fixtures/cloud-agnostic/bad | tests/fixtures/cloud-agnostic/good |
-| The DNS zone is one value in clusters/*/estate-config.yaml; a platform file naming it as a literal fails, in the tree and in a pull-request diff | R46 | `python3 bin/estate-zone-gate` | tests/fixtures/estate-zone/bad | tests/fixtures/estate-zone/good |
-| A compose publication not declared in catalog/ports.yaml, or off loopback without non_loopback, fails | R22 mechanism 4, R20 | `python3 bin/port-gate` | tests/fixtures/ports-bad | catalog/ports.yaml |
-| A listener bound to a different address than its ports.yaml row declares is refused | R20 | `python3 bin/port-gate` | tests/fixtures/ports-live/inventory.bad.json | tests/fixtures/ports-live/inventory.good.json |
-| A control on the security policy page without a proof command that exists is a wish | LAW 44 | `python3 bin/security-policy-gate` | tests/fixtures/security-policy/bad.md | tests/fixtures/security-policy/good.md |
-| Every vault entry an ExternalSecret reads is born by a bootstrapper on disk or ticketed | R52 | `python3 bin/idp-root-trust` | tests/test_incident_crew66_root_trust_register.py | platform/secrets |
-| Every registered AI system has its Annex IV file, risk entries and declared data (Arts. 9, 10, 11) | AI Act, kept voluntarily | `python3 bin/ai-act-gate` | tests/fixtures/ai-act/bad | tests/fixtures/ai-act/good |
-| A new bin file ships with docs/tutorials/demo and docs/how-to/onboarding, above the prose floor and in the nav | LAW 32 | `python3 bin/law32-gate` | bin/feature-with-no-pages | bin/supply-chain |
-| Every launchd template renders to a plist that parses and names its job | LAW 45 | `python3 bin/plist-gate` | tests/fixtures/plist/bad.plist.tmpl | tests/fixtures/plist/abandoned-children.plist.tmpl |
-| A migration whose second apply adds a resource is refused | R22 mechanism 1 | `bin/migration-gate` | tests/fixtures/migration-not-idempotent | bin/scheduler-migrate |
-| Zero static secrets on disk; a key or a .env in the tree is refused | security-policy.md, kini-master-spec 4.1/4.4 | `bin/static-secret-gate` | tests/fixtures/static-secret/bad | tests/fixtures/static-secret/good |
-| Every provider account names a second owner | R54 | `bin/owner-account-gate` | tests/fixtures/owner-accounts/bad.yaml | tests/fixtures/owner-accounts/good.yaml |
-| Only the gateway binds a non-loopback address; everything else is 127.0.0.1 or nothing | R20 | `bin/bind-audit` | tests/fixtures/listeners.bad.txt | tests/fixtures/listeners.good.txt |
-| The founder's ethos is seven measured tenet rows; a row without a command is refused | LAW 44 | `python3 bin/idp-conscience` | a tenet row with no command | bin/idp-conscience |
-| Every scheduled job reaches the Dagster UI with a description of what it does | LAW 28 | `python3 -m` | tests/fixtures/schedule-undescribed.yml | tests/fixtures/schedule-described.yml |
-| A VM mount source outside the shared tree is refused; one inside it is permitted | R19 | `bin/vm-shared-path` | $OUTSIDE | $HOME |
-| No namespace without a both-ways default-deny NetworkPolicy, a ResourceQuota, a LimitRange and a DNS exception | crew#191, crew#839 | `python3 bin/ns-fence-gate` | tests/fixtures/ns-fence/bad.yaml | tests/fixtures/ns-fence/good.yaml |
-| A workflow that grades main never cancels main's own run; stale pull-request runs still are | crew#865 | `python3 bin/main-verdict-gate` | tests/fixtures/main-verdict/bad.yml | tests/fixtures/main-verdict/good.yml |
-| A test grades behavior or parsed structure, never prose: no test function may only assert sentences or string membership in file text | R76 | `python3 bin/test-prose-gate` | tests/fixtures/prose-pin/bad.py | tests/fixtures/prose-pin/good.py |
-| One credential is one tenant's; the operator's road never widens the customer's | decision 0021 | `python3 bin/idp-tenant-split` | tests/fixtures/tenant-split/bad.yaml | tests/fixtures/tenant-split/good.yaml |
-| A grant the JIT broker may mint can never be turned into standing access: no token for a verb that rewrites a pod spec, no secrets or RBAC, no core namespace, no wildcard, a TTL under the ceiling and a declared rate | WJ.5 | `python3 bin/idp-jit-grants` | tests/fixtures/jit-grants/bad.yaml | tests/fixtures/jit-grants/good.yaml |
-| A profile of a denied packet is only ever a wall when the probe proved it could reach an allowed path; a probe that could not run is a fail-closed FAIL, never a pass | zero-trust-boundary.md step 1 | `python3 bin/idp-fence-enforcement` | tests/fixtures/fence-drill/gate-broken-fence.json | tests/fixtures/fence-drill/gate-good.json |
-| The 39 generated policies stay unwired until a deny feed has been read over a full cycle; an empty log feed is a fail-closed FAIL, never a clean bill | platform/calico README | `python3 bin/idp-calico-deny-log` | tests/fixtures/calico-denyflow/feed-no-evidence.log | tests/fixtures/calico-denyflow/feed-with-deny.log |
-| A pod in the gVisor sandbox cell must name runtimeClassName gvisor and must not be privileged, host-networked or mount a hostPath | zero-trust-boundary.md step 5 | `python3 bin/gvisor-cell-gate` | tests/fixtures/gvisor-cell/bad.yaml | tests/fixtures/gvisor-cell/good.yaml |
-| A gVisor-cell namespace fence is default-deny with the gateway the one allowed route; a fence granting the cell internet egress is a break caught in the pull request | zero-trust-boundary.md step 6 | `python3 bin/gvisor-cell-fence-gate` | tests/fixtures/gvisor-cell-fence/bad.yaml | tests/fixtures/gvisor-cell-fence/good.yaml |
-| Every surface the founder can open survives losing one node, and so does every fail-closed admission webhook -- losing one of those costs not a hostname but the cluster's ability to apply anything, its own repair included | docs/reference/policy/availability-standard.md | `python3 bin/idp-availability-gate` | tests/fixtures/availability/bad | tests/fixtures/availability/good |
-| The policy/*_test.rego unit tests run in CI; a test no job runs is decoration | LAW 3 | `conftest verify` | — | — |
-| No dependency whose licence blocks a sale; a scan with no licences is not clean | LAW 40 | `conftest test` | policy/fixtures/sell-blocking.json | policy/fixtures/clean.json |
-| No scheduled job on this laptop that runs in the sleep window or is never pinged | LAW 28 | `conftest test` | policy/fixtures/placement-misplaced.json | policy/fixtures/placement-ok.json |
-| Paid capacity is auto-defaulted up to estate-defaults.yaml node_pool.budget_monthly_usd and refused above it | R14 | `conftest test` | policy/fixtures/capacity-over-cap.json | policy/fixtures/capacity-under-cap.json |
-| A pull request carries its identity and grant together, no console step, a canary label on a paid-capacity change, and no estate-zone literal in the lines it adds | LAW 51, ZCP | `conftest test` | policy/fixtures/opmodel-half-provisioned.json | policy/fixtures/opmodel-ok.json |
-| A doc that tells a person to mint a credential by hand is refused; a FOUNDER ACTION line is not | LAW 47, R52 | `conftest test` | policy/fixtures/notoil-doc-manual.json | policy/fixtures/notoil-doc-founder-action.json |
-| The conscience rules judge a pull request both ways | LAW 44 | `conftest test` | policy/fixtures/conscience-bad.json | policy/fixtures/conscience-clean.json |
-| Every bash script in bin/ passes shellcheck at warning level | LAW 45 | `shellcheck` | tests/fixtures/shell-lint/bad.sh | tests/fixtures/shell-lint/good.sh |
-| No file names where the checkout, home directory or machine lives | LAW 46 | `bin/idp-hardcode-scan` | tests/fixtures/hardcoded-path.bad.sh | tests/fixtures/hardcoded-path.good.sh |
-| A code location loads the way workspace.yaml loads it: by file path, not as a package | LAW 45 | `bin/idp-defs-validate` | tests/fixtures/definitions/relative-import.py | tests/fixtures/definitions/loads-by-path.py |
-| A workload that runs must be one the nodes that exist could place again; a pod the scheduler has refused, and a pod that fits on no other node, are both named | LAW 45 | `python3 bin/idp-fits-a-node` | tests/fixtures/fits-a-node/bad | tests/fixtures/fits-a-node/good |
-| Reloader is off on a workload a custom resource owns; that operator owns its config rollout, and Reloader on top of an operator is a loop, not a control. A Secret re-minted on a timer says what Reloader does with it (ignore, or a sentence why the roll is wanted); a silent one is refused | crew#684 rung 2 | `kyverno` | tests/fixtures/reloader-blind | tests/fixtures/reloader |
-| Dagster is the estate's one scheduler; a recurring job declared in launchd, a GitHub Actions cron or a Kubernetes CronJob is named here until it is folded in | THE HEADLINE (one platform layer, not a stitched one) | `python3 bin/idp-one-scheduler` | tests/fixtures/one-scheduler/bad | tests/fixtures/one-scheduler/good |
-| The broker, its grant catalogue, the RBAC floor and bin/idp-kube never land on a green check alone: no auto-merge, no self-approval, and the founder's own review or nothing | WJ.8 | `python3 bin/idp-glass-break` | tests/fixtures/glass-break/bad.json | tests/fixtures/glass-break/good.json |
-| An infrastructure pull request reaches the merge gate with a Proof-of-Convergence; a body with no such block, or whose proof's run is not a green run on its own head commit, is refused -- a missing or unparseable proof is a fail-closed FAIL, never a pass | W2.3 | `python3 bin/idp-convergence-proof` | tests/fixtures/convergence/no-proof.md | tests/fixtures/convergence/proved.md |
-| A Secret cloned into the shadow dimension is a same-shape shell or it is refused; a live value must never survive re-shaping -- a non-shell Secret in a shadow state-set is a fail (secrets are never copied into a vcluster, only keyed dummies so a Deployment mounts) | W2.1 | `python3 bin/idp-shadow-sync` | tests/fixtures/shadow-sync/verbatim | tests/fixtures/shadow-sync/shelled |
-| A change to a workload passes the low-risk lane only when its sole difference is a strict increase of a resources.limits.memory/cpu value on one workload; a request change (which the scheduler counts), a lower limit, or any other edit is refused -- YAML ancestry is read from the full parsed old and new files, never guessed from a git hunk | W3.1 | `python3 bin/idp-limit-raise-only-diff` | tests/fixtures/limit-raise/request | tests/fixtures/limit-raise/good |
-| A pull request rolls one workload back only when every changed line is a newTag: whose value that same file has already carried on origin/main; a tag never on main is a forward deploy and waits, and a change that edits anything but a tag is refused -- the prior footprint is proved from history, never assumed from age | W3.2 | `python3 bin/idp-rollback-only-diff` | tests/fixtures/rollback/forward-new-tag.diff | tests/fixtures/rollback/rollback-known-good.diff |
-| A sovereign agent's command is inside the allowlist or it is denied; an allowlist that defaults to allow is a denylist wearing the wrong name | spec v1.0 4.2 | `conftest test` | policy/fixtures/command-not-allowlisted.json | policy/fixtures/command-allowed.json |
-| Every fixture pair in the tree is named by a registry case or a test; a fixture graded by nothing is a rule nobody runs, and the ledger of the ones still unwired only shrinks | LAW 45 | `python3 bin/idp-rule-coverage` | tests/fixtures/rule-coverage/bad | tests/fixtures/rule-coverage/good |
-| The broker mints only what it already holds: its own ClusterRole carries no escalate, no bind, no impersonate, no wildcard and no secrets, and no ClusterRoleBinding names it -- the absence that makes KSV-0050 on that file an accepted risk rather than a defect | WJ.5 | `python3 bin/idp-jit-broker-role` | tests/fixtures/jit-broker-role/bad.yaml | tests/fixtures/jit-broker-role/good.yaml |
-| A deck that replaces a vendor operator never reuses the operator's cluster-scoped names; a ClusterRole has no namespace, so moving the ServiceAccounts does not separate them | platform/calico/raw/README.md | `python3 bin/vendor-name-collision-gate` | tests/fixtures/vendor-names/bad.yaml | tests/fixtures/vendor-names/good.yaml |
-| A RuntimeInstall CR names a runtime in the closed set the NodeSoftwareOperator knows, requires a canary on ProgressiveCanary rollouts, and rejects pause durations that would make the canary pause a no-op | NodeSoftwareOperator option c, goal b9217bea | `bin/nodesoftware-operator-gate` | tests/fixtures/nodesoftware-operator/bad.yaml | tests/fixtures/nodesoftware-operator/good.yaml |
-| A conditional's verdict is never a pipeline into grep in a script that sets pipefail: a failing left-hand stage inverts the answer silently. Capture the output first and grade the text. | LAW 55 | `bin/idp-pipeverdict` | tests/fixtures/pipefail-verdict.bad.sh | tests/fixtures/pipefail-verdict.good.sh |
-| One cloud resource has exactly one owner: a Crossplane external-name that matches an OpenTofu resource under platform/oci is two controllers undoing each other, forever | decision 0026 | `python3 bin/idp-split-brain` | tests/fixtures/split-brain/bad | tests/fixtures/split-brain/good |
-| A mechanism this repository depends on may not be switched off, deleted or unproduced: every `uses:` resolves to a workflow in the tree, and every workflow GitHub is not running is named with a reason in .github/disabled.yaml -- a registry, and never inside .github/workflows/, where GitHub tries to run it | incident 2026-09-08, ten days of nothing merging and nothing red | `python3 bin/idp-mechanism-gate` | tests/fixtures/mechanism/bad | tests/fixtures/mechanism/good |
-| A ClickHouse system table the operator gives an <engine> carries its retention inside that engine string, never as a sibling <ttl>; ClickHouse exits 36 on boot when both are present | incident 2026-09-08, signoz-clickhouse CrashLoopBackOff | `python3 bin/idp-clickhouse-system-log-ttl` | tests/fixtures/clickhouse-system-log-ttl/bad.yaml | tests/fixtures/clickhouse-system-log-ttl/good.yaml |
-| A ClickHouse system table this tree configures by its base name also configures its `_0` twin, with a TTL no longer than the base table's; a twin that keeps the operator's 30-day default is a table whose parts the merge pool cannot keep up with | incident 2026-09-13, signoz-clickhouse 49 OOMKilled restarts | `python3 bin/idp-clickhouse-twin-ttl` | tests/fixtures/clickhouse-twin-ttl/bad.yaml | tests/fixtures/clickhouse-twin-ttl/good.yaml |
-| A Crossplane Provider and an instance of a kind its package installs never share a Flux Kustomization path; Flux dry-runs the whole path first, so neither the instance nor the Provider ever lands | incident 2026-09-08, crossplane-providers | `python3 bin/idp-crd-then-cr` | tests/fixtures/crd-then-cr/bad | tests/fixtures/crd-then-cr/good |
-| A secret store that authenticates outside the cluster has a fence that lets it get there: egress_internet, and egress_metadata too when its identity is fetched at run time | incident 2026-09-08, ClusterSecretStore/estate-vault | `python3 bin/idp-store-can-reach-its-vault` | tests/fixtures/store-reach/bad | tests/fixtures/store-reach/good |
-| A package manager may mint its own webhook Service without a catalogue label, and an undeclared door in the same namespace still may not | R38 -- a guard that refuses correct work is an outage | `kyverno` | tests/fixtures/catalogue-entity-runtime-service-blind | tests/fixtures/catalogue-entity-runtime-service |
-| Every priorityClassName a workload names is a PriorityClass this tree declares or one of the two Kubernetes ships; a class that exists nowhere is refused at admission, not at apply | incident 2026-09-08, nodesoftware-operator | `python3 bin/idp-priority-class-exists` | tests/fixtures/priority-class-exists/bad | tests/fixtures/priority-class-exists/good |
-| A state-changing estate MCP tool (an @mcp.tool() named execute_* or exec_*) is refused unless the same module registers a simulate twin to propose its change first (MUM-288, ADR 0006) | MUM-288, ADR 0006 | `python3 bin/idp-simulate-gate` | tests/fixtures/simulate-grade/bad | tests/fixtures/simulate-grade/good |
-| Otto's door presents a key the lifeboat it talks to can validate: when LITELLM_BASE_URL is the loopback otto-brain sidecar, the door derives the same master key from the same Secret the sidecar does. A sidecar with no database cannot look up a virtual key, so it refuses every turn with 400 "No connected db." before any of the three homes is tried | THE EMPIRICAL PROOF RULE | `python3 bin/idp-otto-door-key-agrees` | tests/fixtures/otto-door-key/bad.yaml | tests/fixtures/otto-door-key/good.yaml |
-| A grading step whose verdict cannot reach the run is refused: a grader piped into tee/cat with neither pipefail nor -e, a bare grader that is not the last command under a set line without -e, or a grader ending in '|| true' with no '# optional: <reason>' marker. The step is accepted when the same job asserts the captured verdict in a later step | LAW 28 | `python3 bin/idp-grader-exit-gate` | tests/fixtures/grader-exit/bad | tests/fixtures/grader-exit/good |
-| A pull request that changes a file deciding what the estate SPENDS carries a cost-proof block naming a before, an after and the command that took both -- a number with no way to re-take it is a remembered number, and a change that says caching-enabled without the measured pair is an assertion, not a proof. A change outside the cost paths is never refused. | LAW 2 | `python3 bin/idp-cost-proof` | — | — |
-| Every workflow the founder can dispatch carries a '# button:' title and a '# founder:' sentence, and the portal template on disk matches the workflow that generated it. A feature with no door is not finished, and a door nobody regenerated opens onto something else. | LAW 32 | `python3 bin/idp-portal-buttons` | tests/fixtures/founder-door/bad.yml | .github/workflows/catalog-render.yml |
-| No untracked, unignored checkout of this repository is nested under its own root: a gate that walks the tree reads the nested copy's own tests/fixtures/*/bad.yaml or Dockerfile and reports it as a defect in the branch under test | LAW 45, incident 2026-09-10 | `python3 bin/idp-stray-checkout` | tests/fixtures/stray-checkout/bad/nested-checkout | tests/fixtures/stray-checkout/good/plain-data |
-| An agent's first-person claim of completed work is refused unless THREE INDEPENDENT pieces of evidence back it: independence is judged on the transcript's own tool calls (distinct tool:target pairs), never on a declaration the agent writes, and at least one piece must read state the agent did not author in the session. Hallucination is graded deterministically rather than asked of a larger model | founder 2026-09-13 "i said 3 there u go again alterning ny words" | `python3 bin/idp-epistemic` | tests/fixtures/epistemic/one-source-three-times/session.jsonl | tests/fixtures/epistemic/three-independent/session.jsonl |
-| An agent's action is refused when it serves no goal the agent itself declared: cognitive drift is bounded by a per-goal budget and a context reset, not by asking the model to stay on topic | founder 2026-09-12, the Teleological Firewall | `python3 bin/idp-trajectory` | tests/fixtures/trajectory/bad/session.jsonl | tests/fixtures/trajectory/good/session.jsonl |
-| Three targets returning the same finding prove one cause, so the linear action is refused with 423 Locked and the fleet lever is named instead. The fingerprint is the stable identity of the finding (a CVE set, order-free), never a raw hash of the output -- the same cause prints different bytes on different targets. The lock is scoped to the finding, so a different finding on a locked target, and nine different findings across nine targets, stay workable (R38) | founder 2026-09-12, throw the 423 Locked exception at N=3 | `python3 bin/idp-circuit-breaker` | tests/fixtures/circuit-breaker/bad/three-identical.json | tests/fixtures/circuit-breaker/good/nine-different.json |
-| A gate's answer is only true for the tree it ran in: grading from the shared checkout while it carries uncommitted work, or from any checkout mid-merge, is refused -- three separate estate defects were reported 2026-09-12 that existed only in another session's half-written tree | LAW 2, docs/policy/no-agent-works-in-the-main-checkout.md | `python3 bin/idp-clean-tree` | tests/fixtures/clean-tree/bad.json | tests/fixtures/clean-tree/good.json |
-| A Kustomization's health check names an object this tree actually creates. A wait on an object nothing creates reports NotFound forever, holds every row depending on it out of the cluster, and is invisible in CI because the manifest is valid YAML naming a plausible object. An object an operator makes at runtime is ungraded and said to be ungraded, never assumed absent | LAW 45, incident 2026-09-13 (the tailscale row waited on Deployment/tailscale-operator; the chart emits Deployment/operator, so guacamole and four rows behind it were held out for days) | `python3 bin/idp-healthcheck-exists` | tests/fixtures/healthcheck-exists/bad | tests/fixtures/healthcheck-exists/good |
-| An ExternalSecret that cannot sync is named with the vault key it needs and marked FOUNDER ACTION or ESTATE, never left to read as "Reconciliation in progress". A missing entry in the provider is a value only a person can produce, and it is reported as one; any other failure is an estate defect and is reported as that instead | R47 (a founder blocker is loud and one action), incident 2026-09-13 (cyrus sat HealthCheckFailed for days; the reason was three layers down at ExternalSecret/cyrus/cyrus-linear-oauth, whose vault entries are born in a browser because Linear publishes no create-API for an OAuth application) | `python3 bin/idp-externalsecret-blockers` | tests/fixtures/secret-blockers/bad | tests/fixtures/secret-blockers/good |
-| The /ops graph section reports the estate's three-state rule and never renders a stale domain as serving: UNKNOWN leads the sentence when the graph is older than its window, a BLIND graph names why rather than reading as clean, and the section keeps the tool's own ordering so a dead workload is not buried under warning events | LAW 22, LAW 53 | `node` | tests/fixtures/graphview/bad.json | tests/fixtures/graphview/good.json |
-| Every runtime fact the estate reports comes from the estate's own cluster-state receipt into catalog/estate.db, never from a second store, bus or server; a domain not read inside its freshness window reads UNKNOWN and never MEASURED_OK; the twin's stranded-branch count equals the catalogue generator's, so two surfaces cannot tell a founder two different numbers | LAW 22, LAW 39, THE HEADLINE | `python3 tests/test_estate_twin_rule.py` | tests/fixtures/twin/no-summary.json | tests/fixtures/twin/agreed.json |
-| No pull request opens without BDD proof, across every agent session: the body carries a BDD-PROOF block naming the head commit, that block carries a runner's own passing counts rather than a sentence saying the tests passed, and the named commit is the pull request's own head -- a claim with no run output is refused, and so is a real run on another commit | LAW 22, LAW 53 | `python3 bin/idp-bdd-proof-gate` | tests/fixtures/bdd-proof/bad.json | tests/fixtures/bdd-proof/good.json |
-| No script waits on a clock where an event exists -- a bare sleep of 10 seconds or more is refused, a sleep of 5 or less is a yield and passes, and a longer fixed interval is accepted only with a sleep-ok marker giving the reason: the documented rate limit or protocol heartbeat that forces it. | LAW 14 | `python3 bin/idp-sleep-ban` | — | — |
-| A HelmRelease reporting Ready while it cannot see the cluster disagree with it is not reconciled -- helm-controller diffs the manifest in Helm storage against the rendered chart and never against the cluster, so a Deployment edited after the apply is invisible to it forever. driftDetection is the fence that compares the two, and a release without it is named, with the number of Ready-and-blind releases reported so the count can be driven down | LAW 45, incident 2026-09-13 (chaos-controller-manager ran at 0 replicas for 18 days while Ready/UpgradeSucceeded and helm-controller logged "release in-sync with desired state"; 39 fail-closed webhooks then made every chaos-mesh.org object uncreatable estate-wide) | `python3 bin/idp-helmrelease-drift-coverage` | tests/fixtures/helmrelease-drift/bad | tests/fixtures/helmrelease-drift/good |
-| A tool that could not read the estate exits 2 and prints BLIND, never 0 with an empty result -- "nothing is drifting" and "nothing could be read" must never print the same thing. The rule is proved on a reader whose kubectl is absent and on a clean set of Flux objects, both ways | LAW 2, incident 2026-09-08 (bin/idp-compile-helm exited 0 while 11 of 33 charts failed to render) | `python3 bin/idp-drift-blind` | tests/fixtures/drift-blind/bad | tests/fixtures/drift-blind/good |
-| The breaker's fingerprint is the stable identity of a FINDING, never the bytes a command printed: output carrying no finding -- a successful command, a shell builtin echoing its input, an empty result -- yields no fingerprint and can never lock, however many times it repeats, while three targets carrying the same CVE set still lock. One rule, in bin/idp-circuit-breaker; the extension asks it, so the two cannot drift apart | R38, incident 2026-09-13 | `python3 -m` | tests/fixtures/breaker-enforcement/bad | tests/fixtures/breaker-enforcement/good |
-| Nothing an agent runs may hold a turn open. The 60-second ceiling is applied by the executor daemon outside the caller's process tree, stated once in the door and imported by the daemon -- a second copy of the number is a second answer, and a daemon that swallows its own door import answers health while unable to run anything | founder 2026-09-13 (verbatim) "60 secsos is the nnax" / "it should not even get bera teh" / "a breach of law or gaurd is a security breach" -- after the cap was breached six times; "find where we have done this, operationalise it, make sure every agent session is aware, and remove bash access afterward" | `python3 bin/idp-execution-boundary` | tests/fixtures/execution-boundary/bad | tests/fixtures/execution-boundary/good |
-| A script added to bin/ is not built until it has been EXECUTED once: it must answer --self-test, --self-check or --dry-run with exit 0 in bounded time. A parser and a linter both pass a script that has never run, which is exactly how a wrong variable name, a missing command or an unresolvable import reaches a session as a load failure -- so the compile is the run. | LAW 43 / LAW 45, founder 2026-09-13 (verbatim) "no script shold be built withiut conpiler, enforce it ... aget should not eve have to do it, should be auuto" | `python3 bin/idp-script-compiles` | tests/fixtures/script-compiles/bad | tests/fixtures/script-compiles/good |
-| A claim of completed work is not the agent's to make: the agent may only propose a patch into an ephemeral ledger, three graders the proposer does not control run against the exact bytes -- structural (the bytes compile), symbolic (Z3 over the guard the patch itself declares, which refuses to discharge "tests pass"), and execution (the SUPPLIED TEST SUITE runs in a throwaway tree and the pytest exit code is the verdict, so a proposal carrying no test is refused) -- and an attestation is minted only when all three pass, bound to the SHA-256 of the artifact actually verified. Take the claim away from the claimant | founder 2026-09-13 "the fact u are able toi lie eans he his rules isnt operation al and the firs thig we need to addres" / "thats why i dont belive clains without hard prrov 3 different w3ys" | `python3 bin/idp-verifier-oath` | tests/fixtures/verifier-oath/no-seal | tests/fixtures/verifier-oath/sealed |
-<!-- END GENERATED RULES TABLE -->
+The full generated rule table (85 rows) lives in `docs/policy/rules-table.md`, not here --
+it is re-graded by CI every run but no longer re-injected into agent context every turn
+(founder, 2026-09-14: it was ~32KB of the ~37KB in this file, loaded on every single turn
+for no reason). Open it when you need to look up a specific gate.
 
 Rules that are already types or tools, and so need no row: compose files must parse
 (`docker compose config`), the gateway config must match its release schema
@@ -130,52 +44,16 @@ and `bin/idp-ci`. No new rung, no new gate script.
 
 ## The estate twin: ask the graph, not the cluster (2026-09-12)
 
-The estate had three inventories and every one reported **declared** state as if it were
-**actual** state. Measured 2026-09-12, none of them could name a single one of: 1,523
-unmerged branches, 722 files that exist on no commit of main, 11 zero-scaled deployments,
-or three agents deployed and dead. A dead pod is declared nowhere.
-
-`bin/estate-twin-runtime` is the other half. It reads what the estate already collects --
-the `cluster-state` receipt every 15 minutes -- and writes it into the estate's existing
-asset database, `catalog/estate.db`. It adds no store, no bus and no MCP server.
-
-**Ask the graph before you touch the cluster.** Every question below is one command and
-five seconds, and each answers from the estate's own state rather than from a fresh probe
-that may fail:
-
-```
-bin/estate-twin-runtime --once --code      # the whole graph: runtime + git
-bin/estate-twin-runtime --dead             # what is broken now, workloads first
-bin/estate-twin-runtime --state            # MEASURED_OK / MEASURED_FAIL / UNKNOWN per domain
-bin/estate-twin-runtime --history <node>   # when it changed, and from what
-bin/estate-twin-runtime --blast-radius <n> # what dies with it, over Flux's own dependsOn
-```
-
-Four rules the twin holds, each for a reason that was measured:
-
-* **A graph is not a second store.** It extends `catalog/estate.db`; a second SQLite file
-  is the stitching THE HEADLINE forbids.
-* **`UNKNOWN` is the default and is not a failure.** A domain not read inside its window
-  reads `UNKNOWN`, never `MEASURED_OK`. A reader that cannot tell a five-minute answer from
-  a five-day one is the failure the twin exists to prevent.
-* **`stranded` is not serving.** 648 branches carry work that runs nowhere; a domain
-  reporting `MEASURED_OK` over them is false comfort.
-* **Two surfaces cannot report two numbers.** `bin/catalog-dark-matter` writes its counts
-  to `backstage/platform/dark-matter.json`; the twin reads that file. The BDD suite asserts
-  they are equal.
-
-Spec: `docs/specs/2026-09-12-estate-twin-complete-spec.md`. Ticket:
-`docs/tickets/2026-09-12-estate-twin.md`. Every claim proved, with the command that proves
-it: `docs/evidence/estate-twin/PROOF-OF-WORK.md`.
+Ask before you touch the cluster: `bin/estate-twin-runtime --once --code|--dead|--state|--history <node>|--blast-radius <n>`.
+Extends `catalog/estate.db` (no second store/bus/MCP server, per THE HEADLINE). `UNKNOWN` is
+the default, not a failure; `stranded` is not serving. Full spec, rules and proof:
+`docs/specs/2026-09-12-estate-twin-complete-spec.md`, `docs/evidence/estate-twin/PROOF-OF-WORK.md`.
 
 ## Platform queries go through the estate MCP server (ADR 0006)
 
-Founder, 2026-08-25: the platform is self-aware; one interface answers questions about it. So: a
-question about estate state is one `mcp__estate__*` tool call, not a shell recon. A new query tool
-summarises by default and drills only on request, under a byte ceiling. Any tool that changes state
-is two calls, propose then execute, and execute refuses when the state hash in the proposal no longer
-matches. Events reach agents debounced through the Sovereign Bus, never raw. Extend `mcp/`; never add
-a second server. Full text: `docs/decisions/0006-the-platform-answers-for-itself-over-one-mcp.md`.
+A question about estate state is one `mcp__estate__*` call, never a shell recon. A state-changing
+tool is two calls (propose, execute), execute refusing on a stale state hash. Extend `mcp/`; never
+add a second server. Full text: `docs/decisions/0006-the-platform-answers-for-itself-over-one-mcp.md`.
 
 ## Living policy (crew#219 R38): the block below is code, not prose
 
@@ -226,25 +104,13 @@ contract_max_usd_month = 150
 days_per_month = 31   # the longest month, so a sum under the cap holds in every month
 
 [routing]
-# 2026-09-08, the founder's cost mandate. `default` and `cheap` both named `deepseek`, an
-# account at $0 that has answered 401 since 2026-09-04 -- so the estate's default model and
-# its cheap model were the same dead lane, and test_cp30 enforced that every fallback chain
-# ended there. They moved to the one lane measured answering from inside the router pod that
-# day, with the note that this was "a stopgap, not the destination: `cheap` belongs on a FREE
-# lane, and becomes `groq` the moment SEED_GROQ_API_KEY exists".
-#
-# 2026-09-10, that condition is met and this is the destination. Secret/litellm-upstream in
-# namespace `llm` carries GROQ_API_KEY (key names read that day), platform/vendors/consoles.yaml
-# now renders a `groq` model row, and every fallback chain ends on it. So `cheap` is a lane that
-# costs nothing per token and is metered in requests per day that reset -- which is the point:
-# a prepaid balance can reach zero and stay there, and a daily meter cannot. `default` stays
-# on minimax, because the floor is a floor and never a routing choice.
+# default=minimax (floor, never a routing choice); cheap=groq (free, request-metered, since
+# SEED_GROQ_API_KEY landed 2026-09-10 -- deepseek was the prior cheap lane, dead since 2026-09-04,
+# history in ~/AGENTS-FULL.md). deepseek stays a consensus voter only (rejoins default/cheap the
+# moment its key returns, no PR needed).
 default = "minimax"
 vision = "vision"
 cheap = "groq"
-# deepseek stays a voter: the lane is console-owned, so it rejoins the moment its key is added
-# without a pull request. Until then quorum needs both minimax and gemini, and gemini is
-# rate-limited -- consensus is one refusal from failing. The third live voter is groq.
 consensus = ["deepseek", "minimax", "gemini"]
 
 [merge]
@@ -264,13 +130,5 @@ pending_owner_required_on = ["main"]
 ```
 
 
-## THE EMPIRICAL PROOF RULE (founder 2026-09-05, verbatim; record: `~/.claude/docs/founder/2026-09-05T1415Z-he-generalized-rule-empirical-proof-over-synthetic-probes-a79801e5.md`)
-
-NEVER declare a system "WORKING" or "MEASURED_OK" based solely on synthetic probes, CI gates, or HTTP 200 health checks. Synthetic checks lie.
-
-Before claiming a fix is successful, you MUST prove it empirically:
-1. **Read live traffic:** Fetch the actual pod logs (`kubectl logs --tail=100`) and quote a real, end-to-end user transaction completing successfully.
-2. **Check for silent failures:** Look at the most recent cluster events (`kubectl get events`) to ensure the pod isn't crashing or OOMing immediately after answering a probe.
-3. **Verify the critical path:** If it's a bot, verify the upstream webhook and LLM generation path. If it's a database, verify a real row was written.
-
-If you cannot quote a successful production log line, the system is NOT working.
+THE EMPIRICAL PROOF RULE binds here too, verbatim, inherited from `~/AGENTS.md` — not repeated
+below to avoid loading the same block twice in one context (measured duplicate, 2026-09-14).

@@ -409,26 +409,29 @@ def _table(rules: list[dict]) -> str:
 
 
 def cmd_render(args) -> int:
-    path = os.path.join(ROOT, "AGENTS.md")
+    # 2026-09-14: the table moved out of AGENTS.md into docs/policy/rules-table.md -- ~32KB of
+    # every single turn's context for a table nobody reads every turn. AGENTS.md keeps only a
+    # pointer to it. This is still the one place that regenerates and grades the table.
+    path = os.path.join(ROOT, "docs/policy/rules-table.md")
     with open(path) as fh:
         text = fh.read()
     if BEGIN not in text or END not in text:
-        print(f"AGENTS.md carries no generated-table markers; add {BEGIN} and {END}")
+        print(f"docs/policy/rules-table.md carries no generated-table markers; add {BEGIN} and {END}")
         return 2
     head, rest = text.split(BEGIN, 1)
     _, tail = rest.split(END, 1)
     fresh = f"{head}{BEGIN}\n{_table(load())}\n{END}{tail}"
     if args.check:
         if fresh != text:
-            print("FAIL  table    AGENTS.md's rule table is not what rules.yaml says; "
+            print("FAIL  table    docs/policy/rules-table.md's rule table is not what rules.yaml says; "
                   "run bin/idp-rules render-agents-md")
             return 1
-        print(f"ok    table    AGENTS.md's rule table is generated from rules.yaml "
+        print(f"ok    table    docs/policy/rules-table.md's rule table is generated from rules.yaml "
               f"({len(load())} rules)")
         return 0
     with open(path, "w") as fh:
         fh.write(fresh)
-    print(f"wrote {len(load())} rules into AGENTS.md")
+    print(f"wrote {len(load())} rules into docs/policy/rules-table.md")
     return 0
 
 
