@@ -135,7 +135,7 @@ def parse_unified_diff(patch: str) -> list[ProposedFile]:
             files.append(current)
         elif line.startswith(("--- ", "@@", "diff ", "index ")):
             continue
-        elif line.startswith("+") and current is not None:
+        elif line.startswith(("+", " ")) and current is not None:
             current.lines.append(line[1:])
     return [f for f in files if f.path]
 

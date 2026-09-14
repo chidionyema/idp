@@ -7,6 +7,10 @@ catalog/estate.db.tmp
 # Runtime
 logs/
 *.pid
+runs/
+*.log
+tmp/
+scratch/
 
 # Installed, not authored
 # `.venv/` matches a real directory but NOT a symlink or file named `.venv` -- and this
