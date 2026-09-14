@@ -38,6 +38,13 @@ Usage:
         ...
     if is_this_tree(path):
         ...
+
+Run it as a program for its own proof (LAW 45, bin/idp-script-compiles):
+
+    bin/treewalk.py --self-test
+
+which builds a throwaway git tree with an ignored directory and asserts the three answers
+below, rather than printing ok.
 """
 
 from __future__ import annotations
@@ -173,3 +180,94 @@ def glob_tree(root: os.PathLike | str, *parts: str, recursive: bool = True):
             continue
         if is_this_tree(f, root):
             yield f
+
+
+def _self_test() -> int:
+    """Prove this module RUNS and holds its two predicates, on a tree built here.
+
+    LAW 45 (`bin/idp-script-compiles`): a script under bin/ that has never executed is not
+    built. This module shipped 2026-09-10 carrying nine gates' worth of tree-walking logic
+    with no way to prove it runs, and the pre-push gate refused the push that would have
+    carried it for exactly that reason.
+
+    The proof is not a print-and-exit-0. It builds a throwaway git repository with an
+    ignored directory and an untracked file, and asserts the three answers this module
+    exists to give: a plain file IS this tree, a gitignored path is NOT, and a path
+    outside the root IS (the fixture case -- a caller grading /tmp must still be told yes).
+    A self-test that only echoed its own name would be the decoration LAW 28 names.
+    """
+    import tempfile
+
+    failures: list[str] = []
+
+    def expect(condition: bool, what: str) -> None:
+        if not condition:
+            failures.append(what)
+
+    # A tree with one tracked file and one gitignored directory containing a file.
+    with tempfile.TemporaryDirectory() as tmp:
+        base = pathlib.Path(tmp)
+        (base / "kept").mkdir()
+        (base / "kept" / "real.txt").write_text("tracked\n")
+        (base / "nested").mkdir()
+        (base / "nested" / "bad.yaml").write_text("a nested checkout's fixture\n")
+        (base / ".gitignore").write_text("nested/\n")
+        init = (
+            subprocess.run(
+                [GIT, "init", "-q"], cwd=tmp, capture_output=True, check=False
+            )
+            if GIT
+            else None
+        )
+        if init is None or init.returncode != 0:
+            # git is the authority; without it every caller fails closed, and this test
+            # says so rather than reporting a green it did not measure.
+            print(
+                "SKIP treewalk --self-test: git is not available, callers fail closed"
+            )
+            return 0
+
+        expect(
+            is_this_tree(base / "kept" / "real.txt", base),
+            "a tracked file must be this tree",
+        )
+        expect(
+            not is_this_tree(base / "nested" / "bad.yaml", base),
+            "an ignored path must NOT be this tree",
+        )
+        expect(
+            is_this_tree(os.path.join(tempfile.gettempdir(), "some-fixture"), base),
+            "a path outside the root must be this tree (fixtures in a temp dir)",
+        )
+        expect(is_this_tree(base, base), "the root itself must be this tree")
+
+        # The walk must not enter the ignored directory, and must never enter .git.
+        walked = [os.path.relpath(d, base) for d, _, _ in walk_tree(base)]
+        expect(
+            "nested" not in walked,
+            f"walk_tree entered an ignored directory: {sorted(walked)}",
+        )
+        expect(
+            not any(
+                part == ".git" for p in walked for part in pathlib.PurePath(p).parts
+            ),
+            f"walk_tree entered .git: {sorted(walked)}",
+        )
+        expect(
+            "kept" in walked,
+            f"walk_tree pruned the real directory too: {sorted(walked)}",
+        )
+
+    if failures:
+        for f in failures:
+            print(f"FAIL treewalk --self-test: {f}")
+        return 1
+    print(
+        "ok   treewalk --self-test: walk prunes ignored dirs and .git; "
+        "is_this_tree says yes outside the root, no inside a nested checkout"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_self_test())
