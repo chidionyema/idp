@@ -2131,6 +2131,86 @@ rules:
     note: the estate's own sessions swept from ~/.pi/agent/sessions. This reports rather than fails, because the finding is historical -- 25 of 25 began with no declared plan -- and a gate red until no agent ever drifts again would be switched off and protect nothing (R38). Grading ONE session by name still refuses, and bin/idp-trajectory <a real .jsonl> exits 1.
   ok: every action a transcript records serves the plan the agent declared
   fail: 'the agent acted outside its declared plan. Measured 2026-09-12: this session''s stated goal was "fix the gates, fix the class they exposed, do no more than that", and a grep of its own 1.7MB transcript counts treewalk 169 references (the work) against rule-guard 51, pi/agent/extensions 39 and addopts/-n auto 66 (all drift). The founder stopped it twice by hand. A prompt cannot fix this -- attention weights the most recent tokens, so the newest error out-competes the original objective by construction. The harness must refuse.'
+- id: prm
+  label: prm
+  statement: 'A reasoning step''s own completed-work claim is refused unless the transcript, up to and including that step, already holds three independent pieces of evidence for it (reusing the epistemic gate''s own count), the step''s tool call binds to the declared plan''s active goal (reusing the trajectory lock''s own authorize()), and the step is not a repeat of a (tool, target) pair already run this session. Process supervision, graded per step, not only at the end of the transcript'
+  law: founder essay 2026-09-14, the Reasoning Gateway ("Process Reward Models... evaluates the correctness of each step... rather than just the final outcome")
+  origin: docs/tickets/2026-09-14-reasoning-gateway.md, deliverable D1
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-prm
+  - --grade
+  fixtures:
+    must_fail: tests/fixtures/prm/bad/session.jsonl
+    must_pass: tests/fixtures/prm/good/session.jsonl
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/prm/bad/session.jsonl
+  - expect: pass
+    args:
+    - tests/fixtures/prm/good/session.jsonl
+  - expect: pass
+    live: true
+    note: the estate's own session transcripts, read from ~/.pi/agent/sessions
+  ok: every step of a transcript scores at least 0.8 on factual correctness, relevance and efficiency, so a hallucinated or off-goal step is caught at the step, not only when the transcript is finished
+  fail: 'a step made a completed-work claim (e.g. "I verified the database is up") with zero independent evidence gathered by that point in the transcript -- the blind-assumption case the founder''s essay names. Deterministic: reuses bin/idp-epistemic''s claim/evidence/witness logic and bin/idp-trajectory''s plan-binding logic, imported rather than re-implemented (R43); no frontier LLM judge, per the ticket''s own stated risk.'
+- id: budget
+  label: budget
+  statement: 'A reasoning run is halted the instant one of three ceilings trips -- a repeated (tool, target) pair proving zero new evidence, a running sum of declared cost_usd crossing --max-cost-usd, or the existing per-goal branch budget (bin/idp-trajectory''s budget_per_goal) -- and the best-so-far plan (goal, subgoal completion, steps and dollars spent) is surfaced instead of a claim the run finished'
+  law: founder essay 2026-09-14, the Reasoning Gateway ("Test-Time Compute Budgeting... Budget exhaustion -> forced termination -- the agent stops thinking and executes the best-so-far plan when the budget runs out")
+  origin: docs/tickets/2026-09-14-reasoning-gateway.md, deliverable D2
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-budget
+  fixtures:
+    must_fail: tests/fixtures/budget/exhausted/session.jsonl
+    must_pass: tests/fixtures/budget/complete/session.jsonl
+  cases:
+  - expect: refuse
+    args:
+    - --run
+    - tests/fixtures/budget/exhausted/session.jsonl
+  - expect: pass
+    args:
+    - --run
+    - tests/fixtures/budget/complete/session.jsonl
+  - expect: pass
+    live: true
+    note: the estate's own session transcripts, read from ~/.pi/agent/sessions
+  ok: a run stays inside its declared step and cost ceilings, or finishes its plan before either is reached
+  fail: 'a run crossed a ceiling and was not stopped -- the unbounded-loop case the founder''s essay names. Deterministic: reuses bin/idp-trajectory''s own budget_per_goal/authorize() for the branch ceiling and bin/idp-epistemic''s target-normalisation for the information-gain ceiling, imported rather than re-implemented (R43); the cost ceiling sums only a step''s own declared cost_usd, never a fabricated number.'
+- id: contract
+  label: contract
+  statement: 'Every tool call declares a pre-condition and a post-condition in plain English (`<subject> <op> <value>`, or `<subject> passes`/`fails`, with an optional `within <N>s` deadline); a deterministic script -- never the agent -- checks the post-condition against declared observations after the tool runs, and refuses the next step the instant the post-condition still fails at its deadline'
+  law: founder essay 2026-09-14, the Reasoning Gateway ("Design-by-Contract for Tool Calls... A deterministic script (NOT the agent) checks the post-condition against the live system. If it fails, the PRM penalises the trajectory and the agent is forced to adapt before continuing")
+  origin: docs/tickets/2026-09-14-reasoning-gateway.md, deliverable D3
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-contract
+  fixtures:
+    must_fail: tests/fixtures/contract/bad/contract.json
+    must_pass: tests/fixtures/contract/good/contract.json
+  cases:
+  - expect: refuse
+    args:
+    - --run
+    - tests/fixtures/contract/bad/contract.json
+  - expect: pass
+    args:
+    - --run
+    - tests/fixtures/contract/good/contract.json
+  - expect: pass
+    live: true
+    note: the estate's own recorded contract runs, read from ~/.pi/agent/contracts
+  ok: a tool's pre-condition holds before it is credited as run, and its post-condition holds by its own deadline
+  fail: 'a post-condition probe never passed by its deadline and the run was credited as complete anyway -- the "I assume the database is up" case the founder''s essay names. Deterministic: a small condition grammar over declared observations, no frontier LLM judge (per the ticket''s own stated risk); a subject with no observation at all is BLIND, never assumed to hold; no second live prober is wired here (R43) -- this grades observations a caller declares, real or replayed from a live probe upstream.'
 - id: circuit-breaker
   label: breaker
   statement: Three targets returning the same finding prove one cause, so the linear action is refused with 423 Locked and the fleet lever is named instead. The fingerprint is the stable identity of the finding (a CVE set, order-free), never a raw hash of the output -- the same cause prints different bytes on different targets. The lock is scoped to the finding, so a different finding on a locked target, and nine different findings across nine targets, stay workable (R38)

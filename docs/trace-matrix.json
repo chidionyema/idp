@@ -1691,6 +1691,22 @@
   "ticket": null
  },
  {
+  "feature": "features/gates/budget-governor.feature",
+  "title": "A reasoning run is halted the instant a ceiling trips, and the best-so-far plan survives",
+  "scenarios": [
+   "A run repeats tool calls past the per-goal branch budget",
+   "A run finishes its declared plan inside its budget",
+   "The transcript cannot be read"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_budget_governor.py"
+  ],
+  "status": "BOUND",
+  "added_in": "b44756c8",
+  "pr": 3464,
+  "ticket": null
+ },
+ {
   "feature": "features/gates/capacity-cap.feature",
   "title": "paid capacity is auto-defaulted up to the founder's cap and refused above it",
   "scenarios": [
@@ -1883,6 +1899,22 @@
   "added_in": "0a8807c2",
   "pr": 207,
   "ticket": "crew#297"
+ },
+ {
+  "feature": "features/gates/reasoning-gateway.feature",
+  "title": "A reasoning step is graded as it happens, not only at the end of the transcript",
+  "scenarios": [
+   "A step claims verified state with zero evidence gathered so far",
+   "A step's claim is backed by independent evidence gathered earlier in the same run",
+   "The transcript cannot be read"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_reasoning_gateway.py"
+  ],
+  "status": "BOUND",
+  "added_in": "b44756c8",
+  "pr": 3464,
+  "ticket": null
  },
  {
   "feature": "features/identity/front-door-oidc-client.feature",
