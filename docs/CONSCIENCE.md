@@ -4,22 +4,23 @@
 
 **🧠 4/7 tenets green — red: future-looking, research, secure.** moved +0 since the last reading.
 
-Measured 2026-09-13T12:47:21+00:00 on `runnervmlun5p`. The score is read from the receipt, never from a file scan (LAW 50). A red row has one open issue labelled `conscience`; a tenet nobody can measure is BLIND, and BLIND is never green.
+Measured 2026-09-14T14:14:57+00:00 on `runnervmlun5p`. The score is read from the receipt, never from a file scan (LAW 50). A red row has one open issue labelled `conscience`; a tenet nobody can measure is BLIND, and BLIND is never green.
 
 | | Tenet | Ethos | Measured | Green when | PR rule |
 |---|---|---|---|---|---|
 | 🔴 | future-looking | Future-looking, future-proof. Never build for today. | `stdout 2` | `== 0` | `no_floating_tag` (warn) |
 | 🔴 | research | Relentless research. Always know what is out there and adopt the best. | `exit 1` | `== 0` | `new_dependency_has_a_ledger_entry` (warn) |
 | 🔴 | secure | Zero-friction seamless security. Security that is invisible and automatic. | `exit 1` | `== 0` | `no_static_secret_in_diff` (deny) |
-| 🟢 | better | Get better at getting better. A mistake ends as a guard no session can walk past. | `stdout 6` | `>= 1` | `incident_has_a_guard` (warn) |
+| 🟢 | better | Get better at getting better. A mistake ends as a guard no session can walk past. | `stdout 4` | `>= 1` | `incident_has_a_guard` (warn) |
 | 🟢 | enterprise | Highest enterprise standards, because that is the baseline. | `exit 0` | `== 0` | `new_script_has_a_test` (warn) |
 | 🟢 | portable | Maximum portability, survivability, vendor-agnostic. Never be locked in. | `exit 0` | `== 0` | `no_provider_in_diff` (deny) |
 | 🟢 | survivable | Every routed surface survives losing one node. | `exit 0` | `== 0` | `drill_named` (deny) |
 
-## Trend, last 6 readings
+## Trend, last 7 readings
 
 | When | Score | Red |
 |---|---|---|
+| 2026-09-14T14:14:57+00:00 | 4/7 | secure, future-looking, research |
 | 2026-09-13T12:47:21+00:00 | 4/7 | secure, future-looking, research |
 | 2026-09-12T11:40:10+00:00 | 4/7 | secure, future-looking, research |
 | 2026-09-11T12:15:45+00:00 | 5/7 | secure, future-looking |
