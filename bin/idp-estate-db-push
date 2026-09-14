@@ -32,7 +32,38 @@
 #   SU           sqlite-utils (default this checkout's venv; CI passes the one on PATH)
 #   ESTATE_DB_ARTIFACT  where it goes (default oci://ghcr.io/chidionyema/idp/estate-db:latest)
 #   --dry-run    build the artifact directory and list it; push nothing (LAW 17: measure first)
+#   --self-test  prove this script runs, bounded, no network (LAW 45; bin/idp-script-compiles)
 set -euo pipefail
+
+# --help/--self-test are handled before set -u sees $1 and before anything below touches the
+# network: an unrecognised flag falling through into the real push path is how a probe (the
+# script-compiles gate ran `--help`) ends up executing a live `flux push artifact` and hanging
+# past the gate's 60s ceiling instead of exiting 0 -- measured 2026-09-14, the push this fix
+# itself needed refused on exactly that.
+case "${1:-}" in
+  --help|-h)
+    cat <<'USAGE'
+usage: idp-estate-db-push [--dry-run|--self-test]
+
+Push catalog/estate.db (declared assets from db-gen, plus the estate twin's
+runtime/code/domain graph), catalog-info.yaml and crew/STATE.md to the
+estate-db OCI artifact estate-mcp pulls from.
+
+options:
+  --dry-run     build the artifact directory and list it; push nothing
+  --self-test   prove this script runs: checks its tools, touches no network
+  --help, -h    this message
+USAGE
+    exit 0
+    ;;
+  --self-test)
+    for t in flux git jq sqlite3; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 1; }; done
+    bash -n "$0"
+    echo "ok idp-estate-db-push self-test"
+    exit 0
+    ;;
+esac
+
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 INV="${INV:-$HOME/.estate/state/inventory.json}"
 CATALOG="${CATALOG:-$IDP/catalog/catalog-info.yaml}"
