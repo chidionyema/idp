@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -189,8 +190,6 @@ def call(verb: str, **kwargs) -> dict:
 
 
 def main() -> int:
-    import json
-
     ap = argparse.ArgumentParser()
     ap.add_argument("--remote", required=True)
     ap.add_argument("--branch", required=True)
