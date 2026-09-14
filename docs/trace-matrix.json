@@ -587,8 +587,8 @@
    "sovereign/tests/bdd/test_deterministic_verifier.py"
   ],
   "status": "PENDING",
-  "added_in": "d9c9365f",
-  "pr": null,
+  "added_in": "65588127",
+  "pr": 3376,
   "ticket": null
  },
  {

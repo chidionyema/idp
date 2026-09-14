@@ -354,21 +354,6 @@ def register_mcp_tools(
         },
     )(read_job)
 
-    # The Deterministic Verifier's four verbs, on the same one interface (ADR 0006).
-    #
-    # These reached the socket on 2026-09-14 and stopped there: `mcp/plugins/estate_executor.py`
-    # exposed execute/simulate/read and nothing else, so the only way to propose, verify, seal or
-    # admit a patch was to hand-roll a JSON request onto `~/.estate/executor.sock`. A capability
-    # reachable only by writing your own client is not a capability an agent has -- which is the
-    # exact form of "built, not operational" this estate keeps catching.
-    #
-    # `propose_patch` is state-changing (it opens a ledger), so the simulate gate
-    # (`bin/idp-simulate-gate`) requires a propose twin under this module: `simulate_patch` is it.
-    # It runs the same parser and the same refusal ladder as the door and runs nothing.
-    #
-    # The other three are not state-changing in that sense -- `verify` reads a ledger and relays a
-    # verdict, `seal` mints over bytes it is handed, `admit` only ever writes into the ledger's own
-    # admitted directory, never the live tree -- so they carry no twin.
     server.tool(
         name="propose_patch",
         description=(
@@ -480,6 +465,59 @@ def simulate_command(
         "cwd": cwd or os.getcwd(),
         "note": "nothing was run; this is the executor's answer to the payload",
     }
+
+
+def _refusals_for(
+    command: str,
+    cwd: str | None,
+    ceiling_sec: int,
+    mutates_live_worktree: bool = False,
+) -> list[dict]:
+    """Every reason the execute door would refuse, in the order it would find them."""
+    reasons: list[dict] = []
+    # Rule 1 first, in the same position the execute door checks it. Order is not cosmetic here:
+    # the feature asks which refusal a payload gets, and a proposal that named the ceiling when
+    # the door was really going to name the live-worktree mutation would be the drift this
+    # function exists to prevent.
+    if mutates_live_worktree:
+        reasons.append(
+            {
+                "accepted": False,
+                "error": (
+                    "direct mutation of the live worktree is refused: the estate admits changes "
+                    "only as a patch proposed to an ephemeral ledger, never as a write into the "
+                    "tree that is running"
+                ),
+                "refused": True,
+                "fatal": True,
+                "reason": "mutates_live_worktree",
+            }
+        )
+    if not isinstance(command, str) or not command.strip():
+        reasons.append(_refusal("empty command"))
+        return reasons
+    for pattern in _NEVER:
+        if pattern.search(command):
+            reasons.append(
+                _refusal(
+                    "this command waits on something outside the process",
+                    detail=f"matched {pattern.pattern}",
+                )
+            )
+    written = explicit_ceiling_sec(command)
+    if written is not None and written > CEILING_SEC:
+        reasons.append(
+            _refusal(f"a ceiling of {written}s exceeds the {CEILING_SEC}s cap")
+        )
+    try:
+        int(ceiling_sec)
+    except (TypeError, ValueError):
+        reasons.append(
+            _refusal(f"ceiling_sec must be a whole number, got {ceiling_sec!r}")
+        )
+    if cwd and not os.path.isabs(cwd):
+        reasons.append(_refusal("cwd must be absolute"))
+    return reasons
 
 
 def _verifier_call(payload: dict) -> dict:
@@ -643,60 +681,6 @@ def admit_payload(payload_path: str, attestation: dict | None = None) -> dict:
     return _verifier_call(
         {"verb": "admit", "payload_path": payload_path, "attestation": attestation}
     )
-
-
-def _refusals_for(
-    command: str,
-    cwd: str | None,
-    ceiling_sec: int,
-    mutates_live_worktree: bool = False,
-) -> list[dict]:
-    """Every reason the execute door would refuse, in the order it would find them."""
-    reasons: list[dict] = []
-    # Rule 1 first, in the same position the execute door checks it. Order is not cosmetic here:
-    # the feature asks which refusal a payload gets, and a proposal that named the ceiling when
-    # the door was really going to name the live-worktree mutation would be the drift this
-    # function exists to prevent.
-    if mutates_live_worktree:
-        reasons.append(
-            {
-                "accepted": False,
-                "error": (
-                    "direct mutation of the live worktree is refused: the estate admits changes "
-                    "only as a patch proposed to an ephemeral ledger, never as a write into the "
-                    "tree that is running"
-                ),
-                "refused": True,
-                "fatal": True,
-                "reason": "mutates_live_worktree",
-            }
-        )
-    if not isinstance(command, str) or not command.strip():
-        reasons.append(_refusal("empty command"))
-        return reasons
-    for pattern in _NEVER:
-        if pattern.search(command):
-            reasons.append(
-                _refusal(
-                    "this command waits on something outside the process",
-                    detail=f"matched {pattern.pattern}",
-                )
-            )
-    written = explicit_ceiling_sec(command)
-    if written is not None and written > CEILING_SEC:
-        reasons.append(
-            _refusal(f"a ceiling of {written}s exceeds the {CEILING_SEC}s cap")
-        )
-    try:
-        int(ceiling_sec)
-    except (TypeError, ValueError):
-        reasons.append(
-            _refusal(f"ceiling_sec must be a whole number, got {ceiling_sec!r}")
-        )
-    if cwd and not os.path.isabs(cwd):
-        reasons.append(_refusal("cwd must be absolute"))
-    return reasons
-
 
 if __name__ == "__main__":  # pragma: no cover - a human reading the door
     # A tiny self-check a person can run: `python3 mcp/plugins/estate_executor.py`.
