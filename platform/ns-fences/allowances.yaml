@@ -433,7 +433,20 @@ flows:
     # names it; without llm on this side the door is closed and the publisher's publish is
     # dropped. A one-sided declaration is a closed door -- the reason is written out in the llm
     # row above, learned live on 2026-09-07.
-    ingress_from: [otto-gateway, commerce, llm]
+    # epistemic-fabric: the ingestion connectors (idp#3448 CP1) publish CloudEvents onto the
+    # epistemic.* streams; declared on both sides for the same reason as otto-gateway/commerce/llm.
+    ingress_from: [otto-gateway, commerce, llm, epistemic-fabric]
+  epistemic-fabric:
+    # idp#3448 CP1: four ingestion connectors. Each publishes to the NATS bus (event-bus) and
+    # polls or verifies a webhook against an external vendor API (GitHub, Slack) over the public
+    # internet -- no vendor answers from inside the estate's own address space. No ingress_from
+    # is declared yet: the GitHub webhook receiver is not given a public route in this
+    # checkpoint (that is a founder decision, registering a real GitHub App webhook URL), so
+    # CP1's own acceptance check reaches it the same way the NATS stream-stats door already
+    # does -- `kubectl port-forward` straight to the pod, which default-deny ingress does not
+    # gate (it enforces pod-to-pod traffic on the cluster network, not a port-forward tunnel).
+    egress: [event-bus]
+    egress_internet: [443]
   estate-db:
     # Serves an admission webhook, so the control plane calls IN. It is outside the pod
     # network and outside every namespace selector, so default-deny drops it and only an

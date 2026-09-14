@@ -679,6 +679,31 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-epistemic-fabric
+  title: 'Estate memory ingestion'
+  description: 'Four small pollers that watch GitHub, Slack, CI/CD and the incident log and drop what they see onto the estate''s existing event bus, so later work can ask what actually happened instead of guessing from what shipped.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=epistemic-fabric'
+    estate/flux-kustomization: 'epistemic-fabric'
+    estate/path: './platform/epistemic-fabric'
+    estate/cluster: 'oke'
+  tags: [platform, data]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: data
+  dependsOn:
+    - component:default/layer-secret-store
+    - component:default/layer-event-bus
+    - component:default/layer-alerts-github
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-estate-catalog
   title: 'Estate inventory'
   description: 'The generated inventory of every asset, delivered to the portal as a ConfigMap.'
