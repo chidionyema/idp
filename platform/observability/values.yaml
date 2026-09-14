@@ -102,37 +102,6 @@ clickhouse:
     mark_cache_size: "536870912"
     index_mark_cache_size: "134217728"
     merges_mutations_memory_usage_to_ram_ratio: "0.3"
-    # 2026-09-13: THE TWO SETTINGS crew#483 DID NOT REACH, and the OOM it was meant to stop is
-    # still happening -- 49 OOMKilled restarts, `exitCode: 137, reason: OOMKilled`, one every ~30
-    # minutes for four and a half days, on a pod whose own tracker reported 1.45 GiB in use.
-    #
-    # max_server_memory_usage is pinned EXPLICITLY because the auto-rule is what kills this pod.
-    # `max_server_memory_usage_to_ram_ratio` is 0.9, and ClickHouse correctly reads the 4Gi cgroup
-    # limit -- so it sets its own ceiling to 3.60 GiB and believes the remaining 400 MiB is
-    # headroom. It is not. Measured that day: MemoryResident 3.53 GiB against MemoryTracking
-    # 1.45 GiB, a ratio of 1.9 (upstream's guide calls >1.4 dangerous and sizes max_server_memory_
-    # usage at 80% of the cgroup for exactly this reason). The kernel OOM killer targets RSS, so it
-    # kills the process while ClickHouse's logs show nothing wrong. 80% of 4Gi is 3435973836.
-    # The ratio setting itself cannot be changed at runtime and the chart does not render it; this
-    # achieves the same ceiling and is reloadable.
-    max_server_memory_usage: "3435973836"
-    # uncompressed_cache_size ships ACTIVELY SET to 8 GiB in ClickHouse's own config.xml -- twice
-    # this whole pod -- so it is not a default that could be left alone. It is also not earning
-    # its keep: `system.events` reads UncompressedCacheHits 23 against UncompressedCacheMisses
-    # 11,726, a 0.2% hit rate, and UncompressedCacheWeightLost 204,366,029 has already been
-    # thrown away. The modern codecs this schema uses mostly skip the path it serves. It is set to
-    # zero, which disables the cache rather than shrinking it, because 0.2% does not pay for any
-    # reservation inside a 4 GiB pod. MarkCache, by contrast, reads 364,954 hits against 15,826
-    # misses -- 96% -- which is why its 512 MiB stays.
-    uncompressed_cache_size: "0"
-    uncompressed_cache_size_ratio: "0"
-    # The other three large defaults are also live and also larger than the pod. text_index_
-    # postings 2 GiB and text_index_header 1 GiB serve full-text indexes this schema does not
-    # build; vector_similarity_index 5 GiB serves vector search it does not use. Bounded to 64 MiB
-    # each so a future index cannot quietly re-create this incident.
-    vector_similarity_index_cache_size: "67108864"
-    text_index_header_cache_size: "67108864"
-    text_index_postings_cache_size: "67108864"
     # 2026-09-08: ClickHouse's own system logs default to no TTL, so on a 20Gi volume they grew to
     # 23.0 GiB and pushed the server onto its memory ceiling merging them (see the resources block
     # above for the measurement). Nothing here touches a signoz_* table -- telemetry retention is
