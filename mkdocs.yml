@@ -118,6 +118,7 @@ nav:
       - Epistemic gate (module): tutorials/demo/epistemic_firewall.py.md
       - trajectory: tutorials/demo/trajectory.md
       - Trajectory lock (module): tutorials/demo/trajectory_lock.py.md
+      - PRM gate (module): tutorials/demo/prm_grader.py.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
       - Evidence layer: tutorials/demo/evidence.md
@@ -223,6 +224,7 @@ nav:
       - Epistemic gate (module): how-to/onboarding/epistemic_firewall.py.md
       - trajectory: how-to/onboarding/trajectory.md
       - Trajectory lock (module): how-to/onboarding/trajectory_lock.py.md
+      - PRM gate (module): how-to/onboarding/prm_grader.py.md
       - Drill evidence: onboarding/drill-evidence.md
       - Estate compiler recording: onboarding/intent-compiler.md
       - Estate clock recording: onboarding/dagster.md
