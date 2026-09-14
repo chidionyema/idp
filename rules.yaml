@@ -2184,6 +2184,33 @@ rules:
     note: the estate's own session transcripts, read from ~/.pi/agent/sessions
   ok: a run stays inside its declared step and cost ceilings, or finishes its plan before either is reached
   fail: 'a run crossed a ceiling and was not stopped -- the unbounded-loop case the founder''s essay names. Deterministic: reuses bin/idp-trajectory''s own budget_per_goal/authorize() for the branch ceiling and bin/idp-epistemic''s target-normalisation for the information-gain ceiling, imported rather than re-implemented (R43); the cost ceiling sums only a step''s own declared cost_usd, never a fabricated number.'
+- id: contract
+  label: contract
+  statement: 'Every tool call declares a pre-condition and a post-condition in plain English (`<subject> <op> <value>`, or `<subject> passes`/`fails`, with an optional `within <N>s` deadline); a deterministic script -- never the agent -- checks the post-condition against declared observations after the tool runs, and refuses the next step the instant the post-condition still fails at its deadline'
+  law: founder essay 2026-09-14, the Reasoning Gateway ("Design-by-Contract for Tool Calls... A deterministic script (NOT the agent) checks the post-condition against the live system. If it fails, the PRM penalises the trajectory and the agent is forced to adapt before continuing")
+  origin: docs/tickets/2026-09-14-reasoning-gateway.md, deliverable D3
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-contract
+  fixtures:
+    must_fail: tests/fixtures/contract/bad/contract.json
+    must_pass: tests/fixtures/contract/good/contract.json
+  cases:
+  - expect: refuse
+    args:
+    - --run
+    - tests/fixtures/contract/bad/contract.json
+  - expect: pass
+    args:
+    - --run
+    - tests/fixtures/contract/good/contract.json
+  - expect: pass
+    live: true
+    note: the estate's own recorded contract runs, read from ~/.pi/agent/contracts
+  ok: a tool's pre-condition holds before it is credited as run, and its post-condition holds by its own deadline
+  fail: 'a post-condition probe never passed by its deadline and the run was credited as complete anyway -- the "I assume the database is up" case the founder''s essay names. Deterministic: a small condition grammar over declared observations, no frontier LLM judge (per the ticket''s own stated risk); a subject with no observation at all is BLIND, never assumed to hold; no second live prober is wired here (R43) -- this grades observations a caller declares, real or replayed from a live probe upstream.'
 - id: circuit-breaker
   label: breaker
   statement: Three targets returning the same finding prove one cause, so the linear action is refused with 423 Locked and the fleet lever is named instead. The fingerprint is the stable identity of the finding (a CVE set, order-free), never a raw hash of the output -- the same cause prints different bytes on different targets. The lock is scoped to the finding, so a different finding on a locked target, and nine different findings across nine targets, stay workable (R38)

@@ -120,6 +120,7 @@ nav:
       - Trajectory lock (module): tutorials/demo/trajectory_lock.py.md
       - PRM gate (module): tutorials/demo/prm_grader.py.md
       - Budget gate (module): tutorials/demo/budget_governor.py.md
+      - Contract gate (module): tutorials/demo/contract_executor.py.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
       - Evidence layer: tutorials/demo/evidence.md
@@ -227,6 +228,7 @@ nav:
       - Trajectory lock (module): how-to/onboarding/trajectory_lock.py.md
       - PRM gate (module): how-to/onboarding/prm_grader.py.md
       - Budget gate (module): how-to/onboarding/budget_governor.py.md
+      - Contract gate (module): how-to/onboarding/contract_executor.py.md
       - Drill evidence: onboarding/drill-evidence.md
       - Estate compiler recording: onboarding/intent-compiler.md
       - Estate clock recording: onboarding/dagster.md
@@ -411,6 +413,7 @@ nav:
       - trajectory: gates/trajectory.md
       - prm: gates/prm.md
       - budget: gates/budget.md
+      - contract: gates/contract.md
       - circuit-breaker: gates/circuit-breaker.md
       - clean-tree: gates/clean-tree.md
       - secret-blockers: gates/externalsecret-blockers-are-loud.md
