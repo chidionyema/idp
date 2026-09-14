@@ -474,7 +474,27 @@ class Handler(socketserver.StreamRequestHandler):
         }
 
     def _reply(self, payload: dict) -> None:
-        self.wfile.write((json.dumps(payload) + "\n").encode("utf-8"))
+        """Answer the caller, and treat a departed caller as a non-event.
+
+        Measured 2026-09-14, incident: this daemon crash-looped, and every job dispatched in
+        the window came back with an EMPTY log -- accepted into a queue nothing was draining,
+        which reads exactly like a slow job. The cause was this line. A caller that reads once
+        and closes (`read_job`, a CLI, a session that moved on) leaves the socket shut, so
+        `write` raised BrokenPipeError, socketserver printed a traceback per request, and the
+        daemon did not survive the storm. The execution plane for the whole estate went down
+        because a client hung up.
+
+        A caller who has gone away is not a failed job; there is no one left to tell. So the
+        two errors that mean exactly that are swallowed and the daemon keeps serving. Every
+        other OSError still propagates, because a socket that is genuinely broken is a fact
+        somebody needs.
+        """
+        try:
+            self.wfile.write((json.dumps(payload) + "\n").encode("utf-8"))
+        except (BrokenPipeError, ConnectionResetError):
+            # The caller closed first (BrokenPipeError) or the connection was torn down
+            # (ConnectionResetError). Same meaning, same handling: nobody is listening.
+            return
 
 
 class Server(socketserver.ThreadingUnixStreamServer):

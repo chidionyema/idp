@@ -83,13 +83,49 @@ def is_script(path: Path) -> bool:
 
 
 def declared_probe(path: Path) -> str | None:
-    """A script names its own gate. Take the first flag it actually supports."""
+    """A script names its own gate. Ask the script, never read its prose.
+
+    This used to scan the file's raw text for the first PROBE_FLAGS word. That is wrong
+    because a docstring documents flags a script does not own at top level: `bin/idp-rules`
+    prints `render-agents-md [--check]` in its own usage block, so the scan answered
+    `--check`, the gate ran `bin/idp-rules --check`, and argparse exited 2 with
+    "the following arguments are required: cmd". Fifteen scripts were refused that way on
+    2026-09-14 and the push could not move. A guard that refuses correct work is an outage
+    (LAW 38), and the correct work was every one of those scripts.
+
+    The script is the authority on what it accepts, so the gate asks it: run `--help` and
+    believe only a flag the usage text actually advertises. A script that advertises none of
+    PROBE_FLAGS is reported as declaring no probe -- its real, honest state -- instead of
+    being handed a flag it never implemented.
+    """
     try:
-        text = path.read_text(errors="replace")
-    except OSError:
+        proc = subprocess.run(
+            [str(path.resolve()), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=PROBE_TIMEOUT_S,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
         return None
+
+    usage = proc.stdout + proc.stderr
+    # Only a flag listed in the script's own `options:` block belongs to the script. A flag
+    # that merely appears in prose or in a SUBCOMMAND's usage is not a flag this script
+    # accepts: `idp-rules --help` documents `render-agents-md [--check]`, and running
+    # `idp-rules --check` exits 2 because `--check` belongs to that subcommand. Grading on
+    # bare presence re-created the false positive through the help text.
+    options = []
+    in_options = False
+    for line in usage.splitlines():
+        if line.startswith("options:") or line.startswith("optional arguments:"):
+            in_options = True
+            continue
+        if in_options:
+            options.append(line)
+    block = "\n".join(options)
     for candidate in PROBE_FLAGS:
-        if candidate in text:
+        if candidate in block:
             return candidate
     return None
 
