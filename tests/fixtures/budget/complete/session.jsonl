@@ -1,0 +1,5 @@
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"declare_plan","input":{"goal":"restart the stalled worker","subgoals":[{"id":"sg1","text":"find and restart the stalled worker"}]}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"kubectl get pods -n web"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"grep ERROR worker.log"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"docker restart worker-7"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"complete_goal","input":{"goal_id":"sg1"}}]}}

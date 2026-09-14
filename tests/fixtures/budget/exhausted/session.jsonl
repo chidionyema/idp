@@ -1,0 +1,7 @@
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"declare_plan","input":{"goal":"investigate latency spike","subgoals":[{"id":"sg1","text":"find root cause"}]}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"git show HEAD"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"kubectl get pods -n web"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"curl http://web/health"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"grep ERROR app.log"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"docker ps -a"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"aws s3 ls"}}]}}
