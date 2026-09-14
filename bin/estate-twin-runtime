@@ -1788,7 +1788,16 @@ def _bus_streams(con: sqlite3.Connection) -> int:
         nc = None
         for url in candidates:
             try:
-                nc = await nats.connect(url, connect_timeout=5)
+                # allow_reconnect=False: the default nats-py client treats a FIRST-connect
+                # failure as a disconnect and retries the same server up to
+                # max_reconnect_attempts (60, ~2s apart) before giving up -- up to two
+                # minutes per candidate. Measured 2026-09-14: with --domains added to CI,
+                # the in-cluster candidate is unreachable from every runner this repo uses
+                # (no VPN hop in catalog-render.yml), so that retry loop ran on every single
+                # sweep. This is a bounded probe, not a session that should reconnect, so one
+                # attempt per candidate is correct and the next candidate (or BLIND) is the
+                # recovery, not nats-py's own backoff.
+                nc = await nats.connect(url, connect_timeout=5, allow_reconnect=False)
                 break
             except Exception as e:  # noqa: BLE001 - the next candidate is the recovery
                 last = e
@@ -1857,7 +1866,9 @@ def publish(events: list[dict]) -> int:
         import nats  # imported late so --once works with no NATS client present
 
         n = 0
-        nc = await nats.connect(url, connect_timeout=5)
+        # allow_reconnect=False: see the matching note in _bus_streams -- an unreachable bus
+        # should fail once, in connect_timeout, not retry nats-py's own reconnect ladder.
+        nc = await nats.connect(url, connect_timeout=5, allow_reconnect=False)
         try:
             for e in events:
                 await nc.publish(f"{subject}.{e['kind']}", json.dumps(e).encode())

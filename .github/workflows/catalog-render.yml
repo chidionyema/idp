@@ -133,10 +133,16 @@ jobs:
       # inventories, because a dead pod is declared nowhere.
       #
       # The emitter reads the cluster-state receipt the estate already publishes every 15
-      # minutes and writes it into the same estate.db this job ships, then the code half on top.
-      # It adds no store and no bus. Before this step the graph answers "what is declared";
-      # after it, "what is".
-      - name: estate twin -- runtime + code into the graph (G1, G3, G4)
+      # minutes and writes it into the same estate.db this job ships, then the code half and
+      # the ten domains (identity, network, certificates, capacity, cost, data, postgres,
+      # sessions, worktrees, bus) on top. It adds no store and no bus. Before this step the
+      # graph answers "what is declared"; after it, "what is".
+      #
+      # --domains was missing until 2026-09-14: --once --code alone shipped the receipt-derived
+      # runtime nodes and the code sweep, but every reader asking get_estate_state over a domain
+      # outside "runtime" and "code" got nothing, because the sweep that fills those tables was
+      # never invoked.
+      - name: estate twin -- runtime + code + domains into the graph (G1, G3, G4)
         if: ${{ (inputs.mode || 'commit') == 'commit' }}
         working-directory: idp
         env:
@@ -151,7 +157,7 @@ jobs:
           #
           # A sweep that cannot read the runtime must not fail the job it runs inside: the
           # declared half has already shipped, and a BLIND runtime half is named, not fatal.
-          bin/estate-twin-runtime --once --code || true
+          bin/estate-twin-runtime --once --code --domains || true
           rows=$(python3 -c "import sqlite3;print(sqlite3.connect('catalog/estate.db').execute('select count(*) from nodes').fetchone()[0])" 2>/dev/null || echo 0)
           echo "estate-twin: $rows node(s) in catalog/estate.db after the sweep" | tee -a "$GITHUB_STEP_SUMMARY"
           if [ "$rows" -lt 100 ]; then
