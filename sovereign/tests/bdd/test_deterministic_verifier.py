@@ -1029,10 +1029,21 @@ def test_rule_4_has_two_enforcement_points() -> None:
     #
     # So the exclusion is the CLASS, not one filename: anything under tests/ or ending
     # _test.py is a grader. `enforcing` then means what it says.
+    #
+    # WIDENED 2026-09-13 to the second half of the same class: a document about a code is not a
+    # place that raises it. This suite added docs/specs/2026-09-13-deterministic-verifier-door.md,
+    # which quotes `violation_code: "UNATTESTED"` to specify the envelope -- a `.md` matched no
+    # exclusion, so the spec that DESCRIBES the refusal was counted as a third point that MAKES
+    # it, and the assertion went red on correct work: a documentation change reported as an
+    # admission-enforcement move (R38). Prose cannot refuse a payload; only something executed or
+    # evaluated can. The exclusion below is therefore stated over extensions rather than over the
+    # one filename this suite happened to add, so the next doc to quote the vocabulary is not
+    # read as infrastructure either.
+    NON_EXECUTABLE_SUFFIXES = (".md", ".txt", ".rst", ".feature")
     enforcing = sorted(
         line
         for line in found
-        if not line.endswith(".feature")
+        if not line.endswith(NON_EXECUTABLE_SUFFIXES)
         and not line.startswith("tests/")
         and not line.endswith("_test.py")
         and not line.endswith("test_deterministic_verifier.py")

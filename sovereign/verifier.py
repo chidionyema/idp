@@ -383,7 +383,17 @@ def _failed(
 
 
 def _verified(ledger: Ledger, stages: dict[str, Any], subject: str) -> dict[str, Any]:
-    attestation = sign(subject)
+    # SIGNED UNDER THE LEDGER'S OWN ROOT, NOT A MODULE-WIDE DEFAULT.
+    #
+    # `sign(subject)` alone defaults to `Path(tempfile.gettempdir()) / "estate-verifier"` -- one
+    # global directory shared by every caller on the machine. That is wrong twice over. First, the
+    # seal over one estate's verified patch would be minted by a key living outside every tree that
+    # estate owns, so a caller that isolated its work (the BDD suite isolates each scenario into its
+    # own temporary root) still reads and writes shared state. Second, the verification is supposed
+    # to be a function of the ledger under test; a signature that depends on which unrelated run
+    # happened to create the key first is not that function. `stage_execution` already takes a
+    # private work root for the same reason, so the signing path is given the ledger's parent.
+    attestation = sign(subject, ledger_root=ledger.ledger_dir.parent)
     staged = ledger.ledger_dir.parent / "staged" / f"{ledger.ledger_id}.patch"
     staged.parent.mkdir(parents=True, exist_ok=True)
     staged.write_text("\n".join(f.content for f in ledger.files))

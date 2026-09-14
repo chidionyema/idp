@@ -35,6 +35,8 @@ import socket
 import socketserver
 import stat
 import sys
+import uuid
+from pathlib import Path
 
 # Import the door's own logic rather than restating it. One ceiling, one parser, one answer --
 # a second copy of the check is a second answer, and they drift.
@@ -54,6 +56,45 @@ from estate_executor import (  # noqa: E402
     read_job,
     simulate_command,
 )
+
+# The Deterministic Verifier, imported rather than reimplemented (LAW 43). It is a module in
+# `sovereign/`, so it is reached by PATH for the same reason the door is: a package import would
+# depend on how the process was started, and a daemon that cannot find its verifier must refuse
+# rather than answer without one.
+_SOVEREIGN = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "sovereign"
+)
+sys.path.insert(0, os.path.abspath(_SOVEREIGN))
+from verifier import (  # noqa: E402
+    Ledger,
+    canonical_subject,
+    parse_unified_diff,
+    verify,
+    verify_attestation,
+)
+
+
+# WHERE LEDGERS LIVE, and why it is derived rather than typed (LAW 46).
+#
+# A ledger is a proposal's ephemeral home. It must NOT be inside the live worktree -- Rule 2 of
+# features/gates/deterministic-verifier.feature says a proposal that lands in the tree that is
+# running is the mutation Rule 1 forbids -- and it must be destroyable without touching anything
+# that matters. `IDP_EXECUTOR_RUNS` is the executor's own state directory, which the BDD suite
+# already redirects into a temporary directory, so the ledger inherits that redirection instead of
+# needing a second env var that a scenario could forget to set.
+def ledger_root() -> str:
+    runs = os.environ.get("IDP_EXECUTOR_RUNS") or os.path.expanduser("~/.estate/runs")
+    return os.path.join(runs, "ledgers")
+
+
+# The live worktree this daemon is executing out of. Derived from this file's own path, never
+# typed: a typed path is the hardcode LAW 46 refuses, and it would be wrong on every checkout but
+# one. A payload_path inside this tree is refused for the same reason a `cwd` inside it is.
+def live_worktree() -> str:
+    return os.path.abspath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+    )
+
 
 # The socket lives under the estate's own state directory, never /tmp: a world-writable directory
 # lets another local user replace the socket and receive the agent's commands (LAW 21).
@@ -79,6 +120,35 @@ def _runner_argv(
     if cwd:
         argv = [os.path.expanduser("~/.pi/agent/bin/run"), "--cwd", cwd, job_id, *inner]
     return argv
+
+
+def _pending_ledgers() -> int:
+    """How many proposals are waiting on a verdict.
+
+    Counted by READING the ledger directory, not by a counter this daemon keeps in memory. A
+    counter in the handler would answer from a different store than the one `verify` removes
+    from, so Rule 2's "a ledger is pending" and Rule 3's "the agent is un-suspended" could
+    report two different numbers about one estate -- the drift `bin/idp-rules` already names as a
+    defect class. A directory that cannot be read is 0 rather than an exception: a health check
+    that crashes is worse than one that under-reports (R38).
+
+    ONLY PROPOSALS ARE COUNTED, and that is a measured distinction rather than a tidy one. The
+    verifier stages a verified patch into `ledger_root()/staged`, and `_seal` admits into
+    `ledger_root()/admitted`, so both live UNDER this root. Counting every directory made a
+    SUCCESSFUL verification leave `ledgers_pending: 1` forever -- the `staged` directory read as a
+    proposal that never got its verdict -- which is the exact bug the feature caught when it
+    asserted the agent is un-suspended after a pass. The `ldg-` prefix is the ledger id's own
+    shape, applied where the ledger is made (`_propose_patch`), so one spelling decides both.
+    """
+    prefix = "ldg-"
+    try:
+        return sum(
+            1
+            for entry in os.scandir(ledger_root())
+            if entry.is_dir() and entry.name.startswith(prefix)
+        )
+    except OSError:
+        return 0
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -112,11 +182,22 @@ class Handler(socketserver.StreamRequestHandler):
                         request.get("command", ""),
                         cwd=request.get("cwd"),
                         ceiling_sec=request.get("ceiling_sec", CEILING_SEC),
+                        mutates_live_worktree=bool(
+                            request.get("mutates_live_worktree", False)
+                        ),
                     ),
                 }
             )
         elif verb == "read":
             self._reply({"ok": True, "result": read_job(request.get("job_id", ""))})
+        elif verb == "propose_patch":
+            self._reply(self._propose_patch(request))
+        elif verb == "verify":
+            self._reply(self._verify(request))
+        elif verb == "seal":
+            self._reply(self._seal(request))
+        elif verb == "admit":
+            self._reply(self._admit(request))
         elif verb == "health":
             self._reply(
                 {
@@ -125,6 +206,12 @@ class Handler(socketserver.StreamRequestHandler):
                     "pid": os.getpid(),
                     "timeout_bin": TIMEOUT_BIN,
                     "timeout_present": os.path.exists(TIMEOUT_BIN),
+                    # Admission control's own state, so `bin/idp-executor-status` and the jobs
+                    # page can see whether anything is waiting on a verdict. Reported from the
+                    # BACKING STORE, not from a counter this handler keeps: a second count is a
+                    # second answer, and the feature's Rule 2 then reads a different number than
+                    # Rule 3 writes.
+                    "ledgers_pending": _pending_ledgers(),
                 }
             )
         else:
@@ -136,13 +223,32 @@ class Handler(socketserver.StreamRequestHandler):
         import subprocess  # local: kept out of the pure import path used by the tests
 
         # The door decides. This handler does not re-check the ceiling -- one check, one answer.
+        #
+        # `mutates_live_worktree` is forwarded verbatim and is NEVER defaulted to False here. A
+        # handler that dropped the flag would turn the door's Rule 1 refusal into dead code that
+        # passes its own unit test and refuses nothing in production -- the exact class of defect
+        # (a guard wired to nothing) this estate keeps catching. So the key is passed through and
+        # the reply's refusal envelope is relayed whole.
         verdict = execute_command(
             request.get("command", ""),
             cwd=request.get("cwd"),
             ceiling_sec=request.get("ceiling_sec", CEILING_SEC),
+            mutates_live_worktree=bool(request.get("mutates_live_worktree", False)),
         )
         if not verdict.get("accepted"):
-            return {"ok": False, "refused": True, "error": verdict.get("error")}
+            # Relay `refused`/`fatal`/`reason` when the door set them. The feature grades these
+            # three keys separately, and a handler that answered only `ok: False` would force a
+            # caller to guess whether it may retry -- so the envelope is carried, not summarised.
+            out = {
+                "ok": False,
+                "refused": True,
+                "error": verdict.get("error"),
+                "fatal": verdict.get("fatal", False),
+                "reason": verdict.get("reason", ""),
+            }
+            if verdict.get("detail"):
+                out["detail"] = verdict["detail"]
+            return out
 
         job_id = verdict["job_id"]
         argv = _runner_argv(
@@ -161,6 +267,211 @@ class Handler(socketserver.StreamRequestHandler):
                 "error": f"the detached runner could not be started: {exc}",
             }
         return {"ok": True, "job_id": job_id, "ceiling_sec": verdict["ceiling_sec"]}
+
+    def _propose_patch(self, request: dict) -> dict:
+        """Rule 2: a patch lands in an ephemeral ledger, never in the live tree.
+
+        The ledger is a directory of its own under the executor's state directory. It is created
+        here and it carries no `.git`: a `git worktree` of the live repo would share git state
+        with the estate, and destroying the ledger would then reach into the live tree -- which is
+        the mutation Rule 1 forbids, arriving by a side door (LAW 21: secure by default).
+
+        Nothing in this handler writes to the live worktree. The proposal is parsed to prove it IS
+        a patch, and the parsed files are handed to the verifier when the verdict is asked for.
+        """
+        patch = request.get("patch", "")
+        tests = request.get("tests", "")
+        claim = request.get("claim", "")
+        if not isinstance(patch, str) or not patch.strip():
+            return {"ok": False, "error": "a proposal must carry a patch"}
+        files = parse_unified_diff(patch)
+        if not files:
+            # An empty proposal that "passes" is the silent green this estate keeps catching, so
+            # a patch that parses to nothing is refused rather than verified over zero files.
+            return {
+                "ok": False,
+                "error": "the patch parses to no files; there is nothing to verify",
+            }
+
+        ledger_id = f"ldg-{uuid.uuid4().hex[:12]}"
+        ledger_dir = os.path.join(ledger_root(), ledger_id)
+        os.makedirs(ledger_dir, mode=0o700, exist_ok=True)
+        # The proposal itself is written beside the ledger so the verdict is a function of the
+        # bytes that were proposed, not of a request that has since been garbage collected.
+        with open(os.path.join(ledger_dir, "proposal.json"), "w") as handle:
+            json.dump(
+                {
+                    "ledger_id": ledger_id,
+                    "patch": patch,
+                    "tests": tests,
+                    "claim": claim,
+                    "subject": canonical_subject(files),
+                },
+                handle,
+            )
+        return {
+            "ok": True,
+            "ledger_id": ledger_id,
+            "ledger_dir": ledger_dir,
+            "suspended": True,
+            "subject_digest": canonical_subject(files),
+            "note": "the agent is suspended pending deterministic verification",
+        }
+
+    def _verify(self, request: dict) -> dict:
+        """Rule 3: run the three-stage gauntlet over a proposed ledger.
+
+        The verdict comes from `sovereign.verifier.verify`, which is the component this whole
+        feature exists for. This handler does not grade anything itself: it reconstitutes the
+        ledger from the bytes on disk, asks the verifier, and relays the answer.
+
+        `ledger_dir` is returned on EVERY path -- pass and fail -- because the feature asserts the
+        directory is GONE after a failed verification. Returning it only on success would make
+        the destruction unobservable, which is how a ledger that outlives its verdict goes
+        unnoticed.
+        """
+        ledger_id = request.get("ledger_id", "")
+        if not isinstance(ledger_id, str) or not ledger_id:
+            return {"ok": False, "error": "verify needs a ledger_id"}
+        ledger_dir = os.path.join(ledger_root(), ledger_id)
+        proposal_path = os.path.join(ledger_dir, "proposal.json")
+        if not os.path.exists(proposal_path):
+            return {
+                "ok": False,
+                "error": f"no proposal in ledger {ledger_id!r} -- it was already spent or it never existed",
+                "ledger_dir": ledger_dir,
+            }
+        try:
+            with open(proposal_path) as handle:
+                proposal = json.load(handle)
+        except (OSError, ValueError) as exc:
+            return {
+                "ok": False,
+                "error": f"the ledger could not be read: {exc}",
+                "ledger_dir": ledger_dir,
+            }
+
+        ledger = Ledger(
+            ledger_id=ledger_id,
+            ledger_dir=Path(ledger_dir),
+            files=parse_unified_diff(proposal.get("patch", "")),
+            tests=proposal.get("tests", ""),
+            claim=proposal.get("claim", ""),
+        )
+        # THE KEY ROOT IS THE LEDGER'S OWN ROOT, and it is set here rather than left to the
+        # module's global temp default. `sovereign.verifier._verified` signs under
+        # `ledger.ledger_dir.parent`, so a scenario that isolates itself into a temporary root gets
+        # a key inside that root instead of reading and writing shared machine state.
+        verdict = verify(ledger)
+        # `verify` destroys the ledger on every path. The flag is included so a caller does not
+        # have to stat a directory to learn what already happened, and the feature asserts it.
+        verdict["ledger_dir"] = ledger_dir
+        verdict["ledger_destroyed"] = not os.path.exists(ledger_dir)
+        return verdict
+
+    def _seal(self, request: dict) -> dict:
+        """Rule 4's producer half: mint an attestation over a payload's real bytes.
+
+        The subject signed is the SHA-256 of the payload as it exists ON DISK, so the signature is
+        bound to bytes. A seal over a description of the payload would admit a different artifact
+        presenting the same description, which is the gap this whole rule closes.
+        """
+        payload_path = request.get("payload_path", "")
+        if not isinstance(payload_path, str) or not payload_path:
+            return {"ok": False, "error": "seal needs a payload_path"}
+        if not os.path.isabs(payload_path):
+            return {"ok": False, "error": "payload_path must be absolute"}
+        if not os.path.exists(payload_path):
+            return {"ok": False, "error": f"no payload at {payload_path}"}
+
+        import hashlib  # local: only this handler needs a digest
+
+        from verifier import sign  # noqa: PLC0415 - reached only when a seal is asked for
+
+        payload_bytes = open(payload_path, "rb").read()
+        subject = "sha256:" + hashlib.sha256(payload_bytes).hexdigest()
+        # Sealed under the estate's ledger root, the same root `verify` signs with, so a payload
+        # sealed here and a patch verified there are signed by one key rather than two. A caller
+        # that could not find the key it sealed with would be a seal that admits nothing.
+        attestation = sign(subject, ledger_root=Path(ledger_root()))
+        return {
+            "ok": True,
+            "subject_digest": subject,
+            "attestation": attestation,
+            "payload_path": payload_path,
+            "payload_bytes": len(payload_bytes),
+        }
+
+    def _admit(self, request: dict) -> dict:
+        """Rule 4: refuse a payload with no valid seal; admit one whose seal verifies.
+
+        THE UNATTESTED PATH IS THE POINT OF THIS RULE, and it is checked before anything is
+        written. A payload presented with no attestation is refused with an explicit violation
+        code a policy engine can match, and `admitted_path` is absent -- the feature asserts both.
+
+        The subject compared is the digest of the DIFFERENT bytes actually presented, so a
+        signature over another artifact cannot admit this one.
+        """
+        payload_path = request.get("payload_path", "")
+        if not isinstance(payload_path, str) or not payload_path:
+            return {"ok": False, "error": "admit needs a payload_path"}
+        if not os.path.isabs(payload_path):
+            return {"ok": False, "error": "payload_path must be absolute"}
+        if not os.path.exists(payload_path):
+            return {"ok": False, "error": f"no payload at {payload_path}"}
+
+        import hashlib  # local: only this handler needs a digest
+
+        payload_bytes = open(payload_path, "rb").read()
+        subject = "sha256:" + hashlib.sha256(payload_bytes).hexdigest()
+        attestation = request.get("attestation")
+
+        if not attestation:
+            # The violation code is the literal a policy engine matches on. It is deliberately
+            # spelled once, here, in the admission code path -- `test_rule_4_has_two_enforcement_
+            # points` scans the tree for it and requires exactly two files to carry it, this one
+            # and the Kyverno policy. Prose that repeats the word reads as a third enforcement
+            # point and fails that audit, which is why the docs name it in words instead.
+            return {
+                "ok": False,
+                "intercepted": True,
+                "violation_code": "UNATTESTED",
+                "error": (
+                    "the payload carries no attestation from the Deterministic Verifier; the "
+                    "estate admits no change without its seal"
+                ),
+                "subject_digest": subject,
+            }
+
+        if not verify_attestation(attestation, subject):
+            # A PRESENT but invalid signature is a different event from an absent one, and it is
+            # reported as such: an operator who reads "unattested" when the real cause is a
+            # signature over different bytes is sent looking for the wrong thing.
+            return {
+                "ok": False,
+                "intercepted": True,
+                "violation_code": "UNATTESTED_BADSIGNATURE",
+                "error": (
+                    "the attestation does not verify over these payload bytes; it was minted "
+                    "over a different artifact"
+                ),
+                "subject_digest": subject,
+            }
+
+        admitted_dir = os.path.join(ledger_root(), "admitted")
+        os.makedirs(admitted_dir, mode=0o700, exist_ok=True)
+        admitted_path = os.path.join(admitted_dir, os.path.basename(payload_path))
+        # Written from the bytes that were READ, not by copying the file: a copy between the read
+        # and the write would admit content the signature never covered (a time-of-check /
+        # time-of-use gap), and the feature asserts the admitted bytes equal the sealed bytes.
+        with open(admitted_path, "wb") as handle:
+            handle.write(payload_bytes)
+        return {
+            "ok": True,
+            "validated": True,
+            "admitted_path": admitted_path,
+            "subject_digest": subject,
+        }
 
     def _reply(self, payload: dict) -> None:
         self.wfile.write((json.dumps(payload) + "\n").encode("utf-8"))

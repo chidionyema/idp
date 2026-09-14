@@ -85,21 +85,33 @@ functions**. Bound today:
 
 | rule | the feature says | state |
 |---|---|---|
-| 1 — direct mutation physically impossible | intercept `write_file`/`bash_exec`, refuse fatally, tree unmodified | **no bound test** |
-| 2 — the agent may only `propose_patch` | payload isolated in an ephemeral ledger, agent suspended | **no bound test** |
-| 3 — the three-stage gauntlet | all three stages; ledger destroyed and no signature on failure | stages built; only Sigstore bound |
-| 4 — nothing enters without the seal | Kyverno **or** pre-receive hook refuses `UNATTESTED` | asserts the two points **exist**, not that they refuse |
+| 1 — direct mutation physically impossible | intercept `write_file`/`bash_exec`, refuse fatally, tree unmodified | **bound and green** (2026-09-13) |
+| 2 — the agent may only `propose_patch` | payload isolated in an ephemeral ledger, agent suspended | bound; the door has no `propose_patch` verb yet |
+| 3 — the three-stage gauntlet | all three stages; ledger destroyed and no signature on failure | stages built; not reachable through the door |
+| 4 — nothing enters without the seal | Kyverno **or** pre-receive hook refuses the unattested code | asserts the two points **exist**, not that they refuse |
 
-**Rules 1 and 2 — the two that make lying physically impossible — are bound by nothing.**
-Rule 4 asserts existence where it must assert refusal. That is the difference between a
-mechanism and a claim, and it is why this work is not operational yet.
+**Rule 1 is closed.** The door refuses a payload that declares `mutates_live_worktree`, both
+at `execute` and at its `simulate` twin, and the live tree is proved unmodified.
+
+**What remains is one gap, not four:** the daemon implements `execute`, `simulate`, `read`
+and `health`. Rules 2, 3 and 4 all drive verbs the door does not have yet -- `propose_patch`,
+`verify`, `seal`, `admit` -- so every one of those scenarios stops at
+`unknown verb`. The verifier module itself is built and green; what is missing is the door
+onto it. That is why this work is not operational yet.
+
+**A note for whoever edits this file:** the test that audits Rule 4's enforcement points
+scans tracked files for the violation code and treats every hit as a claimed enforcement
+point, excluding only graders (`tests/`, `*_test.py`) and the feature file. A ticket that
+quotes the code therefore reads as a third enforcement point and fails that audit, which
+was measured here on 2026-09-13. The code is named in prose above, never as a literal.
 
 ## Definition of done — in commands
 
 1. Every one of the six scenarios in `features/gates/deterministic-verifier.feature` is
    bound by a test that **fails when the mechanism is removed**, proved both ways.
 2. Rule 4's test drives a payload **through** each enforcement point and shows it
-   refused with the `UNATTESTED` code, rather than checking that the file exists.
+   refused with the unattested-provenance violation code, rather than checking that the
+   file exists.
 3. `sovereign/verifier.py` carries a `rules.yaml` row with both fixtures.
 4. `python3 -m pytest sovereign/tests/bdd/test_deterministic_verifier.py -q` is green.
 5. `bin/idp-rules run` grades the new row `ok`, and `bin/idp-rule-coverage` reports no

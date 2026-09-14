@@ -173,6 +173,7 @@ def execute_command(
     cwd: str | None = None,
     ceiling_sec: int = CEILING_SEC,
     executor: Executor | None = None,
+    mutates_live_worktree: bool = False,
 ) -> dict:
     """The one door. Accept a command, bound it, hand it to the detached executor.
 
@@ -185,6 +186,41 @@ def execute_command(
     reasons: anything the executor cannot bound is not run.
     """
     executor = executor or _REGISTRY
+
+    # 0. RULE 1 OF features/gates/deterministic-verifier.feature, AND IT IS CHECKED FIRST.
+    #
+    #    The feature's first rule is a claim about PHYSICS, not about policy: "Direct mutation of
+    #    the live estate is physically impossible." A policy that is consulted after some other
+    #    check has already run is not physics -- it is a habit, and the first road that skips it
+    #    is the defect. So the live-worktree refusal sits above every other branch, including the
+    #    empty-command one, and it is unconditional: a caller that flags its own payload as a
+    #    mutation of the live tree is refused whatever else that payload happens to be.
+    #
+    #    WHY THE FLAG IS TRUSTED RATHER THAN INFERRED. The caller is the agent, and an agent that
+    #    wanted to lie would simply not set the flag. That is the honest limit of this half and it
+    #    is stated instead of papered over: inferring intent from a shell string is a heuristic
+    #    that refuses correct work on the day someone greps for the word `rm` (R38), while the
+    #    flag is the SAME declaration the interception layer already raised -- the point of the
+    #    check is that the refusal is made at the far side of the message, by a process the
+    #    caller's own tool calls do not live inside, so the caller cannot swallow it. The
+    #    unspoofable half is the separate uid in `bin/idp-executor-install`, and
+    #    `bin/idp-executor-status` reports whether that half is in place.
+    #
+    #    The reply carries `refused` and `fatal` as SEPARATE keys, because the feature grades them
+    #    separately: `refused` says the door said no, `fatal` says this is not a warning a caller
+    #    may retry around. A refusal that is only advisory is the thing Rule 1 exists to kill.
+    if mutates_live_worktree:
+        return {
+            "accepted": False,
+            "error": (
+                "direct mutation of the live worktree is refused: the estate admits changes only "
+                "as a patch proposed to an ephemeral ledger, never as a write into the tree that "
+                "is running"
+            ),
+            "refused": True,
+            "fatal": True,
+            "reason": "mutates_live_worktree",
+        }
 
     if not isinstance(command, str) or not command.strip():
         return _refusal("empty command")
@@ -269,7 +305,8 @@ def register_mcp_tools(
         description=(
             "Run a command through the estate executor. Returns a job id in milliseconds; the turn "
             f"ends. Every command is bounded to {CEILING_SEC}s by the executor, on the far side of "
-            "this call. Read the outcome later with read_job."
+            "this call. Read the outcome later with read_job. A payload that declares it mutates "
+            "the live worktree is refused, fatally."
         ),
         parameters={
             "type": "object",
@@ -279,6 +316,13 @@ def register_mcp_tools(
                 "ceiling_sec": {
                     "type": "integer",
                     "description": f"seconds; clamped to the estate ceiling of {CEILING_SEC}",
+                },
+                "mutates_live_worktree": {
+                    "type": "boolean",
+                    "description": (
+                        "set when the invocation targets the tree that is running; such a call "
+                        "is refused fatally (Rule 1 of deterministic-verifier.feature)"
+                    ),
                 },
             },
             "required": ["command"],
@@ -315,6 +359,7 @@ def simulate_command(
     *,
     cwd: str | None = None,
     ceiling_sec: int = CEILING_SEC,
+    mutates_live_worktree: bool = False,
 ) -> dict:
     """The propose twin (MUM-288): what the executor WOULD do, running nothing.
 
@@ -322,7 +367,7 @@ def simulate_command(
     that says accepted and an execute that refuses would be a door reporting something the world
     does not do.
     """
-    checks = _refusals_for(command, cwd, ceiling_sec)
+    checks = _refusals_for(command, cwd, ceiling_sec, mutates_live_worktree)
     if checks:
         return {"would_accept": False, "error": checks[0]["error"], "refusals": checks}
     requested = max(MIN_CEILING_SEC, min(int(ceiling_sec), CEILING_SEC))
@@ -334,9 +379,32 @@ def simulate_command(
     }
 
 
-def _refusals_for(command: str, cwd: str | None, ceiling_sec: int) -> list[dict]:
+def _refusals_for(
+    command: str,
+    cwd: str | None,
+    ceiling_sec: int,
+    mutates_live_worktree: bool = False,
+) -> list[dict]:
     """Every reason the execute door would refuse, in the order it would find them."""
     reasons: list[dict] = []
+    # Rule 1 first, in the same position the execute door checks it. Order is not cosmetic here:
+    # the feature asks which refusal a payload gets, and a proposal that named the ceiling when
+    # the door was really going to name the live-worktree mutation would be the drift this
+    # function exists to prevent.
+    if mutates_live_worktree:
+        reasons.append(
+            {
+                "accepted": False,
+                "error": (
+                    "direct mutation of the live worktree is refused: the estate admits changes "
+                    "only as a patch proposed to an ephemeral ledger, never as a write into the "
+                    "tree that is running"
+                ),
+                "refused": True,
+                "fatal": True,
+                "reason": "mutates_live_worktree",
+            }
+        )
     if not isinstance(command, str) or not command.strip():
         reasons.append(_refusal("empty command"))
         return reasons

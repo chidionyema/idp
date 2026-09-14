@@ -2484,7 +2484,16 @@ rules:
     args:
     - tests/fixtures/execution-boundary/good
     note: the whole boundary, ceiling imported once from the door
-  ok: the executor daemon applies one ceiling, imported from the door, and every half of the boundary is present
+  - expect: pass
+    live: true
+    args:
+    - --check
+    note: 'LIVE: the boundary is graded on THIS repository rather than on an example of one, so
+      the row fails the day the daemon restates the ceiling, the door loses its entry point or
+      the launchd job goes missing on the machine that is actually running agents. Two fixture
+      cases alone graded a tree that never moves: every one of the six real breaches this rule
+      was written for would have passed them.'
+  ok: the executor daemon applies one ceiling, imported from the door, and every half of the boundary is present -- and the boundary holds on this repository, not only on an example of one
   fail: a ceiling is restated in the daemon, or the boundary is half built and nothing says so
 - id: a-script-is-not-built-until-it-runs
   fast: true
