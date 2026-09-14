@@ -17,4 +17,7 @@ export const DOOR_WHY: Record<string, string> = {
   Kubernetes: 'What the cluster is running.',
   Tools: 'Every page you sign in through.',
   Find: 'Search the estate.',
+  // The board. The catalogue knows the sessions; the page draws them as rows and the stream keeps
+  // the rows live. Same shape as the catalogue card -- one screen, no scrolling.
+  Fleet: 'Every agent session, live.',
 };

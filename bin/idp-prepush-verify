@@ -1,0 +1,255 @@
+#!/usr/bin/env python3
+# bin/idp-prepush-verify: pre-push gate.
+#
+# The pipeline: propose_patch -> verify. The verify stage runs the
+# full three-stage gauntlet (structural compile, Z3 symbolic proof,
+# pytest execution against the supplied tests) AND mints the Sigstore
+# attestation. A VERIFIED verdict with `admissible: true` IS the
+# admission; the separate seal/admit verbs are for callers that
+# bypass verify. The hook refuses push otherwise.
+#
+# NOTE: parse_unified_diff() in sovereign/verifier.py only keeps '+' and
+# context lines from each hunk. For a MODIFIED file, this gives only the
+# changed hunk lines (~8 out of 745), which is not valid Python. The fix:
+# modified files are expressed as new-file diffs (--- /dev/null, all + lines)
+# so the parser receives complete content. New files use normal diff.
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+VERIFIER_CURL = os.path.join(HERE, "idp-verifier-curl")
+
+
+def _new_file_diff(path: str, content: str) -> str:
+    """Express a complete file as a new-file unified diff (all + lines)."""
+    lines = content.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    n = len(lines)
+    diff_lines = [
+        f"diff --git a/{path} b/{path}\n",
+        f"new file mode 100644\n",
+        f"--- /dev/null\n",
+        f"+++ b/{path}\n",
+        f"@@ -0,0 +1,{n} @@\n",
+    ]
+    for ln in lines:
+        diff_lines.append(f"+{ln}")
+    return "".join(diff_lines)
+
+
+def _files_in_diff(raw: str) -> list[tuple[str, bool]]:
+    """Return (path, is_new) for each file in a git diff output.
+
+    is_new is True when the file appears as 'new file' in the diff.
+    """
+    files = []
+    is_new = False
+    for line in raw.splitlines(keepends=True):
+        if line.startswith("diff --git "):
+            # reset per-file state
+            is_new = False
+        elif line.startswith("new file mode"):
+            is_new = True
+        elif line.startswith("--- "):
+            if line.strip() == "--- /dev/null":
+                pass  # already know from new file mode
+            # capture the a/ path
+            a_path = line[4:].strip().split("\t")[0]
+            if a_path.startswith("a/"):
+                a_path = a_path[2:]
+            files.append((a_path, is_new))
+    return files
+
+
+def push_diff(remote: str, branch: str) -> str:
+    # First pass: standard unified diff
+    out = subprocess.run(
+        [
+            "git",
+            "diff",
+            f"{remote}/{branch}",
+            "HEAD",
+            "--diff-algorithm=myers",
+            "--binary",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=os.getcwd(),
+    )
+    raw = out.stdout
+    if not raw.strip():
+        return raw
+
+    # Second pass: for MODIFIED files (not new), replace their hunk diff
+    # with a new-file-style diff that gives the parser complete content.
+    file_list = _files_in_diff(raw)
+    segments = []
+    cursor = 0
+    in_file = False
+    file_path = None
+    seg_start = 0
+    i = 0
+
+    for i, line in enumerate(raw.splitlines(keepends=True)):
+        if line.startswith("diff --git "):
+            # finish previous file segment
+            if in_file and file_path is not None:
+                segments.append(raw[seg_start:i])
+            seg_start = i
+            in_file = False
+            file_path = None
+        elif line.startswith("--- "):
+            a_path = line[4:].strip().split("\t")[0]
+            if a_path.startswith("a/"):
+                a_path = a_path[2:]
+            file_path = a_path
+            in_file = True
+        elif in_file and file_path is not None and i >= seg_start:
+            # check if this file is modified (not new) in our list
+            # we resolve it from file_list
+            pass  # resolved below
+    # append last segment
+    if in_file and file_path is not None:
+        segments.append(raw[seg_start:])
+
+    # Rebuild with new-file diffs for modified files
+    # Parse the diff into file-level chunks
+    file_chunks = []
+    lines = raw
+    pos = 0
+    while pos < len(lines):
+        if not lines[pos:].startswith("diff --git "):
+            break
+        # Find end of this file's diff (next "diff --git " or end)
+        end = lines.find("\ndiff --git ", pos + 1)
+        if end == -1:
+            end = len(lines)
+        chunk = lines[pos:end]
+        file_chunks.append(chunk)
+        pos = end
+
+    result_parts = []
+    for chunk in file_chunks:
+        # Determine file path and whether it's new
+        path = None
+        is_new = False
+        for ln in chunk.splitlines():
+            if ln.startswith("--- "):
+                a = ln[4:].strip().split("\t")[0]
+                if a.startswith("a/"):
+                    a = a[2:]
+                path = a
+            elif ln.startswith("new file mode"):
+                is_new = True
+
+        if path and not is_new and path != "/dev/null":
+            # Modified file: replace with new-file diff of current content
+            try:
+                # Read the current (post-change) content from working tree
+                full_path = os.path.join(os.getcwd(), path)
+                with open(full_path, "rb") as fh:
+                    content = fh.read()
+                # Only process text files (don't try to decode binary)
+                try:
+                    text = content.decode("utf-8")
+                except UnicodeDecodeError:
+                    text = content.decode("utf-8", errors="replace")
+                result_parts.append(_new_file_diff(path, text))
+            except OSError:
+                # If we can't read it, fall back to original chunk
+                result_parts.append(chunk)
+        else:
+            # New file: keep as-is (already correct)
+            result_parts.append(chunk)
+
+    return "".join(result_parts)
+
+
+def call(verb: str, **kwargs) -> dict:
+    argv = [sys.executable, VERIFIER_CURL, verb]
+    for k, v in kwargs.items():
+        cli = "--" + k.replace("_", "-")
+        if isinstance(v, list):
+            argv.extend([cli, *v])
+        else:
+            argv.extend([cli, str(v)])
+    proc = subprocess.run(argv, capture_output=True, text=True, timeout=55)
+    if proc.returncode not in (0, 2):
+        raise SystemExit(f"verifier: {verb} transport failed:\n{proc.stderr}")
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {"raw_stdout": proc.stdout, "raw_stderr": proc.stderr}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--remote", required=True)
+    ap.add_argument("--branch", required=True)
+    ap.add_argument("--summary", default="pre-push gate")
+    ap.add_argument(
+        "--test-path",
+        action="append",
+        default=None,
+        help="pytest test file whose contents grade the proposal "
+             "(repeatable). Default: tests/test_verifier_hooks.py",
+    )
+    args = ap.parse_args()
+
+    diff = push_diff(args.remote, args.branch)
+    if not diff.strip():
+        return 0
+
+    test_paths = args.test_path
+    if not test_paths:
+        candidate = os.path.join(os.getcwd(), "tests", "test_verifier_hooks.py")
+        if os.path.exists(candidate):
+            test_paths = [candidate]
+        else:
+            test_paths = []
+
+    # The verifier expects TEST SOURCE, not a path. Read the file from
+    # disk; if multiple are supplied, concatenate them.
+    test_source = ""
+    if test_paths:
+        bodies = []
+        for tp in test_paths:
+            with open(tp, "r", encoding="utf-8") as f:
+                bodies.append(f.read())
+        test_source = "\n\n".join(bodies)
+
+    # Step 1: propose_patch (tests must ride here, not at verify)
+    proposal = call(
+        "propose_patch",
+        patch=diff,
+        summary=args.summary,
+        test=test_source,
+    )
+    ledger_id = proposal.get("payload", {}).get("ledger_id")
+    if not ledger_id:
+        sys.stderr.write(f"verifier: propose_patch refused: {json.dumps(proposal)}\n")
+        return 1
+    sys.stderr.write(f"verifier: proposed {ledger_id}\n")
+
+    # Step 2: verify -- the only adjudication step. A VERIFIED verdict
+    # with `admissible: true` admits the proposal; nothing else is needed.
+    verdict = call("verify", ledger_id=ledger_id)
+    payload = verdict.get("payload", {})
+    cv = payload.get("claim_verdict", "FAILED")
+    admissible = payload.get("admissible", False)
+    if cv not in ("PASSED", "VERIFIED") or not admissible:
+        sys.stderr.write(f"verifier: verify FAILED on {ledger_id}: {json.dumps(verdict)}\n")
+        return 1
+    sys.stderr.write(f"verifier: {ledger_id} {cv}; push allowed\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

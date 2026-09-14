@@ -12,7 +12,7 @@ import {
   TestApiProvider,
   mockApis,
 } from '@backstage/frontend-test-utils';
-import { configApiRef, fetchApiRef } from '@backstage/frontend-plugin-api';
+import { configApiRef, discoveryApiRef, fetchApiRef } from '@backstage/frontend-plugin-api';
 import { Fleet } from './Fleet';
 
 const envelope = (over: Record<string, unknown> = {}) => ({
@@ -51,6 +51,9 @@ const renderFleet = (body: unknown) => {
   // a provider list missing it leaves the app shell unable to construct itself -- which surfaced
   // as React's "Element type is invalid" rather than as a missing-API error. EstateHome.test.tsx
   // supplies the same pair for the same reason.
+  // discoveryApiRef too: the page resolves the EventSource URL through it (the fetch goes through
+  // fetchApi's plugin:// middleware, but EventSource bypasses fetchApi). EventSource is stubbed to
+  // undefined above, so this mock is never actually called -- but useApi() would throw without it.
   return renderInTestApp(
     <TestApiProvider
       apis={[
@@ -59,6 +62,7 @@ const renderFleet = (body: unknown) => {
           configApiRef,
           mockApis.config({ data: { app: { title: 'Mumchimp estate' } } }),
         ],
+        [discoveryApiRef, mockApis.discovery()],
       ]}
     >
       <Fleet />

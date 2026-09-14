@@ -47,8 +47,11 @@ def _sessions():
     return module
 
 
-SESSIONS_PATH = "/api/fleetview/sessions"
-STREAM_PATH = "/api/fleetview/stream"
+# The plugin's HTTP paths as the launcher registers them. The Backstage proxy prepends
+# `/api/proxy/<key>` so the browser-facing URL is `/api/proxy/fleetview/<this>` and the
+# launcher's pathRewrite strips that prefix, leaving these inner paths for FastAPI.
+SESSIONS_PATH = "/sessions"
+STREAM_PATH = "/stream"
 
 
 def sessions_envelope() -> tuple[dict[str, Any], int]:
