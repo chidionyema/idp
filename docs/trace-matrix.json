@@ -573,6 +573,25 @@
   "ticket": "crew#213"
  },
  {
+  "feature": "features/gates/deterministic-verifier.feature",
+  "title": "Deterministic Verifier and Zero-Trust Agent Governance",
+  "scenarios": [
+   "The agent attempts to directly write to the active worktree",
+   "The agent successfully queues a change for verification",
+   "A proposed patch contains structural, symbolic, or execution flaws",
+   "A proposed patch achieves mathematical and execution correctness",
+   "An unverified payload attempts to bypass the Verifier and enter the estate",
+   "A mechanically verified payload enters the estate"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_deterministic_verifier.py"
+  ],
+  "status": "PENDING",
+  "added_in": "65588127",
+  "pr": 3376,
+  "ticket": null
+ },
+ {
   "feature": "sovereign/tests/fixtures/bdd/pending_unclaimed/pending_unclaimed.feature",
   "title": "A pending feature nobody has claimed",
   "scenarios": [
@@ -1628,7 +1647,9 @@
   "title": "An agent cannot lie about what it sees, and cannot forget what it was told to do",
   "scenarios": [
    "An agent claims completed work with no tool call behind it",
-   "The same claim, with the tool call behind it",
+   "The same claim, with a single reading behind it",
+   "A claim backed by three independent pieces of evidence",
+   "A claim backed by one source read three times",
    "The transcript cannot be read",
    "An agent acts outside the plan it declared",
    "An agent stays inside its declared plan",
