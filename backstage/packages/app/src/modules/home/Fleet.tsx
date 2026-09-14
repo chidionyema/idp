@@ -4,6 +4,12 @@
 // (`GET /api/proxy/fleetview/stream`). Everything that decides WHAT the page says lives in `fleet.ts`,
 // which is pure and tested; this file draws it.
 //
+// Both URLs are reached through the discovery API (not as raw `/api/proxy/...`). `fetchApi` is the
+// Backstage HTTP client; it ships a `plugin://` middleware that translates `plugin://proxy/...` into
+// the concrete backend URL -- otherwise the relative path lands on `:3100` and the dev server returns
+// the SPA shell instead. `EventSource` cannot go through that middleware (it bypasses fetchApi), so
+// the stream URL is built explicitly from `discoveryApi.getBaseUrl('proxy')`.
+//
 // Three states are drawn differently on purpose (see fleet.ts): an unavailable source is an
 // error, an empty estate is an empty state, and a live board with a silent runtime carries that
 // gap in its own sentence. A page that showed all three as "no sessions" would render an outage
@@ -13,7 +19,11 @@
 // header is what produced four differently-sized titles in the first place.
 import { useEffect, useState } from 'react';
 import { Progress } from '@backstage/core-components';
-import { fetchApiRef, useApi } from '@backstage/frontend-plugin-api';
+import {
+  discoveryApiRef,
+  fetchApiRef,
+  useApi,
+} from '@backstage/frontend-plugin-api';
 import { Chip, EstatePage, Section, Sheet, Summary } from '../shell';
 import { order, prLabel, spendLabel, stateLabel, summarise } from './fleetBoard';
 import type { Board, SessionsEnvelope } from './fleetBoard';
@@ -26,6 +36,7 @@ const POLL_MS = 15000;
 
 export function Fleet() {
   const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
   const [board, setBoard] = useState<Board>(() => summarise(null));
 
   useEffect(() => {
@@ -33,7 +44,13 @@ export function Fleet() {
 
     const read = async () => {
       try {
-        const res = await fetchApi.fetch('/api/proxy/fleetview/sessions');
+        // `plugin://proxy/fleetview/sessions` -- the discovery middleware rewrites the
+        // `proxy` hostname to `${backend.baseUrl}/api/proxy` and joins the path. A bare
+        // `/api/proxy/fleetview/sessions` would go to `:3100` (the SPA's origin) and hit the
+        // history-API fallback instead of the backend.
+        const res = await fetchApi.fetch(
+          'plugin://proxy/fleetview/sessions',
+        );
         const envelope = (await res.json()) as SessionsEnvelope;
         if (!cancelled) setBoard(summarise(envelope));
       } catch (err) {
@@ -56,31 +73,37 @@ export function Fleet() {
     // what it has; the interval below is the fallback so a board is never frozen on a stale row.
     let source: EventSource | undefined;
     if (typeof EventSource !== 'undefined') {
-      try {
-        source = new EventSource('/api/proxy/fleetview/stream');
-        source.onmessage = event => {
-          try {
-            const frame = JSON.parse(event.data);
-            setBoard(current =>
-              summarise({
-                available: true,
-                sessions: [
-                  ...current.sessions.filter(
-                    s => s.session_id !== frame.session_id,
-                  ),
-                  ...(frame.record ? [frame.record] : []),
-                ],
-                unreachable: current.unreachable,
-              }),
-            );
-          } catch {
-            // A frame that will not parse is dropped; the next read reconciles. Taking the board
-            // down on one bad frame would lose every other session with it.
-          }
-        };
-      } catch {
-        source = undefined;
-      }
+      // EventSource does not route through fetchApi, so the plugin:// middleware is not in
+      // the path. Resolve the backend URL explicitly via discoveryApi -- wrapped in an IIFE
+      // because the useEffect callback itself is not async.
+      void (async () => {
+        try {
+          const streamBase = await discoveryApi.getBaseUrl('proxy');
+          source = new EventSource(`${streamBase}/fleetview/stream`);
+          source.onmessage = event => {
+            try {
+              const frame = JSON.parse(event.data);
+              setBoard(current =>
+                summarise({
+                  available: true,
+                  sessions: [
+                    ...current.sessions.filter(
+                      s => s.session_id !== frame.session_id,
+                    ),
+                    ...(frame.record ? [frame.record] : []),
+                  ],
+                  unreachable: current.unreachable,
+                }),
+              );
+            } catch {
+              // A frame that will not parse is dropped; the next read reconciles. Taking the board
+              // down on one bad frame would lose every other session with it.
+            }
+          };
+        } catch {
+          source = undefined;
+        }
+      })();
     }
 
     const fallback = window.setInterval(read, POLL_MS);
@@ -90,7 +113,7 @@ export function Fleet() {
       window.clearInterval(fallback);
       source?.close();
     };
-  }, [fetchApi]);
+  }, [fetchApi, discoveryApi]);
 
   if (board.state === 'loading') {
     return (

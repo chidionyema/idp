@@ -53,6 +53,7 @@ import {
   RiCalendarLine,
   RiCloseLine,
   RiCompass3Line,
+  RiDashboardLine,
   RiFileChartLine,
   RiMenuLine,
   RiNodeTree,
@@ -88,6 +89,7 @@ const ShowcaseIcon = remix(RiSlideshow3Line);
 const ReportsIcon = remix(RiFileChartLine);
 const InvestigateIcon = remix(RiSearchEyeLine);
 const PairIcon = remix(RiTeamLine);
+const FleetIcon = remix(RiDashboardLine);
 
 // The Map door (founder 2026-09-07, on an empty graph): the catalog graph draws outward from
 // roots it is given and nothing at all when it is given none, and this link carried none -- the
@@ -117,6 +119,7 @@ export const NAV = [
   { title: 'Investigate', to: '/investigate', icon: InvestigateIcon },
   { title: 'Pair', to: '/pair', icon: PairIcon },
   { title: 'Tools', to: '/tools', icon: BuildIcon },
+  { title: 'Fleet', to: '/fleet', icon: FleetIcon },
   { title: 'Create', to: '/create', icon: AddCircleOutlineIcon },
   { title: 'Map', to: MAP_TO, icon: AccountTreeIcon },
   { title: 'Kubernetes', to: '/catalog?filters%5Bkind%5D=Component', icon: DnsIcon },
