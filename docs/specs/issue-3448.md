@@ -10,8 +10,14 @@ Founder's own words, verbatim:
 Three layers, in order:
 
 **Layer 1: The Epistemic Fabric (Knowledge Graph)**
-- Ingestion: Redpanda or Kafka. Pipe GitHub webhooks, Slack exports, CI/CD telemetry,
-  incident logs into topics.
+- Ingestion: the estate's existing NATS JetStream event-bus (`platform/event-bus`), not a new
+  Kafka/Redpanda broker — founder, 2026-09-14: "dont use kakfa we have etsrean." This bus was
+  already evaluated against Kafka/Redpanda for exactly this estate (`platform/event-bus/nats.yaml`
+  header comment, LAW 43/THE HEADLINE/LAW 23: a JVM-class broker for a 4-6 OCPU cluster is the
+  right answer at 100x this volume, wrong answer today) and carries a CloudEvents envelope
+  library, subject grammar and outbox/DLQ pattern already (`platform/messaging`). GitHub webhooks,
+  Slack exports, CI/CD telemetry and incident logs each become one JetStream stream (subject per
+  source), published through `platform/messaging/cloudevent`, not a hand-rolled NATS client.
 - Storage: Memgraph (memory-first graph database, not a vector DB).
 - Structure: every piece of data becomes a node with causal edges (e.g. PR #124 fixes
   Jira-99 -> temporal edge).
@@ -40,10 +46,12 @@ Two prerequisites carry forward as tracked dependency line items, not objections
 
 - idp already has a graph layer at `catalog/estate.db` (the estate twin, `bin/estate-twin-runtime`)
   and provider-agnostic model routing via `sovereign/policy.py`'s `[routing]` block
-  (minimax/groq/gemini/deepseek, `llm/config.yaml`). CP1 carries the decision line for the
-  founder: does Memgraph become the new source of truth and `estate.db` migrates into it, or
-  does Memgraph sit alongside it as a second store. Not a blocker — a decision the founder
-  makes once, recorded on the issue.
+  (minimax/groq/gemini/deepseek, `llm/config.yaml`). **Decision recorded 2026-09-14 (comment on
+  #3448):** Memgraph sits alongside `catalog/estate.db` as a second store scoped to this stack —
+  it holds the event-sourced causal graph (PRs, incidents, CI, chat), `estate.db` keeps being the
+  operational cluster twin (Flux/K8s state). No migration of `estate.db` into Memgraph. Reversible
+  (a new store, nothing existing touched); revisit only if the twin's own "two surfaces cannot
+  report two numbers" rule (AGENTS.md) is ever violated between them.
 - No GPU node pool exists in this estate for Ray/Unsloth training or vLLM/SGLang serving.
   `estate-defaults.yaml` caps `node_pool.budget_monthly_usd` at 50 total — a GPU pool is paid
   capacity above that cap, which is FOUNDER ACTION under the `capacity-requests-need-proof`
@@ -78,18 +86,25 @@ gh issue view 3448 --json body,comments | grep -c "FOUNDER ACTION"   # >= 1
 gh issue view 3448 --json comments | grep -c "Memgraph"              # decision recorded
 ```
 
-### CP1: Ingestion — Redpanda/Kafka topics carry GitHub webhooks, Slack exports, CI/CD telemetry, incident logs
+### CP1: Ingestion — event-bus (NATS JetStream) streams carry GitHub webhooks, Slack exports, CI/CD telemetry, incident logs
+
+Uses the existing `event-bus` NATS deployment (`platform/event-bus/nats.yaml`), not a new
+broker. Four JetStream streams, one subject each under the estate's existing subject grammar
+(`platform/messaging/subject`): `epistemic.github`, `epistemic.slack`, `epistemic.cicd`,
+`epistemic.incidents`. Publishers use `platform/messaging/cloudevent` (CloudEvents 1.0 binary
+mode, `Nats-Msg-Id` dedup) exactly as `order_paid` does today — new connectors, not a new bus.
 
 Door (from the UI): Backstage → Catalog → `epistemic-fabric-ingest` component → link **Open
-topic list** → the Redpanda Console showing four topics (`github`, `slack`, `cicd`, `incidents`)
-with a non-zero message count.
+stream stats** → `nats stream ls` (via the existing `kubectl port-forward -n event-bus svc/nats
+4222:4222` door already in the catalogue) showing all four streams with a non-zero message count.
 
 Define done before you start, in commands:
 ```
 kubectl get kustomization epistemic-fabric -n flux-system -o jsonpath='{.status.conditions}'  # Ready=True
 python3 bin/ns-fence-gate platform/epistemic-fabric   # default-deny NetworkPolicy + ResourceQuota + LimitRange present
 python3 bin/idp-healthcheck-exists clusters/oke/platform.yaml epistemic-fabric   # healthcheck names a real object
-rpk topic list --brokers <redpanda-svc>   # github, slack, cicd, incidents all present with lag=0
+kubectl port-forward -n event-bus svc/nats 4222:4222 &
+nats stream ls   # epistemic.github, epistemic.slack, epistemic.cicd, epistemic.incidents all present, msgs > 0
 ```
 
 ### CP2: Storage — Memgraph holds every ingested fact as a node with causal edges
