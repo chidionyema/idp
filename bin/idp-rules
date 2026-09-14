@@ -49,6 +49,28 @@ def _expand(value: str) -> str:
     return os.path.expandvars(os.path.expanduser(str(value)))
 
 
+def _expand_one(value: str, case_env: dict | None = None) -> str:
+    """Expand one argument, resolving `$NAME` against the case's own `env` too.
+
+    WHY THIS EXISTS (measured 2026-09-13, CI run 34796984403). `_expand` resolves
+    against the real process environment, so a `case` that spells a placeholder in
+    its `args` and defines it a line above in `env` gets the literal string -- the
+    `env` dict is passed to the child, but the ARGUMENT LIST is built first. The
+    consequence is that any row needing a path it cannot name literally has to
+    name a real one instead, and a real one belongs to a machine: the `vmmount`
+    row cited `/private/tmp`, which exists on macOS and does not exist on the
+    Linux runner, so the row graded the fixture machine rather than the gate.
+
+    With this, a case can write `args: [$OUTSIDE]` and `env: {OUTSIDE: /}` and the
+    row carries no machine's own path in its text (LAW 46).
+    """
+    merged = {**os.environ, **(case_env or {})}
+    out = value
+    for key, val in merged.items():
+        out = out.replace(f"${{{key}}}", str(val)).replace(f"${key}", str(val))
+    return os.path.expanduser(out)
+
+
 def _argv(rule: dict, case: dict) -> list[str]:
     argv = []
     for part in rule["run"]:
@@ -57,7 +79,7 @@ def _argv(rule: dict, case: dict) -> list[str]:
         if part.startswith("bin/") or part.startswith("./"):
             part = os.path.join(ROOT, part)
         argv.append(part)
-    argv += [_expand(a) for a in case.get("args", [])]
+    argv += [_expand_one(a, case.get("env")) for a in case.get("args", [])]
     if case.get("glob"):
         hits = sorted(globmod.glob(os.path.join(ROOT, case["glob"])))
         # A glob over bin/ catches python and bash alike; a rule that grades one language says

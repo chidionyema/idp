@@ -19,7 +19,7 @@ Fixture: `--files tests/fixtures/script-compiles/bad/never-ran.sh`
 Exit code `1` (the registry expects non-zero). ✓
 
 ```
-DOES NOT RUN: tests/fixtures/script-compiles/bad/never-ran.sh --self-test exited 127
+DOES NOT RUN: tests/fixtures/script-compiles/bad/never-ran.sh --help exited 127
 <checkout>/tests/fixtures/script-compiles/bad/never-ran.sh: line 12: undefined_command_that_does_not_exist: command not found
 never-ran.sh: exit 127
 FAIL: 1 of 1 script(s) do not run. A script that has never executed is not built.

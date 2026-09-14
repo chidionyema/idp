@@ -37,7 +37,7 @@ ok   the execution boundary holds at tests/fixtures/execution-boundary/good (cei
 
 ## The registry's own lines
 
-- when it passes: the executor daemon applies one ceiling, imported from the door, and every half of the boundary is present
+- when it passes: the executor daemon applies one ceiling, imported from the door, and every half of the boundary is present -- and the boundary holds on this repository, not only on an example of one
 - when it refuses: a ceiling is restated in the daemon, or the boundary is half built and nothing says so
 
 Origin: founder 2026-09-13, the execution boundary

@@ -210,8 +210,10 @@ nav:
       - Secret blockers: tutorials/demo/secret-blockers.md
       - Gitops sync: tutorials/demo/gitops-sync.md
       - Helmrelease drift: tutorials/demo/helmrelease-drift.md
+      - Executor daemon: tutorials/demo/exec-daemon.md
   - Onboarding:
       - The Demo Standard: onboarding/demo-standard.md
+      - Executor daemon: how-to/onboarding/exec-daemon.md
       - FleetView: how-to/onboarding/fleetview.md
       - Compile the estate: how-to/onboarding/compile.md
       - Buyer sandbox (one hour): onboarding/demo-sandbox.md
@@ -414,6 +416,17 @@ nav:
       # in rules.yaml; the nav has to name each one or the page is unreachable.
       - clickhouse-twin-ttl: gates/clickhouse-twin-ttl.md
       - execution-boundary-holds: gates/execution-boundary-holds.md
+      # 2026-09-14: the same mistake a third time, and named this time by CI rather
+      # than by a reader. Two rows landed in rules.yaml -- a-script-is-not-built-
+      # until-it-runs (label script-compiles) and deterministic-verifier -- each of
+      # which renders docs/gates/<id>.md, and neither page was reachable in this
+      # nav. bdd-suites (tests) went red on test_gate_demo's nav case:
+      # "generated pages not in the nav: ['a-script-is-not-built-until-it-runs',
+      # 'deterministic-verifier']". The renderer still has no rung that reads the
+      # generated index against the nav, so this stays a comment rather than a
+      # guard; whoever writes the fourth row has to remember what this entry says.
+      - a-script-is-not-built-until-it-runs: gates/a-script-is-not-built-until-it-runs.md
+      - deterministic-verifier: gates/deterministic-verifier.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md

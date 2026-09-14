@@ -2,3 +2,13 @@ temporalio==1.32.0
 httpx>=0.27
 langfuse>=2.0,<3
 tomli>=2.0; python_version < "3.11"
+# sovereign/verifier.py mints the attestation's Ed25519 signature from this
+# library. Declared here rather than left to whatever the developer's machine
+# happened to carry: it was UNDECLARED until 2026-09-13, and CI run 34796984403
+# is what that cost. The seal is not an optional path -- `sign()` is called by
+# every successful `verify()` and by `seal` -- so this is a runtime dependency
+# and not a dev one. The failure it caused is recorded on `_signing_key`
+# itself: three BDD scenarios and the offline-gate's `verifier` row all read
+# `ModuleNotFoundError: No module named 'cryptography'` at the point of
+# signing, hundreds of lines after the module had loaded clean.
+cryptography>=42

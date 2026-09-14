@@ -49,7 +49,7 @@ deprecate them. Eradicate them."
 | Only the gateway binds a non-loopback address; everything else is 127.0.0.1 or nothing | R20 | `bin/bind-audit` | tests/fixtures/listeners.bad.txt | tests/fixtures/listeners.good.txt |
 | The founder's ethos is seven measured tenet rows; a row without a command is refused | LAW 44 | `python3 bin/idp-conscience` | a tenet row with no command | bin/idp-conscience |
 | Every scheduled job reaches the Dagster UI with a description of what it does | LAW 28 | `python3 -m` | tests/fixtures/schedule-undescribed.yml | tests/fixtures/schedule-described.yml |
-| A VM mount source outside the shared tree is refused; one inside it is permitted | R19 | `bin/vm-shared-path` | /private/tmp | $HOME |
+| A VM mount source outside the shared tree is refused; one inside it is permitted | R19 | `bin/vm-shared-path` | $OUTSIDE | $HOME |
 | No namespace without a both-ways default-deny NetworkPolicy, a ResourceQuota, a LimitRange and a DNS exception | crew#191, crew#839 | `python3 bin/ns-fence-gate` | tests/fixtures/ns-fence/bad.yaml | tests/fixtures/ns-fence/good.yaml |
 | A workflow that grades main never cancels main's own run; stale pull-request runs still are | crew#865 | `python3 bin/main-verdict-gate` | tests/fixtures/main-verdict/bad.yml | tests/fixtures/main-verdict/good.yml |
 | A test grades behavior or parsed structure, never prose: no test function may only assert sentences or string membership in file text | R76 | `python3 bin/test-prose-gate` | tests/fixtures/prose-pin/bad.py | tests/fixtures/prose-pin/good.py |

@@ -551,7 +551,7 @@ rules:
   run:
   - bin/vm-shared-path
   fixtures:
-    must_fail: /private/tmp
+    must_fail: $OUTSIDE
     must_pass: $HOME
   cases:
   - expect: pass
@@ -559,11 +559,36 @@ rules:
       VM_SHARED_ROOTS: $HOME
     args:
     - $HOME
+  # The refused argument is spelled `$OUTSIDE`, not a literal absolute path.
+  #
+  # WHY (incident 2026-09-13, CI run 34796984403). This case named
+  # `/private/tmp` as its argument, and the `vmmount` row went red on the Linux
+  # runner with `cites 1 thing(s) that do not exist: /private/tmp (no such
+  # path)`. `/private/tmp` is real on macOS -- it is what `/tmp` resolves to --
+  # and it does not exist on the runner, so the fixture was a claim about the
+  # machine the row was written on rather than about the gate.
+  #
+  # That reading also hid the more interesting half. `bin/vm-shared-path` reads
+  # `real=$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)/$(basename "$p")`, so
+  # when the parent does not exist the `cd` is swallowed and the refusal that
+  # follows is the refusal of a path that does not exist -- true, but not the
+  # property this row claims to grade. The run would have passed while grading
+  # nothing, which is the shape LAW 2 forbids. So the row now proves the gate
+  # with a path that exists on EVERY platform and is genuinely outside the
+  # shared root:
+  #
+  #   $OUTSIDE expands to `/` -- exists on macOS and on Linux, is not under
+  #   `$HOME`, and is named `..` from the shared root. The gate must refuse it
+  #   for being outside the tree.
+  #
+  # `$OUTSIDE` is resolved by bin/idp-rules at grade time, next to the existing
+  # `$HOME` expansion, so the row never carries a machine's own path in its text.
   - expect: refuse
     env:
       VM_SHARED_ROOTS: $HOME
+      OUTSIDE: /
     args:
-    - /private/tmp
+    - $OUTSIDE
   ok: vm-shared-path permits a path under the shared root and refuses one outside it
   fail: bin/vm-shared-path selftest
 - id: ns-fence

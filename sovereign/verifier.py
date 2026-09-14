@@ -86,6 +86,18 @@ ATTESTATION_SCHEME = "estate-ed25519"
 SIGSTORE_SCHEME = "sigstore-bundle"
 
 
+class MissingSignerError(RuntimeError):
+    """The seal cannot be minted because the signer is not installed.
+
+    A named class rather than a bare ModuleNotFoundError, for the reason
+    recorded on `_signing_key`: the import that raises it happens twelve
+    hundred lines below the module's top and inside a socket request thread, so
+    an unhandled ModuleNotFoundError there reads to the operator as a daemon
+    that closed the socket for no reason. This one carries the package name and
+    the install command in its message, and it can be caught by name.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Reading a unified diff without applying it to anything that matters.
 # ---------------------------------------------------------------------------
@@ -425,16 +437,48 @@ def _signing_key(ledger_root: Path) -> Any:
     anything that can read the public key -- not a home-made MAC. The key is
     file-permissioned 0600; where it belongs in production is the vault, and
     that is named here rather than pretended.
+
+    THE ABSENT-LIBRARY CASE, measured on 2026-09-13 (CI run 34796984403).
+
+    `cryptography` was imported HERE, twelve hundred lines below the module's
+    own top, and was declared in no requirements file. On the CI runner it was
+    absent, so the import raised `ModuleNotFoundError` at the moment of signing
+    -- inside a socketserver request thread, three layers from the caller. What
+    the operator saw was not "a library is missing". It was
+    `AssertionError: the executor daemon closed the socket without a reply`,
+    pointing at the transport, naming the daemon as the suspect. Three BDD
+    scenarios and the offline-gate `verifier` row all failed on that sentence.
+
+    The dependency is now declared in sovereign/requirements.txt. This guard is
+    the other half, and it is the half that matters: a deferred import of a
+    hard dependency is a trap that only springs on a machine which happens not
+    to carry it, so no green run on a developer's laptop can ever catch it. The
+    refusal names the package and the fix in one line, and it fails where the
+    capability is actually needed (LAW 45: the guard is the fix, not the
+    message).
     """
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    from cryptography.hazmat.primitives.serialization import (
-        Encoding,
-        NoEncryption,
-        PrivateFormat,
-    )
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            NoEncryption,
+            PrivateFormat,
+        )
+    except ModuleNotFoundError as exc:  # pragma: no cover -- exact env dependent
+        raise MissingSignerError(
+            "cannot mint an attestation: the 'cryptography' package is not "
+            "installed, and it is what signs the seal. Install it with "
+            "`pip install -r sovereign/requirements.txt`. "
+            f"({exc})"
+        ) from exc
 
     key_path = ledger_root / "attestation.key"
     if key_path.exists():
+        # Reached only when a previous run already wrote the key, which can only
+        # have happened on a machine that HAD the library. The import is inside
+        # this branch so a fresh key needs one import, not two; it is guarded by
+        # the same try block above rather than left bare, so the two paths
+        # cannot report the missing library differently.
         from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
         return load_pem_private_key(key_path.read_bytes(), password=None)

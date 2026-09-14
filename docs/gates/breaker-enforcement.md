@@ -26,8 +26,8 @@ Fixture: `tests/test_breaker_extension.py::TestItBlocksProvedRepetition::test_it
 Exit code `0` (the registry expects zero). ✓
 
 ```
-..........                                                               [100%]
-10 passed in <duration>
+.........................                                                [100%]
+25 passed in <duration>
 /usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:103: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls:
 <class 'PermissionError'>: [Errno 1] Operation not permitted: '/<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls'
   warnings.warn(
