@@ -89,7 +89,7 @@ COCKPIT_KEYS: dict[str, tuple[Any, type, str, str]] = {
         "Regex matching POST /api/sessions/<id>/{stop,approve,deny,steer}",
     ),
     "cockpit.start_runner": (
-        "claude", str, "COCKPIT_START_RUNNER",
+        "llm", str, "COCKPIT_START_RUNNER",
         "Runner used by POST /api/sessions (the Start form); the founder never picks one",
     ),
     "cockpit.start_budget_default": (
