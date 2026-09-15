@@ -6,10 +6,11 @@ The workflows run for real on a Temporal dev server started by the
 Temporal SDK's own test environment (`WorkflowEnvironment.start_local`)
 from the `temporal` CLI already on this machine, with a real worker, a
 real git repository, the real budget row and the real receipt chain.
-The one substitution is the runner: "claude" is a vendor CLI and a true
-external boundary, so the branches run the engine's `echo` runner (or
-`sleep`, for the stop scenario), which is the same activity path minus
-the subprocess.
+The one substitution is the runner: the feature text names "llm" (the
+real, model-agnostic runner, for readability), but a real call costs
+money and needs a live LiteLLM proxy, so the branches actually run the
+engine's `echo` runner (or `sleep`, for the stop scenario), which is
+the same activity path minus the network call.
 
 Steps are synchronous; the Temporal environment lives on a background
 event loop for the length of one scenario so "Given running / When stop /
@@ -46,8 +47,8 @@ scenarios("features/sovereign-bus/cp27_temporal_branching.feature")
 
 T = TypeVar("T")
 
-# The runner the feature names is a vendor CLI; see the module docstring.
-_RUNNER_STAND_IN = {"claude": "echo"}
+# The runner the feature names costs money for real; see the module docstring.
+_RUNNER_STAND_IN = {"llm": "echo"}
 
 
 class TemporalLab:

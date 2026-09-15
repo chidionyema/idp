@@ -4,7 +4,7 @@ Feature: Temporal branching — fork silently, merge the winner, keep the losers
   Losing branches are archived, never deleted.
 
   Scenario: A decision point forks three silent branches
-    When I run "bin/sb start --runner claude --repo <repo> --task 'refactor X' --branches 3 --json"
+    When I run "bin/sb start --runner llm --repo <repo> --task 'refactor X' --branches 3 --json"
     Then three child sessions run in Ghost mode
     And zero messages are sent during their run
     And when all finish, exactly one receipt "[✓] BRANCH_MERGE | main←<winner> | hash:<sha>" is emitted

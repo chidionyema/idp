@@ -309,7 +309,6 @@ KEYS: dict[str, KeySpec] = {
     "runner.ask_prefix": KeySpec("needs", "str", "SB_ASK_PREFIX", "prefix the ask runner recognizes in a task, before the separator"),
     "runner.ask_prefix_sep": KeySpec(":", "str", None, "separator between the ask prefix and the rest of the task"),
     "runner.llm_timeout_s": KeySpec(120, "int", "SB_LLM_TIMEOUT_S", "httpx timeout for the llm runner"),
-    "runner.claude_heartbeat_interval_s": KeySpec(3, "int", "SB_CLAUDE_HEARTBEAT_INTERVAL_S", "activity.heartbeat() interval while awaiting the claude subprocess"),
     "receipt.activity_timeout_s": KeySpec(30, "int", "SB_RECEIPT_ACTIVITY_TIMEOUT_S", "append_receipt start-to-close timeout"),
     "receipt.retry_max_attempts": KeySpec(5, "int", "SB_RECEIPT_RETRY_MAX_ATTEMPTS", ""),
     "notify.activity_timeout_s": KeySpec(10, "int", "SB_NOTIFY_ACTIVITY_TIMEOUT_S", "notify_change start-to-close timeout -- short: a stuck notify must never hold up the step loop"),
@@ -755,7 +754,6 @@ RUNNER_TOKEN_ESTIMATE_DIVISOR: int = _R["runner.token_estimate_divisor"].value
 RUNNER_ASK_PREFIX: str = _R["runner.ask_prefix"].value
 RUNNER_ASK_PREFIX_SEP: str = _R["runner.ask_prefix_sep"].value
 RUNNER_LLM_TIMEOUT_S: int = _R["runner.llm_timeout_s"].value
-RUNNER_CLAUDE_HEARTBEAT_INTERVAL_S: int = _R["runner.claude_heartbeat_interval_s"].value
 RECEIPT_ACTIVITY_TIMEOUT_S: int = _R["receipt.activity_timeout_s"].value
 RECEIPT_RETRY_MAX_ATTEMPTS: int = _R["receipt.retry_max_attempts"].value
 NOTIFY_ACTIVITY_TIMEOUT_S: int = _R["notify.activity_timeout_s"].value

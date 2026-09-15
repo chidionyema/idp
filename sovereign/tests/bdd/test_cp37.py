@@ -45,7 +45,7 @@ def _fake_engine_module(sessions: list[dict[str, Any]]) -> types.ModuleType:
     async def _signal(session_id: str, kind: str, by: str, text: str = "") -> dict[str, Any]:
         return {"ok": True}
 
-    async def _start(task: str, runner: str = "claude", repo: str | None = None, by: str = "cli", budget: int = 0) -> dict[str, Any]:
+    async def _start(task: str, runner: str = "llm", repo: str | None = None, by: str = "cli", budget: int = 0) -> dict[str, Any]:
         return {"session_id": "sb-cp37-started"}
 
     mod = types.ModuleType("sovereign.engine.client")
@@ -100,7 +100,7 @@ def _session_running(sessions: list[dict[str, Any]], task: str) -> None:
             "task": task,
             "step": 3,
             "status": "running",
-            "runner": "claude",
+            "runner": "llm",
             "asking": None,
             "budget": 50000,
             "budget_remaining": 41000,
