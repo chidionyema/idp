@@ -152,6 +152,8 @@ def compile_workload(i: dict, out: pathlib.Path, src: str) -> list[str]:
 
 def compile_storage(i: dict, out: pathlib.Path, src: str, dna: dict[str, str]) -> list[str]:
     provider = dna.get("ESTATE_STORAGE_PROVIDER", "")
+    if provider == "crossplane":
+        return compile_storage_crossplane(i, out, src)
     if provider != "oci":
         raise SystemExit(f"BLIND: ESTATE_STORAGE_PROVIDER={provider!r} has no storage backend yet")
     access = {"private": "NoPublicAccess", "public-read": "ObjectRead"}[i.get("access", "private")]
@@ -174,6 +176,33 @@ def compile_storage(i: dict, out: pathlib.Path, src: str, dna: dict[str, str]) -
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(tf)
     return [f"{i['name']}/storage.tf"]
+
+
+def compile_storage_crossplane(i: dict, out: pathlib.Path, src: str) -> list[str]:
+    """ADR 0026 step 3: the same storage intent, emitted as a Claim instead of HCL. The XRD
+    (platform/crossplane/capabilities/storage/xrd-bucket.yaml) exposes exactly the four fields
+    schema/intent/storage.schema.json already has -- no provider, region or bucket URL reaches
+    an agent here either. bin/idp-split-brain refuses this Claim's external-name if it collides
+    with any platform/oci/*.tf resource address, so an intent name already used by the HCL branch
+    is refused there, not silently double-owned."""
+    doc = {
+        "apiVersion": "storage.estate.io/v1alpha1",
+        "kind": "Bucket",
+        "metadata": {
+            "name": i["name"],
+            "namespace": "crossplane-system",
+            "annotations": {"crossplane.io/external-name": i["name"]},
+        },
+        "spec": {
+            "name": i["name"],
+            "purpose": i["purpose"],
+            "size_gb": i["size_gb"],
+            "access": i.get("access", "private"),
+        },
+    }
+    path = out / i["name"] / "storage-claim.yaml"
+    dump(path, doc, src)
+    return [f"{i['name']}/storage-claim.yaml"]
 
 
 REGISTER_OPEN = ("<!-- compiled-intent-rows: written by bin/intent-compile from intents/*.json. "

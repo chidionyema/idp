@@ -183,3 +183,69 @@ claimed here.
 Nothing else moves until that first one has run a full cycle and the drift it corrected has been
 read out of the cluster, not out of a plan file. Thirty-eight resources is a migration, and a
 migration is proved one workload at a time.
+
+## 2026-09-15 status: step 3 shipped, step 4 still deliberately not started
+
+**Shipped:**
+- `bin/intent-compile`'s `compile_storage()` now dispatches on `ESTATE_STORAGE_PROVIDER`: `"oci"`
+  keeps emitting the existing `.tf`, a new `"crossplane"` branch (`compile_storage_crossplane()`)
+  emits a `Bucket.storage.estate.io/v1alpha1` Claim instead. Any other value is a `BLIND` refusal
+  (no silent fallthrough).
+- `platform/crossplane/capabilities/storage/xrd-bucket.yaml`: the `XObjectStorageBucket` XRD,
+  claiming as `Bucket.storage.estate.io`, with exactly the four fields
+  `schema/intent/storage.schema.json` already exposes to agents (`name`, `purpose`, `size_gb`,
+  `access`) — no provider, region or bucket URL reaches the intent vocabulary.
+- `platform/crossplane/capabilities/storage/composition-bucket.yaml`: the `Composition` that maps
+  those four fields onto the real `Bucket.objectstorage.oci.upbound.io/v1alpha1` managed resource
+  confirmed live in-cluster (`bin/idp-kube get crd`), patching in `compartmentId`/`namespace` from
+  the DNA (below) and `access` (`private`→`NoPublicAccess`, `public-read`→`ObjectRead`).
+- `clusters/oke/estate-config.yaml`: added `ESTATE_OCI_COMPARTMENT_OCID` and `ESTATE_OCI_NAMESPACE`,
+  measured against the live tenancy with the OCI CLI (`oci os ns get`; `oci iam compartment list`
+  + `oci os bucket list` per compartment, to find the one actually holding
+  `estate-shop-backups`/`estate-drill-receipts`/`estate-db-backups`/`estate-tofu-state` — the
+  "estate" compartment, not the tenancy root `platform/oci/variables.tf`'s comment calls
+  "acceptable," which this measurement found holds zero buckets).
+- `clusters/oke/platform.yaml`: a fourth Crossplane `Kustomization`, `crossplane-storage-capability`,
+  `dependsOn: [crossplane-providerconfig]`, installing the XRD+Composition live (not suspended) —
+  safe to run live because a `Composition` provisions nothing by itself; no Claim references it yet
+  (`ESTATE_STORAGE_PROVIDER` is still `"oci"`), so this ships a real, reviewable capability with
+  zero cloud-resource or production-data blast radius.
+- Proved, not asserted: `bin/idp-split-brain` passes (`ok split 6 Crossplane resource(s) against 84
+  OpenTofu identity/identities; no cloud object has two owners`); a scratch intent compiled through
+  the new branch with `ESTATE_STORAGE_PROVIDER=crossplane` DNA produces a Claim that (a) validates
+  against the XRD's own `openAPIV3Schema` via `jsonschema.validate`, (b) is byte-identical across
+  two compiler runs (determinism, same proof `bin/idp-ci`'s `intent` rung already holds the
+  `"oci"` branch to); YAML syntax checked on every edited/created file; `bin/idp-rules
+  render-agents-md --check` and `bin/idp-ci` both green after the change.
+
+**Still not started, on purpose — step 4 is unchanged from the paragraph above:** migrating any
+existing OpenTofu-owned resource (buckets or the eight secrets files) needs (a) a provider not
+installed (secrets/vault has no Crossplane provider in this estate yet — only
+`provider-oci-objectstorage` is), (b) the capacity-claim measurement this ADR already says is
+"decided by measurement then, not asserted here," which nobody has re-run since 2026-09-08, and
+(c) Terraform state surgery + cross-tool resource adoption against a resource with a live consumer
+— genuine production risk that a same-pass "get it operational" change should not absorb. Step 4
+stays exactly where this ADR left it: blocked on measurement, not on step 3.
+
+**Two things this pass deliberately did not attempt, and why:**
+- **The `simulate_change`/`execute_change` `admission` grader** (MUM-288) still answers `UNKNOWN`.
+  `platform/mcp/estate-mcp.yaml`'s pod has no path to the K8s API at all today —
+  `automountServiceAccountToken: false`, no `ServiceAccountName`, no kubeconfig — and the only
+  sanctioned way to grant it one, even a dry-run-only verb (Kubernetes has no such verb; the API
+  server authorizes `--dry-run=server` against the real `create`/`patch` verb before discarding),
+  is `platform/jit/grants.yaml`, which `bin/idp-glass-break` holds permanently glass-break: no
+  merge bot, no self-approval, founder review only. Left alone rather than routed around.
+- **The `converge`/`network`/`placement` graders** stay `UNKNOWN` too, per the founder's own
+  2026-09-12 call on the world-model spec ("park. Code complete, gated"): no shadow-apply executor,
+  no Calico deny-log feed (`idp#2452`), no placement-receipt producer exist to grade against.
+  Wiring their env flags with no real feed behind them would make `simulate_change` assert instead
+  of verify. Only `ESTATE_MCP_GRADE_LAWS_DOOR` was turned on, because `bin/idp-rules run --plane
+  ci` is real, already green, and needed no new infrastructure.
+
+**One finding surfaced, not fixed:** `bin/idp-glass-break`'s `PROTECTED` path list contains the
+literal string `"platform/rbac/"`. The RBAC floor actually lives at
+`platform/rbac-floor/agent-reader.yaml` — a different prefix — so that file is not currently
+covered by the glass-break gate, despite the gate's own docstring naming "the RBAC" as one of the
+five things it protects. Not exploited (nothing in this pass touched that file). Fixing
+`bin/idp-glass-break` is itself in its own `PROTECTED` list, so the fix needs the founder's review
+regardless of who writes the diff.

@@ -84,6 +84,16 @@ spec:
             # declared both ways in platform/ns-fences/allowances.yaml.
             - { name: ESTATE_HOLMES_URL, value: "http://robusta-holmes.robusta.svc.cluster.local" }
             - { name: ESTATE_MCP_SIMULATE_GRADERS, value: "1" }   # MUM-288: the world-model door runs the six graders at startup and refuses UNKNOWN
+            # MUM-288, 2026-09-15: the laws grader (mcp/plugins/estate_simulate.py _grade_laws)
+            # just calls `bin/idp-rules run --plane ci`, which is real and already green (85
+            # rules, both fixtures each) -- no new infra, this was the only thing gating it off.
+            # The other three (converge/network/placement) stay UNKNOWN: each needs an evidence
+            # source that does not exist yet (a shadow-apply executor, a Calico deny-log feed,
+            # a placement-receipt producer -- see docs/specs/2026-09-08-estate-world-model-
+            # simulate-before-execute.md's 2026-09-15 update) and wiring a flag with no real feed
+            # behind it would make simulate assert instead of verify, which LAW forbids everywhere
+            # else in this estate.
+            - { name: ESTATE_MCP_GRADE_LAWS_DOOR, value: "1" }
             # MUM-288: where the six grader programs live inside this image. The plugin's own
             # default (`parents[2]` of its file) resolves to `/` here, which found nothing and
             # made every grader answer "could not run" -- the door opened and refused everything.

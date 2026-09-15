@@ -558,6 +558,29 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-crossplane-storage-capability
+  title: 'Cloud storage capability'
+  description: 'The template that lets the cloud control loop hand out a storage bucket: installing it creates nothing by itself, it only makes ''ask for a bucket'' possible once something asks.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=crossplane-storage-capability'
+    estate/flux-kustomization: 'crossplane-storage-capability'
+    estate/path: './platform/crossplane/capabilities/storage'
+    estate/cluster: 'oke'
+  tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: delivery
+  dependsOn:
+    - component:default/layer-crossplane-providerconfig
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-dagster
   title: 'The estate clock'
   description: 'Runs the estate''s schedules from the cluster, off the Mac; every run and its logs on one screen.'
