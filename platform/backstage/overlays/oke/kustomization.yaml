@@ -252,6 +252,13 @@ patches:
         value:
           name: fleetview-data
           emptyDir: {}
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: fleetview-executor
+          secret:
+            secretName: fleetview-executor
+            optional: true
       # bin/idp-catalog-push already publishes catalog/estate.db as an OCI artifact
       # (oci://ghcr.io/chidionyema/idp/estate-db:latest); this container pulls the same
       # artifact estate-mcp.yaml's fetch-estate-db init container pulls, so graph/blast-radius/
@@ -326,13 +333,17 @@ patches:
             # JIT_AGENT_KEY: optional because this estate has no existing mechanism to deliver a
             # laptop-side secret outside a manual, once-off step (see the PR description's Not
             # done section) -- unset, this door is authenticated by the ACL alone, and serve.py's
-            # _check_key() only compares when a value is actually present on this side.
-            - name: FLEETVIEW_EXECUTOR_KEY
-              valueFrom:
-                secretKeyRef: {name: fleetview-executor, key: FLEETVIEW_EXECUTOR_KEY, optional: true}
+            # _check_key() only compares when a value is actually present on this side. Read from
+            # a mounted file, not the environment: secrets-not-from-env-vars (same rule that
+            # refused catalogue's POSTGRES_PASSWORD on 2026-08-25, see catalogue.yaml) rejected
+            # every replica of this sidecar the moment it rolled, 2026-09-15 -- Kyverno blocked
+            # the new ReplicaSet outright, the old Pod kept serving, so the container never even
+            # crash-looped into view.
+            - {name: FLEETVIEW_EXECUTOR_KEY_FILE, value: /run/secrets/fleetview-executor/FLEETVIEW_EXECUTOR_KEY}
           volumeMounts:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
             - {name: estate, mountPath: /estate, readOnly: true}
+            - {name: fleetview-executor, mountPath: /run/secrets/fleetview-executor, readOnly: true}
           readinessProbe:
             httpGet: {path: /healthz, port: fv-executor}
             initialDelaySeconds: 3
