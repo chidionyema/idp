@@ -6,6 +6,20 @@
 # Rungs, per ~/AGENTS.md "How to test": one incident test named for the bug it
 # caught, and mechanical checks a tool already provides. No example tests.
 set -uo pipefail
+
+# The script-compiles gate's fallback probe for a script with no self-test or check flag is
+# a bare --help, which must exit 0 within 60s (LAW 43/45). This script had none -- any argv,
+# --help included, fell straight into the full offline sweep below and blew the ceiling the
+# instant this file was next touched. Same bug class, same fix, as bin/idp-estate-seed's
+# missing -h|--help case: exit fast, exit 0, before any real work starts.
+case "${1:-}" in
+  -h|--help)
+    echo "bin/idp-ci -- the offline gate. No flags to choose a subset; IDP_CI_FAST=1 runs only"
+    echo "rungs 1/1b/1c and ruff. IDP_CI_BASE=<sha> scopes path-gated rungs to a diff."
+    exit 0
+    ;;
+esac
+
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 fail=0
 # crew#584 (founder 2026-08-28, "we should already have diagnostics"): every line carries the
@@ -207,6 +221,17 @@ if refcheck "$a/catalog-info.yaml" && ! refcheck "$tmp/bad-refs.yaml"; then
 else
   say "FAIL  refs     catalog-refcheck cannot tell a resolvable catalogue from a dangling one:"
   python3 "$IDP/bin/catalog-refcheck" "$a/catalog-info.yaml" | sed 's/^/      /'
+  fail=1
+fi
+
+# 4a-owner. bin/catalog-platform only ran in pre-commit until this row: --no-verify, a clone
+#     with hooks not installed, or a GitHub-web merge all shipped a platform layer straight
+#     past it, owner and description both unchecked. This is the gate that cannot be skipped.
+#     render() now also refuses any LAYERS row whose owner field is empty (bin/catalog-platform).
+if python3 "$IDP/bin/catalog-platform" --check >/dev/null 2>&1; then
+  say "ok    layers   catalog-platform's LAYERS is fresh and every layer carries an owner"
+else
+  say "FAIL  layers   backstage/platform/catalog-info.yaml is stale, or a layer has no plain-English row or no owner; run bin/catalog-platform"
   fail=1
 fi
 

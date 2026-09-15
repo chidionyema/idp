@@ -52,7 +52,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/aevum-evidence/bad/chain.json
     must_pass: tests/fixtures/aevum-evidence/good/chain.json
-  live_elsewhere: 'bin/idp-ci:637 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
+  live_elsewhere: 'bin/idp-ci:662 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
   cases:
   - expect: refuse
     args:
@@ -422,7 +422,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/migration-not-idempotent
     must_pass: bin/scheduler-migrate
-  live_elsewhere: bin/idp-ci:376 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
+  live_elsewhere: bin/idp-ci:401 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
   cases:
   - expect: refuse
     args:
@@ -1232,7 +1232,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/reloader-blind
     must_pass: tests/fixtures/reloader
-  live_elsewhere: bin/idp-ci:476 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
+  live_elsewhere: bin/idp-ci:501 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
   cases:
   - expect: refuse
     args:
@@ -1855,7 +1855,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
     must_pass: tests/fixtures/catalogue-entity-runtime-service
-  live_elsewhere: bin/idp-ci:476 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
+  live_elsewhere: bin/idp-ci:501 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
   cases:
   - expect: refuse
     args:
@@ -2018,6 +2018,37 @@ rules:
   ok: a cost-touching change carries a measured before and after, taken by a named command
   fail: a change that moves money reaches the merge gate with no measured pair, or with one number
   why: 'FOUNDER ORDER 2026-09-12: "and from now on it is a required PR artifact". The instruction came after an afternoon in which the same figure was wrong twice ($128 for an OCI shape this tree does not define, $40-60 for a Hetzner server whose own price page says EUR 97.30) and the one figure that held was the only one measured the same way before and after -- cached=0 at 24,012 tokens, then cached=23,808 at 24,008 tokens, same lane, minutes apart.'
+- id: catalog-platform-owner
+  fast: true
+  label: catalog-owner
+  statement: Every platform layer's Backstage Component and API carries a real owner group in bin/catalog-platform's own LAYERS dict, checked at generation time -- not a single hardcoded literal emitted regardless of what LAYERS says, and not left to a pre-commit hook a --no-verify commit, a clone with hooks not installed, or a GitHub-web merge can all skip.
+  law: incident 2026-09-15, via-negativa merged with no catalog owner or description until hand-fixed
+  origin: 'bin/catalog-platform''s LAYERS dict had no owner field at all: every Component and API owner in the generated catalog-info.yaml was the one hardcoded literal group:default/platform, and the only gate that ever ran catalog-platform lived in a pre-commit hook that graded description-completeness only, never ownership. Fixed by giving LAYERS a real 4th field and a fail-closed guard in render() (missing_owners()); this rule proves that guard both ways without touching the real cluster/ tree.'
+  planes:
+  - ci
+  - session
+  session_glob:
+  - bin/catalog-platform
+  run:
+  - python3
+  - bin/catalog-platform
+  - --check-fixture
+  cluster:
+    policy: null
+    why: the defect is in the LAYERS dict in git; the cluster never sees it
+  fixtures:
+    must_fail: tests/fixtures/catalog-platform-owner/bad.py
+    must_pass: tests/fixtures/catalog-platform-owner/good.py
+  live_elsewhere: bin/idp-ci:231 -- the layers rung runs catalog-platform --check, which calls the same missing_owners() guard against the real LAYERS dict, not the fixture pair
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/catalog-platform-owner/bad.py
+  - expect: pass
+    args:
+    - tests/fixtures/catalog-platform-owner/good.py
+  ok: every layer in the fixture carries a real owner group
+  fail: a layer has no owner, or the guard is not discriminating
 - id: founder-door
   fast: true
   label: founder-door
@@ -2397,7 +2428,7 @@ rules:
   statement: 'No pull request opens without BDD proof, across every agent session: the body carries a BDD-PROOF block naming the head commit, that block carries a runner''s own passing counts rather than a sentence saying the tests passed, and the named commit is the pull request''s own head -- a claim with no run output is refused, and so is a real run on another commit'
   law: LAW 22, LAW 53
   origin: founder 2026-09-12
-  live_elsewhere: bin/idp-ci:71 -- the fast plane runs bin/idp-bdd-proof-gate --live, which reads the most recent pull request on this repository and refuses one carrying no BDD-PROOF block on its own head; on 2026-09-12 it refused PR
+  live_elsewhere: bin/idp-ci:85 -- the fast plane runs bin/idp-bdd-proof-gate --live, which reads the most recent pull request on this repository and refuses one carrying no BDD-PROOF block on its own head; on 2026-09-12 it refused PR
   planes:
   - ci
   - session
