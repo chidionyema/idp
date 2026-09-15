@@ -7,76 +7,76 @@ kind: Deployment
 metadata:
   name: via-negativa-rca
   namespace: via-negativa
-  labels: { app.kubernetes.io/name: via-negativa-rca, app.kubernetes.io/part-of: idp }
+  labels: {app.kubernetes.io/name: via-negativa-rca, app.kubernetes.io/part-of: idp}
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   selector:
-    matchLabels: { app.kubernetes.io/name: via-negativa-rca }
+    matchLabels: {app.kubernetes.io/name: via-negativa-rca}
   template:
     metadata:
-      labels: { app.kubernetes.io/name: via-negativa-rca, app.kubernetes.io/part-of: idp }
+      labels: {app.kubernetes.io/name: via-negativa-rca, app.kubernetes.io/part-of: idp}
     spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
         runAsGroup: 65532
-        seccompProfile: { type: RuntimeDefault }
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: rca
-          image: ghcr.io/chidionyema/rca_worker:main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:via-negativa-rca:tag"}
+          image: main-9887-56f087a6fa28cefe401c9f43778186e28d036618 # {"$imagepolicy": "flux-system:via-negativa-rca:tag"}
           env:
-            - { name: REDIS_URL, value: "redis://via-negativa-redis.via-negativa.svc.cluster.local:6379" }
-            - { name: REDIS_PASSWORD_FILE, value: "/run/secrets/via-negativa/redis/REDIS_PASSWORD" }
+            - {name: REDIS_URL, value: "redis://via-negativa-redis.via-negativa.svc.cluster.local:6379"}
+            - {name: REDIS_PASSWORD_FILE, value: "/run/secrets/via-negativa/redis/REDIS_PASSWORD"}
             # No password here -- estate-rw is the one Postgres (platform/estate-db); the
             # worker itself folds VN_LEDGER_DSN_PASSWORD_FILE's contents in
             # (worker.py, _with_password_from_file()), the same convention the proxy's
             # REDIS_PASSWORD_FILE uses (Kyverno secrets-not-from-env-vars).
-            - { name: VN_LEDGER_DSN, value: "postgresql://via_negativa@estate-rw.estate-db.svc.cluster.local:5432/via_negativa" }
-            - { name: VN_LEDGER_DSN_PASSWORD_FILE, value: "/run/secrets/via-negativa/db/DB_PASSWORD" }
+            - {name: VN_LEDGER_DSN, value: "postgresql://via_negativa@estate-rw.estate-db.svc.cluster.local:5432/via_negativa"}
+            - {name: VN_LEDGER_DSN_PASSWORD_FILE, value: "/run/secrets/via-negativa/db/DB_PASSWORD"}
             # Fallback only -- Primitive B's regex pre-filter is the free path and satisfies
             # most failures without ever reaching this. `groq` is the cheapest lane
             # (platform/llm/config.yaml), matching the router key's own scope below.
-            - { name: VN_LLM_MODEL, value: "groq" }
-            - { name: VN_FAILURE_STREAM, value: "via_negativa:failures" }
-            - { name: VN_CONSUMER_GROUP, value: "rca-workers" }
-            - { name: VN_DLQ_STREAM, value: "via_negativa:failures:dlq" }
-            - { name: VN_BANNED_SET, value: "via_negativa:banned_signatures" }
-            - { name: VN_TOP_CONSTRAINTS_KEY, value: "via_negativa:top_constraints" }
-            - { name: VN_MAX_ATTEMPTS, value: "3" }
-            - { name: OPENAI_BASE_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
-            - { name: OPENAI_API_KEY_FILE, value: "/run/secrets/via-negativa/router/LITELLM_API_KEY" }
+            - {name: VN_LLM_MODEL, value: "groq"}
+            - {name: VN_FAILURE_STREAM, value: "via_negativa:failures"}
+            - {name: VN_CONSUMER_GROUP, value: "rca-workers"}
+            - {name: VN_DLQ_STREAM, value: "via_negativa:failures:dlq"}
+            - {name: VN_BANNED_SET, value: "via_negativa:banned_signatures"}
+            - {name: VN_TOP_CONSTRAINTS_KEY, value: "via_negativa:top_constraints"}
+            - {name: VN_MAX_ATTEMPTS, value: "3"}
+            - {name: OPENAI_BASE_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1"}
+            - {name: OPENAI_API_KEY_FILE, value: "/run/secrets/via-negativa/router/LITELLM_API_KEY"}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
-            capabilities: { drop: [ALL] }
+            capabilities: {drop: [ALL]}
           startupProbe:
-            exec: { command: ["test", "-f", "/tmp/rca-worker.ready"] }
+            exec: {command: ["test", "-f", "/tmp/rca-worker.ready"]}
             periodSeconds: 5
             failureThreshold: 24
           readinessProbe:
-            exec: { command: ["test", "-f", "/tmp/rca-worker.ready"] }
+            exec: {command: ["test", "-f", "/tmp/rca-worker.ready"]}
             periodSeconds: 15
           livenessProbe:
-            exec: { command: ["test", "-f", "/tmp/rca-worker.ready"] }
+            exec: {command: ["test", "-f", "/tmp/rca-worker.ready"]}
             periodSeconds: 30
             failureThreshold: 3
           resources:
-            requests: { cpu: 100m, memory: 128Mi }
-            limits: { cpu: 500m, memory: 256Mi }
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 256Mi}
           volumeMounts:
-            - { name: redis-secret, mountPath: /run/secrets/via-negativa/redis, readOnly: true }
-            - { name: db-secret, mountPath: /run/secrets/via-negativa/db, readOnly: true }
-            - { name: router-secret, mountPath: /run/secrets/via-negativa/router, readOnly: true }
-            - { name: tmp, mountPath: /tmp }
+            - {name: redis-secret, mountPath: /run/secrets/via-negativa/redis, readOnly: true}
+            - {name: db-secret, mountPath: /run/secrets/via-negativa/db, readOnly: true}
+            - {name: router-secret, mountPath: /run/secrets/via-negativa/router, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
       volumes:
         - name: redis-secret
-          secret: { secretName: via-negativa-redis }
+          secret: {secretName: via-negativa-redis}
         - name: db-secret
-          secret: { secretName: via-negativa-db }
+          secret: {secretName: via-negativa-db}
         - name: router-secret
-          secret: { secretName: via-negativa-router }
+          secret: {secretName: via-negativa-router}
         - name: tmp
           emptyDir: {}
