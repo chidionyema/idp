@@ -33,9 +33,14 @@
 # developer's laptop"). Founder, 2026-09-15: "a consumer product that assumes the consumer has
 # expensive hardware is a fail." Both halves are Modal apps now, deployed by the one workflow that
 # already holds the Modal root and already checks the code out (LAW 44: one deploy door, not two).
-# Its own secret (human-twilio) is synced from the vault, not re-minted from GitHub secrets like
-# the four below -- bin/idp-sync-modal-secret (idp repo) is the generic vault-to-Modal sync this
-# runtime already needed, and human-twilio already exists in the vault for the Twilio webhook.
+# Its own secrets are synced, not re-minted from GitHub secrets like the four below --
+# bin/idp-sync-modal-secret (idp repo) is the generic sync this runtime already needed. Two
+# different sources, because this estate has two: concierge-tunnel is an estate-vault (OCI)
+# entry; TWILIO_AUTH_TOKEN / MOM_PHONE_NUMBER / GUARDIAN_PHONE_NUMBER / TWILIO_WHATSAPP_NUMBER
+# are Bitwarden's (a founder paste, no create-API, R52) and this estate has no CI-side Bitwarden
+# reader yet -- so --from-cluster reads them from concierge/human-twilio, the Kubernetes Secret
+# platform/human-vault-bridge/externalsecrets.yaml already keeps in sync from Bitwarden every
+# minute, rather than inventing a second path to the same four facts.
 #
 # button: Deploy the concierge runtime
 # founder: Builds the vault sidecar and fetches the voice model, then deploys both concierge Modal apps -- the per-order runtime and the always-on endpoint -- and proves the sidecar is in the path; a dry run stops before deploy.
@@ -101,20 +106,29 @@ jobs:
             || { echo "FAIL    concierge-deploy  Modal refused the root pair; rotate with bin/idp-set-root modal"; exit 1; }
           echo "ok      modal root answers"
 
-      # webapp.py's secret, but synced from the vault rather than minted here: human-twilio
-      # already exists as the source of truth for TWILIO_AUTH_TOKEN / MOM_PHONE_NUMBER /
-      # GUARDIAN_PHONE_NUMBER / TWILIO_WHATSAPP_NUMBER, and re-typing those into a second
-      # `ensure_secret` call below would give Modal's copy a second place someone edits (R52).
+      # webapp.py's secrets, synced rather than minted here: TWILIO_AUTH_TOKEN / MOM_PHONE_NUMBER /
+      # GUARDIAN_PHONE_NUMBER / TWILIO_WHATSAPP_NUMBER already exist as the live concierge/human-twilio
+      # cluster Secret (Bitwarden -> ExternalSecret, refreshed every minute), and PUBLIC_SERVER_URL /
+      # PUBLIC_WSS_URL already exist in estate-vault as concierge-tunnel; re-typing either into a
+      # second `ensure_secret` call below would give Modal's copy a second place someone edits (R52).
       # The OCI session this step reads through is the one the github-app-token step above already
-      # traded for -- same job, same runner, no second exchange.
-      - name: sync human-twilio and concierge-tunnel from the vault to Modal (webapp.py's secrets)
+      # traded for -- same job, same runner, no second exchange, for both the vault read and the
+      # cluster read bin/idp-kube performs under the hood.
+      #
+      # Known gap, not silently papered over: this is the first time this workflow reads the live
+      # cluster rather than estate-vault, and GitHub's runners are not on the estate's tailnet. If
+      # `bin/idp-kube` cannot route to the API server, `--from-cluster` exits BLIND (2), which this
+      # step does not swallow -- `modal deploy ephemeral/webapp.py` needs this secret to exist and
+      # would fail on its own the moment it does not, so surfacing the real cause here rather than
+      # a later, less legible Modal error is the point.
+      - name: sync concierge/human-twilio and concierge-tunnel from their sources to Modal (webapp.py's secrets)
         env:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           OCI_REGION: ${{ vars.OCI_REGION }}
         run: |
           set -euo pipefail
-          bin/idp-sync-modal-secret human-twilio
+          bin/idp-sync-modal-secret --from-cluster concierge/human-twilio human-twilio
           bin/idp-sync-modal-secret concierge-tunnel
 
       # STAGE 1 -- the sidecar. The image cannot carry a binary that has not been built, and this is
