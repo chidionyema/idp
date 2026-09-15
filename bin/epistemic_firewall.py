@@ -352,11 +352,24 @@ def grade_file(path: Path | str) -> dict:
 
 
 def _estate_sessions() -> list[Path]:
-    """The session transcripts this machine's agents actually wrote, newest first."""
-    home = Path.home() / ".pi" / "agent" / "sessions"
-    if not home.is_dir():
-        return []
-    return sorted(home.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    """The session transcripts this machine's agents actually wrote, newest first.
+
+    Two roots, both real: ``~/.pi/agent/sessions`` is the pi-agent harness's own store;
+    ``~/.claude/projects`` is where the Claude Code CLI itself writes one line per turn,
+    verbatim, for every session (bin/idp-session-bootstrap's own SessionStart/Stop hooks
+    depend on that path -- see ~/.claude/scripts/session-recorder.py). The gate that swept
+    only the first root graded a store that stopped being written months before this repo's
+    own idp-prm/idp-budget sessions started -- every live idp session was invisible to it.
+    """
+    roots = (
+        Path.home() / ".pi" / "agent" / "sessions",
+        Path.home() / ".claude" / "projects",
+    )
+    found: list[Path] = []
+    for home in roots:
+        if home.is_dir():
+            found.extend(home.glob("*/*.jsonl"))
+    return sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
 
 
 def _grade_estate(limit: int = 25) -> int:
