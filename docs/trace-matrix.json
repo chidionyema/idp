@@ -1665,7 +1665,7 @@
    "the backend lists sessions from the sovereign engine",
    "the stream sends a change",
    "the route answers the spec's done-command",
-   "a catalogue that cannot be read is not an empty board"
+   "a catalogue that cannot be read leaves the rest of the board live"
   ],
   "bound_by": [
    "sovereign/tests/bdd/test_fleetview_cp1.py"
@@ -1931,6 +1931,26 @@
   "status": "BOUND",
   "added_in": "b44756c8",
   "pr": 3464,
+  "ticket": null
+ },
+ {
+  "feature": "features/gates/typed-multidomain-mutation-ledger.feature",
+  "title": "The typed multi-domain mutation ledger",
+  "scenarios": [
+   "The agent calls propose_mutation with every domain empty",
+   "The agent proposes code, a manifest and a SQL migration together",
+   "Every domain in the bundle passes",
+   "The SQL domain fails while code and the manifest are sound",
+   "The agent calls seal_mutation before verify_mutation ever passed",
+   "An unattested bundle attempts to be admitted",
+   "A validly attested bundle is admitted to a new branch, never main"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_typed_multidomain_mutation_ledger.py"
+  ],
+  "status": "BOUND",
+  "added_in": "56f087a6",
+  "pr": 3500,
   "ticket": null
  },
  {
