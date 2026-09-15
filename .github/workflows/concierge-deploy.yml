@@ -316,16 +316,30 @@ jobs:
           echo "ok      per-order runtime deployed"
           modal deploy code/ephemeral/webapp.py
           echo "ok      always-on endpoint deployed"
-          # PUBLIC_SERVER_URL / PUBLIC_WSS_URL still name the OLD Cloudflare Tunnel hostname in the
-          # vault until this line runs once by hand: `modal deploy` above prints the endpoint's
-          # https://<workspace>--<label>.modal.run URL, and that URL (plus its wss:// twin) needs
-          # one `bin/idp-vault-put concierge-tunnel --merge` to become what voice_endpoints.py and
-          # main.py's webhooks actually read. Not automated here on purpose: the URL is stable
-          # across redeploys (Modal does not change it), so this is a one-time cutover, not a
-          # per-deploy step -- doing it on every run would let a typo in this workflow silently
-          # rewrite a value nothing here changed.
-          echo "note    PUBLIC_SERVER_URL/PUBLIC_WSS_URL still point at the old tunnel host until"
-          echo "        the Modal URL above is written into the concierge-tunnel vault entry once."
+
+      # LAW 31: the founder does not run a script to finish a deploy this workflow started. The
+      # Cloudflare Tunnel hostname `concierge-tunnel` held is now the wrong answer -- Twilio and
+      # voice_endpoints.py need Modal's own host -- so the cutover happens here, not as a follow-up
+      # command handed back to a person. get_web_url(), not a grep against `modal deploy`'s banner:
+      # that text is not a contract, and the platform's own API is the actual source of the fact.
+      # Idempotent: Modal keeps this URL stable across redeploys of the same app/function name, so
+      # a second run of this step writes the same value, not a rotation.
+      - name: point PUBLIC_SERVER_URL / PUBLIC_WSS_URL at the endpoint just deployed
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          set -euo pipefail
+          URL=$(python3 -c "import modal; print(modal.Function.from_name('mums-concierge-web', 'web').get_web_url())")
+          [ -n "$URL" ] || { echo "FAIL    concierge-deploy  Modal returned no URL for mums-concierge-web/web"; exit 1; }
+          # The WebSocket Twilio's <Stream> bridges to is one exact URL (voice_endpoints.py passes
+          # it straight into <Stream url="...">, no path appended by the caller), so the path lives
+          # here, once, rather than being assumed again at read time.
+          WSS_URL=$(python3 -c "import sys; u=sys.argv[1]; print('wss://' + u.split('://', 1)[1].rstrip('/') + '/ws/live-call')" "$URL")
+          ENVF=$(mktemp)
+          trap 'rm -f "$ENVF"' EXIT
+          printf 'MODAL_PUBLIC_SERVER_URL=%s\nMODAL_PUBLIC_WSS_URL=%s\n' "$URL" "$WSS_URL" > "$ENVF"
+          ESTATE_ENV_FILE="$ENVF" bin/idp-vault-put --merge concierge-tunnel \
+            PUBLIC_SERVER_URL=MODAL_PUBLIC_SERVER_URL PUBLIC_WSS_URL=MODAL_PUBLIC_WSS_URL
+          echo "ok      concierge-tunnel now points at $URL"
 
       - name: dry run -- say plainly what was not done
         if: ${{ inputs.dry_run == true }}
