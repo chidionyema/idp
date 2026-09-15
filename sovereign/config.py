@@ -771,7 +771,7 @@ FLIP_RECEIPT_TEMPLATE: str = _R["flip.receipt_template"].value
 FLIP_ROLLBACK_RECEIPT_TEMPLATE: str = _R["flip.rollback_receipt_template"].value
 FLIP_HASH_CHUNK_BYTES: int = _R["flip.hash_chunk_bytes"].value
 PROJECTION_STORE_PATH: Path = Path(_R["projection.store_path"].value)
-REBUILD_RECEIPT_TEMPLATE: str = _R["rebuild.receipt_template"].value,
+REBUILD_RECEIPT_TEMPLATE: str = _R["rebuild.receipt_template"].value
 CROSS_STACK_GIT_TIMEOUT_S: int = _R["cross_stack.git_timeout_s"].value
 
 TEMPORAL_PID_FILE: Path = ESTATE_HOME / "temporal" / "dev-server.pid"
