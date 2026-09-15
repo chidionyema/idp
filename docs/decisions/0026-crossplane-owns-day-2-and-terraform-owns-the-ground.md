@@ -249,3 +249,74 @@ covered by the glass-break gate, despite the gate's own docstring naming "the RB
 five things it protects. Not exploited (nothing in this pass touched that file). Fixing
 `bin/idp-glass-break` is itself in its own `PROTECTED` list, so the fix needs the founder's review
 regardless of who writes the diff.
+
+## 2026-09-15 follow-up: PR #3542 merged — what it means and what is real work, not paperwork
+
+Merge to `main` is the deploy action in this estate (Flux watches git, no separate manual step
+exists or should — an agent taking one would itself violate "agents never deploy"). PR #3542
+merged; this section is the independent-proof follow-up the merge itself does not provide, plus
+the plain answer to "what does this capability mean for the platform."
+
+**A real regression surfaced and was fixed before merge, not glossed over:**
+`composition-bucket.yaml` names `objectstorage.oci.upbound.io` directly, which is exactly the
+kind of line R36's gate (`bin/cloud-agnostic-gate`) exists to catch, and it did catch it — the
+"pod names no cloud" BDD scenario runs the gate over the whole repo, not a fixture, so this
+Composition tripped a real, unrelated-looking test. Fixed by extending the existing crew#66 CP5e
+self-declaration marker (`# provider-adapter: oci`, one line, one file) rather than widening the
+blanket `EXEMPT` list — widening `EXEMPT` would have also silenced `xrd-bucket.yaml` sitting next
+to it, and the XRD is the one file in that directory that must never carry a provider string.
+Verified both ways after the fix: the gate re-run against the real tree exits 0 (5 declared
+adapters, 0 hits), and both `test_gate_cloud_agnostic.py` (fixture-isolated) and
+`test_identity_front_door.py` (real-repo) pass.
+
+**What this capability means for the platform, plainly:** before this change, "ask for a bucket"
+had exactly one path: hand-written OpenTofu, one `.tf` block per request, reviewed and applied by
+a human or CI run per resource. After this change, a second path exists end-to-end: an intent
+compiles to a four-field Claim (`name`, `purpose`, `size_gb`, `access` — nothing else, ever, per
+the Diamond Standard), and the Composition already in-cluster is what turns that Claim into the
+same kind of real OCI bucket, without anyone hand-writing Terraform for it. That is the shape ADR
+0026 committed to for all of Day-2: policy and provisioning-on-request move to Crossplane,
+OpenTofu keeps owning what it already created. This storage capability is the first one proven
+live, and it is the template — the next capability (a queue, a cache, a second secret store) is a
+new XRD + Composition pair under `platform/crossplane/capabilities/`, not a new subsystem.
+**It changes zero live behavior today.** `ESTATE_STORAGE_PROVIDER` is still `"oci"` in
+`clusters/oke/estate-config.yaml`; nothing currently asks for a bucket through the new path. This
+merge makes the capability available, not in use — the distinction the rest of this section is
+about.
+
+**Live-state confirmation, checked and reported honestly:** `mcp__estate__get_workload_state` for
+`layer-crossplane-storage-capability` (the correct catalog entity name, confirmed by reading
+`backstage/platform/catalog-info.yaml` off `origin/main` directly) still returns a snapshot dated
+before this merge — the estate-twin graph behind the MCP server is built by an external pipeline
+(`idp/bin/db-gen`) on its own cadence, and no tool available to this session can force that
+pipeline to run early. That gap is real and stays open; it is reported here rather than argued
+around.
+
+**What that check surfaced that is bigger than this one capability:** `mcp__estate__get_catalog_drift`
+against all 35 currently-checked Backstage components — not just this new one — returns
+`nodes_found: 0, reason: "not observed in the estate graph"` for every single one, including
+`cluster-helmrelease-crossplane`, which has been running in the cluster since 2026-09-08, a full
+week before this change existed. That means the estate-twin's "ask the graph, not the cluster"
+doctrine (crew#180, 2026-09-12) currently has no live component behind it for anything in the
+estate, not a gap this PR introduced. This is a platform-wide, pre-existing finding, surfaced as a
+byproduct of trying to independently verify this one capability, and is worth the founder's
+attention on its own — it means nobody can currently get a live yes/no answer from the estate
+graph about anything.
+
+## What "done" actually starts here, not ends here
+
+- **Put the capability to work.** Nothing uses it yet. The next real step is one real intent
+  compiled with `ESTATE_STORAGE_PROVIDER=crossplane`, applied, and a real bucket watched come up
+  through the Claim — proof the whole path works live, not just that it compiles and passes
+  admission. That is a founder call (production write), not something this pass should reach for
+  on its own.
+- **The estate-twin staleness gap found above** is bigger than this ADR and should be raised to
+  the founder as its own item, separate from step 3/4 of this ADR — it affects every component's
+  drift answer, not just the new one.
+- **Step 4 (migrate an OpenTofu-owned resource, or the eight secrets files, to Crossplane)**
+  remains exactly where the 2026-09-15 status section above left it: blocked on a capacity
+  measurement nobody has re-run since 2026-09-08, and on a secrets provider not yet installed. Not
+  reopened here.
+- **The `platform/rbac/` vs `platform/rbac-floor/` glass-break prefix gap**, found and reported in
+  the status section above, is still unfixed and still needs the founder specifically, since
+  `bin/idp-glass-break` protects its own edit.
