@@ -305,6 +305,16 @@ patches:
             # tag:founder-mac to and nobody else -- not this Pod's own catalogue Service, and not
             # the backstage edge route, either of which would make it reachable more widely.
             - {name: fv-executor, containerPort: 8091}
+          # Probes target fv-executor (0.0.0.0:8091), not fleetview (127.0.0.1:18790): the
+          # kubelet's httpGet probe connects to the Pod IP directly (it does not run inside the
+          # container's network namespace), so a loopback-only listener never answers it and the
+          # container crash-loops on liveness failures forever, even though the app itself is
+          # healthy (confirmed 2026-09-15: `kubectl exec ... wget 127.0.0.1:18790/healthz`
+          # succeeds from inside the pod while the kubelet still kills the container every ~90s).
+          # This does not widen fv-executor's exposure -- the kubelet reaches the Pod IP directly
+          # on the node's pod network regardless of container port choice; which Services select
+          # this pod (still only fleetview-executor-service.yaml's tailnet-gated one) is what
+          # actually controls reachability from anywhere else.
           env:
             - {name: ESTATE_DB, value: /data/estate.db}
             - {name: ESTATE_CATALOG_PATH, value: /estate/catalog-info.yaml}
@@ -324,11 +334,11 @@ patches:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
             - {name: estate, mountPath: /estate, readOnly: true}
           readinessProbe:
-            httpGet: {path: /healthz, port: fleetview}
+            httpGet: {path: /healthz, port: fv-executor}
             initialDelaySeconds: 3
             periodSeconds: 10
           livenessProbe:
-            httpGet: {path: /healthz, port: fleetview}
+            httpGet: {path: /healthz, port: fv-executor}
             initialDelaySeconds: 10
             periodSeconds: 30
           resources:
