@@ -33,6 +33,21 @@ class ResolveTests(unittest.TestCase):
         self.assertIsInstance(config_keys.resolve("cockpit.port", fake_config), int)
 
 
+class StartRunnerTests(unittest.TestCase):
+    def test_default_start_runner_exists_in_engine_registry(self):
+        # LAW 34/cp6: runners.REGISTRY is the only place a runner name is
+        # real. A default here that isn't a key there is silent breakage --
+        # POST /api/sessions (the Start form, the actual door) would return
+        # {"done": True, "output": "unknown runner: <name>"} instead of
+        # erroring. Caught this exact bug once already (cockpit.start_runner
+        # defaulted to "claude", deleted from the registry) -- asserted here
+        # so it can't happen again unnoticed.
+        from sovereign.engine import runners
+
+        default_runner = config_keys.resolve("cockpit.start_runner")
+        self.assertIn(default_runner, runners.REGISTRY)
+
+
 class NonSecretDictTests(unittest.TestCase):
     def test_no_key_is_secret_shaped(self):
         # cp22: "no secret value is printed; keys ending in TOKEN, KEY, SECRET

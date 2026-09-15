@@ -12,7 +12,7 @@
 
 ## Every day
 
-- `bin/sb start --runner claude --task '…' --budget 20000` starts a session. `--runner llm` routes through LiteLLM; vendor names live only in `sovereign/engine/runners.py`.
+- `bin/sb start --runner llm --task '…' --budget 20000` starts a session, routed through LiteLLM (`sovereign/config.py` `model.default`); runner names live only in `sovereign/engine/runners.py`, and no product path shells out to a vendor CLI.
 - `bin/sb list`, `bin/sb show <id>`, `bin/sb stop|approve|deny|steer <id> --by <who>`.
 - `bin/sb attach <repo>` mounts any repository as an estate and scaffolds its `AGENTS.md`; `bin/sb status`, `bin/sb halt --all`.
 - `bin/sb audit --verify` walks the signed receipt chain; `bin/sb episodes --kind stop` reads what happened.
