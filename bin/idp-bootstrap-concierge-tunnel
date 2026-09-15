@@ -382,7 +382,18 @@ def main() -> None:
 
         tun_gid = gid("Cloudflare Tunnel", "com.cloudflare.api.account")
         if not tun_gid:
-            fail("perms", "no permission group 'Cloudflare Tunnel' (account) -- list /user/tokens/permission_groups and fix the name here, LAW 46")
+            # Names are metadata, not a secret (LAW 21 is about credential values, not group
+            # labels) -- print what this account's token actually offers at account scope so the
+            # real name can be read straight out of the CI log instead of guessed blind (run
+            # 34996458292, idp#3537).
+            account_names = sorted(
+                g["name"] for g in groups.get("result", []) if "com.cloudflare.api.account" in g.get("scopes", [])
+            )
+            fail(
+                "perms",
+                "no permission group 'Cloudflare Tunnel' (account) -- LAW 46. "
+                f"account-scoped groups this token actually sees: {account_names}",
+            )
         tunpol = [
             {
                 "effect": "allow",
