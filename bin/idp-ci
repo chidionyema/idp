@@ -184,6 +184,24 @@ if "$MPY" "$IDP/bin/catalog-dark-matter" --check >/dev/null 2>&1; then
   say "ok    darkmatter  backstage/platform/dark-matter.yaml matches a fresh sweep of git and the cluster"
 else say "FAIL  darkmatter  dark-matter.yaml is stale; run bin/catalog-dark-matter"; fail=1; fi
 
+# 4b5. estate-twin-runtime --code-graph is a generator like catalog-gen (AGENTS.md: "every
+#      generator must be idempotent"), so the same property applies to the map it draws: the
+#      code:module:* nodes and imports edges are a pure function of the git-tracked .py files
+#      (bin/estate-twin-runtime's own sweep_code_graph docstring), never of wall-clock or the
+#      live cluster. Two independent sweeps into two empty databases must agree exactly, or
+#      the "mathematically synced" claim for this graph is false the moment CI stops proving
+#      it. Compares only id/domain/type/status/metadata and edge triples -- never last_seen,
+#      which is a clock stamp, not a claim -- so a determinism regression fails here, not
+#      three sessions later as an unexplained diagram drift.
+db_a="$tmp/twin-a.db"; db_b="$tmp/twin-b.db"
+ESTATE_DB="$db_a" "$MPY" "$IDP/bin/estate-twin-runtime" --once --code-graph >/dev/null 2>&1
+ESTATE_DB="$db_b" "$MPY" "$IDP/bin/estate-twin-runtime" --once --code-graph >/dev/null 2>&1
+n=$(sqlite3 "$db_a" "select count(*) from nodes where id like 'code:module:%'")
+dump() { sqlite3 "$1" "select id,domain,type,status,metadata from nodes where id like 'code:module:%' order by id; select '--edges--'; select source_id,target_id,relation from edges where source_id like 'code:module:%' order by source_id, target_id, relation;"; }
+if [ "$n" -gt 0 ] && diff -q <(dump "$db_a") <(dump "$db_b") >/dev/null 2>&1; then
+  say "ok    idempot  estate-twin-runtime --code-graph twice over one repo: identical ($n code:module nodes)"
+else say "FAIL  idempot  estate-twin-runtime --code-graph is not deterministic (n=$n):"; diff <(dump "$db_a") <(dump "$db_b") | head -10 | sed 's/^/      /'; fail=1; fi
+
 # 4c. The catalogue must carry relationships. An entity list with no edges renders
 #     exactly like a mapped estate and is the failure a peer session named on
 #     2026-08-24: "Backstage doesn't magically discover your architecture". Two
