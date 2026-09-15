@@ -18,6 +18,9 @@ REPO = Path(__file__).resolve().parents[3]
 SIGNALS_MODULE = (
     REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "signals.py"
 )
+ROUTES_MODULE = (
+    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "routes.py"
+)
 
 
 def _load(path: Path, name: str):
@@ -33,6 +36,12 @@ def signals(monkeypatch, tmp_path):
     db = tmp_path / "estate.db"
     monkeypatch.setenv("ESTATE_DB", str(db))
     return _load(SIGNALS_MODULE, "fleetview_signals_under_test")
+
+
+@pytest.fixture()
+def routes(tmp_path, monkeypatch):
+    monkeypatch.setenv("ESTATE_DB", str(tmp_path / "estate-test.db"))
+    return _load(ROUTES_MODULE, "fleetview_routes_under_test")
 
 
 def _fake_engine_client(monkeypatch, module, ok: bool, error: str | None = None):
@@ -99,3 +108,20 @@ def test_a_failed_signal_is_still_recorded_never_silently_dropped(signals, monke
     rows = signals.signals_for("sb-1")
     assert len(rows) == 1
     assert rows[0]["ok"] is False
+
+
+def test_get_route_is_always_200_even_when_empty(routes):
+    body, status = routes.signals_envelope("no-such-session")
+    assert status == 200
+    assert body == {"signals": []}
+
+
+def test_get_route_after_a_nudge_sees_the_same_signal(routes, monkeypatch):
+    _fake_engine_client(monkeypatch, routes, ok=True)
+    routes.add_nudge(
+        {"session_id": "sb-4", "runtime": "sovereign", "by": "chidi", "text": "wrap up"}
+    )
+    body, status = routes.signals_envelope("sb-4")
+    assert status == 200
+    assert [s["text"] for s in body["signals"]] == ["wrap up"]
+    assert body["signals"][0]["ok"] is True

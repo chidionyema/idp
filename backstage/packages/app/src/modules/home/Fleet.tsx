@@ -27,6 +27,7 @@ import {
 import { Chip, EstatePage, Fold, Section, Sheet, Summary } from '../shell';
 import { EstateMap } from './EstateMap';
 import {
+  attentionReason,
   capabilityLabel,
   capabilityTitle,
   isStale,
@@ -36,8 +37,9 @@ import {
   spendLabel,
   stateLabel,
   summarise,
+  timelineFor,
 } from './fleetBoard';
-import type { Board, Note, SessionsEnvelope } from './fleetBoard';
+import type { Board, Note, SessionsEnvelope, Signal } from './fleetBoard';
 
 export const TITLE = 'Fleet';
 export const LEAD =
@@ -70,6 +72,63 @@ export function Fleet() {
     }
   };
 
+  // The focus panel's audit trail: every nudge attempt recorded for the session
+  // (backend/src/signals.py's signals_for), merged with its notes into one chronological read.
+  // Fetched lazily, same rule as notes -- only once the fold is actually opened.
+  const [signalsBySession, setSignalsBySession] = useState<Record<string, Signal[]>>({});
+
+  const loadSignals = async (sessionId: string) => {
+    try {
+      const res = await fetchApi.fetch(
+        `plugin://proxy/fleetview/signals?session_id=${encodeURIComponent(sessionId)}`,
+      );
+      const body = (await res.json()) as { signals: Signal[] };
+      setSignalsBySession(current => ({ ...current, [sessionId]: body.signals ?? [] }));
+    } catch {
+      // Same rule as loadNotes: a failed read leaves the panel showing whatever it already had.
+    }
+  };
+
+  // The focus panel's auto-fetched receipt verdict (item #9, backend/src/evals.py), so opening a
+  // session's panel answers "did it actually finish?" without a separate trip to the Check
+  // receipts section below. Fetched once per session, not on every poll.
+  type ReceiptState =
+    | { status: 'loading' }
+    | { status: 'done'; verdict: string; reason: string }
+    | { status: 'error'; error: string };
+  const [receiptsBySession, setReceiptsBySession] = useState<Record<string, ReceiptState>>({});
+
+  const loadReceipt = async (sessionId: string) => {
+    setReceiptsBySession(current => ({ ...current, [sessionId]: { status: 'loading' } }));
+    try {
+      const res = await fetchApi.fetch('plugin://proxy/fleetview/check-receipts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_ids: [sessionId] }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setReceiptsBySession(current => ({
+          ...current,
+          [sessionId]: { status: 'error', error: body.error ?? `HTTP ${res.status}` },
+        }));
+        return;
+      }
+      const result = (body.results ?? [])[0];
+      setReceiptsBySession(current => ({
+        ...current,
+        [sessionId]: result
+          ? { status: 'done', verdict: result.verdict, reason: result.reason }
+          : { status: 'error', error: 'no verdict returned' },
+      }));
+    } catch (err) {
+      setReceiptsBySession(current => ({
+        ...current,
+        [sessionId]: { status: 'error', error: err instanceof Error ? err.message : String(err) },
+      }));
+    }
+  };
+
   const draftFor = (sessionId: string) =>
     draftsBySession[sessionId] ?? { author: '', note: '' };
 
@@ -96,8 +155,17 @@ export function Fleet() {
   const [nudgeStatusBySession, setNudgeStatusBySession] = useState<Record<string, string>>({});
 
   const sendNudge = async (sessionId: string, runtime: string) => {
-    const by = draftFor(sessionId).author.trim() || window.prompt('Your name, for the audit trail:', '')?.trim();
-    if (!by) return;
+    // No window.prompt fallback: the audit-trail name comes from the same inline author field
+    // the focus panel already offers for notes, so nudging never blocks on a browser-native
+    // dialog the panel can't lay out or test around.
+    const by = draftFor(sessionId).author.trim();
+    if (!by) {
+      setNudgeStatusBySession(current => ({
+        ...current,
+        [sessionId]: 'Add your name in Focus above first',
+      }));
+      return;
+    }
     setNudgeStatusBySession(current => ({ ...current, [sessionId]: 'sending…' }));
     try {
       const res = await fetchApi.fetch('plugin://proxy/fleetview/nudge', {
@@ -299,6 +367,23 @@ export function Fleet() {
             </Chip>
           </div>
         )}
+        {board.attention.length > 0 && (
+          // Triage, not table order: a failed or gone-quiet session surfaces here regardless of
+          // where it sits in the sheet below. Built only from board.attention (fleetBoard.ts's
+          // needsAttention), which itself reasons only from real, measured fields -- state and
+          // isStale's elapsed-time claim. Nothing here is a new heuristic.
+          <div data-testid="needs-attention">
+            <Summary>Needs attention</Summary>
+            <ul>
+              {board.attention.map(s => (
+                <li key={`${s.runtime}:${s.session_id}`}>
+                  <Chip>{attentionReason(s) === 'failed' ? 'Failed' : 'Stale'}</Chip>
+                  {` ${s.session_id} (${s.runtime}) — ${s.task}`}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {board.byRuntime.length > 0 && (
           // Every fleet gets its own chip, alphabetical, so a runtime with one session is exactly
           // as visible as one with a hundred -- the board is for every fleet, not just the
@@ -330,13 +415,16 @@ export function Fleet() {
                 <th>Spend</th>
                 <th>Capabilities</th>
                 <th>Pull requests</th>
-                <th>Notes</th>
+                <th>Focus</th>
                 <th>Nudge</th>
               </tr>
             </thead>
             <tbody>
               {order(board.sessions).map(s => {
                 const notes = notesBySession[s.session_id] ?? [];
+                const signals = signalsBySession[s.session_id] ?? [];
+                const timeline = timelineFor(notes, signals);
+                const receipt = receiptsBySession[s.session_id];
                 const draft = draftFor(s.session_id);
                 const capability = capabilityLabel(s.capability_class);
                 const stale = isStale(s);
@@ -360,25 +448,48 @@ export function Fleet() {
                     </td>
                     <td>{prLabel(s.pull_requests)}</td>
                     <td>
-                      {/* Leave a note for a session, read later -- not delivered live into a
-                          running process for any runtime today (see docs/founder/fleetview-voice-
-                          revisit.md). Fetched on first open, not on every poll. */}
+                      {/* The focus panel: notes and nudge attempts merged into one chronological
+                          read (fleetBoard.ts's timelineFor), plus an auto-fetched receipt verdict
+                          -- so opening a session answers "what happened, and did it actually
+                          finish?" without a separate trip to Check receipts below. Nothing here
+                          is delivered live into a running process for any runtime today (see
+                          docs/founder/fleetview-voice-revisit.md). Everything is fetched once, on
+                          first open, not on every poll. */}
                       <Fold
                         testId={`notes-fold-${s.session_id}`}
                         summary={notes.length ? `${notes.length} note${notes.length === 1 ? '' : 's'}` : 'Leave a note'}
                         onToggle={e => {
-                          if (e.currentTarget.open && !notesBySession[s.session_id]) {
-                            void loadNotes(s.session_id);
-                          }
+                          if (!e.currentTarget.open) return;
+                          if (!notesBySession[s.session_id]) void loadNotes(s.session_id);
+                          if (!signalsBySession[s.session_id]) void loadSignals(s.session_id);
+                          if (!receiptsBySession[s.session_id]) void loadReceipt(s.session_id);
                         }}
                       >
                         <div>
-                          <ul>
-                            {notes.map(n => (
-                              <li key={n.id}>
-                                <strong>{n.author}</strong>: {n.note}
-                              </li>
-                            ))}
+                          {receipt && (
+                            <div data-testid={`receipt-verdict-${s.session_id}`}>
+                              {receipt.status === 'loading' && <Chip>Checking receipt…</Chip>}
+                              {receipt.status === 'done' && (
+                                <Chip title={receipt.reason}>Receipt: {receipt.verdict}</Chip>
+                              )}
+                              {receipt.status === 'error' && (
+                                <Chip title={receipt.error}>Receipt: unavailable</Chip>
+                              )}
+                            </div>
+                          )}
+                          <ul data-testid={`timeline-${s.session_id}`}>
+                            {timeline.map((entry, i) =>
+                              entry.kind === 'note' ? (
+                                <li key={`note-${i}`}>
+                                  <strong>{entry.author}</strong>: {entry.text}
+                                </li>
+                              ) : (
+                                <li key={`signal-${i}`}>
+                                  <strong>{entry.by}</strong> nudged: {entry.text} —{' '}
+                                  {entry.ok ? 'delivered' : `failed: ${entry.error}`}
+                                </li>
+                              ),
+                            )}
                           </ul>
                           <input
                             aria-label={`note author for ${s.session_id}`}
