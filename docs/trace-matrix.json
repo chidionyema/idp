@@ -1770,6 +1770,23 @@
   "ticket": null
  },
  {
+  "feature": "features/gates/contract-executor.feature",
+  "title": "A tool call's post-condition is checked by a deterministic script, not the agent",
+  "scenarios": [
+   "The post-condition never holds by its deadline",
+   "Both conditions hold",
+   "A subject has no observation at all",
+   "The contract file cannot be read"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_contract_executor.py"
+  ],
+  "status": "BOUND",
+  "added_in": "22268b89",
+  "pr": null,
+  "ticket": null
+ },
+ {
   "feature": "features/gates/epistemic-and-trajectory.feature",
   "title": "An agent cannot lie about what it sees, and cannot forget what it was told to do",
   "scenarios": [
