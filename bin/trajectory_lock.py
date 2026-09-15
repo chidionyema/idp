@@ -450,11 +450,22 @@ def grade_file(path: Path | str) -> dict:
 
 
 def _estate_sessions() -> list[Path]:
-    """The session transcripts this machine's agents actually wrote, newest first."""
-    home = Path.home() / ".pi" / "agent" / "sessions"
-    if not home.is_dir():
-        return []
-    return sorted(home.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    """The session transcripts this machine's agents actually wrote, newest first.
+
+    Mirrors bin/epistemic_firewall.py's own fix (same defect, same two duplicated defs):
+    ``~/.pi/agent/sessions`` alone stopped being written months ago, so this swept nothing
+    a real idp session ever produced. ``~/.claude/projects`` is where the Claude Code CLI
+    itself writes one line per turn, verbatim, for every session.
+    """
+    roots = (
+        Path.home() / ".pi" / "agent" / "sessions",
+        Path.home() / ".claude" / "projects",
+    )
+    found: list[Path] = []
+    for home in roots:
+        if home.is_dir():
+            found.extend(home.glob("*/*.jsonl"))
+    return sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
 
 
 def _grade_estate(limit: int = 25) -> int:
