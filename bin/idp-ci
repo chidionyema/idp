@@ -466,7 +466,21 @@ fi
 #     named files and the bdd suite, ci.yml ran sovereign/tests/bdd. A PR body that says
 #     "bin/idp-ci runs the incident test on every PR" was a claim with no receipt. Tests
 #     that need kyverno or a sibling checkout skip as BLIND and say so; a skip is printed.
-inc=$("$BDD_PY" -m pytest -q -p no:cacheprovider $XD "$IDP"/tests/test_incident_*.py 2>&1); inc_rc=$?
+#
+#     Omit lever (crew CI/CD overhaul, 2026-09-15): on a pull request (IDP_CI_BASE set),
+#     bin/idp-test-impact runs only the incident tests it can prove a real repo path this
+#     diff touches -- a change it cannot attribute to a subset returns its own FULL
+#     sentinel, and the full sweep below is what runs. main and the merge queue
+#     (IDP_CI_BASE empty) always get the full sweep -- same rule kyverno already follows.
+inc_targets=("$IDP"/tests/test_incident_*.py)
+if [ -n "${IDP_CI_BASE:-}" ]; then
+  inc_sel=$(cd "$IDP" && python3 bin/idp-test-impact --select --base "$IDP_CI_BASE" --tests "$IDP"/tests/test_incident_*.py 2>/dev/null)
+  if [ "$inc_sel" != "FULL" ] && [ -n "$inc_sel" ]; then
+    mapfile -t inc_targets < <(printf '%s\n' "$inc_sel" | sed "s|^|$IDP/|")
+    say "omit  incident: ${#inc_targets[@]}/$(ls "$IDP"/tests/test_incident_*.py | wc -l | tr -d ' ') incident test file(s) selected for this diff"
+  fi
+fi
+inc=$("$BDD_PY" -m pytest -q -p no:cacheprovider $XD "${inc_targets[@]}" 2>&1); inc_rc=$?
 if [ "$inc_rc" -eq 0 ]; then
   say "ok    incident $(printf '%s' "$inc" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$inc" | grep -oE '[0-9]+ skipped' | head -1 || printf '0 skipped') (BLIND skips)"
   printf '%s\n' "$inc" | grep -oE 'BLIND: [^)]*' | sort -u | sed 's/^/      /'

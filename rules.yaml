@@ -2740,3 +2740,25 @@ rules:
     note: graded against the real sovereign/engine/metrics.py and observability/agent-metrics.yaml, not only the fixtures above
   ok: a metric emitted in code always has a governance row, and a governance row marked emitted always corresponds to a real emitter, so telemetry cardinality cannot grow un-owned
   fail: a metric ships with no owner/budget/retention/consumer, or a manifest row claims a metric that no code emits -- either way the manifest and the code have drifted apart
+
+- id: test-impact
+  label: test-impact
+  statement: 'On a pull request, bin/idp-ci runs only the tests/test_incident_*.py files bin/idp-test-impact can prove a real repo path in the diff touches (a bin/idp-* script it subprocess.run()s, or a repo-rooted path literal) -- any changed file it cannot attribute to a subset forces its FULL sentinel and the full sweep runs instead, so a narrower run is never a silent omission (spec 2026-09-15, CI/CD overhaul Part B, the Omit lever, first and highest-priority of Omit/Share/Speculate/Parallelize)'
+  law: founder spec 2026-09-15, "elite exponential asymmetry rather than tool explosion" -- Omit ranks above Share, Speculate and Parallelize
+  origin: docs decision -- the CI/CD half of the 2026-09-15 pasted spec named Omit (test impact analysis) as the first lever, with zero implementation in the repo as of that date; bin/idp-ci ran every tests/test_incident_*.py file on every pull request regardless of what it touched
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-test-impact
+  - --self-test
+  fixtures:
+    must_pass: tests/fixtures/test-impact/scoped
+  cases:
+  - expect: pass
+    note: scoped/test_alerts.py names bin/idp-alert-rows and platform/alerts/alert.yaml; scoped/test_catalog.py names bin/idp-catalog-gen and catalog/estate.db -- --self-test asserts a change to platform/alerts/alert.yaml selects only test_alerts.py, and a change to a path no fixture test names forces FULL
+  - expect: pass
+    live: true
+    note: graded against the real tests/test_incident_*.py suite (bin/idp-ci rung 8b), not only the fixtures above
+  ok: a diff that only touches a path this tool can prove is covered by a subset of incident tests runs only that subset; every other diff runs the full incident suite, same as before this rule existed
+  fail: bin/idp-test-impact selects a narrower run than the diff actually justifies, silently dropping a test that could have caught the defect

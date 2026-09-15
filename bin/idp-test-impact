@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""Omit lever (spec: 2026-09-15 metrics/CI-CD overhaul, Part B): skip a test file only when
+we can prove a changed file cannot affect it, never by guessing.
+
+Most of this estate's test files (tests/test_incident_*.py) are not unit tests importing
+Python source -- they build a synthetic manifest tree in tmp_path and grade it, or they
+shell out to a real bin/idp-* script and grade its stdout (see the file headers). So there
+is no coverage.py line-trace to select from; the only real, checkable signal a test file
+carries is which repo paths it actually names: a `bin/idp-*` script it subprocess.run()s,
+or a repo-rooted path literal (platform/..., clusters/..., sovereign/..., rules.yaml, ...).
+Bare fixture filenames a test writes into its own tmp_path ("kustomization.yaml",
+"values.yaml") are NOT such a signal -- they name no real file, so this tool never treats
+them as one.
+
+Selection rule, safe by construction: a changed file selects every test file whose
+extracted repo-path set contains it, is its directory ancestor, or is its descendant, plus
+any test file that IS the changed file. A changed file matched by ZERO test files, or a
+changed file in the "always full" set (this script, bin/idp-ci, rules.yaml, a workflow
+file, conftest.py) forces FULL -- the caller must run everything, because this tool found
+no proof a narrower run is safe. It only ever narrows a run; it is never the reason a real
+defect goes ungraded.
+
+  idp-test-impact --select --base <ref> --tests <dir-or-file> [<dir-or-file> ...]
+  idp-test-impact --select --changed <file> [<file> ...] --tests <dir-or-file> [...]
+  idp-test-impact --self-test
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+# Real repo-rooted directories a test can legitimately depend on, plus the two root files
+# every gate already treats as estate-wide (rules.yaml, AGENTS.md/CLAUDE.md).
+_REPO_DIRS = (
+    "platform",
+    "clusters",
+    "sovereign",
+    "observability",
+    "catalog",
+    "docs",
+    ".github/workflows",
+)
+_BIN_RE = re.compile(r"\bbin/idp-[a-zA-Z0-9_-]+")
+_REPO_PATH_RE = re.compile(
+    r"""["'](?:%s)/[a-zA-Z0-9_./-]+["']|["'](?:rules\.yaml|AGENTS\.md|CLAUDE\.md)["']"""
+    % "|".join(re.escape(d) for d in _REPO_DIRS)
+)
+
+# A change to any of these can affect how every test runs, not just the ones that happen to
+# name it -- so it is never a selection question, it is always FULL.
+_ALWAYS_FULL = {
+    "bin/idp-ci",
+    "bin/idp-test-impact",
+    "rules.yaml",
+    "conftest.py",
+    "sovereign/conftest.py",
+    "sovereign/pytest.ini",
+}
+
+
+def _rel(p: Path) -> str:
+    return p.resolve().relative_to(ROOT).as_posix()
+
+
+def _discover_tests(test_args: list[str]) -> list[Path]:
+    out: list[Path] = []
+    for arg in test_args:
+        p = ROOT / arg if not Path(arg).is_absolute() else Path(arg)
+        if p.is_dir():
+            out.extend(sorted(p.rglob("test_*.py")))
+        elif p.is_file():
+            out.append(p)
+    return out
+
+
+def _refs(test_file: Path) -> set[str]:
+    text = test_file.read_text(errors="replace")
+    refs: set[str] = set()
+    for m in _BIN_RE.finditer(text):
+        refs.add(m.group(0))
+    for m in _REPO_PATH_RE.finditer(text):
+        refs.add(m.group(0).strip("\"'"))
+    return refs
+
+
+def _hits(changed: str, ref: str) -> bool:
+    if changed == ref:
+        return True
+    if changed.startswith(ref.rstrip("/") + "/"):
+        return True
+    if ref.startswith(changed.rstrip("/") + "/"):
+        return True
+    return False
+
+
+def select(changed: list[str], test_files: list[Path]) -> list[str] | None:
+    """Returns sorted relative test-file paths to run, or None meaning FULL."""
+    test_refs = {t: _refs(t) | {_rel(t)} for t in test_files}
+    selected: set[Path] = set()
+    for c in changed:
+        if c in _ALWAYS_FULL:
+            return None
+        hit_any = False
+        for t, refs in test_refs.items():
+            if any(_hits(c, r) for r in refs):
+                selected.add(t)
+                hit_any = True
+        if not hit_any:
+            return None
+    return sorted(_rel(t) for t in selected)
+
+
+def _changed_from_base(base: str) -> list[str]:
+    out = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        ["git", "diff", "--name-only", f"{base}...HEAD"],  # noqa: S607 -- git resolved via PATH, same as elsewhere in this estate
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return [line for line in out.splitlines() if line]
+
+
+def _self_test() -> int:
+    fx = ROOT / "tests" / "fixtures" / "test-impact"
+    scoped = fx / "scoped"
+    if not scoped.exists():
+        print(f"SKIP test-impact --self-test: fixtures not found under {fx}")
+        return 0
+
+    tests = _discover_tests([str(scoped)])
+    if len(tests) != 2:
+        print(
+            f"FAIL test-impact --self-test: expected 2 fixture tests under {scoped}, found {len(tests)}"
+        )
+        return 1
+
+    got = select(["platform/alerts/alert.yaml"], tests)
+    want = ["tests/fixtures/test-impact/scoped/test_alerts.py"]
+    if got != want:
+        print(f"FAIL test-impact --self-test: scoped selection was {got}, want {want}")
+        return 1
+
+    got_full = select(["platform/nothing/names/this.yaml"], tests)
+    if got_full is not None:
+        print(
+            f"FAIL test-impact --self-test: unmapped change should force FULL, got {got_full}"
+        )
+        return 1
+
+    got_full2 = select(["rules.yaml"], tests)
+    if got_full2 is not None:
+        print("FAIL test-impact --self-test: rules.yaml change should force FULL")
+        return 1
+
+    print(
+        "ok   test-impact --self-test: scoped change narrows, unmapped change forces FULL"
+    )
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) > 1 and argv[1] in ("--help", "-h"):
+        print(__doc__)
+        return 0
+    if len(argv) > 1 and argv[1] == "--self-test":
+        return _self_test()
+
+    if "--select" not in argv:
+        print(__doc__)
+        return 2
+
+    test_args: list[str] = []
+    if "--tests" in argv:
+        i = argv.index("--tests") + 1
+        while i < len(argv) and not argv[i].startswith("--"):
+            test_args.append(argv[i])
+            i += 1
+    if not test_args:
+        print("FAIL: --select needs --tests <dir-or-file> [...]", file=sys.stderr)
+        return 2
+
+    if "--base" in argv:
+        changed = _changed_from_base(argv[argv.index("--base") + 1])
+    elif "--changed" in argv:
+        i = argv.index("--changed") + 1
+        changed = []
+        while i < len(argv) and not argv[i].startswith("--"):
+            changed.append(argv[i])
+            i += 1
+    else:
+        print(
+            "FAIL: --select needs --base <ref> or --changed <file> [...]",
+            file=sys.stderr,
+        )
+        return 2
+
+    test_files = _discover_tests(test_args)
+    result = select(changed, test_files)
+    if result is None:
+        print("FULL")
+        return 0
+    for t in result:
+        print(t)
+    print(
+        f"# selected {len(result)}/{len(test_files)} test file(s) for {len(changed)} changed file(s)",
+        file=sys.stderr,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
