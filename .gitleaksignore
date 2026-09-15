@@ -28,3 +28,11 @@ e4438a077515666ef219f7a60007e337a13cf18e:platform/human-vault-bridge/externalsec
 e4438a077515666ef219f7a60007e337a13cf18e:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:359
 e4438a077515666ef219f7a60007e337a13cf18e:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:360
 e4438a077515666ef219f7a60007e337a13cf18e:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:361
+
+# d66c1b269903da62ca9856d200057c937997f357 is #3490's own merge-into-main SHA for the same
+# router-pools commit above -- gitleaks fingerprints by commit SHA, and every merge that
+# re-lands these four lines under a new SHA needs its own entry. Same finding, not a new one.
+d66c1b269903da62ca9856d200057c937997f357:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:358
+d66c1b269903da62ca9856d200057c937997f357:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:359
+d66c1b269903da62ca9856d200057c937997f357:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:360
+d66c1b269903da62ca9856d200057c937997f357:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:361
