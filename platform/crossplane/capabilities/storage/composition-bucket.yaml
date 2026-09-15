@@ -1,3 +1,4 @@
+# provider-adapter: oci
 # The one place "storage.estate.io" becomes "objectstorage.oci.upbound.io" (xrd-bucket.yaml's
 # header). ${ESTATE_OCI_COMPARTMENT_OCID} and ${ESTATE_OCI_NAMESPACE} are substituted by Flux
 # postBuild from the estate-config ConfigMap (clusters/oke/platform.yaml,
