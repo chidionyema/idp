@@ -610,21 +610,6 @@
   "ticket": "crew#213"
  },
  {
-  "feature": "features/sovereign-bus/cp6_provider_agnostic.feature",
-  "title": "Provider agnostic \u2014 the runner and the model are configuration, never code",
-  "scenarios": [
-   "The engine runs with no vendor present",
-   "No vendor import in the engine",
-   "No hardcoded home, host or checkout",
-   "A real agent runner is one config line away"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
   "feature": "features/sovereign-bus/cp6_self_termination.feature",
   "title": "Auto-termination acts, it does not only report",
   "scenarios": [
@@ -2331,6 +2316,23 @@
   "added_in": "fa6feec2",
   "pr": 158,
   "ticket": "crew#284"
+ },
+ {
+  "feature": "features/sovereign-bus/cp6_provider_agnostic.feature",
+  "title": "Provider agnostic \u2014 the runner and the model are configuration, never code",
+  "scenarios": [
+   "The engine runs a step with no vendor present",
+   "No vendor import in the engine",
+   "No hardcoded home, host or checkout",
+   "A new provider is one registry entry, not a code change"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_cp6_provider_agnostic.py"
+  ],
+  "status": "BOUND",
+  "added_in": "2f0123f8",
+  "pr": 70,
+  "ticket": "crew#213"
  },
  {
   "feature": "features/stale_pr.feature",
