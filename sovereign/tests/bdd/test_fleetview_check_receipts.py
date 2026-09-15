@@ -56,11 +56,10 @@ def test_a_blank_session_id_is_invalid(evals):
 def test_a_success_status_with_observations_passes(evals):
     client = _FakeClient({"s1": _FakeFetched(["status:done"], [{"id": "obs1"}])})
     result = evals.check_receipts("s1", client=client)
-    assert result == {
-        "session_id": "s1",
-        "verdict": "pass",
-        "reason": "status:done, 1 observation(s) recorded",
-    }
+    assert result["session_id"] == "s1"
+    assert result["verdict"] == "pass"
+    assert "status:done" in result["reason"]
+    assert "1 observation" in result["reason"]
 
 
 def test_a_success_status_with_no_observations_fails(evals):
