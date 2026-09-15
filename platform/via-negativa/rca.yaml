@@ -52,6 +52,17 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: { drop: [ALL] }
+          startupProbe:
+            exec: { command: ["test", "-f", "/tmp/rca-worker.ready"] }
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            exec: { command: ["test", "-f", "/tmp/rca-worker.ready"] }
+            periodSeconds: 15
+          livenessProbe:
+            exec: { command: ["test", "-f", "/tmp/rca-worker.ready"] }
+            periodSeconds: 30
+            failureThreshold: 3
           resources:
             requests: { cpu: 100m, memory: 128Mi }
             limits: { cpu: 500m, memory: 256Mi }

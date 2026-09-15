@@ -384,6 +384,11 @@ async def run_forever(
         if "BUSYGROUP" not in str(exc):
             raise
 
+    # Consumer group joined and schema applied -- the loop below can now make progress, so
+    # this is what the k8s probes in platform/via-negativa/rca.yaml exec-check for readiness
+    # and liveness (same convention as platform/temporal/worker.yaml's worker.ready).
+    Path("/tmp/rca-worker.ready").touch()  # noqa: S108 - container-local emptyDir, probed in-pod only, not shared/predictable across hosts
+
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
