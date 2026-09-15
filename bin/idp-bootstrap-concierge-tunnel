@@ -21,7 +21,7 @@
 # asks him to go and find.
 #
 # What it mints, all via the API, none of it typed by a person:
-#   1. A short-lived token scoped to Account:Cloudflare Tunnel:Edit (looked up by name, LAW 46).
+#   1. A short-lived token scoped to Account: Cloudflare Tunnel Read + Write (looked up by name, LAW 46).
 #   2. A remotely-managed Tunnel named "concierge" (POST /accounts/{account}/cfd_tunnel), whose
 #      token is what `cloudflared tunnel run --token ...` needs on the Mac -- no cert.pem, no
 #      credentials.json to copy by hand.
@@ -370,7 +370,7 @@ def main() -> None:
             fail("verify", f"the root token does not verify at {API}/user/tokens/verify")
         say("ok", "root", "root token verifies (User API Tokens: Edit)")
 
-        # 4. a single-purpose child: Account:Cloudflare Tunnel:Edit, looked up by name (LAW 46),
+        # 4. a single-purpose child: Account: Cloudflare Tunnel Read + Write, looked up by name (LAW 46),
         #    never typed. Held only for the length of this run and revoked in step 9.
         groups = cf(root, "GET", "/user/tokens/permission_groups")
 
@@ -380,25 +380,27 @@ def main() -> None:
                     return g["id"]
             return ""
 
-        tun_gid = gid("Cloudflare Tunnel", "com.cloudflare.api.account")
-        if not tun_gid:
+        # Cloudflare has since split the old combined "Cloudflare Tunnel:Edit" scope into two
+        # separate account-level groups; this run does GET (list/read token) and POST/PUT
+        # (create/configure), so it needs both (measured live, run 34997514190, idp#3537).
+        tun_gids = [gid(n, "com.cloudflare.api.account") for n in ("Cloudflare Tunnel Read", "Cloudflare Tunnel Write")]
+        if not all(tun_gids):
             # Names are metadata, not a secret (LAW 21 is about credential values, not group
             # labels) -- print what this account's token actually offers at account scope so the
-            # real name can be read straight out of the CI log instead of guessed blind (run
-            # 34996458292, idp#3537).
+            # real name can be read straight out of the CI log instead of guessed blind.
             account_names = sorted(
                 g["name"] for g in groups.get("result", []) if "com.cloudflare.api.account" in g.get("scopes", [])
             )
             fail(
                 "perms",
-                "no permission group 'Cloudflare Tunnel' (account) -- LAW 46. "
+                "no permission group 'Cloudflare Tunnel Read'/'Write' (account) -- LAW 46. "
                 f"account-scoped groups this token actually sees: {account_names}",
             )
         tunpol = [
             {
                 "effect": "allow",
                 "resources": {f"com.cloudflare.api.account.{account_id}": "*"},
-                "permission_groups": [{"id": tun_gid}],
+                "permission_groups": [{"id": g} for g in tun_gids],
             }
         ]
         tuntok_result = cf(root, "POST", "/user/tokens", {"name": f"estate-concierge-tunnel {hostname}", "policies": tunpol})
@@ -408,7 +410,7 @@ def main() -> None:
         tun_tok_id = tuntok_result["result"]["id"]
         if not verify(tun):
             fail("verify", "tunnel-mgmt token does not verify")
-        say("ok", "mint", f"tunnel-management token minted (account {account_id}, Cloudflare Tunnel:Edit)")
+        say("ok", "mint", f"tunnel-management token minted (account {account_id}, Cloudflare Tunnel Read+Write)")
 
         # 5. the tunnel itself: a remotely-managed tunnel (config_src=cloudflare) so `cloudflared
         #    tunnel run --token ...` needs no cert.pem/credentials.json on the Mac.
