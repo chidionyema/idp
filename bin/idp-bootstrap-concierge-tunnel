@@ -469,10 +469,15 @@ def main() -> None:
                 "TUNNEL_ID=V_ID",
             ],
             capture_output=True,
+            text=True,
             env={**os.environ, "ESTATE_ENV_FILE": str(env_path)},
         )
         if vault_write.returncode != 0:
-            fail("vault", "concierge-tunnel write refused")
+            # idp-vault-put prints key NAMES only, by its own header contract -- never a value --
+            # so its real stdout/stderr is safe to surface here instead of the generic one-liner
+            # that hid it (run 34998308859, idp#3537).
+            cause = (vault_write.stderr.strip() or vault_write.stdout.strip()).splitlines()
+            fail("vault", "concierge-tunnel write refused: " + (cause[-1][:200] if cause else "no output"))
 
         # 9. the single-purpose tunnel-mgmt token is revoked; the DNS token it borrowed was
         #    already standing and stays. A driver-born root dies with this process.
