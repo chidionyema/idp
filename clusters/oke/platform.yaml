@@ -925,6 +925,39 @@ spec:
       - kind: ConfigMap
         name: estate-config
 ---
+# Decision 0026 step 3: the storage capability -- XRD + Composition only, no Claim. Installing
+# this row creates zero cloud resources (a Composition is a template; nothing is provisioned
+# until something claims it), and nothing in the repo emits a Claim yet: bin/intent-compile's
+# compile_storage() only takes the crossplane branch when ESTATE_STORAGE_PROVIDER=crossplane,
+# and clusters/oke/estate-config.yaml still sets it to "oci". So this row is safe to run live
+# (not suspended): it makes the capability real and reviewable without touching production data.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane-storage-capability
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: crossplane-providerconfig
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/crossplane/capabilities/storage
+  prune: true
+  timeout: 5m
+  healthChecks:
+    - apiVersion: apiextensions.crossplane.io/v1
+      kind: CompositeResourceDefinition
+      name: xobjectstoragebuckets.storage.estate.io
+  postBuild:
+    substituteFrom:
+      # ${ESTATE_OCI_COMPARTMENT_OCID} / ${ESTATE_OCI_NAMESPACE}: composition-bucket.yaml patches
+      # these into every Bucket managed resource's forProvider block (measured 2026-09-15, see
+      # estate-config.yaml).
+      - kind: ConfigMap
+        name: estate-config
+---
 # crew#516 CP5 slice 1: the science lane's facts counted in the collector's backend, from inside
 # the cluster (platform/science/science-facts.yaml). Reader: bin/idp-science-facts.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
