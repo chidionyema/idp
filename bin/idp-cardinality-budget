@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Cardinality-budget gate for agent metrics (spec: 2026-09-15 metrics/CI-CD overhaul,
+Part A). Every metric name a real emitter creates over OTLP must have exactly one row in
+observability/agent-metrics.yaml naming its owner, cardinality budget, retention tier and
+consumer -- and every row with status: emitted must name a metric a real emitter creates.
+The two are graded against each other so they cannot drift apart, same discipline
+AGENTS.md's rules.yaml table already applies to itself.
+
+Deterministic, no model: this is a regex over `create_counter(`/`create_histogram(` call
+sites and a YAML parse of the manifest, nothing else.
+
+  idp-cardinality-budget --check [emitter.py ...] --manifest <path>
+  idp-cardinality-budget --self-test
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_EMITTERS = [ROOT / "sovereign" / "engine" / "metrics.py"]
+DEFAULT_MANIFEST = ROOT / "observability" / "agent-metrics.yaml"
+
+# Matches both a direct meter.create_counter("name", ...) / create_histogram("name", ...)
+# call and sovereign/engine/metrics.py's own _instrument("name", "counter"|"histogram", ...)
+# dispatch helper -- one real declaration site per metric, not a naming convention emitters
+# must each reimplement.
+_CALL_RE = re.compile(
+    r'(?:create_(?:counter|histogram)|_instrument)\(\s*["\']([a-zA-Z0-9_]+)["\']'
+)
+
+
+def _emitted_names(paths: list[Path]) -> set[str]:
+    names: set[str] = set()
+    for p in paths:
+        if not p.exists():
+            continue
+        names |= set(_CALL_RE.findall(p.read_text()))
+    return names
+
+
+def _manifest_rows(manifest: Path) -> list[dict]:
+    doc = yaml.safe_load(manifest.read_text()) or {}
+    return doc.get("metrics", []) or []
+
+
+def check(emitter_paths: list[Path], manifest: Path) -> tuple[bool, list[str]]:
+    problems: list[str] = []
+    emitted = _emitted_names(emitter_paths)
+    rows = _manifest_rows(manifest)
+    declared_emitted = {r["name"] for r in rows if r.get("status") == "emitted"}
+
+    for name in sorted(emitted - declared_emitted):
+        problems.append(
+            f"metric {name!r} is emitted in code but has no status: emitted row in {manifest}"
+        )
+    for name in sorted(declared_emitted - emitted):
+        problems.append(
+            f"manifest row {name!r} is status: emitted but no emitter creates it"
+        )
+
+    seen: dict[str, int] = {}
+    for r in rows:
+        seen[r["name"]] = seen.get(r["name"], 0) + 1
+    for name, count in seen.items():
+        if count > 1:
+            problems.append(
+                f"metric {name!r} has {count} rows in {manifest}, must have exactly one"
+            )
+
+    for r in rows:
+        if r.get("status") == "emitted":
+            for field in ("owner", "cardinality_budget", "retention_tier", "consumer"):
+                if not r.get(field):
+                    problems.append(
+                        f"metric {r['name']!r} is status: emitted but declares no {field}"
+                    )
+        elif r.get("status") == "declared_not_emitted":
+            if not r.get("reason"):
+                problems.append(
+                    f"metric {r['name']!r} is declared_not_emitted but names no reason"
+                )
+        else:
+            problems.append(
+                f"metric {r.get('name')!r} has unknown status {r.get('status')!r}"
+            )
+
+    return (not problems, problems)
+
+
+def _self_test() -> int:
+    root = ROOT / "tests" / "fixtures" / "cardinality-budget"
+    bad_dir, good_dir = root / "bad", root / "good"
+    if not bad_dir.exists() or not good_dir.exists():
+        print(f"SKIP cardinality-budget --self-test: fixtures not found under {root}")
+        return 0
+
+    ok_bad, _ = check([bad_dir / "emitter.py"], bad_dir / "manifest.yaml")
+    if ok_bad:
+        print(
+            "FAIL cardinality-budget --self-test: bad fixture should have been refused and was not"
+        )
+        return 1
+
+    ok_good, problems = check([good_dir / "emitter.py"], good_dir / "manifest.yaml")
+    if not ok_good:
+        print(
+            f"FAIL cardinality-budget --self-test: good fixture should have passed and was refused: {problems}"
+        )
+        return 1
+
+    print(
+        "ok   cardinality-budget --self-test: bad fixture refused, good fixture passed"
+    )
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) > 1 and argv[1] in ("--help", "-h"):
+        print(__doc__)
+        return 0
+    if len(argv) > 1 and argv[1] == "--self-test":
+        return _self_test()
+
+    emitter_paths = list(DEFAULT_EMITTERS)
+    manifest = DEFAULT_MANIFEST
+    if "--manifest" in argv:
+        manifest = Path(argv[argv.index("--manifest") + 1])
+    positional = [a for a in argv[1:] if not a.startswith("--") and a != str(manifest)]
+    if positional:
+        emitter_paths = [Path(p) for p in positional]
+
+    ok, problems = check(emitter_paths, manifest)
+    if not ok:
+        for p in problems:
+            print(f"FAIL: {p}")
+        return 1
+    print(
+        f"ok   cardinality-budget: {len(_emitted_names(emitter_paths))} emitted metric(s) match {manifest}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

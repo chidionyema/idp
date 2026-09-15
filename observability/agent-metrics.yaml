@@ -1,0 +1,152 @@
+# Cardinality-budget contract for agent-level metrics (spec: 2026-09-15 metrics/CI-CD
+# overhaul, Part A -- "the same contract-graph idea applied to telemetry"). Every metric
+# name sovereign/engine/metrics.py emits over OTLP is declared here, once, with an owner,
+# a cardinality budget (max distinct label-value combinations expected), a retention tier
+# and the consumer that reads it. bin/idp-cardinality-budget (rules.yaml row
+# "cardinality-budget") greps sovereign/engine/metrics.py for every `create_counter(` /
+# `create_histogram(` call and refuses a run where a name in the code has no row here, or a
+# row here names a metric no code emits -- the two cannot drift apart, same discipline as
+# the AGENTS.md rules table.
+#
+# `status: emitted` rows are real and flowing today (see sovereign/engine/metrics.py's own
+# module docstring for exactly which activity call site produces each one).
+# `status: declared_not_emitted` rows are the spec's named metrics this engine cannot yet
+# produce, with the real reason it cannot -- listed so the gap is visible instead of silent.
+
+metrics:
+  - name: agent_turn_total
+    status: emitted
+    owner: sovereign-engine
+    kind: counter
+    labels: [runner, status]
+    cardinality_budget: 50   # small fixed set of runners x FSM terminal statuses
+    retention_tier: standard
+    consumer: SigNoz (otlphttp/signoz pipeline, observability/otel-collector.yaml)
+
+  - name: agent_turn_duration_seconds
+    status: emitted
+    owner: sovereign-engine
+    kind: histogram
+    labels: [runner]
+    cardinality_budget: 10
+    retention_tier: standard
+    consumer: SigNoz
+
+  - name: agent_wall_clock_seconds
+    status: emitted
+    owner: sovereign-engine
+    kind: counter
+    labels: [runner]
+    cardinality_budget: 10
+    retention_tier: standard
+    consumer: SigNoz
+
+  - name: agent_tokens_total
+    status: emitted
+    owner: sovereign-engine
+    kind: counter
+    labels: [runner]
+    cardinality_budget: 10
+    retention_tier: standard
+    consumer: SigNoz
+    note: >
+      One undifferentiated figure (runners.py's real usage or its
+      len(output)//divisor estimate). Not the spec's split names below.
+
+  - name: agent_tokens_input_total
+    status: declared_not_emitted
+    reason: >
+      runners.py's RunnerFn contract returns one `tokens` field, never a
+      provider-reported input/output split; no runner in sovereign/engine/runners.py
+      distinguishes them today.
+
+  - name: agent_tokens_output_total
+    status: declared_not_emitted
+    reason: same as agent_tokens_input_total
+
+  - name: agent_tokens_cached_total
+    status: declared_not_emitted
+    reason: no runner reports a cache-hit token count
+
+  - name: agent_cost_usd_total
+    status: declared_not_emitted
+    reason: >
+      sovereign/engine/budget.py tracks tokens against a per-day USD ceiling
+      (AGENTS.md [budget.usd_per_day]) but a step's result never carries a
+      $-denominated cost, only a token count; no per-model $/token table is
+      wired to the engine.
+
+  - name: agent_tool_call_total
+    status: declared_not_emitted
+    reason: >
+      An individual tool call happens inside the vendor CLI subprocess a
+      runner shells out to. LAW 34 ("Runner registry: the only place in the
+      engine where a vendor CLI or model name appears") keeps that CLI
+      opaque past its own stdout -- this engine sees one step, not the tool
+      calls inside it.
+
+  - name: agent_tool_call_duration_seconds
+    status: declared_not_emitted
+    reason: same opacity boundary as agent_tool_call_total
+
+  - name: agent_reasoning_tokens_total
+    status: declared_not_emitted
+    reason: not reported by any runner
+
+  - name: agent_context_size_tokens
+    status: declared_not_emitted
+    reason: not tracked by this engine
+
+  - name: agent_compaction_total
+    status: declared_not_emitted
+    reason: this engine has no compaction step to count
+
+  - name: agent_compaction_tokens_lost
+    status: declared_not_emitted
+    reason: same as agent_compaction_total
+
+  - name: agent_mailbox_reads_total
+    status: declared_not_emitted
+    reason: no mailbox abstraction exists in sovereign/engine today
+
+  - name: agent_commit_total
+    status: declared_not_emitted
+    reason: >
+      activities.run_step already computes a real commit hash (before/after
+      gitops.head diff) -- this is the next metric to wire, not a gap in
+      what the engine knows, just in what it has emitted so far.
+
+  - name: agent_verification_latency_seconds
+    status: declared_not_emitted
+    reason: >
+      bin/idp-verifier-oath's three graders (structural/symbolic/execution)
+      run outside sovereign/engine entirely, in the CI gate plane -- no
+      timing from that path is piped back into this metrics module yet.
+
+  - name: agent_repair_loops_total
+    status: declared_not_emitted
+    reason: >
+      sovereign/engine/fsm.py counts cycles (CyclePause) but runs inside the
+      Temporal workflow sandbox, which may take no side effect (its own
+      docstring: "no Temporal import, no disk, no clock"). Emitting a metric
+      there would risk workflow replay determinism. Needs the count moved
+      into an activity first; not done in this pass.
+
+  - name: agent_policy_violation_total
+    status: declared_not_emitted
+    reason: >
+      policy violations are refused and receipted (bin/idp-rules, rules.yaml
+      planes) but the refusal is never mirrored to a metric today.
+
+  - name: agent_hallucination_proxy_total
+    status: declared_not_emitted
+    reason: >
+      bin/idp-epistemic grades this deterministically per rules.yaml
+      (label: epistemic) but its verdict is a CI exit code, not a metric.
+
+  - name: agent_speculation_depth
+    status: declared_not_emitted
+    reason: >
+      no speculative-execution / pre-merge batch path exists yet (Part B of
+      the spec, "Speculate" lever) -- there is nothing to measure the depth
+      of.

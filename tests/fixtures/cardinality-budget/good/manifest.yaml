@@ -1,0 +1,11 @@
+metrics:
+  - name: agent_turn_total
+    status: emitted
+    owner: sovereign-engine
+    cardinality_budget: 50
+    retention_tier: standard
+    consumer: SigNoz
+
+  - name: agent_cost_usd_total
+    status: declared_not_emitted
+    reason: no per-model $/token table is wired to the engine yet

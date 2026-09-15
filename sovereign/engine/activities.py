@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import time
 from typing import Any
 
 from temporalio import activity
@@ -28,6 +29,7 @@ from sovereign import config
 from sovereign.engine import budget
 from sovereign.engine import gitops
 from sovereign.engine import interventions as interventions_mod
+from sovereign.engine import metrics
 from sovereign.engine import receipts as receipts_mod
 from sovereign.engine import runners
 from sovereign.engine import tracing
@@ -45,17 +47,23 @@ async def run_step(inp: dict[str, Any]) -> dict[str, Any]:
     changed nothing, so a receipt never claims a commit that a later step
     actually produced."""
     repo = inp.get("repo")
+    runner_name = inp["runner"]
     before = (
         await asyncio.to_thread(gitops.head, repo) if gitops.is_repo(repo) else None
     )
+    started = time.monotonic()
     result = await runners.run(
-        inp["runner"],
+        runner_name,
         inp["task"],
         repo,
         inp["step"],
         inp.get("steer") or [],
         session_id=inp.get("session_id"),
     )
+    elapsed = time.monotonic() - started
+    metrics.turn_duration(runner_name, elapsed)
+    metrics.wall_clock(runner_name, elapsed)
+    metrics.tokens(runner_name, int(result.get("tokens", 0)))
     after = await asyncio.to_thread(gitops.head, repo) if gitops.is_repo(repo) else None
     result = dict(result)
     result["commit"] = after if after and after != before else None
@@ -127,6 +135,7 @@ async def notify_change(state: dict[str, Any]) -> dict[str, int]:
         state.get("status", ""),
         {"step": state.get("step", 0), "asking": state.get("asking")},
     )
+    metrics.turn(state.get("runner", ""), state.get("status", ""))
     try:
         from sovereign.otto import card  # type: ignore
 

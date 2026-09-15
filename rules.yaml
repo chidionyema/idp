@@ -2710,3 +2710,33 @@ rules:
       line 227 invokes it. A root-cwd run dies on import with IndexError: list index out of range.'
   ok: a patch is admitted only through the three-stage gauntlet, the ledger is the only place an agent can write, and the seal binds the attestation to the bytes that were actually graded (measured 2026-09-13, 9 passed, PYTEST_RC=0)
   fail: a claim of completed work reaches the estate on the word of the agent that made it, with no structural, symbolic or execution grader in front of it, or an attestation whose subject is not the SHA-256 of the graded artifact
+- id: cardinality-budget
+  label: cardinality-budget
+  statement: 'Every metric name sovereign/engine/metrics.py emits over OTLP is declared exactly once in observability/agent-metrics.yaml with an owner, a cardinality budget, a retention tier and a consumer, and every row that manifest marks status:emitted names a metric a real emitter creates -- the same contract-graph discipline this file''s own render-agents-md check already applies to rules.yaml itself, applied to telemetry (spec 2026-09-15, metrics/CI-CD overhaul Part A)'
+  law: founder spec 2026-09-15, "the same contract-graph idea applied to telemetry"
+  origin: docs decision -- the metrics/observability half of the 2026-09-15 pasted spec named a cardinality-budget governance model with zero implementation in the repo as of that date
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-cardinality-budget
+  - --check
+  fixtures:
+    must_fail: tests/fixtures/cardinality-budget/bad
+    must_pass: tests/fixtures/cardinality-budget/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/cardinality-budget/bad/emitter.py
+    - --manifest
+    - tests/fixtures/cardinality-budget/bad/manifest.yaml
+  - expect: pass
+    args:
+    - tests/fixtures/cardinality-budget/good/emitter.py
+    - --manifest
+    - tests/fixtures/cardinality-budget/good/manifest.yaml
+  - expect: pass
+    live: true
+    note: graded against the real sovereign/engine/metrics.py and observability/agent-metrics.yaml, not only the fixtures above
+  ok: a metric emitted in code always has a governance row, and a governance row marked emitted always corresponds to a real emitter, so telemetry cardinality cannot grow un-owned
+  fail: a metric ships with no owner/budget/retention/consumer, or a manifest row claims a metric that no code emits -- either way the manifest and the code have drifted apart

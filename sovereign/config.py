@@ -268,6 +268,8 @@ KEYS: dict[str, KeySpec] = {
     "langfuse.public_key": KeySpec(_ENV_FILE_VALUES.get("LANGFUSE_PUBLIC_KEY"), "str", "LANGFUSE_PUBLIC_KEY", "", secret=True),
     "langfuse.secret_key": KeySpec(_ENV_FILE_VALUES.get("LANGFUSE_SECRET_KEY"), "str", "LANGFUSE_SECRET_KEY", "", secret=True),
 
+    "otel.otlp_endpoint": KeySpec(_ENV_FILE_VALUES.get("OTEL_EXPORTER_OTLP_ENDPOINT"), "str", "OTEL_EXPORTER_OTLP_ENDPOINT", "standard OTel SDK env var; the same otlp receiver observability/otel-collector.yaml already declares. Absent means sovereign.engine.metrics is a no-op (same guard shape as Langfuse tracing)."),
+
     "litellm.base_url": KeySpec(_secret("LITELLM_BASE_URL"), "str", "LITELLM_BASE_URL", "from the estate secret store (secrets/<env>/LITELLM_BASE_URL.yaml), estate.env as the fallback"),
     "litellm.api_key": KeySpec(_secret("LITELLM_API_KEY"), "str", "LITELLM_API_KEY", "a budgeted LiteLLM virtual key (alias sovereign-kernel), never the proxy master key; from the secret store", secret=True),
     "litellm.chat_completions_path": KeySpec("/chat/completions", "str", "LITELLM_CHAT_COMPLETIONS_PATH", ""),
@@ -731,6 +733,8 @@ LANGFUSE_HOST: str | None = _R["langfuse.host"].value
 LANGFUSE_PUBLIC_KEY: str | None = _R["langfuse.public_key"].value
 LANGFUSE_SECRET_KEY: str | None = _R["langfuse.secret_key"].value
 
+OTEL_EXPORTER_OTLP_ENDPOINT: str | None = _R["otel.otlp_endpoint"].value
+
 LITELLM_BASE_URL: str | None = _R["litellm.base_url"].value
 LITELLM_API_KEY: str | None = _R["litellm.api_key"].value
 LITELLM_CHAT_COMPLETIONS_PATH: str = _R["litellm.chat_completions_path"].value
@@ -773,7 +777,7 @@ FLIP_RECEIPT_TEMPLATE: str = _R["flip.receipt_template"].value
 FLIP_ROLLBACK_RECEIPT_TEMPLATE: str = _R["flip.rollback_receipt_template"].value
 FLIP_HASH_CHUNK_BYTES: int = _R["flip.hash_chunk_bytes"].value
 PROJECTION_STORE_PATH: Path = Path(_R["projection.store_path"].value)
-REBUILD_RECEIPT_TEMPLATE: str = _R["rebuild.receipt_template"].value,
+REBUILD_RECEIPT_TEMPLATE: str = _R["rebuild.receipt_template"].value
 CROSS_STACK_GIT_TIMEOUT_S: int = _R["cross_stack.git_timeout_s"].value
 
 TEMPORAL_PID_FILE: Path = ESTATE_HOME / "temporal" / "dev-server.pid"

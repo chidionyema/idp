@@ -40,3 +40,11 @@ PyYAML>=6.0
 redis>=5.0
 prometheus_client>=0.19.0
 requests>=2.31
+# sovereign/engine/metrics.py emits agent_turn_total / agent_turn_duration_seconds /
+# agent_wall_clock_seconds / agent_tokens_total over OTLP to the collector
+# observability/otel-collector.yaml already runs (otlp receiver -> SigNoz). Guarded like
+# langfuse above: metrics.py catches ImportError and no-ops rather than crashing a step if
+# these are absent, so -- unlike cryptography/z3-solver/PyYAML/redis above -- an undeclared
+# copy fails silent-safe, not closed. Declared anyway so the real signal actually ships.
+opentelemetry-sdk>=1.27
+opentelemetry-exporter-otlp-proto-http>=1.27
