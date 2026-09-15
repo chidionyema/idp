@@ -169,6 +169,24 @@ jobs:
     cron: '17 */4 * * *'
     timeout_s: 600
     skip_on_battery: true
+  ai.estate.router-key-reap-orphans:
+    # crew#539 CP7 follow-up (2026-09-15): bin/idp-router-key mints a live key at the proxy
+    # before its vault write, so a write failure between the two strands an accepted,
+    # zero-spend key nothing points at (laptop-20260915T010852Z). The mint path now revokes on
+    # that failure, so a fresh orphan can no longer be created this way -- but --reap-orphans
+    # still has to sweep any that already exist or slip through some other path. runs_on: mac,
+    # not cluster: the script authenticates to the vault the same way every other idp-cloud
+    # caller on this box does (OCI_CLI_AUTH=security_token, this Mac's own session), which no
+    # cluster pod has -- unlike the warden job above, which only reads a mounted Secret file.
+    runs_on: mac
+    runs_on_ref: crew#539 CP7
+    command:
+    - $IDP/bin/idp-router-key
+    - --reap-orphans
+    cron: '52 5 * * *'
+    cwd: $IDP
+    skip_on_battery: false
+    timeout_s: 300
   ai.hermes.runaway-reaper:
     runs_on: retire
     runs_on_ref: crew#516 CP4
