@@ -37,7 +37,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: proxy
-          image: ghcr.io/chidionyema/negative-constraints-proxy:main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:negative-constraints-proxy:tag"}
+          image: ghcr.io/chidionyema/negative-constraints-proxy
           # distroless/static: no shell to compose REDIS_URL before exec, and Kyverno
           # secrets-not-from-env-vars refuses the password as pod env either way. The redis
           # password rides a mounted file instead; REDIS_PASSWORD_FILE tells the binary itself
