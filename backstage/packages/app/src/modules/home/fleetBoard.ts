@@ -55,6 +55,9 @@ export type Board = {
    *  reads that as unrelated noise. Naming the correlation is what turns "three unlucky agents"
    *  into "check the shared cause first." */
   correlatedFailure: CorrelatedFailure | null;
+  /** Sessions that need a human's attention right now, ranked -- see needsAttention. Empty is the
+   *  healthy answer. */
+  attention: Session[];
 };
 
 export type RuntimeCount = {
@@ -83,6 +86,55 @@ export type Note = {
   created_at: string;
   read_at: string | null;
 };
+
+/** One recorded nudge attempt for a session, from the FleetView signals audit trail
+ *  (`fleetview-backend/src/signals.py`'s `signals_for`). Every attempt is recorded, success or
+ *  failure -- `ok: false` is not dropped, it is the honest record of what was tried. */
+export type Signal = {
+  id: number;
+  session_id: string;
+  runtime: string;
+  kind: string;
+  by: string;
+  text: string;
+  ok: boolean;
+  error: string | null;
+  created_at: string;
+};
+
+export type TimelineEntry =
+  | { kind: 'note'; created_at: string; author: string; text: string }
+  | {
+      kind: 'signal';
+      created_at: string;
+      by: string;
+      text: string;
+      ok: boolean;
+      error: string | null;
+    };
+
+/** Notes and signals merged into one chronological read of what happened to a session, oldest
+ *  first. Every entry is a real, already-recorded row from notes.py or signals.py -- nothing here
+ *  is synthesized, only interleaved by timestamp. */
+export function timelineFor(notes: Note[], signals: Signal[]): TimelineEntry[] {
+  const entries: TimelineEntry[] = [
+    ...notes.map(n => ({
+      kind: 'note' as const,
+      created_at: n.created_at,
+      author: n.author,
+      text: n.note,
+    })),
+    ...signals.map(s => ({
+      kind: 'signal' as const,
+      created_at: s.created_at,
+      by: s.by,
+      text: s.text,
+      ok: s.ok,
+      error: s.error,
+    })),
+  ];
+  return entries.sort((a, b) => a.created_at.localeCompare(b.created_at));
+}
 
 const CORRELATION_WINDOW_MINUTES = 15;
 
@@ -159,6 +211,37 @@ export function order(sessions: Session[]): Session[] {
   });
 }
 
+export type AttentionReason = 'failed' | 'stale';
+
+/** Why a session needs a human's attention right now, or null if it does not. Built from the two
+ *  real signals the board already measures -- a failed state, and isStale's elapsed-time claim --
+ *  never a new heuristic invented for this grouping alone. */
+export function attentionReason(
+  session: Session,
+  now: Date = new Date(),
+): AttentionReason | null {
+  if (session.state === 'failed') return 'failed';
+  if (isStale(session, now)) return 'stale';
+  return null;
+}
+
+const ATTENTION_RANK: Record<AttentionReason, number> = { failed: 0, stale: 1 };
+
+/** Sessions that need attention right now, grouped ahead of the rest: failed (nothing recoverable
+ *  is happening) before stale (still running, just quiet), each group most-recently-updated
+ *  first. This is the order a person should look at them in, not table order. */
+export function needsAttention(sessions: Session[], now: Date = new Date()): Session[] {
+  return sessions
+    .map(s => ({ s, reason: attentionReason(s, now) }))
+    .filter((x): x is { s: Session; reason: AttentionReason } => x.reason !== null)
+    .sort((a, b) => {
+      const rank = ATTENTION_RANK[a.reason] - ATTENTION_RANK[b.reason];
+      if (rank !== 0) return rank;
+      return String(b.s.updated_at ?? '').localeCompare(String(a.s.updated_at ?? ''));
+    })
+    .map(x => x.s);
+}
+
 export function summarise(
   envelope: SessionsEnvelope | null | undefined,
   now: Date = new Date(),
@@ -171,6 +254,7 @@ export function summarise(
       unreachable: [],
       byRuntime: [],
       correlatedFailure: null,
+      attention: [],
     };
   }
 
@@ -184,6 +268,7 @@ export function summarise(
       unreachable: envelope.unreachable ?? [],
       byRuntime: [],
       correlatedFailure: null,
+      attention: [],
     };
   }
 
@@ -200,6 +285,7 @@ export function summarise(
       unreachable,
       byRuntime: [],
       correlatedFailure: null,
+      attention: [],
     };
   }
 
@@ -221,6 +307,7 @@ export function summarise(
     unreachable,
     byRuntime: runtimeCounts(sessions),
     correlatedFailure: correlatedFailure(sessions, now),
+    attention: needsAttention(sessions, now),
   };
 }
 
