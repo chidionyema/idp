@@ -55,3 +55,15 @@ da4c11b18aa665b52c22e39c73dae46d96bfc1a3:platform/human-vault-bridge/externalsec
 1e1d9f68986d3a6e1710a6703e77b658e2425b44:tests/test_warden_job.py:generic-api-key:146
 1e1d9f68986d3a6e1710a6703e77b658e2425b44:tests/test_warden_job.py:generic-api-key:157
 1e1d9f68986d3a6e1710a6703e77b658e2425b44:tests/test_warden_job.py:generic-api-key:159
+
+# ab6c306c3a41406e3212591415f1b6ac6b3eaa01 is #3494's own squash-merge-into-main SHA for the
+# same vendor-key-warden finding fingerprinted above under da4c11b1 (its pre-merge feature-branch
+# SHA) -- same class as d66c1b26/e4438a07/51fd812f above: gitleaks fingerprints by commit SHA,
+# and the squash merge that landed CP3 on main (2026-09-15, #3494) re-lands these four lines
+# under the SHA main actually carries them at. Same finding, not a new one -- main's own
+# security-scan run (34931739718) went red on this because the merge SHA could not be known
+# and ignored until after the merge that created it.
+ab6c306c3a41406e3212591415f1b6ac6b3eaa01:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:509
+ab6c306c3a41406e3212591415f1b6ac6b3eaa01:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:510
+ab6c306c3a41406e3212591415f1b6ac6b3eaa01:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:511
+ab6c306c3a41406e3212591415f1b6ac6b3eaa01:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:512
