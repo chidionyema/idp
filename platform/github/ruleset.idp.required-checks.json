@@ -17,13 +17,31 @@
         "strict_required_status_checks_policy": true,
         "required_status_checks": [
           {
-            "context": "offline-gate"
-          },
-          {
             "context": "bdd"
           },
           {
+            "context": "bdd-suites (tests)"
+          },
+          {
+            "context": "bdd-suites (acceptance)"
+          },
+          {
             "context": "security-scan"
+          },
+          {
+            "context": "fast-gate / fast-gate"
+          },
+          {
+            "context": "executes-gate"
+          },
+          {
+            "context": "portal-app"
+          },
+          {
+            "context": "messaging-demo"
+          },
+          {
+            "context": "offline-gate"
           }
         ]
       }
