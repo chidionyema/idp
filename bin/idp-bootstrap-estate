@@ -14,7 +14,11 @@
 set -uo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 MODE=${1:-run}
-case "$MODE" in run|--preflight) ;; *) sed -n 2,4p "$0"; exit 2;; esac
+case "$MODE" in
+  run|--preflight) ;;
+  -h|--help) sed -n 2,4p "$0"; exit 0;;
+  *) sed -n 2,4p "$0"; exit 2;;
+esac
 ARG=""; [ "$MODE" = --preflight ] && ARG=--preflight
 STEPS="idp-estate-seed idp-bootstrap-tailscale idp-bootstrap-cloudflare idp-bootstrap-vendors"
 rc=0
