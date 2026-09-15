@@ -186,10 +186,20 @@ def read_zone() -> str:
     return ""  # unreachable, keeps type-checkers happy
 
 
-def ensure_oci_session() -> str:
-    proc = run([str(IDP / "bin" / "idp-oci-whoami")], capture_output=True, text=True)
-    if proc.returncode == 0 and proc.stdout.strip():
-        return proc.stdout.strip()
+def ensure_oci_session() -> tuple[str, str]:
+    # idp-oci-whoami only exports the right OCI_CLI_AUTH (api_key vs security_token) when
+    # sourced -- a plain subprocess call only gives back the profile name on stdout, and
+    # assuming security_token for an API-key fallback profile (e.g. DEFAULT) breaks every
+    # OCI call after it. Source it in a throwaway shell and read both vars back.
+    probe = run(
+        ["bash", "-c", f'source "{IDP}/bin/idp-oci-whoami" >&2 && printf "%s\\n%s\\n" "$OCI_CLI_PROFILE" "$OCI_CLI_AUTH"'],
+        capture_output=True,
+        text=True,
+    )
+    if probe.returncode == 0:
+        lines = probe.stdout.strip().splitlines()
+        if len(lines) >= 2 and lines[0]:
+            return lines[0], lines[1]
     common_dir = run(
         ["git", "-C", str(IDP), "rev-parse", "--path-format=absolute", "--git-common-dir"],
         capture_output=True,
@@ -211,16 +221,16 @@ def ensure_oci_session() -> str:
     if not region or not tenancy:
         bl("oci", f"no live session and no OCI_REGION / OCI_TENANCY_NAME in {sv}")
     say("", "oci", "no live session: the browser opens once for OCI SSO")
-    auth = run(
+    auth_result = run(
         ["oci", "session", "authenticate", "--region", region, "--tenancy-name", tenancy, "--profile-name", "estate-bootstrap"],
         capture_output=True,
     )
-    if auth.returncode != 0:
+    if auth_result.returncode != 0:
         bl("oci", "session sign-in did not complete")
     proc = run([str(IDP / "bin" / "idp-oci-whoami")], capture_output=True, text=True)
     if proc.returncode != 0 or not proc.stdout.strip():
         bl("oci", "signed in, but no session profile is live")
-    return proc.stdout.strip()
+    return proc.stdout.strip(), "security_token"
 
 
 def ensure_driver(py: Path) -> None:
@@ -281,9 +291,9 @@ def main() -> None:
     ensure_driver(py)
 
     # 1. the vault first (same OCI SSO fallback as bin/idp-bootstrap-cloudflare)
-    oci_profile = ensure_oci_session()
+    oci_profile, oci_auth = ensure_oci_session()
     os.environ["OCI_CLI_PROFILE"] = oci_profile
-    os.environ["OCI_CLI_AUTH"] = "security_token"
+    os.environ["OCI_CLI_AUTH"] = oci_auth
     preflight = run(
         [str(IDP / "bin" / "idp-vault-put"), "concierge-tunnel", "--preflight"],
         capture_output=True,
