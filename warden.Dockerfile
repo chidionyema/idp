@@ -8,6 +8,13 @@
 # estate-scheduler.Dockerfile, the existing pattern for an image whose sources cross
 # directory boundaries, so its context is the whole repository.
 FROM python:3.12-slim
+# The base is a floating Debian tag, so its packages move under the build. On 2026-09-12 an
+# upstream rebuild shipped perl-base 5.40.1-6, which carries three CRITICAL CVEs
+# (CVE-2026-13221, CVE-2026-42496, CVE-2026-8376); the fix is the Debian point release
+# 5.40.1-6+deb13u1 (same defect and fix as sovereign-worker.Dockerfile, which shares this base).
+RUN apt-get update \
+ && apt-get upgrade -y \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
