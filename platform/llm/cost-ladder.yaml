@@ -16,6 +16,14 @@
 # founder-supplied-unverified until D1/D4 (spec section 7) are resolved
 # against the vendor's own pricing page. That is why COST-03's own ACCEPT
 # line calls this a "proposal", never an automatic activation.
+#
+# hardware_class / activation_floor_minutes / cold_start_budget_ms (idp#3525
+# CP2, JIT-01/JIT-02): apple_silicon tiers carry Apple's own 24h-minimum
+# licensing term as activation_floor_minutes=1440 -- not a vendor policy this
+# estate chose, a term it is bound by (S3 §1) -- while gpu tiers bill
+# per-second and MUST NOT declare a floor at all.
+# sovereign/engine/jit_provisioning.py refuses to load a ladder where a
+# tier's hardware_class and activation_floor_minutes disagree.
 version: 1
 
 rungs:
@@ -25,6 +33,9 @@ rungs:
     activation_mode: always_on
     usd_per_month: 0.0
     source: "platform/llm/ollama.yaml, OCI A1 always-free pool"
+    hardware_class: local
+    activation_floor_minutes: 0
+    cold_start_budget_ms: 2000
 
   - rung: 1
     name: router_metered
@@ -33,6 +44,9 @@ rungs:
     input_cost_per_token: 0.0000003
     output_cost_per_token: 0.0000012
     source: "platform/llm/config.yaml (MiniMax default lane), AGENTS.md budget.usd_per_day.litellm"
+    hardware_class: router
+    activation_floor_minutes: 0
+    cold_start_budget_ms: 3000
 
   - rung: 2
     name: flat_rate_apple_silicon
@@ -40,6 +54,9 @@ rungs:
     activation_mode: breakeven_gated
     usd_per_month: 69.0
     source: "founder email 2026-09-14 (Hetzner ~EUR64/mo, 32GB M2 Pro); not cross-checked against Hetzner's own pricing page (D1)"
+    hardware_class: apple_silicon
+    activation_floor_minutes: 1440
+    cold_start_budget_ms: 5000
 
   - rung: 3
     name: gpu_burst_vast_ai
@@ -48,3 +65,6 @@ rungs:
     usd_per_month_low: 73.0
     usd_per_month_high: 146.0
     source: "founder email 2026-09-14, Vast.ai RTX 3090 24/7 @ $0.10-0.20/hr; not re-pulled from Vast.ai's live marketplace (D4)"
+    hardware_class: gpu
+    activation_floor_minutes: 0
+    cold_start_budget_ms: 8000
