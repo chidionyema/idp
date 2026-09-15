@@ -1,0 +1,63 @@
+# The mutations-relay door: serve.py's second, 0.0.0.0-bound app (executor_link.py, port 8091),
+# reachable from the founder's own tailnet devices so `platform/executor/fleetview_register.py`
+# running on his Mac can long-poll it and answer /mutations, /mutations/approve, /mutations/reject
+# with the same local mutations.py calls that machine already makes correctly. The executor
+# daemon and its ledger stay laptop-side (live_worktree() ties every mutation to that real,
+# on-disk checkout -- no cluster Pod can replicate it); this door only carries the relay, per
+# executor_link.py's own docstring (LAW 43: no second gauntlet, no second transport).
+#
+# Same shape as platform/jit/deployment.yaml's Service, for the same reason: the tailnet is the
+# identity layer that already exists here, it is federated, and platform/tailscale/policy.hujson
+# is deny-by-default, so the ACL is the authentication -- not a hand-rolled X.509/mTLS scheme.
+# That gap (Tailscale/WireGuard node auth, not literal client-cert mTLS) is named in the PR's
+# `Not done:` line, not hidden.
+#
+# tag:estate-fleetview-executor rather than the operator's default tag:k8s, for the same reason
+# tag:estate-jit carries its own tag: a rule naming tag:k8s:8091 would open that port on every
+# egress proxy in the tailnet, not just this one. Owned by tag:k8s because the root OAuth client
+# carries tag:k8s and a client may only request tags its own tags own (tailscale kb/1215) --
+# platform/tailscale/policy.hujson's tagOwners carries the matching row.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fleetview-executor
+  namespace: backstage
+  # layer-backstage, not a made-up layer-fleetview: bin/catalog-platform's LAYERS dict has no
+  # fleetview row (this container is a sidecar inside the same Kustomization/layer, not its own
+  # Kustomization), and require-catalogue-entity.yaml (crew#307) exists precisely so a label
+  # cannot point at an entity nobody can open in Backstage -- layer-backstage is real and this
+  # door is genuinely part of it.
+  labels: {backstage.io/kubernetes-id: layer-backstage}
+  annotations:
+    tailscale.com/expose: "true"
+    tailscale.com/hostname: fleetview-executor
+    tailscale.com/tags: tag:estate-fleetview-executor
+spec:
+  selector: {app.kubernetes.io/name: catalogue}
+  ports:
+    - {name: fv-executor, port: 8091, targetPort: fv-executor}
+---
+# Hand-written and port-scoped, not the generic platform/ns-fences/allowances.yaml generator:
+# that generator is namespace-grained, and widening the backstage row there would open every
+# port in this namespace to the tailscale namespace, not just 8091. Mirrors
+# platform/jit/fence.yaml's "the-one-that-may-speak-to-the-broker" policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: the-one-that-may-speak-to-the-fleetview-executor
+  namespace: backstage
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: catalogue}
+  policyTypes: [Ingress]
+  ingress:
+    # The tailnet, asking from outside the cluster. The Service above carries
+    # tailscale.com/expose, so the operator runs an ingress proxy in namespace `tailscale` and
+    # that proxy is what dials this port -- the tailnet peer never appears as a pod. Who may
+    # reach the proxy is decided a layer above, by platform/tailscale/policy.hujson, which
+    # names tag:founder-mac as the only source permitted to reach tag:estate-fleetview-executor
+    # at all.
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: tailscale}
+      ports: [{protocol: TCP, port: 8091}]

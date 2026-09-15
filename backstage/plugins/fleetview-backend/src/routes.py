@@ -57,6 +57,7 @@ nothing about a machine's layout is typed here.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 # The plugin's own module. Imported by path so the portal's build does not need a workspace entry
@@ -71,6 +72,7 @@ _BLAST_MODULE = Path(__file__).resolve().parent / "blast.py"
 _GRAPH_MODULE = Path(__file__).resolve().parent / "graph.py"
 _EVALS_MODULE = Path(__file__).resolve().parent / "evals.py"
 _MUTATIONS_MODULE = Path(__file__).resolve().parent / "mutations.py"
+_EXECUTOR_LINK_MODULE = Path(__file__).resolve().parent / "executor_link.py"
 
 
 def _load(path: Path, name: str):
@@ -110,6 +112,37 @@ def _evals():
 
 def _mutations():
     return _load(_MUTATIONS_MODULE, "fleetview_mutations_impl")
+
+
+def _executor_link():
+    """`executor_link.py` carries process-wide state (the one laptop connection, its pending
+    replies) -- unlike every other `_load`-by-path helper above, this one MUST return the same
+    module object every call, and the same object `serve.py`'s executor app holds, or the two
+    halves of the relay would each keep their own, disconnected copy of "is a laptop connected".
+    Cached in `sys.modules` under a fixed name so whichever of routes.py/serve.py loads it first
+    wins and the other reuses it -- the same singleton-via-sys.modules idiom a normal `import`
+    gives for free, without needing this plugin's path-loaded files to become a real package."""
+    import sys
+
+    name = "fleetview_executor_link_impl"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(name, _EXECUTOR_LINK_MODULE)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load module at {_EXECUTOR_LINK_MODULE}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _relay_mode() -> bool:
+    """FLEETVIEW_EXECUTOR_MODE=relay is set only by the cluster deployment's sidecar env
+    (platform/backstage/overlays/oke/kustomization.yaml); every existing local-dev launch of
+    serve.py leaves it unset, so mutations.py's direct laptop-local calls below are completely
+    unchanged there. See executor_link.py's own docstring for why a relay exists at all."""
+    return os.environ.get("FLEETVIEW_EXECUTOR_MODE") == "relay"
 
 
 # The plugin's HTTP paths as the launcher registers them. The Backstage proxy prepends
@@ -279,27 +312,57 @@ def check_receipts_envelope(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     return {"results": results}, 200
 
 
-def mutations_envelope() -> tuple[dict[str, Any], int]:
+async def mutations_envelope() -> tuple[dict[str, Any], int]:
     """The body and status for `GET /api/fleetview/mutations`.
 
     A daemon that has never proposed a ledger is not an error -- an empty list, 200, same rule
     `sessions_envelope` and `notes_envelope` already follow: "nothing pending" and "could not be
     read" must never look the same, so a read failure (a proposal file this plugin cannot parse,
     a `ledger_root()` it cannot reach) still only drops that one row rather than the whole board.
+
+    In the cluster (FLEETVIEW_EXECUTOR_MODE=relay), the ledger this plugin's own process can see
+    on disk is empty by construction -- it lives on the laptop, not in this Pod (executor_link.py's
+    docstring). "Nothing pending" and "no laptop connected" must not look the same either: an
+    unconnected laptop is reported as such, `connected: false`, never as a quiet, wrong "0 pending".
     """
+    if _relay_mode():
+        link = _executor_link()
+        if not link.is_connected():
+            return {
+                "mutations": [],
+                "connected": False,
+                "error": "the laptop executor is not connected",
+            }, 200
+        try:
+            result = await link.relay("list_pending", {})
+        except link.RelayTimeout as exc:
+            return {"mutations": [], "connected": True, "error": str(exc)}, 503
+        return {"mutations": result.get("mutations", []), "connected": True}, 200
     impl = _mutations()
-    return {"mutations": impl.list_pending()}, 200
+    return {"mutations": impl.list_pending(), "connected": True}, 200
 
 
-def approve_mutation(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+async def approve_mutation(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     """The body and status for `POST /api/fleetview/mutations/approve`.
 
     `body` carries `ledger_id`. A blank id is 400; the executor daemon not answering is 503,
     matching `blast_radius_envelope`'s rule that a real gap is never disguised as a result.
     """
+    ledger_id = body.get("ledger_id", "")
+    if not ledger_id:
+        return {"error": "approve needs a ledger_id"}, 400
+    if _relay_mode():
+        link = _executor_link()
+        if not link.is_connected():
+            return {"error": "the laptop executor is not connected"}, 503
+        try:
+            result = await link.relay("approve", {"ledger_id": ledger_id})
+        except link.RelayTimeout as exc:
+            return {"error": str(exc)}, 503
+        return result, (200 if result.get("ok") else 409)
     impl = _mutations()
     try:
-        result = impl.approve(body.get("ledger_id", ""))
+        result = impl.approve(ledger_id)
     except impl.InvalidQuery as exc:
         return {"error": str(exc)}, 400
     except impl.LedgerUnavailable as exc:
@@ -307,13 +370,26 @@ def approve_mutation(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     return result, (200 if result.get("ok") else 409)
 
 
-def reject_mutation(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+async def reject_mutation(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     """The body and status for `POST /api/fleetview/mutations/reject`. Same shape as
     `approve_mutation`; rejecting never touches the executor socket (see `mutations.py`), so
-    there is no `LedgerUnavailable` case here."""
+    there is no `LedgerUnavailable` case here in local mode -- relay mode can still time out
+    waiting on the laptop, which is a 503 the same way approve's can."""
+    ledger_id = body.get("ledger_id", "")
+    if not ledger_id:
+        return {"error": "reject needs a ledger_id"}, 400
+    if _relay_mode():
+        link = _executor_link()
+        if not link.is_connected():
+            return {"error": "the laptop executor is not connected"}, 503
+        try:
+            result = await link.relay("reject", {"ledger_id": ledger_id})
+        except link.RelayTimeout as exc:
+            return {"error": str(exc)}, 503
+        return result, (200 if result.get("ok") else 409)
     impl = _mutations()
     try:
-        result = impl.reject(body.get("ledger_id", ""))
+        result = impl.reject(ledger_id)
     except impl.InvalidQuery as exc:
         return {"error": str(exc)}, 400
     return result, (200 if result.get("ok") else 409)

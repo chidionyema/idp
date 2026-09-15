@@ -25,7 +25,15 @@ COPY backstage/plugins/fleetview-backend/src /app/backstage/plugins/fleetview-ba
 COPY bin/estate-twin-runtime /app/bin/estate-twin-runtime
 USER 10001
 EXPOSE 18790
+EXPOSE 8091
 # platform/backstage/overlays/oke/kustomization.yaml runs this as a sidecar in the catalogue Pod,
 # on 127.0.0.1, matching backstage/app-config.yaml's proxy.endpoints./fleetview target -- the
 # proxy config does not change, only where 127.0.0.1:18790 is actually answered from.
-ENTRYPOINT ["python3", "/app/backstage/plugins/fleetview-backend/src/serve.py", "18790", "/app/backstage/plugins/fleetview-backend/src/routes.py"]
+#
+# The fourth argv, 8091, is the mutations-relay port serve.py's own docstring documents
+# (executor_link.py, /executor/poll and /executor/reply) -- 0.0.0.0-bound, unlike 18790, and
+# reachable only through fleetview-executor-service.yaml's tailnet-exposed Service plus
+# platform/tailscale/policy.hujson's deny-by-default ACL. A local `docker run` of this image
+# (no FLEETVIEW_EXECUTOR_MODE set) still answers /mutations by calling mutations.py directly --
+# opening this port costs nothing when nothing dials it.
+ENTRYPOINT ["python3", "/app/backstage/plugins/fleetview-backend/src/serve.py", "18790", "/app/backstage/plugins/fleetview-backend/src/routes.py", "8091"]

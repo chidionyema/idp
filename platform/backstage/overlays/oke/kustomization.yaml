@@ -18,6 +18,10 @@ resources:
   - edge-manners.yaml
   # crew#562: tailnet egress Service to Sunshine on the founder's Mac + its Basic-auth secret.
   - sunshine-egress.yaml
+  # The mutations-relay door: tailnet-exposed Service + its own port-scoped NetworkPolicy for
+  # executor_link.py's 0.0.0.0:8091 (see fleetview-backend.Dockerfile's ENTRYPOINT and the
+  # fleetview-backend container patch below).
+  - fleetview-executor-service.yaml
   # crew#503 CP6: backstage/founder is a kustomization of its own (a directory base may live anywhere;
   # a file outside the overlay may not, and plain `kustomize build` in the tests refuses it).
   - ../../../../backstage/founder
@@ -293,9 +297,26 @@ patches:
           image: ghcr.io/chidionyema/fleetview-backend
           ports:
             - {name: fleetview, containerPort: 18790}
+            # Reachable only via fleetview-executor-service.yaml's Service, which the tailnet
+            # exposes, which platform/tailscale/policy.hujson's deny-by-default ACL then admits
+            # tag:founder-mac to and nobody else -- not this Pod's own catalogue Service, and not
+            # the backstage edge route, either of which would make it reachable more widely.
+            - {name: fv-executor, containerPort: 8091}
           env:
             - {name: ESTATE_DB, value: /data/estate.db}
             - {name: ESTATE_CATALOG_PATH, value: /estate/catalog-info.yaml}
+            # Turns on routes.py's relay path for /mutations, /mutations/approve,
+            # /mutations/reject (executor_link.py): unset, every local `docker run`/laptop launch
+            # of this same image calls mutations.py directly, exactly as before this file.
+            - {name: FLEETVIEW_EXECUTOR_MODE, value: relay}
+            # Defense in depth on top of the tailnet ACL, mirroring platform/jit/deployment.yaml's
+            # JIT_AGENT_KEY: optional because this estate has no existing mechanism to deliver a
+            # laptop-side secret outside a manual, once-off step (see the PR description's Not
+            # done section) -- unset, this door is authenticated by the ACL alone, and serve.py's
+            # _check_key() only compares when a value is actually present on this side.
+            - name: FLEETVIEW_EXECUTOR_KEY
+              valueFrom:
+                secretKeyRef: {name: fleetview-executor, key: FLEETVIEW_EXECUTOR_KEY, optional: true}
           volumeMounts:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
             - {name: estate, mountPath: /estate, readOnly: true}

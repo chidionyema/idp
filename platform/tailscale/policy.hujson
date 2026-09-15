@@ -68,6 +68,11 @@
     // reason the two above are: the root OAuth client carries tag:k8s and may only request
     // tags its own tags own (kb/1215).
     "tag:estate-jit": ["tag:k8s"],
+    // The mutations-relay door (backstage/plugins/fleetview-backend/src/executor_link.py, via
+    // platform/backstage/overlays/oke/fleetview-executor-service.yaml). Carries its own tag for
+    // the same reason tag:estate-jit does: a rule naming tag:k8s:8091 would open that port on
+    // every egress proxy too. Owned by tag:k8s for the same kb/1215 reason as the three above.
+    "tag:estate-fleetview-executor": ["tag:k8s"],
   },
   "acls": [
     {"action": "accept", "src": ["tag:k8s"],
@@ -100,5 +105,13 @@
     // does not widen what may be minted.
     {"action": "accept", "src": ["tag:founder-mac", "group:founder"],
      "dst":    ["tag:estate-jit:8080"]},
+    // The mutations-relay door, and only the one port it serves. tag:founder-mac only -- unlike
+    // the JIT rule above, this device has no untagged fallback, because the only thing that ever
+    // dials this port is platform/executor/fleetview_register.py, run on the founder's own Mac,
+    // never from his phone. Reaching this door does not widen what may be mutated: every verb it
+    // relays still runs through mutations.py's own approve()/reject() and the executor daemon's
+    // existing socket on that machine, unchanged.
+    {"action": "accept", "src": ["tag:founder-mac"],
+     "dst":    ["tag:estate-fleetview-executor:8091"]},
   ],
 }
