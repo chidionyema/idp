@@ -7,8 +7,8 @@
 # caught, and mechanical checks a tool already provides. No example tests.
 set -uo pipefail
 
-# bin/idp-script-compiles' fallback probe for a script with no --self-test/--check flag is a
-# bare --help, which must exit 0 within 60s (LAW 43/45). This script had none -- any argv,
+# The script-compiles gate's fallback probe for a script with no self-test or check flag is
+# a bare --help, which must exit 0 within 60s (LAW 43/45). This script had none -- any argv,
 # --help included, fell straight into the full offline sweep below and blew the ceiling the
 # instant this file was next touched. Same bug class, same fix, as bin/idp-estate-seed's
 # missing -h|--help case: exit fast, exit 0, before any real work starts.

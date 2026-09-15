@@ -441,6 +441,7 @@ nav:
       # guard; whoever writes the fourth row has to remember what this entry says.
       - a-script-is-not-built-until-it-runs: gates/a-script-is-not-built-until-it-runs.md
       - deterministic-verifier: gates/deterministic-verifier.md
+      - catalog-owner: gates/catalog-platform-owner.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
