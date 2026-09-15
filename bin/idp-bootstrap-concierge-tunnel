@@ -236,8 +236,14 @@ def ensure_oci_session() -> tuple[str, str]:
 def ensure_driver(py: Path) -> None:
     if os.environ.get("CLOUDFLARE_ROOT_TOKEN"):
         return
-    check = run([str(py), "-c", "import playwright"], capture_output=True)
-    if check.returncode == 0:
+    # py is VENV/bin/python, which does not exist before the first install below -- bash's
+    # `"$VENV/bin/python" -c ...` (the pre-2026-09-15 original) just returns nonzero for a missing
+    # binary, but subprocess.run raises FileNotFoundError for the same case, uncaught, which is
+    # exactly what killed the concierge-tunnel preflight the first time it ran on a bare CI runner
+    # (run 34987035759): treat "not there yet" the same as "there, but doesn't import" rather than
+    # letting the exception through.
+    check = run([str(py), "-c", "import playwright"], capture_output=True) if py.is_file() else None
+    if check is not None and check.returncode == 0:
         version_proc = run(
             [str(py), "-c", 'import playwright,importlib.metadata as m;print(m.version("playwright"))'],
             capture_output=True,
