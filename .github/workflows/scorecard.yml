@@ -1,0 +1,39 @@
+# button: none -- scheduled and on every push to main, no dispatch needed
+# founder: runs OpenSSF Scorecard (scorecard.dev) against this repository and publishes the
+# public supply-chain-health signal a buyer's or investor's engineer checks first. Read-only:
+# it grades what is already on the tree (branch protection, pinned actions, signed releases,
+# dependency review, ...), it changes nothing. crew, 2026-09-15 platform-maturity pass.
+name: scorecard
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: "17 3 * * 2"   # weekly, matches OSSF's own reference workflow
+  push:
+    branches: [main]
+permissions: read-all
+concurrency:
+  group: scorecard
+  cancel-in-progress: false
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # to upload SARIF results to the Security tab
+      id-token: write          # to publish results and get a badge (OSSF publish flag below)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@ea651e62978af7915d09fe2e282747c798bf2dab # v2.4.1
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scorecard-results
+          path: results.sarif
+          retention-days: 5
+      - uses: github/codeql-action/upload-sarif@42c378ffbb438be29e3e1848d520fb0a8ee1c271 # v3.38.0
+        with:
+          sarif_file: results.sarif

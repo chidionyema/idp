@@ -130,6 +130,13 @@ spec:
             # off the ledger. Founder, same day: "all agets send should be in litelln".
             - { name: human-cerebras, mountPath: /run/secrets/human/cerebras, readOnly: true }
             - { name: human-nvidia, mountPath: /run/secrets/human/nvidia, readOnly: true }
+            # 2026-09-15: GROQ_API_KEY_2/_3 and all of SAMBANOVA_API_KEY/_2/_3 ride the human
+            # door alone (no vault entry, same as minimax) -- the bridge Secrets human-groq and
+            # human-sambanova already exist (generated from consoles.yaml targets) but neither
+            # was mounted, so the pool deployments in consoles.yaml naming these env vars would
+            # start unresolved without this pair, exactly the cerebras/nvidia gap above.
+            - { name: human-groq, mountPath: /run/secrets/human/groq, readOnly: true }
+            - { name: human-sambanova, mountPath: /run/secrets/human/sambanova, readOnly: true }
             - { name: tmp, mountPath: /tmp }
           resources:
             # OOMKilled at 1Gi within 19s of start on the -database image (Prisma engine plus the
@@ -187,6 +194,10 @@ spec:
           secret: { secretName: human-cerebras, optional: true }
         - name: human-nvidia
           secret: { secretName: human-nvidia, optional: true }
+        - name: human-groq
+          secret: { secretName: human-groq, optional: true }
+        - name: human-sambanova
+          secret: { secretName: human-sambanova, optional: true }
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
 ---

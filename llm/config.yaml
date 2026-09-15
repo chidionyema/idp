@@ -143,35 +143,122 @@ model_list:
   # The two neutral lane names. They used to be declared on the anthropic row, which is
   # gone, and a caller must be able to ask for a capable model or a cheap one without
   # naming a vendor (LAW 34, founder 2026-09-04: "we supposoed to be provider agnostic").
-  # They sit on Gemini because that account is bought direct and verified in the
-  # 2026-09-04 09:48Z apply run; the fallback chains below take them off Google the
-  # moment it refuses. Model ids from https://ai.google.dev/gemini-api/docs/models.
-  # gemini-2.5-pro was retired under this lane on or before 2026-09-08. Measured from the
-  # router pod that day: 8 of 8 calls to it answered 404, and the body is Google's own
-  # instruction -- "This model models/gemini-2.5-pro is no longer available to new users.
-  # Please update your code to use models/gemini-3.1-pro-preview". Every one of those 404s
-  # then walked the chain to `gemini`, so the neutral lane cost a guaranteed dead round
-  # trip on every single call. The replacement id is the vendor's, not this file's guess.
+  # They sat on Gemini from 2026-09-04 until today, on the theory that account was bought
+  # direct and verified. That theory stopped being true on 2026-09-08 and the fallback
+  # rule this same file states two rows below -- "Gemini goes last everywhere and heads
+  # nothing" -- was never applied to these two rows, because they ARE a Gemini model_name,
+  # not a fallback target of one: the primary attempt is not a fallback hop, so demoting
+  # gemini inside their OWN fallback list (the previous `default: [gemini, minimax, groq]`)
+  # did nothing -- every call still paid one guaranteed-dead round trip to Google before
+  # ever reaching a fallback. Measured 2026-09-15, five consecutive calls to `default` and
+  # `fast` from the live router: `x-litellm-attempted-fallbacks: 1` on every single one,
+  # `x-litellm-model-group: minimax` on every single one -- 100% dead-hop-then-recover, on
+  # every call, forever, because `allowed_fails`/`cooldown_time` cool down a deployment
+  # inside a load-balanced pool, and neither of these model_names has ever had a second
+  # deployment to fail toward -- there is nothing for a cooldown to route around. So they
+  # now sit on MiniMax instead, the same "moat's cheap primary" lane and the only paid
+  # vendor the 2026-09-04 21:5xZ and 2026-09-08 measurements below both found answering.
+  # Gemini is demoted into their fallback (still first there, per the founder's own
+  # "it returns to the front the moment the Google account is billed" rule) rather than
+  # deleted, exactly the `embed-fallback` treatment three lanes below for the same vendor
+  # and the same unbilled-account condition. Model ids unchanged from the vendor's own
+  # https://ai.google.dev/gemini-api/docs/models for the day Gemini is billed again.
+  #
+  # 2026-09-15: MiniMax stopped being the only deployment under these two names. Both are
+  # now a real pool of four -- minimax, groq, cerebras, sambanova -- and router_settings
+  # carries `routing_strategy: cost-based-routing`, so among whichever of the four are not
+  # presently cooling down, LiteLLM's own Router picks the cheapest per token, not a random
+  # one. MiniMax prices its two fields above; the three free vendors carry none, which
+  # LiteLLM reads as $0.0000/token, so they are picked ahead of MiniMax whenever any of
+  # them is healthy -- the estate pays only when every free lane is dead or exhausted.
+  # `allowed_fails`/`cooldown_time` then does the self-healing across all four the same
+  # way it now does for groq's and cerebras's own three-key pools above: a deployment that
+  # is revoked, out of daily quota, or rate-limited is excluded for the cooldown window and
+  # rejoins on its own the moment it starts answering again -- topped-up credit included,
+  # since cooldown is blind to why a deployment failed and only watches whether it answers.
+  # Gemini stays OUT of pool membership on purpose: a pool picks close to uniformly among
+  # its live members (cost-based-routing aside), unlike a fallback chain's fixed order, and
+  # Gemini is measured ~95% dead while unbilled (comment above) -- pool membership would
+  # still spend one call in several on a vendor that almost always refuses. It keeps its
+  # place at the front of the fallback chain below instead, which costs nothing when it is
+  # never reached, and it earns pool membership back the day a live probe says it answers.
   - model_name: default
     litellm_params:
-      model: gemini/gemini-3.1-pro-preview
-      api_key: os.environ/GEMINI_API_KEY
+      model: openai/MiniMax-M3
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
       timeout: 300
       max_tokens: 8192
-      # Its own model, so its own per-minute bucket (see the note on the `gemini` lane).
-      tpm: 1000000
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000012
     model_info:
-      max_input_tokens: 1048576
+      max_input_tokens: 512000
+  - model_name: default
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 131072
+  - model_name: default
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.cerebras.ai/v1
+      api_key: os.environ/CEREBRAS_API_KEY
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 65536
+  - model_name: default
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.sambanova.ai/v1
+      api_key: os.environ/SAMBANOVA_API_KEY
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 131072
 
   - model_name: fast
     litellm_params:
-      model: gemini/gemini-2.5-flash
-      api_key: os.environ/GEMINI_API_KEY
+      model: openai/MiniMax-M3
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
       timeout: 300
       max_tokens: 8192
-      tpm: 300000
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000012
     model_info:
-      max_input_tokens: 1048576
+      max_input_tokens: 512000
+  - model_name: fast
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 131072
+  - model_name: fast
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.cerebras.ai/v1
+      api_key: os.environ/CEREBRAS_API_KEY
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 65536
+  - model_name: fast
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.sambanova.ai/v1
+      api_key: os.environ/SAMBANOVA_API_KEY
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 131072
 
   # --- the free floor ------------------------------------------------------------------
   # Until this row, the estate router had no free lane at all. Every one of its nine model
@@ -220,6 +307,39 @@ model_list:
       # a cascade, the same reason the minimax row carries a cap.
       max_input_tokens: 131072
 
+  # --- the other two Groq accounts, same model_name on purpose ---------------------------
+  # This is what turns `groq` from a single deployment into a real LiteLLM pool. A
+  # model_name with one deployment has nothing for `allowed_fails`/`cooldown_time`
+  # (router_settings) to route around -- the gemini row's own comment three vendors up
+  # measured that exact failure mode, 100% dead-hop-then-recover on every call, forever.
+  # Three deployments under one name means a key that goes dead for any reason -- revoked,
+  # daily quota spent, rate-limited -- gets cooled down and the other two keep answering,
+  # and the cooled-down one rejoins on its own the moment the cooldown window ends, with
+  # no PR and no agent editing a key. That is cause-agnostic by construction: the router
+  # does not know or care WHY a deployment failed, so a revoked key, an empty quota and a
+  # quota that got topped up an hour later are all handled by the same mechanism.
+  # Verified live 2026-09-15 (`GET /openai/v1/models`, curl, both keys): same fourteen-model
+  # catalogue as the primary account, `openai/gpt-oss-120b` present on both.
+  - model_name: groq
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY_2
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 131072
+
+  - model_name: groq
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY_3
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 131072
+
   # Founder, 2026-09-10: "all agets send should be in litelln". Until this row the key
   # above reached exactly one consumer -- Otto's private brain -- and the estate router
   # could not call Cerebras at all, so any other agent that wanted it had to go direct
@@ -252,6 +372,31 @@ model_list:
     model_info:
       max_input_tokens: 65536
 
+  # --- the other two Cerebras accounts, same model_name on purpose, same reason as the
+  # three groq deployments above: a pool, not a single point of failure, so the router's
+  # own cooldown does the self-healing instead of a fallback chain re-attempting a dead
+  # key fresh on every call. Verified live 2026-09-15, same three-model catalogue
+  # (gemma-4-31b, gpt-oss-120b, qwen-3.8-27b) as the primary account on both keys.
+  - model_name: cerebras
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.cerebras.ai/v1
+      api_key: os.environ/CEREBRAS_API_KEY_2
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 65536
+
+  - model_name: cerebras
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.cerebras.ai/v1
+      api_key: os.environ/CEREBRAS_API_KEY_3
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 65536
+
   # Same story as the cerebras row above, and the same fix: the key was in Secrets
   # Manager, the bridge Secret human-nvidia existed in namespace `llm`, and nothing
   # mounted it, so the estate router could not reach NVIDIA at all.
@@ -273,6 +418,36 @@ model_list:
       api_base: https://integrate.api.nvidia.com/v1
       api_key: os.environ/NVIDIA_API_KEY
       timeout: 90
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 131072
+
+  - model_name: sambanova
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.sambanova.ai/v1
+      api_key: os.environ/SAMBANOVA_API_KEY
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 131072
+
+  - model_name: sambanova
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.sambanova.ai/v1
+      api_key: os.environ/SAMBANOVA_API_KEY_2
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 131072
+
+  - model_name: sambanova
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.sambanova.ai/v1
+      api_key: os.environ/SAMBANOVA_API_KEY_3
+      timeout: 60
       max_tokens: 8192
     model_info:
       max_input_tokens: 131072
@@ -376,12 +551,15 @@ router_settings:
     # sovereign cp30 grades and the `[routing] cheap` line of AGENTS.md declares; which
     # lane is `cheap` is the founder's call, not this file's, so it is untouched.
     #
-    # `default` and `fast` are themselves Gemini rows (gemini-2.5-pro and -2.5-flash), so
-    # naming gemini in their own fallback lists was a hop back to the model that had just
-    # failed. Those entries are gone rather than reordered.
+    # `default` and `fast` are MiniMax rows now (see the lane comment above) -- naming
+    # minimax in their own fallback lists would be a hop back to the deployment that had
+    # just failed, the same reason `gemini`'s own list below never names `gemini`. Gemini
+    # stays first in their fallback, demoted but not deleted, so it is what a turn reaches
+    # if MiniMax itself is ever the one refusing, and it is promoted back to heading these
+    # two lanes outright the day crew#920 bills the Google account.
     - gemini: [minimax, groq]
-    - default: [gemini, minimax, groq]
-    - fast: [gemini, minimax, groq]
+    - default: [gemini, groq]
+    - fast: [gemini, groq]
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
   # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored
   # encrypted in litellm-db under the vendor's own name, `moonshot/kimi-k3`. Rendering a
@@ -398,6 +576,15 @@ router_settings:
   # ground. This is the circuit breaker prospector/breaker.py hand-rolls.
   allowed_fails: 3
   cooldown_time: 60
+  # `groq`, `cerebras`, `sambanova`, `default` and `fast` are real pools now (platform/vendors/
+  # consoles.yaml, 2026-09-15: two extra keys each on groq/cerebras, three on the new sambanova
+  # vendor, all four free vendors plus minimax under default/fast). `cost-based-routing` picks
+  # the cheapest deployment among whichever the allowed_fails/cooldown_time breaker has not
+  # cooled down -- the three free vendors carry no input_cost_per_token/output_cost_per_token,
+  # so LiteLLM prices them $0.0000 and prefers them over paid MiniMax whenever one is healthy.
+  # Same setting as platform/llm/config.base.yaml, for the same pools; see that file's comment
+  # for why this repo has two config.base.yaml files at all.
+  routing_strategy: cost-based-routing
 
 litellm_settings:
   # Traces to the collector that already runs. No second store.
