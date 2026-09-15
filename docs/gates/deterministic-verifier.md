@@ -19,7 +19,7 @@ Fixture: `tests/fixtures/verifier-oath/no-seal`
 Exit code `1` (the registry expects non-zero). ✓
 
 ```
-ok   no-seal: refused as required -- a stage refused ({'structural': 'pass', 'symbolic': 'pass', 'execution': 'refuse'}) and no seal was minted
+ok   no-seal: refused as required -- a stage refused ({'structural': 'pass', 'sql': 'pass', 'symbolic': 'pass', 'execution': 'refuse'}) and no seal was minted
 ok   verifier-oath: 1 fixture(s); a claim leaves only when three graders agree and the seal is bound to the graded bytes
 REFUSED verifier-oath: the named proposal carries no seal; a claim may not leave on it
 ```
