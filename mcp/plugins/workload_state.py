@@ -345,7 +345,7 @@ def build_workload_state(
     )
     metrics = summarize_metrics(samples)
 
-    def render(kept_deps, truncated, omitted):
+    def render(kept_deps, truncated, omitted, terse_source=False):
         return {
             "app": app,
             "found": entity is not None,
@@ -365,8 +365,12 @@ def build_workload_state(
             "freshness_detail": freshness_detail,
             "metrics": metrics,
             "metrics_source": (
-                "estate.db single-sample stand-in pending crew#180 -- "
-                "no live Prometheus/OTel metrics pipeline yet"
+                "stub, crew#180 pending"
+                if terse_source
+                else (
+                    "estate.db single-sample stand-in pending crew#180 -- "
+                    "no live Prometheus/OTel metrics pipeline yet"
+                )
             ),
             "byte_ceiling": cfg["byte_ceiling"],
         }
@@ -374,7 +378,19 @@ def build_workload_state(
     kept_deps, truncated, omitted = _fit_under_ceiling(
         depends_on, cfg["byte_ceiling"], render
     )
-    return render(kept_deps, truncated, omitted)
+    payload = render(kept_deps, truncated, omitted)
+    if _json_bytes(payload) > cfg["byte_ceiling"]:
+        # Dependencies are already trimmed to nothing; the fixed envelope alone
+        # (owner/repo/state/metrics provenance) can still outweigh a tight
+        # ceiling. metrics_source is documentation, not state -- the one field
+        # free to shrink further once there is nothing left to drop.
+        kept_deps, truncated, omitted = _fit_under_ceiling(
+            depends_on,
+            cfg["byte_ceiling"],
+            lambda items, t, o: render(items, t, o, terse_source=True),
+        )
+        payload = render(kept_deps, truncated, omitted, terse_source=True)
+    return payload
 
 
 @hookimpl
