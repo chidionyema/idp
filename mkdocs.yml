@@ -219,6 +219,7 @@ nav:
       - Gitops sync: tutorials/demo/gitops-sync.md
       - Helmrelease drift: tutorials/demo/helmrelease-drift.md
       - Executor daemon: tutorials/demo/exec-daemon.md
+      - Estate proof (git+cluster join): tutorials/demo/estate-proof.md
   - Onboarding:
       - The Demo Standard: onboarding/demo-standard.md
       - Executor daemon: how-to/onboarding/exec-daemon.md
@@ -339,6 +340,7 @@ nav:
       - Flux wait brake: how-to/onboarding/idp-flux-wait-brake.md
       - Otto's three homes: how-to/onboarding/otto-three-homes.md
       - Otto homes, grade and deploy: how-to/onboarding/idp-otto-homes.md
+      - Estate proof: how-to/onboarding/estate-proof.md
   - Gates:
       - What these are: gates/index.md
       - api-version-retired: gates/api-version-retired.md
