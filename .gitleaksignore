@@ -17,3 +17,14 @@
 9491d059d7e74ee13bce7b1e76727e734a03e143:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:359
 9491d059d7e74ee13bce7b1e76727e734a03e143:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:360
 9491d059d7e74ee13bce7b1e76727e734a03e143:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:361
+
+# e4438a077515666ef219f7a60007e337a13cf18e is the pre-amend SHA of the same router-pools commit
+# (pushed once before docs/reference/policy/root-trust.md was amended in; both SHAs now sit in
+# this branch's history after merging in origin's own main-sync of the old commit). gitleaks'
+# history walk attributes a line to whichever commit it finds first, so the same four lines can
+# surface under either SHA depending on walk order -- both are fingerprinted for that reason,
+# not because the finding differs.
+e4438a077515666ef219f7a60007e337a13cf18e:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:358
+e4438a077515666ef219f7a60007e337a13cf18e:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:359
+e4438a077515666ef219f7a60007e337a13cf18e:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:360
+e4438a077515666ef219f7a60007e337a13cf18e:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:361
