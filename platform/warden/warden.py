@@ -1,18 +1,32 @@
 #!/usr/bin/env python3
 """The warden job: proves every vendor key and publishes metrics.
 
-For every vendor in platform/vendors/consoles.yaml that has a verify: block, this script:
-1. Reads the key from the environment (using the secret name from the vendor row)
-2. Calls prove() to ask the vendor whether the key works
-3. Publishes two Prometheus gauges per vendor:
-   - estate_vendor_key_valid{vendor} = 1|0
-   - estate_vendor_key_age_days{vendor} = days since rotation_period started
+For every vendor in platform/vendors/consoles.yaml that has a verify: block and is provable
+with a single credential (required_fields(config) == ["key"]; a paired credential such as
+Telegram's bot+chat or Google's client id+secret needs a Mapping this job does not build),
+this script proves every field the vendor's own targets: list names -- not just the seed
+field -- so a pool with several independent keys (groq, cerebras, sambanova) gets a result
+per key, not one result for the pool.
 
-A ProofFailed is recorded as 0, never a crash. The key value never reaches stdout —
+The key is never read from an environment variable: Kyverno's secrets-not-from-env-vars
+policy (platform/edge/kyverno-secrets-policy.yaml) exists because an env var secret ends up
+in log output and forwarding tools. Instead, each field is read from a mounted file at
+WARDEN_SECRETS_DIR/<vendor>/<field> -- platform/human-vault-bridge/externalsecrets.yaml
+generates a human-<vendor> Secret with exactly those files, from consoles.yaml's own
+`targets: [{ns: dagster, field, bw}]` rows, and scheduler/estate_scheduler/definitions.py
+mounts it into the launched run for this one job only.
+
+For every proved field this script publishes Prometheus gauges:
+  - estate_vendor_key_valid{vendor, field, store} = 1|0
+  - estate_vendor_key_age_days{vendor, field, store} = days since rotation started
+  - estate_vendor_key_checked_timestamp{vendor, field} = unix time of the check
+
+A ProofFailed is recorded as 0, never a crash. The key value never reaches stdout --
 use prove.summary() and prove.redact() for any output.
 
-Metrics are pushed to the Prometheus pushgateway. The address is configured via
-PUSH_GATEWAY_URL environment variable (defaults to the in-cluster address).
+Metrics are pushed to the Prometheus pushgateway. The address is configured via the
+PUSH_GATEWAY_URL environment variable (defaults to the in-cluster address) -- a URL is
+config, not a credential, so it is not subject to the same rule.
 """
 
 from __future__ import annotations
@@ -33,6 +47,11 @@ from warden import prove as warden
 DEFAULT_PUSH_GATEWAY = "http://prometheus-pushgateway.monitoring.svc.cluster.local:9091"
 PUSH_GATEWAY_URL = os.environ.get("PUSH_GATEWAY_URL", DEFAULT_PUSH_GATEWAY)
 JOB_NAME = "api-key-warden"
+
+# Where the mounted human-<vendor> Secrets land (crew#832 CP3, kyverno secrets-not-from-env-vars).
+# A directory path is config, like PUSH_GATEWAY_URL above -- it names where to look, not a secret.
+DEFAULT_SECRETS_DIR = "/run/secrets/human"
+WARDEN_SECRETS_DIR = os.environ.get("WARDEN_SECRETS_DIR", DEFAULT_SECRETS_DIR)
 
 
 def rotation_days(config: dict) -> int | None:
@@ -58,24 +77,37 @@ def load_vendors() -> dict[str, dict]:
     return warden.load_vendors()
 
 
-def env_key(secret_name: str) -> str | None:
-    """Read a secret from the environment, or None if not set."""
-    return os.environ.get(secret_name)
+def read_key_file(vendor: str, field: str, base_dir: str | None = None) -> str | None:
+    """Read one credential field from its mounted file, or None if not mounted.
 
-
-def vendor_has_key(config: dict) -> bool:
-    """Check if vendor has a key we can prove.
-
-    A vendor has a key if it has either:
-    - A top-level secret field
-    - A pair: true (which means it needs multiple fields)
+    The mount is optional (a vendor whose key has not reached Bitwarden yet mounts nothing),
+    so a missing file is a normal, expected state -- not an error.
     """
-    if config.get("secret"):
-        return True
-    if config.get("pair"):
-        # Paired credentials need special handling - skip for now
-        return False
-    return False
+    path = Path(base_dir or WARDEN_SECRETS_DIR) / vendor / field
+    try:
+        value = path.read_text().strip()
+    except OSError:
+        return None
+    return value or None
+
+
+def provable_fields(config: dict) -> list[str]:
+    """The credential fields this vendor can be proved on, one per independent key.
+
+    Only vendors provable with a single plain string (required_fields == ["key"]) are
+    covered here -- a paired credential (Telegram's bot+chat, Google's client id+secret)
+    needs a Mapping of several named fields for ONE proof, which is a different shape from
+    a pool of several INDEPENDENT single-key targets (groq/cerebras/sambanova) and is not
+    covered by this job (crew#832 CP3 is the pools, not paired credentials).
+    """
+    if warden.required_fields(config) != ["key"]:
+        return []
+    seen: list[str] = []
+    for target in config.get("targets") or []:
+        field = target.get("field")
+        if field and field not in seen:
+            seen.append(field)
+    return seen
 
 
 def publish_metrics(results: list[dict]) -> None:
@@ -85,21 +117,21 @@ def publish_metrics(results: list[dict]) -> None:
     valid_gauge = Gauge(
         "estate_vendor_key_valid",
         "Whether the vendor key is currently valid (1) or not (0)",
-        ["vendor", "store"],
+        ["vendor", "field", "store"],
         registry=registry,
     )
 
     age_gauge = Gauge(
         "estate_vendor_key_age_days",
         "Days since the key was last rotated",
-        ["vendor", "store"],
+        ["vendor", "field", "store"],
         registry=registry,
     )
 
     checked_gauge = Gauge(
         "estate_vendor_key_checked_timestamp",
         "Unix timestamp when the key was last checked",
-        ["vendor"],
+        ["vendor", "field"],
         registry=registry,
     )
 
@@ -107,15 +139,16 @@ def publish_metrics(results: list[dict]) -> None:
 
     for result in results:
         vendor = result["vendor"]
+        field = result["field"]
         store = result["store"]
         is_valid = 1 if result["valid"] else 0
 
-        valid_gauge.labels(vendor=vendor, store=store).set(is_valid)
-        checked_gauge.labels(vendor=vendor).set(now)
+        valid_gauge.labels(vendor=vendor, field=field, store=store).set(is_valid)
+        checked_gauge.labels(vendor=vendor, field=field).set(now)
 
         age_days = result.get("age_days")
         if age_days is not None:
-            age_gauge.labels(vendor=vendor, store=store).set(age_days)
+            age_gauge.labels(vendor=vendor, field=field, store=store).set(age_days)
 
     # Push to gateway
     try:
@@ -126,7 +159,7 @@ def publish_metrics(results: list[dict]) -> None:
 
 
 def run_warden() -> int:
-    """Run the warden job for all vendors.
+    """Run the warden job for every provable field of every vendor.
 
     Returns exit code 0 even if some keys fail - we record failure as gauge=0.
     """
@@ -138,72 +171,75 @@ def run_warden() -> int:
         if not verify:
             continue  # Skip vendors without verification
 
-        # Skip vendors without a provable key (e.g., paired credentials)
-        if not vendor_has_key(config):
-            continue
+        fields = provable_fields(config)
+        if not fields:
+            continue  # Paired credential, or no target names a field we can prove
 
-        secret_name = config.get("secret")
+        for field in fields:
+            key = read_key_file(vendor_name, field)
+            if not key:
+                # Not mounted yet - record as invalid, same as a proof failure
+                results.append(
+                    {
+                        "vendor": vendor_name,
+                        "field": field,
+                        "store": config.get("store_default", "unknown"),
+                        "valid": False,
+                        "age_days": None,
+                        "error": "no key mounted",
+                    }
+                )
+                continue
 
-        key = env_key(secret_name)
-        if not key:
-            # No key in environment - record as invalid
-            results.append(
-                {
-                    "vendor": vendor_name,
-                    "store": config.get("store_default", "unknown"),
-                    "valid": False,
-                    "age_days": None,
-                    "error": "no key in environment",
-                }
-            )
-            continue
-
-        try:
-            proof = warden.prove(vendor_name, key)
-            results.append(
-                {
-                    "vendor": vendor_name,
-                    "store": proof.store,
-                    "valid": True,
-                    "age_days": key_age_days(config),
-                    "summary": warden.summary(proof),
-                }
-            )
-        except warden.ProofFailed as e:
-            # Record failure as invalid (gauge = 0), don't crash
-            # Redact the key from the error message
-            results.append(
-                {
-                    "vendor": vendor_name,
-                    "store": e.store,
-                    "valid": False,
-                    "age_days": None,
-                    "error": warden.redact(str(e), key),
-                }
-            )
-        except Exception as e:
-            # Other errors - still record as invalid
-            results.append(
-                {
-                    "vendor": vendor_name,
-                    "store": config.get("store_default", "unknown"),
-                    "valid": False,
-                    "age_days": None,
-                    "error": warden.redact(str(e), key),
-                }
-            )
+            try:
+                proof = warden.prove(vendor_name, key)
+                results.append(
+                    {
+                        "vendor": vendor_name,
+                        "field": field,
+                        "store": proof.store,
+                        "valid": True,
+                        "age_days": key_age_days(config),
+                        "summary": warden.summary(proof),
+                    }
+                )
+            except warden.ProofFailed as e:
+                # Record failure as invalid (gauge = 0), don't crash
+                # Redact the key from the error message
+                results.append(
+                    {
+                        "vendor": vendor_name,
+                        "field": field,
+                        "store": e.store,
+                        "valid": False,
+                        "age_days": None,
+                        "error": warden.redact(str(e), key),
+                    }
+                )
+            except Exception as e:
+                # Other errors - still record as invalid
+                results.append(
+                    {
+                        "vendor": vendor_name,
+                        "field": field,
+                        "store": config.get("store_default", "unknown"),
+                        "valid": False,
+                        "age_days": None,
+                        "error": warden.redact(str(e), key),
+                    }
+                )
 
     # Push metrics
     publish_metrics(results)
 
     # Print summary (no key values)
-    print(f"Warden run complete: {len(results)} vendors checked")
+    print(f"Warden run complete: {len(results)} keys checked")
     valid_count = sum(1 for r in results if r["valid"])
     print(f"Valid: {valid_count}, Invalid: {len(results) - valid_count}")
 
     for result in results:
         status = "VALID" if result["valid"] else "INVALID"
-        print(f"  {result['vendor']}: {status}")
+        print(f"  {result['vendor']}/{result['field']}: {status}")
         if "summary" in result:
             print(f"    {result['summary']}")
         if "error" in result:

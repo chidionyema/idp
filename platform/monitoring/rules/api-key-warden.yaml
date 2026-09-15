@@ -19,8 +19,8 @@ spec:
             severity: critical
             owner: idp
           annotations:
-            summary: "Vendor key {{ $labels.vendor }} is invalid"
-            description: "The API key for vendor {{ $labels.vendor }} failed its proof check and is no longer valid. Replace it at the vendor's console and re-activate through the portal."
+            summary: "Vendor key {{ $labels.vendor }}/{{ $labels.field }} is invalid"
+            description: "The API key {{ $labels.field }} for vendor {{ $labels.vendor }} failed its proof check and is no longer valid. Replace it at the vendor's console and re-activate through the portal."
         
         - alert: VendorKeyUnchecked
           expr: |
