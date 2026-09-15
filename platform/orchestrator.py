@@ -7,6 +7,10 @@ Implements context pruning via a custom LangGraph node that strips
 """
 
 import asyncio
+import sys
+import os
+import uuid
+import time
 from pathlib import Path
 
 from langchain_anthropic import ChatAnthropic
@@ -82,7 +86,7 @@ def teleological_filter(state: AgentState) -> AgentState:
     return {**state, "messages": messages}
 
 
-async def run_orchestrator(goal: str):
+async def run_orchestrator(goal: str, worktree: str = None):
     """Execute the agent with MCP boundary and teleological filter.
 
     This is the main entry point. It:
@@ -93,6 +97,9 @@ async def run_orchestrator(goal: str):
        - agent: the LLM + tool executor (ReAct loop)
     4. Streams the execution so you can observe the agent's logic
     """
+    if worktree:
+        os.chdir(worktree)
+
     # 1. The MCP Boundary (The Iron Gate)
     client = MultiServerMCPClient(
         {
@@ -106,7 +113,6 @@ async def run_orchestrator(goal: str):
 
     # 2. Discover Tools
     tools = await client.get_tools()
-    print(f"[MCP] Loaded {len(tools)} tool(s) from idp-estate-gateway\n")
 
     # 3. Initialize the Brain
     model = ChatAnthropic(model_name="claude-3-5-sonnet-20241022", temperature=0)
@@ -129,16 +135,13 @@ async def run_orchestrator(goal: str):
     graph = graph_builder.compile()
 
     # 5. Execute the Goal
-    print(f"Executing Goal: {goal}\n" + "-" * 60)
-
     initial_state = {"messages": [], "goal": goal}
 
     step_count = 0
     async for event in graph.astream(initial_state):
         step_count += 1
-        if step_count > 50:
-            print("\n[Agent] Max steps reached; halting.")
-            break
+        if step_count > 30:
+            return "CIRCUIT_BREAKER: Max steps (30) reached."
 
         for node_name, node_output in event.items():
             if node_name == "agent" and "messages" in node_output:
@@ -146,24 +149,51 @@ async def run_orchestrator(goal: str):
                     msg_type = type(msg).__name__
                     if msg_type == "AIMessage":
                         if hasattr(msg, "tool_calls") and msg.tool_calls:
-                            tool_call = msg.tool_calls[0]
-                            print(
-                                f"\n[Step {step_count}] Agent calls: {tool_call['name']}"
-                            )
-                            print(
-                                f"  Command: {tool_call['args'].get('command', '')[:80]}"
-                            )
+                            pass
                         elif msg.content:
-                            print(f"\n[Agent Response]\n{msg.content}")
+                            pass
+
+    return "TASK_COMPLETE"
+
+
+async def worker_loop(agent_id: str):
+    """Long-lived worker that polls the queue and executes tasks."""
+    from platform.queue import dispatcher
+
+    dispatcher.init_db()
+    print(f"[{agent_id}] Worker booted. Polling queue...")
+
+    while True:
+        dispatcher.sweep_zombies()
+        task = dispatcher.claim_task(agent_id)
+
+        if not task:
+            time.sleep(2)
+            continue
+
+        print(f"[{agent_id}] Claimed task {task['id']}: {task['goal'][:60]}...")
+
+        try:
+            await run_orchestrator(task["goal"], task["worktree"])
+            dispatcher.complete_task(task["id"], "success")
+            print(f"[{agent_id}] Task {task['id']} complete.")
+        except Exception as e:
+            dispatcher.complete_task(task["id"], "failed")
+            print(f"[{agent_id}] Task {task['id']} failed: {e}")
+
+        time.sleep(1)
 
 
 if __name__ == "__main__":
-    import sys
-
     if len(sys.argv) < 2:
-        print("Usage: python orchestrator.py '<goal>'")
-        print("Example: python orchestrator.py 'List all files in src/ directory'")
+        print(
+            "Usage: python orchestrator.py '<goal>' | python orchestrator.py --worker"
+        )
         sys.exit(1)
 
-    goal_prompt = sys.argv[1]
-    asyncio.run(run_orchestrator(goal_prompt))
+    if sys.argv[1] == "--worker":
+        agent_id = f"worker-{uuid.uuid4().hex[:4]}"
+        asyncio.run(worker_loop(agent_id))
+    else:
+        goal_prompt = sys.argv[1]
+        asyncio.run(run_orchestrator(goal_prompt))
