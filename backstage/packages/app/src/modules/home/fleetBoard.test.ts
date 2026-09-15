@@ -1,8 +1,10 @@
 import {
+  attentionReason,
   capabilityLabel,
   capabilityTitle,
   correlatedFailure,
   isStale,
+  needsAttention,
   NUDGEABLE_RUNTIMES,
   order,
   prLabel,
@@ -10,7 +12,9 @@ import {
   spendLabel,
   stateLabel,
   summarise,
+  timelineFor,
 } from './fleetBoard';
+import type { Note, Signal } from './fleetBoard';
 import type { Session } from './fleetBoard';
 
 const session = (over: Partial<Session> = {}): Session => ({
@@ -258,5 +262,132 @@ describe('item #6: a stale session is a claim about elapsed time, never a guess'
   it('only sovereign has a live signal path today', () => {
     expect(NUDGEABLE_RUNTIMES.has('sovereign')).toBe(true);
     expect(NUDGEABLE_RUNTIMES.has('claude-code')).toBe(false);
+  });
+});
+
+describe('needs attention: grouping from real signals only, nothing invented', () => {
+  const NOW = new Date('2026-09-15T10:00:00Z');
+
+  it('a failed session needs attention', () => {
+    expect(attentionReason(session({ state: 'failed' }), NOW)).toBe('failed');
+  });
+
+  it('a stale running session needs attention', () => {
+    expect(
+      attentionReason(session({ state: 'running', updated_at: '2026-09-15T09:00:00Z' }), NOW),
+    ).toBe('stale');
+  });
+
+  it('a running, recently-updated session needs nothing', () => {
+    expect(
+      attentionReason(session({ state: 'running', updated_at: '2026-09-15T09:59:00Z' }), NOW),
+    ).toBeNull();
+  });
+
+  it('a stopped session needs nothing, however old', () => {
+    expect(
+      attentionReason(session({ state: 'stopped', updated_at: '2026-01-01T00:00:00Z' }), NOW),
+    ).toBeNull();
+  });
+
+  it('failed sessions rank ahead of stale ones, each newest first', () => {
+    const stale1 = session({
+      session_id: 'stale-older',
+      state: 'running',
+      updated_at: '2026-09-15T09:00:00Z',
+    });
+    const stale2 = session({
+      session_id: 'stale-newer',
+      state: 'running',
+      updated_at: '2026-09-15T09:20:00Z',
+    });
+    const failed1 = session({
+      session_id: 'failed-older',
+      state: 'failed',
+      updated_at: '2026-09-15T08:00:00Z',
+    });
+    const failed2 = session({
+      session_id: 'failed-newer',
+      state: 'failed',
+      updated_at: '2026-09-15T09:30:00Z',
+    });
+    const healthy = session({ session_id: 'healthy', state: 'running', updated_at: '2026-09-15T09:59:00Z' });
+    const result = needsAttention([stale1, healthy, failed1, stale2, failed2], NOW);
+    expect(result.map(s => s.session_id)).toEqual([
+      'failed-newer',
+      'failed-older',
+      'stale-newer',
+      'stale-older',
+    ]);
+  });
+
+  it('a ready board carries its own attention list', () => {
+    const board = summarise(
+      {
+        available: true,
+        sessions: [session({ session_id: 'ok', state: 'running', updated_at: '2026-09-15T09:59:00Z' }),
+          session({ session_id: 'down', state: 'failed', updated_at: '2026-09-15T09:59:00Z' })],
+        unreachable: [],
+      },
+      NOW,
+    );
+    expect(board.attention.map(s => s.session_id)).toEqual(['down']);
+  });
+
+  it('loading, unavailable and empty boards carry no attention', () => {
+    expect(summarise(null).attention).toEqual([]);
+    expect(summarise({ available: false, error: 'x' }).attention).toEqual([]);
+    expect(summarise({ available: true, sessions: [], unreachable: [] }).attention).toEqual([]);
+  });
+});
+
+describe('timeline: notes and signals merged, nothing synthesized', () => {
+  const note = (over: Partial<Note> = {}): Note => ({
+    id: 1,
+    session_id: 'sb-1',
+    runtime: 'sovereign',
+    note: 'checking in',
+    author: 'chidi',
+    created_at: '2026-09-15T09:00:00Z',
+    read_at: null,
+    ...over,
+  });
+
+  const signal = (over: Partial<Signal> = {}): Signal => ({
+    id: 1,
+    session_id: 'sb-1',
+    runtime: 'sovereign',
+    kind: 'steer',
+    by: 'chidi',
+    text: 'please wrap up',
+    ok: true,
+    error: null,
+    created_at: '2026-09-15T09:30:00Z',
+    ...over,
+  });
+
+  it('an empty history is an empty timeline, not an error', () => {
+    expect(timelineFor([], [])).toEqual([]);
+  });
+
+  it('notes and signals interleave in chronological order', () => {
+    const result = timelineFor(
+      [note({ created_at: '2026-09-15T09:00:00Z', note: 'first' })],
+      [signal({ created_at: '2026-09-15T09:15:00Z', text: 'nudged' })],
+    );
+    expect(result.map(e => e.kind)).toEqual(['note', 'signal']);
+  });
+
+  it('a later note after a signal still sorts last', () => {
+    const result = timelineFor(
+      [note({ created_at: '2026-09-15T09:45:00Z', note: 'still going' })],
+      [signal({ created_at: '2026-09-15T09:30:00Z' })],
+    );
+    expect(result.map(e => e.kind)).toEqual(['signal', 'note']);
+  });
+
+  it('a failed signal carries its error through, never hidden', () => {
+    const result = timelineFor([], [signal({ ok: false, error: 'workflow not found' })]);
+    expect(result[0]).toMatchObject({ kind: 'signal', ok: false, error: 'workflow not found' });
   });
 });

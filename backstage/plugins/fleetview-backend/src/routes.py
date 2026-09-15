@@ -25,6 +25,10 @@ note into a live process today -- that is a documented, honest gap, not hidden b
 the one runtime with a live signal path -- and always records the attempt. A runtime with no such
 path gets 422, never a 200 that pretended to deliver something.
 
+`GET /api/fleetview/signals?session_id=...` (`src/signals.py`'s `signals_for`) reads back that same
+audit trail -- every nudge attempt ever recorded for a session, newest first -- so a focus view can
+show what was already tried, not just offer the button again.
+
 `GET /api/fleetview/blast-radius?node_id=...` (item #7, `src/blast.py`) answers "if this dies,
 what dies with it" over the same `edges` table `bin/estate-twin-runtime --blast-radius` already
 walks -- a Backstage door onto an existing CLI-only answer, not a new graph.
@@ -115,6 +119,7 @@ SESSIONS_PATH = "/sessions"
 STREAM_PATH = "/stream"
 NOTES_PATH = "/notes"
 NUDGE_PATH = "/nudge"
+SIGNALS_PATH = "/signals"
 BLAST_RADIUS_PATH = "/blast-radius"
 GRAPH_PATH = "/graph"
 CHECK_RECEIPTS_PATH = "/check-receipts"
@@ -212,6 +217,17 @@ def add_nudge(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     if not record["ok"]:
         return record, 502
     return record, 200
+
+
+def signals_envelope(session_id: str) -> tuple[dict[str, Any], int]:
+    """The body and status for `GET /api/fleetview/signals?session_id=...`.
+
+    Read-only audit trail of every nudge attempt for a session (`src/signals.py`'s
+    `signals_for`), newest first. Always 200 with a (possibly empty) list -- same rule
+    `notes_envelope` follows: a session with no signals yet is not an error.
+    """
+    impl = _signals()
+    return {"signals": impl.signals_for(session_id)}, 200
 
 
 def blast_radius_envelope(node_id: str) -> tuple[dict[str, Any], int]:

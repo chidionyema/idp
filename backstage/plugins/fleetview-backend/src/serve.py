@@ -4,10 +4,10 @@
 The plugin's logic lives in `backstage/plugins/fleetview-backend/src/routes.py` as a pure
 Python module (no FastAPI imports). This file is the HTTP shell that mounts its
 `sessions_envelope()`, `stream_frames()`, `notes_envelope()`/`add_note()`, `add_nudge()`,
-`blast_radius_envelope()`, `graph_envelope()`, `check_receipts_envelope()` and
-`mutations_envelope()`/`approve_mutation()`/`reject_mutation()` on the paths the Backstage board
-calls (`/api/fleetview/sessions`, `/stream`, `/notes`, `/nudge`, `/blast-radius`, `/graph`,
-`/check-receipts`, `/mutations`, `/mutations/approve`, `/mutations/reject`).
+`blast_radius_envelope()`, `graph_envelope()`, `check_receipts_envelope()`, `signals_envelope()`
+and `mutations_envelope()`/`approve_mutation()`/`reject_mutation()` on the paths the Backstage
+board calls (`/api/fleetview/sessions`, `/stream`, `/notes`, `/nudge`, `/signals`, `/blast-radius`,
+`/graph`, `/check-receipts`, `/mutations`, `/mutations/approve`, `/mutations/reject`).
 
 This used to live at `/tmp/serve_fv.py` -- a real dev launcher with no repo path, so it vanished
 with the machine's temp directory and could not be run from a clean checkout. Moved into the
@@ -86,6 +86,11 @@ def build_app(routes_path: Path) -> FastAPI:
         body = await request.json()
         result, status = routes.add_nudge(body)
         return JSONResponse(content=result, status_code=status)
+
+    @app.get(routes.SIGNALS_PATH)
+    def signals_get(session_id: str):
+        body, status = routes.signals_envelope(session_id)
+        return JSONResponse(content=body, status_code=status)
 
     @app.get(routes.BLAST_RADIUS_PATH)
     def blast_radius(node_id: str = ""):

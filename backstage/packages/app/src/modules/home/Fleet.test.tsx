@@ -192,12 +192,25 @@ describe('item #6: nudge a stale session', () => {
     renderFleet(null, { onFetch });
     await screen.findByText('sb-1');
 
-    const promptSpy = jest.spyOn(window, 'prompt').mockReturnValue('chidi');
+    // No window.prompt: the audit-trail name comes from the same inline author field the focus
+    // panel offers for notes.
+    fireEvent.click(screen.getByTestId('notes-fold-sb-1').querySelector('summary')!);
+    fireEvent.change(screen.getByLabelText('note author for sb-1'), {
+      target: { value: 'chidi' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Nudge' }));
 
     expect(await screen.findByText(/Nudged/)).toBeInTheDocument();
     expect(posted).toEqual({ session_id: 'sb-1', runtime: 'sovereign', by: 'chidi' });
-    promptSpy.mockRestore();
+  });
+
+  it('nudging with no name filled in yet asks for one, never a silent no-op', async () => {
+    renderFleet(envelope({ sessions: [staleSovereign] }));
+    await screen.findByText('sb-1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nudge' }));
+
+    expect(await screen.findByText(/Add your name/)).toBeInTheDocument();
   });
 
   it('a failed nudge shows the failure, never a silent success', async () => {
@@ -210,11 +223,13 @@ describe('item #6: nudge a stale session', () => {
     renderFleet(null, { onFetch });
     await screen.findByText('sb-1');
 
-    const promptSpy = jest.spyOn(window, 'prompt').mockReturnValue('chidi');
+    fireEvent.click(screen.getByTestId('notes-fold-sb-1').querySelector('summary')!);
+    fireEvent.change(screen.getByLabelText('note author for sb-1'), {
+      target: { value: 'chidi' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Nudge' }));
 
     expect(await screen.findByText(/Failed: workflow not found/)).toBeInTheDocument();
-    promptSpy.mockRestore();
   });
 });
 
@@ -467,5 +482,134 @@ describe('leave a note for a session', () => {
         url.includes('/fleetview/notes') && init?.method === 'POST',
     );
     expect(postCalls).toHaveLength(0);
+  });
+});
+
+describe('the focus panel: notes and nudges merged, plus an auto-fetched receipt', () => {
+  it('opening the panel fetches and interleaves notes and signals chronologically', async () => {
+    const onFetch = jest.fn().mockImplementation(async (url: string) => {
+      if (typeof url === 'string' && url.includes('/fleetview/notes')) {
+        return {
+          json: async () => ({
+            notes: [
+              { id: 1, author: 'chidi', note: 'checking in', created_at: '2026-09-12T09:00:00Z' },
+            ],
+          }),
+        };
+      }
+      if (typeof url === 'string' && url.includes('/fleetview/signals')) {
+        return {
+          json: async () => ({
+            signals: [
+              {
+                id: 1,
+                session_id: 'sb-1',
+                runtime: 'sovereign',
+                kind: 'steer',
+                by: 'chidi',
+                text: 'please wrap up',
+                ok: true,
+                error: null,
+                created_at: '2026-09-12T09:30:00Z',
+              },
+            ],
+          }),
+        };
+      }
+      if (typeof url === 'string' && url.includes('/fleetview/check-receipts')) {
+        return {
+          ok: true,
+          json: async () => ({
+            results: [{ session_id: 'sb-1', verdict: 'pass', reason: 'status:done, 3 observation(s) recorded' }],
+          }),
+        };
+      }
+      return { json: async () => envelope({ sessions: [runningSession] }) };
+    });
+    renderFleet(null, { onFetch });
+    await screen.findByText('sb-1');
+
+    fireEvent.click(screen.getByTestId('notes-fold-sb-1').querySelector('summary')!);
+
+    await screen.findByText(/please wrap up/);
+    expect(screen.getByTestId('timeline-sb-1').textContent).toMatch(/checking in.*please wrap up/s);
+    expect(await screen.findByText(/Receipt: pass/)).toBeInTheDocument();
+  });
+
+  it('a failed nudge attempt in the timeline carries its error, never hidden', async () => {
+    const onFetch = jest.fn().mockImplementation(async (url: string) => {
+      if (typeof url === 'string' && url.includes('/fleetview/signals')) {
+        return {
+          json: async () => ({
+            signals: [
+              {
+                id: 1,
+                session_id: 'sb-1',
+                runtime: 'sovereign',
+                kind: 'steer',
+                by: 'chidi',
+                text: 'wrap up',
+                ok: false,
+                error: 'workflow not found',
+                created_at: '2026-09-12T09:30:00Z',
+              },
+            ],
+          }),
+        };
+      }
+      if (typeof url === 'string' && url.includes('/fleetview/notes')) {
+        return { json: async () => ({ notes: [] }) };
+      }
+      if (typeof url === 'string' && url.includes('/fleetview/check-receipts')) {
+        return { ok: true, json: async () => ({ results: [] }) };
+      }
+      return { json: async () => envelope({ sessions: [runningSession] }) };
+    });
+    renderFleet(null, { onFetch });
+    await screen.findByText('sb-1');
+
+    fireEvent.click(screen.getByTestId('notes-fold-sb-1').querySelector('summary')!);
+
+    expect(await screen.findByText(/failed: workflow not found/)).toBeInTheDocument();
+  });
+
+  it('a Langfuse-unavailable receipt reads as unavailable, never a fabricated verdict', async () => {
+    const onFetch = jest.fn().mockImplementation(async (url: string) => {
+      if (typeof url === 'string' && url.includes('/fleetview/check-receipts')) {
+        return { ok: false, status: 503, json: async () => ({ error: 'LANGFUSE_* is not configured' }) };
+      }
+      if (typeof url === 'string' && url.includes('/fleetview/notes')) {
+        return { json: async () => ({ notes: [] }) };
+      }
+      if (typeof url === 'string' && url.includes('/fleetview/signals')) {
+        return { json: async () => ({ signals: [] }) };
+      }
+      return { json: async () => envelope({ sessions: [runningSession] }) };
+    });
+    renderFleet(null, { onFetch });
+    await screen.findByText('sb-1');
+
+    fireEvent.click(screen.getByTestId('notes-fold-sb-1').querySelector('summary')!);
+
+    expect(await screen.findByText(/Receipt: unavailable/)).toBeInTheDocument();
+  });
+});
+
+describe('needs attention: triage above the table, not table order', () => {
+  it('a failed session is named above the sheet', async () => {
+    const failed = { ...runningSession, session_id: 'sb-9', state: 'failed' };
+    renderFleet(envelope({ sessions: [failed] }));
+    const attention = await screen.findByTestId('needs-attention');
+
+    expect(attention.textContent).toMatch(/Failed/);
+    expect(attention.textContent).toMatch(/sb-9/);
+  });
+
+  it('a healthy, recently-updated session needs no attention section at all', async () => {
+    const healthy = { ...runningSession, updated_at: new Date().toISOString() };
+    renderFleet(envelope({ sessions: [healthy] }));
+    await screen.findByText('sb-1');
+
+    expect(screen.queryByTestId('needs-attention')).not.toBeInTheDocument();
   });
 });
