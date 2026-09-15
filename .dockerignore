@@ -3,5 +3,16 @@
 **/.venv
 **/__pycache__
 **/node_modules
-backstage
+# The Backstage frontend app (yarn workspaces, node_modules, build output) is excluded from
+# every root-context build -- estate-mcp.Dockerfile, estate-scheduler.Dockerfile and
+# fleetview-backend.Dockerfile all build from repo root but none of them need the frontend app.
+# fleetview-backend.Dockerfile DOES need backstage/plugins/fleetview-backend/src (its COPY
+# source), so that one path is carved back out. A bare `backstage` exclusion here silently
+# dropped it from the context before COPY ever ran -- "not found", not a permission error
+# (root-caused after fleetview-backend.Dockerfile's build broke on both linux/amd64 and
+# linux/arm64: PR idp#3518).
+backstage/*
+!backstage/plugins
+backstage/plugins/*
+!backstage/plugins/fleetview-backend
 docs/evidence
