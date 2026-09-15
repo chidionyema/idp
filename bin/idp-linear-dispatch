@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""idp-linear-dispatch: the one arrow missing from the estate's proven chain.
+
+Everything downstream of "an issue should start a harness run" already exists and is proven,
+this session, with receipts: epistemic_firewall/trajectory_lock/prm_grader/budget_governor gate
+the run, via-negativa watches it, the Deterministic Verifier stages/verifies/seals/admits its
+patch (sovereign/verifier.py), mcp__estate__simulate_change proves it on paper, the shadow
+cluster proves it converges for real (21/21 tests green, .github/workflows/deploy-when-green.yml
+:86,121 the hard gate), the JIT broker grants the one narrow write (bin/idp-jit*), Flux lands it.
+Nothing before that chain has ever watched Linear and started it.
+
+Cyrus was that door once (docs/FEED.md:212-235) -- assignment to a Linear teammate was its
+trigger -- and was deliberately removed 2026-09-12 ("Cyrus is not the path... the estate is
+moving off the Claude Code harness"). Its removal retired the vehicle, not the goal (founder,
+this session: "cuyrus does not prevent u fron build it"). This rebuilds the WATCH half on the
+estate's own harness, using the same trigger shape Cyrus used -- a visible Linear state, not a
+hidden config -- but changes nothing else: it reads Linear, and it writes one local ledger. It
+does not open a worktree, does not invoke a model, and does not touch the cluster. That is a
+deliberate, named boundary, not an oversight: unattended code-writing execution triggered by an
+external label is exactly the kind of decision this estate's own doctrine (decision 0025:
+"agents hold no write on production") says must go through a proof chain, not get invented
+silently by whichever session happens to be watching Linear that day. This tool produces the
+proven, deduplicated INTAKE queue that a harness-invocation step -- still to be named -- would
+drain. Same shape as bin/idp-shadow-run's own split: "deterministic producer" vs. "the live seam
+the estate must separately approve" (bin/idp-shadow-run's own docstring, verbatim precedent).
+
+TRIGGER: an open MUM-team issue carrying the label named by --label (default `agent-ready`).
+Whoever attaches that label is asserting the issue is scoped and safe to hand to the harness --
+same assertion an assignment to Cyrus used to make, just visible in the issue's own labels
+instead of buried in who happens to be free.
+
+LEDGER: catalog/estate.db, table `linear_dispatch_queue` (issue key, title, url, queued_at,
+drained_at). An issue is queued once; a second run against the same open+labeled issue is a
+no-op (idempotent, same discipline as bin/idp-rules and platform/linear/setup.py). `--drain`
+marks queued rows as drained (the harness-invocation step's job, once named, calls this after it
+actually starts a run) so the queue only ever shows real, undrained work.
+
+BLIND, same shape as every bin/idp-*: no LINEAR_API_KEY/_FILE is disclosed, not faked as zero
+triggering issues.
+
+  bin/idp-linear-dispatch                 # poll, queue new triggers, print the queue
+  bin/idp-linear-dispatch --json          # same, machine output
+  bin/idp-linear-dispatch --label agent-ready
+  bin/idp-linear-dispatch --drain MUM-297 # mark one row drained (the invocation step's job)
+"""
+from __future__ import annotations
+
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import sqlite3
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DB_DEFAULT = ROOT / "catalog" / "estate.db"
+
+
+def _load_twin_runtime():
+    """bin/estate-twin-runtime has no .py suffix; load it by path to reuse its already-proven
+    _linear_token()/_linear_gql() rather than a second copy of the same HTTP/retry/credential
+    logic (one behaviour, one place -- THE HEADLINE)."""
+    loader = importlib.machinery.SourceFileLoader("idp_estate_twin_runtime", str(ROOT / "bin" / "estate-twin-runtime"))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+_LABELED_ISSUES_QUERY = """
+query($team: String!, $label: String!, $after: String) {
+  issues(filter: {team: {key: {eq: $team}}, labels: {name: {eq: $label}}, state: {type: {nin: ["completed", "canceled"]}}}, first: 100, after: $after) {
+    nodes { identifier title url }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+"""
+
+
+def fetch_triggering_issues(token: str, gql, team: str, label: str) -> list[dict]:
+    """Every open MUM-team issue currently carrying `label`. Paginated, hard ceiling 20 pages
+    (2000 issues) -- same defensive ceiling as sweep_linear(), a runaway query must not hang
+    a poller that something else may schedule frequently."""
+    out, after = [], None
+    for _ in range(20):
+        data = gql(token, _LABELED_ISSUES_QUERY, {"team": team, "label": label, "after": after})
+        conn = data.get("issues") or {}
+        out.extend(conn.get("nodes") or [])
+        page = conn.get("pageInfo") or {}
+        if not page.get("hasNextPage"):
+            break
+        after = page.get("endCursor")
+    return out
+
+
+def ensure_schema(con: sqlite3.Connection) -> None:
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS linear_dispatch_queue ("
+        " issue_key TEXT PRIMARY KEY,"
+        " title TEXT NOT NULL,"
+        " url TEXT NOT NULL,"
+        " queued_at TEXT NOT NULL DEFAULT (datetime('now')),"
+        " drained_at TEXT"
+        ")"
+    )
+    con.commit()
+
+
+def enqueue(con: sqlite3.Connection, issues: list[dict]) -> int:
+    """Idempotent: INSERT OR IGNORE keyed on issue_key, so an issue already queued (drained or
+    not) is never re-queued by a second poll while its label is still attached."""
+    added = 0
+    for i in issues:
+        cur = con.execute(
+            "INSERT OR IGNORE INTO linear_dispatch_queue (issue_key, title, url) VALUES (?, ?, ?)",
+            (i["identifier"], i["title"], i["url"]),
+        )
+        added += cur.rowcount
+    con.commit()
+    return added
+
+
+def undrained(con: sqlite3.Connection) -> list[dict]:
+    rows = con.execute(
+        "SELECT issue_key, title, url, queued_at FROM linear_dispatch_queue WHERE drained_at IS NULL ORDER BY queued_at"
+    ).fetchall()
+    return [{"issue_key": r[0], "title": r[1], "url": r[2], "queued_at": r[3]} for r in rows]
+
+
+def drain(con: sqlite3.Connection, issue_key: str) -> bool:
+    cur = con.execute(
+        "UPDATE linear_dispatch_queue SET drained_at = datetime('now') WHERE issue_key = ? AND drained_at IS NULL",
+        (issue_key,),
+    )
+    con.commit()
+    return cur.rowcount > 0
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--label", default="agent-ready", help="Linear label that marks an issue ready for the harness")
+    ap.add_argument("--db", default=str(DB_DEFAULT))
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--drain", metavar="ISSUE_KEY", help="mark one queued issue drained (the harness-invocation step calls this)")
+    args = ap.parse_args(argv)
+
+    con = sqlite3.connect(args.db)
+    ensure_schema(con)
+
+    if args.drain:
+        ok = drain(con, args.drain)
+        if args.json:
+            print(json.dumps({"drained": ok, "issue_key": args.drain}))
+        else:
+            print(f"{'drained' if ok else 'no undrained row for'} {args.drain}")
+        return 0 if ok else 1
+
+    twin = _load_twin_runtime()
+    token = twin._linear_token()
+    if token is None:
+        if args.json:
+            print(json.dumps({"blind": True, "why": "LINEAR_API_KEY/_FILE not set"}))
+        else:
+            print("BLIND   linear-dispatch  LINEAR_API_KEY/_FILE not set", file=sys.stderr)
+        return 2
+
+    try:
+        issues = fetch_triggering_issues(token, twin._linear_gql, twin._LINEAR_TEAM_KEY, args.label)
+    except Exception as e:
+        if args.json:
+            print(json.dumps({"blind": True, "why": str(e)}))
+        else:
+            print(f"BLIND   linear-dispatch  {e}", file=sys.stderr)
+        return 2
+
+    added = enqueue(con, issues)
+    queue = undrained(con)
+    if args.json:
+        print(json.dumps({"blind": False, "label": args.label, "newly_queued": added, "queue": queue}, indent=2))
+    else:
+        print(f"label=`{args.label}` newly_queued={added} undrained_total={len(queue)}")
+        for r in queue:
+            print(f"  {r['issue_key']}  {r['title']}  ({r['url']})  queued {r['queued_at']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

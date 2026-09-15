@@ -25,7 +25,7 @@ import {
   useApi,
 } from '@backstage/frontend-plugin-api';
 import { Chip, EstatePage, Fold, Section, Sheet, Summary } from '../shell';
-import { EstateGraph } from './EstateGraph';
+import { EstateMap } from './EstateMap';
 import {
   capabilityLabel,
   capabilityTitle,
@@ -282,7 +282,7 @@ export function Fleet() {
   return (
     <EstatePage title={TITLE} lead={LEAD}>
       <Section title="Estate map">
-        <EstateGraph />
+        <EstateMap />
       </Section>
       <Section title="Sessions">
         <Summary>{board.summary}</Summary>

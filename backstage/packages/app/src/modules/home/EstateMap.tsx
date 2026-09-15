@@ -48,7 +48,7 @@ const DEFAULT_FILL = '#718096';
 const NODE_W = 170;
 const NODE_H = 40;
 
-function EstateNode({ data }: NodeProps) {
+function EstateNode({ id, data }: NodeProps) {
   const d = data as unknown as {
     label: string;
     domain: string;
@@ -60,7 +60,7 @@ function EstateNode({ data }: NodeProps) {
     d.ring === 'origin' ? '#f6e05e' : d.ring === 'downstream' ? '#e53e3e' : d.ring === 'upstream' ? '#3182ce' : 'transparent';
   return (
     <div
-      title={d.label}
+      title={id}
       style={{
         width: NODE_W,
         height: NODE_H,
@@ -123,7 +123,7 @@ function shortLabel(id: string): string {
   return parts[parts.length - 1] || id;
 }
 
-export function EstateGraph() {
+export function EstateMap() {
   const fetchApi = useApi(fetchApiRef);
   const [snapshot, setSnapshot] = useState<GraphSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -4,7 +4,7 @@
 import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { renderInTestApp, TestApiProvider } from '@backstage/frontend-test-utils';
 import { fetchApiRef } from '@backstage/frontend-plugin-api';
-import { EstateGraph } from './EstateGraph';
+import { EstateMap } from './EstateMap';
 
 beforeEach(() => {
   if (typeof (global as any).ResizeObserver === 'undefined') {
@@ -19,7 +19,7 @@ beforeEach(() => {
 const renderGraph = (onFetch: jest.Mock) =>
   renderInTestApp(
     <TestApiProvider apis={[[fetchApiRef, { fetch: onFetch }]]}>
-      <EstateGraph />
+      <EstateMap />
     </TestApiProvider>,
   );
 
