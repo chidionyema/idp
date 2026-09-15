@@ -11,12 +11,14 @@ a `kind: HTTPRoute` or `kind: Ingress` also gets one `kind: API`, linked with `p
 hostname read off that manifest -- so the APIs tab answers "what can I call" instead of staying
 empty. Nothing here names a host, a provider or a path outside the repository (LAW 46, R36).
 
-    bin/catalog-platform            # rewrite the file
-    bin/catalog-platform --check    # exit 1 when the file is stale (the gate)
+    bin/catalog-platform                        # rewrite the file
+    bin/catalog-platform --check                # exit 1 when the file is stale or a layer has no owner
+    bin/catalog-platform --check-fixture <path>  # rules.yaml only: grade a fixture LAYERS dict, not the cluster
 """
 
 import glob
 import os
+import runpy
 import sys
 
 import yaml
@@ -689,6 +691,12 @@ def emits_model_traces(src):
     return False
 
 
+def missing_owners(layers):
+    """Which LAYERS rows carry no owner -- pulled out of render() so rules.yaml can prove this
+    guard both ways (a fixture LAYERS dict) without exercising the real cluster/catalog paths."""
+    return sorted(n for n in layers if not layers[n][3])
+
+
 def render(rows):
     names = {r["metadata"]["name"] for r in rows}
     missing = sorted(names - set(LAYERS))
@@ -696,7 +704,7 @@ def render(rows):
         sys.exit(
             f"catalog-platform: no plain-English row for {missing}; add it to LAYERS in bin/catalog-platform"
         )
-    no_owner = sorted(n for n in names if not LAYERS[n][3])
+    no_owner = [n for n in missing_owners(LAYERS) if n in names]
     if no_owner:
         sys.exit(
             f"catalog-platform: no owner for {no_owner}; every LAYERS row's 4th field must be a real group"
@@ -803,6 +811,17 @@ def render(rows):
 
 
 def main(argv):
+    if "--check-fixture" in argv:
+        # rules.yaml's catalog-platform-owner rule: proves missing_owners() refuses a row with
+        # no owner and passes a full one, without touching the real cluster/ tree or OUT.
+        path = argv[argv.index("--check-fixture") + 1]
+        fixture = runpy.run_path(path)
+        bad = missing_owners(fixture["LAYERS"])
+        if bad:
+            print(f"FAIL    catalog-platform  no owner for {bad}")
+            return 1
+        print(f"ok      catalog-platform  every layer in {path} carries an owner")
+        return 0
     text = render(kustomizations())
     if "--check" in argv:
         cur = open(OUT).read() if os.path.exists(OUT) else ""

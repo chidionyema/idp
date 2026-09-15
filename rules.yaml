@@ -2018,6 +2018,37 @@ rules:
   ok: a cost-touching change carries a measured before and after, taken by a named command
   fail: a change that moves money reaches the merge gate with no measured pair, or with one number
   why: 'FOUNDER ORDER 2026-09-12: "and from now on it is a required PR artifact". The instruction came after an afternoon in which the same figure was wrong twice ($128 for an OCI shape this tree does not define, $40-60 for a Hetzner server whose own price page says EUR 97.30) and the one figure that held was the only one measured the same way before and after -- cached=0 at 24,012 tokens, then cached=23,808 at 24,008 tokens, same lane, minutes apart.'
+- id: catalog-platform-owner
+  fast: true
+  label: catalog-owner
+  statement: Every platform layer's Backstage Component and API carries a real owner group in bin/catalog-platform's own LAYERS dict, checked at generation time -- not a single hardcoded literal emitted regardless of what LAYERS says, and not left to a pre-commit hook a --no-verify commit, a clone with hooks not installed, or a GitHub-web merge can all skip.
+  law: incident 2026-09-15, via-negativa merged with no catalog owner or description until hand-fixed
+  origin: 'bin/catalog-platform''s LAYERS dict had no owner field at all: every Component and API owner in the generated catalog-info.yaml was the one hardcoded literal group:default/platform, and the only gate that ever ran catalog-platform lived in a pre-commit hook that graded description-completeness only, never ownership. Fixed by giving LAYERS a real 4th field and a fail-closed guard in render() (missing_owners()); this rule proves that guard both ways without touching the real cluster/ tree.'
+  planes:
+  - ci
+  - session
+  session_glob:
+  - bin/catalog-platform
+  run:
+  - python3
+  - bin/catalog-platform
+  - --check-fixture
+  cluster:
+    policy: null
+    why: the defect is in the LAYERS dict in git; the cluster never sees it
+  fixtures:
+    must_fail: tests/fixtures/catalog-platform-owner/bad.py
+    must_pass: tests/fixtures/catalog-platform-owner/good.py
+  live_elsewhere: bin/idp-ci:231 -- the layers rung runs catalog-platform --check, which calls the same missing_owners() guard against the real LAYERS dict, not the fixture pair
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/catalog-platform-owner/bad.py
+  - expect: pass
+    args:
+    - tests/fixtures/catalog-platform-owner/good.py
+  ok: every layer in the fixture carries a real owner group
+  fail: a layer has no owner, or the guard is not discriminating
 - id: founder-door
   fast: true
   label: founder-door
