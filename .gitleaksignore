@@ -36,3 +36,12 @@ d66c1b269903da62ca9856d200057c937997f357:platform/human-vault-bridge/externalsec
 d66c1b269903da62ca9856d200057c937997f357:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:359
 d66c1b269903da62ca9856d200057c937997f357:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:360
 d66c1b269903da62ca9856d200057c937997f357:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:361
+
+# 51fd812f1144086f160549ed1636e0db34b7a442 is the rebased SHA of the via-negativa commit above
+# (was 559fbd7427e9410121c3174c24466d36fa8ea2d5 pre-rebase), re-landing the same generated
+# externalsecrets.yaml lines. Same finding, not a new one -- see the comment on the first entry
+# in this file for the underlying explanation.
+51fd812f1144086f160549ed1636e0db34b7a442:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:358
+51fd812f1144086f160549ed1636e0db34b7a442:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:359
+51fd812f1144086f160549ed1636e0db34b7a442:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:360
+51fd812f1144086f160549ed1636e0db34b7a442:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:361
