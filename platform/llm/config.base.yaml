@@ -36,18 +36,25 @@ router_settings:
   allowed_fails: 3
   cooldown_time: 60
   # What makes the `tpm` on the Gemini lanes an actual ceiling rather than a decoration.
-  # Without these two keys LiteLLM reads tpm and never enforces it: the pre-call filter that
-  # drops a deployment already over its per-minute budget is what `enable_pre_call_checks`
-  # turns on, and usage-based-routing-v2 is the strategy that keeps the counters. They are set
-  # here and not in llm/config.base.yaml because the laptop compose has no shared cache and no
-  # measured quota incident; the fire was in the cluster (2026-09-08 router pod logs).
+  # `enable_pre_call_checks` is the pre-call filter that drops a deployment already over its
+  # per-minute budget -- over budget, walk the fallback chain now, instead of spending a round
+  # trip to be told 429 and then waiting out Google's retryDelay (measured 2026-09-08 at 9s,
+  # 46s, 48s, 55s and 57s -- the pause a person reads as the thing hanging before it switches).
+  # This filter runs ahead of whichever `routing_strategy` picks among what survives it, so it
+  # holds regardless of which strategy is below.
   #
-  # Every model group in this file has exactly one deployment, so this strategy changes no
-  # routing decision. All it adds is the refusal: over budget, walk the fallback chain now,
-  # instead of spending a round trip to be told 429 and then waiting out Google's retryDelay
-  # (measured that day at 9s, 46s, 48s, 55s and 57s -- the pause a person reads as the thing
-  # hanging before it switches).
-  routing_strategy: usage-based-routing-v2
+  # 2026-09-15: `groq`, `cerebras`, `sambanova`, `default` and `fast` stopped being one
+  # deployment each (the state this comment used to describe -- "changes no routing decision")
+  # once the extra Groq/Cerebras keys and the new sambanova vendor turned them into real pools.
+  # `cost-based-routing` is the strategy, not `usage-based-routing-v2`: among whichever
+  # deployments `enable_pre_call_checks` and the `allowed_fails`/`cooldown_time` breaker leave
+  # standing, it picks the cheapest per token. The three free vendors carry no
+  # input_cost_per_token/output_cost_per_token (this file's own convention for a $0 lane), so
+  # LiteLLM prices them at $0.0000 and picks one of them over paid MiniMax whenever any is
+  # healthy -- cost-effective by construction, not by a human watching a bill. They are set here
+  # and not in llm/config.base.yaml because the laptop compose has no shared cache and no
+  # measured quota incident; the fire was in the cluster (2026-09-08 router pod logs).
+  routing_strategy: cost-based-routing
   enable_pre_call_checks: true
   # One memory for the two router pods (founder 2026-09-03): cooldowns, rate counts and spend
   # windows live in the shared cache, so what one pod learns the other honours. The password
