@@ -16,7 +16,6 @@ Feature: Provider agnostic — the runner and the model are configuration, never
     Then the output is empty
 
   Scenario: A real agent runner is one config line away
-    Given "claude" is on PATH
-    When I run "bin/sb start --runner claude --repo <a scratch repo> --task 'say pong' --json"
+    When I run "bin/sb start --runner llm --repo <a scratch repo> --task 'say pong' --json"
     Then the session reaches "done"
     And the session's last step output contains "pong"
