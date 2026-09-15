@@ -19,6 +19,14 @@ or reads the tenancy-root IAM) with `# provider-adapter: <provider>` in its firs
 its provider-specific lines are then skipped, and the prefix `bin/idp-oci-` / `bin/idp-iam-` is
 the only path allowed to carry that marker (a declaration anywhere else is itself a finding:
 a caller hiding behind the marker).
+
+ADR 0026 step 3: a Crossplane Composition under platform/crossplane/capabilities/ is where an
+estate-agnostic Claim (storage.estate.io, ...) becomes one cloud's managed resource -- the same
+job platform/oci and platform/secret-store do, just for Crossplane instead of Terraform and
+ExternalSecrets. It carries the marker too, not a fourth blanket EXEMPT prefix: EXEMPT would also
+silence the XRD sitting next to it, and the XRD is the one file in that directory that must stay
+provider-blind (it is the agent's absolute limit, ADR 0026 / Diamond Standard). The marker only
+ever covers the one file that declares it.
 """
 import os
 import pathlib
@@ -40,7 +48,7 @@ PATTERN = re.compile(
 # itself with this marker on line 1-3; the marker is honoured only when the path starts with one
 # of ADAPTER_ALLOWED_PREFIXES.
 ADAPTER_MARK = re.compile(r"^# provider-adapter: (oci|aws|gcp|azure)\b")
-ADAPTER_ALLOWED_PREFIXES = ("bin/idp-oci-", "bin/idp-iam-")
+ADAPTER_ALLOWED_PREFIXES = ("bin/idp-oci-", "bin/idp-iam-", "platform/crossplane/capabilities/")
 
 
 def _untracked(root: pathlib.Path) -> set[str]:

@@ -1,0 +1,50 @@
+# ADR 0026 step 3: the Claim's own API, provider-agnostic on purpose -- same four fields as
+# schema/intent/storage.schema.json (name, purpose, size_gb, access), the agent's absolute limit
+# per the Diamond Standard (founder 2026-09-01). No field here can ever hold a provider name, a
+# bucket URL or a region; composition-bucket.yaml is where "storage.estate.io" becomes
+# "objectstorage.oci.upbound.io", and if the estate ever changes cloud that file is what is
+# rewritten, not this one and not any agent's intent.
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xobjectstoragebuckets.storage.estate.io
+spec:
+  group: storage.estate.io
+  names:
+    kind: XObjectStorageBucket
+    plural: xobjectstoragebuckets
+  claimNames:
+    kind: Bucket
+    plural: buckets
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                name:
+                  type: string
+                  pattern: "^[a-z][a-z0-9-]{1,40}$"
+                purpose:
+                  type: string
+                  minLength: 10
+                  maxLength: 300
+                size_gb:
+                  type: integer
+                  minimum: 1
+                  maximum: 500
+                access:
+                  type: string
+                  enum: [private, public-read]
+                  default: private
+              required: [name, purpose, size_gb]
+            status:
+              type: object
+              properties:
+                bucketName:
+                  type: string

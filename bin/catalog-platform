@@ -115,6 +115,12 @@ LAYERS = {
         "How the cloud control loop signs in to Oracle Cloud, deployed after the providers rather than beside them: the sign-in names a kind that only a provider installs, and the estate checks a whole folder before it applies any of it, so the two together would wait on each other forever.",
         "group:default/platform",
     ),
+    "crossplane-storage-capability": (
+        "delivery",
+        "Cloud storage capability",
+        "The template that lets the cloud control loop hand out a storage bucket: installing it creates nothing by itself, it only makes 'ask for a bucket' possible once something asks.",
+        "group:default/platform",
+    ),
     "flux-webhook": (
         "delivery",
         "Push-to-deploy door",
