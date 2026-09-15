@@ -226,7 +226,7 @@ KEYS: dict[str, KeySpec] = {
     "ops.fs_commit_tokens": KeySpec(200, "int", "SB_OPS_FS_COMMIT_TOKENS", "R9: tokens charged for one fs_commit (spec 3.1 checkpoint example: added_tokens 200)"),
     "ops.default_tokens": KeySpec(100, "int", "SB_OPS_DEFAULT_TOKENS", "R9: tokens charged for an op with no entry of its own"),
     "ops.nondestructive": KeySpec(["fs_commit", "fs_read", "git_status", "tool_result", "doc_commit", "budget_refill"], "list", "SB_OPS_NONDESTRUCTIVE", "R9: ops that need budget only -- no quorum, no hardware signature (spec 2.3 step 3)"),
-    "ops.destructive": KeySpec(["fs_delete", "git_push_force", "db_drop", "service_destroy", "rewind"], "list", "SB_OPS_DESTRUCTIVE", "R9: ops that need quorum and a hardware signature on top of budget"),
+    "ops.destructive": KeySpec(["fs_delete", "git_push_force", "db_drop", "service_destroy", "rewind", "provision_paid_compute"], "list", "SB_OPS_DESTRUCTIVE", "R9: ops that need quorum and a hardware signature on top of budget"),
 
     "budget.db_filename": KeySpec(str(_estate_home() / "sovereign" / "budget.db"), "path", "SB_BUDGET_DB", "R29: sqlite file holding one versioned budget row per session, the optimistic lock"),
     "budget.max_cas_retries": KeySpec(50, "int", "SB_BUDGET_MAX_CAS_RETRIES", "R29: compare-and-swap attempts before a spend gives up rather than spinning"),

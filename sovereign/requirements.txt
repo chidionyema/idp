@@ -40,3 +40,9 @@ PyYAML>=6.0
 redis>=5.0
 prometheus_client>=0.19.0
 requests>=2.31
+# sovereign/engine/cost_table.py's validate() checks platform/llm/hosting-cost-table.yaml
+# against cost-table.schema.json at module scope, the same real-proof-or-fail-closed shape as
+# cryptography/z3-solver/PyYAML above (idp#3525 COST-04). Declared here, not left to
+# requirements-dev.txt's test-only pin (crew#648), because a caller other than a test can import
+# cost_table at runtime to refuse an ungraded row before it enters cost_ladder.py's arithmetic.
+jsonschema>=4.20
