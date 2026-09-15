@@ -48,6 +48,10 @@ vendors:
       - { ns: otto-gateway, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
       - { entry: prospector-engine-env, ns: prospector, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
       - { entry: hermes-agent-env, ns: hermes-agent, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
+      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
+      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
+      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
+      - { ns: dagster, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
     router:
       lanes: |
         # This key has been mounted in the router pod for days and served no model row, so the
@@ -119,6 +123,10 @@ vendors:
     rotation: assisted  # DeepSeek publishes no create-key API (measured 2026-09-04)
     store_default: human-vault  # founder-pasted key
     targets:
+      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
+      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
+      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
+      - { ns: dagster, field: DEEPSEEK_API_KEY, bw: DEEPSEEK_API_KEY }
       # No litellm-upstream field: the router's DeepSeek key is console-owned (see below), so the
       # vault entry the router mounts carries no DeepSeek key at all. prospector holds its own.
       - { entry: prospector-engine-env, ns: prospector, field: DEEPSEEK_API_KEY, bw: DEEPSEEK_API_KEY }
@@ -157,6 +165,10 @@ vendors:
     rotation: assisted  # MiniMax publishes no create-key API (R52)
     store_default: human-vault
     targets:
+      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
+      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
+      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
+      - { ns: dagster, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
       # No `entry:` on any of these three any more. The vault copies of this key were proved
       # revoked at the vendor on 2026-09-10 -- HTTP 401 "invalid api key (2049)", measured from
       # inside the router pod, while the founder's own copy answered -- and have been unset. The
@@ -298,6 +310,10 @@ vendors:
     targets:
       - { entry: litellm-upstream, ns: llm, field: MOONSHOT_API_KEY, bw: MOONSHOT_API_KEY }
       - { entry: litellm-upstream, field: MOONSHOT_API_BASE, derived: base }
+      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
+      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
+      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
+      - { ns: dagster, field: MOONSHOT_API_KEY, bw: MOONSHOT_API_KEY }
     # NO router block, on purpose (R75, founder 2026-09-03). The kimi lane is console-owned:
     # the key is brought through the router's own console (LLM Credentials -> Add Credential,
     # then Models -> Add Model, stored encrypted in litellm-db) -- the enterprise intake, no
@@ -320,6 +336,10 @@ vendors:
     targets:
       - { entry: litellm-upstream, ns: llm, field: GEMINI_API_KEY, bw: GEMINI_API_KEY }
       - { ns: otto-gateway, field: GEMINI_API_KEY, bw: GEMINI_API_KEY }
+      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
+      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
+      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
+      - { ns: dagster, field: GEMINI_API_KEY, bw: GEMINI_API_KEY }
     router:
       lanes: |
         # The ceiling is Google's, measured, not chosen here. On 2026-09-08 the router pod's
@@ -604,6 +624,12 @@ vendors:
       # No `entry:`, same reason as minimax: these never rode the vault, only the human door.
       - { ns: llm, field: GROQ_API_KEY_2, bw: GROQ_API_KEY_2 }
       - { ns: llm, field: GROQ_API_KEY_3, bw: GROQ_API_KEY_3 }
+      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
+      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
+      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
+      - { ns: dagster, field: GROQ_API_KEY, bw: GROQ_API_KEY }
+      - { ns: dagster, field: GROQ_API_KEY_2, bw: GROQ_API_KEY_2 }
+      - { ns: dagster, field: GROQ_API_KEY_3, bw: GROQ_API_KEY_3 }
     # This is that follow-up. The condition the block above set -- "the moment
     # bin/idp-bootstrap-vendors has written the field" -- was measured met on 2026-09-10:
     # Secret/litellm-upstream in namespace `llm` carries the key names
@@ -723,6 +749,12 @@ vendors:
       # extra Groq keys above and the new sambanova vendor below.
       - { ns: llm, field: CEREBRAS_API_KEY_2, bw: CEREBRAS_API_KEY_2 }
       - { ns: llm, field: CEREBRAS_API_KEY_3, bw: CEREBRAS_API_KEY_3 }
+      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
+      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
+      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
+      - { ns: dagster, field: CEREBRAS_API_KEY, bw: CEREBRAS_API_KEY }
+      - { ns: dagster, field: CEREBRAS_API_KEY_2, bw: CEREBRAS_API_KEY_2 }
+      - { ns: dagster, field: CEREBRAS_API_KEY_3, bw: CEREBRAS_API_KEY_3 }
     router:
       lanes: |
         # Founder, 2026-09-10: "all agets send should be in litelln". Until this row the key
@@ -801,6 +833,10 @@ vendors:
     targets:
       - { entry: litellm-upstream, ns: llm, field: NVIDIA_API_KEY, bw: NVIDIA_API_KEY }
       - { ns: otto-gateway, field: NVIDIA_API_KEY, bw: NVIDIA_API_KEY }
+      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
+      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
+      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
+      - { ns: dagster, field: NVIDIA_API_KEY, bw: NVIDIA_API_KEY }
     router:
       lanes: |
         # Same story as the cerebras row above, and the same fix: the key was in Secrets
@@ -860,6 +896,12 @@ vendors:
       - { ns: llm, field: SAMBANOVA_API_KEY, bw: SAMBANOVA_API_KEY }
       - { ns: llm, field: SAMBANOVA_API_KEY_2, bw: SAMBANOVA_API_KEY_2 }
       - { ns: llm, field: SAMBANOVA_API_KEY_3, bw: SAMBANOVA_API_KEY_3 }
+      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
+      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
+      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
+      - { ns: dagster, field: SAMBANOVA_API_KEY, bw: SAMBANOVA_API_KEY }
+      - { ns: dagster, field: SAMBANOVA_API_KEY_2, bw: SAMBANOVA_API_KEY_2 }
+      - { ns: dagster, field: SAMBANOVA_API_KEY_3, bw: SAMBANOVA_API_KEY_3 }
     router:
       lanes: |
         - model_name: sambanova
@@ -924,6 +966,10 @@ vendors:
     store_default: human-vault
     targets:
       - { entry: litellm-upstream, ns: llm, field: COHERE_API_KEY, bw: COHERE_API_KEY }
+      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
+      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
+      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
+      - { ns: dagster, field: COHERE_API_KEY, bw: COHERE_API_KEY }
     router:
       # The chain's second hop is declared on this row rather than on the gemini row that
       # carries the `embed` lane itself, because a lane belongs to the vendor whose key it
@@ -1031,6 +1077,10 @@ vendors:
     targets:
       - { entry: prospector-engine-env, ns: prospector, field: EXA_API_KEY, bw: EXA_API_KEY }
       - { entry: hermes-agent-env, ns: hermes-agent, field: EXA_API_KEY, bw: EXA_API_KEY }
+      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
+      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
+      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
+      - { ns: dagster, field: EXA_API_KEY, bw: EXA_API_KEY }
   cursor:
     # crew#751: Cursor is an agent harness, not a LiteLLM completions lane. The key authenticates
     # `agent -p` on the Mac via cursor-agent. Architect stays on the model router. Cursor publishes
@@ -1044,6 +1094,10 @@ vendors:
     store_default: human-vault
     targets:
       - { entry: hermes-agent-env, ns: hermes-agent, field: CURSOR_API_KEY, bw: CURSOR_API_KEY }
+      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
+      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
+      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
+      - { ns: dagster, field: CURSOR_API_KEY, bw: CURSOR_API_KEY }
   telegram:
     # BotFather has no HTTP API; each bot token is a root of its own, made once with /newbot.
     kind: secret
@@ -1083,6 +1137,10 @@ vendors:
     rotation: assisted  # Stripe key creation needs dashboard
     store_default: human-vault
     targets:
+      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
+      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
+      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
+      - { ns: dagster, field: Stripe__ApiKey, bw: STRIPE_SECRET_KEY }
       # Stripe__ApiKey, not Stripe__SecretKey: the live prospector-store-api-env Secret carries
       # Stripe__ApiKey and Stripe__WebhookSecret, and nothing in the estate has ever read a key
       # called Stripe__SecretKey. Until 2026-09-07 this row named a field that does not exist,

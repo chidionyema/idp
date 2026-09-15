@@ -249,9 +249,61 @@ def _skip_note(spec: dict) -> str:
     return "; ".join(parts)
 
 
+# crew#832 CP3: the vendor keys the warden proves are mounted files, never env vars
+# (Kyverno secrets-not-from-env-vars) -- computed from the registry itself, so a vendor
+# added or removed there cannot drift from what this one job's launched run mounts.
+_WARDEN_JOB_LABEL = "ai.estate.api-key-warden"
+
+
+def _warden_secret_volumes() -> dict:
+    """One human-<vendor> Secret volume per vendor with a `targets: [{ns: dagster, ...}]`
+    row in platform/vendors/consoles.yaml, mounted read-only at /run/secrets/human/<vendor>
+    -- the same path shape platform/llm/litellm.yaml already mounts the bridge Secrets at.
+    Every mount is optional: a vendor whose key has not reached Bitwarden yet mounts nothing
+    and the warden records it as unchecked, it does not fail the run.
+    """
+    registry = yaml.safe_load((IDP / "platform/vendors/consoles.yaml").read_text())
+    vendors = sorted(
+        name
+        for name, config in (registry.get("vendors") or {}).items()
+        if any(t.get("ns") == "dagster" for t in (config.get("targets") or []))
+    )
+    return {
+        "container_config": {
+            "volume_mounts": [
+                {
+                    "name": f"human-{vendor}",
+                    "mountPath": f"/run/secrets/human/{vendor}",
+                    "readOnly": True,
+                }
+                for vendor in vendors
+            ],
+        },
+        "pod_spec_config": {
+            "volumes": [
+                {
+                    "name": f"human-{vendor}",
+                    "secret": {"secretName": f"human-{vendor}", "optional": True},
+                }
+                for vendor in vendors
+            ],
+        },
+    }
+
+
 def make_job(label: str, spec: dict):
     the_op = make_op(label, spec)
     text, source = describe_job(label, spec)
+
+    tags = {
+        "estate/label": label,
+        "estate/owner": label.split(".")[1] if label.count(".") >= 2 else label.split(".")[0],
+        "dagster/max_runtime": str(int(spec.get("timeout_s", 1800)) + 60),
+        "dagster/priority": str(int(spec.get("priority", 0))),
+        SPEC_HASH_TAG: spec_hash(spec),
+    }
+    if label == _WARDEN_JOB_LABEL:
+        tags["dagster-k8s/config"] = _warden_secret_volumes()
 
     # dagster/max_runtime: run monitoring cancels the run past timeout_s + 60s
     # (docs: deployment/execution/run-monitoring); dagster/priority orders the
@@ -260,13 +312,7 @@ def make_job(label: str, spec: dict):
         name=_job_name(label),
         description=text,
         metadata=_job_metadata(label, spec, source),
-        tags={
-            "estate/label": label,
-            "estate/owner": label.split(".")[1] if label.count(".") >= 2 else label.split(".")[0],
-            "dagster/max_runtime": str(int(spec.get("timeout_s", 1800)) + 60),
-            "dagster/priority": str(int(spec.get("priority", 0))),
-            SPEC_HASH_TAG: spec_hash(spec),
-        },
+        tags=tags,
     )
     def _job():
         the_op()

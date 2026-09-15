@@ -14,9 +14,17 @@ from pathlib import Path
 import pytest
 import requests
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "platform"))
-
-from warden import prove as warden  # noqa: E402
+_PLATFORM = str(Path(__file__).resolve().parent.parent / "platform")
+sys.path.insert(0, _PLATFORM)
+try:
+    from warden import prove as warden  # noqa: E402
+finally:
+    # platform/dagster/ is a directory with no .py files, so leaving `platform` on
+    # sys.path makes `import dagster` resolve it as an empty PEP 420 namespace package
+    # instead of the real pip-installed dagster (crew#832: broke
+    # test_warden_job.py::TestSchedulerRow, which imports the real dagster, in the same
+    # pytest session). Remove it the moment the warden import is done.
+    sys.path.remove(_PLATFORM)
 
 SENTINEL = "sk-0123456789abcdef0123456789abcdef"
 
