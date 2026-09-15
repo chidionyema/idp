@@ -36,8 +36,14 @@ import os
 import sys
 from pathlib import Path
 
-# Add platform to path for imports
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# No sys.path insert here: the only real invocation is `python -m warden.warden` with
+# PYTHONPATH=/app (warden.Dockerfile), which already makes `warden` importable. A prior
+# self-insert of platform/ onto sys.path had no matching removal, so any test process that
+# imported this module (even via the try/finally-guarded import in tests/test_warden_job.py)
+# leaked platform/ onto sys.path for the rest of that process -- `import dagster` then
+# resolved to the empty PEP 420 namespace package platform/dagster/ instead of the real
+# pip-installed dagster (or ModuleNotFoundError, wherever dagster isn't installed at all, as
+# in the bdd-suites CI job), breaking TestSchedulerRow.
 
 from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
 
