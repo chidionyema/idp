@@ -8,7 +8,7 @@
 // in the body. Both are gone: the page top, the tiles and the table now come from
 // modules/shell, which every estate page shares, and this file carries no styling of its own.
 import { Link } from '@backstage/core-components';
-import { Text } from '@backstage/ui';
+import { Button, Flex, Text } from '@backstage/ui';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import { Pill } from './EstateHome';
 import {
@@ -51,6 +51,8 @@ import { domainRows, graphSentence, worst } from './estateGraph';
 import { useGuards } from './useGuards';
 import { guardRows, guardsSentence, guardsUnreadable } from './guards';
 import { ago } from './estate';
+import { canApprove, mutationsSentence, PendingMutation } from './mutations';
+import { ActionResult, useMutations } from './useMutations';
 
 /** The page's name, and the word every door to it already uses (nav, app-config, catalogue). */
 export const TITLE = 'Health';
@@ -202,6 +204,85 @@ const FounderTiles = ({ data, now }: { data: FounderData; now: number }) => (
   </>
 );
 
+// One tile per pending ledger (docs/tickets/2026-09-15-typed-multidomain-mutation-ledger.md,
+// "The door"): ledger id, domains touched, each domain's verdict, and one
+// Approve-and-merge / Reject button. Approve is disabled until `verify_mutation` actually
+// passed (canApprove) -- there is no button here that can call admit_mutation on an
+// unverified bundle. Pressing either button is the founder acting; the backend never
+// admits or rejects on its own (see fleetview-backend/src/mutations.py).
+const MutationTile = ({
+  m,
+  busy,
+  onApprove,
+  onReject,
+}: {
+  m: PendingMutation;
+  busy: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+}) => (
+  <Tile
+    title={m.ledger_id}
+    testId={`ops-mutation-${m.ledger_id}`}
+    state={m.status}
+    badge={<Text variant="body-small">{m.status === 'verified' ? 'Verified' : 'Verifying'}</Text>}
+  >
+    {m.claim && (
+      <Text variant="body-medium" color="secondary">
+        {m.claim}
+      </Text>
+    )}
+    <Names>
+      {m.domains.map(d => (
+        <li key={d}>
+          <Name>{d}</Name> {m.per_domain[d] ?? 'not yet verified'}
+        </li>
+      ))}
+    </Names>
+    <Flex gap="2">
+      <Button
+        size="small"
+        variant="primary"
+        isDisabled={!canApprove(m) || busy}
+        onPress={onApprove}
+      >
+        Approve and merge
+      </Button>
+      <Button size="small" variant="secondary" isDisabled={busy} onPress={onReject}>
+        Reject
+      </Button>
+    </Flex>
+  </Tile>
+);
+
+const MutationsTiles = ({
+  mutations,
+  busy,
+  approve,
+  reject,
+}: {
+  mutations: PendingMutation[];
+  busy: string | null;
+  approve: (ledgerId: string) => Promise<ActionResult>;
+  reject: (ledgerId: string) => Promise<ActionResult>;
+}) => (
+  <>
+    {mutations.map(m => (
+      <MutationTile
+        key={m.ledger_id}
+        m={m}
+        busy={busy === m.ledger_id}
+        onApprove={() => {
+          approve(m.ledger_id);
+        }}
+        onReject={() => {
+          reject(m.ledger_id);
+        }}
+      />
+    ))}
+  </>
+);
+
 const DrillsTile = ({ drills }: { drills: DrillSummary }) => (
   <Tile title="Drills" testId="ops-drills">
     <Text variant="body-medium" data-testid="ops-drills-sentence">
@@ -295,6 +376,7 @@ export const Ops = () => {
   const placement = usePlacement();
   const compiled = useCompiled();
   const inventory = useInventory();
+  const mutations = useMutations();
   const now = Date.now();
   return (
     <EstatePage title={TITLE} lead={LEAD}>
@@ -337,7 +419,25 @@ export const Ops = () => {
             What waits on you could not be read, so it is unknown.
           </UnreadTile>
         )}
+        {mutations.loaded.state === 'ready' && (
+          <MutationsTiles
+            mutations={mutations.loaded.data.mutations}
+            busy={mutations.busy}
+            approve={mutations.approve}
+            reject={mutations.reject}
+          />
+        )}
+        {mutations.loaded.state === 'error' && (
+          <UnreadTile testId="ops-mutations-error" detail={mutations.loaded.error}>
+            Pending mutation ledgers could not be read, so they are unknown.
+          </UnreadTile>
+        )}
       </Tiles>
+      {mutations.loaded.state === 'ready' && (
+        <Summary testId="ops-mutations-sentence">
+          {mutationsSentence(mutations.loaded.data)}
+        </Summary>
+      )}
       <Section
         title="Open reds"
         blurb="Every firing alert, red drill and door that is down, with its owner and what happens next. A red with no owner is itself a red."
