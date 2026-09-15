@@ -748,16 +748,15 @@ metadata:
   name: temporal
   namespace: flux-system
 spec:
-  suspend: true
+  suspend: false
   interval: 10m
   dependsOn:
     - name: edge
     - name: secret-store
     - name: image-automation   # ClusterSecretStore ghcr-pull, mirrored into this namespace (step 2)
-    # Its Postgres data is copied onto the estate cluster before this row is applied, and
-    # this row is what deletes the old server. estate-db-migrate is the copy (crew: one
-    # Postgres for the estate) -- it must report Ready first or the data would be pruned
-    # ahead of being moved.
+    # estate-db-migrate copied this row's Postgres data onto the estate cluster and is the row
+    # that deleted the old server (platform/temporal/temporal.yaml:131) -- it reports Ready, so
+    # the move already happened; this row stayed suspended past that point for no live reason.
     - name: estate-db-migrate
   sourceRef:
     kind: GitRepository
