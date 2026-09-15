@@ -55,6 +55,16 @@ da4c11b18aa665b52c22e39c73dae46d96bfc1a3:platform/human-vault-bridge/externalsec
 da4c11b18aa665b52c22e39c73dae46d96bfc1a3:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:511
 da4c11b18aa665b52c22e39c73dae46d96bfc1a3:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:512
 
+# ab6c306c3a41406e3212591415f1b6ac6b3eaa01 is #3494's own merge-into-main SHA for the same
+# vendor-key-warden finding fingerprinted above under da4c11b1 (its pre-merge feature-branch
+# SHA) -- same class as d66c1b26/e4438a07/51fd812f above: gitleaks fingerprints by commit SHA,
+# and this branch's own merge of main (2026-09-15) re-lands these four lines under the SHA
+# main actually carries them at. Same finding, not a new one.
+ab6c306c3a41406e3212591415f1b6ac6b3eaa01:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:509
+ab6c306c3a41406e3212591415f1b6ac6b3eaa01:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:510
+ab6c306c3a41406e3212591415f1b6ac6b3eaa01:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:511
+ab6c306c3a41406e3212591415f1b6ac6b3eaa01:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:512
+
 # Same class as the backstage fixture above: literal fake key values in
 # tests/test_warden_job.py's test_multi_key_pool_members_are_each_proved (crew#832 CP3, the
 # vendor-key warden), written straight into a tmp_path fixture file to prove every pool member
