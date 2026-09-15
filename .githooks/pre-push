@@ -43,10 +43,15 @@ for v in $(compgen -e | grep '^GIT_' || true); do unset "$v"; done
 # correct work in a file it does not understand (LAW 38).
 sess_base="$(git rev-parse --verify --quiet origin/main || true)"
 if [ -n "$sess_base" ]; then
-	sess_files="$(git diff --name-only --diff-filter=d "$sess_base"...HEAD | tr '\n' ' ')"
-	if [ -n "${sess_files// /}" ]; then
-		# shellcheck disable=SC2086  # the file list is meant to split
-		python3 "$IDP/bin/idp-rules" session --files $sess_files || exit 1
+	# NUL-delimited, not `tr '\n' ' '` then unquoted word-splitting: a real tracked path can
+	# contain a space (backstage/templates/estate-bootstrap-preflight/skeleton/${{ values.filename_slug
+	# }}.sh is one, by Backstage's own convention), and splitting that on IFS whitespace turns one
+	# path into three bogus fragments -- one of them literally "}}.sh", which then fnmatches the
+	# pipeverdict rule's `*.sh` session_glob and is graded as a file that does not exist (incident
+	# 2026-09-15: FAIL pipeverdict }}.sh / BLIND "no shell file was read").
+	mapfile -d '' -t sess_files < <(git diff -z --name-only --diff-filter=d "$sess_base"...HEAD)
+	if [ "${#sess_files[@]}" -gt 0 ]; then
+		python3 "$IDP/bin/idp-rules" session --files "${sess_files[@]}" || exit 1
 	fi
 fi
 # crew#623 (founder 2026-08-29, "why did you not investigate cluster before starting"): the money

@@ -76,10 +76,10 @@ def bl(tag: str, msg: str) -> None:
     sys.exit(2)
 
 
-def usage_and_exit() -> None:
+def usage_and_exit(code: int = 2) -> None:
     lines = Path(__file__).read_text().splitlines()[1:5]
     print("\n".join(lines))
-    sys.exit(2)
+    sys.exit(code)
 
 
 def cf(token: str, method: str, path: str, data: dict | None = None) -> dict:
@@ -277,6 +277,8 @@ def mint_root_via_browser(py: Path, tmp: Path) -> tuple[str, str]:
 
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else "mint"
+    if mode in ("--help", "-h"):
+        usage_and_exit(0)
     if mode not in ("mint", "--preflight", "--rotate"):
         usage_and_exit()
 
