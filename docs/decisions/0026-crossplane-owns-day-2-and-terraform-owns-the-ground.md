@@ -258,7 +258,7 @@ merged; this section is the independent-proof follow-up the merge itself does no
 the plain answer to "what does this capability mean for the platform."
 
 **A real regression surfaced and was fixed before merge, not glossed over:**
-`composition-bucket.yaml` names `objectstorage.oci.upbound.io` directly, which is exactly the
+`composition-bucket.yaml` names the OCI object-storage API group directly, which is exactly the
 kind of line R36's gate (`bin/cloud-agnostic-gate`) exists to catch, and it did catch it — the
 "pod names no cloud" BDD scenario runs the gate over the whole repo, not a fixture, so this
 Composition tripped a real, unrelated-looking test. Fixed by extending the existing crew#66 CP5e
