@@ -46,6 +46,41 @@ Every real session, at `Stop`, gets its own verdict written to
 `~/.pi/agent/reasoning-gateway/<session_id>.json` -- no one has to run a gate by hand, and no PR
 has to remember to add one.
 
+## Model agnostic: the same hook grades pi/DeepSeek sessions too
+
+Founder, 2026-09-15, on this hook landing: "this is supposed to be model agnostic, how about pi
+session". Fair -- the `Stop` wiring above only ever fires for the Claude Code CLI. The hook script
+itself was already model agnostic (it takes a bare `{transcript_path, session_id}`, nothing
+Claude-specific); what was missing was a second caller. `~/.pi/agent/extensions/pi-governance/
+index.ts` -- pi's own global extension config, already wiring `bin/idp-session-gate` to pi's
+`agent_end` event (pi's exact analogue of `Stop`) -- now fires this same hook too. Proof, run
+against a real DeepSeek session already on this machine, no fixture:
+
+```bash
+T=~/.pi/agent/sessions/--Users-chidionyema-dev-code-idp--/2026-09-14T19-21-56-200Z_01a0a15e-70e8-7ddb-97f8-1abd5668c285.jsonl
+echo "{\"transcript_path\": \"$T\", \"session_id\": \"$(basename "$T" .jsonl)\"}" \
+  | python3 bin/idp-reasoning-gateway-hook --hook
+cat ~/.pi/agent/reasoning-gateway/2026-09-14T19-21-56-200Z_01a0a15e-70e8-7ddb-97f8-1abd5668c285.json
+```
+
+```json
+{
+  "transcript": ".../2026-09-14T19-21-56-200Z_01a0a15e-70e8-7ddb-97f8-1abd5668c285.jsonl",
+  "prm": {
+    "exit": 0,
+    "stdout": "ok    prm 11 step(s) graded, all >= 0.8 on factual correctness, relevance and efficiency"
+  },
+  "budget": {
+    "exit": 0,
+    "stdout": "ok    budget plan ran clean inside budget\n       goal=(none declared) subgoals=[none] steps=0/5 cost=$0.00/$0.50"
+  },
+  "session_id": "2026-09-14T19-21-56-200Z_01a0a15e-70e8-7ddb-97f8-1abd5668c285"
+}
+```
+
+Same script, same ledger, same two gates -- a DeepSeek session and a Claude Code session are
+indistinguishable to this hook, which is the point.
+
 ## Why this reports instead of blocking
 
 A step near the start of a two-hour session that already got corrected by step 40 would re-trip
