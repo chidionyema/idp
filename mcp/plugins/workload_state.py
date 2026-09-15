@@ -48,8 +48,10 @@ DESIRED_FIELDS/ACTUAL_FIELDS allow-list below -- every other column (branch, rem
 plist, coupling, note, ...) never leaves read_asset_state. Metrics are five aggregate
 numbers per named series; the samples themselves never leave summarize_metrics.
 """
+
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import sqlite3
@@ -61,17 +63,28 @@ import yaml
 try:
     from datasette import hookimpl
 except ImportError:  # pragma: no cover - exercised only in the datasette-less CI venv
+
     def hookimpl(fn):
         return fn
 
 
 DESIRED_FIELDS = ("loaded", "pinned", "max_age_days", "interval_s")
-ACTUAL_FIELDS = ("running", "last_status", "health", "stale", "age_h", "dirty", "collected")
+ACTUAL_FIELDS = (
+    "running",
+    "last_status",
+    "health",
+    "stale",
+    "age_h",
+    "dirty",
+    "collected",
+)
 
 
 def config() -> dict:
     return {
-        "catalog_path": os.environ.get("ESTATE_CATALOG_PATH", "/data/catalog-info.yaml"),
+        "catalog_path": os.environ.get(
+            "ESTATE_CATALOG_PATH", "/data/catalog-info.yaml"
+        ),
         "estate_db_path": os.environ.get("ESTATE_DB_PATH", "/data/estate.db"),
         "byte_ceiling": int(os.environ.get("ESTATE_WORKLOAD_BYTE_CEILING", "8000")),
     }
@@ -97,7 +110,9 @@ def read_catalog_entity(path: str, app: str) -> "tuple[dict | None, str | None]"
             continue
         spec = doc.get("spec") or {}
         ann = meta.get("annotations") or {}
-        repo = ann.get("github.com/project-slug") or ann.get("backstage.io/source-location")
+        repo = ann.get("github.com/project-slug") or ann.get(
+            "backstage.io/source-location"
+        )
         depends_on = spec.get("dependsOn") or []
         if not isinstance(depends_on, list):
             depends_on = []
@@ -112,7 +127,9 @@ def read_catalog_entity(path: str, app: str) -> "tuple[dict | None, str | None]"
     return None, f"no catalog entity named {app!r}"
 
 
-def read_asset_state(db_path: str, asset_path: "str | None") -> "tuple[dict, dict, str | None]":
+def read_asset_state(
+    db_path: str, asset_path: "str | None"
+) -> "tuple[dict, dict, str | None]":
     """Desired vs actual state for one asset, read-only, joined by `estate/path`.
     Degrades to ({}, {}, error) rather than raising -- an app the catalog knows but
     estate.db has no row for (a dependsOn target, say) is a normal answer, not a fault.
@@ -136,6 +153,104 @@ def read_asset_state(db_path: str, asset_path: "str | None") -> "tuple[dict, dic
     return desired, actual, None
 
 
+def read_k8s_state(db_path: str, app: str) -> "tuple[dict, dict, str | None]":
+    """Live K8s state for `app`, read from the `nodes` table bin/estate-twin-runtime's
+    cluster-state sweep already writes every 15 minutes (G4, node ids `k8s:deployment:
+    {ns}:{name}` / `k8s:pod:{ns}:{name}-<hash>`). Tried only as a fallback, when
+    read_asset_state found no `assets` row: that table is the launchd/colima substrate
+    (module docstring, "standing in for k8s until a cluster exists"); ADR 0004 names
+    OKE as the actual target, and a cluster now exists and carries real workloads
+    (estate-mcp among them) that were never on that substrate and so could never
+    resolve here before this function existed (measured 2026-09-15: get_workload_state
+    ("estate-mcp") returned found=false with a live, 2/2-Running deployment on cluster).
+    Matched by the app name as the deployment/pod-prefix, never a fuzzy search --
+    the same node-id convention G4's blast-radius walk already depends on being exact.
+    """
+    try:
+        conn = sqlite3.connect(f"file:{os.path.abspath(db_path)}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        deploy = conn.execute(
+            "select id, metadata, status from nodes where id like 'k8s:deployment:%:' || ?",
+            (app,),
+        ).fetchone()
+        pods = conn.execute(
+            "select id, metadata, status, last_seen from nodes where id like 'k8s:pod:%:' || ? || '-%'",
+            (app,),
+        ).fetchall()
+        conn.close()
+    except sqlite3.Error as e:
+        return {}, {}, str(e)
+    if deploy is None and not pods:
+        return (
+            {},
+            {},
+            f"no k8s nodes for workload {app!r} (checked k8s:deployment: and k8s:pod: ids)",
+        )
+
+    desired: dict = {}
+    namespace = None
+    if deploy is not None:
+        dm = json.loads(deploy["metadata"] or "{}")
+        namespace = dm.get("namespace")
+        desired = {"replicas": dm.get("replicas")}
+
+    pod_meta = [json.loads(r["metadata"] or "{}") for r in pods]
+    namespace = namespace or next(
+        (m.get("namespace") for m in pod_meta if m.get("namespace")), None
+    )
+    actual = {
+        "namespace": namespace,
+        "pods_total": len(pods),
+        "pods_running": sum(1 for r in pods if r["status"] == "active"),
+        "pods_crashlooping": sum(1 for r in pods if r["status"] == "crashlooping"),
+        "pods_dead": sum(1 for r in pods if r["status"] == "dead"),
+        "restarts_max": max((m.get("restarts") or 0) for m in pod_meta)
+        if pod_meta
+        else 0,
+        "deployment_status": deploy["status"] if deploy is not None else None,
+        "collected": max((r["last_seen"] for r in pods), default=None),
+    }
+    return desired, actual, None
+
+
+def read_k8s_freshness(db_path: str) -> "tuple[str, str]":
+    """G6, the estate's three-state rule (bin/estate-twin-runtime's domain_state()),
+    applied to the `runtime` domain the k8s nodes read_k8s_state() queries come from.
+    Duplicated in ~15 lines rather than imported from bin/estate-twin-runtime -- that
+    file is a CLI, not an importable module, and every other plugin in this directory
+    already duplicates its own small pure helpers rather than reach outside mcp/
+    (see _fit_under_ceiling's own comment). UNKNOWN is the default and is not a
+    failure: it means this payload's k8s state may be older than the CronJob's own
+    sweep interval promises, same meaning as everywhere else this rule is applied."""
+    try:
+        conn = sqlite3.connect(f"file:{os.path.abspath(db_path)}?mode=ro", uri=True)
+        row = conn.execute(
+            "select fresh_s, updated_at from freshness where domain = 'runtime'"
+        ).fetchone()
+        conn.close()
+    except sqlite3.Error as e:
+        return "UNKNOWN", f"runtime: freshness table unreadable ({e})"
+    if row is None:
+        return "UNKNOWN", "runtime: never read; no freshness row exists"
+    fresh_s, updated = int(row[0]), row[1]
+    try:
+        updated_at = dt.datetime.fromisoformat(updated.replace(" ", "T")).replace(
+            tzinfo=dt.timezone.utc
+        )
+    except ValueError:
+        return (
+            "UNKNOWN",
+            f"runtime: freshness row has an unparseable updated_at {updated!r}",
+        )
+    age = (dt.datetime.now(dt.timezone.utc) - updated_at).total_seconds()
+    if age > fresh_s:
+        return "UNKNOWN", (
+            f"runtime: last read {int(age)}s ago, window is {fresh_s}s -- stale, "
+            "so this actual_state may not reflect the live cluster"
+        )
+    return "MEASURED_OK", f"runtime: read {int(age)}s ago, within the {fresh_s}s window"
+
+
 def summarize_metrics(samples: "dict[str, list]") -> dict:
     """min/max/mean/last/count per named metric. Pure, no I/O. The raw `samples` list
     is never part of the return value -- cp2 feature scenario 2, "numeric metrics are
@@ -147,8 +262,11 @@ def summarize_metrics(samples: "dict[str, list]") -> dict:
         if not vals:
             continue
         out[name] = {
-            "min": min(vals), "max": max(vals), "mean": sum(vals) / len(vals),
-            "last": vals[-1], "count": len(vals),
+            "min": min(vals),
+            "max": max(vals),
+            "mean": sum(vals) / len(vals),
+            "last": vals[-1],
+            "count": len(vals),
         }
     return out
 
@@ -191,8 +309,9 @@ def _fit_under_ceiling(items: list, ceiling: int, render) -> "tuple[list, bool, 
     return items[:best], truncated, omitted
 
 
-def build_workload_state(app: str, cfg: "dict | None" = None,
-                          metric_samples: "dict[str, list] | None" = None) -> dict:
+def build_workload_state(
+    app: str, cfg: "dict | None" = None, metric_samples: "dict[str, list] | None" = None
+) -> dict:
     """Assemble one payload: catalog entry, desired vs actual state, summarized
     metrics for `app`. `metric_samples` lets the property test drive up to 10,000
     synthetic samples per metric with no live collector; production passes None and
@@ -202,9 +321,28 @@ def build_workload_state(app: str, cfg: "dict | None" = None,
     if entity is None:
         desired, actual, state_error, depends_on = {}, {}, None, []
     else:
-        desired, actual, state_error = read_asset_state(cfg["estate_db_path"], entity.get("asset_path"))
+        desired, actual, state_error = read_asset_state(
+            cfg["estate_db_path"], entity.get("asset_path")
+        )
         depends_on = entity.get("depends_on", [])
-    samples = metric_samples if metric_samples is not None else collect_metric_samples(actual)
+    state_source = "estate.db assets (launchd/colima substrate)" if actual else None
+    freshness_state, freshness_detail = None, None
+    if not actual:
+        # No row on the launchd/colima substrate -- try the live cluster graph
+        # (ADR 0004) before giving up. Keeps the assets-table contract untouched
+        # when it already answered; only reached when it did not.
+        k8s_desired, k8s_actual, k8s_error = read_k8s_state(cfg["estate_db_path"], app)
+        if k8s_actual:
+            desired, actual, state_error = k8s_desired, k8s_actual, None
+            state_source = "estate.db nodes (live k8s cluster sweep, ADR 0004)"
+            freshness_state, freshness_detail = read_k8s_freshness(
+                cfg["estate_db_path"]
+            )
+        elif state_error is None:
+            state_error = k8s_error
+    samples = (
+        metric_samples if metric_samples is not None else collect_metric_samples(actual)
+    )
     metrics = summarize_metrics(samples)
 
     def render(kept_deps, truncated, omitted):
@@ -222,13 +360,20 @@ def build_workload_state(app: str, cfg: "dict | None" = None,
             "desired_state": desired,
             "actual_state": actual,
             "state_error": state_error,
+            "state_source": state_source,
+            "freshness_state": freshness_state,
+            "freshness_detail": freshness_detail,
             "metrics": metrics,
-            "metrics_source": ("estate.db single-sample stand-in pending crew#180 -- "
-                                "no live Prometheus/OTel metrics pipeline yet"),
+            "metrics_source": (
+                "estate.db single-sample stand-in pending crew#180 -- "
+                "no live Prometheus/OTel metrics pipeline yet"
+            ),
             "byte_ceiling": cfg["byte_ceiling"],
         }
 
-    kept_deps, truncated, omitted = _fit_under_ceiling(depends_on, cfg["byte_ceiling"], render)
+    kept_deps, truncated, omitted = _fit_under_ceiling(
+        depends_on, cfg["byte_ceiling"], render
+    )
     return render(kept_deps, truncated, omitted)
 
 

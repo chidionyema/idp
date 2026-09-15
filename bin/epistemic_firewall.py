@@ -88,6 +88,27 @@ def _unwrap(turn: dict) -> dict:
     return inner if isinstance(inner, dict) else turn
 
 
+_TOOL_CALL_TYPES = ("tool_use", "tool_call", "toolCall")
+
+
+def _is_tool_call_block(block: dict) -> bool:
+    return block.get("type") in _TOOL_CALL_TYPES
+
+
+def _tool_input(block: dict) -> dict:
+    """A tool call's arguments, whichever runtime wrote them.
+
+    Claude Code writes {"type": "tool_use", "input": {...}}. Pi writes
+    {"type": "toolCall", "arguments": {...}} -- a distinct field name, not just a distinct type
+    string. Measured 2026-09-15: this gate counted 0 independent-evidence pieces for every real pi
+    session on this machine regardless of how many tool calls it made, for the same reason
+    _unwrap exists -- it read Claude Code's transcript shape only and was structurally blind to
+    pi's.
+    """
+    inp = block.get("input") or block.get("arguments") or {}
+    return inp if isinstance(inp, dict) else {}
+
+
 def _texts(turn: dict) -> list[str]:
     """Every text block in one turn, whatever shape the transcript stores it in."""
     out: list[str] = []
@@ -111,13 +132,10 @@ def _has_tool_call(turn: dict) -> bool:
     content = msg.get("content")
     if isinstance(content, list):
         for block in content:
-            if isinstance(block, dict) and block.get("type") in (
-                "tool_use",
-                "tool_call",
-            ):
+            if isinstance(block, dict) and _is_tool_call_block(block):
                 return True
     # Some transcript shapes record the call outside content.
-    if msg.get("type") in ("tool_use", "tool_call"):
+    if _is_tool_call_block(msg):
         return True
     return bool(msg.get("tool_calls"))
 
@@ -179,9 +197,7 @@ def _target_of(block: dict) -> str:
     counting raw calls (what this gate did before) cannot see it.
     """
     name = str(block.get("name", ""))
-    inp = block.get("input") or {}
-    if not isinstance(inp, dict):
-        inp = {}
+    inp = _tool_input(block)
     command = str(inp.get("command", "") or "")
     if command:
         words = command.split()
@@ -221,7 +237,7 @@ def _independent_evidence(turns: list[dict]) -> set[str]:
         for block in blocks:
             if not isinstance(block, dict):
                 continue
-            if block.get("type") not in ("tool_use", "tool_call"):
+            if not _is_tool_call_block(block):
                 continue
             # A declared plan is a statement of intent, not a reading of anything. Counting it as
             # evidence would inflate every session's tally by one and let a two-command session
@@ -230,7 +246,7 @@ def _independent_evidence(turns: list[dict]) -> set[str]:
             if str(block.get("name", "")) in _ESCAPE_HATCHES:
                 continue
             pieces.add(f"{block.get('name', '?')}:{_target_of(block)}")
-        if msg.get("type") in ("tool_use", "tool_call"):
+        if _is_tool_call_block(msg):
             if str(msg.get("name", "")) not in _ESCAPE_HATCHES:
                 pieces.add(f"{msg.get('name', '?')}:{_target_of(msg)}")
     return pieces

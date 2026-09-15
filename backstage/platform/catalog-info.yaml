@@ -2251,6 +2251,31 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-via-negativa
+  title: 'Negative-constraint engine'
+  description: 'Sits in front of every LLM call, watches for repeat failures, and learns a short list of things not to do next time -- so the estate stops paying to make the same mistake twice instead of catching it after the fact.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=via-negativa'
+    estate/flux-kustomization: 'via-negativa'
+    estate/path: './platform/via-negativa'
+    estate/cluster: 'oke'
+  tags: [platform, resilience]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: resilience
+  dependsOn:
+    - component:default/layer-secret-store
+    - component:default/layer-llm
+    - component:default/layer-estate-db
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-weave-gitops
   title: 'Deploy button'
   description: 'Flux''s own dashboard: every layer, the revision it is running, and a button that applies main now.'
