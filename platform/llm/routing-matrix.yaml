@@ -1,0 +1,65 @@
+# The routing matrix (idp#3525 CP3, ROUTE-02/ROUTE-05).
+#
+# "The working-method axes SHALL be independent config dimensions: resource tier (Rung 0-3) x
+# candidate volume N x selection method (gate | weighted-vote | multi-verifier) x escalation
+# pattern (route | cascade | hybrid). Changing any cell SHALL be a config edit only, and every
+# cell SHALL be individually enable/disable-able at runtime without a redeploy."
+#
+# sovereign/engine/routing_matrix.py reads this file and this file alone; a cell is a row below,
+# never a branch in that module. Adding, removing or disabling a cell is an edit here.
+#
+# resource_tier names a rung from platform/llm/cost-ladder.yaml (COST-03) by name, not by
+# duplicating its price -- one ladder, referenced, never a second one.
+#
+# filter_depth (ROUTE-05): semantic intent routing (LiteLLM semantic router / RouteLLM / vLLM
+# router) is a NAMED GAP (spec S3 section 4), not a built feature. It exists here ONLY as a
+# toggleable axis, default off, because misclassification ships a wrong answer on the cheap
+# path -- a real cost, not a free filter. No cell below turns it on.
+version: 1
+
+axes:
+  resource_tier:
+    - rung0_local_free
+    - rung1_router_metered
+    - rung2_flat_rate_apple_silicon
+    - rung3_gpu_burst
+  candidate_volume: [1, 3, 5]
+  selection_method: [gate, weighted_vote, multi_verifier]
+  escalation_pattern: [route, cascade, hybrid]
+  filter_depth:
+    enabled: false
+    values: [off, shallow, deep]
+    gap: "ROUTE-05 named gap, spec S3 section 4: semantic intent routing. Not built; this is the toggle."
+
+cells:
+  - config_id: baseline_gate
+    resource_tier: rung1_router_metered
+    candidate_volume: 1
+    selection_method: gate
+    escalation_pattern: route
+    filter_depth: off
+    enabled: true
+
+  - config_id: three_candidate_vote
+    resource_tier: rung1_router_metered
+    candidate_volume: 3
+    selection_method: weighted_vote
+    escalation_pattern: cascade
+    filter_depth: off
+    enabled: true
+
+  - config_id: five_candidate_verifier
+    resource_tier: rung2_flat_rate_apple_silicon
+    candidate_volume: 5
+    selection_method: multi_verifier
+    escalation_pattern: hybrid
+    filter_depth: off
+    enabled: true
+
+  - config_id: local_floor_only
+    resource_tier: rung0_local_free
+    candidate_volume: 1
+    selection_method: gate
+    escalation_pattern: route
+    filter_depth: off
+    enabled: true
