@@ -1,10 +1,14 @@
-# The concierge namespace, with its fence in the same apply. One object runs here: nothing.
+# The concierge namespace, with its fence in the same apply. No workload runs here -- the
+# concierge is Mac-hosted (mums-concierge/docs/DEPLOYMENT.md) -- only the bridged secrets it
+# reads with its own kubectl (human-vault-bridge's human-twilio, and tunnel-external-secret.yaml's
+# concierge-tunnel).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - namespace.yaml
   - ns-fence.yaml
   - network.yaml
+  - tunnel-external-secret.yaml
 labels:
   - pairs:
       app.kubernetes.io/part-of: idp

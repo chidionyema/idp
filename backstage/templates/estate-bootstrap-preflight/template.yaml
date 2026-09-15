@@ -58,12 +58,14 @@ spec:
             - full
             - tailscale
             - cloudflare
+            - concierge-tunnel
             - vendors
             - estate-seed
           enumNames:
             - The whole estate (idp-bootstrap-estate)
             - Tailscale only (idp-bootstrap-tailscale)
             - Cloudflare only (idp-bootstrap-cloudflare)
+            - Concierge tunnel only (idp-bootstrap-concierge-tunnel)
             - Vendor keys only (idp-bootstrap-vendors)
             - Estate-born credentials only (idp-estate-seed)
           description: >-

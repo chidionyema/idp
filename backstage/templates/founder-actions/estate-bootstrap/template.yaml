@@ -21,6 +21,7 @@ spec:
         - estate-seed
         - tailscale
         - cloudflare
+        - concierge-tunnel
         - vendors
         default: estate-seed
       reason:

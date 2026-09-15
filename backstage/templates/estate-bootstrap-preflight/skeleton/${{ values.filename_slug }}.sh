@@ -43,6 +43,7 @@ case "$SCOPE" in
 full) CMD="bin/idp-bootstrap-estate --preflight" ;;
 tailscale) CMD="bin/idp-bootstrap-tailscale --preflight" ;;
 cloudflare) CMD="bin/idp-bootstrap-cloudflare --preflight" ;;
+concierge-tunnel) CMD="bin/idp-bootstrap-concierge-tunnel --preflight" ;;
 vendors) CMD="bin/idp-bootstrap-vendors --preflight" ;;
 estate-seed) CMD="bin/idp-estate-seed --preflight" ;;
 *)

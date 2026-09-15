@@ -1048,7 +1048,14 @@ vendors:
       # silently absent from the bridge, so even a founder who filled in Bitwarden completely
       # would never see them land in the cluster. Same vendor, same ExternalSecret (LAW 44).
       - { entry: concierge-twilio, ns: concierge, field: TWILIO_WHATSAPP_NUMBER, bw: TWILIO_WHATSAPP_NUMBER, optional: true }
-      - { entry: concierge-twilio, ns: concierge, field: PUBLIC_SERVER_URL, bw: PUBLIC_SERVER_URL, optional: true }
+      # PUBLIC_SERVER_URL is NOT here. Measured 2026-09-15: it was declared as a FOUNDER ACTION
+      # value beside the phone numbers, on the theory that "wherever you're hosting/tunnelling it"
+      # is something only the founder can answer. It isn't -- mums-concierge/docs/DEPLOYMENT.md
+      # already names the mechanism as a Cloudflare Tunnel, and the estate already holds the one
+      # Cloudflare root R52 provides for, unattended, in bin/idp-bootstrap-cloudflare. A hostname
+      # under the estate's own zone is exactly the class of fact code mints, not a person pastes.
+      # bin/idp-bootstrap-concierge-tunnel is the bootstrapper; platform/concierge/tunnel-external-secret.yaml
+      # carries the result into this namespace from estate-vault. See root-trust.md's `concierge-tunnel` row.
 
   # The card key. Not a vendor: it is the symmetric key the concierge's card object is encrypted
   # with, and it arrives the same way every other credential does -- the founder drops it into

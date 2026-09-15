@@ -16,7 +16,7 @@ IDP=$(cd "$(dirname "$0")/.." && pwd)
 MODE=${1:-run}
 case "$MODE" in run|--preflight) ;; *) sed -n 2,4p "$0"; exit 2;; esac
 ARG=""; [ "$MODE" = --preflight ] && ARG=--preflight
-STEPS="idp-estate-seed idp-bootstrap-tailscale idp-bootstrap-cloudflare idp-bootstrap-vendors"
+STEPS="idp-estate-seed idp-bootstrap-tailscale idp-bootstrap-cloudflare idp-bootstrap-concierge-tunnel idp-bootstrap-vendors"
 rc=0
 for s in $STEPS; do
   printf '\n== %s %s\n' "$s" "$ARG"
