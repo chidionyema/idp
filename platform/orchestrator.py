@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""LangGraph orchestrator with MCP boundary and teleological filter.
+"""LangGraph orchestrator with MCP boundary, teleological filter, and control loops.
 
 Routes all agent actions through the idp-estate-gateway MCP server.
-Implements context pruning via a custom LangGraph node that strips
-3+ consecutive failures before they reach the LLM.
+Implements context pruning, pre-LLM gates (ParEval), and post-verdict hooks (JudgeDrift).
+All hooks wrapped with failure isolation: exceptions never break the agent path.
 """
 
 import asyncio
@@ -15,10 +15,10 @@ from pathlib import Path
 
 from langchain_anthropic import ChatAnthropic
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_core.messages import BaseMessage, ToolMessage
-from langgraph.graph import StateGraph
+from langchain_core.messages import BaseMessage, ToolMessage, SystemMessage
+from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import create_react_agent
-from typing import Annotated
+from typing import Annotated, Literal
 from typing_extensions import TypedDict
 
 import operator
@@ -29,6 +29,8 @@ class AgentState(TypedDict):
 
     messages: Annotated[list[BaseMessage], operator.add]
     goal: str
+    halt_reason: str = ""
+    verdict: str = ""
 
 
 def teleological_filter(state: AgentState) -> AgentState:
@@ -71,7 +73,6 @@ def teleological_filter(state: AgentState) -> AgentState:
             messages.pop(idx)
 
     # Re-inject goal reminder
-    from langchain_core.messages import SystemMessage
 
     goal_reminder = SystemMessage(
         content=f"REMINDER: Your primary objective is: {goal}. Failed attempts above have been pruned to save context."
@@ -86,19 +87,75 @@ def teleological_filter(state: AgentState) -> AgentState:
     return {**state, "messages": messages}
 
 
-async def run_orchestrator(goal: str, worktree: str = None):
-    """Execute the agent with MCP boundary and teleological filter.
+def pre_llm_gate(state: AgentState, hook_orchestrator) -> AgentState:
+    """
+    Pre-LLM gate: call all pre_llm hooks.
+    If ParEval halts, set halt_reason and route to verdict_complete.
+    Failure isolation: hook exceptions never break this path.
+    """
+    decision = hook_orchestrator.call_pre_llm(state)
+
+    if decision.action == "halt":
+        return {
+            **state,
+            "halt_reason": decision.evidence,
+            "verdict": "HALTED_BY_PAREVAL",
+        }
+
+    return state
+
+
+def verdict_complete(state: AgentState, hook_orchestrator) -> AgentState:
+    """
+    Post-verdict node: call all post_verdict hooks asynchronously.
+    Non-blocking. Never breaks agent path.
+    """
+    verdict = {"halt_reason": state.get("halt_reason"), "status": state.get("verdict")}
+
+    # Call post_verdict hooks (non-blocking, async via queue)
+    hook_orchestrator.call_post_verdict_async(state, verdict, None, 1000)
+
+    return state
+
+
+def should_continue(state: AgentState) -> Literal["filter", "verdict_complete", END]:
+    """Router: continue loop or halt?"""
+    if state.get("halt_reason"):
+        return "verdict_complete"
+    if state.get("verdict") == "HALTED_BY_PAREVAL":
+        return "verdict_complete"
+    # Check for terminal condition: last message is AI text (no tool calls)
+    if state.get("messages"):
+        last = state["messages"][-1]
+        if isinstance(last, BaseMessage) and type(last).__name__ == "AIMessage":
+            if not hasattr(last, "tool_calls") or not last.tool_calls:
+                return "verdict_complete"
+    return "filter"
+
+
+async def run_orchestrator(goal: str, worktree: str = None, hook_orchestrator=None):
+    """Execute the agent with MCP boundary, teleological filter, and control loops.
 
     This is the main entry point. It:
     1. Launches the idp MCP server as a subprocess via stdio
     2. Discovers the estate_exec tool from the server
-    3. Creates a LangGraph state machine with two nodes:
-       - teleological_filter: prunes 3+ consecutive errors
+    3. Creates a LangGraph state machine with nodes:
+       - filter: teleological filter (prune 3+ errors)
+       - pre_llm_gate: call pre_llm hooks (ParEval halt gate)
        - agent: the LLM + tool executor (ReAct loop)
-    4. Streams the execution so you can observe the agent's logic
+       - verdict_complete: call post_verdict hooks (JudgeDrift)
+    4. All hook failures are isolated: exceptions never break the agent path
     """
     if worktree:
         os.chdir(worktree)
+
+    # Initialize hook orchestrator if not provided
+    if hook_orchestrator is None:
+        from platform.config.control_loop_registry import get_registry
+        from platform.eval.hook_wrapper import HookOrchestrator
+
+        registry = get_registry()
+        hook_orchestrator = HookOrchestrator(registry)
 
     # 1. The MCP Boundary (The Iron Gate)
     client = MultiServerMCPClient(
@@ -117,41 +174,39 @@ async def run_orchestrator(goal: str, worktree: str = None):
     # 3. Initialize the Brain
     model = ChatAnthropic(model_name="claude-3-5-sonnet-20241022", temperature=0)
 
-    # 4. Construct the Graph with Teleological Filter
+    # 4. Construct the Graph
     graph_builder = StateGraph(AgentState)
 
-    # Add the ReAct agent node
+    # Add nodes
     agent_node = create_react_agent(model, tools)
 
     graph_builder.add_node("filter", teleological_filter)
+    graph_builder.add_node("pre_llm_gate", lambda s: pre_llm_gate(s, hook_orchestrator))
     graph_builder.add_node("agent", agent_node)
+    graph_builder.add_node(
+        "verdict_complete", lambda s: verdict_complete(s, hook_orchestrator)
+    )
 
-    # Edge logic: filter -> agent -> filter (loop) until done
-    graph_builder.add_edge("filter", "agent")
-    graph_builder.add_edge("agent", "filter")
+    # Edges: filter -> pre_llm_gate -> agent -> router
+    graph_builder.add_edge("filter", "pre_llm_gate")
+    graph_builder.add_edge("pre_llm_gate", "agent")
+    graph_builder.add_conditional_edges("agent", should_continue)
+
+    # Final edges
+    graph_builder.add_edge("verdict_complete", END)
 
     graph_builder.set_entry_point("filter")
 
     graph = graph_builder.compile()
 
     # 5. Execute the Goal
-    initial_state = {"messages": [], "goal": goal}
+    initial_state = {"messages": [], "goal": goal, "halt_reason": "", "verdict": ""}
 
     step_count = 0
-    async for event in graph.astream(initial_state):
+    async for _ in graph.astream(initial_state):
         step_count += 1
         if step_count > 30:
             return "CIRCUIT_BREAKER: Max steps (30) reached."
-
-        for node_name, node_output in event.items():
-            if node_name == "agent" and "messages" in node_output:
-                for msg in node_output["messages"][-1:]:
-                    msg_type = type(msg).__name__
-                    if msg_type == "AIMessage":
-                        if hasattr(msg, "tool_calls") and msg.tool_calls:
-                            pass
-                        elif msg.content:
-                            pass
 
     return "TASK_COMPLETE"
 
