@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nohup git push origin feat/agent-metrics-cardinality-budget)",
+      "Bash(echo \"PID=$!\")"
+    ]
+  }
+}
