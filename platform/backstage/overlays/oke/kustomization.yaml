@@ -18,6 +18,10 @@ resources:
   - edge-manners.yaml
   # crew#562: tailnet egress Service to Sunshine on the founder's Mac + its Basic-auth secret.
   - sunshine-egress.yaml
+  # The mutations-relay door: tailnet-exposed Service + its own port-scoped NetworkPolicy for
+  # executor_link.py's 0.0.0.0:8091 (see fleetview-backend.Dockerfile's ENTRYPOINT and the
+  # fleetview-backend container patch below).
+  - fleetview-executor-service.yaml
   # crew#503 CP6: backstage/founder is a kustomization of its own (a directory base may live anywhere;
   # a file outside the overlay may not, and plain `kustomize build` in the tests refuses it).
   - ../../../../backstage/founder
@@ -43,6 +47,14 @@ images:
   # because kustomize's images transformer is where a reader looks for the effective name.
   - name: docker.io/library/postgres
     newName: docker.io/library/postgres
+  - name: ghcr.io/chidionyema/fleetview-backend
+    newName: ghcr.io/chidionyema/fleetview-backend
+    # Placeholder tag, same situation estate-mcp.yaml documents: the first main build after this
+    # file merges is what publishes a real ghcr.io/chidionyema/fleetview-backend tag: until then
+    # the sidecar cannot pull and Flux reports it. image-automation-controller then rewrites this
+    # line from ImagePolicy flux-system/fleetview-backend (platform/image-automation/
+    # fleetview-backend.yaml); the marker is how it finds the line.
+    newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
 patches:
   # The catalogue's database is the one estate Postgres (platform/estate-db), not the server
   # bundled in base -- base keeps that one because compose and k3d have nothing else to talk to.
@@ -224,3 +236,106 @@ patches:
                   name: org-catalog
                   items:
                     - {key: catalog-info.yaml, path: org/catalog-info.yaml}
+  # FleetView backend as a sidecar in this same Pod (not a new Deployment/Service):
+  # backstage/app-config.yaml:~217 hardcodes proxy.endpoints./fleetview to
+  # http://127.0.0.1:18790, unchanged since local dev. A sidecar shares the Pod's network
+  # namespace, so 127.0.0.1:18790 resolves to it exactly the way it already does on a laptop --
+  # no proxy-config edit, no Service, no port collision (catalogue itself listens on 3100). The
+  # init container/OCI-artifact pattern is platform/mcp/estate-mcp.yaml's, reused rather than
+  # invented (THE HEADLINE).
+  - target:
+      kind: Deployment
+      name: catalogue
+    patch: |
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: fleetview-data
+          emptyDir: {}
+      # bin/idp-catalog-push already publishes catalog/estate.db as an OCI artifact
+      # (oci://ghcr.io/chidionyema/idp/estate-db:latest); this container pulls the same
+      # artifact estate-mcp.yaml's fetch-estate-db init container pulls, so graph/blast-radius/
+      # notes/signals (all backed by ESTATE_DB) read the real catalogue. sessions/stream's
+      # pi/gemini half (_other_harness_sessions, sessions.py) reads the same `estate` projected
+      # ConfigMap volume the main catalogue container already mounts at /estate (below) --
+      # no second store, no second sync path (ADR 0006). sessions/stream's Claude Code half
+      # (_claude_code_sessions) and mutations are NOT covered here -- see the PR description.
+      - op: add
+        path: /spec/template/spec/initContainers
+        value:
+          - name: fetch-estate-db
+            image: ghcr.io/fluxcd/flux-cli:v2.9.4
+            args: ["pull", "artifact", "oci://ghcr.io/chidionyema/idp/estate-db:latest", "--output", "/data"]
+            env:
+              - {name: DOCKER_CONFIG, value: /creds}
+            volumeMounts:
+              - {name: fleetview-data, mountPath: /data}
+              - {name: ghcr-pull-dockerconfig, mountPath: /creds, readOnly: true}
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 10001
+              runAsGroup: 10001
+              seccompProfile: {type: RuntimeDefault}
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: [ALL]}
+      # ghcr-pull is already imagePullSecrets on this Pod (above), but that only gives the
+      # kubelet's image puller the credential -- `flux pull artifact` in the init container
+      # above needs its own DOCKER_CONFIG file, the same two-mount split estate-mcp.yaml uses.
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: ghcr-pull-dockerconfig
+          secret:
+            secretName: ghcr-pull
+            items:
+              - {key: .dockerconfigjson, path: config.json}
+      - op: add
+        path: /spec/template/spec/containers/-
+        value:
+          name: fleetview-backend
+          image: ghcr.io/chidionyema/fleetview-backend
+          ports:
+            - {name: fleetview, containerPort: 18790}
+            # Reachable only via fleetview-executor-service.yaml's Service, which the tailnet
+            # exposes, which platform/tailscale/policy.hujson's deny-by-default ACL then admits
+            # tag:founder-mac to and nobody else -- not this Pod's own catalogue Service, and not
+            # the backstage edge route, either of which would make it reachable more widely.
+            - {name: fv-executor, containerPort: 8091}
+          env:
+            - {name: ESTATE_DB, value: /data/estate.db}
+            - {name: ESTATE_CATALOG_PATH, value: /estate/catalog-info.yaml}
+            # Turns on routes.py's relay path for /mutations, /mutations/approve,
+            # /mutations/reject (executor_link.py): unset, every local `docker run`/laptop launch
+            # of this same image calls mutations.py directly, exactly as before this file.
+            - {name: FLEETVIEW_EXECUTOR_MODE, value: relay}
+            # Defense in depth on top of the tailnet ACL, mirroring platform/jit/deployment.yaml's
+            # JIT_AGENT_KEY: optional because this estate has no existing mechanism to deliver a
+            # laptop-side secret outside a manual, once-off step (see the PR description's Not
+            # done section) -- unset, this door is authenticated by the ACL alone, and serve.py's
+            # _check_key() only compares when a value is actually present on this side.
+            - name: FLEETVIEW_EXECUTOR_KEY
+              valueFrom:
+                secretKeyRef: {name: fleetview-executor, key: FLEETVIEW_EXECUTOR_KEY, optional: true}
+          volumeMounts:
+            - {name: fleetview-data, mountPath: /data, readOnly: true}
+            - {name: estate, mountPath: /estate, readOnly: true}
+          readinessProbe:
+            httpGet: {path: /healthz, port: fleetview}
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: fleetview}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 256Mi}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile: {type: RuntimeDefault}
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
