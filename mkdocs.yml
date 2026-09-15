@@ -444,6 +444,10 @@ nav:
       - a-script-is-not-built-until-it-runs: gates/a-script-is-not-built-until-it-runs.md
       - deterministic-verifier: gates/deterministic-verifier.md
       - catalog-owner: gates/catalog-platform-owner.md
+      # 2026-09-15: same mistake a fourth time. dod-v3-verified-not-asserted landed in
+      # rules.yaml this session with no nav row, so test_gate_demo's nav case went red
+      # again: "generated pages not in the nav: ['dod-v3-verified-not-asserted']".
+      - dod-v3-verified-not-asserted: gates/dod-v3-verified-not-asserted.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md

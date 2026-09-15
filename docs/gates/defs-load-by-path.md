@@ -33,8 +33,8 @@ Stack Trace:
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 [0m
 [32m<timestamp>[0m - dagster - [34mERROR[0m - [31mValidation for 1 code locations failed.[0m
-/usr/local/lib/python3.14/site-packages/click/core.py:788: SupersessionWarning: Function `definitions_validate_command` is superseded and its usage is discouraged. Use 'dg check defs' instead.
-  return __callback(*args, **kwargs)
+<home>/Library/Python/3.14/lib/python/site-packages/click/core.py:910: SupersessionWarning: Function `definitions_validate_command` is superseded and its usage is discouraged. Use 'dg check defs' instead.
+  return callback(*args, **kwargs)
 ```
 
 ## Permitted
@@ -47,8 +47,8 @@ Exit code `0` (the registry expects zero). ✓
 [32m<timestamp>[0m - dagster - [34mWARNING[0m - No dagster instance configuration file (dagster.yaml) found at <tmpdir>. Defaulting to loading and storing all metadata with <tmpdir>. If this is the desired behavior, create an empty dagster.yaml file in <tmpdir>.
 [32m<timestamp>[0m - dagster - [34mINFO[0m - Validation successful for code location loads-by-path.py.
 [32m<timestamp>[0m - dagster - [34mINFO[0m - All code locations passed validation.
-/usr/local/lib/python3.14/site-packages/click/core.py:788: SupersessionWarning: Function `definitions_validate_command` is superseded and its usage is discouraged. Use 'dg check defs' instead.
-  return __callback(*args, **kwargs)
+<home>/Library/Python/3.14/lib/python/site-packages/click/core.py:910: SupersessionWarning: Function `definitions_validate_command` is superseded and its usage is discouraged. Use 'dg check defs' instead.
+  return callback(*args, **kwargs)
 ```
 
 ## The registry's own lines
