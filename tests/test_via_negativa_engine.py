@@ -18,7 +18,7 @@ import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PROXY_DIR = REPO_ROOT / "bin" / "negative-constraints-proxy"
-WORKER_DIR = REPO_ROOT / "bin" / "rca-worker"
+WORKER_DIR = REPO_ROOT / "bin" / "rca_worker"
 
 
 def test_go_proxy_compiles() -> None:

@@ -52,6 +52,19 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: { drop: [ALL] }
+          # No listening port to probe (Redis Streams consumer, no server) -- same shape as
+          # platform/mcp/estate-mcp.yaml's file-freshness probe: the consume loop (worker.py,
+          # run_forever()) touches /tmp/heartbeat every turn, block=2000ms even when idle, so a
+          # stale file means the loop, not just the process, is wedged.
+          livenessProbe:
+            exec: { command: ["sh", "-c", "find /tmp/heartbeat -mmin -2 | grep -q ."] }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            exec: { command: ["sh", "-c", "find /tmp/heartbeat -mmin -2 | grep -q ."] }
+            initialDelaySeconds: 10
+            periodSeconds: 15
           resources:
             requests: { cpu: 100m, memory: 128Mi }
             limits: { cpu: 500m, memory: 256Mi }

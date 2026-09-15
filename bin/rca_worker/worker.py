@@ -397,7 +397,14 @@ async def run_forever(
         CONSUMER_GROUP,
     )
 
+    # The heartbeat file's mtime is the liveness signal (platform/via-negativa/rca.yaml's
+    # exec probe): this loop has no listening port to probe, so the real question a probe
+    # can ask is whether the xreadgroup loop is still turning, not whether messages are
+    # flowing -- block=2000 below means an idle consumer still reaches here every ~2s.
+    heartbeat_path = Path(os.environ.get("VN_HEARTBEAT_PATH", "/tmp/heartbeat"))  # noqa: S108
+
     while not stop.is_set():
+        heartbeat_path.touch()
         resp = await redis_client.xreadgroup(
             CONSUMER_GROUP,
             consumer_name,
