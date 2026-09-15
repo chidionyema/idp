@@ -63,7 +63,13 @@ print("\n".join(str(n) for n in old[int(sys.argv[1]):]))' "$keep" 2>/dev/null) |
 # A grading line is one line. Fold a multi-line CLI diagnosis onto it, drop anything shaped like
 # a bearer token or key so a diagnosis can never become a leak, and cap it so one row stays one row.
 oneline() { printf '%s' "$1" | tr '\n\r\t' '   ' | sed -E 's/[A-Za-z0-9_-]{40,}/<redacted>/g; s/  +/ /g; s/^ //' | cut -c1-300; }
-prim=$1; verb=$2; shift 2
+# `--help` with fewer than two args used to fall straight into `verb=$2`, an unbound variable
+# under `set -u` -- this file had never once run to completion (bin/idp-script-compiles, idp#3537).
+if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
+  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+  exit 0
+fi
+prim=${1:-}; verb=${2:-}; shift $(( $# < 2 ? $# : 2 ))
 BUCKET=""; NAME=""; FILE=""; PREFIX=""; VAULT=""; REGION=""
 while [ $# -gt 0 ]; do
   case "$1" in
