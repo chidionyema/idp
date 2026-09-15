@@ -6,8 +6,9 @@ Reads the register table in docs/reference/policy/root-trust.md and every Extern
 Grades three things, never a proxy:
   1. every vault key an ExternalSecret reads (data[].remoteRef.key, dataFrom[].extract.key) has a
      register row; an unregistered key is a credential born nobody knows how -> FAIL;
-  2. a MEETS row names a bootstrapper that exists as a file under bin/, or one of the two
-     in-estate birth paths (`ESO generator`, Terraform `oci_vault_secret`) -> else FAIL;
+  2. a MEETS row names a bootstrapper that exists as a file under bin/, or one of the three
+     in-estate birth paths (`ESO generator`, Terraform `oci_vault_secret`, Crossplane `Secret`
+     (ADR 0026 step 4)) -> else FAIL;
   3. a MISS or PARTIAL row names a crew ticket (crew#N) -> else FAIL (a miss without a ticket is
      a documented procedure, the thing the ruling refuses).
 Prints one line per finding, then a count line. Exit 0 = PASS (`--check` additionally requires
@@ -27,7 +28,7 @@ IDP = os.environ.get("IDP_ROOT") or os.path.dirname(HERE)
 REGISTER = os.path.join(IDP, "docs", "reference", "policy", "root-trust.md")
 BIN = os.path.join(IDP, "bin")
 PLATFORM = os.path.join(IDP, "platform")
-IN_ESTATE = ("ESO generator", "Terraform")
+IN_ESTATE = ("ESO generator", "Terraform", "Crossplane")
 VERDICTS = {"MEETS", "PARTIAL", "MISS"}
 # Who is asked for the credential, which is a different question from whether code can mint it
 # (founder 2026-09-05: "need to understand what is customer and what is estate/founder credentials

@@ -958,6 +958,45 @@ spec:
       - kind: ConfigMap
         name: estate-config
 ---
+# Decision 0026 step 4: the secret capability -- XRD + Composition only, no Claim. Same
+# zero-blast-radius invariant as crossplane-storage-capability above: a Composition is a
+# template, nothing is provisioned until something claims it, and nothing in the repo emits a
+# VaultSecret Claim yet -- bin/intent-compile's compile_secret()'s crossplane branch only fires
+# when ESTATE_STORAGE_PROVIDER=crossplane and an intent's origin=generated, and
+# clusters/oke/estate-config.yaml still sets the provider to "oci". Safe to run live for the same
+# reason the storage row is: it makes the capability real and reviewable without touching a live
+# credential.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane-secret-capability
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: crossplane-providerconfig
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/crossplane/capabilities/secret
+  prune: true
+  timeout: 5m
+  healthChecks:
+    - apiVersion: apiextensions.crossplane.io/v1
+      kind: CompositeResourceDefinition
+      name: xvaultsecrets.secret.estate.io
+  postBuild:
+    substituteFrom:
+      # ${ESTATE_OCI_COMPARTMENT_OCID}: shared with the storage row above. ${ESTATE_OCI_VAULT_OCID}
+      # / ${ESTATE_OCI_VAULT_KEY_OCID}: composition-secret.yaml patches these into every Secret
+      # managed resource's forProvider block -- measured 2026-09-15 with the OCI CLI against the
+      # live tenancy (`oci kms management vault list`, `oci kms management key list`), the same
+      # vault platform/oci/vault.tf already created (oci_kms_vault.estate / oci_kms_key.estate),
+      # not a new one. Neither value is a secret: an OCID is an identifier (same rule as
+      # ESTATE_OCI_COMPARTMENT_OCID above).
+      - kind: ConfigMap
+        name: estate-config
+---
 # crew#516 CP5 slice 1: the science lane's facts counted in the collector's backend, from inside
 # the cluster (platform/science/science-facts.yaml). Reader: bin/idp-science-facts.
 apiVersion: kustomize.toolkit.fluxcd.io/v1

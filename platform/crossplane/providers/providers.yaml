@@ -15,16 +15,34 @@ spec:
   runtimeConfigRef:
     name: oci-workload-identity
 ---
-# One sub-provider, deliberately. A Crossplane provider installs the CRDs for everything it can
-# manage, and the OCI family covers most of the console; installing the ones nothing asks for
-# would put hundreds of unused CRDs in the API server and widen what a compromised control plane
-# could reach. Object storage is what decision 0026's step 3 emits, so object storage is what is
-# installed. The next capability adds the next sub-provider, in the pull request that needs it.
+# One sub-provider per capability that actually ships, deliberately. A Crossplane provider
+# installs the CRDs for everything it can manage, and the OCI family covers most of the console;
+# installing the ones nothing asks for would put hundreds of unused CRDs in the API server and
+# widen what a compromised control plane could reach. Object storage is what decision 0026's
+# step 3 emits, so object storage is what is installed.
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-oci-objectstorage
 spec:
   package: ghcr.io/oracle/provider-oci-objectstorage:v1.3.0
+  runtimeConfigRef:
+    name: oci-workload-identity
+---
+# Step 4 (2026-09-15): the next capability, in the pull request that needs it, exactly as the
+# comment above promised. vault.oci.upbound.io's Secret resource is the Crossplane equivalent of
+# platform/oci/vault.tf's oci_vault_secret -- confirmed live: `gh api
+# repos/oracle/crossplane-provider-oci/contents/apis/cluster/vault/v1alpha1` lists
+# zz_secret_types.go, and `gh api orgs/oracle/packages/container/provider-oci-vault/versions`
+# shows v1.3.0 published 2026-07-19, the same release line already pinned above and on the
+# family provider. KMS (key/vault lifecycle) is not installed: nothing emits a Vault or a Key yet,
+# only Secrets against the one vault OpenTofu already created (platform/oci/vault.tf) -- same
+# "install what the shipping capability needs" rule as objectstorage-not-the-whole-family above.
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-oci-vault
+spec:
+  package: ghcr.io/oracle/provider-oci-vault:v1.3.0
   runtimeConfigRef:
     name: oci-workload-identity

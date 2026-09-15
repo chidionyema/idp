@@ -44,6 +44,18 @@ data:
   # root compartment "is acceptable", which this measurement shows is not what is actually used.
   ESTATE_OCI_COMPARTMENT_OCID: "ocid1.compartment.oc1..aaaaaaaaynd3mq5nhnccywzbmwfdevpkmvyzwcsxm7kyevei5s72ikyge5oq"
   ESTATE_OCI_NAMESPACE: "lr7j97fk6nor"
+  # ADR 0026 step 4: the same role for the secret capability that the two keys above play for
+  # storage -- bin/intent-compile compile_secret()'s crossplane branch and
+  # platform/crossplane/capabilities/secret/composition-secret.yaml patch these into every Secret
+  # managed resource's forProvider block. Not new OCI resources: the same vault OpenTofu already
+  # created (platform/oci/vault.tf's oci_kms_vault.estate / oci_kms_key.estate). Measured
+  # 2026-09-15 with the OCI CLI against the live tenancy: `oci kms management vault list
+  # --compartment-id $ESTATE_OCI_COMPARTMENT_OCID` for the vault (display-name "estate-secrets",
+  # lifecycle-state ACTIVE), then `oci kms management key list --endpoint
+  # <vault's management-endpoint>` for the key (display-name "estate-secrets", ENABLED) -- not
+  # asserted from the .tf file's resource name, which does not itself carry the OCID.
+  ESTATE_OCI_VAULT_OCID: "ocid1.vault.oc1.uk-london-1.ervi35puaagem.abwgiljsj3naku45j7hnffej3xlqb3b3oiv6voegh5nhzekbxqofbxqxm5sa"
+  ESTATE_OCI_VAULT_KEY_OCID: "ocid1.key.oc1.uk-london-1.ervi35puaagem.abwgiljsbhocbcntwovusm5m2omcnaduoanvsfojn3zn7b7hpvcnja3d5kfq"
   # Founder 2026-09-02: "estate dna is missing email address, basically core company info that
   # can change". The estate's contact address — ACME/cert contact, catalog owner mail, anywhere a
   # surface needs "who runs this" — is referenced as ${ESTATE_EMAIL}, never a literal. Same rule

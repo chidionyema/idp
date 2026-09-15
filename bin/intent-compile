@@ -208,13 +208,48 @@ def compile_storage_crossplane(i: dict, out: pathlib.Path, src: str) -> list[str
 REGISTER_OPEN = ("<!-- compiled-intent-rows: written by bin/intent-compile from intents/*.json. "
                  "Do not edit these rows; edit the intent and re-run. -->")
 REGISTER_SHUT = "<!-- /compiled-intent-rows -->"
-# bin/idp-root-trust accepts a MEETS row whose last cell names a file under bin/, or one of its two
-# in-estate birth paths. A vendor credential is written once by the estate's vendor bootstrapper; a
-# generated one is born by the OpenTofu this compiler emits and no human is ever shown it.
+# bin/idp-root-trust accepts a MEETS row whose last cell names a file under bin/, or one of its
+# three in-estate birth paths (ESO generator, Terraform, Crossplane). A vendor credential is
+# written once by the estate's vendor bootstrapper; a generated one is born by whichever backend
+# ESTATE_STORAGE_PROVIDER names and no human is ever shown it.
 BIRTH = {
     "vendor": ("Supplier", "`bin/idp-bootstrap-vendors`"),
-    "generated": ("Operator", "Terraform `oci_vault_secret`, compiled from `{src}`"),
+    "generated:oci": ("Operator", "Terraform `oci_vault_secret`, compiled from `{src}`"),
+    "generated:crossplane": ("Operator", "Crossplane `Secret` (vault.oci.upbound.io), "
+                             "compiled from `{src}`"),
 }
+
+
+def compile_secret_crossplane(i: dict, out: pathlib.Path, src: str) -> list[str]:
+    """ADR 0026 step 4: origin=generated secrets as Claims instead of Terraform random_password +
+    oci_vault_secret. One Claim per key, the same shape as the Terraform branch's per-key loop --
+    platform/crossplane/capabilities/secret/composition-secret.yaml sets enableAutoGeneration on
+    the OCI Vault resource, so the plaintext never transits this file, the intent, or Terraform
+    state (the Terraform branch still puts it through random_password + Terraform state).
+    bin/idp-split-brain refuses this Claim's external-name if it collides with any
+    platform/oci/*.tf oci_vault_secret address."""
+    files = []
+    for k in sorted(i["keys"], key=lambda k: k["key"]):
+        slug = k["key"].lower().replace("_", "-")
+        name = f"{i['name']}-{slug}"
+        doc = {
+            "apiVersion": "secret.estate.io/v1alpha1",
+            "kind": "VaultSecret",
+            "metadata": {
+                "name": name,
+                "namespace": "crossplane-system",
+                "annotations": {"crossplane.io/external-name": name},
+            },
+            "spec": {
+                "name": name,
+                "purpose": k["purpose"],
+                "rotation_days": i.get("rotation_days", 90),
+            },
+        }
+        path = out / i["name"] / f"secret-claim-{slug}.yaml"
+        dump(path, doc, src)
+        files.append(f"{i['name']}/secret-claim-{slug}.yaml")
+    return files
 
 
 def compile_secret(i: dict, out: pathlib.Path, src: str, dna: dict[str, str]) -> list[str]:
@@ -222,7 +257,7 @@ def compile_secret(i: dict, out: pathlib.Path, src: str, dna: dict[str, str]) ->
     and the register row that makes bin/idp-root-trust able to see it."""
     provider = dna.get("ESTATE_STORAGE_PROVIDER", "")
     origin = i.get("origin", "vendor")
-    if origin == "generated" and provider != "oci":
+    if origin == "generated" and provider not in ("oci", "crossplane"):
         raise SystemExit(f"BLIND: ESTATE_STORAGE_PROVIDER={provider!r} has no vault backend yet")
     name, ns = i["name"], i["workload"]
     keys = sorted(i["keys"], key=lambda k: k["key"])
@@ -241,7 +276,9 @@ def compile_secret(i: dict, out: pathlib.Path, src: str, dna: dict[str, str]) ->
                      for k in keys],
         },
     }, src)
-    if origin == "generated":
+    if origin == "generated" and provider == "crossplane":
+        files += compile_secret_crossplane(i, out, src)
+    elif origin == "generated":
         rot = i.get("rotation_days", 90)
         tf = [HDR.format(src=src),
               "# Self-contained module: the founder wires it into an apply he runs (agents never\n"
@@ -278,16 +315,18 @@ def compile_secret(i: dict, out: pathlib.Path, src: str, dna: dict[str, str]) ->
     return [f"{name}/{f}" for f in sorted(files) + ["kustomization.yaml"]]
 
 
-def register_row(i: dict, src: str) -> str:
+def register_row(i: dict, src: str, backend: str) -> str:
     """The row bin/idp-root-trust grades. Emitting it here is the point: a credential cannot be
     added to the estate without the register learning about it in the same commit."""
     origin = i.get("origin", "vendor")
-    owner, birth = BIRTH[origin]
+    key = origin if origin == "vendor" else f"generated:{backend}"
+    owner, birth = BIRTH[key]
     consumer = f"platform/compiled/{i['name']}/external-secret.yaml"
     provider = "vendor" if origin == "vendor" else "estate"
     how = ("issued by the vendor, written once into the vault by the estate's vendor bootstrapper"
            if origin == "vendor" else
-           "minted inside OpenTofu and never shown to a person")
+           "minted inside OpenTofu and never shown to a person" if backend == "oci" else
+           "minted inside OCI Vault (enableAutoGeneration) and never shown to a person")
     return (f"| `{i['name']}` | {consumer} | {provider} | {owner} | {how}; "
             f"rotation {i.get('rotation_days', 90)}d | MEETS | {birth.format(src=src)} |")
 
@@ -353,7 +392,7 @@ def main() -> int:
             emitted += compile_storage(i, out, f.name, dna)
         elif cap == "secret":
             emitted += compile_secret(i, out, f.name, dna)
-            rows.append(register_row(i, f.name))
+            rows.append(register_row(i, f.name, dna.get("ESTATE_STORAGE_PROVIDER", "")))
         else:
             raise SystemExit(f"BLIND: capability {cap!r} has a schema and no emitter")
     if rows:

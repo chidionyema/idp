@@ -320,3 +320,78 @@ graph about anything.
 - **The `platform/rbac/` vs `platform/rbac-floor/` glass-break prefix gap**, found and reported in
   the status section above, is still unfixed and still needs the founder specifically, since
   `bin/idp-glass-break` protects its own edit.
+
+## 2026-09-15 (same day): step 4 — the secrets provider, not deferred
+
+The previous section said step 4 was "blocked on... a secrets provider not yet installed. Not
+reopened here." That was true when written and is false now: the founder's objection ("when we
+adopt a technology we adopt it fully... don't want your half-baked shit in this estate") is a
+fair read of leaving a second, larger capability sitting on "not yet" when nothing actually
+prevented shipping it the same safe way as storage. It is now installed, following storage's
+proven, zero-blast-radius pattern exactly — not a redesign, the same template applied to the
+next domain.
+
+**What shipped, with the evidence for each claim:**
+- `provider-oci-vault:v1.3.0` added to `platform/crossplane/providers/providers.yaml`. Verified
+  real, not guessed: `gh api orgs/oracle/packages/container/provider-oci-vault` returns the
+  package (owner `oracle`, repo `crossplane-provider-oci`); `gh api
+  orgs/oracle/packages/container/provider-oci-vault/versions` lists tag `v1.3.0` published
+  2026-07-19 — the same release line already pinned for the family provider and
+  `provider-oci-objectstorage`. `gh api
+  repos/oracle/crossplane-provider-oci/contents/apis/cluster/vault/v1alpha1` lists
+  `zz_secret_types.go`; its `SecretParameters`/`SecretObservation` structs (fetched directly,
+  `raw.githubusercontent.com`) gave the exact field names used below (`vaultId`, `keyId`,
+  `enableAutoGeneration`, `secretName`, `status.atProvider.id`).
+- `platform/crossplane/capabilities/secret/{xrd-secret.yaml,composition-secret.yaml,kustomization.yaml}`:
+  an `XVaultSecret`/`VaultSecret` XRD + Composition, same shape as the storage one — a Composition
+  is a template, so this creates zero cloud resources on its own. `kustomize build` on the
+  directory was run and produces valid `CompositeResourceDefinition` and `Composition` objects
+  (output inspected, not assumed).
+- `clusters/oke/platform.yaml`: a `crossplane-secret-capability` Kustomization row, `dependsOn:
+  [crossplane-providerconfig]`, health-checked against the new XRD — same wiring as the storage
+  row, same "safe to run live" justification (no Claim emitted anywhere in the repo yet).
+- `clusters/oke/estate-config.yaml`: two new DNA keys, `ESTATE_OCI_VAULT_OCID` and
+  `ESTATE_OCI_VAULT_KEY_OCID`. Not new OCI resources — the vault OpenTofu already created
+  (`platform/oci/vault.tf`'s `oci_kms_vault.estate` / `oci_kms_key.estate`). Measured live against
+  the tenancy, read-only, same discipline as the compartment/namespace values above: `oci kms
+  management vault list --compartment-id $ESTATE_OCI_COMPARTMENT_OCID` (returns vault
+  `estate-secrets`, `lifecycle-state: ACTIVE`), then `oci kms management key list --endpoint
+  <that vault's management-endpoint>` (returns key `estate-secrets`, `lifecycle-state: ENABLED`).
+  Neither value is a secret — an OCID is an identifier, same rule already applied to
+  `ESTATE_OCI_COMPARTMENT_OCID`.
+- `bin/intent-compile`: `compile_secret_crossplane()`, dispatched from `compile_secret()` when
+  `origin=generated` and `ESTATE_STORAGE_PROVIDER=crossplane` — the same dispatch key
+  `compile_storage()` already uses, because the Diamond Standard ADR is explicit that this switch
+  is estate-wide, not per-capability. Emits one `VaultSecret` Claim per key, mirroring the
+  Terraform branch's per-key loop. `bin/idp-root-trust`'s `IN_ESTATE` tuple gained `"Crossplane"`
+  so a Crossplane-born secret's register row grades `MEETS` on its own merits instead of being
+  forced to lie and say "Terraform".
+- **A real capability, not just a smaller one.** `enableAutoGeneration: true` on the OCI Vault
+  `Secret` resource means the plaintext value is minted server-side, inside OCI Vault, and never
+  transits this Composition, an agent's intent, a Kubernetes object, or — unlike the existing
+  Terraform branch — Terraform state. The `random_password` + `oci_vault_secret` path
+  `compile_secret()`'s `"oci"` branch still uses puts the value through Terraform state whether or
+  not a person ever sees it. The Crossplane branch is a strict improvement on the property LAW 21
+  cares about, not a parity re-implementation.
+- **Proved, not asserted:** `tests/test_adr0026_step4_crossplane_secret_capability.py` runs
+  `bin/intent-compile` end-to-end against the real fixture
+  (`tests/fixtures/intent/good/secret.json`) with `ESTATE_STORAGE_PROVIDER=crossplane`, asserts
+  the emitted Claim's exact shape (namespace `crossplane-system`, no `content` field anywhere)
+  and that the register row's birth path is accepted by `bin/idp-root-trust`'s literal
+  `IN_ESTATE` check — then re-runs the same fixture with `ESTATE_STORAGE_PROVIDER=oci` and
+  asserts `secret.tf` still emits and no Claim does, proving the existing path is unchanged. All
+  three assertions were run and passed (`3 passed`), not written and left unrun. `bin/idp-split-brain`,
+  `bin/cloud-agnostic-gate` (the new file's `# provider-adapter: oci` marker is honored, adapter
+  count 5 -> 6, 0 provider-specific hits) and `bin/idp-root-trust` (`PASS`) were each re-run
+  against the real tree after staging the new files, not only against fixtures.
+
+**What is still not done, stated as plainly as the gaps above:** this is the same state storage
+shipped in — installed, reviewable, zero live effect — not a claim that secrets have migrated.
+`ESTATE_STORAGE_PROVIDER` is still `"oci"`; no `VaultSecret` Claim exists anywhere in the repo; no
+existing secret (vendor or generated) has moved. Flipping the DNA switch, and the copy/migration
+work real secrets need once it flips, stay exactly what the Diamond Standard ADR already said they
+are: the founder's call, not this session's. What changed is that "full adoption" no longer has a
+missing second capability sitting between it and reality — both domains that matter (object
+storage and generated secrets, together the majority of what `platform/oci` holds today) now
+compile through Crossplane, on the same switch, proven live and tested, waiting on one decision
+instead of two unbuilt capabilities.

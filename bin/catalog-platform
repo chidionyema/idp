@@ -121,6 +121,12 @@ LAYERS = {
         "The template that lets the cloud control loop hand out a storage bucket: installing it creates nothing by itself, it only makes 'ask for a bucket' possible once something asks.",
         "group:default/platform",
     ),
+    "crossplane-secret-capability": (
+        "delivery",
+        "Cloud secret capability",
+        "The template that lets the cloud control loop hand out a vault secret whose value the vault itself generates, never Terraform state: installing it creates nothing by itself, it only makes 'ask for a secret' possible once something asks.",
+        "group:default/platform",
+    ),
     "flux-webhook": (
         "delivery",
         "Push-to-deploy door",
