@@ -58,6 +58,11 @@ _PILLAR_GAP_AXES = {
     "pillar4_darwin_machines": "DARWIN-01",
 }
 
+# UX-03 (idp#3525 CP9, spec section 10): the always-on local tiny model's resource_tier. Never
+# a togglable field -- assert_lanes_reachable() enforces that a cell on this tier exists and
+# stays enabled, at the schema layer, in every matrix this module will load.
+LOCAL_FLOOR_TIER = "rung0_local_free"
+
 
 class RoutingMatrixError(ValueError):
     """The matrix file is missing, unparsable, or a cell names a value off no known axis."""
@@ -107,6 +112,36 @@ def validate_schema(matrix: dict[str, Any]) -> None:
                 raise RoutingMatrixError(
                     f"cell {row.get('config_id')!r}: {field}={row.get(field)!r} is off no known axis"
                 )
+    assert_lanes_reachable(matrix)
+
+
+def assert_lanes_reachable(matrix: dict[str, Any]) -> None:
+    """UX-03: "CFG-01 SHALL reject any config write that would leave zero enabled lanes
+    reachable from the router's default entrypoint -- the always-on local tiny model is never
+    a togglable field, it is the floor the schema itself enforces, not a config choice that can
+    be switched off." ACCEPT: attempted write disabling all lanes including the local floor is
+    rejected at the schema layer, not the runtime layer -- the write never lands.
+
+    Called from validate_schema(), the same pre-apply gate ROUTE-05's pillar-gap check already
+    runs through -- one schema-layer check a proposed write passes through before it is ever
+    applied, not a second, separate runtime check that could let a bad write land first.
+    """
+    cells = matrix.get("cells") or []
+    if not any(row.get("enabled", True) for row in cells):
+        raise RoutingMatrixError(
+            "routing matrix write disables every cell -- zero enabled lanes reachable (UX-03)"
+        )
+    floor_cells = [row for row in cells if row.get("resource_tier") == LOCAL_FLOOR_TIER]
+    if not floor_cells:
+        raise RoutingMatrixError(
+            f"routing matrix has no cell on {LOCAL_FLOOR_TIER!r} -- the always-on local floor "
+            "is not a togglable field and must always be present (UX-03)"
+        )
+    if not any(row.get("enabled", True) for row in floor_cells):
+        raise RoutingMatrixError(
+            f"routing matrix write disables every {LOCAL_FLOOR_TIER!r} cell -- the local floor "
+            "is never a togglable field, it cannot be switched off (UX-03)"
+        )
 
 
 def active_cells(matrix: dict[str, Any]) -> list[dict[str, Any]]:
