@@ -5,11 +5,18 @@ Binds `features/fleetview/cp1_contract.feature`. The spec's CP1 done-command is
 scenarios are the same assertion written so it fails before the plugin exists and passes when it
 does.
 
-What is under test is not a new data source. The estate already renders session rows into the
-generated Backstage catalogue (`bin/catalog-gen`, the rows whose `metadata.annotations.estate/path`
-sits under the prompt ledger), and `mcp/plugins/estate_sessions.py` already serves them over MCP.
-CP1 puts the same rows behind the portal's own `/api/fleetview/sessions` so the board reads the
-catalogue the rest of the estate reads rather than a second file (ADR 0006, one source of truth).
+What is under test is not a new data source. claude-code sessions are read directly from the
+estate's own prompt ledger directory (`~/.claude/state/prompt-ledger/*.jsonl`, named by
+`ESTATE_STATE_PATH_PREFIX`); every other harness's sessions come from
+`mcp/plugins/estate_sessions.py`, the estate's one maintained catalogue-session reader (ADR 0006).
+CP1 puts both behind the portal's own `/api/fleetview/sessions` rather than a second file.
+
+(Corrected 2026-09-15: this suite's `catalogue` fixture used to fabricate `Resource` rows for
+claude-code sessions and never actually exercised how the board finds them -- the real
+`bin/catalog-gen` never emits one row per prompt-ledger file, it deliberately collapses them into
+one summary row, so the production filter this fixture stood in for matched zero real rows. Live
+proof: `GET /api/fleetview/sessions` against the real catalogue returned an empty array. The
+fixture below now creates real ledger files, the same shape production reads.)
 
 The portal is not running in this repository's test environment, so the contract is graded the way
 the rest of the estate grades a plugin: the route handler is imported and called directly with a
@@ -294,12 +301,26 @@ def body_names_error(context):
     )
 
 
+@then(parsers.parse('the body names the unreachable adapter "{name}"'))
+def body_names_unreachable(context, name):
+    unreachable = context["body"].get("unreachable") or []
+    assert any(entry.startswith(name) for entry in unreachable), (
+        f"expected {name!r} among the unreachable adapters, got: {unreachable}"
+    )
+
+
 @given("the catalogue is not readable")
 def catalogue_not_readable(monkeypatch, tmp_path):
-    """A catalogue path that does not exist. The route must say so, not answer with an empty
-    board -- "no sessions" and "I could not read the sessions" are different facts and the page
-    renders them differently."""
+    """A catalogue path that does not exist.
+
+    Only the other-harnesses adapter (`.pi`/`.gemini`, read via `mcp/plugins/estate_sessions.py`)
+    depends on the catalogue -- claude-code sessions are read straight off the ledger directory.
+    So a missing catalogue must not take the whole board down: it names one adapter as unreachable
+    and the board otherwise stays live. The ledger prefix is also pointed at an empty tmp
+    directory here so this scenario is hermetic and does not read the real machine's ledger.
+    """
     monkeypatch.setenv("ESTATE_CATALOG_PATH", str(tmp_path / "not-here.yaml"))
+    monkeypatch.setenv("ESTATE_STATE_PATH_PREFIX", str(tmp_path / "empty-ledger") + "/")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -336,38 +357,43 @@ def ledger(tmp_path):
     return path
 
 
-def _row_for(ledger_path, name):
-    """A catalogue row naming one ledger file, as bin/catalog-gen emits it."""
-    return {
-        "apiVersion": "backstage.io/v1alpha1",
-        "kind": "Resource",
-        "metadata": {
-            "name": name,
-            "annotations": {
-                "estate/path": f"@HOME@/.claude/state/prompt-ledger/{ledger_path.name}"
-            },
-        },
-        "spec": {"type": "ledger", "owner": "agents"},
-    }
-
-
-def test_a_session_row_names_its_project_not_a_mangled_path():
-    """`session_id` is an id a person or an agent can say out loud, and the project is named.
-
-    The old adapter put the raw directory slug in both fields, so a board of 29 sessions read as
-    29 paths and no one could tell which was which.
-    """
+def _load_sessions_module():
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("fv_sessions_readable", PLUGIN)
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
+    return m
 
-    row = _row_for(
-        Path("-Users-chidionyema-dev-code-idp--wt-p0.jsonl"),
-        "-Users-chidionyema-dev-code-idp--wt-p0",
+
+def test_a_session_row_names_its_project_not_a_mangled_path(tmp_path):
+    """`session_id` is an id a person or an agent can say out loud, and the project is named.
+
+    The old adapter put the raw directory slug in both fields, so a board of 29 sessions read as
+    29 paths and no one could tell which was which.
+    """
+    import datetime as dt
+    import json
+
+    m = _load_sessions_module()
+
+    path = tmp_path / "-Users-chidionyema-dev-code-idp--wt-p0.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "id": "id1",
+                "session": "abc123",
+                "ts": "2026-09-11T09:30:00Z",
+                "source": "user",
+                "text": "fix the board",
+            }
+        )
+        + "\n"
     )
-    s = m.session_from_row(row)
+    now = dt.datetime(2026, 9, 11, 10, 0, 0, tzinfo=dt.timezone.utc)
+    sessions = m._claude_code_sessions(directory=tmp_path, now=now)
+    assert sessions, "no session rows produced from the ledger file"
+    s = sessions[0]
     assert s["repo"] == "idp", f"the repo is not named: {s}"
     assert "--" not in s["session_id"], f"the id is a raw path slug: {s['session_id']}"
     assert s["session_id"], s
@@ -376,27 +402,26 @@ def test_a_session_row_names_its_project_not_a_mangled_path():
 def test_a_session_row_reports_when_it_was_last_active(ledger, tmp_path):
     """`updated_at` comes from the ledger's own newest timestamp. Without it the board cannot put
     the most recent session first, which is the only ordering a reader cares about."""
-    import importlib.util
+    import datetime as dt
 
-    spec = importlib.util.spec_from_file_location("fv_sessions_time", PLUGIN)
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
+    m = _load_sessions_module()
 
-    row = _row_for(ledger, "session")
-    s = m.session_from_row(row, ledger_path=ledger)
-    assert s["updated_at"] == "2026-09-11T09:30:00Z", s
+    now = dt.datetime(2026, 9, 11, 10, 0, 0, tzinfo=dt.timezone.utc)
+    sessions = m._claude_code_sessions(directory=tmp_path, now=now)
+    assert len(sessions) == 1, sessions
+    assert sessions[0]["updated_at"] == "2026-09-11T09:30:00Z", sessions[0]
 
 
-def test_a_session_row_carries_what_was_asked_for(ledger):
+def test_a_session_row_carries_what_was_asked_for(ledger, tmp_path):
     """`task` is the person's own words -- the newest USER prompt in the ledger -- because that is
     what tells a reader what the session is for. A tool result or a status line is not a task."""
-    import importlib.util
+    import datetime as dt
 
-    spec = importlib.util.spec_from_file_location("fv_sessions_task", PLUGIN)
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
+    m = _load_sessions_module()
 
-    row = _row_for(ledger, "session")
-    s = m.session_from_row(row, ledger_path=ledger)
-    assert s["task"] == "build the fleet board", s
-    assert s["task"] != s["session_id"], "the task is still just the id"
+    now = dt.datetime(2026, 9, 11, 10, 0, 0, tzinfo=dt.timezone.utc)
+    sessions = m._claude_code_sessions(directory=tmp_path, now=now)
+    assert sessions[0]["task"] == "build the fleet board", sessions[0]
+    assert sessions[0]["task"] != sessions[0]["session_id"], (
+        "the task is still just the id"
+    )

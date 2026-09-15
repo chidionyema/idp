@@ -62,7 +62,7 @@ With the port-forward to the estate's Temporal:
 ```console
 $ kubectl -n temporal port-forward svc/temporal-frontend 17233:7233
 $ TEMPORAL_HOST=127.0.0.1 TEMPORAL_PORT=17233 TEMPORAL_NAMESPACE=estate \
-    python /tmp/serve_fv.py 18790 backstage/plugins/fleetview-backend/src/routes.py
+    python backstage/plugins/fleetview-backend/src/serve.py 18790 backstage/plugins/fleetview-backend/src/routes.py
 $ curl -s http://127.0.0.1:18790/api/fleetview/sessions | jq '{count: (.sessions|length), unreachable}'
 {
   "count": 5,

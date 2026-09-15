@@ -28,3 +28,49 @@ e4438a077515666ef219f7a60007e337a13cf18e:platform/human-vault-bridge/externalsec
 e4438a077515666ef219f7a60007e337a13cf18e:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:359
 e4438a077515666ef219f7a60007e337a13cf18e:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:360
 e4438a077515666ef219f7a60007e337a13cf18e:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:361
+
+# d66c1b269903da62ca9856d200057c937997f357 is #3490's own merge-into-main SHA for the same
+# router-pools commit above -- gitleaks fingerprints by commit SHA, and every merge that
+# re-lands these four lines under a new SHA needs its own entry. Same finding, not a new one.
+d66c1b269903da62ca9856d200057c937997f357:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:358
+d66c1b269903da62ca9856d200057c937997f357:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:359
+d66c1b269903da62ca9856d200057c937997f357:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:360
+d66c1b269903da62ca9856d200057c937997f357:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:361
+
+# 51fd812f1144086f160549ed1636e0db34b7a442 is the rebased SHA of the via-negativa commit above
+# (was 559fbd7427e9410121c3174c24466d36fa8ea2d5 pre-rebase), re-landing the same generated
+# externalsecrets.yaml lines. Same finding, not a new one -- see the comment on the first entry
+# in this file for the underlying explanation.
+51fd812f1144086f160549ed1636e0db34b7a442:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:358
+51fd812f1144086f160549ed1636e0db34b7a442:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:359
+51fd812f1144086f160549ed1636e0db34b7a442:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:360
+51fd812f1144086f160549ed1636e0db34b7a442:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:361
+
+# Same generator, same class of finding, one commit later: crew#832 CP3 (the vendor-key warden)
+# adds a dagster-namespace ExternalSecret per single-key vendor so the warden job gets its own
+# copy of each key. SAMBANOVA_API_KEY_2/_3's vault ENTRY NAMES cross the same entropy threshold
+# in this new block as they already do in the llm-namespace block fingerprinted above.
+da4c11b18aa665b52c22e39c73dae46d96bfc1a3:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:509
+da4c11b18aa665b52c22e39c73dae46d96bfc1a3:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:510
+da4c11b18aa665b52c22e39c73dae46d96bfc1a3:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:511
+da4c11b18aa665b52c22e39c73dae46d96bfc1a3:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:512
+
+# ab6c306c3a41406e3212591415f1b6ac6b3eaa01 is #3494's own merge-into-main SHA for the same
+# vendor-key-warden finding fingerprinted above under da4c11b1 (its pre-merge feature-branch
+# SHA) -- same class as d66c1b26/e4438a07/51fd812f above: gitleaks fingerprints by commit SHA,
+# and this branch's own merge of main (2026-09-15) re-lands these four lines under the SHA
+# main actually carries them at. Same finding, not a new one.
+ab6c306c3a41406e3212591415f1b6ac6b3eaa01:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:509
+ab6c306c3a41406e3212591415f1b6ac6b3eaa01:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:510
+ab6c306c3a41406e3212591415f1b6ac6b3eaa01:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:511
+ab6c306c3a41406e3212591415f1b6ac6b3eaa01:platform/human-vault-bridge/externalsecrets.yaml:generic-api-key:512
+
+# Same class as the backstage fixture above: literal fake key values in
+# tests/test_warden_job.py's test_multi_key_pool_members_are_each_proved (crew#832 CP3, the
+# vendor-key warden), written straight into a tmp_path fixture file to prove every pool member
+# is checked independently -- an "alive-<n>-" prefix plus a 10-digit run, matching no vendor's
+# key format, never read from a real store.
+1e1d9f68986d3a6e1710a6703e77b658e2425b44:tests/test_warden_job.py:generic-api-key:144
+1e1d9f68986d3a6e1710a6703e77b658e2425b44:tests/test_warden_job.py:generic-api-key:146
+1e1d9f68986d3a6e1710a6703e77b658e2425b44:tests/test_warden_job.py:generic-api-key:157
+1e1d9f68986d3a6e1710a6703e77b658e2425b44:tests/test_warden_job.py:generic-api-key:159

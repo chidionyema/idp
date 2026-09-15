@@ -2,6 +2,7 @@
 # idp-router-key: mint one LiteLLM virtual key for a consumer and put it in the vault, from CI.
 #
 #   bin/idp-router-key <consumer> <model>[,<model>...]
+#   bin/idp-router-key --reap-orphans [--max-age-hours N]     delete this script's own dead mints
 #
 # The estate's router (platform/llm) is the only place a model key exists; every workload gets a
 # router virtual key, never a vendor key (LAW 34). Before this, each consumer's key was a SEED_*
@@ -13,8 +14,152 @@
 # Idempotent: when the vault already holds a key the router still accepts (/key/info 200), it is
 # kept; a missing or refused key is replaced. Budget: estate-defaults.yaml llm.virtual_key_daily_usd.
 # Exit 0 ok, 1 FAIL (router refused, vault has no master key), 2 BLIND (missing tool or config).
+#
+# --reap-orphans (crew#832 follow-up, 2026-09-15): laptop-20260915T010852Z was a real, live,
+# $0-spend key that /key/generate minted successfully while the vault write after it failed --
+# nothing pointed at it again, so it sat accepted and budgeted at the proxy indefinitely. Two
+# fixes, not one: below, the mint is undone (revoked) the moment its own vault write fails, so a
+# fresh orphan can no longer be created this way; --reap-orphans sweeps up any that already exist
+# or slip through some other path. It only ever touches keys this script minted (metadata.
+# minted_by), never the currently-accepted alias for a consumer, and never a key with nonzero
+# spend -- age plus zero spend plus "not the one the vault points at" is the whole rule.
 set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
+
+# --self-test (LAW 43/45, bin/idp-script-compiles): a fake curl/idp-cloud/idp-vault-put on a
+# throwaway PATH, no socket opened, proving both the mint path and the --reap-orphans path
+# actually run end to end rather than only parsing.
+self_test() {
+  local tmp; tmp=$(mktemp -d)
+  mkdir -p "$tmp/bin"
+  for t in bash jq python3 awk head mktemp date rm cat sh dirname cut sed tr; do
+    ln -s "$(command -v "$t")" "$tmp/bin/$t" 2>/dev/null || true
+  done
+  cat > "$tmp/bin/idp-cloud" <<'FAKE'
+#!/usr/bin/env bash
+case "$3" in
+  litellm-upstream) printf '%s' '{"LITELLM_MASTER_KEY":"sk-fake-master"}' ;;
+  *) exit 1 ;;
+esac
+FAKE
+  cat > "$tmp/bin/idp-vault-put" <<'FAKE'
+#!/usr/bin/env bash
+exit 0
+FAKE
+  cat > "$tmp/bin/curl" <<'FAKE'
+#!/usr/bin/env bash
+case "$*" in
+  *key/generate*) printf '%s' '{"key":"sk-fake-minted","key_alias":"x"}' ;;
+  *key/list*) printf '%s' '{"keys":[]}' ;;
+  *key/info*) printf '%s\n000' '' ;;
+  *) exit 22 ;;
+esac
+FAKE
+  chmod +x "$tmp"/bin/idp-cloud "$tmp"/bin/idp-vault-put "$tmp"/bin/curl
+  local out rc=0
+  out=$(PATH="$tmp/bin" IDP_CLOUD="$tmp/bin/idp-cloud" IDP_VAULT_PUT="$tmp/bin/idp-vault-put" \
+        ROUTER_URL=https://router.test "$0" selftest-consumer minimax 2>&1) || rc=$?
+  if [ "$rc" -ne 0 ] || ! grep -q '^ok' <<< "$out"; then
+    echo "FAIL    router-key   self-test: mint path did not run clean"
+    printf '%s\n' "$out" | sed 's/^/        /'
+    rm -rf "$tmp"; return 1
+  fi
+  rc=0
+  out=$(PATH="$tmp/bin" IDP_CLOUD="$tmp/bin/idp-cloud" ROUTER_URL=https://router.test \
+        "$0" --reap-orphans 2>&1) || rc=$?
+  rm -rf "$tmp"
+  if [ "$rc" -ne 0 ] || ! grep -q 'no router-minted keys found' <<< "$out"; then
+    echo "FAIL    router-key   self-test: --reap-orphans did not run clean"
+    printf '%s\n' "$out" | sed 's/^/        /'
+    return 1
+  fi
+  echo "ok      router-key   self-test: mint path and --reap-orphans both ran clean"
+  return 0
+}
+case "${1:-}" in
+  --self-test) self_test; exit $? ;;
+esac
+
+if [ "${1:-}" = "--reap-orphans" ]; then
+  shift
+  MAX_AGE_HOURS=24
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --max-age-hours) MAX_AGE_HOURS=${2:?hours}; shift 2 ;;
+      *) echo "BLIND   router-key   unknown option $1"; exit 2 ;;
+    esac
+  done
+  IDP_CLOUD_BIN=${IDP_CLOUD:-$IDP/bin/idp-cloud}
+  for t in curl jq python3; do command -v "$t" >/dev/null || { echo "BLIND   router-key   $t missing"; exit 2; }; done
+  CFG="$IDP/clusters/oke/estate-config.yaml"
+  ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG" 2>/dev/null || true)
+  [ -n "$ZONE" ] || { echo "BLIND   router-key   no ESTATE_ZONE in $CFG"; exit 2; }
+  LLM=${ROUTER_URL:-https://llm.$ZONE}
+  MASTER=$("$IDP_CLOUD_BIN" secret get litellm-upstream 2>/dev/null | jq -r '.LITELLM_MASTER_KEY // empty' 2>/dev/null || true)
+  [ -n "$MASTER" ] || { echo "FAIL    router-key   litellm-upstream holds no LITELLM_MASTER_KEY"; exit 1; }
+
+  listing=$(curl -sS -f -H "Authorization: Bearer $MASTER" "$LLM/key/list?size=1000" 2>/dev/null) \
+    || { unset MASTER; echo "FAIL    router-key   $LLM/key/list refused"; exit 1; }
+  candidates=$(printf '%s' "$listing" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+rows = d.get('keys', d if isinstance(d, list) else [])
+for k in rows:
+    md = k.get('metadata') or {}
+    if md.get('minted_by') != 'bin/idp-router-key':
+        continue
+    print('\t'.join([k.get('key_alias') or '', md.get('consumer') or '', str(k.get('spend') or 0), k.get('created_at') or '']))
+" 2>/dev/null) || true
+  unset listing
+
+  if [ -z "$candidates" ]; then
+    unset MASTER
+    echo "ok      router-key   reap-orphans: no router-minted keys found"
+    exit 0
+  fi
+
+  reaped=0; checked_consumers=""; now_epoch=$(date -u +%s)
+  while IFS=$'\t' read -r alias consumer spend created_at; do
+    [ -n "$alias" ] && [ -n "$consumer" ] || continue
+    case " $checked_consumers " in
+      *" $consumer:"*) current=$(printf '%s\n' "$checked_consumers" | tr ' ' '\n' | sed -n "s/^$consumer://p") ;;
+      *)
+        cur_key=$("$IDP_CLOUD_BIN" secret get "$consumer" 2>/dev/null | jq -r '.key // empty' 2>/dev/null || true)
+        current=""
+        if [ -n "$cur_key" ]; then
+          info=$(curl -s -H "Authorization: Bearer $cur_key" "$LLM/key/info" 2>/dev/null || true)
+          current=$(printf '%s' "$info" | jq -r '.info.key_alias // empty' 2>/dev/null || true)
+        fi
+        unset cur_key info
+        checked_consumers="$checked_consumers $consumer:$current"
+        ;;
+    esac
+    [ "$alias" != "$current" ] || continue
+    created_epoch=$(python3 -c "
+import sys, datetime
+try:
+    print(int(datetime.datetime.fromisoformat(sys.argv[1].replace('Z','+00:00')).timestamp()))
+except Exception:
+    print(0)
+" "$created_at" 2>/dev/null || echo 0)
+    [ "$created_epoch" -gt 0 ] || continue
+    age_hours=$(( (now_epoch - created_epoch) / 3600 ))
+    [ "$age_hours" -ge "$MAX_AGE_HOURS" ] || continue
+    spend_zero=$(python3 -c "print(1 if float('$spend' or 0) == 0 else 0)" 2>/dev/null || echo 0)
+    [ "$spend_zero" = 1 ] || continue
+    if curl -sS -f -o /dev/null -X POST -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' \
+        -d "$(jq -n --arg a "$alias" '{key_aliases: [$a]}')" "$LLM/key/delete" 2>/dev/null; then
+      echo "ok      router-key   reaped orphan $alias (consumer=$consumer, age=${age_hours}h, spend=0, superseded by ${current:-nothing})"
+      reaped=$((reaped + 1))
+    else
+      echo "FAIL    router-key   $LLM/key/delete refused for orphan $alias"
+    fi
+  done <<< "$candidates"
+  unset MASTER
+  echo "ok      router-key   reap-orphans: $reaped orphan key(s) removed"
+  exit 0
+fi
+
 CONSUMER=${1:?consumer (the vault entry name, e.g. k8sgpt)}
 MODELS=${2:?model names the key may call, comma separated (rows of platform/llm/config.yaml)}
 shift 2
@@ -98,14 +243,25 @@ body=$(jq -n --arg a "$alias" --arg c "$CONSUMER" --argjson b "$BUDGET" --arg m 
 err="${TMPDIR:-/tmp}/router-key.err"
 resp=$(curl -sS -f -X POST -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' -d "$body" "$LLM/key/generate" 2>"$err") \
   || { unset MASTER; echo "FAIL    router-key   $LLM/key/generate refused: $(head -c 160 "$err")"; exit 1; }
-unset MASTER
 KEY=$(printf '%s' "$resp" | jq -r '.key // empty'); unset resp
-[ -n "$KEY" ] || { echo "FAIL    router-key   /key/generate answered without a key"; exit 1; }
+[ -n "$KEY" ] || { unset MASTER; echo "FAIL    router-key   /key/generate answered without a key"; exit 1; }
 f=$(mktemp); umask 077; printf 'ROUTER_KEY=%s\n' "$KEY" > "$f"; unset KEY
+put_rc=0
 if [ "$ENTRY" = "$CONSUMER" ] && [ "$FIELD" = key ]; then
-  ESTATE_ENV_FILE="$f" "$VAULT_PUT" "$CONSUMER" key=ROUTER_KEY >/dev/null
+  ESTATE_ENV_FILE="$f" "$VAULT_PUT" "$CONSUMER" key=ROUTER_KEY >/dev/null || put_rc=$?
 else
-  ESTATE_ENV_FILE="$f" "$VAULT_PUT" --merge "$ENTRY" "$FIELD=ROUTER_KEY" >/dev/null
+  ESTATE_ENV_FILE="$f" "$VAULT_PUT" --merge "$ENTRY" "$FIELD=ROUTER_KEY" >/dev/null || put_rc=$?
 fi
 rm -f "$f"
+if [ "$put_rc" -ne 0 ]; then
+  # A key that is minted but never reaches the vault is an orphan the instant this process exits
+  # (crew#832 follow-up, 2026-09-15: laptop-20260915T010852Z -- live, $0 spend, budgeted, nothing
+  # pointing at it, found by hand days later). Undo the mint instead of leaving it live.
+  curl -sS -o /dev/null -X POST -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' \
+    -d "$(jq -n --arg a "$alias" '{key_aliases: [$a]}')" "$LLM/key/delete" 2>/dev/null || true
+  unset MASTER
+  echo "FAIL    router-key   $CONSUMER: minted alias $alias but the vault write failed (exit $put_rc); revoked $alias, nothing orphaned"
+  exit 1
+fi
+unset MASTER
 echo "ok      router-key   $CONSUMER: minted alias $alias (models $MODELS, $BUDGET USD/day), written to vault entry $ENTRY field $FIELD"

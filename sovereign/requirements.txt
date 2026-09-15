@@ -24,3 +24,19 @@ cryptography>=42
 # loop, and `stage_symbolic` now also fails closed when it is genuinely absent,
 # because a proof that did not run is never a proof that held (LAW 2).
 z3-solver>=4.12
+# `stage_structural`'s k8s_manifest branch parses every proposed `.yaml`/`.yml` file with
+# `yaml.safe_load_all` before admitting it, the same real-proof-or-fail-closed shape as
+# cryptography and z3-solver above (2026-09-15, the typed multi-domain ledger). Declared here for
+# the same reason: undeclared, this stage would pass a broken manifest silently on any runner
+# that happened to lack PyYAML, which is exactly the defect this file's own history twice caught
+# on cryptography and z3-solver.
+PyYAML>=6.0
+# mcp/plugins/estate_executor.py's report_failure() lazily imports redis (read_job must keep
+# working with no redis installed or reachable, so the import happens at the write path, not
+# at module load). Undeclared, the same class of defect cryptography/z3-solver/PyYAML above
+# already caught twice would recur a third time: CI's runner has no redis, so
+# tests/test_executor_mcp.py::test_report_failure_sends_a_real_xadd_over_the_wire_on_a_real_failure
+# never actually exercises the wire path it is named for.
+redis>=5.0
+prometheus_client>=0.19.0
+requests>=2.31

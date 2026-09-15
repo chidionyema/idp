@@ -24,6 +24,8 @@ export type Session = {
   spend_usd?: number | null;
   pull_requests?: string[];
   ticket?: string | null;
+  capability_class?: string | null;
+  capabilities?: string[] | null;
 };
 
 export type SessionsEnvelope = {
@@ -43,9 +45,161 @@ export type Board = {
   sessions: Session[];
   /** Adapters that did not answer. Empty is the healthy answer, never undefined. */
   unreachable: string[];
+  /** One row per runtime that has ever appeared, alphabetical. A table of 29 claude-code rows and
+   *  1 sovereign row reads as "a claude-code board with sovereign somewhere in it" -- this strip
+   *  is what makes every fleet equally visible regardless of which one happens to be biggest. */
+  byRuntime: RuntimeCount[];
+  /** Set only when two or more DIFFERENT runtimes each failed within the same short window. A
+   *  2026 orchestration control plane (routing, budget, identity, state) is shared underneath
+   *  every runtime; when it breaks, every runtime shows a failure at once and a per-runtime view
+   *  reads that as unrelated noise. Naming the correlation is what turns "three unlucky agents"
+   *  into "check the shared cause first." */
+  correlatedFailure: CorrelatedFailure | null;
+  /** Sessions that need a human's attention right now, ranked -- see needsAttention. Empty is the
+   *  healthy answer. */
+  attention: Session[];
 };
 
+export type RuntimeCount = {
+  runtime: string;
+  total: number;
+  running: number;
+  failed: number;
+};
+
+export type CorrelatedFailure = {
+  runtimes: string[];
+  windowMinutes: number;
+};
+
+/** A note left for a session from the FleetView notes mailbox (`fleetview-backend/src/notes.py`).
+ *  Delivery is async, not live: nothing reads this into a running process automatically today, for
+ *  any runtime -- a person or the session's own next-turn tooling reads it back later. Keyed by
+ *  (session_id, runtime), not by claude-code or any one repo, per the founder's own correction
+ *  ("we are model agnostic and this is enterprise wide, not repo wide"). */
+export type Note = {
+  id: number;
+  session_id: string;
+  runtime: string;
+  note: string;
+  author: string;
+  created_at: string;
+  read_at: string | null;
+};
+
+/** One recorded nudge attempt for a session, from the FleetView signals audit trail
+ *  (`fleetview-backend/src/signals.py`'s `signals_for`). Every attempt is recorded, success or
+ *  failure -- `ok: false` is not dropped, it is the honest record of what was tried. */
+export type Signal = {
+  id: number;
+  session_id: string;
+  runtime: string;
+  kind: string;
+  by: string;
+  text: string;
+  ok: boolean;
+  error: string | null;
+  created_at: string;
+};
+
+export type TimelineEntry =
+  | { kind: 'note'; created_at: string; author: string; text: string }
+  | {
+      kind: 'signal';
+      created_at: string;
+      by: string;
+      text: string;
+      ok: boolean;
+      error: string | null;
+    };
+
+/** Notes and signals merged into one chronological read of what happened to a session, oldest
+ *  first. Every entry is a real, already-recorded row from notes.py or signals.py -- nothing here
+ *  is synthesized, only interleaved by timestamp. */
+export function timelineFor(notes: Note[], signals: Signal[]): TimelineEntry[] {
+  const entries: TimelineEntry[] = [
+    ...notes.map(n => ({
+      kind: 'note' as const,
+      created_at: n.created_at,
+      author: n.author,
+      text: n.note,
+    })),
+    ...signals.map(s => ({
+      kind: 'signal' as const,
+      created_at: s.created_at,
+      by: s.by,
+      text: s.text,
+      ok: s.ok,
+      error: s.error,
+    })),
+  ];
+  return entries.sort((a, b) => a.created_at.localeCompare(b.created_at));
+}
+
+const CORRELATION_WINDOW_MINUTES = 15;
+
+// Item #6: a session with no update in this long has gone quiet enough that a human looking at
+// the board would ask "is this stuck?" -- longer than the correlated-failure window above (a
+// short gap between updates is normal mid-step), short enough that nudging it is still useful.
+const STALE_AFTER_MINUTES = 20;
+
+// Mirrors backend/src/signals.py's _SUPPORTED_RUNTIMES: only sovereign has a live signal path
+// today. The board must not offer a nudge button that cannot possibly do anything.
+export const NUDGEABLE_RUNTIMES = new Set(['sovereign']);
+
+/** A running session the board has not seen an update from in a while -- the one case item #6's
+ *  nudge button is for. A session with no `updated_at` is unmeasured, not stale: staleness is a
+ *  claim about elapsed time, and there is no elapsed time to measure without a timestamp. */
+export function isStale(
+  session: Session,
+  now: Date = new Date(),
+  afterMinutes: number = STALE_AFTER_MINUTES,
+): boolean {
+  if (session.state !== 'running') return false;
+  if (!session.updated_at) return false;
+  const ts = Date.parse(session.updated_at);
+  if (Number.isNaN(ts)) return false;
+  return now.getTime() - ts >= afterMinutes * 60_000;
+}
+
+/** Two or more distinct runtimes with a session that failed inside the same short window, or
+ *  null when failures (if any) are confined to one runtime -- the ordinary, uncorrelated case. */
+export function correlatedFailure(
+  sessions: Session[],
+  now: Date = new Date(),
+  windowMinutes: number = CORRELATION_WINDOW_MINUTES,
+): CorrelatedFailure | null {
+  const cutoff = now.getTime() - windowMinutes * 60_000;
+  const runtimes = new Set<string>();
+  for (const s of sessions) {
+    if (s.state !== 'failed') continue;
+    const ts = s.updated_at ? Date.parse(s.updated_at) : NaN;
+    if (!Number.isNaN(ts) && ts >= cutoff) runtimes.add(s.runtime);
+  }
+  if (runtimes.size < 2) return null;
+  return { runtimes: [...runtimes].sort(), windowMinutes };
+}
+
 const RUNNING = new Set(['running', 'paused']);
+
+/** Per-runtime counts, alphabetical by runtime so the strip's order never depends on which fleet
+ *  happens to have the most sessions today. */
+export function runtimeCounts(sessions: Session[]): RuntimeCount[] {
+  const byRuntime = new Map<string, RuntimeCount>();
+  for (const s of sessions) {
+    const row = byRuntime.get(s.runtime) ?? {
+      runtime: s.runtime,
+      total: 0,
+      running: 0,
+      failed: 0,
+    };
+    row.total += 1;
+    if (RUNNING.has(s.state)) row.running += 1;
+    if (s.state === 'failed') row.failed += 1;
+    byRuntime.set(s.runtime, row);
+  }
+  return [...byRuntime.values()].sort((a, b) => a.runtime.localeCompare(b.runtime));
+}
 
 /** Order the rows: running first, then by how recently the runtime last saw them. A board where
  *  the live sessions are not at the top is a board nobody reads. */
@@ -57,13 +211,50 @@ export function order(sessions: Session[]): Session[] {
   });
 }
 
-export function summarise(envelope: SessionsEnvelope | null | undefined): Board {
+export type AttentionReason = 'failed' | 'stale';
+
+/** Why a session needs a human's attention right now, or null if it does not. Built from the two
+ *  real signals the board already measures -- a failed state, and isStale's elapsed-time claim --
+ *  never a new heuristic invented for this grouping alone. */
+export function attentionReason(
+  session: Session,
+  now: Date = new Date(),
+): AttentionReason | null {
+  if (session.state === 'failed') return 'failed';
+  if (isStale(session, now)) return 'stale';
+  return null;
+}
+
+const ATTENTION_RANK: Record<AttentionReason, number> = { failed: 0, stale: 1 };
+
+/** Sessions that need attention right now, grouped ahead of the rest: failed (nothing recoverable
+ *  is happening) before stale (still running, just quiet), each group most-recently-updated
+ *  first. This is the order a person should look at them in, not table order. */
+export function needsAttention(sessions: Session[], now: Date = new Date()): Session[] {
+  return sessions
+    .map(s => ({ s, reason: attentionReason(s, now) }))
+    .filter((x): x is { s: Session; reason: AttentionReason } => x.reason !== null)
+    .sort((a, b) => {
+      const rank = ATTENTION_RANK[a.reason] - ATTENTION_RANK[b.reason];
+      if (rank !== 0) return rank;
+      return String(b.s.updated_at ?? '').localeCompare(String(a.s.updated_at ?? ''));
+    })
+    .map(x => x.s);
+}
+
+export function summarise(
+  envelope: SessionsEnvelope | null | undefined,
+  now: Date = new Date(),
+): Board {
   if (!envelope) {
     return {
       state: 'loading',
       summary: 'Reading the fleet…',
       sessions: [],
       unreachable: [],
+      byRuntime: [],
+      correlatedFailure: null,
+      attention: [],
     };
   }
 
@@ -75,6 +266,9 @@ export function summarise(envelope: SessionsEnvelope | null | undefined): Board 
       summary: `The fleet could not be read: ${envelope.error ?? 'no reason given'}`,
       sessions: [],
       unreachable: envelope.unreachable ?? [],
+      byRuntime: [],
+      correlatedFailure: null,
+      attention: [],
     };
   }
 
@@ -89,6 +283,9 @@ export function summarise(envelope: SessionsEnvelope | null | undefined): Board 
         : 'No sessions are running.',
       sessions: [],
       unreachable,
+      byRuntime: [],
+      correlatedFailure: null,
+      attention: [],
     };
   }
 
@@ -103,7 +300,15 @@ export function summarise(envelope: SessionsEnvelope | null | undefined): Board 
     parts.push(`${unreachable.length} runtime did not answer: ${unreachable.join('; ')}`);
   }
 
-  return { state: 'ready', summary: parts.join(' · '), sessions, unreachable };
+  return {
+    state: 'ready',
+    summary: parts.join(' · '),
+    sessions,
+    unreachable,
+    byRuntime: runtimeCounts(sessions),
+    correlatedFailure: correlatedFailure(sessions, now),
+    attention: needsAttention(sessions, now),
+  };
 }
 
 /** One row's cell text for `state`. Kept here rather than in the page so a test can grade it and
@@ -136,4 +341,17 @@ export function prLabel(prs: string[] | null | undefined): string {
   const n = (prs ?? []).length;
   if (n === 0) return '—';
   return n === 1 ? '1 PR' : `${n} PRs`;
+}
+
+/** The capability badge text. Null means this runtime carries no capability-class concept,
+ * not that the session can do anything -- so the badge is absent, never a fabricated label. */
+export function capabilityLabel(capabilityClass: string | null | undefined): string | null {
+  return capabilityClass ?? null;
+}
+
+/** The badge's tooltip: the exact ops the class allows, straight from AGENTS.md's policy
+ * table. Empty/undefined renders as no tooltip, never an invented explanation. */
+export function capabilityTitle(capabilities: string[] | null | undefined): string | undefined {
+  if (!capabilities || capabilities.length === 0) return undefined;
+  return capabilities.join(', ');
 }

@@ -1,0 +1,7 @@
+# A trivial file the verifier-hooks smoke test stages so the
+# pre-commit gate has a non-empty diff to grade. The diff against
+# /dev/null mirrors what `git add` produces when a new file is
+# committed.
+diff --git a/proof_hook.txt b/proof_hook.txt
+new file mode 100644
+index 0000000..e69de29

@@ -312,6 +312,42 @@ def _sync_from_disk(job: Job, executor: Executor) -> None:
     log_path = _runs_root() / f"{job.job_id}.log"
     log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
     executor.finish(job.job_id, code, log_text)
+    _report_failure(job.job_id, job.command, job.cwd, code, log_text)
+
+
+def _report_failure(
+    job_id: str, command: str, cwd: str | None, exit_code: int, log_text: str
+) -> None:
+    """Feed a failed job to the via-negativa RCA worker (Primitive D, bin/rca_worker/worker.py).
+
+    This is the producer half of the pipeline that worker's `run_forever()` consumes: without
+    it nothing ever lands on `via_negativa:failures` and the RCA worker has nothing to read,
+    which was the gap measured 2026-09-15 -- the schema/guard logic worked, the ledger schema
+    existed, but no caller anywhere ever XADDed a failure.
+
+    Fire-and-forget by design, matching the proxy's own fail-open rule: a Redis outage must
+    never slow down or break `read_job` on the executor's own timing budget, so this uses a
+    short connect/read timeout and swallows every error rather than raising or retrying.
+    Called once per job, from the one place `Executor.finish()` itself is called, so a job
+    cannot be reported twice (`_sync_from_disk` only runs while `job.state == "accepted"`).
+    """
+    if exit_code == 0:
+        return  # Primitive D learns from failures; a clean exit is not a signature to extract
+    try:
+        import redis  # lazy: read_job must keep working with no redis installed or reachable
+
+        url = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379")
+        stream = os.environ.get("VN_FAILURE_STREAM", "via_negativa:failures")
+        client = redis.from_url(url, socket_connect_timeout=0.3, socket_timeout=0.3)
+        payload = {
+            "command": command,
+            "exit_code": exit_code,
+            "stderr": log_text[-4000:],  # tail only: keep the stream entry small
+            "cwd": cwd or "",
+        }
+        client.xadd(stream, {"payload": json.dumps(payload)})
+    except Exception:  # noqa: S110, BLE001 - fail-open: running commands outranks shipping telemetry
+        pass
 
 
 def read_job(job_id: str, *, executor: Executor | None = None) -> dict:
@@ -457,6 +493,40 @@ def register_mcp_tools(
             "admitted; nothing enters without the seal."
         ),
     )(admit_payload)
+
+    mcp.tool(
+        name="propose_mutation",
+        description=(
+            "Propose code+manifest+SQL as one ledger spanning all three domains, instead of "
+            "three unrelated calls with three unrelated verdicts. Answers a ledger id; call "
+            "verify_mutation with it next."
+        ),
+    )(propose_mutation)
+
+    mcp.tool(
+        name="verify_mutation",
+        description=(
+            "Run the gauntlet (structural, SQL, symbolic, execution) over every domain in the "
+            "ledger. All-or-nothing: if any domain fails, the whole mutation is unverified, and "
+            "per_domain names exactly which domain failed with its own real stage message."
+        ),
+    )(verify_mutation)
+
+    mcp.tool(
+        name="seal_mutation",
+        description=(
+            "Mint a Sigstore attestation over the whole bundle's digest. Refuses unless "
+            "verify_mutation already returned admissible for this ledger id."
+        ),
+    )(seal_mutation)
+
+    mcp.tool(
+        name="admit_mutation",
+        description=(
+            "Admit an attested bundle onto a new Git branch (never main, never live). Returns "
+            "pr_required True always -- this verb never merges; the founder merges."
+        ),
+    )(admit_mutation)
 
 
 def simulate_command(
@@ -697,6 +767,64 @@ def admit_payload(payload_path: str, attestation: dict | None = None) -> dict:
     """Admit a sealed payload. A payload without the seal is intercepted, never admitted."""
     return _verifier_call(
         {"verb": "admit", "payload_path": payload_path, "attestation": attestation}
+    )
+
+
+def propose_mutation(
+    code_patch: str = "",
+    manifest_patch: str = "",
+    sql_migration: str = "",
+    tests: str = "",
+    claim: str = "",
+) -> dict:
+    """Propose code+manifest+SQL as one ledger, never three unrelated calls.
+
+    Spec: `docs/specs/2026-09-15-typed-multidomain-mutation-ledger-door.md`. At least one of
+    the three payload fields must be non-empty; the daemon refuses an all-empty call before a
+    ledger is opened. Non-blocking, same as propose_patch -- read the verdict later with
+    verify_mutation, never a wait_for_verdict verb (this ticket's own "remove the verb" rule).
+    """
+    return _verifier_call(
+        {
+            "verb": "propose_mutation",
+            "code_patch": code_patch,
+            "manifest_patch": manifest_patch,
+            "sql_migration": sql_migration,
+            "tests": tests,
+            "claim": claim,
+        }
+    )
+
+
+def verify_mutation(ledger_id: str) -> dict:
+    """Run the gauntlet over every domain in the ledger; all-or-nothing across the bundle.
+
+    If any domain fails, ok is False for the whole mutation -- there is no reply shape where
+    one domain passed and the caller can admit it alone.
+    """
+    return _verifier_call({"verb": "verify_mutation", "ledger_id": ledger_id})
+
+
+def seal_mutation(ledger_id: str, tests: str = "", claim: str = "") -> dict:
+    """Mint a Sigstore attestation over the bundle digest verify_mutation returned."""
+    return _verifier_call(
+        {
+            "verb": "seal_mutation",
+            "ledger_id": ledger_id,
+            "tests": tests,
+            "claim": claim,
+        }
+    )
+
+
+def admit_mutation(ledger_id: str, attestation: dict | None = None) -> dict:
+    """Admit an attested bundle onto a new Git branch. Never writes live, never merges.
+
+    ADR 0025: the founder is the sole merger on every Glass-Break change. pr_required is
+    always True here -- there is no Trust Threshold row yet for this class of change.
+    """
+    return _verifier_call(
+        {"verb": "admit_mutation", "ledger_id": ledger_id, "attestation": attestation}
     )
 
 
