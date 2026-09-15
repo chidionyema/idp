@@ -6,7 +6,6 @@ import sqlite3
 import threading
 import uuid
 from contextlib import contextmanager
-from dataclasses import asdict
 from datetime import datetime
 from typing import Optional
 
@@ -46,8 +45,10 @@ class SpanEmitter:
                 cursor.execute(
                     """
                     INSERT INTO transcripts
-                    (id, task_id, agent_instance, model_id, model_tier, total_turns, cost,
-                     loop_detected, circuit_breaker_tripped)
+                    (
+                        id, task_id, agent_instance, model_id, model_tier,
+                        total_turns, cost, loop_detected, circuit_breaker_tripped
+                    )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
@@ -132,8 +133,11 @@ class SpanEmitter:
                 cursor.execute(
                     """
                     INSERT INTO transcript_spans
-                    (span_id, transcript_id, parent_span_id, span_kind, sequence_num,
-                     content, args_hash, result_hash, fault_flags, eval_scores, created_at)
+                    (
+                        span_id, transcript_id, parent_span_id, span_kind,
+                        sequence_num, content, args_hash, result_hash,
+                        fault_flags, eval_scores, created_at
+                    )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
@@ -163,7 +167,6 @@ class SpanEmitter:
         args_hash: Optional[str] = None,
     ):
         """Context manager for child span hierarchy."""
-        parent_id = self._current_parent_span_id
         span_id = self.emit(
             span_kind=span_kind,
             content=content,
@@ -208,8 +211,10 @@ class SpanEmitter:
             cursor = self._conn.cursor()
             cursor.execute(
                 """
-                SELECT span_id, transcript_id, parent_span_id, span_kind, sequence_num,
-                       content, args_hash, result_hash, fault_flags, eval_scores, created_at
+                SELECT
+                    span_id, transcript_id, parent_span_id, span_kind,
+                    sequence_num, content, args_hash, result_hash,
+                    fault_flags, eval_scores, created_at
                 FROM transcript_spans
                 WHERE span_id = ?
                 """,
@@ -237,8 +242,10 @@ class SpanEmitter:
         with self._lock:
             cursor = self._conn.cursor()
             query = """
-                SELECT span_id, transcript_id, parent_span_id, span_kind, sequence_num,
-                       content, args_hash, result_hash, fault_flags, eval_scores, created_at
+                SELECT
+                    span_id, transcript_id, parent_span_id, span_kind,
+                    sequence_num, content, args_hash, result_hash,
+                    fault_flags, eval_scores, created_at
                 FROM transcript_spans
                 WHERE transcript_id = ?
                 ORDER BY sequence_num ASC
