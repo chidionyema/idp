@@ -33,6 +33,7 @@ MODE=${1:-mint}; ROTATE=""
 case "$MODE" in
   mint|--preflight) ;;
   --rotate) ROTATE=${2:?entry to rotate}; MODE=mint ;;
+  -h|--help) sed -n 2,6p "$0"; exit 0 ;;
   *) sed -n 2,6p "$0"; exit 2 ;;
 esac
 say()  { printf '%-7s %-24s %s\n' "$1" "$2" "$3"; }
@@ -93,6 +94,7 @@ hindsight         HINDSIGHT_API_LLM_API_KEY  minimax
 hermes-agent-env  LITELLM_API_KEY            minimax,gemini,deepseek,embed
 otto-golden       LITELLM_API_KEY            minimax,gemini,deepseek,embed
 agent-workforce   LITELLM_API_KEY            minimax,fast,deepseek,embed
+laptop            key                        @router
 EOF
 )
 

@@ -76,6 +76,15 @@ router_settings:
   # ground. This is the circuit breaker prospector/breaker.py hand-rolls.
   allowed_fails: 3
   cooldown_time: 60
+  # `groq`, `cerebras`, `sambanova`, `default` and `fast` are real pools now (platform/vendors/
+  # consoles.yaml, 2026-09-15: two extra keys each on groq/cerebras, three on the new sambanova
+  # vendor, all four free vendors plus minimax under default/fast). `cost-based-routing` picks
+  # the cheapest deployment among whichever the allowed_fails/cooldown_time breaker has not
+  # cooled down -- the three free vendors carry no input_cost_per_token/output_cost_per_token,
+  # so LiteLLM prices them $0.0000 and prefers them over paid MiniMax whenever one is healthy.
+  # Same setting as platform/llm/config.base.yaml, for the same pools; see that file's comment
+  # for why this repo has two config.base.yaml files at all.
+  routing_strategy: cost-based-routing
 
 litellm_settings:
   # Traces to the collector that already runs. No second store.

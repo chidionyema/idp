@@ -1,0 +1,125 @@
+# The other half of a backup: a restore nobody has tried is a receipt, not a backup.
+#
+# store-db-backup.yaml verifies what it writes AT WRITE TIME (integrity_check, non-empty
+# catalogue, a size floor against yesterday) and stops there. None of those checks catch a
+# bucket gone unreadable, an IAM policy drifted since the backup ran, or an object that answers
+# a GET but is not the bytes the receipt says it is -- the exact gap crew#713's own postmortem
+# named: "it ran green while measuring nothing is this estate's second-commonest defect."
+#
+# This job does the other half: fetch the newest daily copy the way a real recovery would,
+# re-run the same integrity_check independently, and compare its row counts against the receipt
+# store-db-backup.yaml wrote at backup time. A mismatch here means a backup that LOOKS fine in
+# the bucket would not have saved the shop. No credential: same worker-node instance principal
+# that already has `manage objects` on this one bucket and nothing else (platform/oci/shop-backups.tf).
+# crew, 2026-09-15 platform-maturity pass (founder: get to full maturity, not patchy).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: store-db-restore-drill
+  namespace: prospector
+spec:
+  # Weekly, not daily: this proves the restore path still works, it is not the backup itself.
+  # Off the backup's own schedule (03:17 daily) so a same-day compare is never against the copy
+  # this run is fetching, and off every other estate cron in this file's neighbourhood.
+  schedule: "43 4 * * 0"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400
+      backoffLimit: 1
+      activeDeadlineSeconds: 900
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: restore-drill
+              image: ghcr.io/oracle/oci-cli:20260826
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  oci --auth instance_principal os object get --bucket-name "$BUCKET" \
+                    --name shop/latest.json --file /tmp/receipt.json
+                  OBJECT="$(python3 -c 'import json;print(json.load(open("/tmp/receipt.json"))["object"])')"
+                  oci --auth instance_principal os object get --bucket-name "$BUCKET" \
+                    --name "$OBJECT" --file /tmp/restored.db
+                  python3 - <<'PY'
+                  import hashlib, json, pathlib, sqlite3, sys
+
+                  receipt = json.load(open("/tmp/receipt.json"))
+                  path = pathlib.Path("/tmp/restored.db")
+
+                  # 1. The bytes are what the receipt says they are -- catches a truncated
+                  #    download, a bucket serving a stale version, or a wrong object name.
+                  got_bytes = path.stat().st_size
+                  if got_bytes != receipt["bytes"]:
+                      sys.exit(f"REFUSED: fetched {got_bytes} bytes, receipt says {receipt['bytes']}")
+                  got_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+                  if got_sha != receipt["sha256"]:
+                      sys.exit(f"REFUSED: fetched sha256 {got_sha}, receipt says {receipt['sha256']}")
+
+                  # 2. It actually opens and passes SQLite's own integrity check -- independent
+                  #    of the check the backup job ran on the file before upload; this is the
+                  #    same file coming back OUT of the bucket, which is the part a write-time
+                  #    check cannot see.
+                  db = sqlite3.connect(str(path))
+                  verdict = db.execute("pragma integrity_check").fetchone()[0]
+                  if verdict != "ok":
+                      sys.exit(f"REFUSED: restored copy failed integrity_check: {verdict}")
+
+                  # 3. Row counts match what the backup job counted at write time -- catches
+                  #    silent corruption between "wrote the bytes" and "read them back".
+                  def count(table):
+                      return db.execute(f"select count(*) from [{table}]").fetchone()[0]
+
+                  mismatches = []
+                  for table, key in (("Packs", "packs"), ("AspNetUsers", "accounts"),
+                                      ("Orders", "orders"), ("Entitlements", "entitlements"),
+                                      ("AnalyticsEvents", "analytics_events")):
+                      got = count(table)
+                      want = receipt[key]
+                      if got != want:
+                          mismatches.append(f"{table}: restored {got}, receipt says {want}")
+                  db.close()
+                  if mismatches:
+                      sys.exit("REFUSED: row counts drifted since the backup was written -- " + "; ".join(mismatches))
+
+                  drill = {
+                      "drilled_object": receipt["object"],
+                      "drilled_stamp": receipt["stamp"],
+                      "verdict": "restorable",
+                      "bytes": got_bytes,
+                      "sha256": got_sha,
+                  }
+                  pathlib.Path("/tmp/drill.json").write_text(json.dumps(drill, indent=2, sort_keys=True))
+                  print(json.dumps(drill, sort_keys=True))
+                  PY
+                  oci --auth instance_principal os object put --bucket-name "$BUCKET" \
+                    --name shop/restore-drill/latest.json --file /tmp/drill.json \
+                    --content-type application/json --force
+                  echo "restore drill of $OBJECT: restorable"
+              env:
+                - { name: HOME, value: /tmp }
+                - { name: BUCKET, value: estate-shop-backups }   # platform/oci/shop-backups.tf
+              resources:
+                requests: { cpu: 100m, memory: 256Mi }
+                limits: { cpu: 500m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: tmp
+              emptyDir: { sizeLimit: 512Mi }
