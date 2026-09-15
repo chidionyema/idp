@@ -387,6 +387,11 @@ flows:
     # conversations are declared -- on 2026-09-05 hindsight was cut off from its own database
     # because only one side was.
     egress: [monitoring, robusta, notify, estate-db, observability]
+    # crew#832 CP3: the api-key-warden job (a launched run in this namespace, per
+    # k8sRunLauncher.jobNamespace) proves every vendor key against the vendor's OWN console
+    # (api.groq.com, api.cerebras.ai, ...), so it needs the public internet, not just the
+    # in-cluster egress above. Same idiom as every other outbound-HTTPS workload in this file.
+    egress_internet: [443]
     ingress_from: [edge, backstage]
   hindsight:
     # Every surface that remembers: both Otto doors write from the answering lane

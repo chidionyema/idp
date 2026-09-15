@@ -163,6 +163,13 @@ jobs:
       - name: tools
         run: |
           pip install -q -r sovereign/requirements.txt -r sovereign/requirements-dev.txt
+          # crew#832 CP3: tests/test_warden_job.py::TestSchedulerRow reloads
+          # scheduler/estate_scheduler/definitions.py, which imports the real dagster package
+          # (DagsterRunStatus et al.) -- offline-gate installs dagster for its own leg, but this
+          # job's tests leg never did, so the import fell through to the empty PEP 420 namespace
+          # package platform/dagster/ (a directory with no .py files) or ModuleNotFoundError,
+          # never the real thing. dagster-webserver is not needed here, only the core package.
+          pip install -q dagster
           # bin/sb builds sovereign/.venv on first use and skips the install when the directory
           # already exists. Under `pytest -n auto` several xdist workers reach that check at the
           # same moment: the first creates the venv, the others see it and exec straight into a
