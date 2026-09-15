@@ -3,6 +3,7 @@
 catalog/catalog-info.yaml
 catalog/estate.db
 catalog/estate.db.tmp
+catalog/estate.db-journal
 
 # Runtime
 logs/

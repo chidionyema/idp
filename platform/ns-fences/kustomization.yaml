@@ -50,5 +50,6 @@ resources:
 - tailscale.yaml
 - temporal.yaml
 - trivy-system.yaml
+- via-negativa.yaml
 - weave-gitops.yaml
 - network
