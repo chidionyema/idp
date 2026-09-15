@@ -340,11 +340,19 @@ def main() -> None:
                 sys.exit(0)
 
     if mode == "--preflight":
-        code = http_status(CONSOLE)
-        if code in ("200", "301", "302", "303"):
-            say("ok", "console", f"{CONSOLE} answers {code}")
+        if os.environ.get("CLOUDFLARE_ROOT_TOKEN"):
+            # Same guard as ensure_driver, and the same fix as bin/idp-bootstrap-cloudflare: the
+            # dashboard is only ever opened by mint_root_via_browser, a road the root-token road
+            # (R52, the only one CI/live ever takes) skips outright -- checking it here tests a
+            # road this run will never take, and Cloudflare's own bot-management WAF 403s a bare
+            # urllib request from a CI IP with no browser session regardless (run 34988252536).
+            say("ok", "console", "root token from the environment; browser road not needed, dashboard reachability moot")
         else:
-            fail("console", f"{CONSOLE} answers {code}")
+            code = http_status(CONSOLE)
+            if code in ("200", "301", "302", "303"):
+                say("ok", "console", f"{CONSOLE} answers {code}")
+            else:
+                fail("console", f"{CONSOLE} answers {code}")
         say("ok", "preflight", f"vault, driver, dashboard and DNS token (for {zone}) all reachable; nothing written")
         sys.exit(0)
 

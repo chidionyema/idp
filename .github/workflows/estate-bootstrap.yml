@@ -104,6 +104,11 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           SCOPE: ${{ inputs.scope }}
           REASON: ${{ inputs.reason }}
+          # Same road live-cloudflare/live-concierge-tunnel take (SEED_CLOUDFLARE_ROOT_TOKEN, R52);
+          # harmless for estate-seed/tailscale/vendors, which never read it. Without this, preflight
+          # tested the interactive browser-mint road instead of the one live actually runs, and that
+          # road's own dashboard check 403s from a CI IP regardless (run 34988252536, idp#3537).
+          CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
         # set +e is intentional: the orchestrator's exit code (0 ok, 1 FAIL, 2 BLIND) is the
         # verdict, not bash's. bash -e would mask it.
         run: |
