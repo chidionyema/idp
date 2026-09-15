@@ -26,7 +26,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: rca
-          image: ghcr.io/chidionyema/rca_worker:main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:via-negativa-rca:tag"}
+          image: ghcr.io/chidionyema/rca_worker
           env:
             - { name: REDIS_URL, value: "redis://via-negativa-redis.via-negativa.svc.cluster.local:6379" }
             - { name: REDIS_PASSWORD_FILE, value: "/run/secrets/via-negativa/redis/REDIS_PASSWORD" }
