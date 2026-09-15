@@ -6,6 +6,7 @@ resources:
   - external-secret.yaml
   - redis.yaml
   - litellm.yaml
+  - ollama.yaml
   - availability.yaml
   - httproute.yaml
   - edge-manners.yaml
