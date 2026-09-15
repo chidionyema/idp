@@ -31,3 +31,10 @@ z3-solver>=4.12
 # that happened to lack PyYAML, which is exactly the defect this file's own history twice caught
 # on cryptography and z3-solver.
 PyYAML>=6.0
+# mcp/plugins/estate_executor.py's report_failure() lazily imports redis (read_job must keep
+# working with no redis installed or reachable, so the import happens at the write path, not
+# at module load). Undeclared, the same class of defect cryptography/z3-solver/PyYAML above
+# already caught twice would recur a third time: CI's runner has no redis, so
+# tests/test_executor_mcp.py::test_report_failure_sends_a_real_xadd_over_the_wire_on_a_real_failure
+# never actually exercises the wire path it is named for.
+redis>=5.0
