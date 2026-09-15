@@ -4,10 +4,10 @@
 The plugin's logic lives in `backstage/plugins/fleetview-backend/src/routes.py` as a pure
 Python module (no FastAPI imports). This file is the HTTP shell that mounts its
 `sessions_envelope()`, `stream_frames()`, `notes_envelope()`/`add_note()`, `add_nudge()`,
-`blast_radius_envelope()`, `graph_envelope()`, `check_receipts_envelope()` and
-`mutations_envelope()`/`approve_mutation()`/`reject_mutation()` on the paths the Backstage board
-calls (`/api/fleetview/sessions`, `/stream`, `/notes`, `/nudge`, `/blast-radius`, `/graph`,
-`/check-receipts`, `/mutations`, `/mutations/approve`, `/mutations/reject`).
+`blast_radius_envelope()`, `graph_envelope()`, `check_receipts_envelope()`, `signals_envelope()`
+and `mutations_envelope()`/`approve_mutation()`/`reject_mutation()` on the paths the Backstage
+board calls (`/api/fleetview/sessions`, `/stream`, `/notes`, `/nudge`, `/signals`, `/blast-radius`,
+`/graph`, `/check-receipts`, `/mutations`, `/mutations/approve`, `/mutations/reject`).
 
 This used to live at `/tmp/serve_fv.py` -- a real dev launcher with no repo path, so it vanished
 with the machine's temp directory and could not be run from a clean checkout. Moved into the
@@ -22,6 +22,15 @@ Run (per docs/tutorials/demo/fleetview.md):
 The Backstage backend's proxy plugin (app-config.yaml `proxy.endpoints./fleetview`)
 forwards requests here, with `pathRewrite: { '^/api/fleetview': '' }`, so the launcher
 listens at root and the proxy strips the prefix before forwarding.
+
+A fourth, optional argv starts a second, separately-bound server for the mutations relay
+(`executor_link.py`): `/executor/poll` and `/executor/reply`, the two doors
+`platform/executor/fleetview_register.py` (the laptop companion) speaks to. It binds `0.0.0.0`,
+not `127.0.0.1` like the app above -- the one new network surface this launcher opens, reachable
+only through the tailnet Service+ACL a cluster deployment adds around it (see the PR). Omitting
+the argv (every existing local-dev invocation) leaves this off entirely: no new port, no new
+behaviour, `routes.py`'s mutation handlers keep calling `mutations.py` directly, exactly as
+before.
 """
 
 from __future__ import annotations
@@ -32,8 +41,30 @@ import sys
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+
+_EXECUTOR_LINK_MODULE = Path(__file__).resolve().parent / "executor_link.py"
+
+
+def _load_executor_link():
+    """Same fixed-name `sys.modules` cache `routes.py`'s `_executor_link()` uses, and for the
+    same reason: this module holds the one laptop connection's state, and `routes.py`'s mutation
+    handlers must see the exact object this process's executor app is polling, not a fresh,
+    disconnected re-exec of the file."""
+    import sys
+
+    name = "fleetview_executor_link_impl"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(name, _EXECUTOR_LINK_MODULE)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load module at {_EXECUTOR_LINK_MODULE}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _load_routes(routes_path: Path):
@@ -87,6 +118,11 @@ def build_app(routes_path: Path) -> FastAPI:
         result, status = routes.add_nudge(body)
         return JSONResponse(content=result, status_code=status)
 
+    @app.get(routes.SIGNALS_PATH)
+    def signals_get(session_id: str):
+        body, status = routes.signals_envelope(session_id)
+        return JSONResponse(content=body, status_code=status)
+
     @app.get(routes.BLAST_RADIUS_PATH)
     def blast_radius(node_id: str = ""):
         body, status = routes.blast_radius_envelope(node_id)
@@ -104,20 +140,20 @@ def build_app(routes_path: Path) -> FastAPI:
         return JSONResponse(content=result, status_code=status)
 
     @app.get(routes.MUTATIONS_PATH)
-    def mutations_get():
-        body, status = routes.mutations_envelope()
+    async def mutations_get():
+        body, status = await routes.mutations_envelope()
         return JSONResponse(content=body, status_code=status)
 
     @app.post(routes.MUTATIONS_APPROVE_PATH)
     async def mutations_approve_post(request: Request):
         body = await request.json()
-        result, status = routes.approve_mutation(body)
+        result, status = await routes.approve_mutation(body)
         return JSONResponse(content=result, status_code=status)
 
     @app.post(routes.MUTATIONS_REJECT_PATH)
     async def mutations_reject_post(request: Request):
         body = await request.json()
-        result, status = routes.reject_mutation(body)
+        result, status = await routes.reject_mutation(body)
         return JSONResponse(content=result, status_code=status)
 
     @app.get("/healthz")
@@ -127,8 +163,45 @@ def build_app(routes_path: Path) -> FastAPI:
     return app
 
 
+def build_executor_app() -> FastAPI:
+    """The mutations-relay's own tiny app: two doors, nothing else. A laptop reaching this port
+    can only long-poll for queued verbs and answer them -- it cannot, from here, read or change
+    anything `routes.py`'s own handlers do not themselves choose to relay."""
+    link = _load_executor_link()
+    app = FastAPI(title="FleetView executor relay", version="1.0.0")
+
+    def _check_key(x_executor_key: str | None) -> None:
+        import os
+
+        expected = os.environ.get("FLEETVIEW_EXECUTOR_KEY")
+        if expected and x_executor_key != expected:
+            raise HTTPException(status_code=401, detail="bad or missing executor key")
+
+    @app.post("/executor/poll")
+    async def executor_poll(x_executor_key: str | None = Header(default=None)):
+        _check_key(x_executor_key)
+        return await link.poll()
+
+    @app.post("/executor/reply")
+    async def executor_reply(
+        request: Request, x_executor_key: str | None = Header(default=None)
+    ):
+        _check_key(x_executor_key)
+        body = await request.json()
+        request_id = body.get("request_id", "")
+        result = body.get("result", {})
+        accepted = await link.reply(request_id, result)
+        return {"accepted": accepted}
+
+    @app.get("/healthz")
+    def healthz():
+        return {"ok": True, "connected": link.is_connected()}
+
+    return app
+
+
 def main():
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4):
         print(__doc__, file=sys.stderr)
         sys.exit(2)
     port = int(sys.argv[1])
@@ -137,6 +210,26 @@ def main():
         print(f"routes module not found: {routes_path}", file=sys.stderr)
         sys.exit(2)
     app = build_app(routes_path)
+
+    if len(sys.argv) == 4:
+        executor_port = int(sys.argv[3])
+        executor_app = build_executor_app()
+        main_config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
+        executor_config = uvicorn.Config(
+            executor_app,
+            host="0.0.0.0",  # noqa: S104 -- the one deliberate non-loopback bind this launcher makes; see the module docstring
+            port=executor_port,
+            log_level="info",
+        )
+        main_server = uvicorn.Server(main_config)
+        executor_server = uvicorn.Server(executor_config)
+
+        async def _serve_both():
+            await asyncio.gather(main_server.serve(), executor_server.serve())
+
+        asyncio.run(_serve_both())
+        return
+
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
 
 

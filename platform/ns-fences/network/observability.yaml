@@ -297,4 +297,7 @@ spec:
           kubernetes.io/metadata.name: trivy-system
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: via-negativa
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: weave-gitops

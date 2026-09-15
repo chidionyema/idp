@@ -1,0 +1,75 @@
+# Primitive A (interception proxy: banned-signature pre-flight rejection, the deadlock breaker)
+# and the read side of Primitive C (top-constraints prompt injection). Sits in front of the
+# router, so every agent's tool calls pass through it before litellm ever sees them.
+apiVersion: v1
+kind: Service
+metadata:
+  name: via-negativa-proxy
+  namespace: via-negativa
+  labels: { app.kubernetes.io/name: via-negativa-proxy, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: via-negativa }
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: via-negativa-proxy }
+  ports:
+    - { name: http, port: 80, targetPort: 8080 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: via-negativa-proxy
+  namespace: via-negativa
+  labels: { app.kubernetes.io/name: via-negativa-proxy, app.kubernetes.io/part-of: idp }
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app.kubernetes.io/name: via-negativa-proxy }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: via-negativa-proxy, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: proxy
+          image: ghcr.io/chidionyema/negative-constraints-proxy:main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:negative-constraints-proxy:tag"}
+          # distroless/static: no shell to compose REDIS_URL before exec, and Kyverno
+          # secrets-not-from-env-vars refuses the password as pod env either way. The redis
+          # password rides a mounted file instead; REDIS_PASSWORD_FILE tells the binary itself
+          # where to read it and fold it into REDIS_URL (main.go, resolveRedisURL()).
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: LISTEN_ADDR, value: ":8080" }
+            - { name: UPSTREAM_URL, value: "http://litellm.llm.svc.cluster.local:4000" }
+            - { name: REDIS_URL, value: "redis://via-negativa-redis.via-negativa.svc.cluster.local:6379" }
+            - { name: REDIS_PASSWORD_FILE, value: "/run/secrets/via-negativa/redis/REDIS_PASSWORD" }
+            - { name: REDIS_KEY, value: "via_negativa:banned_signatures" }
+            - { name: TOP_CONSTRAINTS_KEY, value: "via_negativa:top_constraints" }
+            - { name: TOP_CONSTRAINTS_N, value: "5" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 100m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 128Mi }
+          volumeMounts:
+            - { name: redis-secret, mountPath: /run/secrets/via-negativa/redis, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: redis-secret
+          secret: { secretName: via-negativa-redis }
+        - name: tmp
+          emptyDir: {}

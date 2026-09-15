@@ -54,9 +54,11 @@ from epistemic_firewall import (  # noqa: E402
     QUESTION,
     _estate_sessions,
     _has_independent_witness,
+    _is_tool_call_block,
     _sentences,
     _target_of,
     _texts,
+    _tool_input,
     _unwrap,
 )
 from trajectory_lock import ESCAPE_HATCHES, TrajectoryLock  # noqa: E402
@@ -65,16 +67,12 @@ THRESHOLD = 0.8
 _SESSION_ID = "prm"
 
 
-def _is_tool_use(block: dict) -> bool:
-    return isinstance(block, dict) and block.get("type") in ("tool_use", "tool_call")
-
-
 def _step_tool_calls(turn: dict) -> list[dict]:
     msg = _unwrap(turn)
     content = msg.get("content")
     blocks = content if isinstance(content, list) else []
-    calls = [b for b in blocks if _is_tool_use(b)]
-    if not calls and msg.get("type") in ("tool_use", "tool_call"):
+    calls = [b for b in blocks if isinstance(b, dict) and _is_tool_call_block(b)]
+    if not calls and _is_tool_call_block(msg):
         calls = [msg]
     return calls
 
@@ -122,7 +120,7 @@ def grade(turns: list[dict], plan: dict | None = None) -> dict:
             None,
         )
         if plan_call is not None:
-            inp = plan_call.get("input") or {}
+            inp = _tool_input(plan_call)
             result = lock.declare_plan(
                 _SESSION_ID, inp.get("goal", ""), inp.get("subgoals", [])
             )
@@ -156,12 +154,10 @@ def grade(turns: list[dict], plan: dict | None = None) -> dict:
         real_calls = [c for c in calls if str(c.get("name", "")) not in ESCAPE_HATCHES]
         if real_calls:
             for c in real_calls:
-                target_goal_id = (c.get("input") or {}).get(
-                    "target_goal_id"
-                ) or active_goal_id
+                target_goal_id = _tool_input(c).get("target_goal_id") or active_goal_id
                 result = lock.authorize(
                     str(c.get("name", "")),
-                    c.get("input") or {},
+                    _tool_input(c),
                     _SESSION_ID,
                     target_goal_id,
                 )

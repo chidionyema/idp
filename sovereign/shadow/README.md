@@ -12,7 +12,7 @@ Master Spec v1.0 sections 2.4, 3.2, 3.3, 3.4. Three parts, one package.
 
 ## Run
 
-    bin/sb start --runner claude --repo <repo> --task 'refactor X' --branches 3 --budget 10000 --json
+    bin/sb start --runner llm --repo <repo> --task 'refactor X' --branches 3 --budget 10000 --json
     bin/sb distill --task-class git_rebase --json
     bin/sb preauth --session-id sb-1 --remaining 10000 --costs 4000,4000,4000 --json
 

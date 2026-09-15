@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""dod-live-claim-gate [FILES...]: a doc that claims a capability is built AND live must show
+either a real manifest or an honest `Not done:` line -- never just the claim.
+
+DoD v3 (founder, 2026-09-15): "let the environment decide when it is done" and "done means
+commercially ready and viable", not "proven against a local daemon on someone's laptop." The
+violation this gate exists to catch, found the same day: docs/tickets/2026-09-15-typed-
+multidomain-mutation-ledger.md opens with `**Status:** built, smoke-tested, and doored,
+2026-09-15` and later names `backstage/plugins/fleetview-backend/` as the door -- but that path
+has no Dockerfile, no Deployment, no Service, and nothing running under that name in the live
+cluster. The claim and the environment disagreed, and nothing on the repository plane read the
+second one.
+
+WHAT IT ENFORCES. A doc's own `**Status:**` line (checked there and nowhere else, so an
+unrelated sentence with the word "done" in it can never trip this) making a completion claim --
+built, done, proven live, or doored -- while the document ALSO names a Kubernetes-shaped
+capability -- a `platform/<name>/` or `backstage/plugins/<name>/` path, or the words
+`Deployment`, `Service`, `on cluster` -- must carry, somewhere in the document, either:
+
+  (a) a real manifest for every named capability path: a Dockerfile in that path, plus a
+      `kind: Deployment` manifest under platform/ or clusters/ that names the same capability, or
+  (b) an explicit `**Not done:**` line.
+
+A capability named only in prose (`Deployment`/`Service`/`on cluster`, no path) is not graded --
+there is nothing to check a manifest against, and refusing on a word alone would be exactly the
+false-positive risk this gate must not create (R38: a check that blocks correct work is an
+outage). Only a named path is checked.
+
+    python3 dod-live-claim-gate --selftest
+    python3 dod-live-claim-gate docs/tickets/2026-09-15-typed-multidomain-mutation-ledger.md
+"""
+
+from __future__ import annotations
+
+import os
+import pathlib
+import re
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from treewalk import glob_tree  # noqa: E402 -- this repo's one walk-over-the-estate
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+STATUS_CLAIM = re.compile(
+    r"^\*\*Status:\*\*.*\b(?:built|done|proven live|doored)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+CAPABILITY_PATH = re.compile(r"\b((?:platform|backstage/plugins)/[\w.-]+)/?")
+NOT_DONE_LINE = re.compile(
+    r"^\s*(?:[-*]\s*)?\*\*Not done:\*\*", re.IGNORECASE | re.MULTILINE
+)
+
+
+def default_docs() -> list[str]:
+    found: list[str] = []
+    for sub in ("tickets", "specs", "audits"):
+        found += glob_tree(ROOT, "docs", sub, "*.md")
+    return sorted(found)
+
+
+def capability_is_deployed(search_root: pathlib.Path, capability: str) -> bool:
+    """A real Dockerfile in `capability`, plus a `kind: Deployment` manifest naming it."""
+    cap_dir = search_root / capability
+    if not cap_dir.is_dir() or not (cap_dir / "Dockerfile").is_file():
+        return False
+    basename = cap_dir.name
+    manifests = list(glob_tree(search_root, "platform", "**", "*.yaml")) + list(
+        glob_tree(search_root, "clusters", "**", "*.yaml")
+    )
+    for manifest in manifests:
+        try:
+            text = pathlib.Path(manifest).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if "kind: Deployment" in text and basename in text:
+            return True
+    return False
+
+
+def findings_for(path: str, search_root: pathlib.Path) -> list[str]:
+    try:
+        text = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return [f"{path}: cannot read ({exc})"]
+    if not STATUS_CLAIM.search(text):
+        return []
+    capabilities = sorted(set(CAPABILITY_PATH.findall(text)))
+    if not capabilities:
+        return []  # a capability named only in prose, with no path, is not checkable here
+    if NOT_DONE_LINE.search(text):
+        return []
+    out = []
+    for cap in capabilities:
+        if not capability_is_deployed(search_root, cap):
+            out.append(
+                f"{path}: **Status:** claims built/done/doored and names `{cap}`, but that path "
+                "has no Dockerfile + `kind: Deployment` manifest, and the doc has no "
+                "`**Not done:**` line naming the gap"
+            )
+    return out
+
+
+def main() -> int:
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print(__doc__)
+        return 0
+    if "--selftest" in sys.argv:
+        return selftest()
+    args = [a for a in sys.argv[1:] if a != "--selftest"]
+    docs = args if args else default_docs()
+    search_root = pathlib.Path(os.environ.get("DOD_LIVE_CLAIM_SEARCH_ROOT", str(ROOT)))
+    findings: list[str] = []
+    for doc in docs:
+        findings += findings_for(doc, search_root)
+    if not docs:
+        print("ok    dod-live-claim no tickets/specs/audits docs found to grade")
+        return 0
+    for f in findings:
+        print("FAIL  dod-live-claim", f)
+    if findings:
+        return 1
+    print(f"ok    dod-live-claim {len(docs)} doc(s) graded, no unverified live claim")
+    return 0
+
+
+def selftest() -> int:
+    fx = ROOT / "tests" / "fixtures" / "dod-live-claim"
+    ok = True
+    for name, path, search_root, expect_fail in (
+        ("bad", fx / "bad.md", ROOT, True),
+        ("good-not-done", fx / "good.md", ROOT, False),
+        ("good-deployed", fx / "good-deployed.md", fx / "deployed-good", False),
+    ):
+        found = findings_for(str(path), search_root)
+        got_fail = bool(found)
+        print(
+            f"{name}: {'FAIL' if got_fail else 'ok'} {'ok' if got_fail == expect_fail else 'WRONG'}"
+        )
+        ok &= got_fail == expect_fail
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

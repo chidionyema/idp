@@ -142,6 +142,7 @@ nav:
       - Oracle identity: tutorials/demo/oci.md
       - Flux on OKE: tutorials/demo/oke.md
       - Cloud-agnostic: tutorials/demo/cloud-agnostic.md
+      - Vendor-agnostic: tutorials/demo/vendor-agnostic.md
       - Estate zone: tutorials/demo/estate-zone.md
       - MCP: tutorials/demo/mcp.md
       - Otto (golden): tutorials/demo/otto-golden.md
@@ -155,6 +156,7 @@ nav:
       - EU AI Act: tutorials/demo/ai-act.md
       - LAW 32 gate: tutorials/demo/law32.md
       - Branch archive: tutorials/demo/branch-archive.md
+      - DoD live claim gate: tutorials/demo/dod-live-claim-gate.md
       - Actions pinned: tutorials/demo/actions-pinned.md
       - Scheduling immunity: tutorials/demo/scheduling-immunity.md
       - Front-door login drill: tutorials/demo/idp-login-drill.md
@@ -258,6 +260,7 @@ nav:
       - Oracle identity: how-to/onboarding/oci.md
       - Flux on OKE: how-to/onboarding/oke.md
       - Cloud-agnostic: how-to/onboarding/cloud-agnostic.md
+      - Vendor-agnostic: how-to/onboarding/vendor-agnostic.md
       - Estate inventory: how-to/onboarding/estate-inventory.md
       - Cluster autoscaler: how-to/onboarding/autoscaler.md
       - Money: how-to/onboarding/commerce.md
@@ -281,6 +284,7 @@ nav:
       - EU AI Act: how-to/onboarding/ai-act.md
       - LAW 32 gate: how-to/onboarding/law32.md
       - Branch archive: how-to/onboarding/branch-archive.md
+      - DoD live claim gate: how-to/onboarding/dod-live-claim-gate.md
       - Actions pinned: how-to/onboarding/actions-pinned.md
       - Front-door login drill: how-to/onboarding/idp-login-drill.md
       - Portability drill: how-to/onboarding/idp-portability-drill.md
@@ -343,6 +347,7 @@ nav:
       - flux-wait-brake: gates/flux-wait-brake.md
       - probe-host: gates/probe-host.md
       - agnostic: gates/cloud-agnostic.md
+      - vendor-agnostic: gates/vendor-agnostic.md
       - zone: gates/estate-zone.md
       - portlock: gates/port-lock.md
       - portbind: gates/port-bind.md
@@ -442,6 +447,10 @@ nav:
       - a-script-is-not-built-until-it-runs: gates/a-script-is-not-built-until-it-runs.md
       - deterministic-verifier: gates/deterministic-verifier.md
       - catalog-owner: gates/catalog-platform-owner.md
+      # 2026-09-15: same mistake a fourth time. dod-v3-verified-not-asserted landed in
+      # rules.yaml this session with no nav row, so test_gate_demo's nav case went red
+      # again: "generated pages not in the nav: ['dod-v3-verified-not-asserted']".
+      - dod-v3-verified-not-asserted: gates/dod-v3-verified-not-asserted.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md

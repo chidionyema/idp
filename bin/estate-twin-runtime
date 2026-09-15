@@ -39,12 +39,15 @@ Exit codes: 0 ok, 1 nothing could be read, 2 the graph could not be opened.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
 import sqlite3
 import subprocess
 import sys
+import time
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -127,6 +130,32 @@ def ensure_schema(con: sqlite3.Connection) -> None:
             fresh_s   INTEGER NOT NULL,
             updated_at TIMESTAMP NOT NULL
         );
+
+        -- Canonical, provider-agnostic session record (docs/tickets/2026-09-15-
+        -- live-session-sync.md). `provider` and `model` are plain strings -- "claude",
+        -- "gpt-4o", "gemini-pro" are data here, never a schema choice, the same invariant
+        -- CONTRACT.md:41 states for the runner registry. Schema only: nothing in this repo
+        -- writes these tables yet -- the sync daemon that will is a separate, later piece.
+        CREATE TABLE IF NOT EXISTS sessions (
+            id            TEXT PRIMARY KEY,
+            provider      TEXT NOT NULL,
+            model         TEXT NOT NULL,
+            created_at    TIMESTAMP NOT NULL,
+            metadata_json TEXT NOT NULL
+        );
+
+        -- One append-only row per event a session emitted, ordered by `seq` within the
+        -- session -- the same append-only shape as node_events above, applied to sessions
+        -- instead of cluster nodes.
+        CREATE TABLE IF NOT EXISTS session_events (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id   TEXT NOT NULL REFERENCES sessions (id),
+            seq          INTEGER NOT NULL,
+            type         TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            ts           TIMESTAMP NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS session_events_session ON session_events (session_id, seq);
         """
     )
     con.commit()
@@ -478,8 +507,13 @@ def sweep_from_receipt(con: sqlite3.Connection, receipt: dict) -> dict:
     for r in receipt.get("flux_not_ready") or []:
         kind, msg = r.get("kind", "?"), (r.get("message") or "")[:200]
         name = r.get("name") or kind
-        nid = f"flux:{kind}:{name}"
-        put(nid, "flux", DEAD, {"kind": kind, "name": name, "message": msg})
+        # Same identity rule as the `flux` loop below (G4): a node id without the namespace
+        # collides with every other Kustomization/HelmRelease of the same name and orphans
+        # it from the edges the `flux` loop attaches to the namespaced id (found tonight:
+        # flux:Kustomization:mcp carried no edges while flux:Kustomization:flux-system/mcp did).
+        ns_ = r.get("ns") or ""
+        nid = f"flux:{kind}:{ns_ + '/' if ns_ else ''}{name}"
+        put(nid, "flux", DEAD, {"kind": kind, "namespace": ns_, "name": name, "message": msg})
 
     # ---- G1: the other twenty fields. Every one was already collected and paid for; the
     # graph read five of them and the rest were written to object storage and forgotten.
@@ -1267,6 +1301,251 @@ def _blind(con: sqlite3.Connection, domain: str, type_: str, why: str) -> None:
     _put(con, domain, f"{domain}:unreadable", type_, DEAD, {"why": why[:300]})
 
 
+def _module_dotted_name(relpath: str) -> str:
+    """`sovereign/verifier.py` -> `sovereign.verifier`; `mcp/plugins/__init__.py` -> `mcp.plugins`."""
+    dotted = relpath[:-3].replace("/", ".") if relpath.endswith(".py") else relpath.replace("/", ".")
+    if dotted.endswith(".__init__"):
+        dotted = dotted[: -len(".__init__")]
+    return dotted
+
+
+def sweep_code_graph(con: sqlite3.Connection) -> dict:
+    """Phase 2b: a real Python import graph, stdlib `ast` only, no new dependency.
+
+    Founder's ask (2026-09-15, the Omni-State Hypervisor synthesis): a semantic code graph
+    alongside the runtime one, without a second store or a SCIP toolchain this estate does not
+    have. What this can honestly claim: for every git-tracked `.py` file, one `code:module:*`
+    node (id = dotted module path, e.g. `code:module:sovereign.verifier`), and one `imports`
+    edge per `import`/`from ... import ...` statement whose target resolves EXACTLY to another
+    module already in this same set. A resolvable-but-external import (stdlib, a pip package)
+    is not recorded as an edge to nowhere; an id namespace of its own (`code:module:`) keeps
+    this graph from ever colliding with `runtime`'s `k8s:*`/`flux:*` ids or `code`'s own
+    existing `git:summary:stranded`/branch rows, so `blast_radius()` cannot silently cross
+    from "who imports this module" into "what pod does this affect" -- those are two different
+    claims and this graph makes only the first one.
+
+    NOT built, stated rather than left implicit: cross-repo resolution, and call-graph edges
+    (only import-time edges are proven here -- a real call graph needs points-to analysis this
+    function does not attempt). The Linear-issue-to-code link once deferred here for lack of a
+    credential is `sweep_linear()`, below -- a separate domain, run separately.
+    """
+    ensure_schema(con)
+    paths = [p for p in _git(["ls-files", "*.py"]).splitlines() if p.strip()]
+    modules = {_module_dotted_name(p): p for p in paths}
+    known = set(modules)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    edges = 0
+    parse_errors = 0
+    for dotted, relpath in modules.items():
+        node_id = f"code:module:{dotted}"
+        try:
+            source = (ROOT / relpath).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        status = "active"
+        imported: set[str] = set()
+        try:
+            tree = ast.parse(source, filename=relpath)
+        except SyntaxError as exc:
+            status = "dead"
+            parse_errors += 1
+            _put(con, "code", node_id, "module", status, {"path": relpath, "error": str(exc)})
+            continue
+        pkg = dotted.rsplit(".", 1)[0] if "." in dotted else ""
+        for stmt in ast.walk(tree):
+            if isinstance(stmt, ast.Import):
+                for alias in stmt.names:
+                    imported.add(alias.name)
+            elif isinstance(stmt, ast.ImportFrom):
+                if stmt.level == 0:
+                    if stmt.module:
+                        imported.add(stmt.module)
+                else:
+                    # Relative import: climb `level` packages up from this module's own package.
+                    base_parts = pkg.split(".") if pkg else []
+                    climbed = base_parts[: len(base_parts) - (stmt.level - 1)] if stmt.level > 1 else base_parts
+                    base = ".".join(climbed)
+                    target = f"{base}.{stmt.module}" if stmt.module else base
+                    if target:
+                        imported.add(target)
+        _put(
+            con, "code", node_id, "module", status,
+            {"path": relpath, "imports_declared": len(imported)},
+        )
+        for target in imported:
+            # Exact match only, plus the one-level-up package (an `import pkg.sub` also makes
+            # `pkg/__init__.py` a real dependency): both are real membership tests against
+            # `known`, never a guess.
+            candidates = [target] if target in known else []
+            if not candidates and "." in target:
+                pkg_target = target.rsplit(".", 1)[0]
+                if pkg_target in known:
+                    candidates = [pkg_target]
+            for candidate in candidates:
+                upsert_edge(con, node_id, f"code:module:{candidate}", "imports")
+                edges += 1
+    con.execute(
+        "INSERT INTO freshness (domain, fresh_s, updated_at) VALUES ('code_graph', ?, ?) "
+        "ON CONFLICT(domain) DO UPDATE SET fresh_s = excluded.fresh_s, "
+        "updated_at = excluded.updated_at",
+        (int(_env("ESTATE_TWIN_FRESH_S", "180")), now),
+    )
+    con.commit()
+    return {"code_graph_modules": len(modules), "code_graph_imports": edges, "code_graph_parse_errors": parse_errors}
+
+
+_LINEAR_API = "https://api.linear.app/graphql"
+_LINEAR_TEAM_KEY = "MUM"
+_LINEAR_ISSUE_KEY_RE = re.compile(r"\b" + re.escape(_LINEAR_TEAM_KEY) + r"-\d+\b")
+
+
+def _linear_token() -> "str | None":
+    """LAW 46: no path to a home directory or a machine is written here. Same two-source shape
+    as platform/linear/setup.py's own token(), but returns None on absence instead of
+    sys.exit -- this sweep is one of several `--domains` runs in one process, and a missing
+    Linear credential must not take runtime/git-hygiene domains down with it (G6, BLIND not
+    fatal)."""
+    tok = os.environ.get("LINEAR_API_KEY")
+    if tok:
+        return tok.strip()
+    path = os.environ.get("LINEAR_API_KEY_FILE")
+    if path and os.path.exists(path):
+        return open(path, encoding="utf-8").read().strip()
+    return None
+
+
+def _linear_gql(token: str, query: str, variables: dict) -> dict:
+    # Scheme asserted rather than assumed, same guard as platform/linear/setup.py's gql() and
+    # for the same reason (S310): _LINEAR_API is a module constant, so this costs nothing.
+    if not _LINEAR_API.startswith("https://"):
+        raise ValueError(f"refusing a non-https Linear endpoint: {_LINEAR_API}")
+    body = json.dumps({"query": query, "variables": variables}).encode()
+    req = urllib.request.Request(  # noqa: S310 - scheme asserted above
+        _LINEAR_API,
+        data=body,
+        headers={"Authorization": token, "Content-Type": "application/json"},
+    )
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310 - as above
+                out = json.loads(r.read())
+            if "errors" in out and out.get("data") is None:
+                raise RuntimeError(out["errors"][0].get("message", "unknown"))
+            return out.get("data") or {}
+        except Exception:
+            if attempt == 2:
+                raise
+            time.sleep(2 * (attempt + 1))
+    return {}
+
+
+def sweep_linear(con: sqlite3.Connection) -> dict:
+    """Phase 2c: Linear issues, linked to the code they touched, by real commit evidence only.
+
+    Founder, 2026-09-15: cyrus (the old and now-deleted consumer of the `cyrus-linear-api-token`
+    credential) is gone for good, but that does not retire the goal it was meant to serve --
+    linking a Linear issue to the code it changed. The credential itself was confirmed live in
+    Bitwarden Secrets Manager (project `estate`) the same day; this sweep is its first real
+    consumer, run from the same CI step that already runs --code --domains (the step that
+    replaced cyrus, docs/decisions -- "cyrus: removed from the estate"), never a revived cyrus
+    pod, per THE HEADLINE's one-platform rule.
+
+    What this can honestly claim: one `linear:issue:<KEY>` node per issue the Linear API returns
+    for team MUM (own id namespace, own domain -- cannot collide with `code:*`/`k8s:*`/`flux:*`),
+    and one `references` edge from that node to a `code:module:*` node from the code-graph sweep,
+    ONLY when a real commit whose subject or body names that issue key touched a file this repo's
+    own `--code-graph` sweep already resolved to a module. No semantic understanding of the
+    issue, no guess at intent -- a commit message naming an issue, and a file that same commit
+    touched, nothing more. A merge commit's own diff is not expanded (git diff-tree's default for
+    a merge is empty), so a squash- or merge-committed change is credited to the commit that made
+    it, not the merge that landed it -- the same "no fabricated proof" discipline as the
+    Deterministic Verifier.
+
+    Fails BLIND, not fatal, on a missing credential or any network/API error: an absent Linear
+    link is unproven, not broken -- the same three-state rule as every other domain here (G6).
+    """
+    token = _linear_token()
+    if not token:
+        return {"linear_issues": 0, "linear_edges": 0, "linear_blind": True}
+    ensure_schema(con)
+
+    query = """
+    query($after: String, $team: String!) {
+      issues(filter: { team: { key: { eq: $team } } }, first: 100, after: $after) {
+        nodes { identifier title url state { name } }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+    """
+    issues: dict[str, dict] = {}
+    after = None
+    try:
+        for _ in range(50):  # ceiling 5000 issues, far past this one team's real size
+            data = _linear_gql(token, query, {"after": after, "team": _LINEAR_TEAM_KEY})
+            page = data.get("issues") or {}
+            for node in page.get("nodes") or []:
+                key = node.get("identifier")
+                if key:
+                    issues[key] = node
+            info = page.get("pageInfo") or {}
+            if not info.get("hasNextPage"):
+                break
+            after = info.get("endCursor")
+    except Exception as exc:
+        return {"linear_issues": 0, "linear_edges": 0, "linear_blind": True, "linear_error": str(exc)}
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    for key, node in issues.items():
+        _put(
+            con, "linear", f"linear:issue:{key}", "issue", "active",
+            {
+                "title": node.get("title"),
+                "state": (node.get("state") or {}).get("name"),
+                "url": node.get("url"),
+                "team": _LINEAR_TEAM_KEY,
+            },
+        )
+
+    known = {_module_dotted_name(p) for p in _git(["ls-files", "*.py"]).splitlines() if p.strip()}
+    log = _git(["log", "--all", "--format=%H%x1f%s%x1f%b%x1e"])
+    edges = 0
+    commits_scanned = 0
+    for record in log.split("\x1e"):
+        record = record.strip("\n")
+        if not record:
+            continue
+        parts = record.split("\x1f")
+        if len(parts) < 2:
+            continue
+        sha, subject, body = parts[0], parts[1], (parts[2] if len(parts) > 2 else "")
+        keys = set(_LINEAR_ISSUE_KEY_RE.findall(subject + " " + body)) & issues.keys()
+        if not keys:
+            continue
+        commits_scanned += 1
+        if commits_scanned > 1000:  # bounds worst-case CI time; 1000 linked commits is proof enough
+            break
+        changed = _git(["diff-tree", "--no-commit-id", "--name-only", "-r", sha]).splitlines()
+        for path in changed:
+            path = path.strip()
+            if not path.endswith(".py"):
+                continue
+            dotted = _module_dotted_name(path)
+            if dotted not in known:
+                continue
+            for key in keys:
+                upsert_edge(con, f"linear:issue:{key}", f"code:module:{dotted}", "references")
+                edges += 1
+
+    con.execute(
+        "INSERT INTO freshness (domain, fresh_s, updated_at) VALUES ('linear', ?, ?) "
+        "ON CONFLICT(domain) DO UPDATE SET fresh_s = excluded.fresh_s, "
+        "updated_at = excluded.updated_at",
+        (int(_env("ESTATE_TWIN_FRESH_S", "180")), now),
+    )
+    con.commit()
+    return {"linear_issues": len(issues), "linear_edges": edges, "linear_blind": False}
+
+
 def sweep_domains(con: sqlite3.Connection) -> dict:
     """G2: the ten domains the estate owns and its graph could not see.
 
@@ -1932,6 +2211,19 @@ def main(argv: list[str]) -> int:
         help="also sweep git: which capability is built and never merged",
     )
     ap.add_argument(
+        "--code-graph",
+        action="store_true",
+        help="also sweep a real Python import graph (code:module:* nodes, ast-only, "
+        "no SCIP/second store -- see sweep_code_graph)",
+    )
+    ap.add_argument(
+        "--linear",
+        action="store_true",
+        help="also sweep Linear issues (team MUM) and link them to code by real commit "
+        "evidence (linear:issue:* nodes -- see sweep_linear); BLIND, not fatal, without "
+        "LINEAR_API_KEY/_FILE",
+    )
+    ap.add_argument(
         "--dead",
         action="store_true",
         help="print what is dead and exit; a founder's one-liner",
@@ -2101,6 +2393,10 @@ def main(argv: list[str]) -> int:
     counts = sweep(con)
     if args.code:
         counts.update(sweep_code(con))
+    if args.code_graph:
+        counts.update(sweep_code_graph(con))
+    if args.linear:
+        counts.update(sweep_linear(con))
     if args.domains:
         counts.update(sweep_domains(con))
     total = sum(v for k, v in counts.items() if k != "source" and isinstance(v, int))

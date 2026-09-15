@@ -15,3 +15,5 @@ resources:
   - controller.yaml
   - runsc.yaml
   - epistemic-ingest.yaml
+  - via-negativa.yaml
+  - fleetview-backend.yaml
