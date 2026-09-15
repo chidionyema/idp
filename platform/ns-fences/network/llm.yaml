@@ -155,3 +155,6 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: robusta
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: via-negativa

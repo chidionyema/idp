@@ -35,6 +35,7 @@ annotation, no environment variable, no byte of either input file outside those 
 fields reaches the response -- restricting the field set is the guard, not a filter
 that could be bypassed by a differently-shaped entity.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -54,15 +55,19 @@ import yaml
 try:
     from datasette import hookimpl
 except ImportError:  # pragma: no cover - exercised only in the datasette-less CI venv
+
     def hookimpl(fn):
         return fn
+
 
 _STATE_MD_TS_RE = re.compile(r"\*\*Generated (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) UTC\*\*")
 
 
 def config() -> dict:
     return {
-        "catalog_path": os.environ.get("ESTATE_CATALOG_PATH", "/data/catalog-info.yaml"),
+        "catalog_path": os.environ.get(
+            "ESTATE_CATALOG_PATH", "/data/catalog-info.yaml"
+        ),
         "state_md_path": os.environ.get("ESTATE_STATE_MD_PATH", "/data/STATE.md"),
         "byte_ceiling": int(os.environ.get("ESTATE_INVENTORY_BYTE_CEILING", "8000")),
         "stale_minutes": int(os.environ.get("ESTATE_INVENTORY_STALE_MINUTES", "90")),
@@ -79,15 +84,30 @@ def read_state_md_snapshot(path: str, now: "dt.datetime | None" = None) -> dict:
         with open(path, "r", encoding="utf-8") as fh:
             head = fh.read(4096)
     except OSError as e:
-        return {"path": path, "generated_at": None, "age_minutes": None, "error": str(e)}
+        return {
+            "path": path,
+            "generated_at": None,
+            "age_minutes": None,
+            "error": str(e),
+        }
     m = _STATE_MD_TS_RE.search(head)
     if not m:
-        return {"path": path, "generated_at": None, "age_minutes": None,
-                 "error": "no '**Generated ... UTC**' header found in the first 4096 bytes"}
-    generated = dt.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M").replace(tzinfo=dt.timezone.utc)
+        return {
+            "path": path,
+            "generated_at": None,
+            "age_minutes": None,
+            "error": "no '**Generated ... UTC**' header found in the first 4096 bytes",
+        }
+    generated = dt.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M").replace(
+        tzinfo=dt.timezone.utc
+    )
     age_minutes = (now - generated).total_seconds() / 60.0
-    return {"path": path, "generated_at": generated.isoformat(),
-             "age_minutes": round(age_minutes, 1), "error": None}
+    return {
+        "path": path,
+        "generated_at": generated.isoformat(),
+        "age_minutes": round(age_minutes, 1),
+        "error": None,
+    }
 
 
 def read_catalog_entities(path: str) -> "tuple[list[dict], str | None]":
@@ -107,16 +127,20 @@ def read_catalog_entities(path: str) -> "tuple[list[dict], str | None]":
         meta = doc.get("metadata") or {}
         spec = doc.get("spec") or {}
         ann = meta.get("annotations") or {}
-        repo = ann.get("github.com/project-slug") or ann.get("backstage.io/source-location")
+        repo = ann.get("github.com/project-slug") or ann.get(
+            "backstage.io/source-location"
+        )
         name = meta.get("name")
         if not isinstance(name, str):
             continue
-        entities.append({
-            "kind": doc.get("kind"),
-            "name": name,
-            "owner": spec.get("owner"),
-            "repo": repo,
-        })
+        entities.append(
+            {
+                "kind": doc.get("kind"),
+                "name": name,
+                "owner": spec.get("owner"),
+                "repo": repo,
+            }
+        )
     entities.sort(key=lambda e: (e["kind"] or "", e["name"] or ""))
     return entities, None
 
@@ -125,7 +149,9 @@ def _json_bytes(obj) -> int:
     return len(json.dumps(obj, separators=(",", ":")).encode("utf-8"))
 
 
-def summarize_entities(entities: list, ceiling: int, render) -> "tuple[list, bool, int]":
+def summarize_entities(
+    entities: list, ceiling: int, render
+) -> "tuple[list, bool, int]":
     """The largest prefix of `entities` for which render(prefix, ...) fits in `ceiling`
     bytes. `render(kept, truncated, omitted)` builds the whole payload envelope, so the
     search is exact against what a caller actually receives, not an estimate.
@@ -148,18 +174,39 @@ def summarize_entities(entities: list, ceiling: int, render) -> "tuple[list, boo
             hi = mid - 1
     truncated = best < len(entities)
     omitted = len(entities) - best
-    while best > 0 and _json_bytes(render(entities[:best], truncated, omitted)) > ceiling:
+    while (
+        best > 0 and _json_bytes(render(entities[:best], truncated, omitted)) > ceiling
+    ):
         best -= 1
         truncated = best < len(entities)
         omitted = len(entities) - best
     return entities[:best], truncated, omitted
 
 
-def build_inventory(cfg: "dict | None" = None, now: "dt.datetime | None" = None) -> dict:
+def build_inventory(
+    cfg: "dict | None" = None, now: "dt.datetime | None" = None
+) -> dict:
     cfg = cfg or config()
     state = read_state_md_snapshot(cfg["state_md_path"], now=now)
     entities, catalog_error = read_catalog_entities(cfg["catalog_path"])
-    stale = state["age_minutes"] is not None and state["age_minutes"] > cfg["stale_minutes"]
+    stale = (
+        state["age_minutes"] is not None and state["age_minutes"] > cfg["stale_minutes"]
+    )
+    # G6, the estate's three-state rule (bin/estate-twin-runtime's domain_state()),
+    # applied here rather than just disclosed as a bool: a stale snapshot's entities
+    # were being handed back looking exactly as fresh ones do, so an agent had to
+    # already know to check snapshot_stale before trusting entity_count_total. Same
+    # vocabulary as the rest of the estate (MEASURED_OK/UNKNOWN) so "can this be
+    # trusted" reads the same way everywhere, not one bool here and a three-state
+    # elsewhere. Never MEASURED_FAIL: a stale catalog isn't broken, it's just old,
+    # which is exactly what UNKNOWN means (the reader cannot tell, not that the
+    # thing itself failed).
+    if state["error"] is not None:
+        freshness_state = "UNKNOWN"
+    elif stale:
+        freshness_state = "UNKNOWN"
+    else:
+        freshness_state = "MEASURED_OK"
 
     def render(kept, truncated, omitted):
         return {
@@ -167,6 +214,7 @@ def build_inventory(cfg: "dict | None" = None, now: "dt.datetime | None" = None)
             "snapshot_age_minutes": state["age_minutes"],
             "snapshot_stale": stale,
             "snapshot_stale_threshold_minutes": cfg["stale_minutes"],
+            "freshness_state": freshness_state,
             "snapshot_error": state["error"],
             "catalog_error": catalog_error,
             "entity_count_total": len(entities),
@@ -187,6 +235,9 @@ def register_mcp_tools(datasette, mcp):
         """List every Backstage catalog entity (kind, name, owner, repo) and the
         crew/STATE.md snapshot timestamp it was read from, in one call. Summarised
         under a byte ceiling (ESTATE_INVENTORY_BYTE_CEILING); a stale snapshot is
-        disclosed with its age, never hidden. Reads crew/STATE.md and
-        catalog/catalog-info.yaml only -- no shell-out, no live process probe."""
+        disclosed with its age, never hidden, and rolled up into freshness_state
+        (MEASURED_OK/UNKNOWN, the estate's usual three-state rule) so a caller need
+        not re-derive "can I trust this" from the age number by hand. Reads
+        crew/STATE.md and catalog/catalog-info.yaml only -- no shell-out, no live
+        process probe."""
         return build_inventory()

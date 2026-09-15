@@ -148,4 +148,17 @@ if [ -z "$USE" ]; then
 fi
 
 if [ $# -eq 0 ]; then printf 'ok      kube  kubeconfig %s\n' "$USE"; exit 0; fi
+
+# Founder, 2026-09-15: "why are agents still looking for how things work and why is this
+# whole thing not visible to me" -- a real gap, separate from break-glass.log above: that
+# file only ever recorded the loud, rare escape hatch, not the ordinary case of an agent
+# reaching for raw kubectl instead of an mcp__estate__* call. Same append-only shape,
+# same directory, no new mechanism: one line per invocation, so `bin/idp-kube-report`
+# (or a plain `cut`) can answer "how often are agents bypassing the MCP tools" without
+# guessing. Never blocks or slows the call it logs -- a write failure here must not cost
+# the estate its only path to the cluster.
+mkdir -p "$STATE" 2>/dev/null
+printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${JIT_AGENT:-unknown}" "${USE##*/}" "$*" \
+  >>"$STATE/kube-calls.log" 2>/dev/null || true
+
 KUBECONFIG="$USE" exec kubectl "$@"

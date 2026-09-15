@@ -15,6 +15,7 @@ workflow) and receipts.append() did its file/flock/Keychain I/O inline;
 workflow_task_duration=151152ms and "Workflow Task in failed state" on
 set_line_message_id were both this one root cause.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -44,9 +45,16 @@ async def run_step(inp: dict[str, Any]) -> dict[str, Any]:
     changed nothing, so a receipt never claims a commit that a later step
     actually produced."""
     repo = inp.get("repo")
-    before = await asyncio.to_thread(gitops.head, repo) if gitops.is_repo(repo) else None
+    before = (
+        await asyncio.to_thread(gitops.head, repo) if gitops.is_repo(repo) else None
+    )
     result = await runners.run(
-        inp["runner"], inp["task"], repo, inp["step"], inp.get("steer") or []
+        inp["runner"],
+        inp["task"],
+        repo,
+        inp["step"],
+        inp.get("steer") or [],
+        session_id=inp.get("session_id"),
     )
     after = await asyncio.to_thread(gitops.head, repo) if gitops.is_repo(repo) else None
     result = dict(result)

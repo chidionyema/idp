@@ -23,10 +23,10 @@ Feature: CP1 the session contract
     And the body's sessions is a JSON array
     And the body names no unreachable adapter
 
-  Scenario: a catalogue that cannot be read is not an empty board
+  Scenario: a catalogue that cannot be read leaves the rest of the board live
     Given the portal backend is running with the fleetview plugin
     And the catalogue is not readable
     When I GET /api/fleetview/sessions over HTTP
-    Then the status is 503
-    And the body has available false
-    And the body names the error
+    Then the status is 200
+    And the body has available true
+    And the body names the unreachable adapter "other-harnesses"

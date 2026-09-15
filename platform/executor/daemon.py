@@ -67,7 +67,9 @@ _SOVEREIGN = os.path.join(
 sys.path.insert(0, os.path.abspath(_SOVEREIGN))
 from verifier import (  # noqa: E402
     Ledger,
+    ProposedFile,
     canonical_subject,
+    mutation_per_domain,
     parse_unified_diff,
     verify,
     verify_attestation,
@@ -160,6 +162,117 @@ def _pending_ledgers() -> int:
         return 0
 
 
+def _build_mutation_commit(
+    live_root: str, branch: str, files: list[ProposedFile], message: str
+) -> str:
+    """One real commit, on a THROWAWAY index, landing on a brand-new branch ref.
+
+    `GIT_INDEX_FILE` is pointed at a private temp file for every git call here, so this never
+    reads or writes the live worktree's own `.git/index`, never runs `checkout`/`reset`, and
+    never touches a file on disk outside `.git`'s object database and refs -- the live tree
+    this daemon is executing out of is never mutated (the same boundary `_propose_patch`'s own
+    "no `.git` worktree" comment states for its ledger). `git update-ref` only creates a NEW ref
+    under `refs/heads/mutation/<ledger_id>`; it never moves HEAD, `main`, or any branch that
+    already existed, so a caller who never merges this branch has changed nothing a human or
+    Flux was reading.
+
+    The tree is HEAD's tree with the ledger's own files layered on top, via `read-tree` +
+    `update-index`, so the branch is a real, diffable, mergeable commit -- not an orphan blob.
+    """
+    import subprocess  # local: kept out of the pure import path used by the tests
+    import tempfile
+
+    env = {
+        **os.environ,
+        "GIT_DIR": os.path.join(live_root, ".git"),
+        "GIT_AUTHOR_NAME": "estate-mutation-ledger",
+        "GIT_AUTHOR_EMAIL": "estate-mutation-ledger@localhost",
+        "GIT_COMMITTER_NAME": "estate-mutation-ledger",
+        "GIT_COMMITTER_EMAIL": "estate-mutation-ledger@localhost",
+    }
+    fd, index_path = tempfile.mkstemp(prefix="idp-mutation-index-")
+    os.close(fd)
+    os.unlink(
+        index_path
+    )  # git creates it fresh; a pre-existing empty file confuses read-tree
+    env["GIT_INDEX_FILE"] = index_path
+    try:
+        head_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=live_root,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "read-tree", head_sha],
+            cwd=live_root,
+            env=env,
+            check=True,
+            capture_output=True,
+        )
+        for proposed in files:
+            blob_sha = subprocess.run(
+                ["git", "hash-object", "-w", "--stdin"],
+                cwd=live_root,
+                env=env,
+                input=proposed.content,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            subprocess.run(
+                [
+                    "git",
+                    "update-index",
+                    "--add",
+                    "--cacheinfo",
+                    "100644",
+                    blob_sha,
+                    proposed.path,
+                ],
+                cwd=live_root,
+                env=env,
+                check=True,
+                capture_output=True,
+            )
+        tree_sha = subprocess.run(
+            ["git", "write-tree"],
+            cwd=live_root,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        commit_sha = subprocess.run(
+            ["git", "commit-tree", tree_sha, "-p", head_sha, "-m", message],
+            cwd=live_root,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "update-ref", f"refs/heads/{branch}", commit_sha],
+            cwd=live_root,
+            env=env,
+            check=True,
+            capture_output=True,
+        )
+        return commit_sha
+    except subprocess.CalledProcessError as exc:
+        detail = (
+            (exc.stderr or b"").decode(errors="replace")
+            if isinstance(exc.stderr, bytes)
+            else (exc.stderr or "")
+        )
+        raise OSError(f"{exc.cmd} failed: {detail.strip()}") from exc
+    finally:
+        if os.path.exists(index_path):
+            os.unlink(index_path)
+
+
 class Handler(socketserver.StreamRequestHandler):
     """One request, one answer, no state held between them.
 
@@ -207,6 +320,14 @@ class Handler(socketserver.StreamRequestHandler):
             self._reply(self._seal(request))
         elif verb == "admit":
             self._reply(self._admit(request))
+        elif verb == "propose_mutation":
+            self._reply(self._propose_mutation(request))
+        elif verb == "verify_mutation":
+            self._reply(self._verify_mutation(request))
+        elif verb == "seal_mutation":
+            self._reply(self._seal_mutation(request))
+        elif verb == "admit_mutation":
+            self._reply(self._admit_mutation(request))
         elif verb == "health":
             self._reply(
                 {
@@ -480,6 +601,298 @@ class Handler(socketserver.StreamRequestHandler):
             "validated": True,
             "admitted_path": admitted_path,
             "subject_digest": subject,
+        }
+
+    def _mutation_files(self, proposal: dict) -> list[ProposedFile]:
+        """Rebuild the per-file, per-path list a mutation proposal carries.
+
+        Shared by `_verify_mutation` and `_admit_mutation` so the two never disagree about
+        what a ledger's bytes are: one reader, not two. `code_patch`/`manifest_patch` are
+        unified diffs (`parse_unified_diff` already handles any number of files inside one),
+        `sql_migration` is not a diff -- it is the migration's own full text -- so it becomes
+        one `ProposedFile` at a fixed path, the only shape `propose_mutation`'s spec admits
+        (one migration per proposal).
+        """
+        files: list[ProposedFile] = []
+        if proposal.get("code_patch"):
+            files.extend(parse_unified_diff(proposal["code_patch"]))
+        if proposal.get("manifest_patch"):
+            files.extend(parse_unified_diff(proposal["manifest_patch"]))
+        if proposal.get("sql_migration"):
+            files.append(
+                ProposedFile(
+                    path="migration.sql",
+                    lines=proposal["sql_migration"].splitlines(keepends=True),
+                )
+            )
+        return files
+
+    def _propose_mutation(self, request: dict) -> dict:
+        """The typed multi-domain ledger's producer half: one ledger, up to three domains.
+
+        docs/tickets/2026-09-15-typed-multidomain-mutation-ledger.md's gap: a change that
+        legitimately needs code+manifest+SQL together used to be three unrelated `propose_patch`/
+        `simulate_change` calls, three unrelated verdicts, three unrelated windows in which one
+        could land without the other two. This writes every supplied domain's bytes into ONE
+        ledger id, so `verify_mutation` grades them together or not at all.
+
+        The ephemeral `ledger_dir` exists only so `stage_execution` has a sandbox root to build
+        under (same shape `_propose_patch` uses) -- it carries no proposal state of its own and
+        is destroyed by `verify()` on every path, pass or fail. The proposal's own bytes live in
+        `ledger_root()/proposals/<ledger_id>.json`, OUTSIDE that ephemeral directory, because
+        `admit_mutation` needs them to build a real commit after the ledger they arrived in is
+        long gone -- the same reason `staged/<ledger_id>.patch` already survives `verify()`.
+        """
+        code_patch = request.get("code_patch") or ""
+        manifest_patch = request.get("manifest_patch") or ""
+        sql_migration = request.get("sql_migration") or ""
+        tests = request.get("tests") or ""
+        claim = request.get("claim", "")
+        if not (code_patch.strip() or manifest_patch.strip() or sql_migration.strip()):
+            return {"ok": False, "error": "nothing to propose"}
+
+        domains: list[str] = []
+        if code_patch.strip():
+            domains.append("code")
+        if manifest_patch.strip():
+            domains.append("manifest")
+        if sql_migration.strip():
+            domains.append("sql")
+
+        proposal = {
+            "code_patch": code_patch,
+            "manifest_patch": manifest_patch,
+            "sql_migration": sql_migration,
+            "tests": tests,
+            "claim": claim,
+            "domains": domains,
+        }
+        files = self._mutation_files(proposal)
+        if not files:
+            # An empty proposal that "passes" is the silent green this estate keeps catching --
+            # a non-empty field that parses to no files (e.g. a diff with no `+++` hunks) is
+            # refused rather than opening a ledger over zero files.
+            return {
+                "ok": False,
+                "error": "the supplied patch(es) parse to no files; there is nothing to verify",
+            }
+
+        ledger_id = f"ldg-{uuid.uuid4().hex[:12]}"
+        ledger_dir = os.path.join(ledger_root(), ledger_id)
+        os.makedirs(ledger_dir, mode=0o700, exist_ok=True)
+        proposals_dir = os.path.join(ledger_root(), "proposals")
+        os.makedirs(proposals_dir, mode=0o700, exist_ok=True)
+        proposal["ledger_id"] = ledger_id
+        proposal["subject"] = canonical_subject(files)
+        with open(os.path.join(proposals_dir, f"{ledger_id}.json"), "w") as handle:
+            json.dump(proposal, handle)
+
+        return {
+            "ok": True,
+            "ledger_id": ledger_id,
+            "ledger_dir": ledger_dir,
+            "domains": domains,
+            "suspended": True,
+            "subject_digest": proposal["subject"],
+            "note": "the agent is suspended pending deterministic verification",
+        }
+
+    def _verify_mutation(self, request: dict) -> dict:
+        """Rule (new): grade every domain in the ledger together -- all-or-nothing.
+
+        Runs the SAME `sovereign.verifier.verify()` the single-domain door uses (LAW 43: no
+        second gauntlet) over every file across every supplied domain in one pass -- `verify()`
+        already generalized to typed domains (`classify_domain`/`stage_sql`/`domains` in its own
+        verdict) precisely so this handler does not need a parallel implementation. The one
+        thing this handler adds is `per_domain`: which domain(s) a failure actually names, never
+        a paraphrase, and there is no reply shape where one domain is admissible while another
+        is not -- `verify()`'s single verdict already enforces that structurally.
+        """
+        ledger_id = request.get("ledger_id", "")
+        if not isinstance(ledger_id, str) or not ledger_id:
+            return {"ok": False, "error": "verify_mutation needs a ledger_id"}
+        ledger_dir = os.path.join(ledger_root(), ledger_id)
+        proposal_path = os.path.join(ledger_root(), "proposals", f"{ledger_id}.json")
+        if not os.path.exists(proposal_path):
+            return {
+                "ok": False,
+                "error": (
+                    f"no mutation proposal {ledger_id!r} -- it was already spent or it never existed"
+                ),
+                "ledger_dir": ledger_dir,
+            }
+        try:
+            with open(proposal_path) as handle:
+                proposal = json.load(handle)
+        except (OSError, ValueError) as exc:
+            return {
+                "ok": False,
+                "error": f"the mutation ledger could not be read: {exc}",
+                "ledger_dir": ledger_dir,
+            }
+
+        files = self._mutation_files(proposal)
+        ledger = Ledger(
+            ledger_id=ledger_id,
+            ledger_dir=Path(ledger_dir),
+            files=files,
+            tests=proposal.get("tests", ""),
+            claim=proposal.get("claim", ""),
+        )
+        verdict = verify(ledger)
+        verdict["ledger_dir"] = ledger_dir
+        verdict["ledger_destroyed"] = not os.path.exists(ledger_dir)
+        # `verify()`'s own "domains" is the suffix-keyed summary `mutation_per_domain` reads
+        # (classify_domain's vocabulary: code/k8s_manifest/sql_schema) -- it must survive
+        # untouched here. "domains_requested" is the separate, door-facing list
+        # (code/manifest/sql) the proposal itself declared; the two vocabularies are not
+        # interchangeable, and overwriting the first with the second here (a bug caught by
+        # this door's own BDD suite, 2026-09-15) silently dropped every domain but "code"
+        # from per_domain on any multi-domain failure.
+        verdict["domains_requested"] = proposal.get("domains", [])
+        verdict["per_domain"] = mutation_per_domain(verdict, files)
+        if not verdict.get("ok"):
+            # Nothing left to seal or admit: the same "ledger destroyed on every path" rule
+            # `verify()` already applies to its own ephemeral directory applies here to the
+            # proposal record that outlives it.
+            try:
+                os.unlink(proposal_path)
+            except OSError:
+                pass
+        return verdict
+
+    def _seal_mutation(self, request: dict) -> dict:
+        """Rule (new)'s producer half: attest the WHOLE bundle's bytes, not one file's.
+
+        Mirrors `_seal` exactly, over the bundle `verify()` already staged at
+        `staged/<ledger_id>.patch` on a VERIFIED mutation -- that file existing is what proves
+        `verify_mutation` ran and passed; there is no second flag to fall out of sync with it.
+        """
+        ledger_id = request.get("ledger_id", "")
+        if not isinstance(ledger_id, str) or not ledger_id:
+            return {"ok": False, "error": "seal_mutation needs a ledger_id"}
+        staged_path = os.path.join(ledger_root(), "staged", f"{ledger_id}.patch")
+        if not os.path.exists(staged_path):
+            return {
+                "ok": False,
+                "error": (
+                    f"no verified bundle for ledger {ledger_id!r} -- call verify_mutation first "
+                    "and confirm it returned admissible: true"
+                ),
+            }
+
+        import hashlib  # local: only this handler needs a digest
+
+        from verifier import sign  # noqa: PLC0415 - reached only when a seal is asked for
+
+        payload_bytes = open(staged_path, "rb").read()
+        subject = "sha256:" + hashlib.sha256(payload_bytes).hexdigest()
+        attestation = sign(subject, ledger_root=Path(ledger_root()))
+        return {
+            "ok": True,
+            "ledger_id": ledger_id,
+            "subject_digest": subject,
+            "attestation": attestation,
+            "staged_path": staged_path,
+        }
+
+    def _admit_mutation(self, request: dict) -> dict:
+        """Rule (new): refuse an unattested bundle; admit an attested one to a NEW branch.
+
+        Same two-outcome enforcement point `_admit` already proves (UNATTESTED /
+        UNATTESTED_BADSIGNATURE, checked before anything is written) over the bundle's real
+        bytes. The one addition this verb makes over `_admit`: on a valid seal it also builds one
+        real commit, on a throwaway index, landing on a brand-new branch -- never `main`, never
+        HEAD, never the live working tree (see `_build_mutation_commit`). `pr_required: True` on
+        every success: this verb never merges, per ADR 0025 ("he is the only merger on every
+        Glass-Break change") -- merging this class of change is not on the Trust Threshold's
+        closed list today.
+        """
+        ledger_id = request.get("ledger_id", "")
+        if not isinstance(ledger_id, str) or not ledger_id:
+            return {"ok": False, "error": "admit_mutation needs a ledger_id"}
+        staged_path = os.path.join(ledger_root(), "staged", f"{ledger_id}.patch")
+        if not os.path.exists(staged_path):
+            return {
+                "ok": False,
+                "error": f"no verified bundle for ledger {ledger_id!r} -- call verify_mutation first",
+            }
+
+        import hashlib  # local: only this handler needs a digest
+
+        payload_bytes = open(staged_path, "rb").read()
+        subject = "sha256:" + hashlib.sha256(payload_bytes).hexdigest()
+        attestation = request.get("attestation")
+
+        if not attestation:
+            return {
+                "ok": False,
+                "intercepted": True,
+                "violation_code": "UNATTESTED",
+                "error": (
+                    "the mutation bundle carries no attestation from the Deterministic "
+                    "Verifier; the estate admits no change without its seal"
+                ),
+                "subject_digest": subject,
+            }
+        if not verify_attestation(attestation, subject):
+            return {
+                "ok": False,
+                "intercepted": True,
+                "violation_code": "UNATTESTED_BADSIGNATURE",
+                "error": (
+                    "the attestation does not verify over these bundle bytes; it was minted "
+                    "over a different artifact"
+                ),
+                "subject_digest": subject,
+            }
+
+        admitted_dir = os.path.join(ledger_root(), "admitted")
+        os.makedirs(admitted_dir, mode=0o700, exist_ok=True)
+        admitted_path = os.path.join(admitted_dir, f"{ledger_id}.patch")
+        with open(admitted_path, "wb") as handle:
+            handle.write(payload_bytes)
+
+        proposal_path = os.path.join(ledger_root(), "proposals", f"{ledger_id}.json")
+        if not os.path.exists(proposal_path):
+            # Attested and admitted -- the bytes are validated and on disk, same guarantee
+            # `admit_payload` gives -- but the domain-typed record `admit_mutation` itself
+            # writes at propose time and needs to build a real commit is gone. This handler is
+            # the only consumer of that file, so reaching here means it was already spent by an
+            # earlier admit of this same ledger_id: reported, not silently re-admitted.
+            return {
+                "ok": True,
+                "validated": True,
+                "admitted_path": admitted_path,
+                "subject_digest": subject,
+                "branch": None,
+                "error": "proposal record already spent; no branch was built on this call",
+            }
+        with open(proposal_path) as handle:
+            proposal = json.load(handle)
+        files = self._mutation_files(proposal)
+        branch = f"mutation/{ledger_id}"
+        claim = proposal.get("claim") or "typed multi-domain mutation ledger"
+        os.unlink(proposal_path)  # spent: this ledger cannot mint a second branch
+        try:
+            commit_sha = _build_mutation_commit(live_worktree(), branch, files, claim)
+        except OSError as exc:
+            return {
+                "ok": True,
+                "validated": True,
+                "admitted_path": admitted_path,
+                "subject_digest": subject,
+                "branch": None,
+                "error": f"admitted, but the branch could not be built: {exc}",
+            }
+        return {
+            "ok": True,
+            "validated": True,
+            "admitted_path": admitted_path,
+            "subject_digest": subject,
+            "branch": branch,
+            "commit_sha": commit_sha,
+            "pr_required": True,
         }
 
     def _reply(self, payload: dict) -> None:

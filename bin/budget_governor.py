@@ -47,7 +47,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from epistemic_firewall import _estate_sessions, _target_of, _unwrap  # noqa: E402
+from epistemic_firewall import (  # noqa: E402
+    _estate_sessions,
+    _is_tool_call_block,
+    _target_of,
+    _tool_input,
+    _unwrap,
+)
 from trajectory_lock import ESCAPE_HATCHES, TrajectoryLock  # noqa: E402
 
 DEFAULT_MAX_STEPS = 5
@@ -55,16 +61,12 @@ DEFAULT_MAX_COST_USD = 0.50
 _SESSION_ID = "budget"
 
 
-def _is_tool_use(block: dict) -> bool:
-    return isinstance(block, dict) and block.get("type") in ("tool_use", "tool_call")
-
-
 def _step_tool_calls(turn: dict) -> list[dict]:
     msg = _unwrap(turn)
     content = msg.get("content")
     blocks = content if isinstance(content, list) else []
-    calls = [b for b in blocks if _is_tool_use(b)]
-    if not calls and msg.get("type") in ("tool_use", "tool_call"):
+    calls = [b for b in blocks if isinstance(b, dict) and _is_tool_call_block(b)]
+    if not calls and _is_tool_call_block(msg):
         calls = [msg]
     return calls
 
@@ -104,7 +106,7 @@ def run_budget(
             None,
         )
         if plan_call is not None:
-            inp = plan_call.get("input") or {}
+            inp = _tool_input(plan_call)
             result = lock.declare_plan(
                 _SESSION_ID, inp.get("goal", ""), inp.get("subgoals", [])
             )
@@ -120,7 +122,7 @@ def run_budget(
             None,
         )
         if complete_call is not None:
-            gid = str((complete_call.get("input") or {}).get("goal_id", ""))
+            gid = str(_tool_input(complete_call).get("goal_id", ""))
             if lock.complete_goal(_SESSION_ID, gid):
                 done.add(gid)
                 active_goal_id = next(
@@ -131,7 +133,7 @@ def run_budget(
         real_calls = [c for c in calls if str(c.get("name", "")) not in ESCAPE_HATCHES]
         for c in real_calls:
             piece = f"{c.get('name', '?')}:{_target_of(c)}"
-            step_cost = float((c.get("input") or {}).get("cost_usd", 0.0) or 0.0)
+            step_cost = float(_tool_input(c).get("cost_usd", 0.0) or 0.0)
 
             # -- information gain: a repeated (tool, target) pair proves zero new evidence.
             if piece in evidence:
@@ -152,12 +154,10 @@ def run_budget(
 
             # -- branch budget: bin/idp-trajectory's own per-goal count (the ticket's "5 tree
             # branches" IS budget_per_goal, imported rather than re-implemented -- R43).
-            target_goal_id = (c.get("input") or {}).get(
-                "target_goal_id"
-            ) or active_goal_id
+            target_goal_id = _tool_input(c).get("target_goal_id") or active_goal_id
             result = lock.authorize(
                 str(c.get("name", "")),
-                c.get("input") or {},
+                _tool_input(c),
                 _SESSION_ID,
                 target_goal_id,
             )

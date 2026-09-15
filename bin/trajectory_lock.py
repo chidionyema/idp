@@ -248,10 +248,7 @@ class TrajectoryLock:
     def _is_tool_call(self, msg: dict) -> bool:
         content = msg.get("content")
         if isinstance(content, list):
-            return any(
-                isinstance(b, dict) and b.get("type") in ("tool_use", "tool_call")
-                for b in content
-            )
+            return any(isinstance(b, dict) and _is_tool_call_block(b) for b in content)
         return False
 
     def _is_error_output(self, msg: dict) -> bool:
@@ -314,11 +311,8 @@ def _declared_subjects(turns: list[dict]) -> set[str]:
     subjects: set[str] = set()
     for turn in turns:
         for block in _blocks(turn):
-            if (
-                block.get("type") in ("tool_use", "tool_call")
-                and block.get("name") in ESCAPE_HATCHES
-            ):
-                inp = block.get("input") or {}
+            if _is_tool_call_block(block) and block.get("name") in ESCAPE_HATCHES:
+                inp = _tool_input(block)
                 text = f"{inp.get('goal', '')} " + " ".join(
                     str(s.get("text", "")) + " " + str(s.get("id", ""))
                     for s in (inp.get("subgoals") or [])
@@ -355,6 +349,26 @@ def _words(text: str) -> set[str]:
     }
 
 
+_TOOL_CALL_TYPES = ("tool_use", "tool_call", "toolCall")
+
+
+def _is_tool_call_block(block: dict) -> bool:
+    return block.get("type") in _TOOL_CALL_TYPES
+
+
+def _tool_input(block: dict) -> dict:
+    """A tool call's arguments, whichever runtime wrote them.
+
+    Claude Code writes {"type": "tool_use", "input": {...}}. Pi writes
+    {"type": "toolCall", "arguments": {...}} -- a distinct field name, not just a distinct type
+    string. Measured 2026-09-15: every pi session on this machine has 0 declare_plan/revise_plan
+    hits and 0 extracted actions for exactly this reason -- this gate read Claude Code's transcript
+    shape only, so it was structurally blind to every pi session, the same class of bug _unwrap
+    exists to fix for the turn-nesting shape.
+    """
+    return block.get("input") or block.get("arguments") or {}
+
+
 def _unwrap(turn: dict) -> dict:
     """Pi's transcript nests the turn under a `message` key; the test fixtures do not.
 
@@ -381,8 +395,8 @@ def _actions(turns: list[dict]) -> list[str]:
     for turn in turns:
         msg = _unwrap(turn)
         for block in _blocks(turn):
-            if block.get("type") in ("tool_use", "tool_call"):
-                inp = block.get("input") or {}
+            if _is_tool_call_block(block):
+                inp = _tool_input(block)
                 if block.get("name") in ESCAPE_HATCHES:
                     continue
                 out.append(str(inp.get("command", "")) or str(inp.get("path", "")))

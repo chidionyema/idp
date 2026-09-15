@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""idp-kyverno-audit-promote: read Kyverno's own audit stream and say which Audit-mode
+policies are clean enough to promote to Enforce, and which are not.
+
+Decision 0025's own scoreboard named this the missing half of pillar 4: "Audit-mode shadow
+webhooks -- HALF BUILT ... nobody reads the audit stream, so nothing measures a full day of
+churn and nothing flips a clean rule to Enforce" (docs/decisions/
+0025-agents-hold-no-write-on-production-and-the-greenlane-grows-by-rows.md, row 4). The Audit
+mode itself was already real (bin/idp-admission-policies:40-41, kyverno-secrets-policy.yaml:30);
+this file is the reader, not a new policy mechanism.
+
+It never writes. Promotion is a change to a ClusterPolicy's validationFailureAction, and 0025's
+own instruction is that agents hold no write on production -- this script's job stops at naming
+which policies have earned it (WHY: churn_hours, a real number) and which have not (WHY: a real
+recent failure, quoted). Turning a `promote: true` row into a merged PR is the same
+propose -> verify -> seal -> admit path every other change in this estate takes
+(sovereign/verifier.py, mcp/plugins/estate_executor.py) -- this file supplies the fact the
+proposal would cite, not the write itself.
+
+BLIND, same shape as every bin/idp-*: if bin/idp-kube cannot reach the cluster (no PolicyReport
+data exists to grade), that is disclosed as blind, never faked as "no violations found".
+
+  bin/idp-kyverno-audit-promote                 # table, human output
+  bin/idp-kyverno-audit-promote --json           # same rows, machine output
+  bin/idp-kyverno-audit-promote --clean-hours 24 # the "full day" window (default 24)
+"""
+from __future__ import annotations
+
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_admission_policies():
+    """bin/idp-admission-policies has no .py suffix; load it by path so this file can
+    reuse its `rows()`/`mode()` instead of re-parsing ClusterPolicy YAML a second way."""
+    loader = importlib.machinery.SourceFileLoader("idp_admission_policies", str(ROOT / "bin" / "idp-admission-policies"))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def audit_mode_policies() -> list[dict]:
+    ap = _load_admission_policies()
+    return [r for r in ap.rows() if r["mode"] == "Audit"]
+
+
+def fetch_policy_reports(run=subprocess.run) -> "tuple[list[dict], str | None]":
+    """Every result Kyverno's own PolicyReport/ClusterPolicyReport objects hold, cluster-wide.
+    Returns (results, blind_reason). blind_reason is None only when bin/idp-kube itself
+    succeeded -- an empty *result* set with no blind_reason means the cluster was reachable
+    and genuinely reported zero rows, which is different from not being asked."""
+    proc = run(
+        [str(ROOT / "bin" / "idp-kube"), "get", "policyreports,clusterpolicyreports", "-A", "-o", "json"],
+        capture_output=True, text=True, timeout=55,
+    )
+    if proc.returncode != 0:
+        why = (proc.stderr or proc.stdout or "bin/idp-kube exited nonzero").strip().splitlines()[-1] if (proc.stderr or proc.stdout) else "bin/idp-kube exited nonzero"
+        return [], why
+    try:
+        doc = json.loads(proc.stdout)
+    except (json.JSONDecodeError, ValueError) as e:
+        return [], f"bin/idp-kube returned unparseable JSON: {e}"
+    results = []
+    for item in doc.get("items", []):
+        for r in item.get("results", []) or []:
+            results.append(r)
+    return results, None
+
+
+def _result_epoch(r: dict) -> "float | None":
+    ts = r.get("timestamp")
+    if isinstance(ts, dict) and "seconds" in ts:
+        return float(ts["seconds"])
+    return None
+
+
+def churn_hours_clean(policy: str, results: list[dict], now: float) -> "float | None":
+    """Hours since this policy's most recent 'fail' result, or None if it has *evidence*
+    (at least one recorded result, pass or fail) but no fail among it."""
+    fails = [r for r in results if r.get("policy") == policy and r.get("result") == "fail"]
+    epochs = [e for e in (_result_epoch(r) for r in fails) if e is not None]
+    if not epochs:
+        return None
+    return (now - max(epochs)) / 3600.0
+
+
+def build_rows(policies: list[dict], results: list[dict], clean_hours: float, now: "float | None" = None) -> list[dict]:
+    """A policy is only promotable on evidence it was actually graded: at least one
+    PolicyReport *result* recorded against it (pass or fail), same G6 three-state rule as the
+    rest of this estate (bin/estate-twin-runtime's domain_state()) -- zero results is UNKNOWN,
+    never silently read as clean. Measured 2026-09-15: the wgpolicyk8s.io CRDs exist
+    (installed 2026-08-25) but held zero PolicyReport/ClusterPolicyReport objects cluster-wide
+    at proof time -- the schema is real, the stream itself is not populated yet."""
+    now = now if now is not None else time.time()
+    out = []
+    for p in policies:
+        own = [r for r in results if r.get("policy") == p["policy"]]
+        hrs = churn_hours_clean(p["policy"], results, now)
+        if not own:
+            promote, why = False, "UNKNOWN: zero PolicyReport results recorded for this policy -- absence of a fail is not evidence of a pass"
+        elif hrs is None:
+            promote, why = True, f"MEASURED: {len(own)} recorded result(s), none a fail"
+        else:
+            promote = hrs >= clean_hours
+            why = (f"MEASURED: clean {round(hrs, 1)}h >= {clean_hours}h threshold" if promote
+                   else f"MEASURED: failed {round(hrs, 1)}h ago, under the {clean_hours}h threshold")
+        out.append({
+            "policy": p["policy"],
+            "file": p["file"],
+            "recorded_results": len(own),
+            "churn_hours_since_last_fail": None if hrs is None else round(hrs, 1),
+            "promote_to_enforce": promote,
+            "why": why,
+        })
+    return sorted(out, key=lambda r: r["policy"])
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--clean-hours", type=float, default=24.0)
+    args = ap.parse_args(argv)
+
+    policies = audit_mode_policies()
+    results, blind_reason = fetch_policy_reports()
+    if blind_reason is not None:
+        if args.json:
+            print(json.dumps({"blind": True, "why": blind_reason, "audit_mode_policy_count": len(policies)}))
+        else:
+            print(f"BLIND   kyverno-audit-promote  {blind_reason}", file=sys.stderr)
+            print(f"({len(policies)} Audit-mode policies in the tree; no PolicyReport data to grade them against)")
+        return 2
+
+    rows = build_rows(policies, results, args.clean_hours)
+    if args.json:
+        print(json.dumps({"blind": False, "clean_hours_threshold": args.clean_hours, "rows": rows}, indent=2))
+        return 0
+
+    print(f"| Policy | File | Recorded results | Hours since last fail | Promote to Enforce? | Why |")
+    print(f"|---|---|---|---|---|---|")
+    for r in rows:
+        hrs = "n/a" if r["churn_hours_since_last_fail"] is None else f"{r['churn_hours_since_last_fail']}h"
+        print(f"| `{r['policy']}` | `{r['file']}` | {r['recorded_results']} | {hrs} | {'YES' if r['promote_to_enforce'] else 'no'} | {r['why']} |")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

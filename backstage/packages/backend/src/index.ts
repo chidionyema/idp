@@ -58,10 +58,10 @@ backend.add(
 
 // permission plugin
 backend.add(import('@backstage/plugin-permission-backend'));
-// See https://backstage.io/docs/permissions/getting-started for how to create your own permission policy
-backend.add(
-  import('@backstage/plugin-permission-backend-module-allow-all-policy'),
-);
+// Gates scaffolder templates tagged founder-action to group:default/platform; every other
+// permission (catalog browsing, search, techdocs, notifications, kubernetes, ...) stays
+// allowed. See src/permissionPolicy.ts for why this is a catalog-entity policy.
+backend.add(import('./permissionPolicy'));
 
 // search plugin
 backend.add(import('@backstage/plugin-search-backend'));

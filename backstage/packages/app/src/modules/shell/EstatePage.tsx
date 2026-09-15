@@ -19,7 +19,7 @@
 // Colour, radius and font here come from the --bui-* variables, which modules/theme/buiVars.ts
 // fills from modules/theme/tokens.ts. No file below this one carries a colour.
 import { useId } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactNode, SyntheticEvent } from 'react';
 import { Content, Link, Page } from '@backstage/core-components';
 import { ButtonLink, Card, CardBody, CardHeader, Flex, Text } from '@backstage/ui';
 import { RiAddCircleLine, RiSearchLine } from '@remixicon/react';
@@ -246,13 +246,17 @@ export function Fold({
   summary,
   children,
   testId,
+  onToggle,
 }: {
   summary: ReactNode;
   children: ReactNode;
   testId?: string;
+  /** Native `<details>` toggle event -- fires on open AND close. Use `e.currentTarget.open` to
+   *  tell them apart when only "opened" should trigger something (e.g. a lazy fetch). */
+  onToggle?: (e: SyntheticEvent<HTMLDetailsElement>) => void;
 }) {
   return (
-    <details className="estate-fold" data-testid={testId}>
+    <details className="estate-fold" data-testid={testId} onToggle={onToggle}>
       <summary className="estate-fold-summary">
         <span className="estate-fold-arrow" aria-hidden="true">
           &#9656;

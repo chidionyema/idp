@@ -24,9 +24,20 @@ import {
   fetchApiRef,
   useApi,
 } from '@backstage/frontend-plugin-api';
-import { Chip, EstatePage, Section, Sheet, Summary } from '../shell';
-import { order, prLabel, spendLabel, stateLabel, summarise } from './fleetBoard';
-import type { Board, SessionsEnvelope } from './fleetBoard';
+import { Chip, EstatePage, Fold, Section, Sheet, Summary } from '../shell';
+import { EstateMap } from './EstateMap';
+import {
+  capabilityLabel,
+  capabilityTitle,
+  isStale,
+  NUDGEABLE_RUNTIMES,
+  order,
+  prLabel,
+  spendLabel,
+  stateLabel,
+  summarise,
+} from './fleetBoard';
+import type { Board, Note, SessionsEnvelope } from './fleetBoard';
 
 export const TITLE = 'Fleet';
 export const LEAD =
@@ -38,6 +49,151 @@ export function Fleet() {
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
   const [board, setBoard] = useState<Board>(() => summarise(null));
+  // Notes are fetched lazily, per session, the first time its fold is opened -- not prefetched for
+  // every row on every poll, which would multiply the request count by the session count for a
+  // feature most rows never open.
+  const [notesBySession, setNotesBySession] = useState<Record<string, Note[]>>({});
+  const [draftsBySession, setDraftsBySession] = useState<
+    Record<string, { author: string; note: string }>
+  >({});
+
+  const loadNotes = async (sessionId: string) => {
+    try {
+      const res = await fetchApi.fetch(
+        `plugin://proxy/fleetview/notes?session_id=${encodeURIComponent(sessionId)}`,
+      );
+      const body = (await res.json()) as { notes: Note[] };
+      setNotesBySession(current => ({ ...current, [sessionId]: body.notes ?? [] }));
+    } catch {
+      // A notes read that fails leaves the fold showing whatever it already had (or nothing) --
+      // the board's own sessions and totals do not depend on this succeeding.
+    }
+  };
+
+  const draftFor = (sessionId: string) =>
+    draftsBySession[sessionId] ?? { author: '', note: '' };
+
+  const submitNote = async (sessionId: string, runtime: string) => {
+    const draft = draftFor(sessionId);
+    if (!draft.author.trim() || !draft.note.trim()) return;
+    await fetchApi.fetch('plugin://proxy/fleetview/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: sessionId,
+        runtime,
+        note: draft.note,
+        author: draft.author,
+      }),
+    });
+    setDraftsBySession(current => ({ ...current, [sessionId]: { author: draft.author, note: '' } }));
+    await loadNotes(sessionId);
+  };
+
+  // Item #6: nudge a stale session -- a real Temporal steer signal to the live sovereign
+  // workflow (backend/src/signals.py), sent only when a human presses the button. Never
+  // autonomous: nothing on this page fires this on its own.
+  const [nudgeStatusBySession, setNudgeStatusBySession] = useState<Record<string, string>>({});
+
+  const sendNudge = async (sessionId: string, runtime: string) => {
+    const by = draftFor(sessionId).author.trim() || window.prompt('Your name, for the audit trail:', '')?.trim();
+    if (!by) return;
+    setNudgeStatusBySession(current => ({ ...current, [sessionId]: 'sending…' }));
+    try {
+      const res = await fetchApi.fetch('plugin://proxy/fleetview/nudge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, runtime, by }),
+      });
+      const body = (await res.json()) as { ok?: boolean; error?: string };
+      setNudgeStatusBySession(current => ({
+        ...current,
+        [sessionId]: res.ok && body.ok !== false ? 'Nudged' : `Failed: ${body.error ?? res.status}`,
+      }));
+    } catch (err) {
+      setNudgeStatusBySession(current => ({
+        ...current,
+        [sessionId]: `Failed: ${err instanceof Error ? err.message : String(err)}`,
+      }));
+    }
+  };
+
+  // Item #7: blast radius, on the board instead of a terminal. `bin/estate-twin-runtime
+  // --blast-radius <node_id>` already answers "if this dies, what dies with it" over the
+  // graph's edges table; this is the same query reached from a Backstage door. No session row
+  // is wired to a node automatically -- FleetView sessions carry a `repo`, the graph's nodes are
+  // `k8s:deployment:...`/`git:branch:...`/`code:module:...`, and guessing a match between them
+  // would be exactly the fabricated claim this estate's "measured, not guessed" rule forbids.
+  const [blastNodeId, setBlastNodeId] = useState('');
+  const [blastResult, setBlastResult] = useState<{
+    node_id: string;
+    downstream: { node_id: string; hops: number; relation: string }[];
+    upstream: { node_id: string; relation: string }[];
+  } | null>(null);
+  const [blastError, setBlastError] = useState<string | null>(null);
+  const [blastLoading, setBlastLoading] = useState(false);
+
+  const checkBlastRadius = async () => {
+    const nodeId = blastNodeId.trim();
+    if (!nodeId) return;
+    setBlastLoading(true);
+    setBlastError(null);
+    setBlastResult(null);
+    try {
+      const res = await fetchApi.fetch(
+        `plugin://proxy/fleetview/blast-radius?node_id=${encodeURIComponent(nodeId)}`,
+      );
+      const body = await res.json();
+      if (!res.ok) {
+        setBlastError(body.error ?? `HTTP ${res.status}`);
+      } else {
+        setBlastResult(body);
+      }
+    } catch (err) {
+      setBlastError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBlastLoading(false);
+    }
+  };
+
+  // Item #9: check receipts against real production Langfuse traces (backend/src/evals.py).
+  // Deliberately mechanical, not a model grading a session -- see evals.py's own docstring for
+  // why "no model judges another model" rules that out. Runs only when a human presses Check,
+  // over the session ids they name; nothing here schedules or repeats itself.
+  const [receiptsInput, setReceiptsInput] = useState('');
+  const [receiptsResults, setReceiptsResults] = useState<
+    { session_id: string; verdict: string; reason: string }[] | null
+  >(null);
+  const [receiptsError, setReceiptsError] = useState<string | null>(null);
+  const [receiptsLoading, setReceiptsLoading] = useState(false);
+
+  const checkReceipts = async () => {
+    const sessionIds = receiptsInput
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (sessionIds.length === 0) return;
+    setReceiptsLoading(true);
+    setReceiptsError(null);
+    setReceiptsResults(null);
+    try {
+      const res = await fetchApi.fetch('plugin://proxy/fleetview/check-receipts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_ids: sessionIds }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setReceiptsError(body.error ?? `HTTP ${res.status}`);
+      } else {
+        setReceiptsResults(body.results);
+      }
+    } catch (err) {
+      setReceiptsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReceiptsLoading(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -125,8 +281,38 @@ export function Fleet() {
 
   return (
     <EstatePage title={TITLE} lead={LEAD}>
+      <Section title="Estate map">
+        <EstateMap />
+      </Section>
       <Section title="Sessions">
         <Summary>{board.summary}</Summary>
+        {board.correlatedFailure && (
+          // Two or more DIFFERENT runtimes failing in the same short window is the signature of
+          // a shared control-plane cause (routing, budget, identity), not three unlucky agents --
+          // named here so a reader checks the shared cause first instead of debugging three rows
+          // as if they were unrelated.
+          <div data-testid="correlated-failure-banner">
+            <Chip>
+              Correlated failure: {board.correlatedFailure.runtimes.join(', ')} each failed within{' '}
+              {board.correlatedFailure.windowMinutes} min — check for a shared cause before
+              treating these as unrelated
+            </Chip>
+          </div>
+        )}
+        {board.byRuntime.length > 0 && (
+          // Every fleet gets its own chip, alphabetical, so a runtime with one session is exactly
+          // as visible as one with a hundred -- the board is for every fleet, not just the
+          // biggest one on a given day.
+          <div data-testid="fleet-runtime-strip">
+            {board.byRuntime.map(r => (
+              <Chip key={r.runtime}>
+                {r.runtime}: {r.total} total
+                {r.running ? `, ${r.running} live` : ''}
+                {r.failed ? `, ${r.failed} failed` : ''}
+              </Chip>
+            ))}
+          </div>
+        )}
         {board.state === 'unavailable' && (
           // The word a reader scans for. The summary above carries the cause; this carries the
           // verdict, so an outage is visible without reading the sentence.
@@ -142,23 +328,198 @@ export function Fleet() {
                 <th>State</th>
                 <th>Repo</th>
                 <th>Spend</th>
+                <th>Capabilities</th>
                 <th>Pull requests</th>
+                <th>Notes</th>
+                <th>Nudge</th>
               </tr>
             </thead>
             <tbody>
-              {order(board.sessions).map(s => (
-                <tr key={`${s.runtime}:${s.session_id}`}>
-                  <td>{s.session_id}</td>
-                  <td>{s.runtime}</td>
-                  <td>{s.task}</td>
-                  <td>{stateLabel(s.state)}</td>
-                  <td>{s.repo ?? '—'}</td>
-                  <td>{spendLabel(s.spend_usd)}</td>
-                  <td>{prLabel(s.pull_requests)}</td>
-                </tr>
-              ))}
+              {order(board.sessions).map(s => {
+                const notes = notesBySession[s.session_id] ?? [];
+                const draft = draftFor(s.session_id);
+                const capability = capabilityLabel(s.capability_class);
+                const stale = isStale(s);
+                const nudgeable = NUDGEABLE_RUNTIMES.has(s.runtime) && stale;
+                return (
+                  <tr key={`${s.runtime}:${s.session_id}`}>
+                    <td>{s.session_id}</td>
+                    <td>{s.runtime}</td>
+                    <td>{s.task}</td>
+                    <td>{stateLabel(s.state)}</td>
+                    <td>{s.repo ?? '—'}</td>
+                    <td>{spendLabel(s.spend_usd)}</td>
+                    <td>
+                      {/* No badge for a runtime with no capability-class concept -- a dash
+                          would read as "no capabilities", which is a different, false claim. */}
+                      {capability ? (
+                        <Chip title={capabilityTitle(s.capabilities)}>{capability}</Chip>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td>{prLabel(s.pull_requests)}</td>
+                    <td>
+                      {/* Leave a note for a session, read later -- not delivered live into a
+                          running process for any runtime today (see docs/founder/fleetview-voice-
+                          revisit.md). Fetched on first open, not on every poll. */}
+                      <Fold
+                        testId={`notes-fold-${s.session_id}`}
+                        summary={notes.length ? `${notes.length} note${notes.length === 1 ? '' : 's'}` : 'Leave a note'}
+                        onToggle={e => {
+                          if (e.currentTarget.open && !notesBySession[s.session_id]) {
+                            void loadNotes(s.session_id);
+                          }
+                        }}
+                      >
+                        <div>
+                          <ul>
+                            {notes.map(n => (
+                              <li key={n.id}>
+                                <strong>{n.author}</strong>: {n.note}
+                              </li>
+                            ))}
+                          </ul>
+                          <input
+                            aria-label={`note author for ${s.session_id}`}
+                            placeholder="your name"
+                            value={draft.author}
+                            onChange={e =>
+                              setDraftsBySession(current => ({
+                                ...current,
+                                [s.session_id]: { ...draftFor(s.session_id), author: e.target.value },
+                              }))
+                            }
+                          />
+                          <input
+                            aria-label={`note text for ${s.session_id}`}
+                            placeholder="leave a note for this session"
+                            value={draft.note}
+                            onChange={e =>
+                              setDraftsBySession(current => ({
+                                ...current,
+                                [s.session_id]: { ...draftFor(s.session_id), note: e.target.value },
+                              }))
+                            }
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void submitNote(s.session_id, s.runtime)}
+                          >
+                            Send
+                          </button>
+                        </div>
+                      </Fold>
+                    </td>
+                    <td>
+                      {/* Only a stale, sovereign-runtime session ever gets a button -- never one
+                          that cannot possibly do anything (see NUDGEABLE_RUNTIMES in fleetBoard.ts). */}
+                      {nudgeable ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void sendNudge(s.session_id, s.runtime)}
+                          >
+                            Nudge
+                          </button>
+                          {nudgeStatusBySession[s.session_id] && (
+                            <span> {nudgeStatusBySession[s.session_id]}</span>
+                          )}
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </Sheet>
+        )}
+      </Section>
+      <Section title="Blast radius">
+        <Summary>
+          If this node died right now, what dies with it -- the same answer{' '}
+          <code>bin/estate-twin-runtime --blast-radius</code> gives at a terminal, over the
+          graph's own edges. Node ids look like <code>k8s:deployment:idp:catalogue</code>.
+        </Summary>
+        <input
+          aria-label="blast radius node id"
+          placeholder="k8s:deployment:idp:catalogue"
+          value={blastNodeId}
+          onChange={e => setBlastNodeId(e.target.value)}
+        />
+        <button type="button" disabled={blastLoading} onClick={() => void checkBlastRadius()}>
+          {blastLoading ? 'Checking…' : 'Check'}
+        </button>
+        {blastError && (
+          // A graph that has never been swept and a node with no edges are different facts
+          // (see blast.py) -- the error text carries which one this is, never a blank result.
+          <Chip>{blastError}</Chip>
+        )}
+        {blastResult && (
+          <div data-testid="blast-radius-result">
+            <p>{blastResult.node_id}</p>
+            <div>
+              <strong>Upstream (depends on it)</strong>
+              {blastResult.upstream.length === 0 ? (
+                <p>Nothing recorded in the graph yet.</p>
+              ) : (
+                <ul>
+                  {blastResult.upstream.map(u => (
+                    <li key={u.node_id}>
+                      {u.node_id} ({u.relation})
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <strong>Downstream (dies with it)</strong>
+              {blastResult.downstream.length === 0 ? (
+                <p>Nothing recorded in the graph yet.</p>
+              ) : (
+                <ul>
+                  {blastResult.downstream.map(d => (
+                    <li key={d.node_id}>
+                      +{d.hops} {d.node_id} ({d.relation})
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+      </Section>
+      <Section title="Check receipts">
+        <Summary>
+          Does a session that claims done actually have evidence behind it? Checks each named
+          session's real production Langfuse trace for a success status with zero recorded
+          observations -- a claimed win with no receipt. No model grades another model here;
+          this is a mechanical check, the same rule <code>receipt-auditor</code> follows by hand.
+          Comma-separated session ids.
+        </Summary>
+        <input
+          aria-label="check receipts session ids"
+          placeholder="session-1, session-2"
+          value={receiptsInput}
+          onChange={e => setReceiptsInput(e.target.value)}
+        />
+        <button type="button" disabled={receiptsLoading} onClick={() => void checkReceipts()}>
+          {receiptsLoading ? 'Checking…' : 'Check receipts'}
+        </button>
+        {receiptsError && (
+          // Langfuse unconfigured/unreachable is a named gap, never a silent pass (see evals.py).
+          <Chip>{receiptsError}</Chip>
+        )}
+        {receiptsResults && (
+          <ul data-testid="check-receipts-result">
+            {receiptsResults.map(r => (
+              <li key={r.session_id}>
+                <strong>{r.session_id}</strong>: {r.verdict} — {r.reason}
+              </li>
+            ))}
+          </ul>
         )}
       </Section>
     </EstatePage>

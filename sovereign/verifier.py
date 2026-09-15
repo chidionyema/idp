@@ -72,6 +72,7 @@ import hashlib
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -140,6 +141,41 @@ def parse_unified_diff(patch: str) -> list[ProposedFile]:
     return [f for f in files if f.path]
 
 
+_DOMAIN_BY_SUFFIX = {
+    ".py": "code",
+    ".yaml": "k8s_manifest",
+    ".yml": "k8s_manifest",
+    ".sql": "sql_schema",
+}
+
+
+def classify_domain(path: str) -> str:
+    """Which of this estate's mutation domains one proposed file belongs to.
+
+    A unified diff was already multi-file before this function existed --
+    `parse_unified_diff` never limited itself to `.py` -- so a proposal mixing a
+    Python change, a K8s manifest and a SQL migration was already verified
+    atomically by `verify()` below: one ledger, one sandbox, one attestation
+    over all of them. What was missing was TYPED: the verdict never said which
+    domains a patch touched, and `stage_structural` proved nothing at all about
+    a `.yaml` or `.sql` file -- it skipped straight past them (see the `continue`
+    there), so a syntactically broken manifest passed stage 1 silently and was
+    caught only if the supplied test happened to load it. Suffix is the only
+    signal available here: the ledger has bytes and a path, nothing else.
+    """
+    suffix = Path(path).suffix.lower()
+    return _DOMAIN_BY_SUFFIX.get(suffix, "other")
+
+
+def domain_summary(files: list[ProposedFile]) -> dict[str, int]:
+    """How many proposed files fall in each domain -- the typed part of the ledger."""
+    summary: dict[str, int] = {}
+    for proposed in files:
+        domain = classify_domain(proposed.path)
+        summary[domain] = summary.get(domain, 0) + 1
+    return summary
+
+
 def canonical_subject(files: list[ProposedFile]) -> str:
     """The digest that is signed. Order-free on file name, so two identical
     patches written in a different order attest the same subject."""
@@ -157,7 +193,17 @@ def canonical_subject(files: list[ProposedFile]) -> str:
 
 
 def stage_structural(files: list[ProposedFile]) -> tuple[bool, str]:
-    """`compile()` each proposed Python file. Returns (passed, raw_stderr).
+    """Prove each proposed file is well-formed IN ITS OWN DOMAIN. Returns (passed, raw_stderr).
+
+    `.py` gets `compile()`. `.yaml`/`.yml` and `.sql` used to get nothing -- the
+    loop below `continue`d straight past them, so this stage proved only that a
+    patch's Python files compiled and was silent about everything else a
+    multi-domain patch could carry. A broken manifest or an unterminated SQL
+    statement passed stage 1 exactly as a clean one did, and was caught (if at
+    all) only by whatever the supplied test happened to assert. `classify_domain`
+    is what makes that gap visible instead of invisible: every non-`other`
+    domain now gets a real structural check, and `other` is the one honestly
+    left unproven, not silently passed off as proven.
 
     The RAW stderr is returned verbatim, never paraphrased: the scenario that
     grades this requires the failure text to name its real cause, so a caller
@@ -165,15 +211,46 @@ def stage_structural(files: list[ProposedFile]) -> tuple[bool, str]:
     """
     errors: list[str] = []
     for proposed in files:
-        if not proposed.path.endswith(".py"):
-            continue
-        try:
-            compile(proposed.content, proposed.path, "exec")
-        except SyntaxError as exc:
-            # The same shape CPython prints on a real compile failure.
-            errors.append(f'  File "{proposed.path}", line {exc.lineno}')
-            errors.append(f"    {exc.text.rstrip() if exc.text else ''}")
-            errors.append(f"SyntaxError: {exc.msg}")
+        domain = classify_domain(proposed.path)
+        if domain == "code":
+            try:
+                compile(proposed.content, proposed.path, "exec")
+            except SyntaxError as exc:
+                # The same shape CPython prints on a real compile failure.
+                errors.append(f'  File "{proposed.path}", line {exc.lineno}')
+                errors.append(f"    {exc.text.rstrip() if exc.text else ''}")
+                errors.append(f"SyntaxError: {exc.msg}")
+        elif domain == "k8s_manifest":
+            try:
+                import yaml  # noqa: PLC0415 - optional at import time, declared in requirements.txt
+            except (
+                ImportError
+            ) as exc:  # pragma: no cover - declared in requirements.txt
+                errors.append(
+                    f"{proposed.path}: k8s_manifest stage could not run: PyYAML is not "
+                    f"installed, so this file was NOT proven and must not be admitted "
+                    f"({exc})."
+                )
+            else:
+                try:
+                    for _ in yaml.safe_load_all(proposed.content):
+                        pass
+                except yaml.YAMLError as exc:
+                    errors.append(f"{proposed.path}: {exc}")
+        elif domain == "sql_schema":
+            # sqlite3.complete_statement proves only that no statement is left
+            # unterminated or trails an unclosed string/comment -- it is not a
+            # real parser, and this stage never claims more than that (LAW 2:
+            # a proof of a narrow property must not print like a proof of a
+            # wider one). A statement referencing a table this same patch
+            # creates cannot be executed here without a schema to execute it
+            # against, which is exactly what stage_execution's sandbox is for.
+            body = proposed.content.strip()
+            if body and not sqlite3.complete_statement(body):
+                errors.append(
+                    f"{proposed.path}: SQL is not a complete, terminated statement "
+                    "(unclosed string, comment, or missing trailing ';')"
+                )
     if errors:
         return False, "\n".join(errors)
     return True, ""
@@ -295,6 +372,40 @@ def _guard(value: Any, op: str, bound: str) -> Any:
 # ---------------------------------------------------------------------------
 
 
+def stage_sql(files: list[ProposedFile]) -> tuple[bool, str]:
+    """Prove each proposed `sql_schema` file is at least valid, executable SQL.
+
+    `stage_structural`'s `sqlite3.complete_statement` check proves a statement is
+    terminated; it does not prove the database engine can run it. This stage runs
+    every `sql_schema` file's statements against a fresh `sqlite3.connect(":memory:")`
+    -- a real database, but a throwaway one this process created and destroys, never a
+    live or shared one. That is a real, honestly-scoped boundary, stated rather than
+    hidden: sqlite grammar is not guaranteed-valid Postgres/MySQL grammar, so a
+    migration that is valid here can still fail on the estate's real engine, and a
+    migration that references a table only a companion `code`/`manifest` file creates
+    is out of this stage's reach entirely (there is no live schema to check against --
+    see `verify_mutation`'s refusal for that case). What this stage DOES prove: the
+    statement text is not garbage no SQL engine could ever execute.
+    """
+    errors: list[str] = []
+    for proposed in files:
+        if classify_domain(proposed.path) != "sql_schema":
+            continue
+        body = proposed.content.strip()
+        if not body:
+            continue
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.executescript(body)
+        except sqlite3.Error as exc:
+            errors.append(f"{proposed.path}: {exc}")
+        finally:
+            conn.close()
+    if errors:
+        return False, "\n".join(errors)
+    return True, ""
+
+
 def stage_execution(
     files: list[ProposedFile], tests: str, ledger_dir: Path
 ) -> tuple[bool, str]:
@@ -375,18 +486,25 @@ def verify(ledger: Ledger) -> dict[str, Any]:
     stages: dict[str, Any] = {}
     stderr = ""
     subject = canonical_subject(ledger.files)
+    domains = domain_summary(ledger.files)
 
     passed, stderr = stage_structural(ledger.files)
     stages["structural"] = {"passed": passed, "stderr": stderr}
     if not passed:
         ledger.destroy()
-        return _failed(ledger, stages, subject, stderr)
+        return _failed(ledger, stages, subject, stderr, domains)
+
+    passed, stderr = stage_sql(ledger.files)
+    stages["sql"] = {"passed": passed, "stderr": stderr}
+    if not passed:
+        ledger.destroy()
+        return _failed(ledger, stages, subject, stderr, domains)
 
     passed, stderr = stage_symbolic(ledger.files)
     stages["symbolic"] = {"passed": passed, "stderr": stderr}
     if not passed:
         ledger.destroy()
-        return _failed(ledger, stages, subject, stderr)
+        return _failed(ledger, stages, subject, stderr, domains)
 
     try:
         passed, stderr = stage_execution(ledger.files, ledger.tests, ledger.ledger_dir)
@@ -398,19 +516,24 @@ def verify(ledger: Ledger) -> dict[str, Any]:
     stages["execution"] = {"passed": passed, "stderr": stderr}
     if not passed:
         ledger.destroy()
-        return _failed(ledger, stages, subject, stderr)
+        return _failed(ledger, stages, subject, stderr, domains)
 
-    return _verified(ledger, stages, subject)
+    return _verified(ledger, stages, subject, domains)
 
 
 def _failed(
-    ledger: Ledger, stages: dict[str, Any], subject: str, stderr: str
+    ledger: Ledger,
+    stages: dict[str, Any],
+    subject: str,
+    stderr: str,
+    domains: dict[str, int],
 ) -> dict[str, Any]:
     return {
         "ok": False,
         "ledger_id": ledger.ledger_id,
         "ledger_dir": str(ledger.ledger_dir),  # asserted gone by the caller
         "subject_digest": subject,
+        "domains": domains,
         "stages": stages,
         "stderr": stderr,
         "attestation": None,
@@ -418,7 +541,9 @@ def _failed(
     }
 
 
-def _verified(ledger: Ledger, stages: dict[str, Any], subject: str) -> dict[str, Any]:
+def _verified(
+    ledger: Ledger, stages: dict[str, Any], subject: str, domains: dict[str, int]
+) -> dict[str, Any]:
     # SIGNED UNDER THE LEDGER'S OWN ROOT, NOT A MODULE-WIDE DEFAULT.
     #
     # `sign(subject)` alone defaults to `Path(tempfile.gettempdir()) / "estate-verifier"` -- one
@@ -439,6 +564,7 @@ def _verified(ledger: Ledger, stages: dict[str, Any], subject: str) -> dict[str,
         "ledger_id": ledger.ledger_id,
         "ledger_dir": str(ledger.ledger_dir),
         "subject_digest": subject,
+        "domains": domains,
         "stages": stages,
         "stderr": "",
         "attestation": attestation,
@@ -447,6 +573,46 @@ def _verified(ledger: Ledger, stages: dict[str, Any], subject: str) -> dict[str,
         "claim_verdict": "VERIFIED",
         "receipt": "VERIFIED",
     }
+
+
+_DOOR_DOMAIN_NAME = {"code": "code", "k8s_manifest": "manifest", "sql_schema": "sql"}
+
+
+def mutation_per_domain(
+    verdict: dict[str, Any], files: list[ProposedFile]
+) -> dict[str, str]:
+    """Translate a `verify()` verdict into the typed multi-domain door's per-domain shape.
+
+    `verify()` grades one bundle as a whole -- `stage_structural`/`stage_sql`/
+    `stage_symbolic`/`stage_execution` each run over every file in the ledger, not
+    domain-by-domain -- so on failure a domain is named as the culprit only when the
+    failing stage's own raw stderr actually names one of its files (never a paraphrase,
+    same rule the stages themselves follow). A domain whose files are not named there
+    did not itself fail, but it did not verify either: `verify_mutation` is
+    all-or-nothing (the ticket's one new invariant), so it is reported as unresolved
+    rather than falsely `VERIFIED`.
+    """
+    present = {
+        _DOOR_DOMAIN_NAME[d]
+        for d in verdict.get("domains", {})
+        if d in _DOOR_DOMAIN_NAME
+    }
+    if verdict.get("ok"):
+        return dict.fromkeys(present, "VERIFIED")
+    stderr = verdict.get("stderr", "")
+    result: dict[str, str] = {}
+    for suffix_domain, door_name in _DOOR_DOMAIN_NAME.items():
+        if door_name not in present:
+            continue
+        implicated = any(
+            classify_domain(f.path) == suffix_domain and f.path in stderr for f in files
+        )
+        result[door_name] = (
+            stderr
+            if implicated
+            else "not verified: the bundle failed on a different domain (all-or-nothing)"
+        )
+    return result
 
 
 # ---------------------------------------------------------------------------
