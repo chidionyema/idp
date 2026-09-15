@@ -37,10 +37,12 @@
 # bin/idp-sync-modal-secret (idp repo) is the generic sync this runtime already needed. Two
 # different sources, because this estate has two: concierge-tunnel is an estate-vault (OCI)
 # entry; TWILIO_AUTH_TOKEN / MOM_PHONE_NUMBER / GUARDIAN_PHONE_NUMBER / TWILIO_WHATSAPP_NUMBER
-# are Bitwarden's (a founder paste, no create-API, R52) and this estate has no CI-side Bitwarden
-# reader yet -- so --from-cluster reads them from concierge/human-twilio, the Kubernetes Secret
-# platform/human-vault-bridge/externalsecrets.yaml already keeps in sync from Bitwarden every
-# minute, rather than inventing a second path to the same four facts.
+# are Bitwarden's (a founder paste, no create-API, R52) -- read directly with the estate's own
+# bitwarden-machine account via `bws` (decision 0017/0020, the same client vault-bootstrap.yml
+# already uses), not through the cluster's human-twilio Secret: no identity this estate mints for
+# a CI job may read a Secret's value out of the cluster (agent-reader and the JIT broker both
+# withhold it by design, LAW 21) -- a run 2026-09-15 (idp#3537) proved that the hard way, FAIL
+# "cannot get resource secrets", not a fixable RBAC gap but the floor working as designed.
 #
 # button: Deploy the concierge runtime
 # founder: Builds the vault sidecar and fetches the voice model, then deploys both concierge Modal apps -- the per-order runtime and the always-on endpoint -- and proves the sidecar is in the path; a dry run stops before deploy.
@@ -107,28 +109,40 @@ jobs:
           echo "ok      modal root answers"
 
       # webapp.py's secrets, synced rather than minted here: TWILIO_AUTH_TOKEN / MOM_PHONE_NUMBER /
-      # GUARDIAN_PHONE_NUMBER / TWILIO_WHATSAPP_NUMBER already exist as the live concierge/human-twilio
-      # cluster Secret (Bitwarden -> ExternalSecret, refreshed every minute), and PUBLIC_SERVER_URL /
-      # PUBLIC_WSS_URL already exist in estate-vault as concierge-tunnel; re-typing either into a
-      # second `ensure_secret` call below would give Modal's copy a second place someone edits (R52).
-      # The OCI session this step reads through is the one the github-app-token step above already
-      # traded for -- same job, same runner, no second exchange, for both the vault read and the
-      # cluster read bin/idp-kube performs under the hood.
+      # GUARDIAN_PHONE_NUMBER / TWILIO_WHATSAPP_NUMBER live in Bitwarden Secrets Manager (a founder
+      # paste, decision 0017/0020) and PUBLIC_SERVER_URL / PUBLIC_WSS_URL already exist in
+      # estate-vault as concierge-tunnel; re-typing either into a second `ensure_secret` call below
+      # would give Modal's copy a second place someone edits (R52). The OCI session this step reads
+      # the vault entry through is the one the github-app-token step above already traded for --
+      # same job, same runner, no second exchange.
       #
-      # Known gap, not silently papered over: this is the first time this workflow reads the live
-      # cluster rather than estate-vault, and GitHub's runners are not on the estate's tailnet. If
-      # `bin/idp-kube` cannot route to the API server, `--from-cluster` exits BLIND (2), which this
-      # step does not swallow -- `modal deploy ephemeral/webapp.py` needs this secret to exist and
-      # would fail on its own the moment it does not, so surfacing the real cause here rather than
-      # a later, less legible Modal error is the point.
-      - name: sync concierge/human-twilio and concierge-tunnel from their sources to Modal (webapp.py's secrets)
+      # Read from Bitwarden directly, not from the cluster's human-twilio Secret: the first dry run
+      # of this workflow (2026-09-15, idp#3537, run 34985195681) tried the cluster path and got a
+      # real, correct refusal -- `agent-reader` cannot get resource "secrets" in any namespace, by
+      # design (platform/rbac-floor/agent-reader.yaml), and the JIT broker cannot mint a grant that
+      # touches Secrets either (platform/jit/rbac.yaml: "no secrets" is a hard invariant, not an
+      # oversight). LAW 21 means no identity this estate mints for an agent or a CI job may read a
+      # Secret's value out of the cluster, full stop -- so the fix is reading the one hop closer to
+      # the source, not widening that floor. Bitwarden is where the founder actually pasted these
+      # four values; the cluster's copy is a downstream sync ESO already keeps current, not a
+      # second source of truth to invent a read path for.
+      - name: bws, the vendor's own tool, pinned and checksummed
+        run: |
+          set -euo pipefail
+          curl -sSLo bws.zip https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.1.0/bws-x86_64-unknown-linux-gnu-2.1.0.zip
+          echo "ba8233c3a4aee5d43e3c73bbd04d99e9bc5aba13bbbfd06d89b073abe732b860  bws.zip" | sha256sum -c -
+          unzip -q bws.zip bws
+          sudo install -m 0755 bws /usr/local/bin/bws
+          rm -f bws bws.zip
+
+      - name: sync human-twilio (Bitwarden) and concierge-tunnel (estate-vault) to Modal (webapp.py's secrets)
         env:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           OCI_REGION: ${{ vars.OCI_REGION }}
         run: |
           set -euo pipefail
-          bin/idp-sync-modal-secret --from-cluster concierge/human-twilio human-twilio
+          bin/idp-sync-modal-secret --from-bitwarden GUARDIAN_PHONE_NUMBER,MOM_PHONE_NUMBER,TWILIO_AUTH_TOKEN,TWILIO_WHATSAPP_NUMBER human-twilio
           bin/idp-sync-modal-secret concierge-tunnel
 
       # STAGE 1 -- the sidecar. The image cannot carry a binary that has not been built, and this is
