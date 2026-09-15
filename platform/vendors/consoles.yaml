@@ -996,6 +996,13 @@ vendors:
       # absence (bin/idp-externalsecret-blockers tells the two apart).
       - { entry: concierge-twilio, ns: concierge, field: MOM_PHONE_NUMBER, bw: MOM_PHONE_NUMBER, optional: true }
       - { entry: concierge-twilio, ns: concierge, field: GUARDIAN_PHONE_NUMBER, bw: GUARDIAN_PHONE_NUMBER, optional: true }
+      # Same fact class as the two phone numbers above: mums-concierge/src/mums_concierge/
+      # bootstrap.py's CLUSTER_SECRETS fetches five fields from this one secret, and only three
+      # were ever declared here -- the WhatsApp sender number and the public webhook URL were
+      # silently absent from the bridge, so even a founder who filled in Bitwarden completely
+      # would never see them land in the cluster. Same vendor, same ExternalSecret (LAW 44).
+      - { entry: concierge-twilio, ns: concierge, field: TWILIO_WHATSAPP_NUMBER, bw: TWILIO_WHATSAPP_NUMBER, optional: true }
+      - { entry: concierge-twilio, ns: concierge, field: PUBLIC_SERVER_URL, bw: PUBLIC_SERVER_URL, optional: true }
 
   # The card key. Not a vendor: it is the symmetric key the concierge's card object is encrypted
   # with, and it arrives the same way every other credential does -- the founder drops it into
