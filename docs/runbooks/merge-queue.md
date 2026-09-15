@@ -19,10 +19,18 @@ peer lanes ship their work. The bridge below is the standing state until then.
 ## Normal operation (automatic merge bridge)
 Nothing to do. Queue each green pull request with
 `gh pr merge <number> --squash --auto`; it merges itself when the required
-checks pass. One difference from the true queue: automatic merge does not rebuild
-the pull request on the latest main before landing, so the required checks
-graded the branch head. The push run on main is the backstop when two pull
-requests land close together.
+checks pass. As of 2026-09-15 both `required_status_checks` rulesets
+(`idp-required-checks`, `estate-security-scan`) carry
+`strict_required_status_checks_policy: true` — the branch must be up to date
+with main before GitHub allows the merge, so a stale-base merge (checks that
+graded an old main) is refused rather than landed. GitHub reruns the required
+checks against the rebuilt branch automatically; nothing to do beyond
+retrying the merge if it reports out of date. The push run on main is still
+the backstop when two pull requests land close together. Declared in
+`platform/github/ruleset.idp.required-checks.json` and
+`platform/github/ruleset.@active.security-scan.json`; `bin/repo-rulesets`
+reads these as the source of truth, so the live GitHub setting and the git
+history stay in sync.
 
 ## A pull request will not merge itself
 1. `gh pr view <number> --json mergeStateStatus,statusCheckRollup` — a failing
