@@ -121,6 +121,7 @@ nav:
       - PRM gate (module): tutorials/demo/prm_grader.py.md
       - Budget gate (module): tutorials/demo/budget_governor.py.md
       - Contract gate (module): tutorials/demo/contract_executor.py.md
+      - Founder board (module): tutorials/demo/board_serve.py.md
       - Reasoning Gateway end-to-end: tutorials/demo/reasoning-gateway-end-to-end.md
       - Reasoning gateway Stop hook (module): tutorials/demo/reasoning_gateway_hook.py.md
       - idp-reasoning-gateway-hook: tutorials/demo/idp-reasoning-gateway-hook.md
@@ -234,6 +235,7 @@ nav:
       - PRM gate (module): how-to/onboarding/prm_grader.py.md
       - Budget gate (module): how-to/onboarding/budget_governor.py.md
       - Contract gate (module): how-to/onboarding/contract_executor.py.md
+      - Founder board (module): how-to/onboarding/board_serve.py.md
       - Reasoning gateway Stop hook (module): how-to/onboarding/reasoning_gateway_hook.py.md
       - idp-reasoning-gateway-hook: how-to/onboarding/idp-reasoning-gateway-hook.md
       - Drill evidence: onboarding/drill-evidence.md

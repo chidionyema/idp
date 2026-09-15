@@ -2818,3 +2818,33 @@ rules:
       line 227 invokes it. A root-cwd run dies on import with IndexError: list index out of range.'
   ok: a patch is admitted only through the three-stage gauntlet, the ledger is the only place an agent can write, and the seal binds the attestation to the bytes that were actually graded (measured 2026-09-13, 9 passed, PYTEST_RC=0)
   fail: a claim of completed work reaches the estate on the word of the agent that made it, with no structural, symbolic or execution grader in front of it, or an attestation whose subject is not the SHA-256 of the graded artifact
+- id: router-egress-ledger
+  label: routeegr
+  statement: A LiteLLM model_list router config may live only in a namespace on the reviewed ledger (bin/idp-router-egress-gate); a second, undeclared router is a rogue direct-provider bypass
+  law: idp#3525 CP3 (ROUTE-01)
+  origin: crew#3525 CP3, founder standing order "no need to stop until fully done"
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-router-egress-gate
+  fixtures:
+    must_fail: tests/fixtures/router-egress/bad.yaml
+    must_pass: tests/fixtures/router-egress/good.yaml
+  cases:
+  - expect: pass
+    args:
+    - tests/fixtures/router-egress/good.yaml
+  - expect: refuse
+    args:
+    - tests/fixtures/router-egress/bad.yaml
+  - expect: pass
+    args:
+    - platform
+  live_gap: 'chidionyema/idp#2452 -- ROUTE-01''s other ACCEPT clause, runtime bypass-attempt
+    alerting, still has no real Calico deny feed collected anywhere; this rule only closes the
+    build-time half (a second router config landing in an unreviewed namespace), which #2452
+    could not have caught either way (an already-allowed egress_internet hole raises no deny
+    flow, and Calico sees an IP, never a router''s name).'
+  ok: a model_list router config in llm or otto-gateway (the two reviewed namespaces) passes; the same config in any other namespace is refused
+  fail: a second LiteLLM router lands in an unreviewed namespace and nothing catches it before a cluster where NetworkPolicy cannot tell it apart from the router's own traffic
