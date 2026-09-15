@@ -33,6 +33,7 @@ MODE=${1:-mint}; ROTATE=""
 case "$MODE" in
   mint|--preflight) ;;
   --rotate) ROTATE=${2:?entry to rotate}; MODE=mint ;;
+  -h|--help) sed -n 2,6p "$0"; exit 0 ;;
   *) sed -n 2,6p "$0"; exit 2 ;;
 esac
 say()  { printf '%-7s %-24s %s\n' "$1" "$2" "$3"; }
@@ -63,6 +64,7 @@ estate-db                 superuser-password         hex32
 estate-db                 dagster-password           hex32
 estate-db                 langfuse-password          hex32
 estate-db                 research-password          hex32
+estate-db                 via-negativa-password      hex32
 # the read side of the research database: one password, minted once, held by the cluster
 # (as the research_reader role) and by the consumer that reads the evidence.
 estate-db                 research-reader-password   hex32
@@ -93,6 +95,7 @@ hindsight         HINDSIGHT_API_LLM_API_KEY  minimax
 hermes-agent-env  LITELLM_API_KEY            minimax,gemini,deepseek,embed
 otto-golden       LITELLM_API_KEY            minimax,gemini,deepseek,embed
 agent-workforce   LITELLM_API_KEY            minimax,fast,deepseek,embed
+via-negativa      LITELLM_API_KEY            groq
 EOF
 )
 

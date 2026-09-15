@@ -1,0 +1,88 @@
+# Primitive D: the async RCA worker. Consumes real agent failures off Redis Streams, extracts a
+# negative constraint (Primitive B's regex pre-filter first, an LLM-schema-enforced fallback
+# second), writes it to the Postgres ledger and ranks it into the top-constraints set the proxy
+# reads (Primitive C's write side).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: via-negativa-rca
+  namespace: via-negativa
+  labels: { app.kubernetes.io/name: via-negativa-rca, app.kubernetes.io/part-of: idp }
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: via-negativa-rca }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: via-negativa-rca, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: rca
+          image: ghcr.io/chidionyema/rca_worker:main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:via-negativa-rca:tag"}
+          env:
+            - { name: REDIS_URL, value: "redis://via-negativa-redis.via-negativa.svc.cluster.local:6379" }
+            - { name: REDIS_PASSWORD_FILE, value: "/run/secrets/via-negativa/redis/REDIS_PASSWORD" }
+            # No password here -- estate-rw is the one Postgres (platform/estate-db); the
+            # worker itself folds VN_LEDGER_DSN_PASSWORD_FILE's contents in
+            # (worker.py, _with_password_from_file()), the same convention the proxy's
+            # REDIS_PASSWORD_FILE uses (Kyverno secrets-not-from-env-vars).
+            - { name: VN_LEDGER_DSN, value: "postgresql://via_negativa@estate-rw.estate-db.svc.cluster.local:5432/via_negativa" }
+            - { name: VN_LEDGER_DSN_PASSWORD_FILE, value: "/run/secrets/via-negativa/db/DB_PASSWORD" }
+            # Fallback only -- Primitive B's regex pre-filter is the free path and satisfies
+            # most failures without ever reaching this. `groq` is the cheapest lane
+            # (platform/llm/config.yaml), matching the router key's own scope below.
+            - { name: VN_LLM_MODEL, value: "groq" }
+            - { name: VN_FAILURE_STREAM, value: "via_negativa:failures" }
+            - { name: VN_CONSUMER_GROUP, value: "rca-workers" }
+            - { name: VN_DLQ_STREAM, value: "via_negativa:failures:dlq" }
+            - { name: VN_BANNED_SET, value: "via_negativa:banned_signatures" }
+            - { name: VN_TOP_CONSTRAINTS_KEY, value: "via_negativa:top_constraints" }
+            - { name: VN_MAX_ATTEMPTS, value: "3" }
+            - { name: OPENAI_BASE_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
+            - { name: OPENAI_API_KEY_FILE, value: "/run/secrets/via-negativa/router/LITELLM_API_KEY" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          # No HTTP port to probe -- this is a Redis Streams consumer, not a server. worker.py
+          # touches /tmp/via-negativa-heartbeat once per pass through its consume loop (at most
+          # every 2s); --healthcheck exits 0 only when that file is fresh, so a stuck event loop
+          # is caught same as a dead process. Precedent: platform/dagster/dagster.yaml's own
+          # `dagster-daemon liveness-check` exec probe, the same shape for the same reason.
+          livenessProbe:
+            exec: { command: ["python", "worker.py", "--healthcheck"] }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec: { command: ["python", "worker.py", "--healthcheck"] }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          volumeMounts:
+            - { name: redis-secret, mountPath: /run/secrets/via-negativa/redis, readOnly: true }
+            - { name: db-secret, mountPath: /run/secrets/via-negativa/db, readOnly: true }
+            - { name: router-secret, mountPath: /run/secrets/via-negativa/router, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: redis-secret
+          secret: { secretName: via-negativa-redis }
+        - name: db-secret
+          secret: { secretName: via-negativa-db }
+        - name: router-secret
+          secret: { secretName: via-negativa-router }
+        - name: tmp
+          emptyDir: {}

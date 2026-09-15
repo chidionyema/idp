@@ -439,6 +439,11 @@ LAYERS = {
         "Agent memory",
         "What the agents learned, kept between sessions.",
     ),
+    "via-negativa": (
+        "resilience",
+        "Negative-constraint engine",
+        "Sits in front of every LLM call, watches for repeat failures, and learns a short list of things not to do next time -- so the estate stops paying to make the same mistake twice instead of catching it after the fact.",
+    ),
     "estate-db-operator": (
         "data",
         "Database operator",
