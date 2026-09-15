@@ -15,10 +15,17 @@ from unittest.mock import MagicMock
 
 import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "platform"))
-
-from warden import prove as warden
-from warden import warden as warden_job
+_PLATFORM = str(Path(__file__).resolve().parent.parent / "platform")
+sys.path.insert(0, _PLATFORM)
+try:
+    from warden import prove as warden
+    from warden import warden as warden_job
+finally:
+    # platform/dagster/ is a directory with no .py files, so leaving `platform` on
+    # sys.path makes `import dagster` resolve it as an empty PEP 420 namespace package
+    # instead of the real pip-installed dagster, breaking TestSchedulerRow below (and any
+    # other test collected later in the same pytest session that imports the real dagster).
+    sys.path.remove(_PLATFORM)
 
 
 def write_key(secrets_dir: Path, vendor: str, field: str, value: str) -> None:
@@ -141,9 +148,11 @@ class TestWardenJob:
         monkeypatch.setattr(warden_job.warden, "prove", fake_prove)
         monkeypatch.setattr(warden_job, "push_to_gateway", lambda *a, **kw: None)
 
-        write_key(tmp_path, "sambanova", "SAMBANOVA_API_KEY", "alive-1-0123456789")
+        write_key(tmp_path, "sambanova", "SAMBANOVA_API_KEY", "fake-alive-1-0123456789")
         write_key(tmp_path, "sambanova", "SAMBANOVA_API_KEY_2", "dead")
-        write_key(tmp_path, "sambanova", "SAMBANOVA_API_KEY_3", "alive-3-0123456789")
+        write_key(
+            tmp_path, "sambanova", "SAMBANOVA_API_KEY_3", "fake-alive-3-0123456789"
+        )
         monkeypatch.setattr(warden_job, "WARDEN_SECRETS_DIR", str(tmp_path))
 
         results = {}
@@ -154,15 +163,15 @@ class TestWardenJob:
             results[field] = key
 
         assert results == {
-            "SAMBANOVA_API_KEY": "alive-1-0123456789",
+            "SAMBANOVA_API_KEY": "fake-alive-1-0123456789",
             "SAMBANOVA_API_KEY_2": "dead",
-            "SAMBANOVA_API_KEY_3": "alive-3-0123456789",
+            "SAMBANOVA_API_KEY_3": "fake-alive-3-0123456789",
         }
 
         warden_job.run_warden()
         sambanova_calls = [k for v, k in proved_keys if v == "sambanova"]
         assert sorted(sambanova_calls) == sorted(
-            ["alive-1-0123456789", "dead", "alive-3-0123456789"]
+            ["fake-alive-1-0123456789", "dead", "fake-alive-3-0123456789"]
         )
 
     def test_no_key_is_read_from_the_environment(self, monkeypatch, tmp_path):
