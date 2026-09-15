@@ -158,6 +158,17 @@ jobs:
     cwd: ~/.claude/scripts
     skip_on_battery: false
     timeout_s: 1800
+  ai.estate.api-key-warden:
+    # crew#832 CP3: proves every vendor key against its vendor and publishes metrics
+    runs_on: cluster
+    runs_on_ref: crew#832 CP3
+    command:
+    - python
+    - -m
+    - warden.warden
+    cron: '17 */4 * * *'
+    timeout_s: 600
+    skip_on_battery: true
   ai.hermes.runaway-reaper:
     runs_on: retire
     runs_on_ref: crew#516 CP4
