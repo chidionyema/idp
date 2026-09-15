@@ -10,3 +10,6 @@ resources:
   - engine-external-secret.yaml
   # crew#713 CP1: the daily copy of the shop database, off the volume, made by the cluster.
   - store-db-backup.yaml
+  # crew, 2026-09-15 platform-maturity pass: a weekly proof that the daily copy above actually
+  # restores, not just that it uploaded.
+  - store-db-restore-drill.yaml
