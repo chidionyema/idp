@@ -70,191 +70,244 @@ SYSTEMS = {
     ),
 }
 
-# kustomization name -> (area, plain title, one sentence)
+# kustomization name -> (area, plain title, one sentence, owner)
+#
+# owner is a real, required field per layer -- not decoration. Before crew#(this fix), every
+# Component/API this file emitted was silently stamped "group:default/platform" from one
+# global constant, so via-negativa's Kyverno-catching-a-missing-description gate could never
+# have caught a missing OWNER even if it had one to check: there was no per-layer owner to be
+# missing. Every row below is explicit now so a new layer must state one instead of silently
+# inheriting a default nobody chose (Spotify's own Soundcheck treats exactly this -- "every
+# Component has a real owning Group, not a placeholder" -- as a scored, enforced rule, not a
+# convention). Real per-team owners are still a follow-up: this repo has no Group entities
+# beyond the one default, so "group:default/platform" here is today's honest answer, not a
+# forgotten TODO -- render() below refuses a row with no owner at all, same as no description.
 LAYERS = {
     "cross-node-drill": (
         "resilience",
         "Cross-node network drill",
         "Two small canaries, one on each worker, that call each other over the network every few seconds and write down what they saw. It answers the two questions a week-long outage in September 2026 could not: do pods on different machines still reach each other, and does the traffic still arrive under the sender's own address rather than the machine's. If either stops being true it is a red row within the hour instead of a month of unexplained timeouts.",
+        "group:default/platform",
     ),
     "router-events": (
         "model-routing",
         "Router change events and their backup",
         "Every change to a model-routing lane announces itself the moment the database commits it, so the estate never holds a belief it stopped being true seconds ago: a listener passes the change to the estate bus and the catalogue is accurate within the second. A second job writes the lanes to git as they change, which is the copy that survives losing the database the lanes live in. The events carry what changed and which lane, never a key, because a database notification is visible to every session on it.",
+        "group:default/platform",
     ),
     "crossplane": (
         "delivery",
         "Cloud control loop",
         "Keeps the cloud resources the estate asks for looking the way the repository says they should; a change made in a provider console is put back at the next reconcile instead of surviving until someone runs a plan.",
+        "group:default/platform",
     ),
     "crossplane-providers": (
         "delivery",
         "Cloud control loop providers",
         "The provider packages the cloud control loop uses to talk to Oracle Cloud, kept separate so a provider can be upgraded without touching the loop itself.",
+        "group:default/platform",
     ),
     "crossplane-providerconfig": (
         "delivery",
         "Cloud control loop credentials",
         "How the cloud control loop signs in to Oracle Cloud, deployed after the providers rather than beside them: the sign-in names a kind that only a provider installs, and the estate checks a whole folder before it applies any of it, so the two together would wait on each other forever.",
+        "group:default/platform",
     ),
     "flux-webhook": (
         "delivery",
         "Push-to-deploy door",
         "The door GitHub knocks on the moment a change is merged, so the estate reconciles at once instead of waiting out the one-minute poll; the knock is refused unless it carries the shared token.",
+        "group:default/platform",
     ),
     "concierge": (
         "products",
         "Concierge's mailbox",
         "A namespace that holds one thing: the Twilio token the Mums concierge needs to prove a phone call really came from Twilio. Nothing runs here -- the concierge itself lives on a Mac -- but the token rides the estate's human door, and a delivered secret needs somewhere to land.",
+        "group:default/platform",
     ),
     "demo-sandbox": (
         "products",
         "Buyer sandbox",
         "A one-hour throwaway cluster inside the cluster for a buyer's engineer; launched by hand from the runbook, reaped by the platform when the hour is up.",
+        "group:default/platform",
     ),
     "jit": (
         "identity",
         "Just-in-time access",
         "The only way a write reaches the cluster: an agent asks, the founder taps yes on his phone, and a token that expires in minutes is minted for that one verb. Nothing holds standing write access, including this.",
+        "group:default/platform",
     ),
     "rbac-floor": (
         "identity",
         "Who agents are",
         "The identity every agent on this estate actually uses, and it can read the cluster and write nothing; the ceiling above it is the just-in-time broker, and there is no third road.",
+        "group:default/platform",
     ),
     "rbac": (
         "identity",
         "Break-glass bridge",
         "The one road in that does not go through an agent at all: a machine the founder can reach when the cluster will not let anyone else in.",
+        "group:default/platform",
     ),
     "rbac-identity": (
         "identity",
         "Bridge identity",
         "The credential the human-vault bridge signs in with, carried from the vault into flux-system so the binding that trusts it can be substituted before it is applied.",
+        "group:default/platform",
     ),
     "human-vault-bridge": (
         "identity",
         "Vendor key bridge",
         "The human door: a vendor key the founder types once into a console reaches every workload that needs it, generated from platform/vendors/consoles.yaml so adding a vendor is one row and a renderer run.",
+        "group:default/platform",
     ),
     "calico": (
         "edge",
         "Packet policy engine",
         "The engine that actually drops a packet a NetworkPolicy refuses; without it every fence in the estate is a comment.",
+        "group:default/platform",
     ),
     "ns-fences": (
         "edge",
         "Namespace fences",
         "Both-ways default-deny, a quota and request defaults around every namespace, generated from one allowances file so no namespace can be stood up without its walls.",
+        "group:default/platform",
     ),
     "trivy": (
         "resilience",
         "Vulnerability scanning",
         "What is wrong with the images and nodes already running: the operator that reads every workload and files a vulnerability report the security scan reads.",
+        "group:default/platform",
     ),
     "feature-register": (
         "products",
         "Store register",
         "What the store sells and what each plan costs, computed once from features.yaml so the catalogue and the checkout read the same answer.",
+        "group:default/platform",
     ),
     "sandbox-launch": (
         "products",
         "Sandbox launcher",
         "The moving lane behind the buyer sandbox: a branch only the founder's button writes, so a person launches a demo and agents never deploy one.",
+        "group:default/platform",
     ),
     "notify": (
         "observability",
         "Notification fan-out",
         "One place every alert goes; it delivers to the founder's phone and any channel after it.",
+        "group:default/platform",
     ),
     "external-secrets": (
         "delivery",
         "Secrets bridge",
         "Pulls every secret from the vault into the cluster; nothing is typed into a console.",
+        "group:default/platform",
     ),
     "verification": (
         "identity",
         "Verification wall",
         "Proves, on every run, that the cluster's pods are refused the key that signs a verdict; the probe is meant to stay refused.",
+        "group:default/platform",
     ),
     "secret-store": (
         "delivery",
         "Vault connection",
         "The cluster's one root credential to the vault; every other secret is minted from it.",
+        "group:default/platform",
     ),
     "human-vault": (
         "delivery",
         "Human secret door",
         "The one place a person's secret enters the estate: a phone browser writes it into Bitwarden and the cluster pulls it; no terminal, no file, no chat.",
+        "group:default/platform",
     ),
     "image-automation": (
         "delivery",
         "Image roll-out",
         "Watches the registry and rolls each new build of the portal into the cluster.",
+        "group:default/platform",
     ),
     "backstage-namespace": (
         "delivery",
         "Portal namespace",
         "The namespace and quota the portal runs in.",
+        "group:default/platform",
     ),
     "backstage": (
         "delivery",
         "The portal",
         "This site: the catalogue, the front page and every door the founder opens.",
+        "group:default/platform",
     ),
     "estate-catalog": (
         "delivery",
         "Estate inventory",
         "The generated inventory of every asset, delivered to the portal as a ConfigMap.",
+        "group:default/platform",
     ),
     "cluster-state": (
         "delivery",
         "Cluster state",
         "Renders what the cluster is right now, for the checks that read it.",
+        "group:default/platform",
     ),
     "reloader": (
         "delivery",
         "Config reloader",
         "Restarts a workload when its secret or config changes, so nothing runs stale.",
+        "group:default/platform",
     ),
     "gateway-api-crds": (
         "edge",
         "Gateway API",
         "The standard the gateway speaks; installed before anything routes.",
+        "group:default/platform",
     ),
     "kyverno": (
         "edge",
         "Policy engine",
         "Refuses a workload that breaks a rule: no unsigned image, no missing quota, no silent door.",
+        "group:default/platform",
     ),
     "edge": (
         "edge",
         "Gateway",
         "The one front door: TLS, routes to every surface, and the manners on every reply.",
+        "group:default/platform",
     ),
     "data": (
+        # Pre-existing bug, found and fixed in the same pass: this row had no `area` field at
+        # all (2 elements, not 3) since before this fix -- dead until something was actually
+        # named "data", which never happened, so `area, title, desc, owner = LAYERS[n]` never
+        # ran on it. Given the correct shape now rather than left as a landmine.
+        "data",
         "Data",
         "Where the estate keeps its records: one PostgreSQL cluster, a database per service, backed up and failed over once for everything.",
+        "group:default/platform",
     ),
     "commerce": (
         "commerce",
         "Money",
         "Subscriptions, credit packs and invoices. Not switched on yet: it is built and waiting for the founder's word to take over from the store's own payment code.",
+        "group:default/platform",
     ),
     "commerce-data": (
         "commerce",
         "Money ledger",
         "The separate database and queue that hold every payment taken and what each customer is owed. Not switched on yet.",
+        "group:default/platform",
     ),
     "event-bus": (
         "commerce",
         "Event bus",
         "Carries 'this customer paid' to whatever needs to know, so nothing waits on the payment provider to answer. Not switched on yet.",
+        "group:default/platform",
     ),
     "epistemic-fabric": (
         "data",
         "Estate memory ingestion",
         "Four small pollers that watch GitHub, Slack, CI/CD and the incident log and drop what they see onto the estate's existing event bus, so later work can ask what actually happened instead of guessing from what shipped.",
+        "group:default/platform",
     ),
     "research-engine": (
         "agents",
@@ -262,232 +315,283 @@ LAYERS = {
         "Asks one question an hour, retrieves and snapshots the sources behind it, and keeps "
         "only the claims a second model from a different vendor could confirm against the page "
         "they came from. What it refused is kept too, with the reason.",
+        "group:default/platform",
     ),
     "searxng": (
         "agents",
         "Search backend",
         "The estate's own web search, keyless and internal: what the research engine and the grounding chain ask when they need to know which pages are about something.",
+        "group:default/platform",
     ),
     "priority-classes": (
         "scheduling",
         "Priorities",
         "Which pods survive when a node is short: platform first, batch last.",
+        "group:default/platform",
     ),
-    "dns": ("edge", "DNS", "Every hostname the estate answers to, managed from git."),
+    "dns": (
+        "edge",
+        "DNS",
+        "Every hostname the estate answers to, managed from git.",
+        "group:default/platform",
+    ),
     "prospector-platform": (
         "products",
         "Prospector platform",
         "What Prospector needs from the platform: its routes, secrets and namespace.",
+        "group:default/platform",
     ),
     "prospector": (
         "products",
         "Prospector",
         "The product that finds and qualifies prospects.",
+        "group:default/platform",
     ),
     "identity": (
         "identity",
         "Single sign-on",
         "One login in front of every door; the founder signs in once.",
+        "group:default/platform",
     ),
     "guacamole": (
         "identity",
         "Remote hands",
         "A browser desktop into the estate over the private network.",
+        "group:default/platform",
     ),
     "tailscale": (
         "identity",
         "Private network",
         "The mesh that joins the cluster, the Mac and the phone without a public port.",
+        "group:default/platform",
     ),
     "healthchecks": (
         "resilience",
         "Health checks",
         "Pings every scheduled job and pages when one goes quiet.",
+        "group:default/platform",
     ),
     "metrics-server": (
         "scheduling",
         "Metrics",
         "Pod and node usage, the numbers autoscaling reads.",
+        "group:default/platform",
     ),
     "nodesoftware-operator": (
         "scheduling",
         "Node software installs",
         "The one controller that installs software onto the nodes themselves -- a sandbox runtime, a GPU driver -- one node at a time, cordoning it first and rolling back if the probe on that node fails.",
+        "group:default/platform",
     ),
     "gvisor-runtime": (
         "scheduling",
         "The gVisor sandbox runtime",
         "The RuntimeInstall that puts gVisor on the sandbox nodes, so a pod in the sandbox cell runs against a kernel of its own instead of the host's.",
+        "group:default/platform",
     ),
     "scheduling": (
         "scheduling",
         "Scheduling",
         "Node pools, spread rules and what runs where.",
+        "group:default/platform",
     ),
     "autoscaler": (
         "scheduling",
         "Node autoscaler",
         "Adds and removes nodes as the estate's load moves.",
+        "group:default/platform",
     ),
     "keda": (
         "scheduling",
         "Workload autoscaler",
         "Scales a workload on its queue or its traffic, to zero when idle.",
+        "group:default/platform",
     ),
     "dagster": (
         "scheduling",
         "The estate clock",
         "Runs the estate's schedules from the cluster, off the Mac; every run and its logs on one screen.",
+        "group:default/platform",
     ),
     "weave-gitops": (
         "edge",
         "Deploy button",
         "Flux's own dashboard: every layer, the revision it is running, and a button that applies main now.",
+        "group:default/platform",
     ),
     "temporal": (
         "scheduling",
         "Workflows",
         "Durable workflows: every long job resumes where it stopped.",
+        "group:default/platform",
     ),
     "spire": (
         "identity",
         "Workload identity",
         "Every pod gets a cryptographic identity; no shared passwords between services.",
+        "group:default/platform",
     ),
     "staging": (
         "scheduling",
         "Staging namespace",
         "Where a change runs before production: the same cluster, its own quota ceiling, no public door (ADR 0012).",
+        "group:default/platform",
     ),
     "observability-collector": (
         "observability",
         "Collector",
         "Every workload's traces, logs and metrics land here first.",
+        "group:default/platform",
     ),
     "observability": (
         "observability",
         "Traces and model calls",
         "Where every request and every model call is kept and searched.",
+        "group:default/platform",
     ),
     "monitoring": (
         "observability",
         "Metrics and alerts",
         "Cluster metrics, uptime probes and the alert rules that page.",
+        "group:default/platform",
     ),
     "monitoring-rules": (
         "observability",
         "Alert rules",
         "What counts as broken, one rule per promise.",
+        "group:default/platform",
     ),
     "alerts": (
         "observability",
         "Alert routing",
         "Where a page goes: the founder's phone, the board, never a private chat.",
+        "group:default/platform",
     ),
     "alerts-secret": (
         "observability",
         "Alert credentials",
         "The credentials alert routing needs, from the vault.",
+        "group:default/platform",
     ),
     "alerts-github": (
         "observability",
         "Alerts to GitHub",
         "Opens an issue for every page, so nothing fires into the void.",
+        "group:default/platform",
     ),
     "science": (
         "observability",
         "Science",
         "The experiment record: every run's result, graded.",
+        "group:default/platform",
     ),
     "llm": (
         "agents",
         "Model router",
         "One door to every model provider; the estate never calls a vendor directly.",
+        "group:default/platform",
     ),
     "hermes-agent": (
         "agents",
         "Hermes",
         "The agent that acts for the founder from anywhere: a message in, a pull request out.",
+        "group:default/platform",
     ),
     "otto-golden": (
         "agents",
         "Otto (golden)",
         "The new agent's own webhook and health door, running its own pod ahead of production.",
+        "group:default/platform",
     ),
     "otto-gateway": (
         "agents",
         "Customer event door",
         "One door for every chat channel and every customer; adding a customer is a row in a table, not a release.",
+        "group:default/platform",
     ),
     "otto-golden-secret": (
         "agents",
         "Otto (golden) webhook secret",
         "Feeds the secret word Telegram must echo from the vault into the gateway rule on Otto's door.",
+        "group:default/platform",
     ),
     "mcp": (
         "agents",
         "Agent tools",
         "The tools an agent may use, behind one gateway with one audit log.",
+        "group:default/platform",
     ),
     "agent-workforce": (
         "agents",
         "Infrastructure crew",
         "The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.",
+        "group:default/platform",
     ),
     "hindsight": (
         "agents",
         "Agent memory",
         "What the agents learned, kept between sessions.",
+        "group:default/platform",
     ),
     "estate-db-operator": (
         "data",
         "Database operator",
         "Runs the estate's databases: failover, backups and a database per team without anyone touching a server.",
+        "group:default/platform",
     ),
     "estate-db": (
         "data",
         "The estate database",
         "One PostgreSQL for the whole estate. Every service that needs a database gets one here instead of running its own.",
+        "group:default/platform",
     ),
     "estate-db-migrate": (
         "data",
         "Database move",
         "Lifts each service's data off the server it used to run and puts it on the one estate database.",
+        "group:default/platform",
     ),
     "healing": (
         "resilience",
         "Self-healing",
         "Spots a sick workload, explains it and moves it.",
+        "group:default/platform",
     ),
     "healing-k8sgpt": (
         "resilience",
         "Failure explainer",
         "Reads a stuck or crashing workload and says in plain English what is wrong with it.",
+        "group:default/platform",
     ),
     "healing-analyzer": (
         "resilience",
         "Healing analyser",
         "Reads the healer's findings and files the fix.",
+        "group:default/platform",
     ),
     "robusta": (
         "resilience",
         "Incident enrichment",
         "Adds the why to every alert before a person reads it.",
+        "group:default/platform",
     ),
     "chaos-mesh": (
         "resilience",
         "Chaos engine",
         "Breaks things on purpose, on a schedule, to prove the estate survives.",
+        "group:default/platform",
     ),
     "chaos": (
         "resilience",
         "Chaos drills",
         "The scheduled breakages and the proof each one was survived.",
+        "group:default/platform",
     ),
     "drills": (
         "resilience",
         "Drills",
         "Every rehearsed failure and the run that last passed it.",
+        "group:default/platform",
     ),
 }
 
@@ -592,6 +696,11 @@ def render(rows):
         sys.exit(
             f"catalog-platform: no plain-English row for {missing}; add it to LAYERS in bin/catalog-platform"
         )
+    no_owner = sorted(n for n in names if not LAYERS[n][3])
+    if no_owner:
+        sys.exit(
+            f"catalog-platform: no owner for {no_owner}; every LAYERS row's 4th field must be a real group"
+        )
     out = [
         "# GENERATED by bin/catalog-platform from clusters/%s/*.yaml. Do not edit; edit LAYERS there."
         % CLUSTER,
@@ -614,12 +723,15 @@ def render(rows):
             f"  description: {q(desc)}",
             "  tags: [platform]",
             "spec:",
+            # An area (e.g. "resilience") groups many layers with different owners; it has no
+            # single owning team of its own, so it stays the blanket default on purpose -- the
+            # per-layer Component/API owner below is the one that must be a real, named owner.
             "  owner: group:default/platform",
             "  domain: platform",
         ]
     for r in sorted(rows, key=lambda r: r["metadata"]["name"]):
         n = r["metadata"]["name"]
-        area, title, desc = LAYERS[n]
+        area, title, desc, owner = LAYERS[n]
         spec = r["spec"]
         src = os.path.normpath(os.path.join(ROOT, spec.get("path", "./")))
         hosts = http_hostnames(src)
@@ -657,7 +769,7 @@ def render(rows):
             "spec:",
             f"  type: {TYPE}",
             "  lifecycle: production",
-            "  owner: group:default/platform",
+            f"  owner: {owner}",
             f"  system: {area}",
         ]
         if hosts:
@@ -681,7 +793,7 @@ def render(rows):
                 "spec:",
                 "  type: openapi",
                 "  lifecycle: production",
-                "  owner: group:default/platform",
+                f"  owner: {owner}",
                 f"  system: system:default/{area}",
                 "  definition: |",
                 f"    # Not published. {n} answers at {host_str}; this entity",
