@@ -11,6 +11,7 @@ branches themselves are ordinary refs in the repository; the worktrees
 are removed after the merge and the refs stay (spec 3.2: losers are
 archived, never deleted).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -89,12 +90,24 @@ def _commit_marker(wt: Path, branch: str, task: str, step: int, output: str) -> 
 async def branch_step(inp: dict[str, Any]) -> dict[str, Any]:
     repo = inp.get("repo")
     wt = worktree_dir(inp["parent_id"], inp["branch"]) if repo else None
-    result = await runners.run(inp["runner"], inp["task"], str(wt) if wt else None, int(inp["step"]), [])
+    result = await runners.run(
+        inp["runner"],
+        inp["task"],
+        str(wt) if wt else None,
+        int(inp["step"]),
+        [],
+        session_id=inp.get("child_id"),
+    )
     result = dict(result)
     result["commit"] = None
     if wt is not None:
         result["commit"] = await asyncio.to_thread(
-            _commit_marker, wt, inp["branch"], inp["task"], int(inp["step"]), str(result.get("output", ""))
+            _commit_marker,
+            wt,
+            inp["branch"],
+            inp["task"],
+            int(inp["step"]),
+            str(result.get("output", "")),
         )
     return result
 
@@ -148,16 +161,28 @@ def _merge(inp: dict[str, Any]) -> dict[str, Any]:
         _git(repo, "merge", "--ff-only", str(winner["branch"]))
         merged_commit = _git(repo, "rev-parse", "HEAD")
     losers = [c for c in children if c is not winner]
-    savings = max((int(c.get("tokens", 0)) for c in losers), default=0) - int(winner.get("tokens", 0))
+    savings = max((int(c.get("tokens", 0)) for c in losers), default=0) - int(
+        winner.get("tokens", 0)
+    )
     node_hash, _body = dag.write_node(
-        {"merge": inp["parent_id"], "winner": winner["branch"], "commit": merged_commit,
-         "losers": [c.get("branch") for c in losers]},
+        {
+            "merge": inp["parent_id"],
+            "winner": winner["branch"],
+            "commit": merged_commit,
+            "losers": [c.get("branch") for c in losers],
+        },
         parent=str(inp.get("fork_hash") or dag.GENESIS),
         timestamp=int(inp["timestamp"]),
     )
     dag.write_head(dag.main_head_name(), node_hash)
-    short = merged_commit[: int(ck.get("branch.commit_hash_len"))] if merged_commit else node_hash[: int(ck.get("branch.commit_hash_len"))]
-    line = str(ck.get("branch.merge_line_format")).format(winner=winner["branch"], hash=short, savings=savings)
+    short = (
+        merged_commit[: int(ck.get("branch.commit_hash_len"))]
+        if merged_commit
+        else node_hash[: int(ck.get("branch.commit_hash_len"))]
+    )
+    line = str(ck.get("branch.merge_line_format")).format(
+        winner=winner["branch"], hash=short, savings=savings
+    )
     receipt = receipts_mod.append(
         {
             "session_id": inp["parent_id"],
@@ -174,8 +199,16 @@ def _merge(inp: dict[str, Any]) -> dict[str, Any]:
             "savings": savings,
         }
     )
-    return {"ok": True, "winner": winner["branch"], "commit": merged_commit, "node": node_hash,
-            "losers": [c.get("branch") for c in losers], "savings": savings, "receipt": receipt, "text": line}
+    return {
+        "ok": True,
+        "winner": winner["branch"],
+        "commit": merged_commit,
+        "node": node_hash,
+        "losers": [c.get("branch") for c in losers],
+        "savings": savings,
+        "receipt": receipt,
+        "text": line,
+    }
 
 
 @activity.defn

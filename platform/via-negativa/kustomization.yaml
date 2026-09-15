@@ -1,0 +1,25 @@
+# The via-negativa engine: Primitive A/C's proxy, Primitive D's RCA worker, and their own
+# dedicated Redis and Postgres row -- plain Kustomize, the same shape every other first-party
+# service in platform/ uses (platform/llm, platform/epistemic-fabric, platform/router-events).
+# No Helm chart: this repo has none for first-party code (HelmRelease is reserved for
+# third-party infra, e.g. cert-manager).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: via-negativa
+resources:
+  - namespace.yaml
+  - external-secret.yaml
+  - redis.yaml
+  - proxy.yaml
+  - rca.yaml
+images:
+  # Neither image has been built yet -- this PR is what makes build-multiarch discover
+  # `negative-constraints-proxy` and `rca_worker` for the first time (bin/dockerfiles).
+  # newTag is git's own null object id, not a real commit; the one ImageUpdateAutomation
+  # (platform/image-automation/backstage.yaml) overwrites these two lines with the real
+  # main-<run>-<sha> the first time CI pushes each image, the same way it already does for
+  # router-events and epistemic-ingest.
+  - name: ghcr.io/chidionyema/negative-constraints-proxy
+    newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:negative-constraints-proxy:tag"}
+  - name: ghcr.io/chidionyema/rca_worker
+    newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:via-negativa-rca:tag"}

@@ -1,0 +1,60 @@
+# The via-negativa engine's two images roll on every main build, the same wiring
+# router-events.yaml and epistemic-ingest.yaml use. build-multiarch pushes
+# ghcr.io/chidionyema/negative-constraints-proxy:main-<run>-<sha> and
+# ghcr.io/chidionyema/rca_worker:main-<run>-<sha>; the policy picks the highest run and the one
+# ImageUpdateAutomation (backstage.yaml, path ./) writes it into
+# platform/via-negativa/kustomization.yaml on flux/image-updates. Two automations on one push
+# branch collide (crew#406), so there is exactly one, shared by every image. The ImagePolicy
+# object here is named via-negativa-rca (not rca_worker -- Kubernetes names refuse the
+# underscore) while spec.image still names the real ghcr repository.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: negative-constraints-proxy
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/negative-constraints-proxy
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: negative-constraints-proxy
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: negative-constraints-proxy
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: via-negativa-rca
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/rca_worker
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: via-negativa-rca
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: via-negativa-rca
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

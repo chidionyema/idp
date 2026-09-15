@@ -185,6 +185,31 @@ spec:
   owner: lago
   ensure: present
 ---
+# The via-negativa engine's RCA ledger (Primitive D). Brand new, like lago and aevum-evidence
+# above -- there is no copy Job for it because the layer has never run and there is nothing to
+# move; its password is minted straight into this entry by bin/idp-estate-seed.
+#
+# bin/rca_worker/schema.sql embeds a rules.embedding vector(384) column (same reasoning as the
+# hindsight and otto-gateway entries above): pgvector is not a trusted extension, so the
+# `via_negativa` role cannot CREATE EXTENSION it however it is granted -- only a superuser can.
+# The operator issues the CREATE here; the worker's own `CREATE EXTENSION IF NOT EXISTS vector`
+# on every start then finds it present and does nothing, a notice rather than a permission error.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: via-negativa
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: via_negativa
+  owner: via_negativa
+  ensure: present
+  extensions:
+    - name: vector
+      ensure: present
+      schema: public
+---
 # The evidence layer's ledger (decision 0028). Aevum writes its signed receipts here, in the
 # estate's own Postgres, so the records outlive the tool that wrote them -- which is the whole
 # reason this is not Aevum's in-memory default or its embedded store. Its factory calls

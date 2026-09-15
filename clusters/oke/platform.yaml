@@ -1574,6 +1574,30 @@ spec:
   wait: false
   timeout: 20m
 ---
+# The via-negativa engine: Primitive A/C's interception proxy and Primitive D's async RCA
+# worker (docs/specs/2026-09-13-via-negativa-engine.md). Brand new, like research-engine below
+# it in git history -- no copy Job, estate-db not estate-db-migrate, because there is no legacy
+# server. llm because the proxy fronts litellm and the RCA worker's fallback LLM call is a
+# router key (llm/config.yaml's `groq` row).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: via-negativa
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: secret-store
+    - name: llm
+    - name: estate-db
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/via-negativa
+  prune: true
+  wait: true
+  timeout: 10m
+---
 # crew#839: every namespace's request defaults and its ceiling, generated in one pass by
 # bin/idp-ns-fence-gen from platform/ns-fences/allowances.yaml. A LimitRange lands beside every
 # quota in the same file, because a quota that counts requests.cpu refuses every pod that declares

@@ -12,9 +12,13 @@ it grades (LAW 45).
 from __future__ import annotations
 
 import importlib.util
+import os
 import pathlib
+import socket
 import sys
 import tempfile
+import threading
+import time
 
 import pytest
 
@@ -231,3 +235,126 @@ def test_a_word_after_the_number_never_becomes_the_unit():
     assert ex.explicit_ceiling_sec("timeout 60 sed -i s/x/y/") == 60
     assert ex.explicit_ceiling_sec("timeout 60 head -1 f") == 60
     assert ex.explicit_ceiling_sec("timeout 60 date") == 60
+
+
+# --- THE FAILURE PRODUCER (via-negativa Primitive D's missing supply, closed 2026-09-15) ---
+# `_report_failure` is the only caller that ever XADDs onto `via_negativa:failures`; with no
+# caller the RCA worker in bin/rca_worker/worker.py had a queue nothing ever fed.
+
+
+def _restore_env(name, old):
+    if old is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = old
+
+
+def test_report_failure_never_touches_the_network_on_a_clean_exit(monkeypatch):
+    monkeypatch.setattr(
+        "redis.from_url",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not connect")),
+    )
+    ex._report_failure("job-ok", "pytest -q", "/tmp", 0, "3 passed")
+
+
+def test_report_failure_fails_open_when_redis_is_unreachable():
+    """Matches the proxy's own fail-open proof earlier this session: a refused connection must
+    not raise out of read_job's call path, and must not stall it."""
+    old = os.environ.get("REDIS_URL")
+    os.environ["REDIS_URL"] = (
+        "redis://127.0.0.1:1"  # refused immediately, no listener there
+    )
+    try:
+        start = time.monotonic()
+        ex._report_failure("job-down", "false", "/tmp", 1, "boom")
+        elapsed = time.monotonic() - start
+    finally:
+        _restore_env("REDIS_URL", old)
+    assert elapsed < 2.0
+
+
+def test_report_failure_sends_a_real_xadd_over_the_wire_on_a_real_failure():
+    """A raw TCP server stands in for redis: no mock of the client, a real socket accepts a real
+    connection and the RESP bytes redis-py sends are inspected on the wire."""
+    captured = {}
+    ready = threading.Event()
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+
+    def serve():
+        srv.settimeout(2)
+        ready.set()
+        try:
+            conn, _ = srv.accept()
+            conn.settimeout(2)
+            buf = b""
+            # redis-py negotiates (HELLO, maybe SELECT/PING) before the real command, so this
+            # acks whatever comes first and keeps reading until XADD itself shows up on the wire.
+            for _ in range(6):
+                chunk = conn.recv(65536)
+                if not chunk:
+                    break
+                buf += chunk
+                if b"XADD" in chunk:
+                    conn.sendall(b"$15\r\n1700000000-0\r\n")
+                    break
+                if b"HELLO" in chunk:
+                    # A real (if minimal) RESP3 HELLO reply, so redis-py's handshake succeeds and
+                    # it goes on to send the command this test actually cares about.
+                    conn.sendall(
+                        b"%7\r\n"
+                        b"$6\r\nserver\r\n$5\r\nredis\r\n"
+                        b"$7\r\nversion\r\n$5\r\n7.4.0\r\n"
+                        b"$5\r\nproto\r\n:3\r\n"
+                        b"$2\r\nid\r\n:1\r\n"
+                        b"$4\r\nmode\r\n$10\r\nstandalone\r\n"
+                        b"$4\r\nrole\r\n$6\r\nmaster\r\n"
+                        b"$7\r\nmodules\r\n*0\r\n"
+                    )
+                else:
+                    conn.sendall(b"+OK\r\n")
+            captured["raw"] = buf
+        except OSError:
+            pass
+        finally:
+            srv.close()
+
+    t = threading.Thread(target=serve, daemon=True)
+    t.start()
+    ready.wait(timeout=2)
+    old = os.environ.get("REDIS_URL")
+    os.environ["REDIS_URL"] = f"redis://127.0.0.1:{port}"
+    try:
+        ex._report_failure("job-x", "pytest -q", "/tmp", 1, "AssertionError: boom")
+    finally:
+        _restore_env("REDIS_URL", old)
+    t.join(timeout=3)
+    raw = captured.get("raw", b"")
+    assert b"XADD" in raw
+    assert b"via_negativa:failures" in raw
+    assert b"pytest -q" in raw
+
+
+def test_read_job_triggers_the_failure_producer_exactly_once(
+    executor, tmp_path, monkeypatch
+):
+    """Proves the docstring's own claim: `_sync_from_disk` only calls `_report_failure` while
+    `job.state == "accepted"`, so `finish()` flipping the state makes a second read a no-op."""
+    monkeypatch.setenv("ESTATE_RUNS", str(tmp_path))
+    calls = []
+    monkeypatch.setattr(ex, "_report_failure", lambda *a, **k: calls.append(a))
+    out = ex.execute_command("false", executor=executor)
+    job_id = out["job_id"]
+    (tmp_path / f"{job_id}.exit").write_text("1")
+    (tmp_path / f"{job_id}.log").write_text("boom")
+
+    first = ex.read_job(job_id, executor=executor)
+    assert first["state"] == "finished"
+    assert len(calls) == 1
+    assert calls[0][:4] == (job_id, "false", None, 1)
+
+    second = ex.read_job(job_id, executor=executor)
+    assert second["state"] == "finished"
+    assert len(calls) == 1  # not reported twice
