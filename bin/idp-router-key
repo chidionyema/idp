@@ -26,6 +26,60 @@
 set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 
+# --self-test (LAW 43/45, bin/idp-script-compiles): a fake curl/idp-cloud/idp-vault-put on a
+# throwaway PATH, no socket opened, proving both the mint path and the --reap-orphans path
+# actually run end to end rather than only parsing.
+self_test() {
+  local tmp; tmp=$(mktemp -d)
+  mkdir -p "$tmp/bin"
+  for t in bash jq python3 awk head mktemp date rm cat sh dirname cut sed tr; do
+    ln -s "$(command -v "$t")" "$tmp/bin/$t" 2>/dev/null || true
+  done
+  cat > "$tmp/bin/idp-cloud" <<'FAKE'
+#!/usr/bin/env bash
+case "$3" in
+  litellm-upstream) printf '%s' '{"LITELLM_MASTER_KEY":"sk-fake-master"}' ;;
+  *) exit 1 ;;
+esac
+FAKE
+  cat > "$tmp/bin/idp-vault-put" <<'FAKE'
+#!/usr/bin/env bash
+exit 0
+FAKE
+  cat > "$tmp/bin/curl" <<'FAKE'
+#!/usr/bin/env bash
+case "$*" in
+  *key/generate*) printf '%s' '{"key":"sk-fake-minted","key_alias":"x"}' ;;
+  *key/list*) printf '%s' '{"keys":[]}' ;;
+  *key/info*) printf '%s\n000' '' ;;
+  *) exit 22 ;;
+esac
+FAKE
+  chmod +x "$tmp"/bin/idp-cloud "$tmp"/bin/idp-vault-put "$tmp"/bin/curl
+  local out rc=0
+  out=$(PATH="$tmp/bin" IDP_CLOUD="$tmp/bin/idp-cloud" IDP_VAULT_PUT="$tmp/bin/idp-vault-put" \
+        ROUTER_URL=https://router.test "$0" selftest-consumer minimax 2>&1) || rc=$?
+  if [ "$rc" -ne 0 ] || ! grep -q '^ok' <<< "$out"; then
+    echo "FAIL    router-key   self-test: mint path did not run clean"
+    printf '%s\n' "$out" | sed 's/^/        /'
+    rm -rf "$tmp"; return 1
+  fi
+  rc=0
+  out=$(PATH="$tmp/bin" IDP_CLOUD="$tmp/bin/idp-cloud" ROUTER_URL=https://router.test \
+        "$0" --reap-orphans 2>&1) || rc=$?
+  rm -rf "$tmp"
+  if [ "$rc" -ne 0 ] || ! grep -q 'no router-minted keys found' <<< "$out"; then
+    echo "FAIL    router-key   self-test: --reap-orphans did not run clean"
+    printf '%s\n' "$out" | sed 's/^/        /'
+    return 1
+  fi
+  echo "ok      router-key   self-test: mint path and --reap-orphans both ran clean"
+  return 0
+}
+case "${1:-}" in
+  --self-test) self_test; exit $? ;;
+esac
+
 if [ "${1:-}" = "--reap-orphans" ]; then
   shift
   MAX_AGE_HOURS=24
