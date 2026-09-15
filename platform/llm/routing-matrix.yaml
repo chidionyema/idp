@@ -15,7 +15,20 @@
 # router) is a NAMED GAP (spec S3 section 4), not a built feature. It exists here ONLY as a
 # toggleable axis, default off, because misclassification ships a wrong answer on the cheap
 # path -- a real cost, not a free filter. No cell below turns it on.
-version: 1
+#
+# pillar2_execute_python / pillar3_grind_tool / pillar4_darwin_machines (idp#3525 CP7, CFG-01):
+# "Pillar 2/3/4 on/off once built" -- OFF-02, GRIND-01 and DARWIN-01 are each still a NAMED GAP
+# (CP5 evidence), so these three axes exist ONLY as toggles, default off, for the day one of
+# them is built. Flipping one to true without the underlying capability existing is a config
+# error this file cannot itself catch -- routing_matrix.validate_schema() only enforces the
+# toggle's presence and its off-by-default floor, same discipline as filter_depth above.
+#
+# This file is CFG-01's "ONE config document": every axis this spec names -- resource tier,
+# candidate volume, selection method, escalation pattern, filter_depth, and the three pillar
+# gaps -- is a field here, nowhere else. sovereign/engine/config_schema_check.py checks this
+# file's axis keys against CFG-01's own sentence in the spec, so the two cannot drift apart
+# silently (CFG-02).
+version: 2
 
 axes:
   resource_tier:
@@ -30,6 +43,15 @@ axes:
     enabled: false
     values: [off, shallow, deep]
     gap: "ROUTE-05 named gap, spec S3 section 4: semantic intent routing. Not built; this is the toggle."
+  pillar2_execute_python:
+    enabled: false
+    gap: "OFF-02 named gap, idp#3525 CP5: execute_python CPU sandbox. Not built; this is the toggle for once it is (CFG-01)."
+  pillar3_grind_tool:
+    enabled: false
+    gap: "GRIND-01 named gap, idp#3525 CP5: overnight grind worker CronJob. Not built; this is the toggle for once it is (CFG-01)."
+  pillar4_darwin_machines:
+    enabled: false
+    gap: "DARWIN-01 named gap, idp#3525 CP5: Darwin Machines meta-optimizer. Not built; this is the toggle for once it is (CFG-01)."
 
 cells:
   - config_id: baseline_gate

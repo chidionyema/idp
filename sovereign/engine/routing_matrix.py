@@ -19,10 +19,18 @@ immediately and not never -- matching the ACCEPT line's own wording, "within one
 ROUTE-05: filter_depth is a NAMED GAP axis (semantic intent routing), present and toggleable in
 this schema, default off. validate_schema() is the config-schema-review ACCEPT: it fails if the
 gap axis is missing or has drifted to enabled by default.
+
+CFG-01 (idp#3525 CP7, spec section 5c): this file is the single config document every axis the
+spec names lives in -- resource tier, candidate volume, selection method, escalation pattern,
+filter_depth, and the three not-yet-built Pillar 2/3/4 toggles (pillar2_execute_python,
+pillar3_grind_tool, pillar4_darwin_machines). content_version() gives the "visible as a version
+bump" signal CFG-01 asks for: a hash of the file's own bytes, so any edit to any axis or cell
+changes it mechanically, never by someone remembering to bump a hand-maintained counter.
 """
 
 from __future__ import annotations
 
+import hashlib
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +49,14 @@ DEFAULT_MATRIX_PATH = (
 # never matched by config_id, so a new cell needs no new branch.
 _SELECTION_METHODS = {"gate", "weighted_vote", "multi_verifier"}
 _ESCALATION_PATTERNS = {"route", "cascade", "hybrid"}
+
+# Pillar 2/3/4 (CFG-01): each is still a NAMED GAP (OFF-02, GRIND-01, DARWIN-01 -- CP5
+# evidence), so each is only a toggle here, floored off until the capability it names exists.
+_PILLAR_GAP_AXES = {
+    "pillar2_execute_python": "OFF-02",
+    "pillar3_grind_tool": "GRIND-01",
+    "pillar4_darwin_machines": "DARWIN-01",
+}
 
 
 class RoutingMatrixError(ValueError):
@@ -72,6 +88,16 @@ def validate_schema(matrix: dict[str, Any]) -> None:
             "filter_depth (ROUTE-05, a named gap) must default to disabled: "
             "misclassification ships a wrong answer on the cheap path"
         )
+    for axis_key, req_id in _PILLAR_GAP_AXES.items():
+        axis = axes.get(axis_key)
+        if not isinstance(axis, dict) or "enabled" not in axis:
+            raise RoutingMatrixError(
+                f"routing matrix has no toggleable {axis_key} axis ({req_id}, idp#3525 CFG-01)"
+            )
+        if axis["enabled"] is not False:
+            raise RoutingMatrixError(
+                f"{axis_key} ({req_id}, a named gap not yet built) must default to disabled"
+            )
     for row in matrix["cells"]:
         for field, known in (
             ("selection_method", _SELECTION_METHODS),
@@ -85,6 +111,14 @@ def validate_schema(matrix: dict[str, Any]) -> None:
 
 def active_cells(matrix: dict[str, Any]) -> list[dict[str, Any]]:
     return [row for row in matrix["cells"] if row.get("enabled", True)]
+
+
+def content_version(path: Path | None = None) -> str:
+    """CFG-01's version-bump signal: a hash of the file's raw bytes, so it changes iff the
+    file's content changes, whether that edit is a cell field, an axis, or anything else --
+    never a separately hand-maintained counter someone can forget to bump."""
+    path = path or DEFAULT_MATRIX_PATH
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
 
 
 def dispatch_cell(cell: dict[str, Any]) -> str:
@@ -125,4 +159,13 @@ class MatrixWatcher:
         for row in self._matrix["cells"]:
             if row.get("config_id") == config_id:
                 return bool(row.get("enabled", True))
+        raise RoutingMatrixError(f"routing matrix has no cell {config_id!r}")
+
+    def get_cell(self, config_id: str) -> dict[str, Any]:
+        """CFG-01's own ACCEPT case: a cell whose selection_method (or any other field) changed
+        on disk since the last poll comes back with its new fields, not its stale ones."""
+        self._refresh()
+        for row in self._matrix["cells"]:
+            if row.get("config_id") == config_id:
+                return row
         raise RoutingMatrixError(f"routing matrix has no cell {config_id!r}")

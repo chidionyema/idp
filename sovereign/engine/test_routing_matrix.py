@@ -116,3 +116,98 @@ def test_unknown_config_id_raises() -> None:
     watcher._loaded_at = watcher.clock()
     with pytest.raises(routing_matrix.RoutingMatrixError):
         watcher.is_enabled("does-not-exist")
+
+
+# ---------------------------------------------------------------------------
+# idp#3525 CP7, CFG-01 (spec section 5c): every axis the spec names lives in this one
+# document, hot-reloadable, no code change and no redeploy to flip a field.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "axis_key",
+    ["pillar2_execute_python", "pillar3_grind_tool", "pillar4_darwin_machines"],
+)
+def test_pillar_gap_axis_present_toggleable_and_default_off(axis_key: str) -> None:
+    matrix = routing_matrix.load_matrix()
+    routing_matrix.validate_schema(matrix)
+    assert matrix["axes"][axis_key]["enabled"] is False
+    assert "gap" in matrix["axes"][axis_key]
+
+
+@pytest.mark.parametrize(
+    "axis_key",
+    ["pillar2_execute_python", "pillar3_grind_tool", "pillar4_darwin_machines"],
+)
+def test_pillar_gap_axis_enabled_by_default_fails_schema_review(axis_key: str) -> None:
+    matrix = routing_matrix.load_matrix()
+    matrix["axes"][axis_key]["enabled"] = True
+    with pytest.raises(routing_matrix.RoutingMatrixError, match=axis_key):
+        routing_matrix.validate_schema(matrix)
+
+
+def test_content_version_changes_when_matrix_content_changes(tmp_path) -> None:
+    path = tmp_path / "routing-matrix.yaml"
+    path.write_text("version: 1\naxes: {}\ncells: []\n")
+    before = routing_matrix.content_version(path)
+    path.write_text("version: 2\naxes: {}\ncells: []\n")
+    after = routing_matrix.content_version(path)
+    assert before != after
+
+
+def test_content_version_is_stable_for_unchanged_content(tmp_path) -> None:
+    path = tmp_path / "routing-matrix.yaml"
+    path.write_text("version: 1\naxes: {}\ncells: []\n")
+    first = routing_matrix.content_version(path)
+    second = routing_matrix.content_version(path)
+    assert first == second
+
+
+def test_selection_method_change_on_disk_takes_effect_next_poll_no_restart(
+    tmp_path,
+) -> None:
+    """CFG-01's ACCEPT: a config diff toggling selection method takes effect on the next
+    request with zero process restart. MatrixWatcher is the one running, never-restarted
+    process in this proof; only the file on disk changes between the two get_cell() calls."""
+    matrix_path = tmp_path / "routing-matrix.yaml"
+    matrix_path.write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "axes": {"filter_depth": {"enabled": False}},
+                "cells": [
+                    {
+                        "config_id": "flip_me",
+                        "selection_method": "gate",
+                        "escalation_pattern": "route",
+                        "enabled": True,
+                    }
+                ],
+            }
+        )
+    )
+    ticks = iter([0.0, 5.0])  # poll_interval_s=5.0
+    watcher = routing_matrix.MatrixWatcher(
+        path=matrix_path, poll_interval_s=5.0, clock=lambda: next(ticks)
+    )
+    before = watcher.get_cell("flip_me")["selection_method"]
+
+    matrix_path.write_text(
+        yaml.safe_dump(
+            {
+                "version": 2,
+                "axes": {"filter_depth": {"enabled": False}},
+                "cells": [
+                    {
+                        "config_id": "flip_me",
+                        "selection_method": "weighted_vote",
+                        "escalation_pattern": "route",
+                        "enabled": True,
+                    }
+                ],
+            }
+        )
+    )
+    after = watcher.get_cell("flip_me")["selection_method"]
+
+    assert (before, after) == ("gate", "weighted_vote")
