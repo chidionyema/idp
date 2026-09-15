@@ -438,6 +438,16 @@ else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1; 
 if out=$("$MPY" "$IDP/tests/test_estate_diagram.py" 2>&1); then say "ok    diagram  tests/test_estate_diagram.py"
 else say "FAIL  diagram  tests/test_estate_diagram.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
+# 8b. The deploy-time map (R29 applied to Flux): docs/architecture/flux-deploy-map.dot is a
+#     pure function of the dependsOn: edges clusters/ and platform/ declare -- the same
+#     ordering Flux itself honours before a reconcile (bin/estate-twin-runtime's G4 comment).
+#     bin/estate-flux-dag collects nothing live, so a stale map here is a generator bug, not a
+#     cluster drift; --check fails the moment a manifest's dependsOn changes and nobody re-ran it.
+if out=$("$MPY" "$IDP/tests/test_estate_flux_dag.py" 2>&1); then say "ok    flux-dag  tests/test_estate_flux_dag.py"
+else say "FAIL  flux-dag  tests/test_estate_flux_dag.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+if out=$("$MPY" "$IDP/bin/estate-flux-dag" --check 2>&1); then say "ok    flux-dag  $out"
+else say "FAIL  flux-dag  docs/architecture/flux-deploy-map.dot is stale: run bin/estate-flux-dag"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
 
 # 11. crew#219 R39: the acceptance suite is executable. The 35 Gherkin files in
 #     features/sovereign-bus/ were prose until now -- crew#200 measured "61
