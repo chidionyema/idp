@@ -195,15 +195,28 @@ proxy:
     # FleetView CP1 (docs/specs/2026-09-08-fleetview-backstage-offering.md). The Python
     # service at 127.0.0.1:18790 serves the session envelope and SSE stream; the plugin
     # source is backstage/plugins/fleetview-backend/src/{routes.py,sessions.py}, and the
-    # launcher is /tmp/serve_fv.py. Backstage's proxy plugin prepends `/api/proxy/` to the
-    # key, so the browser-facing URL is `/api/proxy/fleetview/<...>`; the plugin's default
-    # pathRewrite strips that and the Python service hears `/sessions` and `/stream`.
-    # GET only: CP1 is read; the buttons (CP3) are a separate route set behind the same
-    # proxy when they land.
+    # launcher is backstage/plugins/fleetview-backend/src/serve.py. Backstage's proxy plugin
+    # prepends `/api/proxy/` to the key, so the browser-facing URL is
+    # `/api/proxy/fleetview/<...>`; the plugin's default pathRewrite strips that and the
+    # Python service hears `/sessions` and `/stream`.
+    # GET reads the board, the notes mailbox, and the blast radius of one graph node
+    # (`src/blast.py`, `GET /fleetview/blast-radius?node_id=...`, item #7 -- the same
+    # answer `bin/estate-twin-runtime --blast-radius` gives at a terminal, from a page
+    # instead). POST writes one note (`src/notes.py`, `POST /fleetview/notes`) -- the
+    # estate-wide, runtime-agnostic "leave a note for a session" feature -- or nudges
+    # one live sovereign session (`src/signals.py`, `POST /fleetview/nudge`, item #6), or
+    # checks named sessions' real Langfuse traces for a claimed success with no recorded
+    # evidence behind it (`src/evals.py`, `POST /fleetview/check-receipts`, item #9 -- a
+    # mechanical receipt check, never a model grading another model's session), or lists
+    # pending typed multi-domain mutation ledgers and approves/rejects one
+    # (`src/mutations.py`, `GET /fleetview/mutations`, `POST /fleetview/mutations/approve`,
+    # `POST /fleetview/mutations/reject` -- docs/tickets/2026-09-15-typed-multidomain-
+    # mutation-ledger.md, "The door"; approve never merges, it only ever produces a new
+    # branch and commit for the founder's own PR).
     '/fleetview':
       target: 'http://127.0.0.1:18790'
       changeOrigin: true
-      allowedMethods: ['GET']
+      allowedMethods: ['GET', 'POST']
 
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
 # Note: After experimenting with basic setup, use CI/CD to generate docs
