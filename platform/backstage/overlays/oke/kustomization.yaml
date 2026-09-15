@@ -251,8 +251,11 @@ patches:
       # bin/idp-catalog-push already publishes catalog/estate.db as an OCI artifact
       # (oci://ghcr.io/chidionyema/idp/estate-db:latest); this container pulls the same
       # artifact estate-mcp.yaml's fetch-estate-db init container pulls, so graph/blast-radius/
-      # notes/signals (all backed by ESTATE_DB) read the real catalogue. sessions/stream/
-      # mutations are NOT covered by this artifact -- see the PR description.
+      # notes/signals (all backed by ESTATE_DB) read the real catalogue. sessions/stream's
+      # pi/gemini half (_other_harness_sessions, sessions.py) reads the same `estate` projected
+      # ConfigMap volume the main catalogue container already mounts at /estate (below) --
+      # no second store, no second sync path (ADR 0006). sessions/stream's Claude Code half
+      # (_claude_code_sessions) and mutations are NOT covered here -- see the PR description.
       - op: add
         path: /spec/template/spec/initContainers
         value:
@@ -292,8 +295,10 @@ patches:
             - {name: fleetview, containerPort: 18790}
           env:
             - {name: ESTATE_DB, value: /data/estate.db}
+            - {name: ESTATE_CATALOG_PATH, value: /estate/catalog-info.yaml}
           volumeMounts:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
+            - {name: estate, mountPath: /estate, readOnly: true}
           readinessProbe:
             httpGet: {path: /healthz, port: fleetview}
             initialDelaySeconds: 3
