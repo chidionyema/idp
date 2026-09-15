@@ -183,6 +183,30 @@ rules:
     live: true
   ok: cloud-agnostic-gate refuses a provider annotation, permits a plain Service, and the repo is clean
   fail: cloud-agnostic-gate is not discriminating or the platform names a cloud outside platform/oci
+- id: vendor-agnostic
+  label: agnostic
+  statement: No hardcoded claude/anthropic/.claude token in the session engine outside the one runner registry CONTRACT.md:41 names
+  law: LAW 34
+  origin: founder, 2026-09-15
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/vendor-agnostic-gate
+  fixtures:
+    must_fail: tests/fixtures/vendor-agnostic/bad
+    must_pass: tests/fixtures/vendor-agnostic/good
+  cases:
+  - expect: refuse
+    env:
+      VENDOR_AGNOSTIC_ROOT: tests/fixtures/vendor-agnostic/bad
+  - expect: pass
+    env:
+      VENDOR_AGNOSTIC_ROOT: tests/fixtures/vendor-agnostic/good
+  - expect: pass
+    live: true
+  ok: vendor-agnostic-gate refuses a stray vendor name in workflow.py, permits the registry entry and the adapters/ wrapper, and sovereign/engine is clean
+  fail: vendor-agnostic-gate is not discriminating or a vendor name has leaked into the engine outside runners.py
 - id: estate-zone
   label: zone
   statement: The DNS zone is one value in clusters/*/estate-config.yaml; a platform file naming it as a literal fails, in the tree and in a pull-request diff
