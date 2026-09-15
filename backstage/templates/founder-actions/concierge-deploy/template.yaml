@@ -4,8 +4,9 @@ kind: Template
 metadata:
   name: run-concierge-deploy
   title: Deploy the concierge runtime
-  description: Builds the vault sidecar and fetches the voice model, then deploys the concierge's ephemeral
-    runtime to Modal and proves the sidecar is in the path; a dry run stops before deploy.
+  description: Builds the vault sidecar and fetches the voice model, then deploys both concierge Modal
+    apps -- the per-order runtime and the always-on endpoint -- and proves the sidecar is in the path;
+    a dry run stops before deploy.
   tags:
   - founder-action
   - estate
