@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: widget-good
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: widget-good
+  template:
+    metadata:
+      labels:
+        app: widget-good
+    spec:
+      containers:
+        - name: widget-good
+          image: registry.internal/widget-good:latest

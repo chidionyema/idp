@@ -2631,6 +2631,90 @@ rules:
       was written for would have passed them.'
   ok: the executor daemon applies one ceiling, imported from the door, and every half of the boundary is present -- and the boundary holds on this repository, not only on an example of one
   fail: a ceiling is restated in the daemon, or the boundary is half built and nothing says so
+- id: dod-v3-verified-not-asserted
+  label: verified-not-asserted
+  statement: 'Honestly scoped to ONE of DoD v3''s five required letters -- (c) "Verified, not
+    asserted": a doc''s own `**Status:**` line claiming built/done/proven live/doored, that
+    also names a Kubernetes-shaped capability path (`platform/<name>/` or
+    `backstage/plugins/<name>/`), must show either a real manifest for that path (a Dockerfile
+    plus a `kind: Deployment` naming it) or an honest `**Not done:**` line -- a one-off curl or
+    test the builder ran against its own daemon is not a manifest and does not satisfy this.
+    This row does NOT cover the other four letters (sellable, installable-fast-benchmarked,
+    procurement-passable, owned); those have no document schema in this repo yet and are not
+    claimed here.'
+  law: 'LAW 38, founder 2026-09-15 (DoD v3, "final cut"): "Done" means commercially ready and
+    viable, five checks, all five required, none self-graded -- (c) is "verified by a
+    non-builder, scheduled check that keeps confirming, not a one-off curl the builder ran
+    itself, no matter how real the response." ~/.claude/docs/founder/2026-09-15T0947Z-standing-rule-definition-of-done-is-environment-verified-and-commercially-viable.md'
+  origin: 'Two incidents the same day. docs/tickets/2026-09-15-typed-multidomain-mutation-ledger.md
+    opens `**Status:** built, smoke-tested, and doored` and names
+    `backstage/plugins/fleetview-backend/`, `platform/estate-db/` and `platform/executor/` --
+    none of which had a Dockerfile plus a live-tree `kind: Deployment` manifest, and the doc
+    carried no `**Not done:**` line. Separately, a concurrent agent (task a6316e4fdcd04f1f6,
+    "Deploy fleetview-backend for real") replied `DONE:` with a "Founder receipt" that was its
+    own curl to its own `127.0.0.1:18790` launchd daemon -- real output, but not independent, and
+    not a manifest. Both were the same shape: a claim graded only by the claimant.'
+  planes:
+  - ci
+  - session
+  session_glob:
+  - docs/tickets/*.md
+  - docs/specs/*.md
+  - docs/audits/*.md
+  run:
+  - python3
+  - bin/dod-live-claim-gate
+  fixtures:
+    must_fail: tests/fixtures/dod-live-claim/bad.md
+    must_pass: tests/fixtures/dod-live-claim/good.md
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/dod-live-claim/bad.md
+    note: claims built/doored, names a platform/ path with no Dockerfile and no Deployment
+      anywhere in the real tree, and carries no `**Not done:**` line
+  - expect: pass
+    args:
+    - tests/fixtures/dod-live-claim/good.md
+    note: the identical claim, honestly downgraded with a `**Not done:**` line naming the gap --
+      inventory, not done, and the gate agrees
+  - expect: pass
+    args:
+    - tests/fixtures/dod-live-claim/good-deployed.md
+    env:
+      DOD_LIVE_CLAIM_SEARCH_ROOT: tests/fixtures/dod-live-claim/deployed-good
+    note: 'the same claim shape, graded against a self-contained fixture tree that DOES carry a
+      real Dockerfile and `kind: Deployment` manifest naming the capability -- the gate passes a
+      claim only when the environment itself backs it, not the doc''s own say-so'
+  - expect: pass
+    live: true
+    args:
+    - docs/tickets/2026-09-13-deterministic-verifier.md
+    - docs/tickets/2026-09-13-three-independent-pieces-of-evidence.md
+    - docs/tickets/2026-09-13-wartime-inference.md
+    - docs/tickets/2026-09-14-bayesian-mcts-k8s-sre.md
+    - docs/tickets/2026-09-14-mcts-mcp-server.md
+    - docs/tickets/2026-09-14-reasoning-gateway.md
+    note: 'LIVE, and deliberately narrow: six real ticket docs from this estate''s own tree, none
+      of which carry an unbacked live claim today, so this case grades the estate rather than an
+      example of one. It deliberately excludes
+      docs/tickets/2026-09-15-typed-multidomain-mutation-ledger.md, the ticket this row exists
+      to catch -- that doc is genuinely RED right now (see `origin` above) and fixing the
+      mutation-ledger deployment itself is separately tracked and out of this row''s scope.
+      Sweeping it into a bare repo-wide default-docs() case and asserting the whole tree green
+      would be exactly the false pass this gate was built to catch, so it is named here instead
+      as a known, live, unclosed gap -- not asserted, not hidden.'
+  ok: a doc's completion claim about a named capability path is backed by a real manifest in
+    the tree or an honest `**Not done:**` line -- never the claim alone, and never a one-off curl
+  fail: 'a `**Status:**` line claims built/done/doored, names a capability path with no
+    Dockerfile and no `kind: Deployment` manifest anywhere in the tree, and the doc says nothing
+    about it'
+  why: 'Measured 2026-09-15: this gate run cold against the real repo (no env override) finds
+    exactly the mutation-ledger doc''s three unbacked claims and nothing else -- see origin.
+    This row covers letter (c) of DoD v3''s five-letter bar only; letters (a) sellable, (b)
+    installable-fast-benchmarked, (d) procurement-passable and (e) owned have no document schema
+    in this repo to grade against yet, and inventing one here would be exactly the ungrounded
+    schema LAW 38 warns against. Not claimed, not hidden.'
 - id: a-script-is-not-built-until-it-runs
   fast: true
   label: script-compiles
