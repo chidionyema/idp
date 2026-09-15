@@ -13,7 +13,7 @@ Feature: Provider agnostic — the runner and the model are configuration, never
     Then the output is empty
 
   Scenario: No hardcoded home, host or checkout
-    When I run "grep -rn '/Users/\|127\.0\.0\.1:[0-9]\|localhost:[0-9]' sovereign bin/sb --include=*.py --exclude-dir=__pycache__ --exclude-dir=tests"
+    When I run "grep -rn '/Users/\|127\.0\.0\.1:[0-9]\|localhost:[0-9]' sovereign bin/sb --include=*.py --exclude-dir=__pycache__ --exclude-dir=tests --exclude-dir=.venv"
     Then the output is empty
 
   Scenario: A new provider is one registry entry, not a code change
