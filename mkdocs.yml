@@ -142,6 +142,7 @@ nav:
       - Oracle identity: tutorials/demo/oci.md
       - Flux on OKE: tutorials/demo/oke.md
       - Cloud-agnostic: tutorials/demo/cloud-agnostic.md
+      - Vendor-agnostic: tutorials/demo/vendor-agnostic.md
       - Estate zone: tutorials/demo/estate-zone.md
       - MCP: tutorials/demo/mcp.md
       - Otto (golden): tutorials/demo/otto-golden.md
@@ -259,6 +260,7 @@ nav:
       - Oracle identity: how-to/onboarding/oci.md
       - Flux on OKE: how-to/onboarding/oke.md
       - Cloud-agnostic: how-to/onboarding/cloud-agnostic.md
+      - Vendor-agnostic: how-to/onboarding/vendor-agnostic.md
       - Estate inventory: how-to/onboarding/estate-inventory.md
       - Cluster autoscaler: how-to/onboarding/autoscaler.md
       - Money: how-to/onboarding/commerce.md
@@ -345,6 +347,7 @@ nav:
       - flux-wait-brake: gates/flux-wait-brake.md
       - probe-host: gates/probe-host.md
       - agnostic: gates/cloud-agnostic.md
+      - vendor-agnostic: gates/vendor-agnostic.md
       - zone: gates/estate-zone.md
       - portlock: gates/port-lock.md
       - portbind: gates/port-bind.md

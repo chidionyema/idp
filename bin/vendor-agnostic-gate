@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Refuse a hardcoded vendor name in the engine's product code, outside its one registry.
+
+Founder, 2026-09-15: "this is idiotic, nothing claude-code specific should exist, we are
+building enterprise model agnostic, gut it out" -- said of a proposal that parsed Claude
+Code's own local file format directly. `sovereign/CONTRACT.md`'s own line 41 already states
+the invariant this gate makes structural: "Registry is the ONLY place a vendor name appears;
+engine/workflow.py and engine/client.py import no vendor." A rule the agent must remember to
+follow is a wish (LAW 44); this is the caller.
+
+Scanned: sovereign/engine/**/*.py (the session engine -- the one place a vendor CLI or model
+name could quietly re-enter and make the FSM/workflow non-portable). Exempt: runners.py
+itself (the one file CONTRACT.md names as the registry) and any path with an `adapters`
+directory component (LAW 34's future home for a real vendor CLI wrapper, kept out of the
+engine's own files the same way platform/oci is cloud-agnostic-gate's one allowed exception).
+Comment lines are not counted, and this file does not grade itself.
+
+Pattern: `claude` or `anthropic`, case-insensitive -- covers `.claude` (a path token) too, so
+one pattern serves all three vendor tokens the founder named.
+
+    bin/vendor-agnostic-gate                       grade sovereign/engine in the working tree
+    VENDOR_AGNOSTIC_ROOT=<dir> bin/vendor-agnostic-gate   grade a different tree (fixtures, CI)
+    bin/vendor-agnostic-gate --self-test            this gate's own proof, both ways
+    bin/vendor-agnostic-gate --help                 this message
+
+Exit 0 clean, 1 with each offending line printed, 2 when the root cannot be read (BLIND).
+"""
+from __future__ import annotations
+
+import os
+import pathlib
+import re
+import subprocess
+import sys
+
+ROOT = pathlib.Path(os.environ.get("VENDOR_AGNOSTIC_ROOT") or pathlib.Path(__file__).resolve().parents[1])
+SCAN = ["sovereign/engine"]
+# CONTRACT.md:41 -- runners.py is the one file allowed to name a vendor; it IS the registry.
+EXEMPT_FILES = ("sovereign/engine/runners.py",)
+PATTERN = re.compile(r"claude|anthropic", re.IGNORECASE)
+
+
+def _untracked(root: pathlib.Path) -> set[str]:
+    """Paths git does not track under root, relative to root; empty when root is not a checkout."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "--others", "-z"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return set()
+    return {p for p in out.split("\0") if p}
+
+
+def _exempt(rel: str) -> bool:
+    if rel in EXEMPT_FILES:
+        return True
+    parts = pathlib.PurePosixPath(rel).parts
+    return "adapters" in parts
+
+
+def main() -> int:
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print(__doc__)
+        return 0
+    if "--self-test" in sys.argv:
+        return selftest()
+    if not ROOT.is_dir():
+        print(f"BLIND: {ROOT} is not a directory")
+        return 2
+    hits: list[str] = []
+    untracked = _untracked(ROOT)
+    for top in SCAN:
+        d = ROOT / top
+        if not d.is_dir():
+            continue
+        for f in sorted(d.rglob("*.py")):
+            rel = f.relative_to(ROOT).as_posix()
+            if f.resolve() == pathlib.Path(__file__).resolve():
+                continue  # the gate names the vendor it hunts; it is not a finding against itself
+            if rel in untracked or _exempt(rel):
+                continue
+            try:
+                lines = f.read_text(errors="replace").splitlines()
+            except OSError:
+                continue
+            for n, line in enumerate(lines, 1):
+                if line.lstrip().startswith("#"):
+                    continue
+                if PATTERN.search(line):
+                    hits.append(f"{rel}:{n}: {line.strip()}")
+    for h in hits:
+        print(h)
+    print(f"vendor-agnostic-gate: {len(hits)} vendor-name line(s) outside the runner registry")
+    return 1 if hits else 0
+
+
+def selftest() -> int:
+    fx = pathlib.Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "vendor-agnostic"
+    ok = True
+    for name, root, expect_fail in (("bad", fx / "bad", True), ("good", fx / "good", False)):
+        env = dict(os.environ)
+        env["VENDOR_AGNOSTIC_ROOT"] = str(root)
+        proc = subprocess.run([sys.executable, __file__], env=env, capture_output=True, text=True)
+        got_fail = proc.returncode == 1
+        print(f"{name}: {'FAIL' if got_fail else 'ok'} {'ok' if got_fail == expect_fail else 'WRONG'}")
+        ok &= got_fail == expect_fail
+    print("ok    vendor-agnostic-gate self-test" if ok else "FAIL  vendor-agnostic-gate self-test")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
