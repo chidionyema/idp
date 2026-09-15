@@ -130,6 +130,32 @@ def ensure_schema(con: sqlite3.Connection) -> None:
             fresh_s   INTEGER NOT NULL,
             updated_at TIMESTAMP NOT NULL
         );
+
+        -- Canonical, provider-agnostic session record (docs/tickets/2026-09-15-
+        -- live-session-sync.md). `provider` and `model` are plain strings -- "claude",
+        -- "gpt-4o", "gemini-pro" are data here, never a schema choice, the same invariant
+        -- CONTRACT.md:41 states for the runner registry. Schema only: nothing in this repo
+        -- writes these tables yet -- the sync daemon that will is a separate, later piece.
+        CREATE TABLE IF NOT EXISTS sessions (
+            id            TEXT PRIMARY KEY,
+            provider      TEXT NOT NULL,
+            model         TEXT NOT NULL,
+            created_at    TIMESTAMP NOT NULL,
+            metadata_json TEXT NOT NULL
+        );
+
+        -- One append-only row per event a session emitted, ordered by `seq` within the
+        -- session -- the same append-only shape as node_events above, applied to sessions
+        -- instead of cluster nodes.
+        CREATE TABLE IF NOT EXISTS session_events (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id   TEXT NOT NULL REFERENCES sessions (id),
+            seq          INTEGER NOT NULL,
+            type         TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            ts           TIMESTAMP NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS session_events_session ON session_events (session_id, seq);
         """
     )
     con.commit()
