@@ -200,8 +200,8 @@
     }
   ],
   "total": {
-    "cpu": 5.78,
-    "memory_gb": 23.9,
+    "cpu": 5.88,
+    "memory_gb": 24.15,
     "storage_gb": 16.0
   },
   "depend_failures": [],

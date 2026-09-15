@@ -65,6 +65,9 @@ still_outside_dagster:
 - job: .github/workflows/probe-mutations.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/scorecard.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
 - job: .github/workflows/stale.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'
@@ -160,6 +163,9 @@ still_outside_dagster:
   kind: Kubernetes CronJob
   fold: 'pending: to be declared as a Dagster schedule'
 - job: platform/prospector/store-db-backup.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/prospector/store-db-restore-drill.yaml
   kind: Kubernetes CronJob
   fold: 'pending: to be declared as a Dagster schedule'
 - job: platform/research-engine/cronjob.yaml
