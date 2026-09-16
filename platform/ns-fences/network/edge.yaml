@@ -110,6 +110,9 @@ spec:
           kubernetes.io/metadata.name: identity
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: idp-agent
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: llm
     - namespaceSelector:
         matchLabels:

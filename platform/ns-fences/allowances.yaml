@@ -186,6 +186,16 @@ flows:
     # (2026-09-06: 4 restarts, `dial log.tailscale.com:443: i/o timeout`).
     egress_internet: [443]
     ingress_from: [edge]
+  idp-agent:
+    # GitHub and Flux webhooks arrive through the estate's own gateway (docs/specs/
+    # orbstack-event-driven-agents.md), the same door demo-sandbox and hermes-agent read from.
+    # Redis is idp-agent-redis in this same namespace, so the generator's own allow-same-namespace
+    # rule already covers gateway.py:43's queue connection -- no cross-namespace line for it.
+    # engine.py clones, pushes and opens/merges pull requests over `git`/`gh` against
+    # github.com:443 (engine.py:191,342,382+); the LangGraph agent bodies that would call an LLM
+    # are still stubs (engine.py run_worker_agent/run_judge_agent), so no llm-namespace egress yet.
+    ingress_from: [edge]
+    egress_internet: [443]
   # The `laws` container fetches the estate's own laws over https from the code host
   # (platform/agent-workforce/cronjob.yaml line 97) and the crew that reads them refuses to
   # boot without them. Undeclared, that hop was one enforcement wave away from a silent
@@ -540,7 +550,10 @@ flows:
              # every webhook delivery: 8,544 packets on one node when read on 2026-09-08, and a
              # 504 "Starting up" page for every Linear and GitHub delivery since the route was made.
              cyrus,
-             demo-sandbox]
+             # idp-agent admits edge for the same reason demo-sandbox does: the GitHub/Flux
+             # webhook route into platform/idp_agent/gateway.py's /webhook/github and
+             # /webhook/flux crosses this namespace, so edge must name the return path back.
+             demo-sandbox, idp-agent]
     # The public listeners (traefik containerPorts web 8000 and websecure 8443, behind the OCI
     # load balancer with externalTrafficPolicy Local, so the source address is the client's).
     # The traefik pods still held flannel addresses when Calico started enforcing on 2026-09-06,
