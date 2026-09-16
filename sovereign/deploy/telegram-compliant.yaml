@@ -74,19 +74,7 @@ spec:
                 - ALL
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-          env:
-            - name: TELEGRAM_BOT_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: telegram-sovereign-secrets
-                  key: bot-token
-                  optional: true
-            - name: TELEGRAM_CHANNELS
-              valueFrom:
-                secretKeyRef:
-                  name: telegram-sovereign-secrets
-                  key: channels
-                  optional: true
+          env: []
           livenessProbe:
             exec:
               command:
@@ -121,6 +109,9 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            - name: secrets
+              mountPath: /etc/secrets
+              readOnly: true
       volumes:
         - name: config
           configMap:
@@ -130,3 +121,8 @@ spec:
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+        - name: secrets
+          secret:
+            secretName: telegram-sovereign-secrets
+            optional: true
+            defaultMode: 0400
