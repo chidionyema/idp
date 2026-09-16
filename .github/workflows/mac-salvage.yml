@@ -42,6 +42,15 @@ jobs:
   salvage:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Every kubectl step below auths to the OKE API through the oci exec plugin (the kubeconfig
+    # bin/idp-cloud minted carries `command: oci`), so OCI_CLI_AUTH and the session-token
+    # environment must be present for the plugin, not just for the mint step (run 35129740693:
+    # kubectl blocked at "exec: executable oci failed with exit code 1" until this landed here).
+    env:
+      OCI_CLI_AUTH: security_token
+      OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+      OCI_REGION: ${{ vars.OCI_REGION }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
