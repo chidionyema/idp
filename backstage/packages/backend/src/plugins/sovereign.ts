@@ -1,15 +1,7 @@
-import {
-  createBackendModule,
-  coreServices,
-  createServiceRef,
-} from '@backstage/backend-plugin-api';
+import { createBackendModule, coreServices } from '@backstage/backend-plugin-api';
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
-
-export const sovereignServiceRef = createServiceRef({
-  id: 'plugin.sovereign',
-});
 
 const sovereignPlugin = createBackendModule({
   pluginId: 'sovereign',
@@ -18,9 +10,6 @@ const sovereignPlugin = createBackendModule({
       deps: { http: coreServices.httpRouter },
       async init({ http }) {
         const router = Router();
-
-        // Artifacts can be provided via SOVEREIGN_ARTIFACTS_DIR env var (for mounted volumes)
-        // or fall back to the repo root if running locally
         const artifactsDir = process.env.SOVEREIGN_ARTIFACTS_DIR ||
           path.join(__dirname, '../../../artifacts');
 
