@@ -615,7 +615,7 @@ LAYERS = {
 # backstage/app-config.yaml is the door, the same shape as /holmes). A layer with no entry
 # here gets no UI link; the catalog never invents a URL it cannot back.
 UI_DOORS = {
-    "dagster": ("/dagster", "Open the scheduler"),
+    "dagster": ("https://catalogue.${ESTATE_ZONE}/dagster", "Open the scheduler"),
 }
 
 
