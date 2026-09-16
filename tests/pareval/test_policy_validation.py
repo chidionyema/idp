@@ -86,8 +86,9 @@ def test_false_positive_rate_within_target():
         layer = PartialEvalDecisionLayer()
         for i in range(20):
             # No real difference: both scores drawn from the same distribution.
-            a = 0.7 + random.uniform(-0.1, 0.1)
-            b = 0.7 + random.uniform(-0.1, 0.1)
+            # Statistical test noise, not a security-sensitive value.
+            a = 0.7 + random.uniform(-0.1, 0.1)  # noqa: S311
+            b = 0.7 + random.uniform(-0.1, 0.1)  # noqa: S311
             layer.observe(f"t_{i}", a, b, stratum="small" if i % 2 == 0 else "large")
         if layer.decide() in (Decision.A_BETTER, Decision.B_BETTER):
             false_positives += 1
@@ -109,8 +110,9 @@ def test_unresolved_rate_within_target():
     for _ in range(trials):
         layer = PartialEvalDecisionLayer()
         for i in range(20):
-            a = 0.9 + random.uniform(-0.02, 0.02)
-            b = 0.5 + random.uniform(-0.02, 0.02)
+            # Statistical test noise, not a security-sensitive value.
+            a = 0.9 + random.uniform(-0.02, 0.02)  # noqa: S311
+            b = 0.5 + random.uniform(-0.02, 0.02)  # noqa: S311
             layer.observe(f"t_{i}", a, b, stratum="small" if i % 2 == 0 else "large")
         if layer.decide() == Decision.NEED_MORE_EVIDENCE:
             unresolved += 1
