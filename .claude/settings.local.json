@@ -40,7 +40,28 @@
       "Bash(kubectl describe *)",
       "Bash(kubectl port-forward *)",
       "Bash(curl -s http://localhost:3100/sovereign)",
-      "Bash(curl -s http://localhost:3100/api/proxy/fleetview/sessions)"
+      "Bash(curl -s http://localhost:3100/api/proxy/fleetview/sessions)",
+      "Bash(curl -s http://localhost:3100/api/sovereign/intent.dag.json)",
+      "Bash(curl -s http://harbor.core/api/v2.0/projects)",
+      "Bash(curl -v http://localhost:3100/api/sovereign/intent.dag.json)",
+      "Bash(kubectl exec *)",
+      "Bash(timeout 10 docker images)",
+      "Bash(gh repo *)",
+      "Bash(kubectl kustomize *)",
+      "Bash(kustomize build *)",
+      "Bash(kubectl create *)",
+      "Bash(kubectl patch deployment catalogue -n backstage --type merge -p '{ *)",
+      "Bash(kubectl set *)",
+      "Bash(kubectl patch deployment catalogue -n backstage --type=json '-p=[ *)",
+      "Bash(kubectl wait *)",
+      "Bash(gh run *)",
+      "Bash(pkill -f \"port-forward.*catalogue\")",
+      "Bash(cargo fmt *)",
+      "Bash(timeout 5 curl -w \"\\\\n%{http_code}\\\\n\" http://localhost:3100/api/sovereign/intent.dag.json)",
+      "Bash(python3 *)",
+      "Bash(/Users/chidionyema/dev/code/idp/bin/build-image --load -t ironcage-kernel:v0.1.0 .)",
+      "Bash(curl -I http://localhost:3100/)",
+      "Bash(kubectl patch deployment catalogue -n backstage --type merge --patch '{ *)"
     ]
   }
 }
