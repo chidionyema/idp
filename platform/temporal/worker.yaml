@@ -71,6 +71,7 @@ spec:
           env:
             # The chart's frontend Service (platform/temporal/temporal.yaml); sovereign/config.py
             # builds TEMPORAL_ADDRESS from host and port.
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
             - { name: TEMPORAL_HOST, value: temporal-frontend.temporal.svc }
             - { name: TEMPORAL_PORT, value: "7233" }
             - { name: TEMPORAL_NAMESPACE, value: estate }
