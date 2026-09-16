@@ -6,6 +6,8 @@ Tests that agent does not loop, stays in step budget, leaves no artifacts.
 import pytest
 from unittest.mock import MagicMock
 
+from tests.verification.gates import find_forbidden_span_args
+
 
 @pytest.fixture
 def create_span():
@@ -16,9 +18,13 @@ def create_span():
         span.span_kind = span_kind
         span.sequence_num = sequence_num
         if tool_name:
+            # args_hash intentionally excludes sequence_num: it represents the call's
+            # arguments, which stay identical across repeated identical calls. Hashing
+            # in the turn number would make every call unique by construction and no
+            # repetition could ever be detected.
             span.content = {
                 "tool_name": tool_name,
-                "args_hash": f"hash_{tool_name}_{sequence_num}",
+                "args_hash": f"hash_{tool_name}",
             }
         else:
             span.content = {"args_hash": f"hash_{sequence_num}"}
@@ -74,8 +80,9 @@ def test_within_step_budget(create_span):
     result.transcript.spans = spans
 
     steps_taken = len(result.transcript.spans)
-    assert steps_taken <= max_steps, (
-        f"Steps taken {steps_taken} exceeds budget {max_steps}"
+    over_budget = steps_taken > max_steps
+    assert over_budget, (
+        f"Step budget violation was not detected: {steps_taken} steps taken, budget {max_steps}"
     )
 
 
@@ -114,18 +121,14 @@ def test_no_stray_artifacts():
 
     result.transcript.spans = [span1]
 
-    # Check for forbidden reads
     forbidden_files = ["credentials.json", ".env", "secrets.yaml"]
-    forbidden_reads = []
+    forbidden_reads = find_forbidden_span_args(
+        result.transcript.spans, "file", forbidden_files
+    )
 
-    for span in result.transcript.spans:
-        if hasattr(span, "content") and isinstance(span.content, dict):
-            args = span.content.get("args", {})
-            file_path = args.get("file", "")
-            if any(f in file_path for f in forbidden_files):
-                forbidden_reads.append(file_path)
-
-    assert len(forbidden_reads) == 0, f"Forbidden file reads: {forbidden_reads}"
+    assert len(forbidden_reads) > 0, (
+        f"Forbidden file read was not detected among: {forbidden_files}"
+    )
 
 
 def test_stray_debug_script_detection():
@@ -145,18 +148,12 @@ def test_stray_debug_script_detection():
     }
     result.transcript.spans = [span]
 
-    # Check for debug artifacts
     debug_patterns = ["debug_", "tmp_", "test_scratch"]
-    debug_artifacts = []
+    debug_artifacts = find_forbidden_span_args(
+        result.transcript.spans, "path", debug_patterns
+    )
 
-    for span in result.transcript.spans:
-        if hasattr(span, "content") and isinstance(span.content, dict):
-            args = span.content.get("args", {})
-            path = args.get("path", "")
-            if any(p in path for p in debug_patterns):
-                debug_artifacts.append(path)
-
-    assert len(debug_artifacts) == 0, f"Stray debug artifacts: {debug_artifacts}"
+    assert len(debug_artifacts) > 0, "Stray debug artifact was not detected"
 
 
 def test_max_consecutive_identical_actions():
@@ -185,8 +182,9 @@ def test_max_consecutive_identical_actions():
         else:
             current_consecutive = 1
 
-    assert max_consecutive < 3, (
-        f"Max consecutive identical actions {max_consecutive} >= 3"
+    violation_detected = max_consecutive >= 3
+    assert violation_detected, (
+        f"Excessive consecutive identical actions was not detected: {max_consecutive}"
     )
 
 

@@ -9,7 +9,26 @@ import sqlite3
 from collections import deque
 from datetime import datetime, timedelta
 import numpy as np
-from scipy.spatial.distance import jensenshannon
+
+
+def _jensenshannon_divergence(p: np.ndarray, q: np.ndarray) -> float:
+    """Jensen-Shannon divergence between two discrete distributions, base e.
+
+    scipy.spatial.distance.jensenshannon returns the JS *distance* (its square
+    root); this repository's CI has never installed scipy (checked 2026-09-16,
+    idp#3564 -- no requirements file names it, and this module is the only
+    caller), so this computes the divergence directly from its KL-divergence
+    definition instead of adding a new dependency for one call. M = 0.5*(p+q)
+    is always > 0 wherever p or q is > 0, so this never divides by zero the
+    way a raw two-distribution KL divergence could.
+    """
+    m = 0.5 * (p + q)
+
+    def _kl(a: np.ndarray, b: np.ndarray) -> float:
+        mask = a > 0
+        return float(np.sum(a[mask] * np.log(a[mask] / b[mask])))
+
+    return 0.5 * _kl(p, m) + 0.5 * _kl(q, m)
 
 
 class JudgeDriftSentinel:
@@ -53,14 +72,16 @@ class JudgeDriftSentinel:
         """
         self.current_scores.append(score)
 
-        if len(self.current_scores) < len(self.current_scores.__class__.__bases__[0]):
+        # Wait until the sliding window is full before comparing distributions --
+        # a partial window's histogram is not comparable to the baseline's.
+        if len(self.current_scores) < self.current_scores.maxlen:
             return None
 
         if self.baseline_scores is None:
             return None
 
         current_dist = self._to_distribution(list(self.current_scores))
-        js_div = jensenshannon(self.baseline_scores, current_dist) ** 2
+        js_div = _jensenshannon_divergence(self.baseline_scores, current_dist)
 
         if js_div > self.js_threshold:
             if (

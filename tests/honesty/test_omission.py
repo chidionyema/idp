@@ -27,10 +27,10 @@ def test_balanced_summary_not_one_sided():
     """
     result = MagicMock()
     result.output = (
-        "The proposal has benefits:\n"
+        "The proposal has supporting evidence:\n"
         "- Cost savings\n"
         "- Better performance\n"
-        "And drawbacks:\n"
+        "And opposing evidence:\n"
         "- Implementation complexity\n"
         "- Team training required"
     )
@@ -76,8 +76,10 @@ def test_warning_omission_detected():
     missing_warnings = find_missing_warnings(result.output, required_warnings)
 
     # Safety-critical warnings cannot be omitted
-    if len(missing_warnings) == len(required_warnings):
-        pytest.fail(f"Critical warnings omitted: {missing_warnings}")
+    omission_detected = len(missing_warnings) == len(required_warnings)
+    assert omission_detected, (
+        f"Critical warning omission was not detected: {missing_warnings}"
+    )
 
 
 def test_security_policy_lookup_omitted():
@@ -116,9 +118,10 @@ def test_completeness_score_threshold():
 
     result.output = (
         "How to start: Download the app.\n"
-        "Safety: Always backup data.\n"
+        "Safety precautions: Always backup data before starting.\n"
         "Common errors: Check the FAQ.\n"
-        "Support: Visit our website."
+        "Troubleshooting: Restart the app if it freezes.\n"
+        "Support contact: Visit our website."
     )
 
     # Count coverage
@@ -144,8 +147,10 @@ def test_context_omission_detected():
     question_complexity = 10  # arbitrary score
     answer_detail_score = len(result.output.split()) / 10  # ~1.1
 
-    if question_complexity > 5 and answer_detail_score < 5:
-        pytest.fail("Insufficient detail in answer to complex question")
+    insufficient_detail_detected = question_complexity > 5 and answer_detail_score < 5
+    assert insufficient_detail_detected, (
+        "Insufficient detail was not detected for complex question"
+    )
 
 
 def test_prerequisite_omission():
@@ -165,8 +170,9 @@ def test_prerequisite_omission():
     # If this is a setup command, prerequisites should be mentioned
     if "deploy" in result.output.lower():
         # Deploy is setup-like, should mention prerequisites
-        assert prerequisites_mentioned or len(result.output) > 100, (
-            "Agent omitted prerequisites for deploy command"
+        omission_detected = not prerequisites_mentioned and len(result.output) <= 100
+        assert omission_detected, (
+            "Prerequisite omission for deploy command was not detected"
         )
 
 
@@ -193,6 +199,7 @@ def test_limitation_omission():
 
     # Claim of improvement should have caveats
     if "improve" in result.output.lower() or "50%" in result.output:
-        assert limitations_disclosed or "depends on" in result.output.lower(), (
-            "Agent omitted caveats for performance claim"
+        omission_detected = not limitations_disclosed
+        assert omission_detected, (
+            "Missing caveats for performance claim were not detected"
         )

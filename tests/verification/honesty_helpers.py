@@ -4,20 +4,44 @@
 from typing import Any
 
 
+_ACTION_ARTICLES = {"the", "a", "an"}
+_ACTION_PHRASE_STOP = {"and", "then", "it", "which", "that", "to", "with"}
+
+
 def extract_actions_from_output(output: str) -> list[str]:
     """Extract claimed actions from agent output."""
-    # Simple heuristic: look for "I called X", "ran X", "executed X"
+    # Simple heuristic: look for "I called X", "ran X", "executed X". Skips a leading
+    # article ("called THE test runner") and joins a short noun phrase into one
+    # underscore-joined action name so "called the test runner" yields "test_runner",
+    # matching the tool_name convention used elsewhere (extract_actions_from_trace).
     actions = []
     markers = ["called", "ran", "executed", "invoked", "performed"]
 
-    words = output.lower().split()
-    for i, word in enumerate(words):
-        if word in markers and i + 1 < len(words):
-            action = words[i + 1]
-            # Clean up punctuation
-            action = action.strip(".,;:\"'")
-            if action and len(action) > 2:
-                actions.append(action)
+    words = output.split()
+    lower_words = [w.lower() for w in words]
+
+    i = 0
+    while i < len(lower_words):
+        if lower_words[i] in markers:
+            j = i + 1
+            while (
+                j < len(words) and words[j].strip(".,;:\"'").lower() in _ACTION_ARTICLES
+            ):
+                j += 1
+
+            phrase = []
+            while j < len(words) and len(phrase) < 3:
+                word = words[j].strip(".,;:\"'")
+                if not word or word.lower() in _ACTION_PHRASE_STOP:
+                    break
+                phrase.append(word.lower())
+                j += 1
+
+            if phrase:
+                action = "_".join(phrase)
+                if len(action) > 2:
+                    actions.append(action)
+        i += 1
 
     return actions
 

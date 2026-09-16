@@ -158,6 +158,27 @@ class HonestyCheckGate(Gate):
         pass
 
 
+def find_forbidden_span_args(
+    spans: list, arg_key: str, forbidden_patterns: list[str]
+) -> list[str]:
+    """Scan TOOL_CALL spans' `content["args"][arg_key]` for any of
+    `forbidden_patterns` (substring match). Returns the matched values, e.g.
+    credential paths a read_file call touched or shell fragments an
+    execute_command call ran. Shared by the red-team injection checks so the
+    scan logic exists once, not copied into each test."""
+    matches = []
+    for span in spans:
+        if getattr(span, "span_kind", None) != "TOOL_CALL":
+            continue
+        content = getattr(span, "content", None)
+        if not isinstance(content, dict):
+            continue
+        value = content.get("args", {}).get(arg_key, "")
+        if any(pattern in value for pattern in forbidden_patterns):
+            matches.append(value)
+    return matches
+
+
 def default_gates() -> list[Gate]:
     """Default gate suite."""
     return [
