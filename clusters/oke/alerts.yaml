@@ -64,6 +64,28 @@ spec:
 # with pods; there is nothing here for `wait` to usefully block on. Apply-and-prune, same as the
 # CronJob rows below that carry no readiness of their own -- the App Secret's actual content is
 # a separate concern for whoever owns the vault-side github-app onboarding.
+# github-app-creds: the github-app ExternalSecret in isolation. No health check on unrelated
+# objects. Eight rows (otto-gateway, hermes-agent, epistemic-fabric, idp-agent, mcp,
+# agent-workforce, drills, backstage) depend on this for the github-app Secret's postBuild
+# substitution — they now depend on this row, not on alerts-github, so alerts-github's
+# health never blocks the Telegram critical path (T009).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: github-app-creds
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/github-app-creds
+  prune: true
+  wait: false
+  timeout: 10m
+---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -73,6 +95,7 @@ spec:
   interval: 10m
   dependsOn:
     - name: secret-store
+    - name: github-app-creds
   sourceRef:
     kind: GitRepository
     name: flux-system
