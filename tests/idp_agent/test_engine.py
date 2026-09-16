@@ -154,16 +154,34 @@ def test_skip_local_vacuum_defers_to_ci(engine_module, monkeypatch):
     assert "GitHub Actions" in logs
 
 
+def test_mint_gh_token_reads_the_eso_minted_file_in_cluster(
+    engine_module, monkeypatch, tmp_path
+):
+    """In-cluster, GH_TOKEN_FILE points at the Secret external-secrets'
+    GithubAccessToken generator populates (engine-deployment.yaml) -- this
+    is the primary path, checked before GH_TOKEN or a subprocess call."""
+    token_file = tmp_path / "GH_TOKEN"
+    token_file.write_text("ghs_eso_minted_token\n")
+    monkeypatch.setenv("GH_TOKEN_FILE", str(token_file))
+    monkeypatch.setenv("GH_TOKEN", "should-be-ignored")  # noqa: S105
+
+    assert engine_module.mint_gh_token() == "ghs_eso_minted_token"  # noqa: S105
+
+
 def test_mint_gh_token_local_dev_override(engine_module, monkeypatch):
-    """A developer's own GH_TOKEN, when set, overrides the App lane mint --
-    no bin/idp-github-app call, no network."""
+    """A developer's own GH_TOKEN, when set and no GH_TOKEN_FILE exists,
+    overrides the App lane mint -- no bin/idp-github-app call, no network."""
+    monkeypatch.delenv("GH_TOKEN_FILE", raising=False)
     monkeypatch.setenv("GH_TOKEN", "ghp_local_dev_token")
     assert engine_module.mint_gh_token() == "ghp_local_dev_token"
 
 
 def test_mint_gh_token_calls_the_agent_workforce_lane(engine_module, monkeypatch):
-    """With no local override, the token comes from the estate's existing
-    agent-workforce GitHub App lane, not a new lane or a static secret."""
+    """With no GH_TOKEN_FILE and no local override, the token comes from the
+    estate's existing agent-workforce GitHub App lane directly (a
+    developer's laptop with real OCI credentials), not a new lane or a
+    static secret."""
+    monkeypatch.delenv("GH_TOKEN_FILE", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
     calls = []
 
