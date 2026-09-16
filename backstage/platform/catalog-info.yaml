@@ -1264,6 +1264,31 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-idp-agent
+  title: 'OrbStack agent platform'
+  description: 'GitHub and Flux webhooks in, PRs verified by the judge/red-team/honesty harness out (docs/specs/orbstack-event-driven-agents.md).'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=idp-agent'
+    estate/flux-kustomization: 'idp-agent'
+    estate/path: './platform/idp_agent'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-alerts-github
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-image-automation
   title: 'Image roll-out'
   description: 'Watches the registry and rolls each new build of the portal into the cluster.'
