@@ -505,6 +505,12 @@ LAYERS = {
         "The agent that acts for the founder from anywhere: a message in, a pull request out.",
         "group:default/platform",
     ),
+    "idp-agent": (
+        "agents",
+        "OrbStack agent platform",
+        "GitHub and Flux webhooks in, PRs verified by the judge/red-team/honesty harness out (docs/specs/orbstack-event-driven-agents.md).",
+        "group:default/platform",
+    ),
     "otto-golden": (
         "agents",
         "Otto (golden)",

@@ -474,6 +474,49 @@ spec:
       name: hermes-agent-gateway
       namespace: hermes-agent
 ---
+# The idp_agent platform (docs/specs/orbstack-event-driven-agents.md, idp#3599/#3603): GitHub
+# and Flux webhooks in, PRs verified by the judge/red-team/honesty harness (idp#3564) out.
+# engine-deployment.yaml's GithubAccessToken generator needs the estate-agents App's id and
+# installation id the same way hermes-agent's row above does -- substituteFrom + dependsOn on
+# alerts-github is the same wiring, not a new pattern.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: idp-agent
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/idp_agent
+  prune: true
+  postBuild:
+    substituteFrom:
+      # The estate-agents App's id and installation id for the GithubAccessToken generator;
+      # rendered into flux-system by platform/alerts-github/github-app.yaml from the vault.
+      - kind: Secret
+        name: github-app
+  dependsOn:
+    - name: scheduling
+    - name: secret-store
+    # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
+    - name: alerts-github
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: idp-agent-redis
+      namespace: idp-agent
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: idp-engine
+      namespace: idp-agent
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: idp-gateway
+      namespace: idp-agent
+---
 # Otto staging row (founder order 2026-09-01: "get this shipped and operational now"). A second,
 # separate pod from hermes-agent above -- the new otto.boot process (hermes-v2 branch
 # otto/boot-surface), same image, its own namespace and its own HTTPRoute paths

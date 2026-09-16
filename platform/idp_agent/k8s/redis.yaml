@@ -1,0 +1,64 @@
+# The idp_tasks / idp_tasks_dead queue. Ephemeral on purpose: a lost queue on restart means
+# in-flight tasks are lost, which this platform already treats as an acceptable failure mode --
+# every task handler dead-letters on any failure rather than assuming at-least-once delivery
+# (docs/specs/orbstack-event-driven-agents.md), so a Redis restart is the same shape of loss as
+# an engine pod dying mid-task. No PVC, no AOF: one replica, emptyDir, matching jit-broker's own
+# "deliberately one replica" reasoning (platform/jit/deployment.yaml) but without even the ledger
+# PVC, since nothing here needs to survive a restart to be correct.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idp-agent-redis
+  namespace: idp-agent
+  labels: { app.kubernetes.io/name: idp-agent-redis }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: idp-agent-redis }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: idp-agent-redis }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["redis-server", "--appendonly", "no", "--save", ""]
+          ports:
+            - { name: redis, containerPort: 6379 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          readinessProbe:
+            tcpSocket: { port: redis }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: redis }
+            periodSeconds: 30
+            failureThreshold: 3
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: data, emptyDir: { sizeLimit: 512Mi } }
+        - { name: tmp, emptyDir: { sizeLimit: 64Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: idp-agent-redis
+  namespace: idp-agent
+spec:
+  selector: { app.kubernetes.io/name: idp-agent-redis }
+  ports:
+    - { name: redis, port: 6379, targetPort: redis }

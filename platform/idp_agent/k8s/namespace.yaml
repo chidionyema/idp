@@ -1,0 +1,12 @@
+# Same shape as platform/hermes-agent/gateway.yaml's Namespace block: never garbage-collected
+# by Flux (a namespace moved between Kustomization rows or dropped from git should stay, with
+# everything in it, rather than vanish -- idp#648), restricted pod security, part-of idp.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: idp-agent
+  labels:
+    app.kubernetes.io/part-of: idp
+    pod-security.kubernetes.io/enforce: restricted
