@@ -181,6 +181,13 @@ spec:
               PGDATABASE=$OTTO_INGRESS_DB_NAME
               PGPASSWORD=$(cat "$OTTO_INGRESS_DB_PASSWORD_FILE")
               export PGHOST PGPORT PGUSER PGDATABASE PGPASSWORD
+              # Operator notifier (T060): the bot token and the operator's chat id, read
+              # from the channels mount and exported under the names TelegramNotifier reads.
+              # The files are already mounted for the binding seed; no new secret is needed.
+              OTTO_TELEGRAM_BOT_TOKEN=$(cat /run/secrets/otto-gateway-channels/OTTO_TELEGRAM_BOT_TOKEN)
+              export OTTO_TELEGRAM_BOT_TOKEN
+              OTTO_OPERATOR_CHAT_ID=$(cat /run/secrets/otto-gateway-channels/TELEGRAM_CHAT_ID)
+              export OTTO_OPERATOR_CHAT_ID
               # The fork's credentials (GITHUB_TOKEN, EXA key, ESTATE_MCP_KEY ...) arrive as one
               # file per name under HERMES_ENV_DIR; export them the way the image's own
               # entrypoint does (hermes-v2 deploy/k8s/entrypoint.sh), since this command
