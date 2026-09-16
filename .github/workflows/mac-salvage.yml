@@ -90,19 +90,31 @@ jobs:
           chmod 600 "$HOME/.kube/config"
           echo "KUBECONFIG=$HOME/.kube/config" >> "$GITHUB_ENV"
 
-      - name: Confirm hermes-agent pod is ready
+      - name: Report hermes-agent pod state (never fails; just reports)
         run: |
-          set -euo pipefail
-          kubectl -n hermes-agent get deploy hermes-agent-gateway
-          kubectl -n hermes-agent rollout status deploy/hermes-agent-gateway --timeout=60s
+          set +e
+          echo "### hermes-agent pod state" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n hermes-agent get deploy hermes-agent-gateway -o wide 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n hermes-agent get pods -o wide 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "--- recent events ---" >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n hermes-agent get events --sort-by='.lastTimestamp' 2>&1 | tail -15 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          # crew#584 CP4: probe the Mac even when the pod is 0/1 -- readiness gates traffic but
+          # not exec (kubectl exec attaches to the running container regardless). A Mac we can
+          # rescue by tolerating a degraded pod is worth more than a rollout-status verdict.
+          exit 0
 
       - name: Probe the Mac over mac-run
         id: probe
         run: |
-          set -uo pipefail
+          set +e
           out=$(kubectl -n hermes-agent exec deploy/hermes-agent-gateway -- \
                 mac-run 'hostname && whoami && uptime && date -u && df -h ~ | tail -1' 2>&1)
           rc=$?
+          set -e
           printf '%s\n' "$out"
           {
             echo '### probe (rc='"$rc"')'
@@ -112,6 +124,15 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$rc" -ne 0 ]; then
             echo "probe failed: the Mac is not answering mac-run. Common causes: Mac asleep, off the tailnet, sshd stopped, or the vault key not synced (see skills/founder-mac)."
+            # Diagnostic: what does the pod know about tailnet reachability of the Mac?
+            echo "--- extra diagnostic: what the pod sees ---"
+            kubectl -n hermes-agent exec deploy/hermes-agent-gateway -- sh -c '
+              echo "-- id --"; id
+              echo "-- ls key --"; ls -l /run/secrets/hermes-agent-mac-run/id_ed25519 2>&1
+              echo "-- tailscale status --self --"; tailscale --socket=/tmp/tailscaled.sock status --self --json 2>&1 | head -30 || echo "(no tailscale on the pod path)"
+              echo "-- test tailnet dns --"; getent hosts 100.93.240.113 2>&1 | head -1
+              echo "-- test SOCKS proxy port --"; nc -zv localhost 1055 2>&1 || echo "(nc not present)"
+            ' 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
             exit "$rc"
           fi
 
