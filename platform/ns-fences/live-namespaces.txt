@@ -22,6 +22,7 @@ healthchecks
 hermes-agent
 hindsight
 identity
+idp-agent
 infra-crew
 jit
 keda
