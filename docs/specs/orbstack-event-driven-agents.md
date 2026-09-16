@@ -98,12 +98,15 @@ anything back to GitHub, not after.
 
 - **Network isolation**: the vacuum container runs with `--network none`.
   No exfiltration path exists once CI starts.
-- **Token handling**: in-cluster, `engine.py` never holds a static GitHub
-  token at all. `mint_gh_token()` calls `bin/idp-github-app token
-  agent-workforce`, the estate's existing GitHub App lane, per task —
-  a fresh installation token that expires in an hour and never touches
-  disk. A local `GH_TOKEN` env var overrides this for a developer's own
-  dev loop, never in a deployed engine.
+- **Token handling**: in-cluster, `engine.py` never mints its own token or
+  holds a static one. A `GithubAccessToken` generator (external-secrets)
+  mints a fresh installation token of the estate's existing
+  `agent-workforce` GitHub App lane on every 10-minute refresh;
+  `mint_gh_token()` just reads the resulting file (`GH_TOKEN_FILE`), the
+  same pattern `platform/mcp/` and `platform/hermes-agent/` already use.
+  Local dev falls back to a `GH_TOKEN` env var, or a direct
+  `bin/idp-github-app token agent-workforce` call with real OCI
+  credentials — never in a deployed engine.
 - **Least privilege**: `agent-workforce` (`platform/github-app/lanes.json`)
   is narrowed to `contents: write`, `pull_requests: write`, `issues:
   write`, `metadata/actions/checks: read` — it can open and update PRs and
@@ -230,23 +233,39 @@ theirs, not a cluster's.
 Kubernetes `Secret` (`GITHUB_WEBHOOK_SECRET_FILE`), not an environment
 variable — an env var is printed by every crash dump and `kubectl describe
 pod`, which is exactly what this cluster's `secrets-not-from-env-vars`
-Kyverno policy refuses. The engine fleet needs no secret of its own at
-all: `mint_gh_token()` mints a fresh token per task from the already-vaulted
-`github-app` entry (docs/reference/policy/root-trust.md), so there is no
-static `GH_TOKEN` to store, rotate, or leak in the first place.
+Kyverno policy refuses.
+
+`GH_TOKEN` arrives the same way, but is minted rather than vaulted: a
+`GithubAccessToken` generator (external-secrets' own generator kind) mints
+a fresh installation token of the estate-agents App, narrowed to the
+existing `agent-workforce` lane, on every 10-minute `ExternalSecret`
+refresh — the identical in-cluster pattern `platform/mcp/external-secret.yaml`
+and `platform/hermes-agent/gateway.yaml` already run for their own GitHub
+identities. No OCI credential and no vault call happens inside the engine
+pod at all; the App's private key never leaves the `idp-engine-github-app-pem`
+Secret ESO itself renders from the already-vaulted `github-app` entry. An
+earlier revision of this design had `mint_gh_token()` shell out to
+`bin/idp-github-app token agent-workforce` from inside the pod, which would
+have needed its own OCI workload-identity binding just to read the vault —
+solved instead by using the platform's existing generator mechanism, the
+same way every other in-cluster GitHub consumer here already does it.
 
 ## 11. Production hardening checklist
 
 - [ ] `requirepass` set on Redis; `REDIS_URL` carries the password.
 - [ ] `GITHUB_WEBHOOK_SECRET` set and configured in the GitHub repo's
       webhook settings.
-- [ ] The `idp-engine` ServiceAccount carries whatever OCI workload-identity
-      binding `bin/idp-cloud secret get` needs to read the `github-app`
-      vault entry in-cluster (not yet resolved — section 12).
+- [ ] The `idp-agent` namespace's Flux `Kustomization` declares
+      `postBuild.substituteFrom` against the `flux-system/github-app` Secret
+      and `dependsOn: [..., alerts-github]`, the same wiring
+      `clusters/oke/platform.yaml`'s `hermes-agent` row already has —
+      otherwise `${githubAppIDQuoted}` / `${githubAppInstallationIDQuoted}`
+      in `engine-deployment.yaml`'s `GithubAccessToken` generator never
+      resolve and the row fails closed on a strict envsubst (by design; see
+      section 12).
 - [ ] No `GH_TOKEN` env var is set on the deployed engine: its presence
-      would silently skip the per-task App-lane mint (`mint_gh_token()`'s
-      local-dev override) in production, exactly the static-token risk
-      this design avoids.
+      would be checked after `GH_TOKEN_FILE` but is still a static-token
+      risk the generator design avoids entirely; local dev only.
 - [ ] Vacuum image is a custom, pre-built image with CI dependencies
       baked in — not `apt-get install` on every run (local dev only, see
       section 10).
@@ -264,16 +283,11 @@ static `GH_TOKEN` to store, rotate, or leak in the first place.
   `run_sre_agent` (LangGraph) is not written here — each function is a
   real call site that already records a real transcript and goes through
   the harness, so wiring in real planning logic is additive.
-- `engine-deployment.yaml`'s `idp-engine` ServiceAccount does not yet
-  declare the OCI workload-identity binding `bin/idp-cloud secret get`
-  needs to read the `github-app` vault entry from inside the cluster.
-  `bin/idp-github-app token agent-workforce` works today from any
-  environment with real OCI credentials (a developer's session, CI); the
-  in-cluster equivalent wasn't resolved from the code alone and needs
-  verifying against however this cluster's other in-pod `bin/idp-cloud`
-  callers, if any, are bound before this deploys for real.
 - Kubernetes deployment manifests are provided; no Helm chart or Flux
   `HelmRelease` wraps them yet, so they are not reconciled by GitOps the
-  way the rest of this estate's workloads are. Follow-up: fold
-  `platform/idp_agent/k8s/` into a HelmRelease once the engine is proven
-  in staging.
+  way the rest of this estate's workloads are, and `clusters/oke/platform.yaml`
+  has no `idp-agent` `Kustomization` row at all yet — needed before
+  `engine-deployment.yaml`'s `GithubAccessToken` generator can actually
+  resolve its App ID/installation ID (see the hardening checklist above).
+  Follow-up: fold `platform/idp_agent/k8s/` into a HelmRelease once the
+  engine is proven in staging, with that row added alongside it.
