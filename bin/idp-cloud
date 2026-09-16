@@ -63,7 +63,13 @@ print("\n".join(str(n) for n in old[int(sys.argv[1]):]))' "$keep" 2>/dev/null) |
 # A grading line is one line. Fold a multi-line CLI diagnosis onto it, drop anything shaped like
 # a bearer token or key so a diagnosis can never become a leak, and cap it so one row stays one row.
 oneline() { printf '%s' "$1" | tr '\n\r\t' '   ' | sed -E 's/[A-Za-z0-9_-]{40,}/<redacted>/g; s/  +/ /g; s/^ //' | cut -c1-300; }
-prim=$1; verb=$2; shift 2
+# `--help` with fewer than two args used to fall straight into `verb=$2`, an unbound variable
+# under `set -u` -- this file had never once run to completion (bin/idp-script-compiles, idp#3537).
+if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
+  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+  exit 0
+fi
+prim=${1:-}; verb=${2:-}; shift $(( $# < 2 ? $# : 2 ))
 BUCKET=""; NAME=""; FILE=""; PREFIX=""; VAULT=""; REGION=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -131,6 +137,31 @@ oci_vault_id() {
         | jq -r '.[]?' 2>/dev/null) || ids=""
   n=$(printf '%s\n' "$ids" | grep -c . || true)
   [ "$n" = 1 ] || { echo "BLIND   vault   the compartment has $n ACTIVE vaults, so which one holds the estate's secrets is not a question this can answer; set ESTATE_VAULT_OCID or pass --vault" >&2; return 2; }
+  printf '%s' "$ids"
+}
+
+# Same bug class as oci_vault_id (see the comment above it), never fixed for the key: a GitHub
+# runner has no local tofu state, so `tofu output -raw vault_key_id` failed loudly every time and
+# `secret put`'s create-base64 branch swallowed that failure (idp-cloud has no `set -e`), passing
+# an empty --key-id straight to OCI. OCI accepted the request as a client validation error
+# ("keyId cannot be an empty string"), on this backend's own stderr, unreported by the caller --
+# so `settle_secret` waited 120 s to read back a secret that was never created (idp#3537, runs
+# 35008063886 and 35016765336: no secret named concierge-tunnel ever existed in the compartment,
+# checked directly, both times). Ask the compartment the same way oci_vault_id does.
+oci_vault_key_id() { # <vault ocid> -> the vault's one ENABLED key id
+  if [ -n "${ESTATE_VAULT_KEY_OCID:-}" ]; then printf '%s' "$ESTATE_VAULT_KEY_OCID"; return 0; fi
+  local vid="$1" MAIN K mgmt ids n
+  MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+  K=$(cd "$MAIN/platform/oci" 2>/dev/null && tofu output -raw vault_key_id 2>/dev/null) || K=""
+  if [ -n "$K" ]; then printf '%s' "$K"; return 0; fi
+  local C; C=$(oci_compartment) || return 2
+  mgmt=$(oci kms management vault get --vault-id "$vid" --query 'data."management-endpoint"' --raw-output 2>/dev/null) || mgmt=""
+  [ -n "$mgmt" ] || { echo "BLIND   vault   could not read the management endpoint for vault $vid" >&2; return 2; }
+  ids=$(oci kms management key list --compartment-id "$C" --endpoint "$mgmt" --all \
+          --query "data[?\"lifecycle-state\"=='ENABLED'].id" --output json 2>/dev/null \
+        | jq -r '.[]?' 2>/dev/null) || ids=""
+  n=$(printf '%s\n' "$ids" | grep -c . || true)
+  [ "$n" = 1 ] || { echo "BLIND   vault   vault $vid has $n ENABLED key(s), so which one encrypts new secrets is not a question this can answer; set ESTATE_VAULT_KEY_OCID" >&2; return 2; }
   printf '%s' "$ids"
 }
 
@@ -286,13 +317,15 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             payload=$(base64 < "$FILE" | tr -d '\n')
             if [ -n "$sid" ] && [ "$sid" != null ]; then
               prune_secret_versions "$sid"
-              oci vault secret update-base64 --secret-id "$sid" --secret-content-content "$payload" >/dev/null
+              out=$(oci vault secret update-base64 --secret-id "$sid" --secret-content-content "$payload" 2>&1 >/dev/null) \
+                || blind "secret $NAME update-base64 failed: $(oneline "$out")"
               settle_secret "$payload"
               printf '%s' updated
             else
               V=$(oci_vault_id) || exit 2
-              K=${ESTATE_VAULT_KEY_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_key_id)}
-              oci vault secret create-base64 --compartment-id "$C" --vault-id "$V" --key-id "$K" --secret-name "$NAME" --secret-content-content "$payload" >/dev/null
+              K=$(oci_vault_key_id "$V") || exit 2
+              out=$(oci vault secret create-base64 --compartment-id "$C" --vault-id "$V" --key-id "$K" --secret-name "$NAME" --secret-content-content "$payload" 2>&1 >/dev/null) \
+                || blind "secret $NAME create-base64 failed: $(oneline "$out")"
               settle_secret "$payload"
               printf '%s' created
             fi

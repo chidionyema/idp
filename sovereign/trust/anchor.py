@@ -1,8 +1,11 @@
 """HardwareTrustAnchor: one interface, backends behind it (cp20). Platform
-detection (platform.system() / sys.platform) is confined to this file --
-nowhere else in sovereign/ may branch on the OS (a founder-presence gateway
-under sovereign/presence/ is the only other place cp20 permits it, and
-none exists in this build).
+detection (sys.platform, not the stdlib `platform` module -- this repository's
+own top-level platform/ package shadows it once anything imports
+platform.<submodule>, which corrupts sys.modules['platform'] for every
+importer for the rest of the process) is confined to this file -- nowhere
+else in sovereign/ may branch on the OS (a founder-presence gateway under
+sovereign/presence/ is the only other place cp20 permits it, and none
+exists in this build).
 
 This module never imports sovereign.config at module load time: it is
 imported *by* sovereign/config.py (config.py's merge step does
@@ -21,9 +24,9 @@ import hashlib
 import hmac
 import json
 import os
-import platform
 import secrets
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -135,10 +138,9 @@ def _detect_fido2_backend() -> str:
 
 
 def _detect_backend() -> str:
-    system = platform.system()
-    if system == "Darwin":
+    if sys.platform == "darwin":
         return _detect_macos_backend()
-    if system == "Windows":
+    if sys.platform == "win32":
         backend = _detect_windows_backend()
         return backend if backend != "software_key" else _detect_fido2_backend()
     return _detect_fido2_backend()
