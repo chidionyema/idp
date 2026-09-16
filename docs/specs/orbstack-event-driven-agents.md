@@ -98,12 +98,19 @@ anything back to GitHub, not after.
 
 - **Network isolation**: the vacuum container runs with `--network none`.
   No exfiltration path exists once CI starts.
-- **Token handling**: `GH_TOKEN` is read from the environment, never
-  hardcoded, and injected into the clone URL as `x-access-token`. It is
-  never written to disk or logged.
-- **Least privilege**: the engine needs only a `GH_TOKEN` scoped to
-  `contents: write`, `pull_requests: write`, `issues: read` on the target
-  repo(s) — not a full `repo` scope token.
+- **Token handling**: in-cluster, `engine.py` never holds a static GitHub
+  token at all. `mint_gh_token()` calls `bin/idp-github-app token
+  agent-workforce`, the estate's existing GitHub App lane, per task —
+  a fresh installation token that expires in an hour and never touches
+  disk. A local `GH_TOKEN` env var overrides this for a developer's own
+  dev loop, never in a deployed engine.
+- **Least privilege**: `agent-workforce` (`platform/github-app/lanes.json`)
+  is narrowed to `contents: write`, `pull_requests: write`, `issues:
+  write`, `metadata/actions/checks: read` — it can open and update PRs and
+  push to a branch, and it can never merge, dispatch a workflow, or reach
+  a cluster. This architecture reuses that lane rather than minting a new
+  App or a new lane: a second GitHub identity for the same role would be
+  the second copy of one credential LAW 54 refuses.
 - **Webhook signature verification**: `GITHUB_WEBHOOK_SECRET` is required
   in any deployment reachable from the public internet; the gateway
   refuses a request with a missing or invalid `X-Hub-Signature-256` once
@@ -153,7 +160,9 @@ pip install -r platform/idp_agent/requirements.txt
 
 # 3. Set environment variables
 export REDIS_URL="redis://localhost:6379"
-export GH_TOKEN="ghp_..."                 # contents:write, pull_requests:write, issues:read
+export GH_TOKEN="ghp_..."                 # local dev only: overrides mint_gh_token()'s
+                                           # agent-workforce lane mint, so a developer
+                                           # doesn't need App credentials just to run locally
 export GITHUB_WEBHOOK_SECRET=""           # required outside local dev
 
 # 4. Start the gateway
@@ -217,19 +226,27 @@ in-cluster. `run_orbstack_vacuum` itself stays real and useful for the
 local-dev loop, where a developer's own OrbStack socket is exactly that:
 theirs, not a cluster's.
 
-Both `GH_TOKEN` and `GITHUB_WEBHOOK_SECRET` arrive as files from an
-`ExternalSecret`-backed Kubernetes `Secret` (`GH_TOKEN_FILE` /
-`GITHUB_WEBHOOK_SECRET_FILE`), not environment variables — an env var is
-printed by every crash dump and `kubectl describe pod`, which is exactly
-what this cluster's `secrets-not-from-env-vars` Kyverno policy refuses.
+`GITHUB_WEBHOOK_SECRET` arrives as a file from an `ExternalSecret`-backed
+Kubernetes `Secret` (`GITHUB_WEBHOOK_SECRET_FILE`), not an environment
+variable — an env var is printed by every crash dump and `kubectl describe
+pod`, which is exactly what this cluster's `secrets-not-from-env-vars`
+Kyverno policy refuses. The engine fleet needs no secret of its own at
+all: `mint_gh_token()` mints a fresh token per task from the already-vaulted
+`github-app` entry (docs/reference/policy/root-trust.md), so there is no
+static `GH_TOKEN` to store, rotate, or leak in the first place.
 
 ## 11. Production hardening checklist
 
 - [ ] `requirepass` set on Redis; `REDIS_URL` carries the password.
 - [ ] `GITHUB_WEBHOOK_SECRET` set and configured in the GitHub repo's
       webhook settings.
-- [ ] `GH_TOKEN` is a fine-grained token scoped to `contents: write`,
-      `pull_requests: write`, `issues: read` only.
+- [ ] The `idp-engine` ServiceAccount carries whatever OCI workload-identity
+      binding `bin/idp-cloud secret get` needs to read the `github-app`
+      vault entry in-cluster (not yet resolved — section 12).
+- [ ] No `GH_TOKEN` env var is set on the deployed engine: its presence
+      would silently skip the per-task App-lane mint (`mint_gh_token()`'s
+      local-dev override) in production, exactly the static-token risk
+      this design avoids.
 - [ ] Vacuum image is a custom, pre-built image with CI dependencies
       baked in — not `apt-get install` on every run (local dev only, see
       section 10).
@@ -247,6 +264,14 @@ what this cluster's `secrets-not-from-env-vars` Kyverno policy refuses.
   `run_sre_agent` (LangGraph) is not written here — each function is a
   real call site that already records a real transcript and goes through
   the harness, so wiring in real planning logic is additive.
+- `engine-deployment.yaml`'s `idp-engine` ServiceAccount does not yet
+  declare the OCI workload-identity binding `bin/idp-cloud secret get`
+  needs to read the `github-app` vault entry from inside the cluster.
+  `bin/idp-github-app token agent-workforce` works today from any
+  environment with real OCI credentials (a developer's session, CI); the
+  in-cluster equivalent wasn't resolved from the code alone and needs
+  verifying against however this cluster's other in-pod `bin/idp-cloud`
+  callers, if any, are bound before this deploys for real.
 - Kubernetes deployment manifests are provided; no Helm chart or Flux
   `HelmRelease` wraps them yet, so they are not reconciled by GitOps the
   way the rest of this estate's workloads are. Follow-up: fold

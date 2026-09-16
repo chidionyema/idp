@@ -25,20 +25,38 @@ import redis
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-def _read_gh_token() -> str | None:
-    """GH_TOKEN for local dev (an env var on a developer's own machine);
-    GH_TOKEN_FILE in-cluster, where the token arrives as a 0400 file from an
-    ExternalSecret (engine-deployment.yaml) rather than an env var a crash
-    dump or `kubectl describe pod` would print."""
-    token_file = os.getenv("GH_TOKEN_FILE")
-    if token_file:
-        with open(token_file) as f:
-            return f.read().strip()
-    return os.getenv("GH_TOKEN")
+GH_APP_LANE = os.getenv("IDP_GH_APP_LANE", "agent-workforce")
+
+
+def mint_gh_token() -> str:
+    """A fresh, short-lived installation token narrowed to the estate's
+    existing `agent-workforce` GitHub App lane (platform/github-app/lanes.json:
+    contents:write, pull_requests:write, issues:write, metadata/actions/checks
+    read -- it can open and update PRs and push to a branch, and it can
+    never merge, dispatch a workflow, or reach a cluster). This engine does
+    not mint its own App or its own lane: agent-workforce already exists
+    for exactly this identity, and a second one would be the second copy
+    of one credential LAW 54 refuses. `bin/idp-github-app token <lane>`
+    prints nothing but the token, and only when stdout is not a terminal
+    (bin/idp-github-app's own header comment).
+
+    GH_TOKEN, if set, overrides this for local dev -- a developer's own
+    PAT, not the estate's App identity."""
+    static_token = os.getenv("GH_TOKEN")
+    if static_token:
+        return static_token
+
+    idp_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    result = subprocess.run(
+        [os.path.join(idp_root, "bin", "idp-github-app"), "token", GH_APP_LANE],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
 
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-GH_TOKEN = _read_gh_token()
 CI_IMAGE = os.getenv("IDP_CI_IMAGE", "node:20-bullseye-slim")
 CI_COMMAND = os.getenv("IDP_CI_COMMAND", "bin/idp-ci")
 VACUUM_TIMEOUT_S = int(os.getenv("IDP_VACUUM_TIMEOUT_S", "600"))
@@ -124,6 +142,12 @@ def run_task_through_harness(
     return result
 
 
+def _gh_env(gh_token: str) -> dict:
+    """Env for a `gh` CLI subprocess call: the freshly minted installation
+    token, not ambient `gh auth` state a fresh pod has none of."""
+    return {**os.environ, "GH_TOKEN": gh_token}
+
+
 def _dead_letter(task: dict, reason: str) -> None:
     task_with_reason = {**task, "_dead_letter_reason": reason}
     queue.rpush("idp_tasks_dead", json.dumps(task_with_reason))
@@ -135,15 +159,21 @@ def _dead_letter(task: dict, reason: str) -> None:
 # ---------------------------------------------------------------------------
 @contextmanager
 def ephemeral_workspace(repo_url: str, branch_name: str):
-    """A mathematically isolated, disposable workspace: clones the repo,
-    checks out (or creates) the target branch, and destroys itself on exit."""
+    """A mathematically isolated, disposable workspace: mints a fresh
+    installation token, clones the repo, checks out (or creates) the
+    target branch, and destroys itself on exit. Yields (workspace_path,
+    gh_token) -- callers pass gh_token to every `gh` subprocess call
+    (env={**os.environ, "GH_TOKEN": gh_token}) rather than relying on
+    ambient `gh` CLI auth state, which a fresh pod has none of."""
+    gh_token = mint_gh_token()
+
     with tempfile.TemporaryDirectory(prefix="idp_ws_") as tmp_dir:
         log.info("Spawning isolated workspace: %s", tmp_dir)
 
         clone_url = repo_url
-        if GH_TOKEN and clone_url.startswith("https://"):
+        if gh_token and clone_url.startswith("https://"):
             clone_url = clone_url.replace(
-                "https://", f"https://x-access-token:{GH_TOKEN}@"
+                "https://", f"https://x-access-token:{gh_token}@"
             )
 
         result = subprocess.run(
@@ -177,7 +207,7 @@ def ephemeral_workspace(repo_url: str, branch_name: str):
         )
 
         try:
-            yield tmp_dir
+            yield tmp_dir, gh_token
         finally:
             log.info("Teardown complete. %s destroyed.", tmp_dir)
 
@@ -322,7 +352,7 @@ def handle_worker_feature(task: dict) -> None:
     branch = f"auto/worker-issue-{task['issue_id']}"
     transcript_id = f"worker_{task['issue_id']}_{uuid.uuid4().hex[:8]}"
 
-    with ephemeral_workspace(task["repo_url"], branch) as workspace:
+    with ephemeral_workspace(task["repo_url"], branch) as (workspace, gh_token):
         spans, output = run_worker_agent(task, workspace)
 
         verdict = run_task_through_harness(transcript_id, spans, output)
@@ -361,12 +391,14 @@ def handle_worker_feature(task: dict) -> None:
                 branch,
             ],
             cwd=workspace,
+            env=_gh_env(gh_token),
             check=True,
             capture_output=True,
         )
         subprocess.run(
             ["gh", "pr", "merge", "--auto", "--squash"],
             cwd=workspace,
+            env=_gh_env(gh_token),
             check=True,
             capture_output=True,
         )
@@ -376,7 +408,7 @@ def handle_worker_feature(task: dict) -> None:
 def handle_judge_review(task: dict) -> None:
     transcript_id = f"judge_{task['pr_num']}_{uuid.uuid4().hex[:8]}"
 
-    with ephemeral_workspace(task["repo_url"], task["branch"]) as workspace:
+    with ephemeral_workspace(task["repo_url"], task["branch"]) as (workspace, gh_token):
         approved, spans, output = run_judge_agent(task, workspace)
 
         verdict = run_task_through_harness(transcript_id, spans, output)
@@ -388,6 +420,7 @@ def handle_judge_review(task: dict) -> None:
             subprocess.run(
                 ["gh", "pr", "review", str(task["pr_num"]), "--approve"],
                 cwd=workspace,
+                env=_gh_env(gh_token),
                 check=True,
                 capture_output=True,
             )
@@ -404,6 +437,7 @@ def handle_judge_review(task: dict) -> None:
                     "Automated review found issues.",
                 ],
                 cwd=workspace,
+                env=_gh_env(gh_token),
                 check=True,
                 capture_output=True,
             )
@@ -414,7 +448,7 @@ def handle_sre_revert(task: dict) -> None:
     branch = f"auto/sre-revert-{task['commit_sha'][:8]}"
     transcript_id = f"sre_{task['commit_sha'][:8]}_{uuid.uuid4().hex[:8]}"
 
-    with ephemeral_workspace(task["repo_url"], branch) as workspace:
+    with ephemeral_workspace(task["repo_url"], branch) as (workspace, gh_token):
         success, spans, output = run_sre_agent(task, workspace)
         if not success:
             log.error("SRE revert failed.")
@@ -457,12 +491,14 @@ def handle_sre_revert(task: dict) -> None:
                 branch,
             ],
             cwd=workspace,
+            env=_gh_env(gh_token),
             check=True,
             capture_output=True,
         )
         subprocess.run(
             ["gh", "pr", "merge", "--auto", "--squash"],
             cwd=workspace,
+            env=_gh_env(gh_token),
             check=True,
             capture_output=True,
         )

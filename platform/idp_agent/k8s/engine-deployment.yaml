@@ -10,31 +10,24 @@
 # every PR in this repository) instead of trying to run Docker-in-Docker;
 # platform/idp_agent/engine.py's run_orbstack_vacuum documents this in full.
 #
-# GH_TOKEN arrives as a file, not an env var: an env var is printed by
-# every crash dump and `kubectl describe pod`, which is exactly what
-# Kyverno's secrets-not-from-env-vars policy refuses (see
-# platform/jit/deployment.yaml's JIT_SECRETS comment for the same reasoning
-# applied there).
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: idp-engine
-  namespace: idp-agent
-spec:
-  refreshInterval: 10m
-  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
-  target:
-    name: idp-engine
-    creationPolicy: Owner
-    template:
-      engineVersion: v2
-      data:
-        # A fine-grained token scoped to contents:write, pull_requests:write,
-        # issues:read on the target repo(s) only -- not a full `repo` scope.
-        GH_TOKEN: "{{ .GH_TOKEN }}"
-  dataFrom:
-    - extract: { key: idp-engine }
----
+# No GH_TOKEN secret here at all: engine.py's mint_gh_token() calls
+# `bin/idp-github-app token agent-workforce`, which mints a fresh,
+# short-lived installation token per task (contents:write,
+# pull_requests:write, issues:write -- can open/update PRs and push to a
+# branch, can never merge, dispatch a workflow, or reach a cluster) by
+# reading the App's own credentials via `bin/idp-cloud secret get
+# github-app`, the same door every other in-cluster consumer of the App
+# uses. Reusing the estate's existing `agent-workforce` lane rather than a
+# new one or a pasted PAT means no static, long-lived GitHub credential
+# exists for this workload to leak in the first place (LAW 54: no fresh
+# key while one exists).
+#
+# TODO before real deploy: confirm this ServiceAccount carries whatever
+# OCI workload-identity binding `bin/idp-cloud secret get` needs in-cluster
+# -- this manifest does not yet declare it, since the exact binding this
+# cluster uses for other in-pod `bin/idp-cloud` callers was not resolved
+# from the code alone. See docs/specs/orbstack-event-driven-agents.md
+# section 12.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -50,7 +43,6 @@ spec:
       labels: { app.kubernetes.io/name: idp-engine }
     spec:
       serviceAccountName: idp-engine
-      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -62,7 +54,6 @@ spec:
           command: [python3, platform/idp_agent/engine.py]
           env:
             - { name: REDIS_URL, value: "redis://idp-agent-redis:6379" }
-            - { name: GH_TOKEN_FILE, value: /etc/idp-engine-secrets/GH_TOKEN }
             - { name: IDP_SKIP_LOCAL_VACUUM, value: "1" }
             - { name: IDP_CI_COMMAND, value: bin/idp-ci }
             - name: POD_NAME
@@ -75,12 +66,8 @@ spec:
             requests: { cpu: 250m, memory: 256Mi }
             limits: { cpu: 1000m, memory: 512Mi }
           volumeMounts:
-            - { name: secrets, mountPath: /etc/idp-engine-secrets, readOnly: true }
             - { name: workspace-tmp, mountPath: /tmp }
       volumes:
-        # 0400, owned by the one uid the container runs as: the kubelet
-        # writes these files and nothing in the pod can rewrite them.
-        - { name: secrets, secret: { secretName: idp-engine, defaultMode: 0400 } }
         # readOnlyRootFilesystem needs somewhere writable for
         # tempfile.TemporaryDirectory's ephemeral workspaces.
         - { name: workspace-tmp, emptyDir: { sizeLimit: 4Gi } }
