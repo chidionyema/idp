@@ -41,13 +41,23 @@ BASE="${1:-origin/main}"
 # module by name. A gate that cannot see this shape pushes such a test back to asserting the
 # manifest's TEXT, which is the thing this gate exists to refuse.
 #
+# `from tests\.verification` is the fourth shape, found on chidionyema/idp#3564: a test that
+# imports a real function from this repository's own tests/verification/ support library
+# (extraction, comparison and DSL helpers with no test of their own -- see the __init__.py /
+# support-module skip above) and calls it against a built fixture, asserting on the function's
+# REAL computed return value rather than a copy of the fixture's own text. That is an ordinary
+# unit test of first-party logic, not a file reading itself back -- the fixture and the
+# expectation are independent, and the helper's own bugs (a wrong extraction, a wrong
+# threshold) are exactly what such a test can catch. It is scoped to this one first-party
+# namespace, not import in general, because importing something is not calling it.
+#
 # `ast.parse` IS DELIBERATELY NOT HERE. A test can parse a file and assert its SHAPE without
 # running anything, and that would slip past this gate while still measuring nothing. Measured
 # on the same change: a test whose only work is to parse bin/catalog-render and check a
 # function name passes `ast.parse` and passes bin/test-prose-gate too, so the two gates
 # together would have called it behavioural. `exec(` is the line -- if the string does not run,
 # this pattern does not match.
-EXECUTES='subprocess|requests\.|httpx|socket\.|urllib\.request|http\.server|http\.client|os\.system|pexpect|docker\.|kubernetes\.client|importlib|spec_from_file|exec\(|compile\('
+EXECUTES='subprocess|requests\.|httpx|socket\.|urllib\.request|http\.server|http\.client|os\.system|pexpect|docker\.|kubernetes\.client|importlib|spec_from_file|exec\(|compile\(|from tests\.verification'
 
 # tests/fixtures/ is excluded because a file there is a fixture, not a test. The pairs this
 # repository grades gates with include python files, and one of them is a test that reads a
@@ -61,6 +71,18 @@ added=$(cd "$IDP" && git diff --name-only --diff-filter=A "$BASE...HEAD" -- 'tes
 bad=0
 while IFS= read -r f; do
   [ -n "$f" ] || continue
+  # pytest itself only ever collects test_*.py / *_test.py as test modules (its own
+  # discovery rule, unconfigured here) -- an __init__.py or a plain support module
+  # (helpers, a DSL, a harness) that tests import is never a test, so grading it as one
+  # asserts a premise that does not hold, the same reasoning tests/fixtures/ is excluded
+  # on above. Found on chidionyema/idp#3564: tests/verification/honesty_helpers.py holds
+  # no test itself but is imported by three real tests in tests/honesty/.
+  base="$(basename "$f")"
+  case "$base" in
+    __init__.py) echo "ok    executes  $f is a package marker, not a test"; continue ;;
+    test_*.py|*_test.py) ;;
+    *) echo "ok    executes  $f is a support module, not a test pytest collects"; continue ;;
+  esac
   if grep -qE "$EXECUTES" "$IDP/$f"; then
     case "$(basename "$f")" in
       test_incident_*)
