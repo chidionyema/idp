@@ -19,7 +19,10 @@ const sovereignPlugin = createBackendModule({
       async init({ http }) {
         const router = Router();
 
-        const artifactsDir = path.join(__dirname, '../../../artifacts');
+        // Artifacts can be provided via SOVEREIGN_ARTIFACTS_DIR env var (for mounted volumes)
+        // or fall back to the repo root if running locally
+        const artifactsDir = process.env.SOVEREIGN_ARTIFACTS_DIR ||
+          path.join(__dirname, '../../../artifacts');
 
         // Serve intent DAG as JSON
         router.get('/intent.dag.json', (req, res) => {
