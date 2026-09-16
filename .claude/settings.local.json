@@ -12,7 +12,16 @@
       "Bash(kubectl get *)",
       "Bash(gh pr create --title 'feat\\(pi-agent\\): automatic token efficiency with 8 mechanisms' --body ' *)",
       "Bash(gh pr *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(kubectl apply *)",
+      "Bash(kubectl logs *)",
+      "Bash(kubectl delete *)",
+      "Bash(git init *)",
+      "Bash(git config *)",
+      "Bash(awk '{print $9, \"-\", $5}')",
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/final-proof.sh)",
+      "Bash(bash /tmp/final-proof.sh)"
     ]
   }
 }
