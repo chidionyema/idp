@@ -1,0 +1,12 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-dagster
+  description: A component with a relative URL in links
+  links:
+    - url: /dagster
+      title: Open the scheduler
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
