@@ -61,7 +61,10 @@
       "Bash(python3 *)",
       "Bash(./bin/build-image --load -t ironcage-kernel:v0.1.0 .)",
       "Bash(curl -I http://localhost:3100/)",
-      "Bash(kubectl patch deployment catalogue -n backstage --type merge --patch '{ *)"
+      "Bash(kubectl patch deployment catalogue -n backstage --type merge --patch '{ *)",
+      "Bash(./bin/build-image --push -t ghcr.io/chidionyema/ironcage-kernel:v0.1.0 -f Dockerfile.kernel .)",
+      "Bash(gh auth *)",
+      "Bash(curl -s -H \"Authorization: token $\\(gh auth token\\)\" https://api.github.com/repos/chidionyema/idp/actions/runs/35083200118/attempts/1/jobs)"
     ]
   }
 }
