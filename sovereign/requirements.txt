@@ -57,6 +57,11 @@ numpy>=1.26
 # TestClient constructs the app, which imports it whether or not a test posts a form.
 fastapi>=0.141.0
 python-multipart>=0.0.18
+# platform/idp_agent/gateway.py imports uvicorn unconditionally at module level
+# (its __main__ block calls uvicorn.run), so importing the module at all -- which
+# test_gateway.py does to get at verify_github_signature and the FastAPI app --
+# needs it present even though no test here actually starts a server.
+uvicorn>=0.30.6
 # starlette.testclient (what fastapi.testclient.TestClient wraps) requires httpx2 at
 # import time now, not the older httpx -- installing it here, not as a fastapi extra,
 # since fastapi does not declare it as a hard dependency (it's a test-time need only).
