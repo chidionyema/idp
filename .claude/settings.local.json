@@ -67,7 +67,13 @@
       "Bash(curl -s -H \"Authorization: token $\\(gh auth token\\)\" https://api.github.com/repos/chidionyema/idp/actions/runs/35083200118/attempts/1/jobs)",
       "Bash(docker buildx *)",
       "Bash(gh api *)",
-      "Bash(curl -s -H \"Authorization: token $\\(gh auth token\\)\" \"https://api.github.com/repos/chidionyema/idp/actions/jobs?run_id=35083859902\")"
+      "Bash(curl -s -H \"Authorization: token $\\(gh auth token\\)\" \"https://api.github.com/repos/chidionyema/idp/actions/jobs?run_id=35083859902\")",
+      "Artifact",
+      "Bash(awk '/^kind: Component.*layer-dagster/,/^---/' backstage/platform/catalog-info.yaml)",
+      "Bash(IDP_CI_FAST=1 python3 bin/idp-ci)",
+      "Bash(bash bin/idp-ci)",
+      "Bash(bash -n bin/idp-ci)",
+      "Bash(xargs -I {} gh run view {} --log)"
     ]
   }
 }
