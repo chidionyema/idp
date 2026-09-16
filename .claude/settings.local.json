@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git reset *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'feat\\(pi-agent\\): automatic token efficiency with 8 mechanisms - zero config *)",
+      "Bash(git push *)",
+      "Bash(git commit -m 'FINAL: Sovereign - Honest Status + Flux Integration *)",
+      "Bash(git commit -m 'FINAL: Sovereign - Honest Status Report *)",
+      "Bash(cargo build *)",
+      "Bash(cargo test *)",
+      "Bash(kubectl get *)",
+      "Bash(gh pr create --title 'feat\\(pi-agent\\): automatic token efficiency with 8 mechanisms' --body ' *)",
+      "Bash(gh pr *)",
+      "Bash(git commit *)"
+    ]
+  }
+}
