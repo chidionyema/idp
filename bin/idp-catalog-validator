@@ -102,6 +102,12 @@ def validate_catalog_file(path):
     return errors, warnings
 
 def main():
+    # Handle --help before anything else (must exit 0 per LAW 43/45)
+    if '-h' in sys.argv or '--help' in sys.argv:
+        print("bin/idp-catalog-validator -- validate catalog YAML data integrity")
+        print("usage: bin/idp-catalog-validator [--strict] <catalog-file> [more...]")
+        return 0
+
     strict = '--strict' in sys.argv
     paths = [p for p in sys.argv[1:] if not p.startswith('-')]
 
