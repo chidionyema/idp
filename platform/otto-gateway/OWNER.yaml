@@ -1,0 +1,66 @@
+# Telegram Bot Singleton — Single Writer Declaration (T001, Phase 0)
+#
+# Telegram allows exactly one registered webhook URL per bot token and exactly one
+# reader. Any process that calls setWebhook or deleteWebhook steals the channel from
+# the rightful owner for up to 5 minutes (until the next reconciler run).
+#
+# OWNER: otto-gateway (namespace otto-gateway, this directory)
+#
+# What this means in practice:
+#   - otto-gateway/registration-reconciler.yaml is the ONLY process allowed to call
+#     setWebhook. It runs every 5 minutes and repairs any divergence.
+#   - hermes-agent has TELEGRAM_BOT_TOKEN removed from its ExternalSecret (the rename
+#     to DISABLED_TELEGRAM_BOT_TOKEN was the interim workaround; the key must be
+#     absent from the spec entirely, not renamed).
+#   - jit-broker must never call setWebhook, deleteWebhook, or getUpdates against
+#     the Telegram Bot API. It receives a copy of every inbound POST via the Traefik
+#     mirror in telegram-mirror.yaml and must operate on that copy only.
+#   - otto-golden/httproute.yaml serves GET /healthz only. POST /telegram-webhook is
+#     removed. otto-golden does not receive Telegram messages.
+#   - Any future process wanting Telegram access reads through otto-gateway's internal
+#     HTTP API or subscribes to the NATS otto.ingress subject. It never touches the
+#     Bot API directly.
+#
+# To transfer ownership: update this file, update registration-reconciler.yaml, update
+# otto-golden and hermes-agent ExternalSecrets. Never transfer by race.
+#
+# Enforcement: bin/idp-rules (rule: telegram-single-writer). Verifies:
+#   1. grep -rn "setWebhook\|deleteWebhook" clusters/ returns exactly one hit
+#      (registration-reconciler.yaml).
+#   2. The TELEGRAM_BOT_TOKEN key is absent from hermes-agent's ExternalSecret spec.
+#   3. otto-golden/httproute.yaml contains no /telegram-webhook path.
+#
+# This is a machine-readable declaration used by the rule gate.
+kind: SingletonOwnerDeclaration
+apiVersion: idp.estate/v1
+metadata:
+  name: telegram-bot
+  annotations:
+    idp.estate/singleton: "telegram-bot-token"
+    idp.estate/owner: "otto-gateway"
+    idp.estate/owner-namespace: "otto-gateway"
+    idp.estate/owner-manifest: "platform/otto-gateway/registration-reconciler.yaml"
+    idp.estate/declared: "2026-09-16"
+spec:
+  singleton:
+    name: Telegram Bot
+    description: >
+      The estate's one Telegram bot (@Ottototbot). One webhook URL, one reader,
+      one setWebhook caller. Owner is the registration reconciler in otto-gateway.
+  writer:
+    kustomization: otto-gateway
+    namespace: otto-gateway
+    resource: CronJob/otto-registration-reconciler
+    operation: setWebhook
+  readers:
+    - kustomization: otto-gateway
+      resource: Deployment/otto-gateway
+      description: Receives inbound POSTs at /webhook/telegram via HTTPRoute
+    - kustomization: jit
+      resource: Deployment/jit-broker
+      description: Receives a Traefik mirror copy of inbound Telegram POSTs; never touches Bot API
+  prohibited:
+    - any call to setWebhook outside of CronJob/otto-registration-reconciler
+    - any call to deleteWebhook from any process
+    - any call to getUpdates while a webhook is registered
+    - TELEGRAM_BOT_TOKEN in any ExternalSecret other than otto-gateway-channels
