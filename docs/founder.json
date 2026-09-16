@@ -1,6 +1,15 @@
 {
- "receipts": [],
- "taken": "2026-09-16T02:05Z",
+ "receipts": [
+  {
+   "merged_at": "2026-09-16T04:56:05Z",
+   "number": 3566,
+   "repo": "chidionyema/idp",
+   "title": "feat(pi-agent): zero-config pi extension with 8 token efficiency mechanisms",
+   "url": "https://github.com/chidionyema/idp/pull/3566",
+   "use": "normally - all 8 mechanisms activate automatically:"
+  }
+ ],
+ "taken": "2026-09-16T07:19Z",
  "waiting": [
   {
    "cp": "CP1",
