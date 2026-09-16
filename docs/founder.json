@@ -1,6 +1,14 @@
 {
  "receipts": [
   {
+   "merged_at": "2026-09-16T17:39:29Z",
+   "number": 3625,
+   "repo": "chidionyema/idp",
+   "title": "mac-salvage: workflow_dispatch to commit and push dirty state from the broken-screen Mac",
+   "url": "https://github.com/chidionyema/idp/pull/3625",
+   "use": "probe_only=true first to test reachability without touching a working tree."
+  },
+  {
    "merged_at": "2026-09-16T04:56:05Z",
    "number": 3566,
    "repo": "chidionyema/idp",
@@ -9,7 +17,7 @@
    "use": "normally - all 8 mechanisms activate automatically:"
   }
  ],
- "taken": "2026-09-16T13:13Z",
+ "taken": "2026-09-16T18:01Z",
  "waiting": [
   {
    "cp": "CP1",
