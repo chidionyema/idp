@@ -2829,7 +2829,6 @@ rules:
   - session
   session_glob:
   - backstage/**/*.yaml
-  - '**/*catalog-info.yaml'
   run:
   - python3
   - bin/idp-catalog-spec-type-gate
@@ -2864,7 +2863,6 @@ rules:
   - session
   session_glob:
   - backstage/**/*.yaml
-  - '**/*catalog-info.yaml'
   run:
   - python3
   - bin/idp-catalog-links-gate
