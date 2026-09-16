@@ -29,19 +29,31 @@ GH_APP_LANE = os.getenv("IDP_GH_APP_LANE", "agent-workforce")
 
 
 def mint_gh_token() -> str:
-    """A fresh, short-lived installation token narrowed to the estate's
-    existing `agent-workforce` GitHub App lane (platform/github-app/lanes.json:
+    """A fresh installation token narrowed to the estate's existing
+    `agent-workforce` GitHub App lane (platform/github-app/lanes.json:
     contents:write, pull_requests:write, issues:write, metadata/actions/checks
     read -- it can open and update PRs and push to a branch, and it can
-    never merge, dispatch a workflow, or reach a cluster). This engine does
-    not mint its own App or its own lane: agent-workforce already exists
-    for exactly this identity, and a second one would be the second copy
-    of one credential LAW 54 refuses. `bin/idp-github-app token <lane>`
-    prints nothing but the token, and only when stdout is not a terminal
-    (bin/idp-github-app's own header comment).
+    never merge, dispatch a workflow, or reach a cluster).
 
-    GH_TOKEN, if set, overrides this for local dev -- a developer's own
-    PAT, not the estate's App identity."""
+    In-cluster, GH_TOKEN_FILE points at a Secret populated by external-secrets'
+    own GithubAccessToken generator (platform/idp_agent/k8s/engine-deployment.yaml),
+    the same pattern platform/mcp/external-secret.yaml and
+    platform/hermes-agent/gateway.yaml already use: ESO mints and refreshes the
+    token at the platform layer, on a 10-minute ExternalSecret refreshInterval
+    well inside the token's 60-minute life, with no OCI credential or vault
+    access inside this pod at all. Reading the file fresh on every call (this
+    engine mints per task, not once at boot) means a rotated token is always
+    picked up without needing a Reloader-triggered restart the way a
+    read-once-at-boot consumer like github-mcp does.
+
+    Local dev has two lighter options, in order: GH_TOKEN (a developer's own
+    PAT) or shelling out to `bin/idp-github-app token <lane>` directly (real
+    OCI credentials on a laptop, no cluster needed)."""
+    token_file = os.getenv("GH_TOKEN_FILE")
+    if token_file:
+        with open(token_file) as f:
+            return f.read().strip()
+
     static_token = os.getenv("GH_TOKEN")
     if static_token:
         return static_token
