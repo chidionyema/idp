@@ -1,36 +1,28 @@
 #!/usr/bin/env python3
-"""Claude Code hook: after each agent turn, verify transcript."""
+"""Claude Code hook: verify + token efficiency on each turn."""
 
 import sys
 
 sys.path.insert(0, "/Users/chidionyema/dev/code/idp")
 
 from platform.integration import verify
+from platform.efficiency import (
+    CacheGuardian,
+    TokenKiller,
+    MCPAdapter,
+    TokenBudgetOrchestrator,
+)
+
+# Global state
+cache_guardian = CacheGuardian()
+token_killer = TokenKiller()
+mcp_adapter = MCPAdapter()
+budget_orchestrator = TokenBudgetOrchestrator()
 
 
 def after_agent_turn(agent_result):
-    """
-    Called by Claude Code after agent execution completes.
-
-    agent_result format:
-    {
-        "transcript_id": str,
-        "transcript": {
-            "transcript_id": str,
-            "loop_detected": bool,
-            "circuit_breaker_tripped": bool,
-            "spans": [
-                {
-                    "span_kind": str,
-                    "fault_flags": list or None,
-                    ...
-                }
-            ]
-        },
-        "output": str,
-        "verdict": str
-    }
-    """
+    """Verify transcript + apply token efficiency mechanisms."""
+    # 1. Verification gates
     verdict = verify(agent_result)
 
     if not verdict["passed"]:
@@ -40,7 +32,19 @@ def after_agent_turn(agent_result):
             print(f"  Message: {failure['message']}")
 
         if verdict["halt"]:
-            print("\n❌ HALTING EXECUTION - Fix verification errors before continuing")
+            print("\n❌ HALTING EXECUTION")
             return {"halt": True}
+
+    # 2. Token efficiency metrics
+    cache_stats = cache_guardian.get_cache_stats()
+    killer_stats = token_killer.get_savings_stats()
+    mcp_stats = mcp_adapter.compress_schemas()
+    budget_stats = budget_orchestrator.get_budget_stats()
+
+    print(f"\n📊 Token Efficiency (Turn {verdict['turn']}):")
+    print(f"  Cache hit rate: {cache_stats['hit_rate_pct']:.1f}%")
+    print(f"  Bash compression: {killer_stats['estimated_tokens_saved']} tokens saved")
+    print(f"  MCP reduction: {mcp_stats['reduction_pct']:.1f}%")
+    print(f"  Total spend: {budget_stats['total_spend']} tokens")
 
     return {"halt": False}
