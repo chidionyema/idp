@@ -2,8 +2,9 @@
 """Final integration test: 9-layer stack + 8 mechanisms + N=10 scale + verification gates."""
 
 import sys
+import os
 
-sys.path.insert(0, "/Users/chidionyema/dev/code/idp")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tests.verification.harness import VerificationHarness
 from platform.efficiency import (
