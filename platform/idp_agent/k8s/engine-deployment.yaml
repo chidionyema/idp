@@ -1,0 +1,86 @@
+# The engine fleet: N stateless pods competing for tasks via Redis BLPOP.
+# See docs/specs/orbstack-event-driven-agents.md.
+#
+# No docker.sock, no privileged access: mounting the host's Docker socket
+# is a known container-escape vector, and this cluster's Kyverno policy set
+# already refuses that shape of access (readOnlyRootFilesystem, non-root,
+# no added capabilities -- the same pattern platform/jit/deployment.yaml
+# runs). IDP_SKIP_LOCAL_VACUUM=1 below means the in-cluster engine defers
+# CI validation to GitHub Actions (the same 14 checks that already gate
+# every PR in this repository) instead of trying to run Docker-in-Docker;
+# platform/idp_agent/engine.py's run_orbstack_vacuum documents this in full.
+#
+# GH_TOKEN arrives as a file, not an env var: an env var is printed by
+# every crash dump and `kubectl describe pod`, which is exactly what
+# Kyverno's secrets-not-from-env-vars policy refuses (see
+# platform/jit/deployment.yaml's JIT_SECRETS comment for the same reasoning
+# applied there).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: idp-engine
+  namespace: idp-agent
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: idp-engine
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        # A fine-grained token scoped to contents:write, pull_requests:write,
+        # issues:read on the target repo(s) only -- not a full `repo` scope.
+        GH_TOKEN: "{{ .GH_TOKEN }}"
+  dataFrom:
+    - extract: { key: idp-engine }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idp-engine
+  namespace: idp-agent
+  labels: { app.kubernetes.io/name: idp-engine }
+spec:
+  replicas: 10
+  selector:
+    matchLabels: { app.kubernetes.io/name: idp-engine }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: idp-engine }
+    spec:
+      serviceAccountName: idp-engine
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: engine
+          image: ghcr.io/chidionyema/idp-engine
+          command: [python3, platform/idp_agent/engine.py]
+          env:
+            - { name: REDIS_URL, value: "redis://idp-agent-redis:6379" }
+            - { name: GH_TOKEN_FILE, value: /etc/idp-engine-secrets/GH_TOKEN }
+            - { name: IDP_SKIP_LOCAL_VACUUM, value: "1" }
+            - { name: IDP_CI_COMMAND, value: bin/idp-ci }
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: 1000m, memory: 512Mi }
+          volumeMounts:
+            - { name: secrets, mountPath: /etc/idp-engine-secrets, readOnly: true }
+            - { name: workspace-tmp, mountPath: /tmp }
+      volumes:
+        # 0400, owned by the one uid the container runs as: the kubelet
+        # writes these files and nothing in the pod can rewrite them.
+        - { name: secrets, secret: { secretName: idp-engine, defaultMode: 0400 } }
+        # readOnlyRootFilesystem needs somewhere writable for
+        # tempfile.TemporaryDirectory's ephemeral workspaces.
+        - { name: workspace-tmp, emptyDir: { sizeLimit: 4Gi } }
