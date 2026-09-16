@@ -24,7 +24,23 @@
       "Bash(bash /tmp/final-proof.sh)",
       "Bash(git checkout *)",
       "Bash(git worktree *)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(bin/idp-exec curl *)",
+      "Bash(docker build *)",
+      "Bash(colima start *)",
+      "Bash(chmod +x *)",
+      "Bash(command -v shfmt)",
+      "Bash(shfmt -w deploy.sh)",
+      "Bash(brew install *)",
+      "Bash(docker tag *)",
+      "Bash(k3d cluster *)",
+      "Bash(kubectl cluster-info *)",
+      "Bash(docker push *)",
+      "Bash(kubectl rollout *)",
+      "Bash(kubectl describe *)",
+      "Bash(kubectl port-forward *)",
+      "Bash(curl -s http://localhost:3100/sovereign)",
+      "Bash(curl -s http://localhost:3100/api/proxy/fleetview/sessions)"
     ]
   }
 }
