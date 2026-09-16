@@ -66,6 +66,7 @@ import {
   RiTeamLine,
   RiToolsLine,
   RiUserLine,
+  RiGitGraphLine,
 } from '@remixicon/react';
 import { remix } from './remixIcon';
 import { SidebarLogo } from './SidebarLogo';
@@ -90,6 +91,7 @@ const ReportsIcon = remix(RiFileChartLine);
 const InvestigateIcon = remix(RiSearchEyeLine);
 const PairIcon = remix(RiTeamLine);
 const FleetIcon = remix(RiDashboardLine);
+const SovereignIcon = remix(RiGitGraphLine);
 
 // The Map door (founder 2026-09-07, on an empty graph): the catalog graph draws outward from
 // roots it is given and nothing at all when it is given none, and this link carried none -- the
@@ -118,6 +120,7 @@ export const NAV = [
   { title: 'Reports', to: '/reports', icon: ReportsIcon },
   { title: 'Investigate', to: '/investigate', icon: InvestigateIcon },
   { title: 'Pair', to: '/pair', icon: PairIcon },
+  { title: 'Sovereign', to: '/sovereign', icon: SovereignIcon },
   { title: 'Tools', to: '/tools', icon: BuildIcon },
   { title: 'Fleet', to: '/fleet', icon: FleetIcon },
   { title: 'Create', to: '/create', icon: AddCircleOutlineIcon },

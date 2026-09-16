@@ -21,7 +21,10 @@
       "Bash(awk '{print $9, \"-\", $5}')",
       "Bash(cat)",
       "Bash(chmod +x /tmp/final-proof.sh)",
-      "Bash(bash /tmp/final-proof.sh)"
+      "Bash(bash /tmp/final-proof.sh)",
+      "Bash(git checkout *)",
+      "Bash(git worktree *)",
+      "Bash(git rm *)"
     ]
   }
 }

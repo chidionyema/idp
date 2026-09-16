@@ -362,6 +362,13 @@ catalog:
       rules:
         - allow: [Template]
 
+    # Sovereign: infrastructure topology DAG with drift detection. Exports intent DAG,
+    # runtime capture, and drift reports in JSON, GraphViz, and Mermaid formats.
+    - type: file
+      target: ../../../backstage/catalog-info-sovereign.yaml
+      rules:
+        - allow: [Component, API]
+
     # The guest identity. Load-bearing, not an example: the guest auth provider
     # resolves user:default/guest through the catalog, so removing this file
     # breaks sign-in.
