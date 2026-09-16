@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telegram-sovereign-bot
+  namespace: sovereign-system
+data:
+  bot.py: |
+    #!/usr/bin/env python3
+    import os
+    import json
+    from pathlib import Path
+
+    # Read from mounted artifacts
+    dag_path = Path("/artifacts/intent.dag.json")
+
+    print("🤖 TELEGRAM SOVEREIGN BOT LIVE")
+
+    if dag_path.exists():
+        with open(dag_path) as f:
+            dag = json.load(f)
+        print(f"✅ Topology loaded: {len(dag.get('nodes', []))} nodes")
+        print(f"📊 Verdict: {json.load(open('/artifacts/drift-report.json')).get('verdict', 'UNKNOWN')}")
+        print("📥 Export formats: JSON, GraphViz, Mermaid")
+        print(f"🔐 Content Hash: {dag.get('content_hash', '')[:16]}...")
+    else:
+        print("❌ Artifacts not mounted")
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sovereign-artifacts
+  namespace: sovereign-system
+spec:
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telegram-sovereign-bot
+  namespace: sovereign-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telegram-sovereign-bot
+  template:
+    metadata:
+      labels:
+        app: telegram-sovereign-bot
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: sovereign-snapshotter
+      containers:
+        - name: bot
+          image: python:3.11-slim
+          imagePullPolicy: IfNotPresent
+          command:
+            - python3
+            - /config/bot.py
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          env: []
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - test -f /artifacts/intent.dag.json
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - test -f /artifacts/drift-report.json
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: artifacts
+              mountPath: /artifacts
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: secrets
+              mountPath: /etc/secrets
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: telegram-sovereign-bot
+            defaultMode: 0555
+        - name: artifacts
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: secrets
+          secret:
+            secretName: telegram-sovereign-secrets
+            optional: true
+            defaultMode: 0400

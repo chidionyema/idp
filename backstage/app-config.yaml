@@ -216,6 +216,7 @@ proxy:
     '/fleetview':
       target: 'http://127.0.0.1:18790'
       changeOrigin: true
+      pathRewrite: { '^/fleetview': '' }
       allowedMethods: ['GET', 'POST']
 
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
@@ -361,6 +362,13 @@ catalog:
       target: ../../templates/agent-foundry-space/template.yaml
       rules:
         - allow: [Template]
+
+    # Sovereign: infrastructure topology DAG with drift detection. Exports intent DAG,
+    # runtime capture, and drift reports in JSON, GraphViz, and Mermaid formats.
+    - type: file
+      target: ../../../backstage/catalog-info-sovereign.yaml
+      rules:
+        - allow: [Component, API]
 
     # The guest identity. Load-bearing, not an example: the guest auth provider
     # resolves user:default/guest through the catalog, so removing this file

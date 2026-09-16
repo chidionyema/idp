@@ -30,6 +30,7 @@ import { metricsPlugin } from './modules/metrics';
 // render time and shows prices from the pre-computed plan (plan.json).
 import { featureRegisterModule } from './modules/featureRegister';
 import { customEntityExtensionsPlugin } from '../../../plugins/custom-entity-extensions/src';
+// Sovereign: infrastructure topology DAG with drift detection, accessible at /sovereign
 
 export default createApp({
   features: [
