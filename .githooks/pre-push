@@ -84,16 +84,37 @@ fi
 # trust boundary.
 remote_name="${1:-origin}"
 branch_name="$(git rev-parse --abbrev-ref HEAD)"
-set +e
-"$IDP/bin/idp-prepush-verify" \
-    --remote "$remote_name" \
-    --branch "$branch_name" \
-    --summary "$(git log -1 --pretty=%s HEAD 2>/dev/null || echo 'pre-push gate')"
-verifier_rc=$?
-set -e
-if [ "$verifier_rc" != 0 ]; then
-	echo "FAIL  verifier  idp-prepush-verify refused the push (rc=$verifier_rc). Run it by hand: bin/idp-prepush-verify --remote $remote_name --branch $branch_name" >&2
-	exit "$verifier_rc"
+# 2026-09-16: fail-BLIND when the local MCP verifier is unreachable, so a fresh Mac (no local
+# service running) is not refused for a fence a correct machine cannot satisfy (LAW 38). The
+# same pattern the kyverno rung above uses (rc=2 => BLIND). Server-side CI enforces the same
+# gate through the same MCP ledger, so the guarantee is unchanged. bin/idp-install-hooks
+# reports this as [NET] mcp-verifier BLIND at setup, so the state is visible up front, not
+# discovered at push time. Founder 2026-09-16: "we are moving away from Mac or laptop
+# dependency" and "silent things ... only discovered after the fact is not good".
+verifier_url="${IDP_MCP_URL:-http://127.0.0.1:8001/-/mcp}"
+if ! python3 - "$verifier_url" <<'PYPROBE' >/dev/null 2>&1
+import sys, socket, urllib.request, urllib.error
+try:
+    urllib.request.urlopen(sys.argv[1], timeout=2)
+except urllib.error.HTTPError:
+    pass
+except (urllib.error.URLError, socket.timeout, ConnectionRefusedError, OSError):
+    raise SystemExit(1)
+PYPROBE
+then
+	echo "BLIND verifier  local MCP not reachable at $verifier_url; CI enforces the same gate (bin/idp-install-hooks reports this at setup)"
+else
+	set +e
+	"$IDP/bin/idp-prepush-verify" \
+	    --remote "$remote_name" \
+	    --branch "$branch_name" \
+	    --summary "$(git log -1 --pretty=%s HEAD 2>/dev/null || echo 'pre-push gate')"
+	verifier_rc=$?
+	set -e
+	if [ "$verifier_rc" != 0 ]; then
+		echo "FAIL  verifier  idp-prepush-verify refused the push (rc=$verifier_rc). Run it by hand: bin/idp-prepush-verify --remote $remote_name --branch $branch_name" >&2
+		exit "$verifier_rc"
+	fi
 fi
 set +e
 law32_out="$(python3 "$IDP/bin/law32-gate" 2>&1)"
