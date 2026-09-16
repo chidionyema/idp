@@ -30,9 +30,9 @@ class SpanRetentionLoop(ControlLoop):
         db_path: str = None,
         archive_dir: str = None,
     ):
-        self.db_path = db_path or "/Users/chidionyema/dev/code/idp/state/queue.db"
-        self.archive_dir = (
-            archive_dir or "/Users/chidionyema/dev/code/idp/state/archives"
+        self.db_path = db_path or os.environ.get("QUEUE_DB_PATH", "state/queue.db")
+        self.archive_dir = archive_dir or os.environ.get(
+            "ARCHIVE_DIR", "state/archives"
         )
 
         # Ensure archive dir exists

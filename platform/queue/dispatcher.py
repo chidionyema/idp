@@ -2,8 +2,8 @@ import sqlite3
 import os
 import subprocess
 
-DB_PATH = os.path.expanduser("~/dev/code/idp/state/queue.db")
-WORKTREE_BASE = os.path.expanduser("~/dev/code/idp/.wt-agents")
+DB_PATH = os.environ.get("QUEUE_DB_PATH", "state/queue.db")
+WORKTREE_BASE = os.environ.get("WORKTREE_BASE", ".wt-agents")
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 os.makedirs(WORKTREE_BASE, exist_ok=True)
 
@@ -49,6 +49,7 @@ def claim_task(agent_id: str):
             )
             conn.commit()
 
+            repo_root = os.environ.get("IDP_ROOT", ".")
             subprocess.run(  # noqa: S603
                 [  # noqa: S607
                     "git",
@@ -58,7 +59,7 @@ def claim_task(agent_id: str):
                     "--detach",
                     "HEAD",
                 ],
-                cwd=os.path.expanduser("~/dev/code/idp"),
+                cwd=repo_root,
                 capture_output=True,
             )
 

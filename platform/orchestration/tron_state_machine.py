@@ -30,7 +30,7 @@ class IllegalTransition(Exception):
 
 
 def _get_db_path() -> str:
-    return os.path.expanduser("~/dev/code/idp/state/tron.db")
+    return os.environ.get("TRON_DB_PATH", "state/tron.db")
 
 
 def _init_tron_db() -> None:

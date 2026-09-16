@@ -2,8 +2,9 @@
 """Claude Code hook: verify + 8 token efficiency mechanisms on each turn."""
 
 import sys
+import os
 
-sys.path.insert(0, "/Users/chidionyema/dev/code/idp")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from platform.integration import verify
 from platform.efficiency import (

@@ -9,6 +9,7 @@ from platform.eval.protocol import ControlLoop, GateDecision, LoopHealth
 from platform.eval.judge_drift import JudgeDriftSentinel, GoldSetCalibrator
 from datetime import datetime
 import sqlite3
+import os
 
 
 class JudgeDriftLoop(ControlLoop):
@@ -20,7 +21,7 @@ class JudgeDriftLoop(ControlLoop):
     name = "judge_drift"
 
     def __init__(self, db_path: str = None):
-        self.db_path = db_path or "/Users/chidionyema/dev/code/idp/state/queue.db"
+        self.db_path = db_path or os.environ.get("QUEUE_DB_PATH", "state/queue.db")
         self.sentinel = JudgeDriftSentinel(db_path=self.db_path)
         self.calibrator = GoldSetCalibrator(db_path=self.db_path)
         self.last_run_at = None

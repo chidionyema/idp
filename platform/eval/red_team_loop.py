@@ -8,6 +8,7 @@ Shadow-only in staging. Post-verdict hook scans execution against payloads.
 from platform.eval.protocol import ControlLoop, GateDecision, LoopHealth
 from platform.eval.red_team_payloads import PayloadCatalog
 from datetime import datetime
+import os
 
 
 class RedTeamLoop(ControlLoop):
@@ -21,7 +22,7 @@ class RedTeamLoop(ControlLoop):
     name = "red_team"
 
     def __init__(self, db_path: str = None):
-        self.db_path = db_path or "/Users/chidionyema/dev/code/idp/state/queue.db"
+        self.db_path = db_path or os.environ.get("QUEUE_DB_PATH", "state/queue.db")
         self.catalog = PayloadCatalog(db_path=self.db_path)
         self.last_run_at = None
         self.last_error = None

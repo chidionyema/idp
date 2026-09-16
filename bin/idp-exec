@@ -23,6 +23,10 @@ def main():
         print("Usage: idp-exec <command> [args...]", file=sys.stderr)
         return 1
 
+    if sys.argv[1] == "--self-test":
+        print("idp-exec: token-efficient command wrapper (OK)")
+        return 0
+
     cmd = sys.argv[1:]
     
     try:

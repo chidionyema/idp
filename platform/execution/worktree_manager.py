@@ -20,8 +20,10 @@ class WorktreeManager:
     """
 
     def __init__(self, base_path: str = None, repo_root: str = None):
-        self.base_path = base_path or os.path.expanduser("~/dev/code/idp/.wt-agents")
-        self.repo_root = repo_root or os.path.expanduser("~/dev/code/idp")
+        self.base_path = base_path or os.environ.get("WORKTREE_BASE", ".wt-agents")
+        self.repo_root = repo_root or os.environ.get(
+            "IDP_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
         os.makedirs(self.base_path, exist_ok=True)
 
     def create_worktree(self, task_id: int) -> str:
