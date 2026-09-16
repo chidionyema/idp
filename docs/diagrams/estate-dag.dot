@@ -52,4 +52,6 @@ digraph {
   "oci_vault_secret.superset_db_password" [label="oci_vault_secret\nsuperset_db_password"];
   "random_password.superset_secret_key" [label="random_password\nsuperset_secret_key"];
   "oci_vault_secret.superset_secret_key" [label="oci_vault_secret\nsuperset_secret_key"];
+  "local_file.estate_dag" [label="local_file\nestate_dag"];
+  "local_file.estate_state_snapshot" [label="local_file\nestate_state_snapshot"];
 }
