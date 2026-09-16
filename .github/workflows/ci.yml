@@ -29,6 +29,10 @@ jobs:
   # crew#584 CP-C: the 60 s gate every heavy job below waits for (fast-gate.yml).
   fast-gate:
     uses: ./.github/workflows/fast-gate.yml
+  # Deterministic Verifier: three-stage gauntlet (structural/symbolic/execution) over
+  # the PR diff. Runs in parallel with fast-gate; heavy jobs need both.
+  verifier:
+    uses: ./.github/workflows/verifier.yml
   # 2026-09-04: this job was 9 of the 9.5 minutes a pull request waits, so it was moved off pull
   # requests and onto the merge queue and the push to main -- a placement change, with `if:` as
   # the switch. That trade is over, and both halves of it were wrong.
