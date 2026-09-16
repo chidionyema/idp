@@ -656,6 +656,19 @@ if python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$
 else say "FAIL  grade    estate-showcase did not render, or --check did not discriminate"; fail=1; fi
 
 
+# crew#584 CP2: this gate mirrors what CI runs, so a laptop that has not wired core.hooksPath at
+# .githooks is one where the pre-push hook does not fire and the local gate above never blocks a
+# push -- the exact class of failure that cost idp#3627 three CI cycles on 2026-09-16. Loud
+# banner, not a refusal (a fence a correct machine cannot satisfy is an outage, LAW 38): the
+# founder always sees whether his clone will actually refuse a bad push.
+_hp="$(git -C "$IDP" config --local core.hooksPath 2>/dev/null || true)"
+if [ "$_hp" != ".githooks" ]; then
+  echo ""
+  echo "  WARN  hooks   core.hooksPath is ${_hp:-unset} -- .githooks/pre-push will NOT run on push"
+  echo "                run: bin/idp-install-hooks (idempotent) to close the gap"
+  echo ""
+fi
+
 timing_summary
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"
