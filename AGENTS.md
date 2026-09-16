@@ -42,6 +42,17 @@ every entity reference in it must resolve to an entity something defines
 Adding a rule: add a row to `rules.yaml`, add both fixtures, run `bin/idp-rules render-agents-md`
 and `bin/idp-ci`. No new rung, no new gate script.
 
+## Token Efficiency: idp-exec wrapper (2026-09-15)
+
+**Mandate: You are forbidden from running raw shell commands. You must prefix every command with `bin/idp-exec` to preserve token efficiency.**
+
+Why: Raw command output can exceed 50 lines and bloat the context window. `bin/idp-exec` automatically:
+- Clamps output to first 25 + last 25 lines if it exceeds 50 lines
+- Saves full output to `~/.pi/agent/state/last_exec.log` for later inspection
+- Returns the exact exit code of the underlying command
+
+Usage: `bin/idp-exec cat large_file.log` instead of `cat large_file.log`
+
 ## The estate twin: ask the graph, not the cluster (2026-09-12)
 
 Ask before you touch the cluster: `bin/estate-twin-runtime --once --code|--dead|--state|--history <node>|--blast-radius <n>`.

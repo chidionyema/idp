@@ -9,6 +9,14 @@ extend-exclude = ["backstage", "node_modules", ".venv", ".claude"]
 [tool.ruff.lint]
 select = ["E9", "F63", "F7", "F82"]
 
+[tool.ruff.lint.per-file-ignores]
+# fast-gate's python-strict hook runs `ruff check E9,F,B,S` on top of this file's own
+# narrower select (idp#3564). S101 (bare assert) is the standard pytest assertion idiom,
+# not a production input-validation smell -- bandit's own docs recommend this exact
+# exemption for test code. S311 (random not for crypto) fires on tests/pareval's use of
+# random.uniform() to generate statistical test noise, never a credential or token.
+"tests/**/*.py" = ["S101", "S311"]
+
 [tool.pyright]
 include = ["tests"]
 pythonVersion = "3.12"

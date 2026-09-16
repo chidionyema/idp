@@ -40,3 +40,11 @@ PyYAML>=6.0
 redis>=5.0
 prometheus_client>=0.19.0
 requests>=2.31
+# platform/eval/judge_drift.py's Jensen-Shannon histogram binning and
+# platform/eval/pareval_layer.py's bootstrap confidence interval (idp#3564) both need real
+# array math, not a hand-rolled substitute. Undeclared, the same class of defect
+# cryptography/z3-solver/PyYAML/redis above already caught: bdd-suites (tests) has no
+# requirements file that names it, so tests/judge/*, tests/pareval/* and
+# tests/integration/test_claude_code_hook.py fail collection with ModuleNotFoundError
+# rather than actually exercising the judge/pareval code they're named for.
+numpy>=1.26

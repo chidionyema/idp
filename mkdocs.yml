@@ -321,6 +321,8 @@ nav:
       - Estate DAG generator: how-to/onboarding/estate-dag-gen.md
       - Otto (the founder's agent): how-to/onboarding/otto.md
       - Hermes (Cursor WORK worker): how-to/onboarding/hermes.md
+      - Pi token efficiency: how-to/onboarding/pi-token-efficiency.md
+      - Estate DAG generator: how-to/onboarding/estate-dag-gen.md
       - Migration gate: how-to/onboarding/migration.md
       - Multiarch gate: how-to/onboarding/multiarch.md
       - Rules registry: how-to/onboarding/idp-rules.md
