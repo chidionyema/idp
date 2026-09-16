@@ -42,6 +42,18 @@ every entity reference in it must resolve to an entity something defines
 Adding a rule: add a row to `rules.yaml`, add both fixtures, run `bin/idp-rules render-agents-md`
 and `bin/idp-ci`. No new rung, no new gate script.
 
+## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
+
+**Mandate: On any fresh checkout, run `bin/idp-install-hooks` before your first commit.**
+
+The estate's `.githooks/pre-push` is the hook the founder shipped (crew#584 CP2) to refuse a
+push whose session-plane rules would fail in CI seven minutes later. It only fires when
+`core.hooksPath` names `.githooks`, which a fresh clone does not do. On 2026-09-16 that gap cost
+three CI cycles on idp#3627 to catch two static defects (portal-buttons drift, LAW 46 hardcode)
+that this hook would have refused in seconds. Running `bin/idp-install-hooks` is idempotent and
+takes under a second; `bin/idp-ci` prints a WARN banner at the tail of every run on a clone that
+has not wired it, so the missing setup is impossible to miss.
+
 ## Token Efficiency: idp-exec wrapper (2026-09-15)
 
 **Mandate: You are forbidden from running raw shell commands. You must prefix every command with `bin/idp-exec` to preserve token efficiency.**

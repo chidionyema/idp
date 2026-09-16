@@ -52,7 +52,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/aevum-evidence/bad/chain.json
     must_pass: tests/fixtures/aevum-evidence/good/chain.json
-  live_elsewhere: 'bin/idp-ci:662 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
+  live_elsewhere: 'bin/idp-ci:675 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
   cases:
   - expect: refuse
     args:
