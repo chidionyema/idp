@@ -29,6 +29,34 @@ jobs:
   # crew#584 CP-C: the 60 s gate every heavy job below waits for (fast-gate.yml).
   fast-gate:
     uses: ./.github/workflows/fast-gate.yml
+
+  # 2026-09-16: the emergency PR that added mac-salvage.yml paid the full ~15 min of every heavy
+  # gate below to change ten lines of a workflow file. A workflow-only or button-only change cannot
+  # affect what bdd, offline-gate, security-scan, portal-app or messaging-demo measure, so the
+  # gates opt out of it -- a job with a false `if:` posts a `skipped` conclusion, and GitHub's
+  # required-check rule treats skipped as passing. Fast-gate still runs on every PR (it grades the
+  # workflow file itself; that is its whole job). The `paths` list names the files this cutoff
+  # covers, so a change outside them keeps running every gate.
+  changes:
+    needs: fast-gate
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.f.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: f
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          # `code` is true when any file OUTSIDE the workflow/button/docs quiet zone changed.
+          # dorny/paths-filter treats a negated pattern as "exclude"; the first line matches every
+          # file, and the rest exclude the quiet zone.
+          filters: |
+            code:
+              - '**'
+              - '!.github/workflows/**'
+              - '!backstage/templates/founder-actions/**'
+              - '!docs/**'
+              - '!**/*.md'
   # 2026-09-04: this job was 9 of the 9.5 minutes a pull request waits, so it was moved off pull
   # requests and onto the merge queue and the push to main -- a placement change, with `if:` as
   # the switch. That trade is over, and both halves of it were wrong.
@@ -49,7 +77,8 @@ jobs:
   # So it runs on the pull request, where it can still refuse, and on the push to main, where the
   # empty IDP_CI_BASE grades every directory rather than only the diff. Both, not either.
   offline-gate:
-    needs: fast-gate
+    needs: [fast-gate, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -114,14 +143,16 @@ jobs:
   # founder machine; this job only installs its tools. Pinned by checksum, the
   # way conftest above is pinned by version (bin/actions-pinned covers uses:).
   security-scan:
-    needs: fast-gate
+    needs: [fast-gate, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/security-scan   # the steps every active estate repo runs
 
   bdd-suites:
-    needs: fast-gate
+    needs: [fast-gate, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # crew#584, 2026-08-28: run 33203670180 measured this job at 2m13s, of which the acceptance
     # suite was 54 s and the root pytest suite 57 s -- back to back on one runner. GitHub's own
@@ -251,7 +282,8 @@ jobs:
   # runner-second; the matrix underneath can change shape -- a third suite, a rename -- without
   # anyone touching the repository ruleset, which is the coupling that caused the stall.
   messaging-demo:
-    needs: fast-gate
+    needs: [fast-gate, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # crew#639 CP9, founder 2026-08-30: the messaging demos run on every push, both of them, against
     # an embedded nats-server (the chart's version) and an embedded Postgres. No cluster, no Docker:
@@ -315,7 +347,8 @@ jobs:
   # that runs it. Only on changes under backstage/: the install is the slow part and nothing else
   # in the repository can move these tests.
   portal-app:
-    needs: fast-gate
+    needs: [fast-gate, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

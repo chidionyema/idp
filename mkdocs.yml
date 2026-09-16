@@ -459,6 +459,12 @@ nav:
       # rules.yaml this session with no nav row, so test_gate_demo's nav case went red
       # again: "generated pages not in the nav: ['dod-v3-verified-not-asserted']".
       - dod-v3-verified-not-asserted: gates/dod-v3-verified-not-asserted.md
+      # 2026-09-16: same mistake a fifth and sixth time. catalog-spec-type and
+      # catalog-links-absolute landed in rules.yaml with no nav rows, so
+      # test_gate_demo's nav case went red: "generated pages not in the nav:
+      # ['catalog-spec-type', 'catalog-links-absolute']".
+      - catalog-spec-type: gates/catalog-spec-type.md
+      - catalog-links-absolute: gates/catalog-links-absolute.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
