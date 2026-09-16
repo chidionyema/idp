@@ -130,7 +130,7 @@ def test_handle_worker_feature_dead_letters_on_harness_halt_without_pushing_to_g
 
     @contextmanager
     def _fake_workspace(repo_url, branch):
-        yield str(tmp_path)
+        yield str(tmp_path), "fake-installation-token"
 
     monkeypatch.setattr(engine_module, "run_worker_agent", _fake_run_worker_agent)
     monkeypatch.setattr(engine_module, "ephemeral_workspace", _fake_workspace)
@@ -152,3 +152,41 @@ def test_skip_local_vacuum_defers_to_ci(engine_module, monkeypatch):
     passed, logs = engine_module.run_orbstack_vacuum("/tmp/whatever")  # noqa: S108
     assert passed is True
     assert "GitHub Actions" in logs
+
+
+def test_mint_gh_token_local_dev_override(engine_module, monkeypatch):
+    """A developer's own GH_TOKEN, when set, overrides the App lane mint --
+    no bin/idp-github-app call, no network."""
+    monkeypatch.setenv("GH_TOKEN", "ghp_local_dev_token")
+    assert engine_module.mint_gh_token() == "ghp_local_dev_token"
+
+
+def test_mint_gh_token_calls_the_agent_workforce_lane(engine_module, monkeypatch):
+    """With no local override, the token comes from the estate's existing
+    agent-workforce GitHub App lane, not a new lane or a static secret."""
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    calls = []
+
+    class _FakeResult:
+        stdout = "ghs_minted_installation_token\n"
+
+    def _fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return _FakeResult()
+
+    monkeypatch.setattr(engine_module.subprocess, "run", _fake_run)
+
+    token = engine_module.mint_gh_token()
+
+    assert token == "ghs_minted_installation_token"  # noqa: S105 -- test fixture, not a real token
+    assert calls[0][-2:] == ["token", "agent-workforce"]
+    assert calls[0][0].endswith("bin/idp-github-app")
+
+
+def test_gh_env_carries_the_minted_token_not_ambient_auth(engine_module):
+    """Every `gh` CLI subprocess call in a task handler passes env=_gh_env(token)
+    -- a fresh pod has no ambient `gh auth` state to fall back on."""
+    env = engine_module._gh_env("ghs_minted_token")
+    assert env["GH_TOKEN"] == "ghs_minted_token"  # noqa: S105 -- test fixture, not a real token
+    # The rest of the parent environment (PATH, etc.) is preserved, not replaced.
+    assert env["PATH"] == os.environ["PATH"]
