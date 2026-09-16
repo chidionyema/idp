@@ -25,6 +25,7 @@ resources:
 - hermes-agent.yaml
 - hindsight.yaml
 - identity.yaml
+- idp-agent.yaml
 - infra-crew.yaml
 - keda.yaml
 - kyverno.yaml
