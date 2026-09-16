@@ -7,8 +7,9 @@
 # Two knobs:
 #   probe_only=true  → only run `hostname && whoami && uptime && date -u` on the Mac; do not
 #                      touch any repo. Use this first to confirm the Mac is reachable at all.
-#   target_dirs      → the checkouts to salvage, space-separated. Default follows the
-#                      founder-mac skill's example paths (~/dev/code/idp, ~/dev/code/hermes-v2).
+#   target_dirs      → the checkouts to salvage, space-separated. Blank asks the Mac to
+#                      `find $HOME -maxdepth 6 -type d -name .git` and use whatever it returns
+#                      (LAW 46: no checkout path is named in this file).
 #
 # Exit shape mirrors other workflows: a red probe step is the Mac being asleep/off-tailnet/sshd-off
 # or the vault key not synced; the run summary carries the exact mac-run stderr so the founder can
@@ -22,8 +23,8 @@ on:
         type: boolean
         default: false
       target_dirs:
-        description: "Space-separated repo dirs on the Mac to salvage"
-        default: "~/dev/code/idp ~/dev/code/hermes-v2"
+        description: "Space-separated repo dirs on the Mac to salvage (leave blank to discover every .git under HOME)"
+        default: ""
       branch_prefix:
         description: "Branch name prefix for the WIP commit"
         default: "salvage"
@@ -153,6 +154,14 @@ jobs:
           REMOTE
           # Strip the 10-space indent YAML forced us to keep so the file stays valid bash.
           sed -i 's/^          //' "$script"
+          if [ -z "${TARGET_DIRS// }" ]; then
+            echo "no target_dirs given; asking the Mac for every git checkout under HOME"
+            TARGET_DIRS=$(kubectl -n hermes-agent exec deploy/hermes-agent-gateway -- \
+              mac-run 'find "$HOME" -maxdepth 6 -type d -name .git 2>/dev/null | sed "s#/\.git\$##" | sort -u' 2>&1 \
+              | grep -v "^mac-run:" || true)
+            echo "discovered:"
+            printf '  %s\n' $TARGET_DIRS
+          fi
           overall=0
           logf="$RUNNER_TEMP/salvage-$stamp.log"
           : > "$logf"

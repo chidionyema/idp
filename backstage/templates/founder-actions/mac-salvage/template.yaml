@@ -19,9 +19,10 @@ spec:
         type: boolean
         default: false
       target_dirs:
-        title: Space-separated repo dirs on the Mac to salvage
+        title: Space-separated repo dirs on the Mac to salvage (leave blank to discover every .git under
+          HOME)
         type: string
-        default: ~/dev/code/idp ~/dev/code/hermes-v2
+        default: ''
       branch_prefix:
         title: Branch name prefix for the WIP commit
         type: string
