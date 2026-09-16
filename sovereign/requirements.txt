@@ -48,3 +48,21 @@ requests>=2.31
 # tests/integration/test_claude_code_hook.py fail collection with ModuleNotFoundError
 # rather than actually exercising the judge/pareval code they're named for.
 numpy>=1.26
+# tests/idp_agent/test_gateway.py imports fastapi.testclient to exercise the real
+# platform/idp_agent/gateway.py FastAPI app (idp#3599). Undeclared, same class of defect
+# as the numpy/redis rows above: bdd-suites (tests) has no requirements file that names
+# it, so the whole file fails collection with ModuleNotFoundError rather than exercising
+# the real webhook signature verification and event-normalization it's named for.
+# python-multipart is FastAPI's own runtime dependency for form parsing (request.form());
+# TestClient constructs the app, which imports it whether or not a test posts a form.
+fastapi>=0.141.0
+python-multipart>=0.0.18
+# platform/idp_agent/gateway.py imports uvicorn unconditionally at module level
+# (its __main__ block calls uvicorn.run), so importing the module at all -- which
+# test_gateway.py does to get at verify_github_signature and the FastAPI app --
+# needs it present even though no test here actually starts a server.
+uvicorn>=0.30.6
+# starlette.testclient (what fastapi.testclient.TestClient wraps) requires httpx2 at
+# import time now, not the older httpx -- installing it here, not as a fastapi extra,
+# since fastapi does not declare it as a hard dependency (it's a test-time need only).
+httpx2

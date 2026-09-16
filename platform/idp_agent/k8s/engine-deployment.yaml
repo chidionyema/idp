@@ -1,0 +1,73 @@
+# The engine fleet: N stateless pods competing for tasks via Redis BLPOP.
+# See docs/specs/orbstack-event-driven-agents.md.
+#
+# No docker.sock, no privileged access: mounting the host's Docker socket
+# is a known container-escape vector, and this cluster's Kyverno policy set
+# already refuses that shape of access (readOnlyRootFilesystem, non-root,
+# no added capabilities -- the same pattern platform/jit/deployment.yaml
+# runs). IDP_SKIP_LOCAL_VACUUM=1 below means the in-cluster engine defers
+# CI validation to GitHub Actions (the same 14 checks that already gate
+# every PR in this repository) instead of trying to run Docker-in-Docker;
+# platform/idp_agent/engine.py's run_orbstack_vacuum documents this in full.
+#
+# No GH_TOKEN secret here at all: engine.py's mint_gh_token() calls
+# `bin/idp-github-app token agent-workforce`, which mints a fresh,
+# short-lived installation token per task (contents:write,
+# pull_requests:write, issues:write -- can open/update PRs and push to a
+# branch, can never merge, dispatch a workflow, or reach a cluster) by
+# reading the App's own credentials via `bin/idp-cloud secret get
+# github-app`, the same door every other in-cluster consumer of the App
+# uses. Reusing the estate's existing `agent-workforce` lane rather than a
+# new one or a pasted PAT means no static, long-lived GitHub credential
+# exists for this workload to leak in the first place (LAW 54: no fresh
+# key while one exists).
+#
+# TODO before real deploy: confirm this ServiceAccount carries whatever
+# OCI workload-identity binding `bin/idp-cloud secret get` needs in-cluster
+# -- this manifest does not yet declare it, since the exact binding this
+# cluster uses for other in-pod `bin/idp-cloud` callers was not resolved
+# from the code alone. See docs/specs/orbstack-event-driven-agents.md
+# section 12.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idp-engine
+  namespace: idp-agent
+  labels: { app.kubernetes.io/name: idp-engine }
+spec:
+  replicas: 10
+  selector:
+    matchLabels: { app.kubernetes.io/name: idp-engine }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: idp-engine }
+    spec:
+      serviceAccountName: idp-engine
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: engine
+          image: ghcr.io/chidionyema/idp-engine
+          command: [python3, platform/idp_agent/engine.py]
+          env:
+            - { name: REDIS_URL, value: "redis://idp-agent-redis:6379" }
+            - { name: IDP_SKIP_LOCAL_VACUUM, value: "1" }
+            - { name: IDP_CI_COMMAND, value: bin/idp-ci }
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: 1000m, memory: 512Mi }
+          volumeMounts:
+            - { name: workspace-tmp, mountPath: /tmp }
+      volumes:
+        # readOnlyRootFilesystem needs somewhere writable for
+        # tempfile.TemporaryDirectory's ephemeral workspaces.
+        - { name: workspace-tmp, emptyDir: { sizeLimit: 4Gi } }
