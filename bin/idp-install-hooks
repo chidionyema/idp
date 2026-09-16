@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Point this clone's git at .githooks so pre-commit and pre-push actually fire.
+#
+# The estate's local gates (crew#584 CP2, .githooks/pre-push) refuse a push whose
+# session-plane rules would refuse it in CI 7 minutes later. But `.githooks/` is
+# only consulted when `core.hooksPath` names it -- a fresh clone points at
+# `.git/hooks/`, so the file the founder shipped for exactly this reason never
+# runs. On 2026-09-16 that gap cost three CI cycles on idp#3627 to catch two
+# defects (portal-buttons drift and a LAW 46 hardcode) that this hook would have
+# refused in seconds.
+#
+# Idempotent. Safe to run on every checkout. Fails loud if the hook script it
+# expects is absent (a clone with `.githooks/` but no pre-push is a broken tree,
+# not a working one).
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$IDP"
+[ -x "$IDP/.githooks/pre-push" ] || { echo "FAIL .githooks/pre-push is not executable or absent -- fix the tree, do not paper over"; exit 1; }
+cur="$(git config --local core.hooksPath 2>/dev/null || true)"
+if [ "$cur" = ".githooks" ]; then
+  echo "ok    hooks   core.hooksPath already .githooks"
+  exit 0
+fi
+git config --local core.hooksPath .githooks
+echo "ok    hooks   core.hooksPath set to .githooks (was: ${cur:-unset})"
