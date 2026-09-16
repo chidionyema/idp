@@ -31,7 +31,6 @@ import { metricsPlugin } from './modules/metrics';
 import { featureRegisterModule } from './modules/featureRegister';
 import { customEntityExtensionsPlugin } from '../../../plugins/custom-entity-extensions/src';
 // Sovereign: infrastructure topology DAG with drift detection, accessible at /sovereign
-import { sovereignModule } from './modules/sovereign';
 
 export default createApp({
   features: [
@@ -54,6 +53,5 @@ export default createApp({
     metricsPlugin,
     featureRegisterModule,
     customEntityExtensionsPlugin,
-    sovereignModule,
   ],
 });

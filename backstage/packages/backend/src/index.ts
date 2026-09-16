@@ -87,7 +87,5 @@ backend.add(import('@backstage/plugin-signals-backend'));
 // mcp actions plugin
 backend.add(import('@backstage/plugin-mcp-actions-backend'));
 
-// sovereign topology plugin: DAG generation with drift detection
-backend.add(import('./plugins/sovereign'));
 
 backend.start();
