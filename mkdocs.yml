@@ -201,6 +201,8 @@ nav:
       - Hermes (Cursor WORK worker): tutorials/demo/hermes.md
       - Router image lanes: tutorials/demo/llm-images.md
       - KINI: tutorials/demo/kini.md
+      - Pi token efficiency: tutorials/demo/pi-token-efficiency.md
+      - Estate DAG generator: tutorials/demo/estate-dag-gen.md
       - Migration gate: tutorials/demo/migration.md
       - Multiarch gate: tutorials/demo/multiarch.md
       - Rules registry: tutorials/demo/idp-rules.md
@@ -315,6 +317,8 @@ nav:
       - Prose-pin gate: how-to/onboarding/test-prose-gate.md
       - Router image lanes: how-to/onboarding/llm-images.md
       - KINI: how-to/onboarding/kini.md
+      - Pi token efficiency: how-to/onboarding/pi-token-efficiency.md
+      - Estate DAG generator: how-to/onboarding/estate-dag-gen.md
       - Otto (the founder's agent): how-to/onboarding/otto.md
       - Hermes (Cursor WORK worker): how-to/onboarding/hermes.md
       - Migration gate: how-to/onboarding/migration.md
