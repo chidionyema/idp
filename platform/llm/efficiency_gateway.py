@@ -38,6 +38,7 @@ except ModuleNotFoundError:
         async def async_pre_call_hook(self, *a, **k):
             raise NotImplementedError
 
+
 CHARS_PER_TOKEN = 4
 MAX_TOOL_DESC_CHARS = int(os.environ.get("ESTATE_MAX_TOOL_DESC_CHARS", "400"))
 MAX_HISTORY_MSGS = int(os.environ.get("ESTATE_MAX_HISTORY_MSGS", "60"))
@@ -91,8 +92,11 @@ class EstateEfficiencyGateway(CustomLogger):
                 self._cache_hits += 1
             else:
                 self._cache_misses += 1
-                log.warning("[1-CacheGuardian] System prompt drifted — prefix cache MISS (was %s, now %s)",
-                            self._golden_hash[:8], h[:8])
+                log.warning(
+                    "[1-CacheGuardian] System prompt drifted — prefix cache MISS (was %s, now %s)",
+                    self._golden_hash[:8],
+                    h[:8],
+                )
         return messages
 
     # ---------------------------------------------------------------------- [2]
@@ -147,8 +151,12 @@ class EstateEfficiencyGateway(CustomLogger):
         )
         est = chars // CHARS_PER_TOKEN
         self._cumulative_tokens += est
-        log.debug("[4-BudgetOrchestrator] call=%d est=%d cumulative=%d",
-                  self._calls, est, self._cumulative_tokens)
+        log.debug(
+            "[4-BudgetOrchestrator] call=%d est=%d cumulative=%d",
+            self._calls,
+            est,
+            self._cumulative_tokens,
+        )
         return data
 
     # ---------------------------------------------------------------------- [5]
@@ -164,9 +172,15 @@ class EstateEfficiencyGateway(CustomLogger):
             h = hashlib.sha256(content.encode()).hexdigest()[:16]
             handle = f"#OBS_{h}"
             if h in self._obs_handles:
-                msg["content"] = f"[duplicate observation — see earlier result: {handle}]"
+                msg["content"] = (
+                    f"[duplicate observation — see earlier result: {handle}]"
+                )
                 self._obs_hits += 1
-                log.info("[5-SoLPi] Replaced %d-char observation with handle %s", len(content), handle)
+                log.info(
+                    "[5-SoLPi] Replaced %d-char observation with handle %s",
+                    len(content),
+                    handle,
+                )
             else:
                 self._obs_handles[h] = True
         return messages
@@ -184,7 +198,9 @@ class EstateEfficiencyGateway(CustomLogger):
                 result.append(msg)
                 continue
             if msg.get("role") == "tool":
-                key = str(msg.get("tool_call_id", "")) + str(msg.get("content", ""))[:80]
+                key = (
+                    str(msg.get("tool_call_id", "")) + str(msg.get("content", ""))[:80]
+                )
                 if key in seen:
                     self._pruned_duplicates += 1
                     log.debug("[6-DynamicPruning] Pruned duplicate tool_result")
@@ -199,15 +215,25 @@ class EstateEfficiencyGateway(CustomLogger):
         """Bound conversation history: drop oldest non-system messages beyond MAX_HISTORY_MSGS."""
         if len(messages) <= MAX_HISTORY_MSGS:
             return messages
-        system = [m for m in messages if isinstance(m, dict) and m.get("role") == "system"]
-        rest = [m for m in messages if not (isinstance(m, dict) and m.get("role") == "system")]
+        system = [
+            m for m in messages if isinstance(m, dict) and m.get("role") == "system"
+        ]
+        rest = [
+            m
+            for m in messages
+            if not (isinstance(m, dict) and m.get("role") == "system")
+        ]
         keep = MAX_HISTORY_MSGS - len(system)
         if len(rest) > keep:
             dropped = len(rest) - keep
             rest = rest[dropped:]
             self._compactions += 1
-            log.info("[7-CompactionManager] Dropped %d messages, kept %d (+ %d system)",
-                     dropped, len(rest), len(system))
+            log.info(
+                "[7-CompactionManager] Dropped %d messages, kept %d (+ %d system)",
+                dropped,
+                len(rest),
+                len(system),
+            )
         return system + rest
 
     # ---------------------------------------------------------------------- [8]
@@ -227,7 +253,9 @@ class EstateEfficiencyGateway(CustomLogger):
                 continue
             msg["content"] = f"[GISTED:{len(content)}ch] {content[:120]}…"
             self._gisted += 1
-            log.debug("[8-GistingSimulator] Gisted assistant message (%d chars)", len(content))
+            log.debug(
+                "[8-GistingSimulator] Gisted assistant message (%d chars)", len(content)
+            )
         return messages
 
     # ---------------------------------------------------------------------- hook
@@ -243,13 +271,13 @@ class EstateEfficiencyGateway(CustomLogger):
         msgs = list(data.get("messages") or [])
         tools = list(data.get("tools") or [])
 
-        msgs = self._cache_guardian(msgs)       # [1]
-        msgs = self._sol_pi(msgs)               # [5] dedup before other pruning
-        msgs = self._dynamic_pruning(msgs)      # [6]
-        msgs = self._compaction_manager(msgs)   # [7]
-        msgs = self._gisting(msgs)              # [8]
-        msgs = self._token_killer(msgs)         # [2]
-        tools = self._mcp_adapter(tools)        # [3]
+        msgs = self._cache_guardian(msgs)  # [1]
+        msgs = self._sol_pi(msgs)  # [5] dedup before other pruning
+        msgs = self._dynamic_pruning(msgs)  # [6]
+        msgs = self._compaction_manager(msgs)  # [7]
+        msgs = self._gisting(msgs)  # [8]
+        msgs = self._token_killer(msgs)  # [2]
+        tools = self._mcp_adapter(tools)  # [3]
         data = self._budget_orchestrator(data)  # [4] — always last (reads final state)
 
         data["messages"] = msgs
@@ -259,10 +287,15 @@ class EstateEfficiencyGateway(CustomLogger):
         log.info(
             "[EfficiencyGateway] [1]cache=%d/%d [2]tool_lines_saved=%d [3]schema_chars=%d "
             "[4]cumulative_tokens=%d [5]obs_hits=%d [6]pruned=%d [7]compactions=%d [8]gisted=%d",
-            self._cache_hits, self._cache_hits + self._cache_misses,
-            self._tool_line_compressions, self._schema_chars_saved,
-            self._cumulative_tokens, self._obs_hits,
-            self._pruned_duplicates, self._compactions, self._gisted,
+            self._cache_hits,
+            self._cache_hits + self._cache_misses,
+            self._tool_line_compressions,
+            self._schema_chars_saved,
+            self._cumulative_tokens,
+            self._obs_hits,
+            self._pruned_duplicates,
+            self._compactions,
+            self._gisted,
         )
         return data
 

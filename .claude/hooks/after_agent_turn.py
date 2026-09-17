@@ -84,12 +84,17 @@ def _measure_transcript(transcript_path: str, state: dict) -> dict:
             usage = entry.get("usage") or {}
             if usage:
                 state["total_input_tokens"] += int(usage.get("input_tokens", 0))
-                state["total_cache_read"] += int(usage.get("cache_read_input_tokens", 0))
+                state["total_cache_read"] += int(
+                    usage.get("cache_read_input_tokens", 0)
+                )
             if etype == "system" and "compacted" in str(entry).lower():
                 state["compactions"] += 1
             if etype in ("tool_result", "error"):
                 content = str(entry.get("content", "") or entry.get("error", ""))
-                if "estate's ceiling" in content or "Refused before it was sent" in content:
+                if (
+                    "estate's ceiling" in content
+                    or "Refused before it was sent" in content
+                ):
                     state["proxy_refused"] += 1
     except Exception:
         pass
@@ -100,23 +105,29 @@ def _format_report(state: dict, session_id: str) -> str:
     bash = state["bash_calls"]
     idp_exec = state["idp_exec_calls"]
     raw_bash = bash - idp_exec
-    compliance = "PASS" if raw_bash == 0 else f"FAIL — {raw_bash} raw Bash call(s) (use bin/idp-exec)"
+    compliance = (
+        "PASS"
+        if raw_bash == 0
+        else f"FAIL — {raw_bash} raw Bash call(s) (use bin/idp-exec)"
+    )
     total_in = state["total_input_tokens"]
     total_cached = state["total_cache_read"]
     denom = total_in + total_cached
     cache_pct = round(100 * total_cached / denom, 1) if denom > 0 else 0.0
     refused = state["proxy_refused"]
-    return "\n".join([
-        f"[token-efficiency] session={session_id[-12:]} turn={state['turns']}",
-        "  PROXY (model-agnostic, all 9 vendors):",
-        f"    [ceiling] 128K/call hard limit | {refused} refused this session",
-        "    [gateway] all 8 mechanisms active in efficiency_gateway.py",
-        "  CLAUDE CODE (this session):",
-        f"    [3-compliance] bash_calls={bash} idp_exec={idp_exec} raw={raw_bash} -> {compliance}",
-        f"    [1-cache]      hit_rate={cache_pct}% ({total_cached:,} cached / {total_in:,} fresh)",
-        f"    [7-compaction] {state['compactions']} auto-compactions",
-        f"    [mcp]          {state['mcp_calls']} MCP calls",
-    ])
+    return "\n".join(
+        [
+            f"[token-efficiency] session={session_id[-12:]} turn={state['turns']}",
+            "  PROXY (model-agnostic, all 9 vendors):",
+            f"    [ceiling] 128K/call hard limit | {refused} refused this session",
+            "    [gateway] all 8 mechanisms active in efficiency_gateway.py",
+            "  CLAUDE CODE (this session):",
+            f"    [3-compliance] bash_calls={bash} idp_exec={idp_exec} raw={raw_bash} -> {compliance}",
+            f"    [1-cache]      hit_rate={cache_pct}% ({total_cached:,} cached / {total_in:,} fresh)",
+            f"    [7-compaction] {state['compactions']} auto-compactions",
+            f"    [mcp]          {state['mcp_calls']} MCP calls",
+        ]
+    )
 
 
 def main() -> None:

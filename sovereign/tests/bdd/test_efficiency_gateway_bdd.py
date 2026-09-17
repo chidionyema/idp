@@ -35,14 +35,18 @@ def _load():
 def _run(gw, data):
     class _Key:
         api_key = "sk-bdd-test"
+
     return asyncio.run(
-        gw.async_pre_call_hook(user_api_key_dict=_Key(), cache=None, data=data, call_type="completion")
+        gw.async_pre_call_hook(
+            user_api_key_dict=_Key(), cache=None, data=data, call_type="completion"
+        )
     )
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def state():
@@ -61,6 +65,7 @@ def _gateway(state):
 # ---------------------------------------------------------------------------
 # [1] CacheGuardian
 # ---------------------------------------------------------------------------
+
 
 @given(parsers.parse('a request with system prompt "{prompt}"'))
 def _system_prompt(state, prompt):
@@ -101,9 +106,12 @@ def _check_misses(state, misses):
 # [2] TokenKiller
 # ---------------------------------------------------------------------------
 
+
 @given(parsers.parse('a tool_result message with content "{content}"'))
 def _tool_result_content(state, content):
-    state["data"]["messages"] = [{"role": "tool", "content": content.replace("\\n", "\n"), "tool_call_id": "t1"}]
+    state["data"]["messages"] = [
+        {"role": "tool", "content": content.replace("\\n", "\n"), "tool_call_id": "t1"}
+    ]
 
 
 @when("the hook runs")
@@ -132,6 +140,7 @@ def _compressions(state, n):
 # [3] MCPAdapter
 # ---------------------------------------------------------------------------
 
+
 @given(parsers.parse("a tool with a description of {n:d} characters"))
 def _tool_desc(state, n):
     state["data"]["tools"] = [{"function": {"name": "tool", "description": "A" * n}}]
@@ -159,6 +168,7 @@ def _schemas_compressed(state, n):
 # [4] TokenBudgetOrchestrator
 # ---------------------------------------------------------------------------
 
+
 @given(parsers.parse("a request with {n:d} characters of user content"))
 def _user_content(state, n):
     state["data"]["messages"] = [{"role": "user", "content": "x" * n}]
@@ -179,7 +189,10 @@ def _run_again(state):
 # [5] SoLPi
 # ---------------------------------------------------------------------------
 
-@given(parsers.parse("two tool_result messages with identical content of {n:d} characters"))
+
+@given(
+    parsers.parse("two tool_result messages with identical content of {n:d} characters")
+)
 def _two_large_obs(state, n):
     large = "observation data " * (n // 17 + 1)
     large = large[:n]
@@ -210,6 +223,7 @@ def _obs_hits(state, n):
 # [6] DynamicContextPruning
 # ---------------------------------------------------------------------------
 
+
 @given("a conversation of 14 messages including two identical tool_result entries")
 def _convo_with_dup(state):
     filler = [{"role": "user", "content": f"msg {i}"} for i in range(12)]
@@ -232,10 +246,13 @@ def _pruned(state, n):
 # [7] CompactionManager
 # ---------------------------------------------------------------------------
 
+
 @given("a conversation of MAX_HISTORY_MSGS + 20 user messages")
 def _long_convo(state):
     limit = state["mod"].MAX_HISTORY_MSGS
-    state["data"]["messages"] = [{"role": "user", "content": f"m{i}"} for i in range(limit + 20)]
+    state["data"]["messages"] = [
+        {"role": "user", "content": f"m{i}"} for i in range(limit + 20)
+    ]
     state["limit"] = limit
 
 
@@ -267,6 +284,7 @@ def _system_preserved(state):
 # ---------------------------------------------------------------------------
 # [8] GistingSimulator
 # ---------------------------------------------------------------------------
+
 
 @given("a conversation where the first message is an assistant turn of 500 characters")
 def _old_assistant(state):
@@ -309,6 +327,7 @@ def _not_gisted(state):
 # All 8 together
 # ---------------------------------------------------------------------------
 
+
 @given("a realistic over-limit session payload")
 def _realistic_payload(state):
     mod = state["mod"]
@@ -320,7 +339,9 @@ def _realistic_payload(state):
     tool1 = {"role": "tool", "content": large, "tool_call_id": "obs_1"}
     tool2 = {"role": "tool", "content": large, "tool_call_id": "obs_2"}
     state["data"]["messages"] = [old_assistant, system] + users + [tool1, tool2]
-    state["data"]["tools"] = [{"function": {"name": "verbose", "description": "X" * 2000}}]
+    state["data"]["tools"] = [
+        {"function": {"name": "verbose", "description": "X" * 2000}}
+    ]
     state["limit"] = limit
 
 

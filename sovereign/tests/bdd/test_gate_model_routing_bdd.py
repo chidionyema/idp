@@ -4,6 +4,7 @@ Tests the structural invariants of platform/llm/config.yaml and related manifest
 No cluster or live API needed — pure manifest inspection.
 Scenarios that require the live cluster/vault are BLIND per LAW 38.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,6 +30,7 @@ def state() -> dict:
 
 # Scenario: cluster router carries every hosted model the laptop router carries ----
 
+
 @given("llm/config.yaml lists the hosted models and the local ollama lane")
 def _load_config(state: dict) -> None:
     cfg = _config()
@@ -43,12 +45,15 @@ def _compare(state: dict) -> None:
         m["model_name"]
         for m in state["models"]
         if m.get("litellm_params", {}).get("api_key", "os.environ/")
-        and not str(m.get("litellm_params", {}).get("api_key", "os.environ/")).startswith("os.environ")
+        and not str(
+            m.get("litellm_params", {}).get("api_key", "os.environ/")
+        ).startswith("os.environ")
     ]
     state["docker_refs"] = [
         m["model_name"]
         for m in state["models"]
-        if "host.docker.internal" in str(m.get("litellm_params", {}).get("api_base", ""))
+        if "host.docker.internal"
+        in str(m.get("litellm_params", {}).get("api_base", ""))
     ]
 
 
@@ -73,6 +78,7 @@ def _fallback_model(state: dict) -> None:
 
 
 # Scenario: router reachable at llm.<zone> through the one edge -----------------
+
 
 @given("the prospector edge has a listener https-llm for llm.${ESTATE_ZONE}")
 def _edge_listener(state: dict) -> None:
@@ -115,18 +121,25 @@ def _vault_auth(state: dict) -> None:
 
 # Scenario: upstream keys reach pod only from vault ----------------------------
 
+
 @given("the vault holds one JSON secret litellm-upstream")
 def _vault_secret(state: dict) -> None:
     es_file = LLM / "external-secret.yaml"
     assert es_file.exists(), f"ExternalSecret not found: {es_file}"
-    docs = [d for d in yaml.safe_load_all(es_file.read_text()) if d and d.get("kind") == "ExternalSecret"]
+    docs = [
+        d
+        for d in yaml.safe_load_all(es_file.read_text())
+        if d and d.get("kind") == "ExternalSecret"
+    ]
     assert docs, f"No ExternalSecret in {es_file}"
     state["external_secrets"] = docs
 
 
 @when("the ExternalSecret materialises it in namespace llm")
 def _es_namespace(state: dict) -> None:
-    namespaces = {d.get("metadata", {}).get("namespace") for d in state["external_secrets"]}
+    namespaces = {
+        d.get("metadata", {}).get("namespace") for d in state["external_secrets"]
+    }
     state["es_namespaces"] = namespaces
 
 
@@ -159,6 +172,7 @@ def _no_hardcoded_key(state: dict) -> None:
 
 # Scenario: founder adds models in Admin UI, not by PR -------------------------
 
+
 @given("the router runs the -database image with litellm-db in namespace llm")
 def _db_image(state: dict) -> None:
     litellm_yaml = LLM / "litellm.yaml"
@@ -166,7 +180,9 @@ def _db_image(state: dict) -> None:
     state["litellm_src"] = litellm_yaml.read_text()
 
 
-@given("general_settings.store_model_in_db is true so a model added in the UI outlives a restart")
+@given(
+    "general_settings.store_model_in_db is true so a model added in the UI outlives a restart"
+)
 def _store_in_db(state: dict) -> None:
     cfg = _config()
     gs = cfg.get("general_settings", {})
@@ -180,12 +196,16 @@ def _ui_login(state: dict) -> None:
     pytest.skip("BLIND: live cluster UI test — CI enforces via drain drill")
 
 
-@then("the console sends the founder to the estate identity domain, the same login as the catalogue")
+@then(
+    "the console sends the founder to the estate identity domain, the same login as the catalogue"
+)
 def _identity_domain(state: dict) -> None:
     pass  # BLIND step — skip guard in @when
 
 
-@then("the OIDC client reaches the pod only from the vault, written by platform/oci/identity")
+@then(
+    "the OIDC client reaches the pod only from the vault, written by platform/oci/identity"
+)
 def _oidc_from_vault(state: dict) -> None:
     pass
 
@@ -198,7 +218,9 @@ def _no_password_in_repo(state: dict) -> None:
     )
 
 
-@then("every provider key the UI can bind to is an os.environ name the pod already exports")
+@then(
+    "every provider key the UI can bind to is an os.environ name the pod already exports"
+)
 def _provider_keys_from_env(state: dict) -> None:
     cfg = _config()
     models = cfg.get("model_list", [])

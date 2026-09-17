@@ -2,6 +2,7 @@
 
 Tests forge/common.py budget + quality gates directly. No network, no GPU.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -19,8 +20,15 @@ COMMON = REPO / "forge" / "common.py"
 TASK_YAML = REPO / "forge" / "task.yaml"
 
 REQUIRED_KEYS = [
-    "task", "base", "kind", "prompt_template", "labels",
-    "abstain_below", "min_agreement", "kv_cache_prefix", "compute",
+    "task",
+    "base",
+    "kind",
+    "prompt_template",
+    "labels",
+    "abstain_below",
+    "min_agreement",
+    "kv_cache_prefix",
+    "compute",
 ]
 
 
@@ -44,6 +52,7 @@ def mod():
 
 # Background -------------------------------------------------------------------
 
+
 @given("the forge common module exists at forge/common.py")
 def _common_exists():
     assert COMMON.exists(), f"not found: {COMMON}"
@@ -56,6 +65,7 @@ def _task_yaml_exists():
 
 # Scenario: task.yaml required fields ------------------------------------------
 
+
 @when("the task file is loaded")
 def _load_task(state):
     state["task"] = yaml.safe_load(TASK_YAML.read_text())
@@ -66,7 +76,7 @@ def _has_key(state, key):
     assert key in state["task"], f"task.yaml missing key: {key!r}"
 
 
-@then("the prompt_template contains \"{input}\"")
+@then('the prompt_template contains "{input}"')
 def _prompt_has_input(state):
     assert "{input}" in state["task"]["prompt_template"]
 
@@ -78,6 +88,7 @@ def _abstain_range(state):
 
 
 # Scenario: shipped task.yaml fits budget --------------------------------------
+
 
 @when("the cost gate is applied to the shipped task.yaml")
 def _cost_gate_shipped(state, mod):
@@ -92,9 +103,16 @@ def _no_refusal(state):
 
 # Scenario: within-budget run --------------------------------------------------
 
-@given(parsers.parse('a compute plan with GPU "{gpu}", timeout {timeout:d} seconds, budget USD {budget:f}'))
+
+@given(
+    parsers.parse(
+        'a compute plan with GPU "{gpu}", timeout {timeout:d} seconds, budget USD {budget:f}'
+    )
+)
 def _compute_plan(state, gpu, timeout, budget):
-    state["plan"] = {"compute": {"gpu": gpu, "timeout_s": timeout, "budget_usd": budget}}
+    state["plan"] = {
+        "compute": {"gpu": gpu, "timeout_s": timeout, "budget_usd": budget}
+    }
 
 
 @when("the cost gate is applied")
@@ -103,6 +121,7 @@ def _cost_gate_plan(state, mod):
 
 
 # Scenario: over-budget run ----------------------------------------------------
+
 
 @then("the cost gate returns a refusal reason")
 def _has_refusal(state):
@@ -121,6 +140,7 @@ def _refusal_has_budget(state, budget):
 
 # Scenario: unpriced GPU -------------------------------------------------------
 
+
 @given(parsers.parse('a compute plan with GPU "{gpu}" and budget USD {budget:f}'))
 def _unpriced_plan(state, gpu, budget):
     state["plan"] = {"compute": {"gpu": gpu, "budget_usd": budget}}
@@ -132,6 +152,7 @@ def _refusal_contains(state, text):
 
 
 # Scenario: no GPU block defaults to T4 ----------------------------------------
+
 
 @given("a compute plan with no GPU block")
 def _empty_plan(state):
@@ -151,6 +172,7 @@ def _gpu_is(state, gpu):
 
 # Scenario: T4 cost ------------------------------------------------------------
 
+
 @when(parsers.parse("the T4 hourly cost is looked up for {seconds:d} seconds"))
 def _t4_cost(state, seconds, mod):
     state["cost"] = mod.usd_for("T4", seconds)
@@ -162,6 +184,7 @@ def _cost_is(state, amount):
 
 
 # Scenario: dataset split minimum ----------------------------------------------
+
 
 @given(parsers.parse("a dataset with {n:d} rows"))
 def _dataset(state, n):
@@ -185,6 +208,7 @@ def _value_error_raised(state):
 
 # Scenario: split determinism and 80/20 ----------------------------------------
 
+
 @when("the split function is called twice")
 def _split_twice(state, mod):
     rows = state["rows"]
@@ -204,6 +228,7 @@ def _rows_labelled(state, count, label):
 
 
 # Scenario: label probabilities ------------------------------------------------
+
 
 @given("logit scores where both labels are equal")
 def _equal_logits(state):
@@ -226,6 +251,7 @@ def _prob_half(state):
 
 
 # Scenario: grade abstain rate -------------------------------------------------
+
 
 @given("a set of predictions where 1 of 3 rows abstains below margin 0.8")
 def _predictions(state):

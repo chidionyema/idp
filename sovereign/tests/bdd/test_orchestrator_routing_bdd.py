@@ -3,6 +3,7 @@
 Tests platform/orchestrator.py structural invariants without importing
 LangChain, LangGraph, or any network dependency. Pure static + unit checks.
 """
+
 from __future__ import annotations
 
 import ast
@@ -33,6 +34,7 @@ def state():
 
 # Background -------------------------------------------------------------------
 
+
 @given("the orchestrator source exists at platform/orchestrator.py")
 def _orch_exists():
     assert ORCH.exists(), f"not found: {ORCH}"
@@ -46,6 +48,7 @@ def _no_hardcoded_keys():
 
 
 # Scenario: configurable base URL, not hardcoded vendor URL --------------------
+
 
 @when("the orchestrator module is loaded")
 def _check_base_url(state):
@@ -82,16 +85,18 @@ def _no_vendor_host(state):
 
 # Scenario: no direct vendor SDK imports ----------------------------------------
 
+
 @when("the orchestrator source is scanned for vendor-specific imports")
 def _scan_imports(state):
     tree = _ast()
     state["imports"] = [
-        node for node in ast.walk(tree)
+        node
+        for node in ast.walk(tree)
         if isinstance(node, (ast.Import, ast.ImportFrom))
     ]
 
 
-@then("there is no direct import of \"openai\" as a top-level SDK")
+@then('there is no direct import of "openai" as a top-level SDK')
 def _no_openai_direct(state):
     for node in state["imports"]:
         if isinstance(node, ast.Import):
@@ -99,7 +104,7 @@ def _no_openai_direct(state):
                 assert alias.name != "openai", "direct openai import found"
 
 
-@then("there is no import of \"anthropic\" as a top-level SDK")
+@then('there is no import of "anthropic" as a top-level SDK')
 def _no_anthropic_direct(state):
     for node in state["imports"]:
         if isinstance(node, ast.Import):
@@ -117,9 +122,11 @@ def _uses_langchain_openai(state):
 
 # Scenario: teleological filter ------------------------------------------------
 
+
 @given("an agent state with 3 consecutive ToolMessage errors")
 def _three_errors(state):
     from langchain_core.messages import ToolMessage
+
     state["agent_state"] = {
         "messages": [
             ToolMessage(content="error: failed to do X", tool_call_id="t1"),
@@ -158,8 +165,12 @@ def _seed_platform_mocks():
         pkg.__path__ = []
         sys.modules["platform"] = pkg
 
-    for sub in ("platform.eval", "platform.eval.protocol",
-                 "platform.telemetry", "platform.telemetry.agent_circuit_breaker"):
+    for sub in (
+        "platform.eval",
+        "platform.eval.protocol",
+        "platform.telemetry",
+        "platform.telemetry.agent_circuit_breaker",
+    ):
         if sub not in sys.modules:
             sys.modules[sub] = ModuleType(sub)
 
@@ -174,6 +185,7 @@ def _seed_platform_mocks():
 
 def _load_orch_module():
     import importlib.util
+
     _seed_platform_mocks()
     spec = importlib.util.spec_from_file_location("orchestrator_mod", ORCH)
     mod = importlib.util.module_from_spec(spec)
@@ -199,24 +211,32 @@ def _run_teleological_filter(state):
 @then("the 3 error messages are removed from state")
 def _errors_removed(state):
     from langchain_core.messages import ToolMessage
+
     msgs = state["filtered"]["messages"]
-    error_msgs = [m for m in msgs if isinstance(m, ToolMessage) and "error" in m.content.lower()]
+    error_msgs = [
+        m for m in msgs if isinstance(m, ToolMessage) and "error" in m.content.lower()
+    ]
     assert len(error_msgs) == 0, f"expected 0 error ToolMessages, got {len(error_msgs)}"
 
 
 @then("a goal reminder SystemMessage is injected")
 def _goal_reminder_injected(state):
     from langchain_core.messages import SystemMessage
+
     msgs = state["filtered"]["messages"]
-    reminders = [m for m in msgs if isinstance(m, SystemMessage) and "REMINDER" in m.content]
+    reminders = [
+        m for m in msgs if isinstance(m, SystemMessage) and "REMINDER" in m.content
+    ]
     assert len(reminders) >= 1
 
 
 # Scenario: fewer than 3 errors left untouched ---------------------------------
 
+
 @given("an agent state with 2 consecutive ToolMessage errors")
 def _two_errors(state):
     from langchain_core.messages import ToolMessage
+
     state["agent_state"] = {
         "messages": [
             ToolMessage(content="error: failed to do X", tool_call_id="t1"),
@@ -229,12 +249,16 @@ def _two_errors(state):
 @then("the 2 error messages remain in state")
 def _errors_remain(state):
     from langchain_core.messages import ToolMessage
+
     msgs = state["filtered"]["messages"]
-    error_msgs = [m for m in msgs if isinstance(m, ToolMessage) and "error" in m.content.lower()]
+    error_msgs = [
+        m for m in msgs if isinstance(m, ToolMessage) and "error" in m.content.lower()
+    ]
     assert len(error_msgs) == 2
 
 
 # Scenario: pre-LLM gate halts -------------------------------------------------
+
 
 @given(parsers.parse('a hook orchestrator that signals halt with reason "{reason}"'))
 def _halting_hooks(state, reason):
@@ -242,7 +266,12 @@ def _halting_hooks(state, reason):
     hook_orch = MagicMock()
     hook_orch.call_pre_llm.return_value = decision
     state["hook_orch"] = hook_orch
-    state["agent_state"] = {"messages": [], "goal": "g", "halt_reason": "", "verdict": ""}
+    state["agent_state"] = {
+        "messages": [],
+        "goal": "g",
+        "halt_reason": "",
+        "verdict": "",
+    }
 
 
 @when("the pre-LLM gate runs")
@@ -266,13 +295,19 @@ def _routes_to_verdict(state):
 
 # Scenario: pre-LLM gate passes ------------------------------------------------
 
+
 @given("a hook orchestrator that signals no halt")
 def _non_halting_hooks(state):
     decision = SimpleNamespace(action="continue", evidence="")
     hook_orch = MagicMock()
     hook_orch.call_pre_llm.return_value = decision
     state["hook_orch"] = hook_orch
-    state["agent_state"] = {"messages": [], "goal": "g", "halt_reason": "", "verdict": ""}
+    state["agent_state"] = {
+        "messages": [],
+        "goal": "g",
+        "halt_reason": "",
+        "verdict": "",
+    }
 
 
 @then("the halt_reason remains empty")
@@ -289,9 +324,11 @@ def _routes_to_llm(state):
 
 # Scenario: circuit breaker trips -----------------------------------------------
 
+
 @given("an AgentCircuitBreaker configured with a turn threshold")
 def _circuit_breaker(state):
     import importlib.util
+
     _seed_platform_mocks()
     spec = importlib.util.spec_from_file_location("agent_circuit_breaker_real", CB_MOD)
     mod = importlib.util.module_from_spec(spec)
@@ -322,7 +359,10 @@ def _cb_reason_names_turn(state):
 
 # Scenario: proxy base URL from environment -------------------------------------
 
-@given(parsers.parse('the environment variable for the proxy base URL is set to "{url}"'))
+
+@given(
+    parsers.parse('the environment variable for the proxy base URL is set to "{url}"')
+)
 def _set_env_url(state, url, monkeypatch):
     monkeypatch.setenv("LITELLM_BASE_URL", url)
     state["expected_url"] = url

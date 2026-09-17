@@ -249,7 +249,9 @@ def main(argv=None) -> int:
     with open(args.task, encoding="utf-8") as f:
         task = yaml.safe_load(f)
     texts = read_inputs(args.input, args.limit)
-    _proxy_url = os.environ.get("ANTHROPIC_BASE_URL") or os.environ.get("LITELLM_BASE_URL")
+    _proxy_url = os.environ.get("ANTHROPIC_BASE_URL") or os.environ.get(
+        "LITELLM_BASE_URL"
+    )
     if not _proxy_url:
         raise RuntimeError(
             "LITELLM_BASE_URL is not set. Direct Anthropic access is banned (LAW 34). "
@@ -257,7 +259,8 @@ def main(argv=None) -> int:
         )
     client = anthropic.Anthropic(
         base_url=router_root(_proxy_url),
-        api_key=os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("LITELLM_API_KEY"),
+        api_key=os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("LITELLM_API_KEY"),
     )
     road = label_batch if args.batch else label_live
     kwargs = {} if args.batch else {"concurrency": args.concurrency}

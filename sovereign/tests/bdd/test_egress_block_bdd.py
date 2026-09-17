@@ -3,6 +3,7 @@
 Tests the Calico manifests at platform/calico/raw/deny-direct-ai-vendor-egress.yaml.
 No cluster access required — all assertions are on the manifest text.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -36,7 +37,10 @@ def state():
 
 # Background -------------------------------------------------------------------
 
-@given("the Calico GlobalNetworkPolicy manifest exists at platform/calico/raw/deny-direct-ai-vendor-egress.yaml")
+
+@given(
+    "the Calico GlobalNetworkPolicy manifest exists at platform/calico/raw/deny-direct-ai-vendor-egress.yaml"
+)
 def _manifest_exists(state):
     assert MANIFEST.exists(), f"manifest not found: {MANIFEST}"
     state["docs"] = _docs()
@@ -50,12 +54,13 @@ def _network_set_exists(state):
 
 # Scenario: policy name and order ----------------------------------------------
 
+
 @when("the policy manifest is parsed")
 def _parse_policy(state):
     state["policy"] = _policy(state["docs"])
 
 
-@then("the GlobalNetworkPolicy name is \"deny-direct-ai-vendor-egress\"")
+@then('the GlobalNetworkPolicy name is "deny-direct-ai-vendor-egress"')
 def _policy_name(state):
     assert state["policy"]["metadata"]["name"] == "deny-direct-ai-vendor-egress"
 
@@ -65,12 +70,13 @@ def _policy_order(state, order):
     assert state["policy"]["spec"]["order"] == order
 
 
-@then("the policy type includes \"Egress\"")
+@then('the policy type includes "Egress"')
 def _policy_egress_type(state):
     assert "Egress" in state["policy"]["spec"]["types"]
 
 
 # Scenario: vendor domains -----------------------------------------------------
+
 
 @when("the GlobalNetworkSet manifest is parsed")
 def _parse_network_set(state):
@@ -90,13 +96,14 @@ def _ns_label(state, key, value):
 
 # Scenario: namespace exemptions -----------------------------------------------
 
+
 @when("the namespaceSelector is parsed from the GlobalNetworkPolicy")
 def _parse_ns_selector(state):
     docs = state.get("docs") or _docs()
     state["selector"] = _policy(docs)["spec"]["namespaceSelector"]
 
 
-@then("the selector uses \"not in\" logic")
+@then('the selector uses "not in" logic')
 def _selector_not_in(state):
     assert "not in" in state["selector"]
 
@@ -109,11 +116,13 @@ def _ns_exempt(state, ns):
 @then(parsers.parse("exactly {count:d} namespaces are exempt"))
 def _exempt_count(state, count):
     import re
+
     found = re.findall(r"'([^']+)'", state["selector"])
     assert len(found) == count, f"found {len(found)} exempt namespaces: {found}"
 
 
 # Scenario: egress rule --------------------------------------------------------
+
 
 @when("the egress rules are parsed")
 def _parse_egress_rules(state):
@@ -143,7 +152,9 @@ def _egress_dest_selector(state, selector):
 
 @then(parsers.parse("the destination port is {port:d}"))
 def _egress_port(state, port):
-    ports = state["egress"][0].get("ports") or state["egress"][0]["destination"].get("ports", [])
+    ports = state["egress"][0].get("ports") or state["egress"][0]["destination"].get(
+        "ports", []
+    )
     assert port in ports
 
 
@@ -171,6 +182,7 @@ def _subject_to_deny(state):
 
 
 # Scenario: manifest validity --------------------------------------------------
+
 
 @when("the manifest file is read")
 def _read_manifest(state):

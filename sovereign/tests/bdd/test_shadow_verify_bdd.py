@@ -2,6 +2,7 @@
 
 Calls bin/idp-shadow-verify.grade() directly. No cluster needed.
 """
+
 from __future__ import annotations
 
 import sys
@@ -18,7 +19,10 @@ SHADOW_VERIFY = REPO / "bin" / "idp-shadow-verify"
 
 def _load():
     import importlib.machinery
-    loader = importlib.machinery.SourceFileLoader("idp_shadow_verify", str(SHADOW_VERIFY))
+
+    loader = importlib.machinery.SourceFileLoader(
+        "idp_shadow_verify", str(SHADOW_VERIFY)
+    )
     spec = importlib.util.spec_from_loader("idp_shadow_verify", loader)
     mod = importlib.util.module_from_spec(spec)
     sys.modules["idp_shadow_verify"] = mod
@@ -42,6 +46,7 @@ def mod():
 
 # Background -------------------------------------------------------------------
 
+
 @given("the shadow-verify tool exists at bin/idp-shadow-verify")
 def _exists():
     assert SHADOW_VERIFY.exists(), f"not found: {SHADOW_VERIFY}"
@@ -49,7 +54,10 @@ def _exists():
 
 # Observation builders ---------------------------------------------------------
 
-@given("an observation where ready is true, kind is Deployment, requiredReplicas is 2, availableReplicas is 2, readyReplicas is 2")
+
+@given(
+    "an observation where ready is true, kind is Deployment, requiredReplicas is 2, availableReplicas is 2, readyReplicas is 2"
+)
 def _obs_ready_deployment(state):
     state["obs"] = {
         "kind": "Deployment",
@@ -88,7 +96,9 @@ def _obs_silent_ready(state):
     }
 
 
-@given("an observation where ready is true, kind is Deployment, requiredReplicas is 3, availableReplicas is 2, readyReplicas is 2")
+@given(
+    "an observation where ready is true, kind is Deployment, requiredReplicas is 3, availableReplicas is 2, readyReplicas is 2"
+)
 def _obs_replica_mismatch(state):
     state["obs"] = {
         "kind": "Deployment",
@@ -111,7 +121,9 @@ def _obs_pod_kind(state):
     }
 
 
-@given("an observation where ready is true, kind is Deployment without requiredReplicas")
+@given(
+    "an observation where ready is true, kind is Deployment without requiredReplicas"
+)
 def _obs_no_required_replicas(state):
     state["obs"] = {
         "kind": "Deployment",
@@ -123,7 +135,11 @@ def _obs_no_required_replicas(state):
     }
 
 
-@given(parsers.parse("an observation where ready is true, kind is {kind}, requiredReplicas is 1, availableReplicas is 1, readyReplicas is 1"))
+@given(
+    parsers.parse(
+        "an observation where ready is true, kind is {kind}, requiredReplicas is 1, availableReplicas is 1, readyReplicas is 1"
+    )
+)
 def _obs_kind_ok(state, kind):
     state["obs"] = {
         "kind": kind,
@@ -136,7 +152,9 @@ def _obs_kind_ok(state, kind):
     }
 
 
-@given("an observation where ready is true, kind is StatefulSet, requiredReplicas is 1, availableReplicas is 1, readyReplicas is 1, probesPassing is false")
+@given(
+    "an observation where ready is true, kind is StatefulSet, requiredReplicas is 1, availableReplicas is 1, readyReplicas is 1, probesPassing is false"
+)
 def _obs_probe_fail(state):
     state["obs"] = {
         "kind": "StatefulSet",
@@ -150,6 +168,7 @@ def _obs_probe_fail(state):
 
 
 # When / Then ------------------------------------------------------------------
+
 
 @when("idp-shadow-verify grades the observation")
 def _grade(state, mod):
