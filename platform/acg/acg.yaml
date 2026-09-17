@@ -149,7 +149,7 @@ spec:
         node.kubernetes.io/instance-type: VM.Standard.A1.Flex
       containers:
         - name: gateway
-          image: ghcr.io/chidionyema/acg:main-0-placeholder # {"$imagepolicy": "flux-system:acg"}
+          image: ghcr.io/chidionyema/idp:main-0-placeholder # {"$imagepolicy": "flux-system:acg"}
           ports:
             - containerPort: 8000
           env:

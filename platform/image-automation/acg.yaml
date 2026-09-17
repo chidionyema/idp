@@ -1,13 +1,15 @@
 # ACG (Asymmetric Compute Grid) image automation.
-# build-multiarch in chidionyema/acg pushes main-<run>-<sha>; this row picks the highest run.
-# The {"$imagepolicy"} marker in platform/acg/oke.yaml is what image-automation-controller rewrites.
+# build-multiarch in chidionyema/acg pushes main-<run>-<sha> to ghcr.io/chidionyema/idp
+# (bare Dockerfile at repo root → image name = repo name = "idp" per bin/dockerfiles rule).
+# TODO: rename Dockerfile to acg.Dockerfile so future builds push to ghcr.io/chidionyema/acg.
+# The {"$imagepolicy"} marker in platform/acg/acg.yaml is what image-automation-controller rewrites.
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
   name: acg
   namespace: flux-system
 spec:
-  image: ghcr.io/chidionyema/acg
+  image: ghcr.io/chidionyema/idp
   interval: 5m
   secretRef:
     name: ghcr-pull

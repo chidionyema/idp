@@ -115,6 +115,46 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-acg
+  title: 'Asymmetric Compute Grid'
+  description: 'OpenAI-compatible inference gateway with a 5-layer cost cascade: Redis cache, free-tier APIs, CPU llama.cpp, GPU Vast.ai, and a degraded fallback. GOV-01 local floor on Apple Silicon keeps spend at zero when the cluster carries the load.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=acg'
+    estate/flux-kustomization: 'acg'
+    estate/path: './platform/acg'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  providesApis:
+    - api:default/acg-api
+  dependsOn:
+    - component:default/layer-edge
+    - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: acg-api
+  description: 'Asymmetric Compute Grid: the HTTP interface, answering at acg.example.com.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/agents
+  definition: |
+    # Not published. acg answers at acg.example.com; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-agent-workforce
   title: 'Infrastructure crew'
   description: 'The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.'

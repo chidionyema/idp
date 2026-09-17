@@ -499,6 +499,12 @@ LAYERS = {
         "The experiment record: every run's result, graded.",
         "group:default/platform",
     ),
+    "acg": (
+        "agents",
+        "Asymmetric Compute Grid",
+        "OpenAI-compatible inference gateway with a 5-layer cost cascade: Redis cache, free-tier APIs, CPU llama.cpp, GPU Vast.ai, and a degraded fallback. GOV-01 local floor on Apple Silicon keeps spend at zero when the cluster carries the load.",
+        "group:default/platform",
+    ),
     "llm": (
         "agents",
         "Model router",
