@@ -59,6 +59,7 @@ spec:
             - { name: EDGE_BIND, value: "127.0.0.1:8421" }
             - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
             - { name: RUST_LOG, value: "info" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
           resources:
             # 1.2 Gi for a 0.6-1.7B expert at Q4 plus activations. GUARANTEED (request == limit),
             # because policy/require-priority-class refuses a container where they differ.

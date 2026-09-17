@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""idp-ci-verify — run the three-stage verifier gauntlet directly in CI.
+
+WHY THIS EXISTS. The pre-push hook calls the verifier through the estate-mcp
+daemon (propose_patch → verify over a Unix socket). CI runners have no daemon.
+This script calls sovereign/verifier.py directly — same stages, same verdict,
+no daemon, no Datasette, no estate.db — so the CI job is the real gate when
+the daemon is unavailable locally (BLIND mode in bin/idp-prepush-verify).
+
+WHAT IT GRADES. A unified diff read from stdin (or --patch-file), exactly the
+diff that would be proposed in a push. CI passes it as:
+
+    git diff origin/main...HEAD | python3 bin/idp-ci-verify
+
+Exits 0 on PASSED/VERIFIED, 1 on FAILED, 2 on BLIND (nothing to grade).
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
+# sovereign/ is the module root; add it to sys.path exactly as daemon.py does.
+sys.path.insert(0, str(REPO / "sovereign"))
+sys.path.insert(0, str(REPO / "platform" / "executor"))
+
+from verifier import (  # noqa: E402
+    Ledger,
+    parse_unified_diff,
+    verify,
+)
+
+
+def _test_source() -> str:
+    candidate = REPO / "tests" / "test_verifier_hooks.py"
+    if candidate.exists():
+        return candidate.read_text()
+    return ""
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--patch-file", help="read diff from file instead of stdin")
+    ap.add_argument("--claim", default="ci-verify: automated CI gauntlet")
+    args = ap.parse_args()
+
+    if args.patch_file:
+        patch = Path(args.patch_file).read_text()
+    else:
+        patch = sys.stdin.read()
+
+    if not patch.strip():
+        print("BLIND verifier: empty diff — nothing to grade", file=sys.stderr)
+        return 2
+
+    files = parse_unified_diff(patch)
+    if not files:
+        print("BLIND verifier: diff parses to no files", file=sys.stderr)
+        return 2
+
+    with tempfile.TemporaryDirectory(prefix="kronos-verifier-") as tmp:
+        ledger = Ledger(
+            ledger_id="ci-verify",
+            ledger_dir=Path(tmp),
+            files=files,
+            tests=_test_source(),
+            claim=args.claim,
+        )
+        verdict = verify(ledger)
+
+    cv = verdict.get("claim_verdict", "FAILED")
+    admissible = verdict.get("admissible", False)
+    stages = verdict.get("stages", {})
+
+    for stage, result in stages.items():
+        passed = result.get("passed", False)
+        note = result.get("note", "")
+        print(f"{'ok' if passed else 'FAIL'}  verifier/{stage}  {note}")
+
+    if cv in ("PASSED", "VERIFIED") and admissible:
+        print(f"ok    verifier  {cv}; admissible=true")
+        return 0
+
+    print(f"FAIL  verifier  {cv}; admissible={admissible}")
+    reason = verdict.get("reason", "")
+    if reason:
+        print(f"      {reason}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
