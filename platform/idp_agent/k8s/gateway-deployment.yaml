@@ -47,6 +47,7 @@ spec:
           ports:
             - { name: http, containerPort: 8000 }
           env:
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
             - { name: REDIS_URL, value: "redis://idp-agent-redis:6379" }
             - { name: IDP_GATEWAY_HOST, value: "0.0.0.0" }
             - {

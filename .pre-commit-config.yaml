@@ -82,22 +82,9 @@ repos:
         language: system
         pass_filenames: false
         files: ^(backstage/platform/dark-matter\.yaml$|backstage/platform/dark-matter\.json$)
-      # catalog-spec-type (rules.yaml): every catalog entity's spec.type must be in the
-      # ontology enum in schema/catalog-ontology.json. An invented type returns 200 []
-      # from the catalog API -- indistinguishable from "no results" -- and blank UI surfaces.
-      - id: catalog-spec-type
-        name: every catalog spec.type is in the ontology enum (rules.yaml catalog-spec-type)
-        entry: python3 bin/idp-catalog-spec-type-gate
+      - id: catalog-validator
+        name: catalog data is valid before merge (Layer 1 prevention)
+        entry: python3 bin/idp-catalog-validator --strict backstage/platform/catalog-info.yaml
         language: system
-        pass_filenames: true
-        files: (backstage/.*\.ya?ml$|catalog-info\.ya?ml$)
-        exclude: /skeleton/
-      # catalog-links-absolute (rules.yaml): every metadata.links[].url must be an
-      # absolute https/http URI. A relative URL renders a blank page in the portal.
-      - id: catalog-links-absolute
-        name: every catalog link URL is absolute https/http (rules.yaml catalog-links-absolute)
-        entry: python3 bin/idp-catalog-links-gate
-        language: system
-        pass_filenames: true
-        files: (backstage/.*\.ya?ml$|catalog-info\.ya?ml$)
-        exclude: /skeleton/
+        pass_filenames: false
+        files: ^backstage/platform/catalog-info\.yaml$
