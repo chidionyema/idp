@@ -142,22 +142,34 @@ IDP_BREAK_GLASS_TOKEN=$(cat ~/.local/state/idp/break-glass-token) claude
 
 **The post-mortem requirement:** every break-glass session automatically generates a PR titled `recovery/<date>-<reason>` containing the full Aevum log of every action taken. That PR must be reviewed and merged before another break-glass token can be minted. This is the accountability loop.
 
-### Agent-assisted cluster revival
+### Agent-assisted cluster revival — Claude Code unrestricted
 
-When the cluster is down and a local agent is the best tool to diagnose and sequence the recovery:
+When the cluster is down, the gateway is unreachable, and the estate needs to be revived, **Claude Code on the founder's machine is the recovery tool**. In this scenario the gateway-as-floor rule is explicitly suspended for the duration of the recovery session. This is not a loophole — it is the designed exception.
+
+**What triggers this:** the cluster is confirmed down (`bin/idp-kube` returns no nodes), the gateway pod is not running, and Flux cannot reconcile anything. Normal operation is impossible by definition.
+
+**How to start a recovery session:**
 
 ```bash
-# Read-only cluster probe (works even when gateway is down — uses saved kubeconfig)
-bin/idp-kube get nodes -o wide
-bin/idp-kube get pods -n flux-system
-bin/idp-kube get events -A --sort-by=.lastTimestamp | tail -30
+# Confirm the cluster is actually down (not just a probe failure)
+bin/idp-kube get nodes 2>&1
+bin/idp-kube get pods -n flux-system 2>&1
 
-# Structured recovery sequence (pre-approved, Aevum-logged)
-bin/idp-recovery-seq --plan <plan-name>
-# Plans live in recovery/plans/*.yaml — add plans via PR, not during a break-glass session
+# Start Claude Code in recovery mode — full write capability, Aevum-logged
+IDP_RECOVERY_MODE=1 claude
+# The session hook records a gate.run receipt at start: {gate_id: "break-glass", result: "open", plane: "recovery"}
+# Every subsequent tool call appends to .aevum/local.jsonl before execution
 ```
 
-The local agent's role in recovery is **diagnosis and sequencing**, not direct cluster writes. It reads state, proposes a sequence, and hands each step to the pre-approved recovery scripts. It does not run `kubectl apply` or `helm upgrade` directly. Those remain Flux-only.
+**What Claude Code can do in recovery mode:**
+- Full shell access, git, kubectl — everything needed to diagnose and fix
+- Push to `recovery/*` branches directly (Flux can reconcile from these)
+- Run `kubectl apply` for emergency patches if Flux itself is down
+- Restart pods, rotate secrets, re-seed vault, re-bootstrap OCI credentials
+
+**The one hard constraint:** every action taken must be committed to `.aevum/local.jsonl` before it executes. The session hook enforces this — if the receipt write fails, the tool call is blocked (LAW 38 exception: if the Aevum path itself is corrupted, the founder types `IDP_AEVUM_SKIP=1` explicitly at the terminal — never scripted).
+
+**After recovery:** a post-mortem PR is required within 24 hours. Title: `recovery/<date>-<reason>`. Must include the full `.aevum/local.jsonl` diff from the session. No new break-glass session opens until this PR is merged.
 
 ## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
 
