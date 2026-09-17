@@ -55,6 +55,11 @@ PYREGEN
   mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR)
 fi
 
+# Write one hash-chained evidence record for this commit. Fails open (LAW 38).
+if command -v python3 >/dev/null; then
+  python3 "$top/bin/idp-evidence-write" || true
+fi
+
 # Phase 1 of the founder's playbook names pre-commit; when it is installed and the repo carries
 # .pre-commit-config.yaml, that config is the checks (same ruff and shellcheck, repo: local).
 pc="$(command -v pre-commit || true)"; [ -x "$top/.venv/bin/pre-commit" ] && pc="$top/.venv/bin/pre-commit"

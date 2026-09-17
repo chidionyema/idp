@@ -678,6 +678,13 @@ if [ "$_hp" != ".githooks" ]; then
   echo ""
 fi
 
+# Local evidence chain: fail-closed on empty, chain must verify.
+if python3 "$IDP/bin/idp-local-evidence-gate" "$IDP/.aevum/local.jsonl" >/dev/null 2>&1; then
+  say "ok    local-evidence chain present and intact"
+else
+  say "FAIL  local-evidence .aevum/local.jsonl is empty or chain is broken — no agent action has been recorded"; fail=1
+fi
+
 timing_summary
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 # --full: write sentinel on success so the pre-push hook proceeds without re-running.
