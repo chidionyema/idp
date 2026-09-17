@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""idp-max-open-prs-gate — refuses a push when the author already has >= MAX open PRs.
+
+Founder 2026-09-17: 10 open PRs from one agent was 'red signal', consolidated into one branch,
+and this gate ensures we never return to that state. An agent that has already opened
+IDP_MAX_OPEN_PRS_PER_AUTHOR (default 5) PRs cannot open another until one merges or closes.
+The rule is: pull in flight before push in fresh.
+
+Reads GH_TOKEN from env; BLIND when unset (fails open, LAW 38).
+
+  bin/idp-max-open-prs-gate                     # grade the estate today
+  bin/idp-max-open-prs-gate --author chidionyema  # grade one author
+  bin/idp-max-open-prs-gate --check             # exit 0/1 without narration
+"""
+from __future__ import annotations
+import argparse, json, os, sys, urllib.request, urllib.error
+
+MAX_DEFAULT = int(os.environ.get("IDP_MAX_OPEN_PRS_PER_AUTHOR", "5"))
+REPO = os.environ.get("IDP_REPO", "chidionyema/idp")
+
+def get_open_prs():
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        print("BLIND max-open-prs: no GH_TOKEN in env; skip (LAW 38)", file=sys.stderr)
+        return None
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{REPO}/pulls?state=open&per_page=100",
+        headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as fh:
+            return json.load(fh)
+    except (urllib.error.URLError, TimeoutError) as e:
+        print(f"BLIND max-open-prs: GH API {e}", file=sys.stderr)
+        return None
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--author")
+    ap.add_argument("--max", type=int, default=MAX_DEFAULT)
+    ap.add_argument("--check", action="store_true")
+    args = ap.parse_args()
+    prs = get_open_prs()
+    if prs is None:
+        sys.exit(0)  # BLIND, fail open
+    by_author = {}
+    for p in prs:
+        # Skip bot / image-update PRs — they are managed by Flux and don't count
+        if any(l for l in (p.get("labels") or []) if l.get("name") == "image-update"):
+            continue
+        if (p.get("head") or {}).get("ref","").startswith("flux/"):
+            continue
+        u = (p.get("user") or {}).get("login", "?")
+        by_author.setdefault(u, []).append(p["number"])
+    bad = {a:n for a,n in by_author.items() if len(n) > args.max}
+    if args.author:
+        bad = {a:n for a,n in bad.items() if a == args.author}
+    if not bad:
+        print(f"ok    max-open-prs  every author is at or below {args.max} open PRs (excluding bot lanes)")
+        sys.exit(0)
+    for a,n in bad.items():
+        print(f"FAIL  max-open-prs  {a} has {len(n)} open PRs (limit {args.max}): #{', #'.join(map(str,n))}")
+    sys.exit(1)
+
+if __name__ == "__main__":
+    main()
