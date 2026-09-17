@@ -24,6 +24,15 @@ import {
   fetchApiRef,
   useApi,
 } from '@backstage/frontend-plugin-api';
+import dagre from 'dagre';
+import {
+  Background,
+  ReactFlow,
+  ReactFlowProvider,
+  type Edge as RFEdge,
+  type Node as RFNode,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import { Chip, EstatePage, Fold, Section, Sheet, Summary } from '../shell';
 import { EstateMap } from './EstateMap';
 import {
@@ -69,6 +78,91 @@ export function Fleet() {
     } catch {
       // A notes read that fails leaves the fold showing whatever it already had (or nothing) --
       // the board's own sessions and totals do not depend on this succeeding.
+    }
+  };
+
+  // CP7: trace data per session, fetched lazily when the Trace fold is opened.
+  // available:false means the trace endpoint said so (e.g. Langfuse unconfigured).
+  // available:true with nodes.length===0 means no spans recorded yet.
+  type TraceState = { available: boolean; nodes: RFNode[]; edges: RFEdge[]; error?: string };
+  const [traceBySession, setTraceBySession] = useState<Record<string, TraceState>>({});
+
+  // CP7: ledger rows per session, fetched lazily when the Log fold is opened.
+  type LedgerRow = { ts: string; source: string; text: string };
+  const [ledgerBySession, setLedgerBySession] = useState<Record<string, { rows: LedgerRow[] }>>({});
+
+  const loadTrace = async (sessionId: string) => {
+    try {
+      const res = await fetchApi.fetch(
+        `plugin://proxy/fleetview/trace?session_id=${encodeURIComponent(sessionId)}`,
+      );
+      const body = (await res.json()) as {
+        available: boolean;
+        nodes?: { id: string; label: string }[];
+        edges?: { source: string; target: string }[];
+        error?: string;
+      };
+      if (!body.available) {
+        setTraceBySession(current => ({
+          ...current,
+          [sessionId]: { available: false, nodes: [], edges: [], error: body.error },
+        }));
+        return;
+      }
+      const rawNodes = body.nodes ?? [];
+      const rawEdges = body.edges ?? [];
+      if (rawNodes.length === 0) {
+        setTraceBySession(current => ({
+          ...current,
+          [sessionId]: { available: true, nodes: [], edges: [] },
+        }));
+        return;
+      }
+      // Lay out with dagre, same pattern as EstateMap.tsx.
+      const SPAN_W = 160;
+      const SPAN_H = 36;
+      const g = new dagre.graphlib.Graph();
+      g.setGraph({ rankdir: 'TB', nodesep: 20, ranksep: 50 });
+      g.setDefaultEdgeLabel(() => ({}));
+      for (const n of rawNodes) g.setNode(n.id, { width: SPAN_W, height: SPAN_H });
+      for (const e of rawEdges) {
+        if (g.hasNode(e.source) && g.hasNode(e.target)) g.setEdge(e.source, e.target);
+      }
+      dagre.layout(g);
+      const rfNodes: RFNode[] = rawNodes.map(n => {
+        const pos = g.node(n.id) ?? { x: 0, y: 0 };
+        return {
+          id: n.id,
+          position: { x: pos.x - SPAN_W / 2, y: pos.y - SPAN_H / 2 },
+          data: { label: n.label },
+        };
+      });
+      const rfEdges: RFEdge[] = rawEdges.map((e, i) => ({
+        id: `trace-edge-${i}`,
+        source: e.source,
+        target: e.target,
+      }));
+      setTraceBySession(current => ({
+        ...current,
+        [sessionId]: { available: true, nodes: rfNodes, edges: rfEdges },
+      }));
+    } catch {
+      // A trace read that fails leaves the fold showing whatever it already had.
+    }
+  };
+
+  const loadLedger = async (sessionId: string) => {
+    try {
+      const res = await fetchApi.fetch(
+        `plugin://proxy/fleetview/ledger?session_id=${encodeURIComponent(sessionId)}`,
+      );
+      const body = (await res.json()) as { rows?: { ts: string; source: string; text: string }[] };
+      setLedgerBySession(current => ({
+        ...current,
+        [sessionId]: { rows: body.rows ?? [] },
+      }));
+    } catch {
+      // A ledger read that fails leaves the fold showing whatever it already had.
     }
   };
 
@@ -319,6 +413,16 @@ export function Fleet() {
                   unreachable: current.unreachable,
                 }),
               );
+              // CP7: when a new event arrives for a session that already has its Trace fold
+              // open (traceBySession has an entry), reload the trace to show new spans.
+              if (frame.session_id) {
+                setTraceBySession(current => {
+                  if (current[frame.session_id]) {
+                    void loadTrace(frame.session_id);
+                  }
+                  return current;
+                });
+              }
             } catch {
               // A frame that will not parse is dropped; the next read reconciles. Taking the board
               // down on one bad frame would lose every other session with it.
@@ -416,6 +520,8 @@ export function Fleet() {
                 <th>Capabilities</th>
                 <th>Pull requests</th>
                 <th>Focus</th>
+                <th>Trace</th>
+                <th>Log</th>
                 <th>Nudge</th>
               </tr>
             </thead>
@@ -520,6 +626,83 @@ export function Fleet() {
                             Send
                           </button>
                         </div>
+                      </Fold>
+                    </td>
+                    <td>
+                      {/* CP7: Trace fold -- React Flow graph of recorded spans, laid out with
+                          dagre. Fetched lazily on first open. Reloads on SSE events for this
+                          session (the stream is the live clock; the fold shows the latest spans
+                          at the moment a person opens it, then stays current while it is open). */}
+                      <Fold
+                        testId={`trace-fold-${s.session_id}`}
+                        summary="Trace"
+                        onToggle={e => {
+                          if (!e.currentTarget.open) return;
+                          if (!traceBySession[s.session_id]) void loadTrace(s.session_id);
+                        }}
+                      >
+                        {(() => {
+                          const t = traceBySession[s.session_id];
+                          if (!t) return null;
+                          if (!t.available) {
+                            return <Chip>Trace unavailable: {t.error ?? 'no reason given'}</Chip>;
+                          }
+                          if (t.nodes.length === 0) {
+                            return <Chip>No spans recorded yet</Chip>;
+                          }
+                          return (
+                            <div style={{ width: 600, height: 300, border: '1px solid #e2e8f0', borderRadius: 6 }}>
+                              <ReactFlowProvider>
+                                <ReactFlow
+                                  nodes={t.nodes}
+                                  edges={t.edges}
+                                  fitView
+                                  nodesDraggable={false}
+                                  nodesConnectable={false}
+                                  proOptions={{ hideAttribution: true }}
+                                >
+                                  <Background gap={20} />
+                                </ReactFlow>
+                              </ReactFlowProvider>
+                            </div>
+                          );
+                        })()}
+                      </Fold>
+                    </td>
+                    <td>
+                      {/* CP7: Log fold -- last ledger rows for this session. Laptop sessions show
+                          the last 20; pod sessions point to cluster logs. Fetched lazily on
+                          first open. */}
+                      <Fold
+                        testId={`log-fold-${s.session_id}`}
+                        summary="Log"
+                        onToggle={e => {
+                          if (!e.currentTarget.open) return;
+                          if (!ledgerBySession[s.session_id]) void loadLedger(s.session_id);
+                        }}
+                      >
+                        {(() => {
+                          const l = ledgerBySession[s.session_id];
+                          if (!l) return null;
+                          return (
+                            <div>
+                              <ul>
+                                {l.rows.map((row, i) => (
+                                  // eslint-disable-next-line react/no-array-index-key
+                                  <li key={i}>
+                                    <strong>{row.source}</strong> {row.ts}: {row.text}
+                                  </li>
+                                ))}
+                              </ul>
+                              <p>
+                                <em>
+                                  Laptop sessions show the last 20 ledger rows. Pod sessions: see
+                                  cluster logs.
+                                </em>
+                              </p>
+                            </div>
+                          );
+                        })()}
                       </Fold>
                     </td>
                     <td>

@@ -1,10 +1,13 @@
-"""FleetView nudge (item #6): src/signals.py, graded the same way test_fleetview_notes.py and
+"""FleetView nudge (item #6, CP8): src/signals.py, graded the same way test_fleetview_notes.py and
 test_fleetview_spend.py grade their modules -- a plain unit suite, no feature file, no live
 Temporal cluster.
 
 `sovereign.engine.client.signal` is stubbed: this suite proves signals.py's own contract (input
 validation, runtime scoping, and that every real attempt is recorded) rather than Temporal's own
 delivery, which `sovereign/tests/bdd/test_engine_*` already covers.
+
+CP8 additions: claude-code directives mailbox, otto NATS steer, cyrus Linear comment, and the
+routing through the updated _dispatch_steer(session_id, runtime, by, text) signature.
 """
 
 from __future__ import annotations
@@ -79,7 +82,7 @@ def test_a_blank_by_is_invalid(signals):
 
 def test_an_unsupported_runtime_is_refused_and_writes_nothing(signals):
     with pytest.raises(signals.UnsupportedRuntime):
-        signals.nudge("sb-1", "claude-code", "chidi")
+        signals.nudge("sb-1", "dagster", "chidi")
     assert signals.signals_for("sb-1") == []
 
 
@@ -125,3 +128,93 @@ def test_get_route_after_a_nudge_sees_the_same_signal(routes, monkeypatch):
     assert status == 200
     assert [s["text"] for s in body["signals"]] == ["wrap up"]
     assert body["signals"][0]["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# CP8: claude-code directives mailbox
+# ---------------------------------------------------------------------------
+
+
+def test_dispatch_steer_claude_code_writes_correct_json(signals, tmp_path, monkeypatch):
+    """_dispatch_steer_claude_code writes a file at <directives_dir>/<raw_uuid>.json with the
+    expected keys, deriving the directives dir from ESTATE_STATE_PATH_PREFIX."""
+    ledger = tmp_path / "prompt-ledger"
+    ledger.mkdir()
+    monkeypatch.setenv("ESTATE_STATE_PATH_PREFIX", str(ledger) + "/")
+
+    error = signals._dispatch_steer_claude_code("idp:s-xyz", "founder", "check the signals")
+    assert error is None
+
+    import json as _json
+
+    dest = tmp_path / "directives" / "s-xyz.json"
+    assert dest.exists(), f"expected directive file at {dest}"
+    payload = _json.loads(dest.read_text(encoding="utf-8"))
+    assert payload["session_id"] == "idp:s-xyz"
+    assert payload["by"] == "founder"
+    assert payload["text"] == "check the signals"
+    assert "written_at" in payload
+
+
+def test_nudge_with_claude_code_runtime_succeeds(signals, tmp_path, monkeypatch):
+    """nudge() with runtime='claude-code' calls _dispatch_steer_claude_code and records ok=True."""
+    ledger = tmp_path / "prompt-ledger"
+    ledger.mkdir()
+    monkeypatch.setenv("ESTATE_STATE_PATH_PREFIX", str(ledger) + "/")
+
+    record = signals.nudge("idp:s-xyz", "claude-code", "founder", "check the signals")
+    assert record["ok"] is True
+    assert record["error"] is None
+    assert record["session_id"] == "idp:s-xyz"
+    rows = signals.signals_for("idp:s-xyz")
+    assert len(rows) == 1
+    assert rows[0]["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# CP8: cyrus — no LINEAR_API_KEY returns error, never raises
+# ---------------------------------------------------------------------------
+
+
+def test_dispatch_steer_cyrus_without_api_key_returns_error_not_raise(signals, monkeypatch):
+    """_dispatch_steer_cyrus with no LINEAR_API_KEY returns an error string -- never raises."""
+    monkeypatch.delenv("LINEAR_API_KEY", raising=False)
+    monkeypatch.delenv("LINEAR_API_KEY_FILE", raising=False)
+
+    error = signals._dispatch_steer_cyrus("IDP-1234:some-uuid", "founder", "hello")
+    assert error is not None
+    assert "LINEAR_API_KEY" in error
+
+
+# ---------------------------------------------------------------------------
+# CP8: dagster — unsupported runtime raises UnsupportedRuntime before any row
+# ---------------------------------------------------------------------------
+
+
+def test_nudge_with_dagster_runtime_raises_unsupported(signals):
+    """nudge() with runtime='dagster' raises UnsupportedRuntime and records nothing."""
+    with pytest.raises(signals.UnsupportedRuntime):
+        signals.nudge("dag-1", "dagster", "founder", "hello")
+    assert signals.signals_for("dag-1") == []
+
+
+# ---------------------------------------------------------------------------
+# CP8: otto — no NATS_URL records ok=False with the real error
+# ---------------------------------------------------------------------------
+
+
+def test_nudge_with_otto_runtime_no_nats_url_records_ok_false(signals, monkeypatch):
+    """nudge() with runtime='otto' and NATS_URL unset records ok=False with a real error message.
+    Two conditions are acceptable: NATS_URL not configured (env missing) or nats library not
+    importable -- both are honest 'cannot reach Otto' outcomes that must be recorded, never silently
+    dropped."""
+    monkeypatch.delenv("NATS_URL", raising=False)
+
+    record = signals.nudge("otto:t-789", "otto", "founder", "pause and report")
+    assert record["ok"] is False
+    assert record["error"] is not None
+    # Either the nats library is missing, or NATS_URL is not configured -- both are valid errors
+    assert "NATS_URL" in record["error"] or "nats" in record["error"].lower()
+    rows = signals.signals_for("otto:t-789")
+    assert len(rows) == 1
+    assert rows[0]["ok"] is False

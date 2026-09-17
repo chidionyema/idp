@@ -73,6 +73,8 @@ _GRAPH_MODULE = Path(__file__).resolve().parent / "graph.py"
 _EVALS_MODULE = Path(__file__).resolve().parent / "evals.py"
 _MUTATIONS_MODULE = Path(__file__).resolve().parent / "mutations.py"
 _EXECUTOR_LINK_MODULE = Path(__file__).resolve().parent / "executor_link.py"
+_TRACE_MODULE = Path(__file__).resolve().parent / "trace.py"
+_LEDGER_TAIL_MODULE = Path(__file__).resolve().parent / "ledger_tail.py"
 
 
 def _load(path: Path, name: str):
@@ -112,6 +114,14 @@ def _evals():
 
 def _mutations():
     return _load(_MUTATIONS_MODULE, "fleetview_mutations_impl")
+
+
+def _trace():
+    return _load(_TRACE_MODULE, "fleetview_trace_impl")
+
+
+def _ledger_tail():
+    return _load(_LEDGER_TAIL_MODULE, "fleetview_ledger_tail_impl")
 
 
 def _executor_link():
@@ -159,6 +169,8 @@ CHECK_RECEIPTS_PATH = "/check-receipts"
 MUTATIONS_PATH = "/mutations"
 MUTATIONS_APPROVE_PATH = "/mutations/approve"
 MUTATIONS_REJECT_PATH = "/mutations/reject"
+TRACE_PATH = "/trace"
+LEDGER_PATH = "/ledger"
 
 
 def sessions_envelope() -> tuple[dict[str, Any], int]:
@@ -393,6 +405,42 @@ async def reject_mutation(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     except impl.InvalidQuery as exc:
         return {"error": str(exc)}, 400
     return result, (200 if result.get("ok") else 409)
+
+
+def trace_envelope(session_id: str) -> tuple[dict[str, Any], int]:
+    """The body and status for `GET /api/fleetview/trace?session_id=...`.
+
+    On success: {"available": True, "error": None, "nodes": [...], "edges": [...]}, 200.
+    On TraceUnavailable (Langfuse not configured, trace missing, or unreachable):
+        {"available": False, "error": str(e), "nodes": [], "edges": []}, 503 —
+    the same rule blast_radius_envelope follows: a real gap is never disguised as empty data.
+    """
+    impl = _trace()
+    try:
+        result = impl.trace_graph(session_id)
+    except impl.TraceUnavailable as exc:
+        return {
+            "available": False,
+            "error": str(exc),
+            "nodes": [],
+            "edges": [],
+        }, 503
+    return {"available": True, "error": None, **result}, 200
+
+
+def ledger_tail_envelope(session_id: str) -> tuple[dict[str, Any], int]:
+    """The body and status for `GET /api/fleetview/ledger?session_id=...`.
+
+    Always 200 — log-pane errors are soft: an empty list and an unreadable ledger look the same
+    to the page (no rows to show), and a broken log pane must not take down the session card.
+    On any error the error is included so a developer can diagnose it from the response.
+    """
+    impl = _ledger_tail()
+    try:
+        rows = impl.ledger_tail(session_id)
+        return {"rows": rows}, 200
+    except Exception as exc:  # noqa: BLE001 — soft failure for the log pane
+        return {"rows": [], "error": str(exc)}, 200
 
 
 def _now() -> str:
