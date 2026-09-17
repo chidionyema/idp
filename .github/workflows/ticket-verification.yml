@@ -45,6 +45,7 @@ jobs:
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
       - name: bin/idp-ticket-verify as the prover App
+        id: verify
         env:
           OCI_CI: "1"
           OCI_CLI_AUTH: security_token
@@ -56,7 +57,20 @@ jobs:
           set -o pipefail
           tok=$(bin/idp-github-app token ticket-verifier 2>&1) || { echo "BLIND   ticket-verify  no App token: ${tok:0:160}"; exit 2; }
           echo "::add-mask::$tok"
+          echo "tok=$tok" >> "$GITHUB_OUTPUT"
           apply=--apply
           [ "${{ github.event_name }}" = workflow_dispatch ] && [ "${{ inputs.apply }}" != true ] && apply=""
           GH_TOKEN="$tok" bin/idp-ticket-verify $apply 2>&1 | tee verify.out
           printf '### ticket-verification\n```\n%s\n```\n' "$(cat verify.out)" >> "$GITHUB_STEP_SUMMARY"
+      - name: post verdict to crew#102 (only when labels changed or on manual dispatch)
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.verify.outputs.tok }}
+        run: |
+          changed=$(grep -cE '^\s*(VERIFIED|REJECTED|REVERTED)' verify.out || true)
+          trigger="${{ github.event_name }}"
+          if [ "$changed" -gt 0 ] || [ "$trigger" = "workflow_dispatch" ]; then
+            ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            body="$ts **ticket-verification** (scheduler): $(grep -cE '^\s*VERIFIED' verify.out || echo 0) verified, $(grep -cE '^\s*REJECTED' verify.out || echo 0) rejected, $(grep -cE '^\s*REVERTED' verify.out || echo 0) reverted — [run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            gh issue comment 102 --repo chidionyema/crew --body "$body"
+          fi
