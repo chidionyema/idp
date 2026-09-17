@@ -8,19 +8,17 @@ import asyncio
 import uuid
 from typing import Any, Literal
 
-from temporalio.client import Client, WorkflowFailureError, WorkflowHandle
-from temporalio.service import RPCError
-
 from sovereign import config
 from sovereign.engine import fsm
 from sovereign.engine import receipts as receipts_mod
 
-_client: Client | None = None
+_client: Any = None
 
 WORKFLOW = "SessionWorkflow"
 
 
-async def get_client() -> Client:
+async def get_client() -> Any:
+    from temporalio.client import Client
     global _client
     if _client is None:
         _client = await Client.connect(config.TEMPORAL_ADDRESS, namespace=config.TEMPORAL_NAMESPACE)
@@ -82,7 +80,7 @@ async def start(
     return {"session_id": session_id}
 
 
-async def _state_of(handle: WorkflowHandle) -> dict[str, Any] | None:
+async def _state_of(handle: Any) -> dict[str, Any] | None:
     """A query is answered from the workflow's own in-memory attributes
     (workflow.py's `state()` never awaits), so it must never take long --
     but a client-side timeout still guards `list_sessions` against any
@@ -95,13 +93,13 @@ async def _state_of(handle: WorkflowHandle) -> dict[str, Any] | None:
         # A running workflow's `result()` would only block further, so
         # degrade to "unknown" rather than stacking a second wait.
         return None
-    except (RPCError, Exception):
+    except Exception:
         pass
     try:
         result = await asyncio.wait_for(handle.result(), timeout=timeout)
         if isinstance(result, dict):
             return result
-    except (asyncio.TimeoutError, WorkflowFailureError, RPCError, Exception):
+    except Exception:
         pass
     return None
 
