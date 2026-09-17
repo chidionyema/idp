@@ -86,6 +86,7 @@ spec:
             - { name: HOME, value: /tmp }
             - { name: OLLAMA_MODELS, value: /models }
             - { name: OLLAMA_KEEP_ALIVE, value: 24h }   # crew#284 CP2: cold load measured 30.8s, warm 16.9s
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
           volumeMounts:
             - { name: models, mountPath: /models }
             - { name: tmp, mountPath: /tmp }
