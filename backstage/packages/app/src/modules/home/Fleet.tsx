@@ -24,6 +24,12 @@ import {
   fetchApiRef,
   useApi,
 } from '@backstage/frontend-plugin-api';
+import Box from '@material-ui/core/Box';
+import Button from '@material-ui/core/Button';
+import MuiChip from '@material-ui/core/Chip';
+import TextField from '@material-ui/core/TextField';
+import Tooltip from '@material-ui/core/Tooltip';
+import Typography from '@material-ui/core/Typography';
 import dagre from 'dagre';
 import {
   Background,
@@ -39,7 +45,6 @@ import {
   attentionReason,
   capabilityLabel,
   capabilityTitle,
-  isStale,
   NUDGEABLE_RUNTIMES,
   order,
   prLabel,
@@ -248,6 +253,46 @@ export function Fleet() {
   // nothing in the estate needs to be built for voice (spec 2026-09-08, line 22).
   const [nudgeStatusBySession, setNudgeStatusBySession] = useState<Record<string, string>>({});
   const [steerTextBySession, setSteerTextBySession] = useState<Record<string, string>>({});
+  const [stopStatusBySession, setStopStatusBySession] = useState<Record<string, string>>({});
+  const [approveStatusBySession, setApproveStatusBySession] = useState<Record<string, string>>({});
+  const [denyStatusBySession, setDenyStatusBySession] = useState<Record<string, string>>({});
+
+  const sendStop = async (sessionId: string, runtime: string) => {
+    const by = draftFor(sessionId).author.trim();
+    if (!by) { setStopStatusBySession(c => ({ ...c, [sessionId]: 'Add name in Focus first' })); return; }
+    setStopStatusBySession(c => ({ ...c, [sessionId]: 'stopping…' }));
+    try {
+      const res = await fetchApi.fetch('plugin://proxy/fleetview/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, runtime, by }) });
+      const body = (await res.json()) as { ok?: boolean; error?: string };
+      setStopStatusBySession(c => ({ ...c, [sessionId]: res.ok && body.ok !== false ? 'Stopped ✓' : `Failed: ${body.error ?? res.status}` }));
+    } catch (err) { setStopStatusBySession(c => ({ ...c, [sessionId]: `Failed: ${err instanceof Error ? err.message : String(err)}` })); }
+  };
+
+  const sendApprove = async (sessionId: string, runtime: string) => {
+    const by = draftFor(sessionId).author.trim();
+    if (!by) { setApproveStatusBySession(c => ({ ...c, [sessionId]: 'Add name in Focus first' })); return; }
+    const text = (steerTextBySession[sessionId] ?? '').trim();
+    setApproveStatusBySession(c => ({ ...c, [sessionId]: 'approving…' }));
+    try {
+      const res = await fetchApi.fetch('plugin://proxy/fleetview/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, runtime, by, ...(text ? { text } : {}) }) });
+      const body = (await res.json()) as { ok?: boolean; error?: string };
+      setApproveStatusBySession(c => ({ ...c, [sessionId]: res.ok && body.ok !== false ? 'Approved ✓' : `Failed: ${body.error ?? res.status}` }));
+      if (res.ok) void loadSignals(sessionId);
+    } catch (err) { setApproveStatusBySession(c => ({ ...c, [sessionId]: `Failed: ${err instanceof Error ? err.message : String(err)}` })); }
+  };
+
+  const sendDeny = async (sessionId: string, runtime: string) => {
+    const by = draftFor(sessionId).author.trim();
+    if (!by) { setDenyStatusBySession(c => ({ ...c, [sessionId]: 'Add name in Focus first' })); return; }
+    const text = (steerTextBySession[sessionId] ?? '').trim();
+    setDenyStatusBySession(c => ({ ...c, [sessionId]: 'denying…' }));
+    try {
+      const res = await fetchApi.fetch('plugin://proxy/fleetview/deny', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, runtime, by, ...(text ? { text } : {}) }) });
+      const body = (await res.json()) as { ok?: boolean; error?: string };
+      setDenyStatusBySession(c => ({ ...c, [sessionId]: res.ok && body.ok !== false ? 'Denied ✓' : `Failed: ${body.error ?? res.status}` }));
+      if (res.ok) void loadSignals(sessionId);
+    } catch (err) { setDenyStatusBySession(c => ({ ...c, [sessionId]: `Failed: ${err instanceof Error ? err.message : String(err)}` })); }
+  };
 
   const sendNudge = async (sessionId: string, runtime: string) => {
     const by = draftFor(sessionId).author.trim();
@@ -532,24 +577,29 @@ export function Fleet() {
                 const receipt = receiptsBySession[s.session_id];
                 const draft = draftFor(s.session_id);
                 const capability = capabilityLabel(s.capability_class);
-                const stale = isStale(s);
-                const nudgeable = NUDGEABLE_RUNTIMES.has(s.runtime) && stale;
+                const nudgeable = NUDGEABLE_RUNTIMES.has(s.runtime);
                 return (
                   <tr key={`${s.runtime}:${s.session_id}`}>
-                    <td>{s.session_id}</td>
-                    <td>{s.runtime}</td>
-                    <td>{s.task}</td>
-                    <td>{stateLabel(s.state)}</td>
-                    <td>{s.repo ?? '—'}</td>
-                    <td>{spendLabel(s.spend_usd)}</td>
+                    <td><Typography variant="caption" style={{ fontFamily: 'monospace' }}>{s.session_id.slice(-8)}</Typography></td>
                     <td>
-                      {/* No badge for a runtime with no capability-class concept -- a dash
-                          would read as "no capabilities", which is a different, false claim. */}
+                      <MuiChip size="small" label={s.runtime} style={{ fontWeight: 600, fontSize: 11,
+                        background: s.runtime === 'claude-code' ? '#7c3aed' : s.runtime === 'sovereign' ? '#0369a1' : s.runtime === 'otto' ? '#059669' : '#6b7280',
+                        color: '#fff' }} />
+                    </td>
+                    <td><Typography variant="body2" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.task}>{s.task}</Typography></td>
+                    <td>
+                      <MuiChip size="small" label={stateLabel(s.state)} style={{ fontWeight: 700, fontSize: 11,
+                        background: s.state === 'running' ? '#166534' : s.state === 'failed' ? '#991b1b' : s.state === 'paused' ? '#92400e' : '#374151',
+                        color: '#fff' }} />
+                    </td>
+                    <td><Typography variant="caption">{s.repo ?? '—'}</Typography></td>
+                    <td><Typography variant="caption" style={{ fontWeight: 600 }}>{spendLabel(s.spend_usd)}</Typography></td>
+                    <td>
                       {capability ? (
-                        <Chip title={capabilityTitle(s.capabilities)}>{capability}</Chip>
-                      ) : (
-                        '—'
-                      )}
+                        <Tooltip title={capabilityTitle(s.capabilities) ?? ''}>
+                          <MuiChip size="small" label={capability} />
+                        </Tooltip>
+                      ) : '—'}
                     </td>
                     <td>{prLabel(s.pull_requests)}</td>
                     <td>
@@ -705,33 +755,79 @@ export function Fleet() {
                       </Fold>
                     </td>
                     <td>
-                      {/* Only a stale, sovereign-runtime session ever gets a button -- never one
-                          that cannot possibly do anything (see NUDGEABLE_RUNTIMES in fleetBoard.ts). */}
                       {nudgeable ? (
-                        <>
-                          <input
-                            aria-label={`steer text for ${s.session_id}`}
-                            placeholder="steer instruction (or dictate with superwhisper)"
-                            value={steerTextBySession[s.session_id] ?? ''}
-                            onChange={e =>
-                              setSteerTextBySession(current => ({
-                                ...current,
-                                [s.session_id]: e.target.value,
-                              }))
-                            }
-                          />
-                          <button
-                            type="button"
-                            onClick={() => void sendNudge(s.session_id, s.runtime)}
-                          >
-                            Steer
-                          </button>
-                          {nudgeStatusBySession[s.session_id] && (
-                            <span> {nudgeStatusBySession[s.session_id]}</span>
+                        <Box display="flex" flexDirection="column" style={{ gap: 6, minWidth: 200 }}>
+                          {s.state === 'running' && (
+                            <Box display="flex" alignItems="center" style={{ gap: 6 }}>
+                              <Button
+                                variant="contained"
+                                size="small"
+                                style={{ backgroundColor: '#da3633', color: '#fff', minWidth: 64, fontWeight: 600, letterSpacing: '0.02em' }}
+                                onClick={() => void sendStop(s.session_id, s.runtime)}
+                              >
+                                Stop
+                              </Button>
+                              {stopStatusBySession[s.session_id] && (
+                                <Typography variant="caption" style={{ color: '#9ca3af' }}>
+                                  {stopStatusBySession[s.session_id]}
+                                </Typography>
+                              )}
+                            </Box>
                           )}
-                        </>
+                          {s.state === 'paused' && (
+                            <Box display="flex" alignItems="center" style={{ gap: 6 }}>
+                              <Button
+                                variant="contained"
+                                size="small"
+                                style={{ backgroundColor: '#16a34a', color: '#fff', minWidth: 72, fontWeight: 600 }}
+                                onClick={() => void sendApprove(s.session_id, s.runtime)}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                variant="outlined"
+                                size="small"
+                                style={{ minWidth: 56, color: '#6b7280', borderColor: '#6b7280', fontWeight: 600 }}
+                                onClick={() => void sendDeny(s.session_id, s.runtime)}
+                              >
+                                Deny
+                              </Button>
+                              {(approveStatusBySession[s.session_id] || denyStatusBySession[s.session_id]) && (
+                                <Typography variant="caption" style={{ color: '#9ca3af' }}>
+                                  {approveStatusBySession[s.session_id] || denyStatusBySession[s.session_id]}
+                                </Typography>
+                              )}
+                            </Box>
+                          )}
+                          <Box display="flex" alignItems="flex-end" style={{ gap: 6 }}>
+                            <TextField
+                              aria-label={`steer text for ${s.session_id}`}
+                              placeholder="steer… or tap mic"
+                              size="small"
+                              variant="outlined"
+                              value={steerTextBySession[s.session_id] ?? ''}
+                              onChange={e => setSteerTextBySession(current => ({ ...current, [s.session_id]: e.target.value }))}
+                              inputProps={{ style: { fontSize: 12, padding: '4px 8px' } }}
+                              style={{ flex: 1 }}
+                            />
+                            <Button
+                              variant="contained"
+                              size="small"
+                              color="primary"
+                              style={{ minWidth: 56, fontWeight: 600, whiteSpace: 'nowrap' }}
+                              onClick={() => void sendNudge(s.session_id, s.runtime)}
+                            >
+                              Steer
+                            </Button>
+                          </Box>
+                          {nudgeStatusBySession[s.session_id] && (
+                            <Typography variant="caption" style={{ color: '#9ca3af' }}>
+                              {nudgeStatusBySession[s.session_id]}
+                            </Typography>
+                          )}
+                        </Box>
                       ) : (
-                        '—'
+                        <Typography variant="caption" style={{ color: '#4b5563' }}>—</Typography>
                       )}
                     </td>
                   </tr>
