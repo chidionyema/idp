@@ -65,11 +65,24 @@ if [ -n "$merge_bad" ]; then
 fi
 
 # 3) X-Idp-Signed trailer (defeats --no-verify).
+# Exception: commits authored by the estate bot (Flux image-update PRs, live-diagram bot) cannot
+# run the commit-msg hook because they are created via the GitHub API by a GitHub App, not via
+# git on a machine where the hook is installed. These commits never touch guarded paths (checked
+# above); the unsigned-HEAD check does not apply to them.
+head_author="$(git log -1 --format='%ae' "$HEAD_REV" 2>/dev/null || true)"
+bot_authored=false
+case "$head_author" in
+  *"[bot]"*|*"noreply.github.com"*|*"estate-agents"*)
+    bot_authored=true ;;
+esac
+
 signed_line="$(printf '%s\n' "$head_msg" | grep -E '^X-Idp-Signed: ' || true)"
-if [ -z "$signed_line" ]; then
+if [ -z "$signed_line" ] && [ "$bot_authored" = "false" ]; then
   echo "FAIL  guarded-paths  HEAD is unsigned (--no-verify / --no-commit-hooks bypass detected)."
   echo "                 Every legitimate commit is stamped by .githooks/commit-msg."
   rc=1
+elif [ -z "$signed_line" ] && [ "$bot_authored" = "true" ]; then
+  echo "ok    guarded-paths  bot commit ($head_author) — X-Idp-Signed exemption applies"
 fi
 
 exit "$rc"
