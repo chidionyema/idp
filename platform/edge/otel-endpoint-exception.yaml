@@ -29,5 +29,3 @@ spec:
       # VENDOR — third-party image with no OTel SDK; cannot be instrumented
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [notify], names: [apprise*] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [edge], names: [status-page*] }
-      # QUEUE — estate code that owns the debt; remove each entry when wired
-      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [edge-runtime], names: [expert-*, swarm-*] }
