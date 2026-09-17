@@ -30,12 +30,9 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
-  replicas: 3   # Layer 4 Prevention: multi-replica for zero-downtime pod failures
+  replicas: 1
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0   # Always 2/3 pods up
+    type: Recreate   # one Postgres, one writer; two catalogues ingesting at once is a race
   selector:
     matchLabels:
       app.kubernetes.io/name: catalogue
@@ -61,8 +58,6 @@ spec:
           image: ghcr.io/chidionyema/backstage:local
           imagePullPolicy: Never   # built locally, imported with `k3d image import`; a pull would fetch a stranger's image of the same name
           env:
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: http://signoz-otel-collector.observability.svc:4318
             - name: POSTGRES_HOST
               value: postgres
             - name: POSTGRES_PORT
@@ -138,13 +133,3 @@ spec:
             optional: false
         - name: tmp
           emptyDir: {}
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: catalogue
-spec:
-  minAvailable: 2   # Layer 4 Prevention: keep 2 pods up even during node drains
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: catalogue

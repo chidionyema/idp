@@ -1,0 +1,104 @@
+# Injects OTEL_EXPORTER_OTLP_ENDPOINT into every estate workload container at admission.
+# This is the platform's single point of OTel wiring — no manifest declares the env var;
+# Kyverno adds it. A workload that already carries the key keeps its own value (add-if-absent).
+#
+# WHY MUTATION OVER DECORATION: the require-auto-reload pattern (crew#684 blueprint) proved
+# the model — an annotation the policy injects cannot be forgotten, cannot drift, and is not
+# a surface an author must maintain. The same reasoning applies here: every workload emits
+# traces to the estate collector, and the only way to guarantee that is to make the wrong
+# state inexpressible rather than to enumerate 40 manifests and expect them to stay current.
+#
+# VENDOR workloads that have no OTel SDK are excluded at the namespace/name level; they do
+# not benefit from the injection and the env var sitting unused is noise. Estate code that
+# has not yet initialised the SDK receives the env var and emits nothing until the SDK is
+# wired — the env var is the contract, not the proof.
+#
+# SCOPE: Deployments and StatefulSets only; DaemonSets are infra (otel-agent, node-exporters)
+# excluded by namespace anyway.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: inject-otel-endpoint
+  annotations:
+    policies.kyverno.io/title: Inject OTel exporter endpoint into every workload
+    policies.kyverno.io/category: observability
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Deployment, StatefulSet
+    policies.kyverno.io/description: >-
+      Every container in every estate Deployment and StatefulSet receives
+      OTEL_EXPORTER_OTLP_ENDPOINT at admission. The mutation is add-if-absent:
+      a container that already declares the variable keeps its value.
+spec:
+  background: false
+  rules:
+    - name: inject-otel-endpoint
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, StatefulSet]
+              operations: [CREATE, UPDATE]
+      exclude:
+        any:
+          # Infrastructure namespaces — Kyverno, Flux, cert-manager cannot mutate themselves
+          - resources:
+              namespaces:
+                - kube-system
+                - flux-system
+                - kyverno
+                - cert-manager
+                - spire-mgmt
+                - metrics-server
+                - reloader
+                - keda
+                - external-secrets
+                - trivy-system
+                - tailscale
+                - observability
+                - observability-agent
+                - monitoring
+                - healing
+                - nodesoftware-operator
+                - crossplane-system
+                - calico-system
+                - calico-apiserver
+                - scheduling
+                - cross-node-drill
+                - staging
+                - state
+          # VENDOR workloads — third-party images with no OTel SDK; injection is dead weight
+          - resources:
+              namespaces: [guacamole]
+              names: [guacamole*, guacd*]
+          - resources:
+              namespaces: [healthchecks]
+              names: [healthchecks*]
+          - resources:
+              namespaces: [searxng]
+              names: [searxng*]
+          - resources:
+              namespaces: [weave-gitops]
+              names: [weave-gitops*]
+          - resources:
+              namespaces: [commerce]
+              names: [lago*, redis*]
+          - resources:
+              namespaces: [llm, idp-agent, via-negativa]
+              names: [redis*]
+          - resources:
+              namespaces: [dagster]
+          - resources:
+              namespaces: [notify]
+              names: [apprise*]
+          - resources:
+              namespaces: [edge]
+              names: [status-page*]
+      mutate:
+        patchStrategicMerge:
+          spec:
+            template:
+              spec:
+                containers:
+                  - (name): "*"
+                    env:
+                      - +(name): OTEL_EXPORTER_OTLP_ENDPOINT
+                        value: "http://signoz-otel-collector.observability.svc:4318"
