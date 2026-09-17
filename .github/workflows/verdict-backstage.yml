@@ -101,6 +101,17 @@ jobs:
             -f status=completed -f conclusion="$c" -f details_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -f "output[title]=$line" -f "output[summary]=$summary" >/dev/null
           printf '### verdict-backstage\n```\n%s\n```\n%s\n' "$line" "$summary" >> "$GITHUB_STEP_SUMMARY"
+      - name: post FAIL verdict to crew#102
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          line=$(grep -E '^(PASS|FAIL|BLOCKED|ERROR) +prove' prove.out | tail -1 || true)
+          outcome=${line%% *}
+          [ "$outcome" = "PASS" ] && exit 0
+          ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          body="$ts **verdict/backstage** (scheduler): ${outcome} — ${line#* } — [run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          gh issue comment 102 --repo chidionyema/crew --body "$body" || true
       - name: the job is red when the verdict is not PASS
         if: always()
         run: |
