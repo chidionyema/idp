@@ -143,9 +143,9 @@ const CORRELATION_WINDOW_MINUTES = 15;
 // short gap between updates is normal mid-step), short enough that nudging it is still useful.
 const STALE_AFTER_MINUTES = 20;
 
-// Mirrors backend/src/signals.py's _SUPPORTED_RUNTIMES: only sovereign has a live signal path
-// today. The board must not offer a nudge button that cannot possibly do anything.
-export const NUDGEABLE_RUNTIMES = new Set(['sovereign']);
+// Mirrors backend/src/signals.py's _SUPPORTED_RUNTIMES (CP8). Voice: superwhisper dictates
+// into the steer text field — nothing to build in the estate (spec 2026-09-08, line 22).
+export const NUDGEABLE_RUNTIMES = new Set(['sovereign', 'claude-code', 'otto', 'cyrus']);
 
 /** A running session the board has not seen an update from in a while -- the one case item #6's
  *  nudge button is for. A session with no `updated_at` is unmeasured, not stale: staleness is a

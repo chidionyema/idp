@@ -259,9 +259,11 @@ describe('item #6: a stale session is a claim about elapsed time, never a guess'
     expect(isStale(session({ state: 'running', updated_at: 'not-a-date' }), NOW)).toBe(false);
   });
 
-  it('only sovereign has a live signal path today', () => {
+  it('sovereign, claude-code, otto, and cyrus all have a live signal path', () => {
     expect(NUDGEABLE_RUNTIMES.has('sovereign')).toBe(true);
-    expect(NUDGEABLE_RUNTIMES.has('claude-code')).toBe(false);
+    expect(NUDGEABLE_RUNTIMES.has('claude-code')).toBe(true);
+    expect(NUDGEABLE_RUNTIMES.has('otto')).toBe(true);
+    expect(NUDGEABLE_RUNTIMES.has('cyrus')).toBe(true);
   });
 });
 

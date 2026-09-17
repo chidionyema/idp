@@ -23,6 +23,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          # For pull_request events the default checkout is the GitHub test-merge commit,
+          # which is never stamped by commit-msg. Check out the PR branch tip directly so
+          # git rev-parse HEAD returns the commit the author actually signed.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: run bin/idp-ci-guarded-paths against the base
         run: |
           set -uo pipefail
