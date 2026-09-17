@@ -342,6 +342,73 @@ def nudge(session_id: str, runtime: str, by: str, text: str = "") -> dict[str, A
     )
 
 
+def stop(session_id: str, runtime: str, by: str) -> dict[str, Any]:
+    session_id = (session_id or "").strip()
+    runtime = (runtime or "").strip()
+    by = (by or "").strip()
+    if not session_id: raise InvalidSignal("session_id is required")
+    if not runtime: raise InvalidSignal("runtime is required")
+    if not by: raise InvalidSignal("by is required")
+    if runtime not in _SUPPORTED_RUNTIMES: raise UnsupportedRuntime(f"{runtime} has no live signal path yet")
+    if runtime == "sovereign":
+        try:
+            from sovereign.engine import client as ec
+            result = asyncio.run(ec.signal(session_id, "stop", by, ""))
+            error = None if result.get("ok") else str(result.get("error") or "rejected")
+        except Exception as exc: error = str(exc)
+    elif runtime == "claude-code":
+        raw = session_id.rsplit(":", 1)[-1]
+        dr = Path(os.environ.get("ESTATE_STATE_PATH_PREFIX", os.path.expanduser("~/.claude/state/prompt-ledger/"))).parent / "directives"
+        try:
+            os.makedirs(dr, exist_ok=True)
+            (dr / f"{raw}.json").write_text(json.dumps({"session_id": session_id, "by": by, "kind": "stop", "written_at": _now()}))
+            error = None
+        except OSError as exc: error = str(exc)
+    else:
+        error = f"stop not yet wired for {runtime}"
+    return _record(session_id, runtime, "stop", by, "", ok=error is None, error=error)
+
+
+def approve(session_id: str, runtime: str, by: str, text: str = "") -> dict[str, Any]:
+    session_id = (session_id or "").strip()
+    runtime = (runtime or "").strip()
+    by = (by or "").strip()
+    text = (text or "").strip()
+    if not session_id: raise InvalidSignal("session_id is required")
+    if not runtime: raise InvalidSignal("runtime is required")
+    if not by: raise InvalidSignal("by is required")
+    if runtime not in _SUPPORTED_RUNTIMES: raise UnsupportedRuntime(f"{runtime} has no live signal path yet")
+    if runtime == "sovereign":
+        try:
+            from sovereign.engine import client as ec
+            result = asyncio.run(ec.signal(session_id, "approve", by, text))
+            error = None if result.get("ok") else str(result.get("error") or "rejected")
+        except Exception as exc: error = str(exc)
+    else:
+        error = f"approve not yet wired for {runtime}"
+    return _record(session_id, runtime, "approve", by, text, ok=error is None, error=error)
+
+
+def deny(session_id: str, runtime: str, by: str, text: str = "") -> dict[str, Any]:
+    session_id = (session_id or "").strip()
+    runtime = (runtime or "").strip()
+    by = (by or "").strip()
+    text = (text or "").strip()
+    if not session_id: raise InvalidSignal("session_id is required")
+    if not runtime: raise InvalidSignal("runtime is required")
+    if not by: raise InvalidSignal("by is required")
+    if runtime not in _SUPPORTED_RUNTIMES: raise UnsupportedRuntime(f"{runtime} has no live signal path yet")
+    if runtime == "sovereign":
+        try:
+            from sovereign.engine import client as ec
+            result = asyncio.run(ec.signal(session_id, "deny", by, text))
+            error = None if result.get("ok") else str(result.get("error") or "rejected")
+        except Exception as exc: error = str(exc)
+    else:
+        error = f"deny not yet wired for {runtime}"
+    return _record(session_id, runtime, "deny", by, text, ok=error is None, error=error)
+
+
 def signals_for(session_id: str) -> list[dict[str, Any]]:
     """Every signal attempt recorded for a session, newest first -- the audit trail a board row
     can show, mirroring notes_for's read-back in notes.py."""

@@ -187,6 +187,24 @@ def build_app(routes_path: Path) -> FastAPI:
         result, status = routes.add_nudge(body)
         return JSONResponse(content=result, status_code=status)
 
+    @app.post(routes.STOP_PATH)
+    async def stop_post(request: Request):
+        body = await request.json()
+        result, status = routes.add_stop(body)
+        return JSONResponse(content=result, status_code=status)
+
+    @app.post(routes.APPROVE_PATH)
+    async def approve_post(request: Request):
+        body = await request.json()
+        result, status = routes.add_approve(body)
+        return JSONResponse(content=result, status_code=status)
+
+    @app.post(routes.DENY_PATH)
+    async def deny_post(request: Request):
+        body = await request.json()
+        result, status = routes.add_deny(body)
+        return JSONResponse(content=result, status_code=status)
+
     @app.get(routes.SIGNALS_PATH)
     def signals_get(session_id: str):
         body, status = routes.signals_envelope(session_id)

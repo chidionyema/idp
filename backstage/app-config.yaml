@@ -217,7 +217,7 @@ proxy:
     '/fleetview':
       target: 'http://127.0.0.1:18790'
       changeOrigin: true
-      pathRewrite: { '^/fleetview': '' }
+      pathRewrite: { '^/api/proxy/fleetview': '' }
       allowedMethods: ['GET', 'POST']
 
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
