@@ -20,6 +20,19 @@
 # A red refuses the push. No test rung: R58 makes this hook lint-only, and the tests are CI's.
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
+# Artifact 3 (founder 2026-09-17): a push against an unverified tree is refused.
+# bin/idp-ci --full runs the complete matrix, requires all tools, and writes
+# ~/.cache/idp-ci-verified/<HEAD-sha> on success. Without it, this hook exits 1.
+# Override for genuine emergencies: IDP_CI_FULL_VERIFIED=1 git push
+_HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+_SENTINEL="$HOME/.cache/idp-ci-verified/$_HEAD_SHA"
+if [ "${IDP_CI_FULL_VERIFIED:-0}" != "1" ] && [ ! -f "$_SENTINEL" ]; then
+  echo "REFUSE pre-push: full CI matrix has not been run against this tree."
+  echo "       Run: bin/idp-ci --full"
+  echo "       (install missing tools first if needed: bin/idp-install-deps)"
+  echo "       Emergency override: IDP_CI_FULL_VERIFIED=1 git push"
+  exit 1
+fi
 # Incident 2026-08-28: git exports GIT_DIR/GIT_INDEX_FILE/GIT_PREFIX to hooks, so every test that builds a
 # throwaway repo (git init in tmp) committed into THIS branch when run from here -- five junk commits, one
 # of them 841 files deleted (crew#584). The tests run in a clean git environment, always.
@@ -92,7 +105,7 @@ if [ -n "$kyv_base" ]; then
 		set -e
 		case "$kyv_rc" in
 		0) echo "ok    kyverno  $kyv_dirs render clean against the cluster's admission policies" ;;
-		2) echo "BLIND kyverno  the judge did not run here; CI judges $kyv_dirs" ;;
+		2) echo "FAIL  kyverno  helm or kyverno not installed; run bin/idp-install-deps then retry"; exit 1 ;;
 		*)
 			echo "FAIL  kyverno  a render in $kyv_dirs is refused by admission policy"
 			printf '%s\n' "$kyv_out" | grep -vE '^ok ' | tail -40

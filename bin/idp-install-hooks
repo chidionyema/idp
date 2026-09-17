@@ -93,6 +93,20 @@ probe_py_module REQ yaml    "pip install pyyaml (bin/idp-rules reads rules.yaml 
 probe_bin       REC gh      "brew install gh; without it push-on-green and pr-report BLIND"
 probe_bin       REC ruff    "pip install ruff; used by bin/idp-ci fast rungs"
 
+# Install all CI-matrix tools (kyverno, helm, conftest, flux, kustomize, kubeconform).
+# These are required by bin/idp-ci --full and the pre-push kyverno rung; without them
+# the hook refuses rather than going BLIND. Same pinned versions as CI.
+echo ""
+echo "=== installing CI-matrix tools (bin/idp-install-deps) ==="
+if "$IDP/bin/idp-install-deps"; then
+  probe_bin REQ kyverno "bin/idp-install-deps failed to install kyverno"
+  probe_bin REQ helm    "bin/idp-install-deps failed to install helm"
+else
+  lines+=("[REQ] idp-install-deps  FAIL  one or more CI tools could not be installed (see output above)")
+  missing_required=1
+fi
+echo ""
+
 probe_http      NET mcp-verifier "${IDP_MCP_URL:-http://127.0.0.1:8001/-/mcp}" \
   "the pre-push verifier rung POSTs the diff here; set IDP_MCP_URL to a remote endpoint (WJ.1 style) or start the local service; otherwise CI enforces the same gate"
 
