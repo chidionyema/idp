@@ -42,6 +42,17 @@ every entity reference in it must resolve to an entity something defines
 Adding a rule: add a row to `rules.yaml`, add both fixtures, run `bin/idp-rules render-agents-md`
 and `bin/idp-ci`. No new rung, no new gate script.
 
+## Definition of Done — a PR is the beginning, not the end (2026-09-17)
+
+**Mandate: Never announce a pull request to the founder as an achievement. A merged PR is the start of the work.**
+
+A task is only done when all three are true:
+1. It executes on live traffic — a real cron, webhook, or event trigger in production, not a CI fixture
+2. Its output reaches a surface the founder reads: Telegram, crew#102, or mumchimp.com
+3. If it breaks, something reports it within one hour without the founder asking
+
+A PR that writes to GITHUB_STEP_SUMMARY, a JSONL ledger file, a Backstage TechDocs page, or an OrbStack log is not done. It is ghost code. The next step after every merge is always: wire it into the live execution path. If wiring is blocked, say so explicitly and name the blocker — do not move on to the next build task.
+
 ## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
 
 **Mandate: On any fresh checkout, run `bin/idp-install-hooks` before your first commit.**
