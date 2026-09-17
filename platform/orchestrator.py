@@ -191,7 +191,7 @@ async def run_orchestrator(goal: str, worktree: str = None, hook_orchestrator=No
     # 3. Initialize the Brain — routes through the estate proxy so ceiling + efficiency_gateway fire.
     # ChatOpenAI with the LiteLLM base_url works for any model the proxy serves (model-agnostic).
     # LITELLM_BASE_URL and LITELLM_API_KEY are injected by sovereign/config.py from the secret store.
-    _litellm_url = os.environ.get("LITELLM_BASE_URL", "https://llm.mumchimp.com")
+    _litellm_url = os.environ.get("LITELLM_BASE_URL", "")
     _litellm_key = os.environ.get("LITELLM_API_KEY", "")
     model = ChatOpenAI(
         model="default",
