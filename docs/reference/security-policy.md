@@ -54,6 +54,7 @@ PR alongside these.
 | `capacity-requests-need-proof` | Audit 1, Enforce 1 | No paid capacity without proof (crew#584) | `edge` | `platform/edge/capacity-policy.yaml` |
 | `dev-loop-mirrord-fence` | Enforce | mirrord agents only where the namespace allows the dev loop | `edge` | `platform/edge/dev-loop-policy.yaml` |
 | `flux-only-writes` | Enforce | Only Flux and the deploy workflow may change the cluster | `edge` | `platform/edge/flux-only-writes.yaml` |
+| `inject-otel-endpoint` | Audit | Inject OTel exporter endpoint into every workload | `edge` | `platform/edge/inject-otel-endpoint.yaml` |
 | `no-token-by-default` | Audit | A pod on the default account gets no Kubernetes token | `edge` | `platform/edge/no-token-by-default.yaml` |
 | `otto-gvisor-admission` | Enforce | otto-gvisor-sandbox requires runtimeClassName:gvisor and no privileged | `edge` | `platform/edge/gvisor-admission.yaml` |
 | `protect-namespaces` | Enforce | A platform namespace cannot be deleted | `edge` | `platform/edge/protect-namespaces.yaml` |
@@ -62,6 +63,7 @@ PR alongside these.
 | `require-auto-reload` | Audit 2, Enforce 2 | Every workload restarts when its config changes | `edge` | `platform/edge/require-auto-reload.yaml` |
 | `require-availability` | Enforce | Founder-facing workloads survive losing one node | `scheduling` | `platform/scheduling/require-availability.yaml` |
 | `require-catalogue-entity` | Enforce | Everything that serves a port names its catalogue entity | `edge` | `platform/edge/require-catalogue-entity.yaml` |
+| `require-otel-endpoint` | Enforce | Every application workload declares an OTel endpoint | `edge` | `platform/edge/require-otel-endpoint.yaml` |
 | `require-priority-class` | Audit 1, Enforce 2 | Require a PriorityClass on platform workloads | `scheduling` | `platform/scheduling/require-priority-class.yaml` |
 | `require-registry-host` | Audit | Every image names its registry | `edge` | `platform/edge/require-registry-host.yaml` |
 | `secrets-not-from-env-vars` | Audit | Disallow Secrets from Env Vars in CEL expressions | `edge` | `platform/edge/kyverno-secrets-policy.yaml` |

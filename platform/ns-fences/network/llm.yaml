@@ -139,6 +139,9 @@ spec:
           kubernetes.io/metadata.name: edge
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: forge
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: healing
     - namespaceSelector:
         matchLabels:
@@ -155,6 +158,9 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: robusta
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: sovereign-system
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: via-negativa

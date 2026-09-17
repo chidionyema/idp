@@ -465,6 +465,10 @@ nav:
       # ['catalog-spec-type', 'catalog-links-absolute']".
       - catalog-spec-type: gates/catalog-spec-type.md
       - catalog-links-absolute: gates/catalog-links-absolute.md
+      # 2026-09-17: main-green-gate and wip-gate added to rules.yaml (Andon cord enforcement);
+      # nav entries required or test_gate_demo's nav case fails.
+      - main-green-gate: gates/main-green-gate.md
+      - wip-gate: gates/wip-gate.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md

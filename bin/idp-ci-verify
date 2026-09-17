@@ -35,6 +35,64 @@ from verifier import (  # noqa: E402
 )
 
 
+def _full_content_diff(patch: str) -> str:
+    """Replace hunk diffs for modified (non-new) files with new-file-style diffs.
+
+    parse_unified_diff only keeps '+' lines from each hunk, so a modified file
+    yields a fragment, not the complete content.  stage_structural's YAML/SQL
+    checks then receive a partial document and emit false-positive parse errors.
+    New-file diffs (--- /dev/null) already contain every line, so they are left
+    as-is.  For everything else we read the current file from disk and emit a
+    synthetic new-file diff that the verifier's structural stage can validate.
+    """
+    lines = patch
+    result: list[str] = []
+    pos = 0
+    while pos < len(lines):
+        if not lines[pos:].startswith("diff --git "):
+            break
+        end = lines.find("\ndiff --git ", pos + 1)
+        end = len(lines) if end == -1 else end
+        chunk = lines[pos:end]
+
+        path: str | None = None
+        is_new = False
+        for ln in chunk.splitlines():
+            if ln.startswith("--- "):
+                a = ln[4:].strip().split("\t")[0]
+                if a.startswith("a/"):
+                    a = a[2:]
+                path = a
+            elif ln.startswith("new file mode"):
+                is_new = True
+
+        if path and not is_new and path != "/dev/null":
+            full_path = REPO / path
+            try:
+                content = full_path.read_text(encoding="utf-8", errors="replace")
+                lines_list = content.splitlines(keepends=True)
+                if lines_list and not lines_list[-1].endswith("\n"):
+                    lines_list[-1] += "\n"
+                n = len(lines_list)
+                synthetic = (
+                    f"diff --git a/{path} b/{path}\n"
+                    f"new file mode 100644\n"
+                    f"--- /dev/null\n"
+                    f"+++ b/{path}\n"
+                    f"@@ -0,0 +1,{n} @@\n"
+                )
+                synthetic += "".join(f"+{ln}" for ln in lines_list)
+                result.append(synthetic)
+            except OSError:
+                result.append(chunk)
+        else:
+            result.append(chunk)
+
+        pos = end
+
+    return "".join(result)
+
+
 def _test_source() -> str:
     candidate = REPO / "tests" / "test_verifier_hooks.py"
     if candidate.exists():
@@ -57,6 +115,7 @@ def main() -> int:
         print("BLIND verifier: empty diff — nothing to grade", file=sys.stderr)
         return 2
 
+    patch = _full_content_diff(patch)
     files = parse_unified_diff(patch)
     if not files:
         print("BLIND verifier: diff parses to no files", file=sys.stderr)

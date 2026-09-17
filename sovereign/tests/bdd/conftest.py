@@ -52,6 +52,7 @@ verdict on a skip changes. The fixture directory
 sovereign/tests/fixtures/bdd/pending_unclaimed is the must-fail half of
 that guard, and sovereign/tests/bdd/test_branch_policy.py runs it both ways.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -70,6 +71,12 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+# bin/idp-install-deps installs tools to ~/.cache/estate-tools/; add to PATH so
+# conftest, helm, kyverno, etc. are found by BDD steps without manual PATH setup.
+_ESTATE_TOOLS = Path.home() / ".cache" / "estate-tools"
+if _ESTATE_TOOLS.is_dir() and str(_ESTATE_TOOLS) not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = str(_ESTATE_TOOLS) + os.pathsep + os.environ.get("PATH", "")
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +103,9 @@ def pytest_configure(config: pytest.Config) -> None:
     ):
         for line in _TAG_LINE_RE.findall(feature.read_text()):
             for tag in (t.lstrip("@") for t in line.split()):
-                config.addinivalue_line("markers", f"{tag}: Gherkin tag, declared in {feature.name}")
+                config.addinivalue_line(
+                    "markers", f"{tag}: Gherkin tag, declared in {feature.name}"
+                )
 
 
 STRICT_ENV = "SB_BDD_STRICT"
@@ -118,11 +127,19 @@ def pending_verdict(mark: pytest.Mark, strict: bool) -> tuple[str, str]:
     if not strict:
         return "skip", f"{req}: steps not bound yet, owner {owner or '?'}"
     if not owner or owner == UNCLAIMED:
-        return "fail", f"{req}: pending mark has no owner (got {owner or 'none'!r}); a strict branch needs a named workstream"
-    return "fail", f"{req}: steps not bound yet (owner {owner}); pending is not allowed on a strict branch"
+        return (
+            "fail",
+            f"{req}: pending mark has no owner (got {owner or 'none'!r}); a strict branch needs a named workstream",
+        )
+    return (
+        "fail",
+        f"{req}: steps not bound yet (owner {owner}); pending is not allowed on a strict branch",
+    )
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
     pending: dict[str, str] = {}
     strict = strict_branch_policy()
     for item in items:
@@ -150,12 +167,20 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 _PENDING: pytest.StashKey[dict[str, str]] = pytest.StashKey()
 
 
-def pytest_terminal_summary(terminalreporter: Any, exitstatus: int, config: pytest.Config) -> None:
+def pytest_terminal_summary(
+    terminalreporter: Any, exitstatus: int, config: pytest.Config
+) -> None:
     pending = config.stash.get(_PENDING, {})
     if not pending:
         return
-    mode = "strict: each one fails" if strict_branch_policy() else "permissive: each one skips"
-    terminalreporter.write_sep("-", f"{len(pending)} feature(s) pending step definitions ({mode})")
+    mode = (
+        "strict: each one fails"
+        if strict_branch_policy()
+        else "permissive: each one skips"
+    )
+    terminalreporter.write_sep(
+        "-", f"{len(pending)} feature(s) pending step definitions ({mode})"
+    )
     for path, who in sorted(pending.items()):
         terminalreporter.write_line(f"  pending  {path}  {who}")
 
@@ -364,7 +389,9 @@ class MessageSink:
         assert self.sent == [], f"expected Ghost silence, got {self.sent!r}"
 
     def assert_exactly_one(self) -> Message:
-        assert len(self.sent) == 1, f"expected exactly one message, got {len(self.sent)}: {self.sent!r}"
+        assert len(self.sent) == 1, (
+            f"expected exactly one message, got {len(self.sent)}: {self.sent!r}"
+        )
         return self.sent[0]
 
 
@@ -384,8 +411,14 @@ def messages() -> MessageSink:
 def scratch_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "scratch"
     repo.mkdir()
-    env = {**os.environ, "GIT_CONFIG_GLOBAL": str(tmp_path / "gitconfig"), "GIT_CONFIG_SYSTEM": os.devnull}
-    run = lambda *a: subprocess.run(["git", *a], cwd=repo, env=env, check=True, capture_output=True)
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": str(tmp_path / "gitconfig"),
+        "GIT_CONFIG_SYSTEM": os.devnull,
+    }
+    run = lambda *a: subprocess.run(
+        ["git", *a], cwd=repo, env=env, check=True, capture_output=True
+    )
     run("init", "-q", "-b", "main")
     run("config", "user.email", "bdd@example.invalid")
     run("config", "user.name", "bdd")
@@ -436,12 +469,21 @@ def sb(estate_home: Path, tmp_path: Path) -> Callable[..., SbResult]:
         proc = subprocess.run(
             argv,
             cwd=str(cwd or REPO_ROOT),
-            env={**os.environ, "ESTATE_HOME": str(estate_home), "PYTHONPATH": str(REPO_ROOT)},
+            env={
+                **os.environ,
+                "ESTATE_HOME": str(estate_home),
+                "PYTHONPATH": str(REPO_ROOT),
+            },
             capture_output=True,
             text=True,
             timeout=timeout,
         )
-        return SbResult(argv=argv, returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
+        return SbResult(
+            argv=argv,
+            returncode=proc.returncode,
+            stdout=proc.stdout,
+            stderr=proc.stderr,
+        )
 
     return _run
 

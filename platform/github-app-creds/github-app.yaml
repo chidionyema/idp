@@ -1,0 +1,43 @@
+# The github-app Secret, split out of platform/alerts-github so that any row
+# that needs the Secret (otto-gateway postBuild substitution, the GithubAccessToken
+# generators) can declare a tight dependency on just this resource rather than on
+# alerts-github's health check, which watches the backstage catalogue Deployment.
+# That health check caused alerts-github to be NOT READY whenever backstage degraded,
+# blocking otto-gateway and every other row that substitutes ${githubAppIDQuoted} --
+# even though the Secret itself was in the cluster and ready to be read.
+#
+# This Kustomization depends only on secret-store. alerts-github depends on this
+# Kustomization. otto-gateway, agent-workforce and any other postBuild substituter
+# depend on this Kustomization, not on alerts-github.
+#
+# Incident 2026-08-26 (crew#325): platform/alerts/provider-github.yaml named secretRef github-app,
+# and nothing created that Secret in the cluster (the App lives only in the vault, written by
+# bin/idp-github-app convert + installation). The Provider never became Ready, the reconcile
+# ledger posted zero repository_dispatch events in 24h, and a session with no kube path had no
+# way to read why langfuse-web was not serving. Flux's githubdispatch provider authenticates as
+# the App with these three keys (notification-controller >= v1.5).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: github-app
+  namespace: flux-system
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: github-app
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        githubAppID: "{{ .app_id }}"
+        githubAppInstallationID: "{{ .installation_id }}"
+        # Incident run 33339964930: kustomize build drops YAML quotes around ${githubAppID}, and
+        # Flux envsubst then types the bare numeral as an int -- the API server refuses the
+        # GithubAccessToken (spec.appID expected string). The quotes must ride IN the value:
+        # these keys carry the id already double-quoted, so the substituted text parses as a string.
+        githubAppIDQuoted: '{{ .app_id | quote }}'
+        githubAppInstallationIDQuoted: '{{ .installation_id | quote }}'
+        githubAppPrivateKey: "{{ .pem_b64 | b64dec }}"
+  dataFrom:
+    - extract: { key: github-app }

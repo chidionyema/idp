@@ -15,3 +15,4 @@ resources:
   - rbac.yaml
   - calico-node.yaml
   - calico-kube-controllers.yaml
+  - deny-direct-ai-vendor-egress.yaml

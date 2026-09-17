@@ -33,7 +33,6 @@ spec:
         - hermes
         - science
         - router-rows
-        - langsmith
         default: all
       delete:
         title: schedule deletion of one vault entry by name (for a mis-named entry); the entry field is

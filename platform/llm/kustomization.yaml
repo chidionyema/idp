@@ -23,6 +23,7 @@ configMapGenerator:
   - name: litellm-request-ceiling
     files:
       - request_ceiling.py
+      - efficiency_gateway.py
 generatorOptions:
   disableNameSuffixHash: false
 
