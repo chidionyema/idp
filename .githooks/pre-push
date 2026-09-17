@@ -20,6 +20,8 @@
 # A red refuses the push. No test rung: R58 makes this hook lint-only, and the tests are CI's.
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
+# bin/idp-install-deps installs tools to ~/.cache/estate-tools/; ensure they're on PATH.
+export PATH="$HOME/.cache/estate-tools:$PATH"
 # Artifact 3 (founder 2026-09-17): a push against an unverified tree is refused.
 # bin/idp-ci --full runs the complete matrix, requires all tools, and writes
 # ~/.cache/idp-ci-verified/<HEAD-sha> on success. Without it, this hook exits 1.
