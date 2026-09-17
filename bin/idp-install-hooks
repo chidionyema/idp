@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Wire this clone at .githooks AND surface every silent trap the pre-push depends on.
+#
+# The estate's .githooks/pre-push (crew#584 CP2) refuses a push whose session-plane rules would
+# fail in CI seven minutes later -- but each rung it dispatches depends on some combination of
+# tools, credentials or local services. Before this file was a preflight, a fresh clone learned
+# about each dependency the moment it broke: `gh` missing surfaced when push-on-green BLINDed,
+# the MCP verifier at 127.0.0.1:8001 surfaced as a Connection refused traceback the first time
+# an agent pushed. Founder called both classes out on 2026-09-16: "silent things ... only
+# discovered after the fact is not good" and "we are moving away from Mac or laptop dependency".
+# This file is the up-front discovery point: no push is refused without the setup step naming
+# the reason.
+#
+# Three states for each probe:
+#   OK     the rung will run and can refuse a push
+#   BLIND  the tool or service is absent AND the rung it belongs to fails-BLIND (informational
+#          only, LAW 38: a fence a correct machine cannot satisfy is an outage). CI enforces the
+#          same gate on the server side, so the push is still graded.
+#   FAIL   the tool is absent AND the rung it belongs to is fail-closed. Install refuses; the
+#          message names the exact package or endpoint.
+#
+# Idempotent. Safe to run on every checkout, and in CI where the printed report is the receipt.
+case "${1:-}" in
+  -h|--help)
+    echo "bin/idp-install-hooks -- wire .githooks and install all CI-matrix tools; idempotent"
+    exit 0
+    ;;
+esac
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$IDP"
+
+[ -x "$IDP/.githooks/pre-push" ] || {
+  echo "FAIL .githooks/pre-push is not executable or absent -- fix the tree, do not paper over"
+  exit 1
+}
+
+missing_required=0
+lines=()
+
+probe_bin() {
+  local level="$1" name="$2" desc="$3"
+  if command -v "$name" >/dev/null 2>&1; then
+    local ver
+    ver="$("$name" --version 2>&1 | head -1 | tr -d '\n' || true)"
+    lines+=("[$level] $name  OK  ${ver:-installed}")
+  else
+    if [ "$level" = "REQ" ]; then
+      lines+=("[$level] $name  FAIL  not on PATH -- $desc")
+      missing_required=1
+    else
+      lines+=("[$level] $name  BLIND  not on PATH; the rung using it BLINDs, CI enforces -- $desc")
+    fi
+  fi
+}
+
+probe_py_module() {
+  local level="$1" mod="$2" desc="$3"
+  if python3 -c "import $mod" >/dev/null 2>&1; then
+    lines+=("[$level] py:$mod  OK")
+  else
+    if [ "$level" = "REQ" ]; then
+      lines+=("[$level] py:$mod  FAIL  python3 cannot import $mod -- $desc")
+      missing_required=1
+    else
+      lines+=("[$level] py:$mod  BLIND  python3 cannot import $mod; rung using it BLINDs -- $desc")
+    fi
+  fi
+}
+
+probe_http() {
+  local level="$1" name="$2" url="$3" desc="$4"
+  if python3 - "$url" <<'PYPROBE' >/dev/null 2>&1
+import sys, socket, urllib.request, urllib.error
+url = sys.argv[1]
+try:
+    urllib.request.urlopen(url, timeout=2)
+except urllib.error.HTTPError:
+    pass
+except (urllib.error.URLError, socket.timeout, ConnectionRefusedError, OSError):
+    raise SystemExit(1)
+PYPROBE
+  then
+    lines+=("[$level] $name  OK  $url")
+  else
+    if [ "$level" = "REQ" ]; then
+      lines+=("[$level] $name  FAIL  unreachable at $url -- $desc")
+      missing_required=1
+    else
+      lines+=("[$level] $name  BLIND  unreachable at $url; rung using it BLINDs, CI enforces -- $desc")
+    fi
+  fi
+}
+
+probe_bin       REQ git     "install git via your system package manager"
+probe_bin       REQ python3 "install python 3.11+ via brew or apt"
+probe_py_module REQ yaml    "pip install pyyaml (bin/idp-rules reads rules.yaml through it)"
+
+probe_bin       REC gh      "brew install gh; without it push-on-green and pr-report BLIND"
+probe_bin       REC ruff    "pip install ruff; used by bin/idp-ci fast rungs"
+
+# Install all CI-matrix tools (kyverno, helm, conftest, flux, kustomize, kubeconform).
+# These are required by bin/idp-ci --full and the pre-push kyverno rung; without them
+# the hook refuses rather than going BLIND. Same pinned versions as CI.
+echo ""
+echo "=== installing CI-matrix tools (bin/idp-install-deps) ==="
+if "$IDP/bin/idp-install-deps"; then
+  export PATH="$HOME/.cache/estate-tools:$PATH"
+  probe_bin REQ kyverno "bin/idp-install-deps failed to install kyverno"
+  probe_bin REQ helm    "bin/idp-install-deps failed to install helm"
+else
+  lines+=("[REQ] idp-install-deps  FAIL  one or more CI tools could not be installed (see output above)")
+  missing_required=1
+fi
+echo ""
+
+probe_http      NET mcp-verifier "${IDP_MCP_URL:-http://127.0.0.1:8001/-/mcp}" \
+  "the pre-push verifier rung POSTs the diff here; set IDP_MCP_URL to a remote endpoint (WJ.1 style) or start the local service; otherwise CI enforces the same gate"
+
+echo "=== idp preflight ($(date -u +%Y-%m-%dT%H:%M:%SZ)) ==="
+for l in "${lines[@]}"; do printf '  %s\n' "$l"; done
+echo ""
+
+if [ "$missing_required" -ne 0 ]; then
+  echo "FAIL preflight: a required tool is missing (see [REQ] rows above). Install it and re-run bin/idp-install-hooks."
+  echo "                Hooks are NOT installed."
+  exit 1
+fi
+
+cur="$(git config --local core.hooksPath 2>/dev/null || true)"
+if [ "$cur" = ".githooks" ]; then
+  echo "ok    hooks   core.hooksPath already .githooks"
+else
+  git config --local core.hooksPath .githooks
+  echo "ok    hooks   core.hooksPath set to .githooks (was: ${cur:-unset})"
+fi
+echo "        every BLIND row above is a rung that will pass through at push time with a warning;"
+echo "        every OK row is a rung that will run and can refuse the push."

@@ -186,6 +186,16 @@ flows:
     # (2026-09-06: 4 restarts, `dial log.tailscale.com:443: i/o timeout`).
     egress_internet: [443]
     ingress_from: [edge]
+  idp-agent:
+    # GitHub and Flux webhooks arrive through the estate's own gateway (docs/specs/
+    # orbstack-event-driven-agents.md), the same door demo-sandbox and hermes-agent read from.
+    # Redis is idp-agent-redis in this same namespace, so the generator's own allow-same-namespace
+    # rule already covers gateway.py:43's queue connection -- no cross-namespace line for it.
+    # engine.py clones, pushes and opens/merges pull requests over `git`/`gh` against
+    # github.com:443 (engine.py:191,342,382+); the LangGraph agent bodies that would call an LLM
+    # are still stubs (engine.py run_worker_agent/run_judge_agent), so no llm-namespace egress yet.
+    ingress_from: [edge]
+    egress_internet: [443]
   # The `laws` container fetches the estate's own laws over https from the code host
   # (platform/agent-workforce/cronjob.yaml line 97) and the crew that reads them refuses to
   # boot without them. Undeclared, that hop was one enforcement wave away from a silent
@@ -236,7 +246,7 @@ flows:
     egress_internet: [443]
     # research: the hourly research engine sends every lane's prompt through the router
     # (platform/research-engine/cronjob.yaml:105, LITELLM_BASE_URL).
-    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta, research, cyrus, via-negativa]
+    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta, research, cyrus, via-negativa, sovereign-system, forge]
   research:
     # The research engine is an hourly CronJob (platform/research-engine/cronjob.yaml, schedule
     # "23 * * * *"), so it holds no long-lived pod and nothing here was measured from one. Every
@@ -462,7 +472,7 @@ flows:
     # guacamole/env.yaml, platform/healthchecks/env.yaml), not only in the one-shot migration
     # Jobs -- these are standing daily diallers, and a database neither can reach is a service
     # that does not start.
-    ingress_from: [backstage, otto-gateway, hindsight, temporal, llm, observability, commerce, dagster, research, guacamole, healthchecks, via-negativa]
+    ingress_from: [backstage, otto-gateway, hindsight, temporal, llm, observability, commerce, dagster, research, guacamole, healthchecks, via-negativa, sovereign-system, forge]
   temporal:
     # 2026-09-06: estate-db-copy-temporal-r2 timed out on estate-rw from this namespace once Calico
     # enforced the fence; estate-db named temporal on its ingress side, this side named nothing.
@@ -540,7 +550,10 @@ flows:
              # every webhook delivery: 8,544 packets on one node when read on 2026-09-08, and a
              # 504 "Starting up" page for every Linear and GitHub delivery since the route was made.
              cyrus,
-             demo-sandbox]
+             # idp-agent admits edge for the same reason demo-sandbox does: the GitHub/Flux
+             # webhook route into platform/idp_agent/gateway.py's /webhook/github and
+             # /webhook/flux crosses this namespace, so edge must name the return path back.
+             demo-sandbox, idp-agent]
     # The public listeners (traefik containerPorts web 8000 and websecure 8443, behind the OCI
     # load balancer with externalTrafficPolicy Local, so the source address is the client's).
     # The traefik pods still held flannel addresses when Calico started enforcing on 2026-09-06,
@@ -614,3 +627,19 @@ flows:
     # estate-rw.estate-db). Nothing here targets via-negativa-redis -- that DSN is
     # via-negativa-redis.via-negativa.svc, same-namespace, and default-deny never touches it.
     egress: [llm, estate-db]
+  sovereign-system:
+    # The sovereign verifier and LangGraph orchestrator (sovereign/deploy/telegram-bot-final.yaml).
+    # All LLM calls must go through the estate proxy in llm; no direct vendor egress is declared
+    # here because the GlobalNetworkPolicy deny-direct-ai-vendor-egress blocks it at the network
+    # layer regardless, and this fence closes the door at the namespace layer too.
+    # estate-db: sovereign writes attestations and session state to the shared Postgres.
+    # observability: standard LAW 50 OTLP collector (added automatically by the generator).
+    egress: [llm, estate-db, observability]
+    ingress_from: []
+  forge:
+    # The teacher-dataset forge (forge/generate_teacher_dataset.py). It calls LLMs to generate
+    # training examples and must go through the proxy (not anthropic.Anthropic() directly --
+    # forge/generate_teacher_dataset.py:252 uses a direct client and must be migrated).
+    # egress_internet is intentionally absent: internet-origin datasets arrive through the
+    # research namespace, not here.
+    egress: [llm, estate-db, observability]

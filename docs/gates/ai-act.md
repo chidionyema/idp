@@ -19,7 +19,7 @@ Fixture: `tests/fixtures/ai-act/bad`
 Exit code `1` (the registry expects non-zero). ✓
 
 ```
-FAIL  ai-act risk R-1: review overdue (2020-01-01 < 2026-09-15)
+FAIL  ai-act risk R-1: review overdue (2020-01-01 < 2026-09-17)
 FAIL  ai-act system demo: docs/ai-systems/demo/technical-file.md lacks Annex IV section '## 9.'
 ```
 

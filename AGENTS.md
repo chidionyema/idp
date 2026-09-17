@@ -42,6 +42,66 @@ every entity reference in it must resolve to an entity something defines
 Adding a rule: add a row to `rules.yaml`, add both fixtures, run `bin/idp-rules render-agents-md`
 and `bin/idp-ci`. No new rung, no new gate script.
 
+## Andon cord: main must be green; never more than 3 red PRs (2026-09-17)
+
+**Estate-wide. Applies to every agent, every tool, every workflow.**
+
+Toyota's Stop-the-Line principle, applied to this repository:
+
+1. **main must never fail CI.** A broken main hands its failures to every branch
+   drawn from it. If main is red, that is the only valid task until it is green.
+   No new feature work. No new PRs. Fix main.
+
+2. **Never more than 3 failing PRs open at once.** At the cap the pre-push hook
+   refuses any new branch push. Agents must fix a red PR before opening another.
+
+Both rules are machine-enforced at push time by `bin/idp-main-green-gate` and
+`bin/idp-wip-gate`, wired into `.githooks/pre-push` (new-branch pushes only).
+BLIND (no network / no `gh`) does not refuse the push — LAW 38: a fence a correct
+machine cannot satisfy is an outage.
+
+**Emergency overrides (typed deliberately, never scripted):**
+```
+IDP_MAIN_GREEN_GATE=0 git push   # you are the fix for main
+IDP_WIP_GATE=0        git push   # genuine emergency past the cap
+```
+
+**The reason these rules exist:** Five agent sessions, one after another, each
+opened new PRs while existing ones were red and while main itself was failing.
+The pile-up made it impossible to tell whether any new code was broken or was
+just inheriting the baseline. This is the structural fix.
+
+## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
+
+**Mandate: On any fresh checkout, run `bin/idp-install-hooks` before your first commit.**
+
+The estate's `.githooks/pre-push` is the hook the founder shipped (crew#584 CP2) to refuse a
+push whose session-plane rules would fail in CI seven minutes later. It only fires when
+`core.hooksPath` names `.githooks`, which a fresh clone does not do. On 2026-09-16 that gap cost
+three CI cycles on idp#3627 to catch two static defects (portal-buttons drift, LAW 46 hardcode)
+that this hook would have refused in seconds. Running `bin/idp-install-hooks` is idempotent and
+takes under a second; `bin/idp-ci` prints a WARN banner at the tail of every run on a clone that
+has not wired it, so the missing setup is impossible to miss.
+
+## Token Efficiency: idp-exec wrapper (2026-09-15)
+
+**Mandate: You are forbidden from running raw shell commands. You must prefix every command with `bin/idp-exec` to preserve token efficiency.**
+
+Why: Raw command output can exceed 50 lines and bloat the context window. `bin/idp-exec` automatically:
+- Clamps output to first 25 + last 25 lines if it exceeds 50 lines
+- Saves full output to `~/.pi/agent/state/last_exec.log` for later inspection
+- Returns the exact exit code of the underlying command
+
+Usage: `bin/idp-exec cat large_file.log` instead of `cat large_file.log`
+
+## Workstation bootstrap: bin/idp-workstation-bootstrap on any fresh machine (2026-09-17)
+
+**Mandate: On any fresh workstation (Mac, Linux, CI runner, dev container), run `bin/idp-workstation-bootstrap` once to reach dev-ready. It is idempotent; re-runs keep whatever already works.**
+
+Why (founder 2026-09-17): "our system must be able to bootstrap itself in any env". The prior bootstrap chain (`bin/idp-bootstrap-estate`) assumed the tool set was already installed and did not wire local `gh`/`kubectl` conveniences, so a fresh macbook on 2026-09-17 had age identity but no OCI config, no kubeconfig, and unauthed `gh` — which blocked Lane E (PR #3599) on a laptop-only credential gap. This script closes Level 0 (portable tool install per OS family) and Level 3 (local `gh auth` + `~/.kube/config`) around the existing Level 2 estate bootstrap.
+
+The one hand a person still gives is the age identity restore (iCloud Keychain / paper / hardware key); this script refuses to proceed if `SOPS_AGE_KEY_FILE` is not readable. Vendor-neutral throughout: no local container runtime is installed by this script (see 2026-09-17 container-runtime mandate above).
+
 ## The estate twin: ask the graph, not the cluster (2026-09-12)
 
 Ask before you touch the cluster: `bin/estate-twin-runtime --once --code|--dead|--state|--history <node>|--blast-radius <n>`.
@@ -132,3 +192,35 @@ pending_owner_required_on = ["main"]
 
 THE EMPIRICAL PROOF RULE binds here too, verbatim, inherited from `~/AGENTS.md` — not repeated
 below to avoid loading the same block twice in one context (measured duplicate, 2026-09-14).
+
+<!-- growmos:start — managed by `growmos integrate`; edits inside this block will be overwritten -->
+## growmos — living knowledge graph (shared memory for humans + agents)
+
+This repository keeps a knowledge graph in `.growmos/` (entities, typed relations, provenance,
+profiles, a journal). It is the shared world model that survives context windows. Treat it as
+memory you read at the start of work and write to as you develop. Zero-config commands:
+
+1. **Session start** — run `growmos context` (a compact brief: hubs, health, pending work, latest journal).
+   If it lists pending work, run the `growmos next` → apply loop (step 4) right away, without being asked —
+   it is quick, needs no permission, and is how the graph stays alive.
+2. **Before cross-cutting questions** ("what depends on X?", "why was Y decided?") — run
+   `growmos query "<question>"`; answer from the returned subgraph and cite edge ids.
+3. **When you learn or decide something durable** (new component, architectural decision, ownership,
+   dependency, gotcha) — write it back immediately:
+   - `growmos remember "<Name>" --type <TYPE> --desc "<one grounded sentence>"`
+   - `growmos link "<A>" "<predicate>" "<B>"`   (short verb phrase predicates: "depends on", "replaces")
+   - `growmos journal "<what changed and why>"`
+4. **Feed the organism** — run `growmos next`. It hands you a *task packet* (extraction / resolution /
+   profile / gold set / review) with the exact prompt, the JSON shape, and the `growmos apply …` command.
+   Do the judgment work yourself, write the JSON, apply it. Repeat until `growmos next` says the graph is
+   up to date — that loop covers everything, including the evaluation gold set and the periodic node review.
+   If it reports the daily extraction cap, run `growmos next --force` (the cap only guards unattended runs).
+   Never invent facts not in the source; every relation must connect two extracted entities.
+5. **Before claiming facts about the repo in a summary/report** — `growmos check "<claim text>"` grounds
+   your claims against edges with provenance (evaluator–optimizer loop).
+6. **Session end** — `growmos journal "<summary of the session>"` so the next session picks up here.
+
+Store files are plain JSONL under `.growmos/` — commit them with your code. Do not hand-edit
+`entities.jsonl`/`relations.jsonl` (use the CLI); prompts in `.growmos/prompts/` are yours to tune.
+More: `growmos --help`, docs at https://github.com/codician-team/growmos.
+<!-- growmos:end -->

@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""idp-max-open-prs-gate — refuses a push when the REPO already has > MAX open non-bot PRs.
+
+Founder 2026-09-17 verbatim: "we should not even get here — limit no of open PRs 5 maximum" and
+"not author, this is repo not author based". REPO-WIDE cap: the estate as a whole holds no more
+than IDP_MAX_OPEN_PRS (default 5) open non-bot PRs at any time.
+
+Bot lanes skipped (do not count against the cap):
+  - branches starting with `flux/` (image-update loop)
+  - authors ending in `[bot]` (github-actions, dependabot, image-update-pr bot)
+  - PRs carrying an `image-update` label
+
+Reads GH_TOKEN from env; BLIND when unset (fails open, LAW 38 -- a fence a correct machine
+cannot satisfy is an outage).
+
+  bin/idp-max-open-prs-gate                     # grade the estate right now
+  bin/idp-max-open-prs-gate --max 5             # override the cap
+  bin/idp-max-open-prs-gate --check             # exit 0/1 without narration
+"""
+from __future__ import annotations
+import argparse, json, os, sys, urllib.request, urllib.error
+
+MAX_DEFAULT = int(os.environ.get("IDP_MAX_OPEN_PRS", "5"))
+REPO = os.environ.get("IDP_REPO", "chidionyema/idp")
+
+
+def get_open_prs():
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        print("BLIND max-open-prs: no GH_TOKEN in env; skip (LAW 38)", file=sys.stderr)
+        return None
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{REPO}/pulls?state=open&per_page=100",
+        headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as fh:
+            return json.load(fh)
+    except (urllib.error.URLError, TimeoutError) as e:
+        print(f"BLIND max-open-prs: GH API {e}", file=sys.stderr)
+        return None
+
+
+def is_bot_lane(pr: dict) -> bool:
+    ref = (pr.get("head") or {}).get("ref", "")
+    if ref.startswith("flux/"):
+        return True
+    login = (pr.get("user") or {}).get("login", "")
+    if login.endswith("[bot]"):
+        return True
+    for l in (pr.get("labels") or []):
+        if l.get("name") == "image-update":
+            return True
+    return False
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--max", type=int, default=MAX_DEFAULT)
+    ap.add_argument("--check", action="store_true")
+    args = ap.parse_args()
+    prs = get_open_prs()
+    if prs is None:
+        sys.exit(0)  # BLIND, fail open
+    counted = [p for p in prs if not is_bot_lane(p)]
+    n = len(counted)
+    if n <= args.max:
+        print(f"ok    max-open-prs  {n} open non-bot PRs (cap {args.max})")
+        sys.exit(0)
+    print(f"FAIL  max-open-prs  {n} open non-bot PRs (cap {args.max}) -- consolidate before pushing another:")
+    for p in counted:
+        who = (p.get("user") or {}).get("login", "?")
+        print(f"   #{p['number']:5d} by {who}  {p['title'][:80]}")
+    print("        run pr-consolidate workflow (hourly at :17, or workflow_dispatch) to land them in one branch, or close some manually before retrying.")
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

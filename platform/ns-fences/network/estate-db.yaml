@@ -128,6 +128,9 @@ spec:
           kubernetes.io/metadata.name: dagster
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: forge
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: guacamole
     - namespaceSelector:
         matchLabels:
@@ -147,6 +150,9 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: research
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: sovereign-system
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: temporal

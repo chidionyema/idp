@@ -18,6 +18,11 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/bin/idp-reasoning-gateway-hook --hook",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "PYTHONPATH=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/after_agent_turn.py",
+            "timeout": 15
           }
         ]
       }

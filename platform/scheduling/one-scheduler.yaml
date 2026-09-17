@@ -62,6 +62,9 @@ still_outside_dagster:
 - job: .github/workflows/pr-age.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/pr-consolidate.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
 - job: .github/workflows/probe-mutations.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'

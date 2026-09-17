@@ -82,3 +82,9 @@ repos:
         language: system
         pass_filenames: false
         files: ^(backstage/platform/dark-matter\.yaml$|backstage/platform/dark-matter\.json$)
+      - id: catalog-validator
+        name: catalog data is valid before merge (Layer 1 prevention)
+        entry: python3 bin/idp-catalog-validator --strict backstage/platform/catalog-info.yaml
+        language: system
+        pass_filenames: false
+        files: ^backstage/platform/catalog-info\.yaml$

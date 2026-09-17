@@ -40,7 +40,7 @@ images:
     newName: ghcr.io/chidionyema/backstage
     # image-automation-controller rewrites this line from ImagePolicy flux-system/backstage
     # (platform/image-automation/backstage.yaml, crew#267); the marker is how it finds the line.
-    newTag: main-9946-f51dde1cbfaec11304ea24c01bfd583e818f0995 # {"$imagepolicy": "flux-system:backstage:tag"}
+    newTag: main-10875-fd519c9bdff6dc02a6edbd28e54388d96a2e2a4b # {"$imagepolicy": "flux-system:backstage:tag"}
   # OKE's CRI-O enforces fully qualified names: `postgres:17.6-alpine` failed with
   # "short name mode is enforcing" on 2026-08-25. k3d resolves either form. The name now
   # arrives qualified from the base, so this entry no longer renames anything; it is kept
@@ -54,7 +54,7 @@ images:
     # the sidecar cannot pull and Flux reports it. image-automation-controller then rewrites this
     # line from ImagePolicy flux-system/fleetview-backend (platform/image-automation/
     # fleetview-backend.yaml); the marker is how it finds the line.
-    newTag: main-9952-862261dde924763a72980afd6b838a07efd1f3b3 # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
+    newTag: main-10086-287de699677a162a43a4ce71d126a0eac6d433d7 # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
 patches:
   # The catalogue's database is the one estate Postgres (platform/estate-db), not the server
   # bundled in base -- base keeps that one because compose and k3d have nothing else to talk to.
@@ -252,6 +252,13 @@ patches:
         value:
           name: fleetview-data
           emptyDir: {}
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: fleetview-executor
+          secret:
+            secretName: fleetview-executor
+            optional: true
       # bin/idp-catalog-push already publishes catalog/estate.db as an OCI artifact
       # (oci://ghcr.io/chidionyema/idp/estate-db:latest); this container pulls the same
       # artifact estate-mcp.yaml's fetch-estate-db init container pulls, so graph/blast-radius/
@@ -326,13 +333,17 @@ patches:
             # JIT_AGENT_KEY: optional because this estate has no existing mechanism to deliver a
             # laptop-side secret outside a manual, once-off step (see the PR description's Not
             # done section) -- unset, this door is authenticated by the ACL alone, and serve.py's
-            # _check_key() only compares when a value is actually present on this side.
-            - name: FLEETVIEW_EXECUTOR_KEY
-              valueFrom:
-                secretKeyRef: {name: fleetview-executor, key: FLEETVIEW_EXECUTOR_KEY, optional: true}
+            # _check_key() only compares when a value is actually present on this side. Read from
+            # a mounted file, not the environment: secrets-not-from-env-vars (same rule that
+            # refused catalogue's POSTGRES_PASSWORD on 2026-08-25, see catalogue.yaml) rejected
+            # every replica of this sidecar the moment it rolled, 2026-09-15 -- Kyverno blocked
+            # the new ReplicaSet outright, the old Pod kept serving, so the container never even
+            # crash-looped into view.
+            - {name: FLEETVIEW_EXECUTOR_KEY_FILE, value: /run/secrets/fleetview-executor/FLEETVIEW_EXECUTOR_KEY}
           volumeMounts:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
             - {name: estate, mountPath: /estate, readOnly: true}
+            - {name: fleetview-executor, mountPath: /run/secrets/fleetview-executor, readOnly: true}
           readinessProbe:
             httpGet: {path: /healthz, port: fv-executor}
             initialDelaySeconds: 3

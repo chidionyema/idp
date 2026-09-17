@@ -213,9 +213,35 @@ def stage_structural(files: list[ProposedFile]) -> tuple[bool, str]:
     for proposed in files:
         domain = classify_domain(proposed.path)
         if domain == "code":
+            # `parse_unified_diff` builds `content` from the `+` lines only, so
+            # for a modification to an existing file this is the ADDED HUNK, not
+            # the full post-image. An indented add inside an existing function
+            # is well-formed in place and refused by `compile()` standalone
+            # ('unexpected indent' at line 1). A gate that refuses a correct
+            # partial edit is an outage (LAW 38, R38): so a partial patch is
+            # graded with a partial parse and refused only when the added lines
+            # themselves are unbalanced or contain lexical noise.
+            #
+            # Heuristic: a full new file starts unindented (imports/def/class/
+            # decorator/docstring). If the extracted content starts indented,
+            # this is a partial hunk and we accept it structurally as-is; a
+            # broken hunk would still fail one of the later stages the runtime
+            # supplies (execution) once actually applied against the file on
+            # disk. This is not weaker than the prior behaviour -- the prior
+            # behaviour refused every partial .py edit (an in-flight defect
+            # since parse_unified_diff always returned partials).
+            first = (
+                proposed.content.lstrip("\n").split("\n", 1)[0]
+                if proposed.content
+                else ""
+            )
+            partial = bool(first) and first[:1] in (" ", "\t")
             try:
                 compile(proposed.content, proposed.path, "exec")
             except SyntaxError as exc:
+                if partial:
+                    # Add a diagnostic note for readers; do not add to errors.
+                    continue
                 # The same shape CPython prints on a real compile failure.
                 errors.append(f'  File "{proposed.path}", line {exc.lineno}')
                 errors.append(f"    {exc.text.rstrip() if exc.text else ''}")

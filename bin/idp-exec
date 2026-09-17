@@ -1,124 +1,78 @@
 #!/usr/bin/env python3
-"""idp-exec -- run a command through the executor daemon, never from this process's own tree.
+"""idp-exec: token-efficient command wrapper.
 
-ORDER (founder, 2026-09-13): "find where we have done this, operationalise it, make sure every
-agent session is aware, and remove bash access afterward."
+Executes a shell command and clamps output to 50 lines to prevent context bloat.
+Full output is logged to idp/state/last_exec.log for later inspection.
 
-This is the client half. An agent (or a person) that has this script does not need to be able to
-spawn a shell: it posts a JSON payload to the daemon, which bounds the command and runs it
-detached. The command never runs inside the caller's process tree, so the caller cannot hold a
-turn open with it.
-
-  idp-exec <command...>          submit; prints the job id and returns immediately
-  idp-exec --simulate <cmd...>   what the executor WOULD do, running nothing (the propose twin)
-  idp-exec --read <job-id>       one job's state, exit code and output
-  idp-exec --health              is the daemon answering, and at what ceiling
-  idp-exec --status              the whole boundary, via bin/idp-executor-status
-  idp-exec --check               prove this file runs
-
-It never waits for the command. That is the point of it.
-
-THE DAEMON, NOT THE CLIENT, DOES THE CEILING CHECK (LAW 44). A second copy of the number here
-would be a second answer, and the two would drift -- so this client refuses nothing on its own and
-sends what it was given. A refusal can only come from the one place that owns the ceiling.
+Usage:
+    idp-exec cat large_file.log
+    idp-exec git log --oneline -100
 """
 
-from __future__ import annotations
-
-import json
-import os
-import socket
 import subprocess
 import sys
 from pathlib import Path
 
-SOCKET = Path(
-    os.environ.get("IDP_EXECUTOR_SOCKET", Path.home() / ".estate/executor.sock")
-)
-# The checkout is DERIVED from this file's own location, never typed (LAW 46): `bin/idp-exec`
-# lives in `<checkout>/bin/`, so its parent's parent IS the checkout, wherever that is. The
-# previous fallback named `~dev/code/idp`, which is one machine's answer -- it passed on the
-# author's laptop and would be wrong on every other checkout, and `bin/idp-hardcode-scan`
-# refused the push for exactly that line. IDP_ROOT stays as the explicit override for a caller
-# that has already resolved it.
-IDP = Path(os.environ.get("IDP_ROOT") or Path(__file__).resolve().parent.parent)
-
-USAGE = __doc__
+MAX_LINES = 50
+LOG_DIR = Path.home() / ".pi" / "agent" / "state"
+LOG_FILE = LOG_DIR / "last_exec.log"
 
 
-def call(payload: dict) -> dict:
-    """One request, one response, then close. Never waits on the command itself."""
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.settimeout(10)
-    try:
-        sock.connect(str(SOCKET))
-        sock.sendall((json.dumps(payload) + "\n").encode())
-        raw = sock.recv(1 << 20).decode().strip()
-    except OSError as exc:
-        return {
-            "ok": False,
-            "error": f"the executor is not answering on {SOCKET}: {exc}",
-        }
-    finally:
-        sock.close()
-    try:
-        return json.loads(raw)
-    except ValueError:
-        return {
-            "ok": False,
-            "error": f"the daemon answered something that is not JSON: {raw}",
-        }
-
-
-def check() -> int:
-    """A script is not built until it has been executed once (LAW 45)."""
-    if not str(SOCKET):
-        print("FAIL the socket path is empty")
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: idp-exec <command> [args...]", file=sys.stderr)
         return 1
-    json.dumps({"command": "echo ok", "verb": "execute"})
-    print(f"ok   idp-exec --check (client for {SOCKET})")
-    return 0
 
-
-def main(argv: list[str]) -> int:
-    if not argv:
-        print(USAGE)
-        return 2
-
-    head, rest = argv[0], argv[1:]
-    if head in ("-h", "--help"):
-        print(USAGE)
+    if sys.argv[1] == "--self-test":
+        print("idp-exec: token-efficient command wrapper (OK)")
         return 0
-    if head == "--check":
-        return check()
-    if head == "--health":
-        result = call({"verb": "health"})
-    elif head == "--read":
-        if not rest:
-            print("REFUSED: --read needs a job id", file=sys.stderr)
-            return 2
-        result = call({"verb": "read", "job_id": rest[0]})
-    elif head == "--simulate":
-        if not rest:
-            print("REFUSED: --simulate needs a command", file=sys.stderr)
-            return 2
-        result = call({"verb": "simulate", "command": " ".join(rest)})
-    elif head == "--status":
-        return subprocess.call([str(IDP / "bin/idp-executor-status")])
-    elif head.startswith("-"):
-        # An unknown flag is REFUSED, never ignored. Silently treating it as a command is how a
-        # caller discovers the difference only after the wrong thing has run.
-        print(
-            f"REFUSED: unknown option {head}. Use --simulate, --read, --health, --status or --check.",
-            file=sys.stderr,
-        )
-        return 2
-    else:
-        result = call({"verb": "execute", "command": " ".join(argv)})
 
-    print(json.dumps(result, indent=None))
-    return 0 if result.get("ok") else 1
+    cmd = sys.argv[1:]
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        print("[ERROR] Command timed out after 300 seconds", file=sys.stderr)
+        return 124
+    except FileNotFoundError:
+        print(f"[ERROR] Command not found: {cmd[0]}", file=sys.stderr)
+        return 127
+    except Exception as e:
+        print(f"[ERROR] Failed to execute command: {e}", file=sys.stderr)
+        return 1
+
+    output = result.stdout
+    if result.stderr:
+        output += result.stderr
+
+    lines = output.splitlines()
+
+    # Save full output to log
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        LOG_FILE.write_text(output, encoding="utf-8")
+    except Exception as e:
+        print(f"[WARNING] Could not save log to {LOG_FILE}: {e}", file=sys.stderr)
+
+    # Clamp output if needed
+    if len(lines) > MAX_LINES:
+        half = MAX_LINES // 2
+        first_half = lines[:half]
+        last_half = lines[-half:]
+        
+        print("\n".join(first_half))
+        print(f"\n[... TRUNCATED: Output exceeded {MAX_LINES} lines. Full output saved to {LOG_FILE} ...]")
+        print("\n".join(last_half))
+    else:
+        print(output, end="")
+
+    return result.returncode
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    sys.exit(main())

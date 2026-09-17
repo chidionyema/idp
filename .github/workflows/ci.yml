@@ -29,6 +29,10 @@ jobs:
   # crew#584 CP-C: the 60 s gate every heavy job below waits for (fast-gate.yml).
   fast-gate:
     uses: ./.github/workflows/fast-gate.yml
+  # Deterministic Verifier: three-stage gauntlet (structural/symbolic/execution) over
+  # the PR diff. Runs in parallel with fast-gate; heavy jobs need both.
+  verifier:
+    uses: ./.github/workflows/verifier.yml
   # 2026-09-04: this job was 9 of the 9.5 minutes a pull request waits, so it was moved off pull
   # requests and onto the merge queue and the push to main -- a placement change, with `if:` as
   # the switch. That trade is over, and both halves of it were wrong.
@@ -232,6 +236,16 @@ jobs:
         run: |
           echo "base_ref=${{ github.base_ref }} merge_group=${{ github.event.merge_group.base_ref }} SB_BDD_STRICT=$SB_BDD_STRICT"
           cd sovereign && python -m pytest tests/bdd -q -p no:cacheprovider -n auto --durations=10   # crew#584: four cores; the ten slowest are printed
+      - name: lane wiring evidence (real repo content, not fixtures)
+        # Proves each rescue lane's gate is wired to actual platform/ manifests and code.
+        # Not a test of gate logic (BDD does that) — proves the mechanism exists in the repo
+        # that Flux deploys. BLIND (missing dep) exits 2 and writes a note; not a FAIL.
+        if: matrix.suite == 'acceptance'
+        run: |
+          python3 bin/idp-lane-receipts | tee -a "$GITHUB_STEP_SUMMARY"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" = 2 ]; then echo "BLIND lane-receipts: missing dependency; CI environment may lack numpy/yaml"; fi
+          exit $rc
       - name: ruff (crew#325 step 3; the rule set is pyproject.toml)
         if: matrix.suite == 'tests'
         run: pip install -q ruff==0.15.18 && ruff check .
@@ -483,3 +497,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
       - run: bin/test-executes-gate "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}"
+
+  # Notify estate-graph repo to sync after every merge to main.
+  # Model-agnostic: estate-graph/bin/sync-all uses GROWMOS_BASE_URL (LiteLLM proxy),
+  # not the Claude API. Any future model the proxy routes to automatically benefits.
+  estate-graph-sync:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: dispatch sync to estate-graph repo
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.ESTATE_GITHUB_PAT || secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: 'chidionyema',
+              repo: 'estate-graph',
+              event_type: 'estate-sync',
+              client_payload: {
+                source_repo: context.repo.repo,
+                sha: context.sha,
+                ref: context.ref,
+              }
+            });

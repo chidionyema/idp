@@ -5,6 +5,11 @@ resources:
   - traefik.yaml
   - status-page.yaml
   - require-catalogue-entity.yaml
+  # OTel endpoint: mutation injects OTEL_EXPORTER_OTLP_ENDPOINT at admission (add-if-absent);
+  # validation then refuses anything that still lacks it. VENDOR exceptions in otel-endpoint-exception.yaml.
+  - inject-otel-endpoint.yaml
+  - require-otel-endpoint.yaml
+  - otel-endpoint-exception.yaml
   - no-token-by-default.yaml
   # crew#684 and the founder blueprint that closed it: the invariant "a workload restarts when
   # its config changes" moves out of three hand-kept annotation lists and one hand-kept test

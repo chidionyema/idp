@@ -173,7 +173,17 @@ def build_executor_app() -> FastAPI:
     def _check_key(x_executor_key: str | None) -> None:
         import os
 
+        # In-cluster (OKE): the key is a mounted Secret volume file, not an env var --
+        # secrets-not-from-env-vars refuses a Pod that sources a secret via env valueFrom
+        # (Kyverno blocked this sidecar's own rollout on 2026-09-15 for exactly that).
+        # Local `docker run`/laptop launches still set FLEETVIEW_EXECUTOR_KEY directly.
         expected = os.environ.get("FLEETVIEW_EXECUTOR_KEY")
+        key_file = os.environ.get("FLEETVIEW_EXECUTOR_KEY_FILE")
+        if not expected and key_file:
+            try:
+                expected = Path(key_file).read_text().strip() or None
+            except FileNotFoundError:
+                expected = None
         if expected and x_executor_key != expected:
             raise HTTPException(status_code=401, detail="bad or missing executor key")
 

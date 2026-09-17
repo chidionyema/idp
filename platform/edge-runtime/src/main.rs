@@ -1,12 +1,44 @@
 //! Edge Runtime: loads one artifact directory (model.gguf, model-card.yaml, tokenizer.json,
 //! pulled by an `oras` init container) and answers `/v1/infer` on loopback (R20).
-//! Config by environment only (LAW 46): EDGE_ARTIFACT_DIR, EDGE_BIND.
+//! Config by environment only (LAW 46): EDGE_ARTIFACT_DIR, EDGE_BIND, OTEL_EXPORTER_OTLP_ENDPOINT.
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use opentelemetry::global;
+use opentelemetry::trace::TracerProvider as _;
+use opentelemetry::KeyValue;
+use opentelemetry_otlp::{SpanExporter, WithExportConfig};
+use opentelemetry_sdk::runtime;
+use opentelemetry_sdk::trace::TracerProvider;
+use opentelemetry_sdk::Resource;
+
 mod engine;
 mod server;
+
+// OTel wiring for opentelemetry-otlp 0.27 (Cargo.toml pin). The 0.26 pipeline builders
+// (new_pipeline, new_exporter) were removed upstream in 0.27; the replacement is a typed
+// builder on SpanExporter plus a TracerProvider builder that carries the Resource directly.
+// Config::with_resource is deprecated in 0.27, so the resource is set on the provider builder.
+// Behaviour unchanged: HTTP OTLP exporter, batch export on the tokio runtime,
+// service.name = edge-runtime.
+fn init_otel() -> Option<opentelemetry_sdk::trace::Tracer> {
+    let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok()?;
+    let exporter = SpanExporter::builder()
+        .with_http()
+        .with_endpoint(endpoint)
+        .build()
+        .ok()?;
+    let provider = TracerProvider::builder()
+        .with_batch_exporter(exporter, runtime::Tokio)
+        .with_resource(Resource::new(vec![KeyValue::new(
+            "service.name",
+            "edge-runtime",
+        )]))
+        .build();
+    global::set_tracer_provider(provider.clone());
+    Some(provider.tracer("edge-runtime"))
+}
 
 /// `--health`: is the server on this box answering? Exit 0 if it is, 1 if it is not.
 ///
@@ -36,7 +68,19 @@ fn health_check(bind: &str) -> std::process::ExitCode {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().json().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
+    let _tracer = init_otel();
+    let subscriber = tracing_subscriber::fmt()
+        .json()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .finish();
+    if _tracer.is_some() {
+        use tracing_subscriber::layer::SubscriberExt;
+        tracing::subscriber::set_global_default(
+            subscriber.with(tracing_opentelemetry::layer()),
+        )?;
+    } else {
+        tracing::subscriber::set_global_default(subscriber)?;
+    }
     let dir = PathBuf::from(std::env::var("EDGE_ARTIFACT_DIR").unwrap_or_else(|_| "artifact".into()));
     let bind = std::env::var("EDGE_BIND").unwrap_or_else(|_| "127.0.0.1:8421".into());
     if !bind.starts_with("127.0.0.1:") {
@@ -61,5 +105,6 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     tracing::info!(%bind, "listening");
     axum::serve(listener, server::app(state)).await?;
+    global::shutdown_tracer_provider();
     Ok(())
 }

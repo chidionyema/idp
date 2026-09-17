@@ -75,6 +75,7 @@ spec:
             periodSeconds: 30
             failureThreshold: 6
           env:
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
             - { name: HOME, value: /tmp }
             - { name: NATS_URL, value: "nats.event-bus.svc:4222" }
             - { name: PGPASSWORD_FILE, value: /var/run/db/LITELLM_DB_PASSWORD }

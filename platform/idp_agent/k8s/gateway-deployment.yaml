@@ -1,0 +1,85 @@
+# The webhook receiver. See docs/specs/orbstack-event-driven-agents.md.
+# GITHUB_WEBHOOK_SECRET arrives as a file, same reasoning as GH_TOKEN in
+# engine-deployment.yaml (Kyverno's secrets-not-from-env-vars).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: idp-gateway
+  namespace: idp-agent
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: idp-gateway
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        GITHUB_WEBHOOK_SECRET: "{{ .GITHUB_WEBHOOK_SECRET }}"
+  dataFrom:
+    - extract: { key: idp-gateway }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idp-gateway
+  namespace: idp-agent
+  labels: { app.kubernetes.io/name: idp-gateway }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app.kubernetes.io/name: idp-gateway }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: idp-gateway }
+    spec:
+      serviceAccountName: idp-gateway
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: gateway
+          image: ghcr.io/chidionyema/idp-gateway
+          command: [python3, platform/idp_agent/gateway.py]
+          ports:
+            - { name: http, containerPort: 8000 }
+          env:
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
+            - { name: REDIS_URL, value: "redis://idp-agent-redis:6379" }
+            - { name: IDP_GATEWAY_HOST, value: "0.0.0.0" }
+            - {
+                name: GITHUB_WEBHOOK_SECRET_FILE,
+                value: /etc/idp-gateway-secrets/GITHUB_WEBHOOK_SECRET,
+              }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 30
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          volumeMounts:
+            - { name: secrets, mountPath: /etc/idp-gateway-secrets, readOnly: true }
+      volumes:
+        - { name: secrets, secret: { secretName: idp-gateway, defaultMode: 0400 } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: idp-gateway
+  namespace: idp-agent
+  labels: { backstage.io/kubernetes-id: layer-idp-agent }
+spec:
+  selector: { app.kubernetes.io/name: idp-gateway }
+  ports:
+    - { name: http, port: 8000, targetPort: http }

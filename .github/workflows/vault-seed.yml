@@ -190,4 +190,6 @@ jobs:
             fi
             rm -rf "$RUNNER_TEMP/estate-secrets"
           fi
+            rm -rf "$RUNNER_TEMP/estate-secrets"
+          fi
           rm -f "$ESTATE_ENV_FILE"

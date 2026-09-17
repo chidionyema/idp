@@ -12,12 +12,19 @@ set -uo pipefail
 # --help included, fell straight into the full offline sweep below and blew the ceiling the
 # instant this file was next touched. Same bug class, same fix, as bin/idp-estate-seed's
 # missing -h|--help case: exit fast, exit 0, before any real work starts.
+FULL=0
 case "${1:-}" in
   -h|--help)
     echo "bin/idp-ci -- the offline gate. No flags to choose a subset; IDP_CI_FAST=1 runs only"
     echo "rungs 1/1b/1c and ruff. IDP_CI_BASE=<sha> scopes path-gated rungs to a diff."
+    echo ""
+    echo "  --full   run the complete matrix with no BLIND skips; all tools required."
+    echo "           On success writes ~/.cache/idp-ci-verified/<HEAD-sha> so the pre-push"
+    echo "           hook proceeds without re-running. Missing tool -> FAIL (not BLIND);"
+    echo "           run bin/idp-install-deps to install."
     exit 0
     ;;
+  --full) FULL=1 ;;
 esac
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
@@ -36,7 +43,7 @@ timing_summary() {
   printf 'timing   %ss total; slowest rungs:\n' "$SECONDS"; printf '%s\n' "$rows" | sed 's/^/         /'
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '## bin/idp-ci %ss\n\n```\n%s\n```\n' "$SECONDS" "$rows" >> "$GITHUB_STEP_SUMMARY"; fi
 }
-need() { command -v "$1" >/dev/null || { say "FAIL  $1 is not installed"; exit 2; }; }
+need() { command -v "$1" >/dev/null || { say "FAIL  $1 is not installed -- run bin/idp-install-deps"; exit 2; }; }
 # Does this change touch any of these paths? IDP_CI_BASE is the merge base on a pull request and
 # empty on main, where the answer is always yes -- the merged state gets the full sweep, and the
 # pull request gets only the rungs its diff can actually break. The kyverno rung has scoped itself
@@ -54,6 +61,8 @@ touched() {
 FAST="${IDP_CI_FAST:-0}"
 need python3
 [ "$FAST" = 1 ] || { need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; }
+# --full requires every tool the CI matrix uses; missing tool = FAIL (not BLIND).
+[ "$FULL" = 1 ] && { need helm; need kyverno; need flux; need kustomize; need kubeconform; }
 
 MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 
@@ -232,6 +241,16 @@ if python3 "$IDP/bin/catalog-platform" --check >/dev/null 2>&1; then
   say "ok    layers   catalog-platform's LAYERS is fresh and every layer carries an owner"
 else
   say "FAIL  layers   backstage/platform/catalog-info.yaml is stale, or a layer has no plain-English row or no owner; run bin/catalog-platform"
+  fail=1
+fi
+
+# 4a-validator. Layer 1 Prevention: validate catalog data integrity before merge.
+# Catches invalid URLs, missing fields, broken references -- the corruption that
+# caused silent Backstage failures (crew#911 2026-09-16).
+if python3 "$IDP/bin/idp-catalog-validator" --strict "$IDP/backstage/platform/catalog-info.yaml" >/dev/null 2>&1; then
+  say "ok    catalog   all link URLs valid, required fields present, no self-references"
+else
+  say "FAIL  catalog   catalog data validation failed (run: bin/idp-catalog-validator --strict backstage/platform/catalog-info.yaml)"
   fail=1
 fi
 
@@ -583,7 +602,7 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
   elif (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
     say "FAIL  kyverno  the must-fail fixture passed; the judge admits an unpatched chart"; fail=1
   else say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused ($kyv_scope)"; fi
-else say "BLIND kyverno  helm or kyverno CLI not installed; HelmRelease renders were not judged"; fail=1; fi
+else say "FAIL  kyverno  helm or kyverno CLI not installed -- run bin/idp-install-deps"; fail=1; fi
 
 # 9c. idp#1027 (run 33339964930): the cluster refused `.spec.appID: expected string, got 4740261`
 #     -- a field typed int where its CRD declares a string. Kyverno grades whether a resource is
@@ -646,8 +665,35 @@ if python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$
 else say "FAIL  grade    estate-showcase did not render, or --check did not discriminate"; fail=1; fi
 
 
+# crew#584 CP2: this gate mirrors what CI runs, so a laptop that has not wired core.hooksPath at
+# .githooks is one where the pre-push hook does not fire and the local gate above never blocks a
+# push -- the exact class of failure that cost idp#3627 three CI cycles on 2026-09-16. Loud
+# banner, not a refusal (a fence a correct machine cannot satisfy is an outage, LAW 38): the
+# founder always sees whether his clone will actually refuse a bad push.
+_hp="$(git -C "$IDP" config --local core.hooksPath 2>/dev/null || true)"
+if [ "$_hp" != ".githooks" ]; then
+  echo ""
+  echo "  WARN  hooks   core.hooksPath is ${_hp:-unset} -- .githooks/pre-push will NOT run on push"
+  echo "                run: bin/idp-install-hooks (idempotent) to close the gap"
+  echo ""
+fi
+
+# Local evidence chain: fail-closed on empty, chain must verify.
+if python3 "$IDP/bin/idp-local-evidence-gate" "$IDP/.aevum/local.jsonl" >/dev/null 2>&1; then
+  say "ok    local-evidence chain present and intact"
+else
+  say "FAIL  local-evidence .aevum/local.jsonl is empty or chain is broken — no agent action has been recorded"; fail=1
+fi
+
 timing_summary
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
+# --full: write sentinel on success so the pre-push hook proceeds without re-running.
+if [ "$FULL" = 1 ] && [ "$fail" -eq 0 ]; then
+  _sha=$(git -C "$IDP" rev-parse HEAD 2>/dev/null || echo unknown)
+  mkdir -p "$HOME/.cache/idp-ci-verified"
+  touch "$HOME/.cache/idp-ci-verified/$_sha"
+  say "ok    verified  sentinel written for $_sha"
+fi
 exit "$fail"
 # Decision 0028: the evidence layer's live case. This is not the fixture pair again -- it grades
 # the REAL manifest the cluster reconciles, and it asserts the two properties whose absence is

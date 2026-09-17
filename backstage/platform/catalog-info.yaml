@@ -137,7 +137,7 @@ spec:
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-secret-store
-    - component:default/layer-alerts-github
+    - component:default/layer-github-app-creds
     - component:default/layer-llm
 ---
 apiVersion: backstage.io/v1alpha1
@@ -185,6 +185,7 @@ spec:
   system: observability
   dependsOn:
     - component:default/layer-secret-store
+    - component:default/layer-github-app-creds
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -260,7 +261,7 @@ spec:
     - component:default/layer-secret-store
     - component:default/layer-edge
     - component:default/layer-estate-db-migrate
-    - component:default/layer-alerts-github
+    - component:default/layer-github-app-creds
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -593,7 +594,7 @@ metadata:
   links:
     - url: https://signoz.${ESTATE_ZONE}
       title: 'Live logs and metrics'
-    - url: /dagster
+    - url: https://catalogue.${ESTATE_ZONE}/dagster
       title: 'Open the scheduler'
 spec:
   type: platform-layer
@@ -672,7 +673,7 @@ spec:
   owner: group:default/platform
   system: resilience
   dependsOn:
-    - component:default/layer-alerts-github
+    - component:default/layer-github-app-creds
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -722,7 +723,7 @@ spec:
   dependsOn:
     - component:default/layer-secret-store
     - component:default/layer-event-bus
-    - component:default/layer-alerts-github
+    - component:default/layer-github-app-creds
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -946,6 +947,29 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-github-app-creds
+  title: 'GitHub App credentials'
+  description: 'The GitHub App ExternalSecret in isolation; eight rows depend on this Secret for postBuild substitution.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=github-app-creds'
+    estate/flux-kustomization: 'github-app-creds'
+    estate/path: './platform/github-app-creds'
+    estate/cluster: 'oke'
+  tags: [platform, security]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: security
+  dependsOn:
+    - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-guacamole
   title: 'Remote hands'
   description: 'A browser desktop into the estate over the private network.'
@@ -1145,7 +1169,7 @@ spec:
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-secret-store
-    - component:default/layer-alerts-github
+    - component:default/layer-github-app-creds
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -1260,6 +1284,31 @@ spec:
   definition: |
     # Not published. identity answers at auth.${ESTATE_ZONE}; this entity
     # exists so the catalogue records that the interface is reachable and who owns it.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-idp-agent
+  title: 'OrbStack agent platform'
+  description: 'GitHub and Flux webhooks in, PRs verified by the judge/red-team/honesty harness out (docs/specs/orbstack-event-driven-agents.md).'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=idp-agent'
+    estate/flux-kustomization: 'idp-agent'
+    estate/path: './platform/idp_agent'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-github-app-creds
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -1437,7 +1486,7 @@ spec:
     - component:default/layer-scheduling
     - component:default/layer-edge
     - component:default/layer-secret-store
-    - component:default/layer-alerts-github
+    - component:default/layer-github-app-creds
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -1690,7 +1739,7 @@ spec:
     - component:default/layer-secret-store
     - component:default/layer-edge
     - component:default/layer-event-bus
-    - component:default/layer-alerts-github
+    - component:default/layer-github-app-creds
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API

@@ -487,6 +487,12 @@ LAYERS = {
         "Opens an issue for every page, so nothing fires into the void.",
         "group:default/platform",
     ),
+    "github-app-creds": (
+        "security",
+        "GitHub App credentials",
+        "The GitHub App ExternalSecret in isolation; eight rows depend on this Secret for postBuild substitution.",
+        "group:default/platform",
+    ),
     "science": (
         "observability",
         "Science",
@@ -503,6 +509,12 @@ LAYERS = {
         "agents",
         "Hermes",
         "The agent that acts for the founder from anywhere: a message in, a pull request out.",
+        "group:default/platform",
+    ),
+    "idp-agent": (
+        "agents",
+        "OrbStack agent platform",
+        "GitHub and Flux webhooks in, PRs verified by the judge/red-team/honesty harness out (docs/specs/orbstack-event-driven-agents.md).",
         "group:default/platform",
     ),
     "otto-golden": (
@@ -615,7 +627,7 @@ LAYERS = {
 # backstage/app-config.yaml is the door, the same shape as /holmes). A layer with no entry
 # here gets no UI link; the catalog never invents a URL it cannot back.
 UI_DOORS = {
-    "dagster": ("/dagster", "Open the scheduler"),
+    "dagster": ("https://catalogue.${ESTATE_ZONE}/dagster", "Open the scheduler"),
 }
 
 

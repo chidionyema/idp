@@ -24,6 +24,13 @@
 # portal and could not see his own UI surfaces while every other row in this drill was green.
 #
 # Python with Playwright: $DRILL_PYTHON if set, else python3. CI installs it in the job.
+case "${1:-}" in
+  -h|--help)
+    echo "bin/idp-login-drill -- sign in to the portal as estate-drill and grade every published path."
+    echo "Requires playwright (pip install playwright && playwright install chromium) and OCI vault access."
+    exit 0
+    ;;
+esac
 set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 # estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
@@ -429,6 +436,7 @@ with sync_playwright() as p:
         "settings",
         "visualizer",
         "tools",
+        "fleet",
         "ops",
         "reports",
         "pair",

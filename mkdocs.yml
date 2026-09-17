@@ -202,6 +202,8 @@ nav:
       - Hermes (Cursor WORK worker): tutorials/demo/hermes.md
       - Router image lanes: tutorials/demo/llm-images.md
       - KINI: tutorials/demo/kini.md
+      - Pi token efficiency: tutorials/demo/pi-token-efficiency.md
+      - Estate DAG generator: tutorials/demo/estate-dag-gen.md
       - Migration gate: tutorials/demo/migration.md
       - Multiarch gate: tutorials/demo/multiarch.md
       - Rules registry: tutorials/demo/idp-rules.md
@@ -220,6 +222,7 @@ nav:
       - Gitops sync: tutorials/demo/gitops-sync.md
       - Helmrelease drift: tutorials/demo/helmrelease-drift.md
       - Executor daemon: tutorials/demo/exec-daemon.md
+      - Estate proof (git+cluster join): tutorials/demo/estate-proof.md
   - Onboarding:
       - The Demo Standard: onboarding/demo-standard.md
       - Executor daemon: how-to/onboarding/exec-daemon.md
@@ -316,8 +319,12 @@ nav:
       - Prose-pin gate: how-to/onboarding/test-prose-gate.md
       - Router image lanes: how-to/onboarding/llm-images.md
       - KINI: how-to/onboarding/kini.md
+      - Pi token efficiency: how-to/onboarding/pi-token-efficiency.md
+      - Estate DAG generator: how-to/onboarding/estate-dag-gen.md
       - Otto (the founder's agent): how-to/onboarding/otto.md
       - Hermes (Cursor WORK worker): how-to/onboarding/hermes.md
+      - Pi token efficiency: how-to/onboarding/pi-token-efficiency.md
+      - Estate DAG generator: how-to/onboarding/estate-dag-gen.md
       - Migration gate: how-to/onboarding/migration.md
       - Multiarch gate: how-to/onboarding/multiarch.md
       - Rules registry: how-to/onboarding/idp-rules.md
@@ -341,6 +348,7 @@ nav:
       - Flux wait brake: how-to/onboarding/idp-flux-wait-brake.md
       - Otto's three homes: how-to/onboarding/otto-three-homes.md
       - Otto homes, grade and deploy: how-to/onboarding/idp-otto-homes.md
+      - Estate proof: how-to/onboarding/estate-proof.md
   - Gates:
       - What these are: gates/index.md
       - api-version-retired: gates/api-version-retired.md
@@ -453,6 +461,16 @@ nav:
       # rules.yaml this session with no nav row, so test_gate_demo's nav case went red
       # again: "generated pages not in the nav: ['dod-v3-verified-not-asserted']".
       - dod-v3-verified-not-asserted: gates/dod-v3-verified-not-asserted.md
+      # 2026-09-16: same mistake a fifth and sixth time. catalog-spec-type and
+      # catalog-links-absolute landed in rules.yaml with no nav rows, so
+      # test_gate_demo's nav case went red: "generated pages not in the nav:
+      # ['catalog-spec-type', 'catalog-links-absolute']".
+      - catalog-spec-type: gates/catalog-spec-type.md
+      - catalog-links-absolute: gates/catalog-links-absolute.md
+      # 2026-09-17: main-green-gate and wip-gate added to rules.yaml (Andon cord enforcement);
+      # nav entries required or test_gate_demo's nav case fails.
+      - main-green-gate: gates/main-green-gate.md
+      - wip-gate: gates/wip-gate.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md

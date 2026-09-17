@@ -12,3 +12,4 @@ resources:
   - agentgateway-servicemonitor.yaml
   - canary-servicemonitor.yaml
   - api-key-warden.yaml
+  - kyverno.yaml
