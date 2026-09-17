@@ -80,7 +80,7 @@ spec:
               names: [weave-gitops*]
           - resources:
               namespaces: [commerce]
-              names: [lago*, redis*]
+              names: [lago*, redis*, commerce-redis]
           - resources:
               namespaces: [llm, idp-agent, via-negativa]
               names: [redis*, litellm-cache*]
@@ -91,7 +91,27 @@ spec:
               names: [apprise*]
           - resources:
               namespaces: [edge]
-              names: [status-page*]
+              names: [status-page*, traefik*, external-dns*]
+          # VENDOR — fully third-party Helm chart namespaces
+          - resources:
+              namespaces: [event-bus, robusta, estate-db, chaos-mesh, temporal]
+          - resources:
+              namespaces: [identity]
+              names: [oauth2-proxy*]
+          # DEMO — sandbox workload
+          - resources:
+              namespaces: [demo-sandbox]
+          # rotation-canary deploys into backstage namespace despite living in platform/state/
+          - resources:
+              namespaces: [backstage]
+              names: [rotation-canary*]
+          # PLATFORM WIP — pending OTel instrumentation (crew#584 follow-up)
+          - resources:
+              namespaces: [epistemic-fabric]
+              names: [epistemic-ingest-*]
+          - resources:
+              namespaces: [via-negativa]
+              names: [via-negativa-proxy*, via-negativa-rca*]
       mutate:
         patchStrategicMerge:
           spec:
