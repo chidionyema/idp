@@ -3,9 +3,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-pr-consolidate
-  title: Consolidate every author's open PRs hourly, delete the originals
-  description: "Founder 2026-09-17, verbatim: \"in all honesty we should not even get here \u2014 limit\
-    \ no of"
+  title: Consolidate the repo's open non-bot PRs hourly, delete the originals
+  description: "Founder 2026-09-17: \"we should not even get here \u2014 limit no of open PRs 5 maximum\"\
+    \ and"
   tags:
   - founder-action
   - estate
@@ -16,7 +16,7 @@ spec:
   - title: Choices for this run
     properties:
       max_open:
-        title: Author's open-PR threshold that triggers consolidation
+        title: Repo-wide open-PR cap that triggers consolidation
         type: string
         default: '5'
       dry_run:
@@ -26,10 +26,10 @@ spec:
       reason:
         title: Why (one line, kept in the run record)
         type: string
-        default: hourly PR sprawl cap enforcement
+        default: hourly repo-wide PR sprawl cap enforcement
   steps:
   - id: dispatch
-    name: Start Consolidate every author's open PRs hourly, delete the originals
+    name: Start Consolidate the repo's open non-bot PRs hourly, delete the originals
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
