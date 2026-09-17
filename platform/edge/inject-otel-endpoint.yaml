@@ -83,7 +83,7 @@ spec:
               names: [lago*, redis*]
           - resources:
               namespaces: [llm, idp-agent, via-negativa]
-              names: [redis*]
+              names: [redis*, litellm-cache*]
           - resources:
               namespaces: [dagster]
           - resources:

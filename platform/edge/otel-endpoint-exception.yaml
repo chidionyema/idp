@@ -24,7 +24,7 @@ spec:
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [searxng], names: [searxng*] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [weave-gitops], names: [weave-gitops*] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [commerce], names: [lago*, redis*] }
-      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [llm, idp-agent, via-negativa], names: [redis*] }
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [llm, idp-agent, via-negativa], names: [redis*, litellm-cache*] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [dagster] }
       # VENDOR — third-party image with no OTel SDK; cannot be instrumented
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [notify], names: [apprise*] }
