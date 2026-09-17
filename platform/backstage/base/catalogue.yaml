@@ -30,9 +30,12 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
-  replicas: 1
+  replicas: 3   # Layer 4 Prevention: multi-replica for zero-downtime pod failures
   strategy:
-    type: Recreate   # one Postgres, one writer; two catalogues ingesting at once is a race
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0   # Always 2/3 pods up
   selector:
     matchLabels:
       app.kubernetes.io/name: catalogue
