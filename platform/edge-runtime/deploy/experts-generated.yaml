@@ -63,6 +63,7 @@ spec:
             - { name: EDGE_BIND, value: "127.0.0.1:8421" }
             - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
             - { name: RUST_LOG, value: "info" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
           resources:
             requests: { cpu: "100m", memory: "7Gi" }
             limits:   { cpu: "1500m", memory: "7Gi" }
@@ -159,6 +160,7 @@ spec:
             - { name: EDGE_BIND, value: "127.0.0.1:8421" }
             - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
             - { name: RUST_LOG, value: "info" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
           resources:
             requests: { cpu: "100m", memory: "4Gi" }
             limits:   { cpu: "1500m", memory: "4Gi" }
@@ -255,6 +257,7 @@ spec:
             - { name: EDGE_BIND, value: "127.0.0.1:8421" }
             - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
             - { name: RUST_LOG, value: "info" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
           resources:
             requests: { cpu: "100m", memory: "4Gi" }
             limits:   { cpu: "1500m", memory: "4Gi" }
@@ -351,6 +354,7 @@ spec:
             - { name: EDGE_BIND, value: "127.0.0.1:8421" }
             - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
             - { name: RUST_LOG, value: "info" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
           resources:
             requests: { cpu: "100m", memory: "3Gi" }
             limits:   { cpu: "1500m", memory: "3Gi" }
@@ -447,6 +451,7 @@ spec:
             - { name: EDGE_BIND, value: "127.0.0.1:8421" }
             - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
             - { name: RUST_LOG, value: "info" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
           resources:
             requests: { cpu: "100m", memory: "4Gi" }
             limits:   { cpu: "1500m", memory: "4Gi" }
