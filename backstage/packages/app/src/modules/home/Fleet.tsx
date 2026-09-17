@@ -27,6 +27,7 @@ import {
 import Box from '@material-ui/core/Box';
 import Button from '@material-ui/core/Button';
 import MuiChip from '@material-ui/core/Chip';
+import IconButton from '@material-ui/core/IconButton';
 import TextField from '@material-ui/core/TextField';
 import Tooltip from '@material-ui/core/Tooltip';
 import Typography from '@material-ui/core/Typography';
@@ -39,7 +40,7 @@ import {
   type Node as RFNode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Chip, EstatePage, Fold, Section, Sheet, Summary } from '../shell';
+import { Chip, EstatePage, Fold, Section, Summary } from '../shell';
 import { EstateMap } from './EstateMap';
 import {
   attentionReason,
@@ -248,79 +249,85 @@ export function Fleet() {
     await loadNotes(sessionId);
   };
 
-  // Item #6: nudge / steer a session. CP8 extends to all four runtimes. The steer text input
-  // is a plain browser text field -- superwhisper (free tier, local Whisper) dictates into it;
-  // nothing in the estate needs to be built for voice (spec 2026-09-08, line 22).
   const [nudgeStatusBySession, setNudgeStatusBySession] = useState<Record<string, string>>({});
   const [steerTextBySession, setSteerTextBySession] = useState<Record<string, string>>({});
   const [stopStatusBySession, setStopStatusBySession] = useState<Record<string, string>>({});
   const [approveStatusBySession, setApproveStatusBySession] = useState<Record<string, string>>({});
   const [denyStatusBySession, setDenyStatusBySession] = useState<Record<string, string>>({});
+  const [listeningSession, setListeningSession] = useState<string | null>(null);
 
-  const sendStop = async (sessionId: string, runtime: string) => {
-    const by = draftFor(sessionId).author.trim();
-    if (!by) { setStopStatusBySession(c => ({ ...c, [sessionId]: 'Add name in Focus first' })); return; }
-    setStopStatusBySession(c => ({ ...c, [sessionId]: 'stopping…' }));
-    try {
-      const res = await fetchApi.fetch('plugin://proxy/fleetview/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, runtime, by }) });
-      const body = (await res.json()) as { ok?: boolean; error?: string };
-      setStopStatusBySession(c => ({ ...c, [sessionId]: res.ok && body.ok !== false ? 'Stopped ✓' : `Failed: ${body.error ?? res.status}` }));
-    } catch (err) { setStopStatusBySession(c => ({ ...c, [sessionId]: `Failed: ${err instanceof Error ? err.message : String(err)}` })); }
-  };
-
-  const sendApprove = async (sessionId: string, runtime: string) => {
-    const by = draftFor(sessionId).author.trim();
-    if (!by) { setApproveStatusBySession(c => ({ ...c, [sessionId]: 'Add name in Focus first' })); return; }
-    const text = (steerTextBySession[sessionId] ?? '').trim();
-    setApproveStatusBySession(c => ({ ...c, [sessionId]: 'approving…' }));
-    try {
-      const res = await fetchApi.fetch('plugin://proxy/fleetview/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, runtime, by, ...(text ? { text } : {}) }) });
-      const body = (await res.json()) as { ok?: boolean; error?: string };
-      setApproveStatusBySession(c => ({ ...c, [sessionId]: res.ok && body.ok !== false ? 'Approved ✓' : `Failed: ${body.error ?? res.status}` }));
-      if (res.ok) void loadSignals(sessionId);
-    } catch (err) { setApproveStatusBySession(c => ({ ...c, [sessionId]: `Failed: ${err instanceof Error ? err.message : String(err)}` })); }
-  };
-
-  const sendDeny = async (sessionId: string, runtime: string) => {
-    const by = draftFor(sessionId).author.trim();
-    if (!by) { setDenyStatusBySession(c => ({ ...c, [sessionId]: 'Add name in Focus first' })); return; }
-    const text = (steerTextBySession[sessionId] ?? '').trim();
-    setDenyStatusBySession(c => ({ ...c, [sessionId]: 'denying…' }));
-    try {
-      const res = await fetchApi.fetch('plugin://proxy/fleetview/deny', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, runtime, by, ...(text ? { text } : {}) }) });
-      const body = (await res.json()) as { ok?: boolean; error?: string };
-      setDenyStatusBySession(c => ({ ...c, [sessionId]: res.ok && body.ok !== false ? 'Denied ✓' : `Failed: ${body.error ?? res.status}` }));
-      if (res.ok) void loadSignals(sessionId);
-    } catch (err) { setDenyStatusBySession(c => ({ ...c, [sessionId]: `Failed: ${err instanceof Error ? err.message : String(err)}` })); }
+  const startDictation = (sessionId: string) => {
+    const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    const rec = new SR() as any;
+    rec.continuous = false; rec.interimResults = false; rec.lang = 'en-US';
+    setListeningSession(sessionId);
+    rec.onresult = (e: any) => {
+      const t: string = e.results[0][0].transcript;
+      setSteerTextBySession(cur => ({ ...cur, [sessionId]: (cur[sessionId] ? cur[sessionId] + ' ' : '') + t }));
+    };
+    rec.onend = () => setListeningSession(null);
+    rec.onerror = () => setListeningSession(null);
+    rec.start();
   };
 
   const sendNudge = async (sessionId: string, runtime: string) => {
-    const by = draftFor(sessionId).author.trim();
-    if (!by) {
-      setNudgeStatusBySession(current => ({
-        ...current,
-        [sessionId]: 'Add your name in Focus above first',
-      }));
-      return;
-    }
     const text = (steerTextBySession[sessionId] ?? '').trim();
-    setNudgeStatusBySession(current => ({ ...current, [sessionId]: 'sending…' }));
+    if (!text) return;
+    setNudgeStatusBySession(cur => ({ ...cur, [sessionId]: 'sending…' }));
     try {
       const res = await fetchApi.fetch('plugin://proxy/fleetview/nudge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, runtime, by, ...(text ? { text } : {}) }),
+        body: JSON.stringify({ session_id: sessionId, runtime, by: 'founder', text }),
       });
       const body = (await res.json()) as { ok?: boolean; error?: string };
-      setNudgeStatusBySession(current => ({
-        ...current,
-        [sessionId]: res.ok && body.ok !== false ? 'Nudged' : `Failed: ${body.error ?? res.status}`,
-      }));
+      setNudgeStatusBySession(cur => ({ ...cur, [sessionId]: res.ok && body.ok !== false ? '✓ steered' : `Failed: ${body.error ?? res.status}` }));
+      if (res.ok && body.ok !== false) setSteerTextBySession(cur => ({ ...cur, [sessionId]: '' }));
     } catch (err) {
-      setNudgeStatusBySession(current => ({
-        ...current,
-        [sessionId]: `Failed: ${err instanceof Error ? err.message : String(err)}`,
-      }));
+      setNudgeStatusBySession(cur => ({ ...cur, [sessionId]: `Failed: ${err instanceof Error ? err.message : String(err)}` }));
+    }
+  };
+
+  const sendStop = async (sessionId: string, runtime: string) => {
+    setStopStatusBySession(cur => ({ ...cur, [sessionId]: 'stopping…' }));
+    try {
+      const res = await fetchApi.fetch('plugin://proxy/fleetview/stop', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, runtime, by: 'founder' }),
+      });
+      const body = (await res.json()) as { ok?: boolean; error?: string };
+      setStopStatusBySession(cur => ({ ...cur, [sessionId]: res.ok && body.ok !== false ? '■ stopped' : `Failed: ${body.error ?? res.status}` }));
+    } catch (err) {
+      setStopStatusBySession(cur => ({ ...cur, [sessionId]: `Failed: ${err instanceof Error ? err.message : String(err)}` }));
+    }
+  };
+
+  const sendApprove = async (sessionId: string, runtime: string) => {
+    setApproveStatusBySession(cur => ({ ...cur, [sessionId]: 'approving…' }));
+    try {
+      const res = await fetchApi.fetch('plugin://proxy/fleetview/approve', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, runtime, by: 'founder' }),
+      });
+      const body = (await res.json()) as { ok?: boolean; error?: string };
+      setApproveStatusBySession(cur => ({ ...cur, [sessionId]: res.ok && body.ok !== false ? '✓ approved' : `Failed: ${body.error ?? res.status}` }));
+    } catch (err) {
+      setApproveStatusBySession(cur => ({ ...cur, [sessionId]: `Failed: ${err instanceof Error ? err.message : String(err)}` }));
+    }
+  };
+
+  const sendDeny = async (sessionId: string, runtime: string) => {
+    setDenyStatusBySession(cur => ({ ...cur, [sessionId]: 'denying…' }));
+    try {
+      const res = await fetchApi.fetch('plugin://proxy/fleetview/deny', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, runtime, by: 'founder' }),
+      });
+      const body = (await res.json()) as { ok?: boolean; error?: string };
+      setDenyStatusBySession(cur => ({ ...cur, [sessionId]: res.ok && body.ok !== false ? '✕ denied' : `Failed: ${body.error ?? res.status}` }));
+    } catch (err) {
+      setDenyStatusBySession(cur => ({ ...cur, [sessionId]: `Failed: ${err instanceof Error ? err.message : String(err)}` }));
     }
   };
 
@@ -552,24 +559,12 @@ export function Fleet() {
           <Chip>Unavailable</Chip>
         )}
         {board.state !== 'unavailable' && (
-          <Sheet testId="fleet-sessions">
-            <thead>
-              <tr>
-                <th>Session</th>
-                <th>Runtime</th>
-                <th>Task</th>
-                <th>State</th>
-                <th>Repo</th>
-                <th>Spend</th>
-                <th>Capabilities</th>
-                <th>Pull requests</th>
-                <th>Focus</th>
-                <th>Trace</th>
-                <th>Log</th>
-                <th>Nudge</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <style>{`
+              @keyframes fleet-pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+              @keyframes fleet-mic { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)} 70%{box-shadow:0 0 0 8px rgba(239,68,68,0)} }
+            `}</style>
+            <div data-testid="fleet-sessions" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(360px,1fr))', gap:16, paddingTop:8 }}>
               {order(board.sessions).map(s => {
                 const notes = notesBySession[s.session_id] ?? [];
                 const signals = signalsBySession[s.session_id] ?? [];
@@ -578,349 +573,233 @@ export function Fleet() {
                 const draft = draftFor(s.session_id);
                 const capability = capabilityLabel(s.capability_class);
                 const nudgeable = NUDGEABLE_RUNTIMES.has(s.runtime);
+                const rc = s.runtime === 'claude-code' ? '#7c3aed' : s.runtime === 'sovereign' ? '#0369a1' : s.runtime === 'otto' ? '#059669' : '#6b7280';
+                const sc = s.state === 'running' ? '#22c55e' : s.state === 'paused' ? '#f59e0b' : s.state === 'failed' ? '#ef4444' : '#6b7280';
+                const isRunning = s.state === 'running';
+                const isPaused = s.state === 'paused';
                 return (
-                  <tr key={`${s.runtime}:${s.session_id}`}>
-                    <td><Typography variant="caption" style={{ fontFamily: 'monospace' }}>{s.session_id.slice(-8)}</Typography></td>
-                    <td>
-                      <MuiChip size="small" label={s.runtime} style={{ fontWeight: 600, fontSize: 11,
-                        background: s.runtime === 'claude-code' ? '#7c3aed' : s.runtime === 'sovereign' ? '#0369a1' : s.runtime === 'otto' ? '#059669' : '#6b7280',
-                        color: '#fff' }} />
-                    </td>
-                    <td><Typography variant="body2" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.task}>{s.task}</Typography></td>
-                    <td>
-                      <MuiChip size="small" label={stateLabel(s.state)} style={{ fontWeight: 700, fontSize: 11,
-                        background: s.state === 'running' ? '#166534' : s.state === 'failed' ? '#991b1b' : s.state === 'paused' ? '#92400e' : '#374151',
-                        color: '#fff' }} />
-                    </td>
-                    <td><Typography variant="caption">{s.repo ?? '—'}</Typography></td>
-                    <td><Typography variant="caption" style={{ fontWeight: 600 }}>{spendLabel(s.spend_usd)}</Typography></td>
-                    <td>
-                      {capability ? (
-                        <Tooltip title={capabilityTitle(s.capabilities) ?? ''}>
-                          <MuiChip size="small" label={capability} />
-                        </Tooltip>
-                      ) : '—'}
-                    </td>
-                    <td>{prLabel(s.pull_requests)}</td>
-                    <td>
-                      {/* The focus panel: notes and nudge attempts merged into one chronological
-                          read (fleetBoard.ts's timelineFor), plus an auto-fetched receipt verdict
-                          -- so opening a session answers "what happened, and did it actually
-                          finish?" without a separate trip to Check receipts below. Nothing here
-                          is delivered live into a running process for any runtime today (see
-                          docs/founder/fleetview-voice-revisit.md). Everything is fetched once, on
-                          first open, not on every poll. */}
-                      <Fold
-                        testId={`notes-fold-${s.session_id}`}
-                        summary={notes.length ? `${notes.length} note${notes.length === 1 ? '' : 's'}` : 'Leave a note'}
-                        onToggle={e => {
-                          if (!e.currentTarget.open) return;
-                          if (!notesBySession[s.session_id]) void loadNotes(s.session_id);
-                          if (!signalsBySession[s.session_id]) void loadSignals(s.session_id);
-                          if (!receiptsBySession[s.session_id]) void loadReceipt(s.session_id);
-                        }}
-                      >
-                        <div>
-                          {receipt && (
-                            <div data-testid={`receipt-verdict-${s.session_id}`}>
-                              {receipt.status === 'loading' && <Chip>Checking receipt…</Chip>}
-                              {receipt.status === 'done' && (
-                                <Chip title={receipt.reason}>Receipt: {receipt.verdict}</Chip>
-                              )}
-                              {receipt.status === 'error' && (
-                                <Chip title={receipt.error}>Receipt: unavailable</Chip>
-                              )}
-                            </div>
-                          )}
-                          <ul data-testid={`timeline-${s.session_id}`}>
+                  <Box key={s.session_id} style={{ background:'#0d1117', border:`1px solid rgba(255,255,255,0.07)`, borderLeft:`3px solid ${rc}`, borderRadius:10, padding:'16px 18px', display:'flex', flexDirection:'column', gap:10 }}>
+                    {/* Header row */}
+                    <Box display="flex" alignItems="center" justifyContent="space-between">
+                      <Box display="flex" alignItems="center" style={{ gap:7 }}>
+                        <span style={{ width:8, height:8, borderRadius:'50%', background:sc, display:'inline-block', flexShrink:0, animation: isRunning ? 'fleet-pulse 1.6s ease-in-out infinite' : undefined }} />
+                        <MuiChip size="small" label={s.runtime} style={{ background:rc, color:'#fff', fontWeight:700, fontSize:10, height:18, borderRadius:4, letterSpacing:0.4 }} />
+                        <MuiChip size="small" label={stateLabel(s.state).toUpperCase()} style={{ background:'transparent', color:sc, border:`1px solid ${sc}`, fontWeight:700, fontSize:10, height:18, borderRadius:4 }} />
+                        {capability && (
+                          <Tooltip title={capabilityTitle(s.capabilities) ?? ''}>
+                            <MuiChip size="small" label={capability} style={{ fontSize:10, height:18, borderRadius:4 }} />
+                          </Tooltip>
+                        )}
+                      </Box>
+                      <Typography variant="caption" style={{ fontFamily:'monospace', color:'#484f58', fontSize:10 }}>{s.session_id.slice(-10)}</Typography>
+                    </Box>
+
+                    {/* Task */}
+                    <Typography variant="body2" style={{ color:'#e6edf3', fontWeight:500, fontSize:14, lineHeight:1.5, minHeight:20 }}>
+                      {s.task || <span style={{ color:'#484f58', fontStyle:'italic' }}>no task description</span>}
+                    </Typography>
+
+                    {/* Meta */}
+                    <Box display="flex" style={{ gap:14, flexWrap:'wrap' }}>
+                      {s.repo && <Typography variant="caption" style={{ color:'#6b7280' }}>repo <span style={{ color:'#8b949e', fontWeight:600 }}>{s.repo}</span></Typography>}
+                      <Typography variant="caption" style={{ color:'#6b7280' }}>spend <span style={{ color:'#8b949e', fontWeight:600 }}>{spendLabel(s.spend_usd)}</span></Typography>
+                      {s.ticket && <Typography variant="caption" style={{ color:'#6b7280' }}>ticket <span style={{ color:'#8b949e', fontWeight:600 }}>{s.ticket}</span></Typography>}
+                      {prLabel(s.pull_requests) !== '—' && <Typography variant="caption" style={{ color:'#6b7280' }}>PRs <span style={{ color:'#8b949e', fontWeight:600 }}>{prLabel(s.pull_requests)}</span></Typography>}
+                    </Box>
+
+                    {/* Controls */}
+                    {nudgeable && (
+                      <Box style={{ borderTop:'1px solid rgba(255,255,255,0.06)', paddingTop:10, display:'flex', flexDirection:'column', gap:8 }}>
+                        {/* Stop / Approve / Deny */}
+                        {isRunning && (
+                          <Box display="flex" alignItems="center" style={{ gap:8 }}>
+                            <Button variant="contained" size="small" fullWidth
+                              style={{ background:'#7f1d1d', color:'#fca5a5', fontWeight:800, fontSize:11, letterSpacing:1, borderRadius:6, padding:'5px 0' }}
+                              onClick={() => void sendStop(s.session_id, s.runtime)}>
+                              ■ STOP
+                            </Button>
+                            {stopStatusBySession[s.session_id] && <Typography variant="caption" style={{ color:'#6b7280', whiteSpace:'nowrap' }}>{stopStatusBySession[s.session_id]}</Typography>}
+                          </Box>
+                        )}
+                        {isPaused && (
+                          <Box display="flex" style={{ gap:8 }}>
+                            <Button variant="contained" size="small" fullWidth
+                              style={{ background:'#14532d', color:'#86efac', fontWeight:800, fontSize:11, letterSpacing:0.8, borderRadius:6 }}
+                              onClick={() => void sendApprove(s.session_id, s.runtime)}>
+                              ✓ APPROVE
+                            </Button>
+                            <Button variant="outlined" size="small" fullWidth
+                              style={{ color:'#9ca3af', borderColor:'#374151', fontWeight:700, fontSize:11, letterSpacing:0.8, borderRadius:6 }}
+                              onClick={() => void sendDeny(s.session_id, s.runtime)}>
+                              ✕ DENY
+                            </Button>
+                            {(approveStatusBySession[s.session_id] || denyStatusBySession[s.session_id]) && (
+                              <Typography variant="caption" style={{ color:'#6b7280', alignSelf:'center', whiteSpace:'nowrap' }}>
+                                {approveStatusBySession[s.session_id] || denyStatusBySession[s.session_id]}
+                              </Typography>
+                            )}
+                          </Box>
+                        )}
+
+                        {/* Steer row */}
+                        <Box display="flex" alignItems="center" style={{ gap:6 }}>
+                          <Tooltip title={listeningSession === s.session_id ? 'Listening…' : 'Dictate'}>
+                            <IconButton size="small" onClick={() => startDictation(s.session_id)}
+                              style={{ background: listeningSession === s.session_id ? '#450a0a' : '#161b22', color: listeningSession === s.session_id ? '#ef4444' : '#6b7280', borderRadius:6, width:32, height:32, border:'1px solid rgba(255,255,255,0.08)', animation: listeningSession === s.session_id ? 'fleet-mic 1s ease-out infinite' : undefined }}>
+                              🎤
+                            </IconButton>
+                          </Tooltip>
+                          <TextField size="small" variant="outlined" placeholder="Steer this agent…"
+                            value={steerTextBySession[s.session_id] ?? ''}
+                            onChange={e => setSteerTextBySession(cur => ({ ...cur, [s.session_id]: e.target.value }))}
+                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendNudge(s.session_id, s.runtime); } }}
+                            style={{ flex:1 }}
+                            inputProps={{ style:{ fontSize:12, color:'#e6edf3', padding:'6px 10px', background:'#010409' } }}
+                            InputProps={{ style:{ borderRadius:6, borderColor:'#30363d' } }} />
+                          <Button variant="contained" size="small" color="primary"
+                            style={{ fontWeight:800, whiteSpace:'nowrap', fontSize:11, letterSpacing:0.8, minWidth:64, borderRadius:6, height:32 }}
+                            onClick={() => void sendNudge(s.session_id, s.runtime)}>
+                            STEER →
+                          </Button>
+                        </Box>
+                        {nudgeStatusBySession[s.session_id] && (
+                          <Typography variant="caption" style={{ color:'#6b7280' }}>{nudgeStatusBySession[s.session_id]}</Typography>
+                        )}
+                      </Box>
+                    )}
+
+                    {/* History / trace / log (lazy) */}
+                    <Fold testId={`focus-${s.session_id}`} summary={notes.length ? `${notes.length} note${notes.length === 1 ? '' : 's'} · history` : 'History & trace'}
+                      onToggle={e => {
+                        if (!e.currentTarget.open) return;
+                        if (!notesBySession[s.session_id]) void loadNotes(s.session_id);
+                        if (!signalsBySession[s.session_id]) void loadSignals(s.session_id);
+                        if (!receiptsBySession[s.session_id]) void loadReceipt(s.session_id);
+                        if (!traceBySession[s.session_id]) void loadTrace(s.session_id);
+                        if (!ledgerBySession[s.session_id]) void loadLedger(s.session_id);
+                      }}>
+                      <div style={{ display:'flex', flexDirection:'column', gap:8, paddingTop:6 }}>
+                        {receipt && (
+                          <div data-testid={`receipt-verdict-${s.session_id}`}>
+                            {receipt.status === 'loading' && <Chip>Checking receipt…</Chip>}
+                            {receipt.status === 'done' && <Chip title={receipt.reason}>Receipt: {receipt.verdict}</Chip>}
+                            {receipt.status === 'error' && <Chip title={receipt.error}>Receipt: unavailable</Chip>}
+                          </div>
+                        )}
+                        {timeline.length > 0 && (
+                          <ul data-testid={`timeline-${s.session_id}`} style={{ margin:0, paddingLeft:16, fontSize:12, color:'#8b949e' }}>
                             {timeline.map((entry, i) =>
                               entry.kind === 'note' ? (
-                                <li key={`note-${i}`}>
-                                  <strong>{entry.author}</strong>: {entry.text}
-                                </li>
+                                <li key={`note-${i}`}><strong style={{ color:'#e6edf3' }}>{entry.author}</strong>: {entry.text}</li>
                               ) : (
-                                <li key={`signal-${i}`}>
-                                  <strong>{entry.by}</strong> nudged: {entry.text} —{' '}
-                                  {entry.ok ? 'delivered' : `failed: ${entry.error}`}
-                                </li>
-                              ),
+                                <li key={`sig-${i}`}><strong style={{ color:'#e6edf3' }}>{entry.by}</strong> steered: {entry.text} — {entry.ok ? 'delivered' : `failed: ${entry.error}`}</li>
+                              )
                             )}
                           </ul>
-                          <input
-                            aria-label={`note author for ${s.session_id}`}
-                            placeholder="your name"
-                            value={draft.author}
-                            onChange={e =>
-                              setDraftsBySession(current => ({
-                                ...current,
-                                [s.session_id]: { ...draftFor(s.session_id), author: e.target.value },
-                              }))
-                            }
-                          />
-                          <input
-                            aria-label={`note text for ${s.session_id}`}
-                            placeholder="leave a note for this session"
-                            value={draft.note}
-                            onChange={e =>
-                              setDraftsBySession(current => ({
-                                ...current,
-                                [s.session_id]: { ...draftFor(s.session_id), note: e.target.value },
-                              }))
-                            }
-                          />
-                          <button
-                            type="button"
-                            onClick={() => void submitNote(s.session_id, s.runtime)}
-                          >
-                            Send
-                          </button>
-                        </div>
-                      </Fold>
-                    </td>
-                    <td>
-                      {/* CP7: Trace fold -- React Flow graph of recorded spans, laid out with
-                          dagre. Fetched lazily on first open. Reloads on SSE events for this
-                          session (the stream is the live clock; the fold shows the latest spans
-                          at the moment a person opens it, then stays current while it is open). */}
-                      <Fold
-                        testId={`trace-fold-${s.session_id}`}
-                        summary="Trace"
-                        onToggle={e => {
-                          if (!e.currentTarget.open) return;
-                          if (!traceBySession[s.session_id]) void loadTrace(s.session_id);
-                        }}
-                      >
+                        )}
+                        {/* Trace */}
                         {(() => {
                           const t = traceBySession[s.session_id];
                           if (!t) return null;
-                          if (!t.available) {
-                            return <Chip>Trace unavailable: {t.error ?? 'no reason given'}</Chip>;
-                          }
-                          if (t.nodes.length === 0) {
-                            return <Chip>No spans recorded yet</Chip>;
-                          }
+                          if (!t.available) return <Typography variant="caption" style={{ color:'#6b7280' }}>Trace unavailable: {t.error ?? 'no reason given'}</Typography>;
+                          if (t.nodes.length === 0) return <Typography variant="caption" style={{ color:'#6b7280' }}>No spans recorded yet</Typography>;
                           return (
-                            <div style={{ width: 600, height: 300, border: '1px solid #e2e8f0', borderRadius: 6 }}>
+                            <div style={{ width:'100%', height:220, border:'1px solid #30363d', borderRadius:6 }}>
                               <ReactFlowProvider>
-                                <ReactFlow
-                                  nodes={t.nodes}
-                                  edges={t.edges}
-                                  fitView
-                                  nodesDraggable={false}
-                                  nodesConnectable={false}
-                                  proOptions={{ hideAttribution: true }}
-                                >
+                                <ReactFlow nodes={t.nodes} edges={t.edges} fitView nodesDraggable={false} nodesConnectable={false} proOptions={{ hideAttribution:true }}>
                                   <Background gap={20} />
                                 </ReactFlow>
                               </ReactFlowProvider>
                             </div>
                           );
                         })()}
-                      </Fold>
-                    </td>
-                    <td>
-                      {/* CP7: Log fold -- last ledger rows for this session. Laptop sessions show
-                          the last 20; pod sessions point to cluster logs. Fetched lazily on
-                          first open. */}
-                      <Fold
-                        testId={`log-fold-${s.session_id}`}
-                        summary="Log"
-                        onToggle={e => {
-                          if (!e.currentTarget.open) return;
-                          if (!ledgerBySession[s.session_id]) void loadLedger(s.session_id);
-                        }}
-                      >
-                        {(() => {
-                          const l = ledgerBySession[s.session_id];
-                          if (!l) return null;
-                          return (
-                            <div>
-                              <ul>
-                                {l.rows.map((row, i) => (
-                                  // eslint-disable-next-line react/no-array-index-key
-                                  <li key={i}>
-                                    <strong>{row.source}</strong> {row.ts}: {row.text}
-                                  </li>
-                                ))}
-                              </ul>
-                              <p>
-                                <em>
-                                  Laptop sessions show the last 20 ledger rows. Pod sessions: see
-                                  cluster logs.
-                                </em>
-                              </p>
-                            </div>
-                          );
-                        })()}
-                      </Fold>
-                    </td>
-                    <td>
-                      {nudgeable ? (
-                        <Box display="flex" flexDirection="column" style={{ gap: 6, minWidth: 200 }}>
-                          {s.state === 'running' && (
-                            <Box display="flex" alignItems="center" style={{ gap: 6 }}>
-                              <Button
-                                variant="contained"
-                                size="small"
-                                style={{ backgroundColor: '#da3633', color: '#fff', minWidth: 64, fontWeight: 600, letterSpacing: '0.02em' }}
-                                onClick={() => void sendStop(s.session_id, s.runtime)}
-                              >
-                                Stop
-                              </Button>
-                              {stopStatusBySession[s.session_id] && (
-                                <Typography variant="caption" style={{ color: '#9ca3af' }}>
-                                  {stopStatusBySession[s.session_id]}
-                                </Typography>
-                              )}
-                            </Box>
-                          )}
-                          {s.state === 'paused' && (
-                            <Box display="flex" alignItems="center" style={{ gap: 6 }}>
-                              <Button
-                                variant="contained"
-                                size="small"
-                                style={{ backgroundColor: '#16a34a', color: '#fff', minWidth: 72, fontWeight: 600 }}
-                                onClick={() => void sendApprove(s.session_id, s.runtime)}
-                              >
-                                Approve
-                              </Button>
-                              <Button
-                                variant="outlined"
-                                size="small"
-                                style={{ minWidth: 56, color: '#6b7280', borderColor: '#6b7280', fontWeight: 600 }}
-                                onClick={() => void sendDeny(s.session_id, s.runtime)}
-                              >
-                                Deny
-                              </Button>
-                              {(approveStatusBySession[s.session_id] || denyStatusBySession[s.session_id]) && (
-                                <Typography variant="caption" style={{ color: '#9ca3af' }}>
-                                  {approveStatusBySession[s.session_id] || denyStatusBySession[s.session_id]}
-                                </Typography>
-                              )}
-                            </Box>
-                          )}
-                          <Box display="flex" alignItems="flex-end" style={{ gap: 6 }}>
-                            <TextField
-                              aria-label={`steer text for ${s.session_id}`}
-                              placeholder="steer… or tap mic"
-                              size="small"
-                              variant="outlined"
-                              value={steerTextBySession[s.session_id] ?? ''}
-                              onChange={e => setSteerTextBySession(current => ({ ...current, [s.session_id]: e.target.value }))}
-                              inputProps={{ style: { fontSize: 12, padding: '4px 8px' } }}
-                              style={{ flex: 1 }}
-                            />
-                            <Button
-                              variant="contained"
-                              size="small"
-                              color="primary"
-                              style={{ minWidth: 56, fontWeight: 600, whiteSpace: 'nowrap' }}
-                              onClick={() => void sendNudge(s.session_id, s.runtime)}
-                            >
-                              Steer
-                            </Button>
-                          </Box>
-                          {nudgeStatusBySession[s.session_id] && (
-                            <Typography variant="caption" style={{ color: '#9ca3af' }}>
-                              {nudgeStatusBySession[s.session_id]}
-                            </Typography>
-                          )}
+                        {/* Log */}
+                        {ledgerBySession[s.session_id] && (
+                          <ul style={{ margin:0, paddingLeft:16, fontSize:11, color:'#6b7280', fontFamily:'monospace' }}>
+                            {ledgerBySession[s.session_id].rows.map((row, i) => (
+                              // eslint-disable-next-line react/no-array-index-key
+                              <li key={i}><span style={{ color:'#484f58' }}>{row.ts.slice(11,19)}</span> <strong style={{ color:'#8b949e' }}>{row.source}</strong> {row.text}</li>
+                            ))}
+                          </ul>
+                        )}
+                        {/* Leave a note */}
+                        <Box display="flex" style={{ gap:6, marginTop:4 }}>
+                          <input aria-label={`note author for ${s.session_id}`} placeholder="your name"
+                            value={draft.author}
+                            onChange={e => setDraftsBySession(cur => ({ ...cur, [s.session_id]: { ...draftFor(s.session_id), author: e.target.value } }))}
+                            style={{ width:100, fontSize:12, background:'#0d1117', color:'#e6edf3', border:'1px solid #30363d', borderRadius:4, padding:'4px 8px' }} />
+                          <input aria-label={`note text for ${s.session_id}`} placeholder="leave a note…"
+                            value={draft.note}
+                            onChange={e => setDraftsBySession(cur => ({ ...cur, [s.session_id]: { ...draftFor(s.session_id), note: e.target.value } }))}
+                            style={{ flex:1, fontSize:12, background:'#0d1117', color:'#e6edf3', border:'1px solid #30363d', borderRadius:4, padding:'4px 8px' }} />
+                          <button type="button" onClick={() => void submitNote(s.session_id, s.runtime)}
+                            style={{ fontSize:11, background:'#21262d', color:'#e6edf3', border:'1px solid #30363d', borderRadius:4, padding:'4px 10px', cursor:'pointer' }}>
+                            Note
+                          </button>
                         </Box>
-                      ) : (
-                        <Typography variant="caption" style={{ color: '#4b5563' }}>—</Typography>
-                      )}
-                    </td>
-                  </tr>
+                      </div>
+                    </Fold>
+                  </Box>
                 );
               })}
-            </tbody>
-          </Sheet>
+            </div>
+          </>
         )}
       </Section>
-      <Section title="Blast radius">
-        <Summary>
-          If this node died right now, what dies with it -- the same answer{' '}
-          <code>bin/estate-twin-runtime --blast-radius</code> gives at a terminal, over the
-          graph's own edges. Node ids look like <code>k8s:deployment:idp:catalogue</code>.
-        </Summary>
-        <input
-          aria-label="blast radius node id"
-          placeholder="k8s:deployment:idp:catalogue"
-          value={blastNodeId}
-          onChange={e => setBlastNodeId(e.target.value)}
-        />
-        <button type="button" disabled={blastLoading} onClick={() => void checkBlastRadius()}>
-          {blastLoading ? 'Checking…' : 'Check'}
-        </button>
-        {blastError && (
-          // A graph that has never been swept and a node with no edges are different facts
-          // (see blast.py) -- the error text carries which one this is, never a blank result.
-          <Chip>{blastError}</Chip>
-        )}
-        {blastResult && (
-          <div data-testid="blast-radius-result">
-            <p>{blastResult.node_id}</p>
-            <div>
-              <strong>Upstream (depends on it)</strong>
-              {blastResult.upstream.length === 0 ? (
-                <p>Nothing recorded in the graph yet.</p>
-              ) : (
-                <ul>
-                  {blastResult.upstream.map(u => (
-                    <li key={u.node_id}>
-                      {u.node_id} ({u.relation})
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div>
-              <strong>Downstream (dies with it)</strong>
-              {blastResult.downstream.length === 0 ? (
-                <p>Nothing recorded in the graph yet.</p>
-              ) : (
-                <ul>
-                  {blastResult.downstream.map(d => (
-                    <li key={d.node_id}>
-                      +{d.hops} {d.node_id} ({d.relation})
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        )}
-      </Section>
-      <Section title="Check receipts">
-        <Summary>
-          Does a session that claims done actually have evidence behind it? Checks each named
-          session's real production Langfuse trace for a success status with zero recorded
-          observations -- a claimed win with no receipt. No model grades another model here;
-          this is a mechanical check, the same rule <code>receipt-auditor</code> follows by hand.
-          Comma-separated session ids.
-        </Summary>
-        <input
-          aria-label="check receipts session ids"
-          placeholder="session-1, session-2"
-          value={receiptsInput}
-          onChange={e => setReceiptsInput(e.target.value)}
-        />
-        <button type="button" disabled={receiptsLoading} onClick={() => void checkReceipts()}>
-          {receiptsLoading ? 'Checking…' : 'Check receipts'}
-        </button>
-        {receiptsError && (
-          // Langfuse unconfigured/unreachable is a named gap, never a silent pass (see evals.py).
-          <Chip>{receiptsError}</Chip>
-        )}
-        {receiptsResults && (
-          <ul data-testid="check-receipts-result">
-            {receiptsResults.map(r => (
-              <li key={r.session_id}>
-                <strong>{r.session_id}</strong>: {r.verdict} — {r.reason}
-              </li>
-            ))}
-          </ul>
-        )}
+
+      <Section title="Tools">
+        <Box display="flex" style={{ gap:24, flexWrap:'wrap' }}>
+          {/* Blast radius */}
+          <Box style={{ flex:'1 1 320px', minWidth:280 }}>
+            <Typography variant="subtitle2" style={{ color:'#8b949e', fontWeight:700, marginBottom:8 }}>Blast radius</Typography>
+            <Typography variant="caption" style={{ color:'#6b7280', display:'block', marginBottom:8 }}>
+              If this node died right now, what dies with it.
+            </Typography>
+            <Box display="flex" style={{ gap:6 }}>
+              <input aria-label="blast radius node id" placeholder="k8s:deployment:idp:catalogue"
+                value={blastNodeId} onChange={e => setBlastNodeId(e.target.value)}
+                style={{ flex:1, fontSize:12, background:'#0d1117', color:'#e6edf3', border:'1px solid #30363d', borderRadius:6, padding:'6px 10px' }} />
+              <button type="button" disabled={blastLoading} onClick={() => void checkBlastRadius()}
+                style={{ fontSize:12, fontWeight:700, background:'#21262d', color:'#e6edf3', border:'1px solid #30363d', borderRadius:6, padding:'6px 14px', cursor:'pointer' }}>
+                {blastLoading ? '…' : 'Check'}
+              </button>
+            </Box>
+            {blastError && <Typography variant="caption" style={{ color:'#ef4444', display:'block', marginTop:6 }}>{blastError}</Typography>}
+            {blastResult && (
+              <div data-testid="blast-radius-result" style={{ marginTop:8, fontSize:12, color:'#8b949e' }}>
+                <div><strong style={{ color:'#e6edf3' }}>Upstream</strong>{blastResult.upstream.length === 0 ? ' — none recorded' : ''}</div>
+                {blastResult.upstream.map(u => <div key={u.node_id} style={{ paddingLeft:12 }}>{u.node_id} ({u.relation})</div>)}
+                <div style={{ marginTop:4 }}><strong style={{ color:'#e6edf3' }}>Downstream</strong>{blastResult.downstream.length === 0 ? ' — none recorded' : ''}</div>
+                {blastResult.downstream.map(d => <div key={d.node_id} style={{ paddingLeft:12 }}>+{d.hops} {d.node_id} ({d.relation})</div>)}
+              </div>
+            )}
+          </Box>
+
+          {/* Check receipts */}
+          <Box style={{ flex:'1 1 320px', minWidth:280 }}>
+            <Typography variant="subtitle2" style={{ color:'#8b949e', fontWeight:700, marginBottom:8 }}>Check receipts</Typography>
+            <Typography variant="caption" style={{ color:'#6b7280', display:'block', marginBottom:8 }}>
+              Does a session that claims done have a real Langfuse trace to back it?
+            </Typography>
+            <Box display="flex" style={{ gap:6 }}>
+              <input aria-label="check receipts session ids" placeholder="session-1, session-2"
+                value={receiptsInput} onChange={e => setReceiptsInput(e.target.value)}
+                style={{ flex:1, fontSize:12, background:'#0d1117', color:'#e6edf3', border:'1px solid #30363d', borderRadius:6, padding:'6px 10px' }} />
+              <button type="button" disabled={receiptsLoading} onClick={() => void checkReceipts()}
+                style={{ fontSize:12, fontWeight:700, background:'#21262d', color:'#e6edf3', border:'1px solid #30363d', borderRadius:6, padding:'6px 14px', cursor:'pointer' }}>
+                {receiptsLoading ? '…' : 'Check'}
+              </button>
+            </Box>
+            {receiptsError && <Typography variant="caption" style={{ color:'#ef4444', display:'block', marginTop:6 }}>{receiptsError}</Typography>}
+            {receiptsResults && (
+              <ul data-testid="check-receipts-result" style={{ marginTop:8, fontSize:12, color:'#8b949e', paddingLeft:16 }}>
+                {receiptsResults.map(r => (
+                  <li key={r.session_id}><strong style={{ color:'#e6edf3' }}>{r.session_id}</strong>: {r.verdict} — {r.reason}</li>
+                ))}
+              </ul>
+            )}
+          </Box>
+        </Box>
       </Section>
     </EstatePage>
   );
