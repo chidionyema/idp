@@ -1,15 +1,14 @@
-# button: Consolidate every author's open PRs hourly, delete the originals
-# founder: Founder 2026-09-17, verbatim: "in all honesty we should not even get here — limit no of
-#   open prs 5 maximum" and (recovery) "hourly ... needs to delete the prs after consolidating". So:
-#     - PREVENTION: bin/idp-max-open-prs-gate refuses a push when the author is already at 5 open.
-#     - RECOVERY (this workflow): every hour, for every non-bot author with >= 5 open PRs, merge
-#       them all into one branch consolidate-<author>-<YYYY-MM-DD-HHZ>, open ONE PR, close the
-#       originals, and delete their branches. Human-in-loop: the consolidation PR itself waits for
-#       normal checks + merge-when-green; nothing lands on main without CI's word.
+# button: Consolidate the repo's open non-bot PRs hourly, delete the originals
+# founder: Founder 2026-09-17: "we should not even get here — limit no of open PRs 5 maximum" and
+#   (recovery) "hourly ... needs to delete the PRs after consolidating" and later "not author, this
+#   is repo not author based". So the cap is REPO-WIDE (not per-author).
 #
-# Bot lanes are skipped by design: PRs on branches starting with `flux/` or authored by
-# `github-actions[bot]` are the image-update loop; they must NOT be consolidated (each one is a
-# tag pin and merging them together loses the pinning contract).
+#   PREVENTION: bin/idp-max-open-prs-gate refuses a push when the repo already has > 5 open non-bot
+#                PRs.
+#   RECOVERY (this workflow): every hour, if the repo has more open non-bot PRs than the cap, merge
+#                every non-bot open PR into ONE branch consolidate-<YYYY-MM-DD-HHZ>, open ONE PR,
+#                close the originals and DELETE their branches. Bot PRs (flux/*, *[bot], image-
+#                update label) are skipped by design -- each is a tag pin the Flux loop manages.
 name: pr-consolidate
 on:
   schedule:
@@ -17,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       max_open:
-        description: "Author's open-PR threshold that triggers consolidation"
+        description: "Repo-wide open-PR cap that triggers consolidation"
         default: "5"
       dry_run:
         description: "List what would be consolidated; do not act"
@@ -26,7 +25,7 @@ on:
       reason:
         description: "Why (one line, kept in the run record)"
         required: false
-        default: "hourly PR sprawl cap enforcement"
+        default: "hourly repo-wide PR sprawl cap enforcement"
 permissions:
   id-token: write
   contents: write
@@ -48,42 +47,40 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: find authors over the cap
-        id: find
+      - name: count and list open non-bot PRs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAX_OPEN: ${{ inputs.max_open || '5' }}
         run: |
           set -euo pipefail
-          python3 - <<'PY' | tee "$GITHUB_STEP_SUMMARY"
-          import json, os, urllib.request, sys
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, os, urllib.request
           token = os.environ["GH_TOKEN"]
           req = urllib.request.Request(
               "https://api.github.com/repos/chidionyema/idp/pulls?state=open&per_page=100",
               headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"})
           prs = json.load(urllib.request.urlopen(req, timeout=15))
           maxN = int(os.environ["MAX_OPEN"])
-          by = {}
-          for p in prs:
-              if (p.get("head") or {}).get("ref","").startswith("flux/"):
-                  continue
-              if (p.get("user") or {}).get("login","").endswith("[bot]"):
-                  continue
-              u = (p.get("user") or {}).get("login","?")
-              by.setdefault(u,[]).append({"n": p["number"], "ref": p["head"]["ref"], "title": p["title"]})
-          over = {a:l for a,l in by.items() if len(l) >= maxN}
-          print(f"## pr-consolidate scan (max_open={maxN})")
+          def bot(p):
+              if (p.get("head") or {}).get("ref","").startswith("flux/"): return True
+              if (p.get("user") or {}).get("login","").endswith("[bot]"): return True
+              for l in (p.get("labels") or []):
+                  if l.get("name") == "image-update": return True
+              return False
+          non_bot = [p for p in prs if not bot(p)]
+          print(f"## pr-consolidate scan (cap={maxN}, open non-bot={len(non_bot)})")
           print("")
-          if not over:
-              print("no author over the cap; nothing to do")
-          for a,l in over.items():
-              print(f"author `{a}` at {len(l)} open PRs:")
-              for p in l: print(f"  - #{p['n']} `{p['ref']}` -- {p['title'][:80]}")
-          json.dump(over, open("/tmp/over.json","w"))
+          for p in non_bot:
+              who = (p.get("user") or {}).get("login","?")
+              print(f"  #{p['number']} by `{who}` `{p['head']['ref']}` -- {p['title'][:80]}")
+          hit = len(non_bot) > maxN
+          print("")
+          print(f"OVER_CAP={'yes' if hit else 'no'}")
+          payload = [{"n": p["number"], "ref": p["head"]["ref"], "title": p["title"]} for p in non_bot]
+          json.dump({"hit": hit, "prs": payload}, open("/tmp/scan.json","w"))
           PY
-          echo "over=$(wc -c </tmp/over.json)" >> "$GITHUB_OUTPUT"
 
-      - name: consolidate each author's PRs
+      - name: consolidate the open non-bot PRs
         if: ${{ inputs.dry_run != true }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -91,10 +88,11 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import json, os, subprocess, time
-          over = json.load(open("/tmp/over.json"))
-          if not over:
-              print("nothing to consolidate")
+          scan = json.load(open("/tmp/scan.json"))
+          if not scan["hit"]:
+              print("under cap; nothing to consolidate")
               raise SystemExit(0)
+          prs = scan["prs"]
           def sh(*a, **kw):
               print("+", " ".join(a))
               return subprocess.run(a, check=kw.get("check", True), capture_output=True, text=True)
@@ -105,7 +103,7 @@ jobs:
                   method=method,
                   headers={"Authorization": f"token {os.environ['GH_TOKEN']}",
                            "Accept": "application/vnd.github+json",
-                           "Content-Type":"application/json"})
+                           "Content-Type": "application/json"})
               try:
                   return json.load(urllib.request.urlopen(req, timeout=15))
               except urllib.error.HTTPError as e:
@@ -113,35 +111,35 @@ jobs:
           sh("git","config","user.name","estate-pr-consolidate")
           sh("git","config","user.email","estate-pr-consolidate@users.noreply.github.com")
           sh("git","fetch","origin","main")
-          for author, prs in over.items():
-              stamp = time.strftime("%Y-%m-%d-%HZ", time.gmtime())
-              cbr = f"consolidate-{author}-{stamp}"
-              sh("git","checkout","-B",cbr,"origin/main")
-              merged = []
-              for p in prs:
-                  sh("git","fetch","origin",p["ref"], check=False)
-                  r = sh("git","merge","-X","theirs","--no-edit",f"origin/{p['ref']}", check=False)
-                  if r.returncode != 0:
-                      print(f"  MERGE FAIL #{p['n']} {p['ref']}: {r.stderr[:200]}")
-                      sh("git","merge","--abort", check=False)
-                      continue
-                  merged.append(p)
-              if not merged:
-                  print(f"  no PRs merged for {author}")
+          stamp = time.strftime("%Y-%m-%d-%HZ", time.gmtime())
+          cbr = f"consolidate-{stamp}"
+          sh("git","checkout","-B",cbr,"origin/main")
+          merged = []
+          for p in prs:
+              sh("git","fetch","origin",p["ref"], check=False)
+              r = sh("git","merge","-X","theirs","--no-edit",f"origin/{p['ref']}", check=False)
+              if r.returncode != 0:
+                  print(f"  MERGE FAIL #{p['n']} {p['ref']}: {r.stderr[:200]}")
+                  sh("git","merge","--abort", check=False)
                   continue
-              sh("git","push","--no-verify","-u","origin",cbr)
-              body_lines = [f"Hourly consolidation for author `{author}` (>=5 open PRs).",
-                            "", "Merged PRs (now closed):"]
-              for p in merged: body_lines.append(f"- #{p['n']} `{p['ref']}` -- {p['title'][:80]}")
-              body_lines += ["","Original branches deleted. See platform/pr-consolidate for policy."]
-              r = gh_api("POST","/repos/chidionyema/idp/pulls",
-                        {"title": f"consolidate: {len(merged)} PRs from {author} ({stamp})",
-                         "head": cbr, "base":"main", "body":"\n".join(body_lines)})
-              print("  opened", r.get("number"), r.get("html_url"))
-              for p in merged:
-                  gh_api("POST", f"/repos/chidionyema/idp/issues/{p['n']}/comments",
-                        {"body": f"Superseded by #{r.get('number')} (hourly pr-consolidate). Closing and deleting branch `{p['ref']}`."})
-                  gh_api("PATCH", f"/repos/chidionyema/idp/pulls/{p['n']}", {"state":"closed"})
-                  gh_api("DELETE", f"/repos/chidionyema/idp/git/refs/heads/{p['ref']}")
-                  print(f"    #{p['n']} closed + branch deleted")
+              merged.append(p)
+          if not merged:
+              print("no PRs merged cleanly; abort")
+              raise SystemExit(0)
+          sh("git","push","--no-verify","-u","origin",cbr)
+          body_lines = [f"Hourly repo-wide consolidation ({len(merged)} PRs, cap exceeded).", "",
+                        "Merged PRs (now closed, branches deleted):"]
+          for p in merged: body_lines.append(f"- #{p['n']} `{p['ref']}` -- {p['title'][:80]}")
+          body_lines += ["", "Bot PRs (flux/*, *[bot], image-update label) were skipped by design.",
+                         "See .github/workflows/pr-consolidate.yml for the policy."]
+          r = gh_api("POST","/repos/chidionyema/idp/pulls",
+                    {"title": f"consolidate: {len(merged)} PRs ({stamp})",
+                     "head": cbr, "base":"main", "body":"\n".join(body_lines)})
+          print("  opened", r.get("number"), r.get("html_url"))
+          for p in merged:
+              gh_api("POST", f"/repos/chidionyema/idp/issues/{p['n']}/comments",
+                    {"body": f"Superseded by #{r.get('number')} (hourly pr-consolidate). Closing and deleting branch `{p['ref']}`."})
+              gh_api("PATCH", f"/repos/chidionyema/idp/pulls/{p['n']}", {"state":"closed"})
+              gh_api("DELETE", f"/repos/chidionyema/idp/git/refs/heads/{p['ref']}")
+              print(f"    #{p['n']} closed + branch deleted")
           PY
