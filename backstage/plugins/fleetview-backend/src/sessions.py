@@ -134,6 +134,7 @@ def _estate_db_sessions(now: dt.datetime | None = None) -> list[dict[str, Any]]:
         )
     return out
 
+
 _ESTATE_SESSIONS_MODULE = (
     Path(__file__).resolve().parents[4] / "mcp" / "plugins" / "estate_sessions.py"
 )
