@@ -1,0 +1,28 @@
+# ACG (Asymmetric Compute Grid) image automation.
+# build-multiarch in chidionyema/acg pushes main-<run>-<sha>; this row picks the highest run.
+# The {"$imagepolicy"} marker in platform/acg/oke.yaml is what image-automation-controller rewrites.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: acg
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/acg
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: acg
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: acg
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc
