@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""idp-pr-ownership-check -- read-only summary of this session's in-flight PRs.
+
+Called at the tail of bin/idp-ci so every session sees its own accountability state at every
+run. Also usable at any time to answer "which of my PRs are stalled?".
+
+  bin/idp-pr-ownership-check                # print this session's in-flight PRs
+  bin/idp-pr-ownership-check --all          # every session, not just this one
+  bin/idp-pr-ownership-check --strict       # exit 1 if any of this session's PRs are red/overdue
+
+Read-only. Never writes. BLIND when the board is missing or malformed (LAW 38).
+"""
+from __future__ import annotations
+import argparse, json, os, pathlib, sys, time
+
+BOARD = pathlib.Path(os.environ.get("IDP_ESTATE_BOARD", str(pathlib.Path.home() / ".claude" / "ESTATE_BOARD.jsonl")))
+SID_FILE = pathlib.Path.home() / ".claude" / "session-id"
+SLO_HOURS = float(os.environ.get("IDP_PR_LAND_SLO_HOURS", "4"))
+
+
+def read_board() -> list[dict]:
+    out = []
+    try:
+        if not BOARD.exists():
+            return out
+        for line in BOARD.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                d = json.loads(line)
+                if isinstance(d, dict):
+                    out.append(d)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return out
+
+
+def latest_per_key(entries: list[dict]) -> dict:
+    latest = {}
+    for e in entries:
+        if e.get("kind") != "pr_ownership":
+            continue
+        key = (e.get("session_id"), e.get("branch") or e.get("pr"))
+        prev = latest.get(key)
+        if prev is None or float(e.get("ts", 0)) > float(prev.get("ts", 0)):
+            latest[key] = e
+    return latest
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--all", action="store_true")
+    ap.add_argument("--strict", action="store_true")
+    args = ap.parse_args()
+    sid = os.environ.get("IDP_SESSION_ID") or (SID_FILE.read_text().strip() if SID_FILE.exists() else "unknown")
+    now = time.time()
+    board = read_board()
+    latest = latest_per_key(board)
+    rows = []
+    for (s, k), e in latest.items():
+        if not args.all and s != sid:
+            continue
+        state = str(e.get("state", "in_flight"))
+        if state in ("landed", "closed"):
+            continue
+        opened = float(e.get("opened_at", e.get("ts", now)))
+        age_h = (now - opened) / 3600
+        overdue = age_h > SLO_HOURS
+        rows.append({"session": (s or "?")[:8], "branch": e.get("branch", "?"),
+                     "pr": e.get("pr", ""), "state": "overdue" if overdue else state,
+                     "age_h": age_h, "title": (e.get("title") or "")[:60]})
+    if not rows:
+        print(f"ok pr-ownership-check -- session {sid[:12]} has 0 in-flight PRs")
+        sys.exit(0)
+    print(f"pr-ownership-check -- {len(rows)} in-flight PR(s) (session={sid[:12]}, slo={SLO_HOURS:.0f}h):")
+    for r in rows:
+        print(f"  [{r['state']:8s}] session {r['session']} branch {r['branch'][:40]} pr#{r['pr']} age {r['age_h']:.1f}h  {r['title']}")
+    bad = [r for r in rows if r["state"] in ("red", "overdue")]
+    if args.strict and bad:
+        sys.exit(1)
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

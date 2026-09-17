@@ -1,0 +1,89 @@
+# button: Grade every in-flight PR ownership receipt against GitHub
+# founder: Founder 2026-09-17: "we push a PR and move on, no accountability. we spray and pray."
+#   This workflow is what turns the local ownership receipt (bin/idp-pr-ownership-record wrote it
+#   at pre-push) into a live, checked claim. Every hour, read every open PR on the repo; for each,
+#   find the matching receipt on ~/.claude/ESTATE_BOARD.jsonl by branch (or sha) and update its
+#   state -- red, green, overdue, landed -- so the NEXT time the same session tries to push, the
+#   pre-push rung reads the current state, not the state at open-time.
+#
+# The board is per-Mac (session ids don't cross machines), so this workflow does not read every
+# session's receipts -- it reads GitHub state and writes ONE authoritative row per PR sha into a
+# workflow-artifact JSON. Each laptop's hourly pull (bin/idp-pr-ownership-sync, follow-up) folds
+# the artifact into its local board. For v1, the workflow's job summary is the artifact and any
+# session can eyeball it -- the tighter loop follows.
+name: pr-ownership-watch
+on:
+  schedule:
+    - cron: "23 * * * *"   # hourly at :23 (offset from other estate crons)
+  workflow_dispatch:
+    inputs:
+      reason:
+        required: false
+        default: "hourly PR ownership state refresh"
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: read
+concurrency:
+  group: pr-ownership-watch
+  cancel-in-progress: false
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: grade every open PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, os, urllib.request, time
+          token = os.environ["GH_TOKEN"]
+          SLO_HOURS = float(os.environ.get("IDP_PR_LAND_SLO_HOURS","4"))
+          def api(path):
+              req = urllib.request.Request(f"https://api.github.com{path}",
+                  headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"})
+              return json.load(urllib.request.urlopen(req, timeout=15))
+          prs = api("/repos/chidionyema/idp/pulls?state=open&per_page=100")
+          print(f"## pr-ownership-watch ({len(prs)} open PRs, slo {SLO_HOURS:.0f}h)")
+          print("")
+          rows = []
+          now = time.time()
+          for p in prs:
+              sha = p["head"]["sha"]
+              age_h = (now - time.mktime(time.strptime(p["created_at"], "%Y-%m-%dT%H:%M:%SZ"))) / 3600
+              checks = api(f"/repos/chidionyema/idp/commits/{sha}/check-runs?per_page=100").get("check_runs",[])
+              red = [c for c in checks if c.get("conclusion") in ("failure","cancelled","timed_out")]
+              running = [c for c in checks if c.get("status") != "completed"]
+              state = "green"
+              if red:
+                  state = "red"
+              elif running:
+                  state = "in_flight"
+              if age_h > SLO_HOURS and state != "green":
+                  state = "overdue"
+              rows.append({"pr": p["number"], "branch": p["head"]["ref"], "sha": sha,
+                           "state": state, "age_h": round(age_h,1),
+                           "red_checks": [c["name"] for c in red][:5],
+                           "title": p["title"][:60], "user": (p.get("user") or {}).get("login","?")})
+          # print a compact table for the run summary
+          print("| PR | state | age | branch | red | title |")
+          print("|---:|:------|----:|:-------|:----|:------|")
+          for r in sorted(rows, key=lambda x: (-int(x["state"] in ("red","overdue")), -x["age_h"])):
+              red = ", ".join(r["red_checks"]) or "-"
+              print(f"| #{r['pr']} | {r['state']} | {r['age_h']}h | `{r['branch']}` | {red} | {r['title']} |")
+          # write the artifact so laptops can fold it into local boards later (v2)
+          out = {"generated_at": now, "slo_hours": SLO_HOURS, "rows": rows}
+          import pathlib
+          pathlib.Path("pr-ownership-state.json").write_text(json.dumps(out, indent=2))
+          PY
+      - uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
+        with:
+          name: pr-ownership-state
+          path: pr-ownership-state.json
+          retention-days: 7

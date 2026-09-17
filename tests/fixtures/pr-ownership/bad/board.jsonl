@@ -1,0 +1,1 @@
+{"kind":"pr_ownership","ts":1,"session_id":"test-session","branch":"broken","state":"red","opened_at":1,"expected_land_by":2,"pr":9999,"title":"a red PR blocking new pushes"}

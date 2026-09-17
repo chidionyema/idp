@@ -84,6 +84,20 @@ fi
 # trust boundary.
 remote_name="${1:-origin}"
 branch_name="$(git rev-parse --abbrev-ref HEAD)"
+# 2026-09-17: accountability door. Refuses THIS push when THIS session has any earlier PR that
+# is still in-flight and red or overdue. bin/idp-pr-ownership-record reads the estate board,
+# names offenders and exits non-zero. On clean, appends a receipt for this branch. LAW 38: if
+# the board is unreadable or the session id cannot be resolved, the rung is fail-open.
+# Founder 2026-09-17: "we push a PR and move on, no accountability. we spray and pray ... this
+# is how we got a pileup in the first place."
+set +e
+"$IDP/bin/idp-pr-ownership-record" --branch "$branch_name" 2>&1
+own_rc=$?
+set -e
+if [ "$own_rc" != 0 ]; then
+	echo "FAIL  pr-ownership  session has in-flight red/overdue PRs. Fix or close before pushing another." >&2
+	exit "$own_rc"
+fi
 # 2026-09-16: fail-BLIND when the local MCP verifier is unreachable, so a fresh Mac (no local
 # service running) is not refused for a fence a correct machine cannot satisfy (LAW 38). The
 # same pattern the kyverno rung above uses (rc=2 => BLIND). Server-side CI enforces the same

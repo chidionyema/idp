@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""idp-pr-ownership-record — the accountability door.
+
+Founder 2026-09-17 verbatim: "we push a PR and move on, no freaking accountability. we spray and
+pray this is why we keep running around in fucking circles fixing the same problems this is how
+we got a pileup in the first fucking place." The pattern is: agent opens a PR, walks away, then
+opens another. Nothing enforces "you own it until it lands green". This file is that enforcement.
+
+WHAT IT DOES.
+  At pre-push, this session's own in-flight receipts are read from ~/.claude/ESTATE_BOARD.jsonl.
+  If ANY receipt for this session is red (a required check failed) or overdue (opened >
+  IDP_PR_LAND_SLO_HOURS hours ago and still open), THE PUSH IS REFUSED. The refusal names the
+  offending PR by number and says what needs to happen (fix the failure, or close the PR) before
+  a new push is allowed.
+
+  On a clean session, this file writes a NEW receipt for the branch about to be pushed:
+    {ts, session_id, host, user, branch, sha, opened_at, expected_land_by, state: "in_flight"}
+
+  The hourly workflow .github/workflows/pr-ownership-watch.yml is what turns state from
+  "in_flight" to "red" or "green" or "overdue" or "landed" by reading GitHub.
+
+BLIND-open (LAW 38). Unreadable board, missing GH_TOKEN, corrupt JSON: exit 0. A gate that
+refuses correct work when its own storage breaks is an outage.
+
+SESSION IDENTITY. ~/.claude/session-id, one UUID per Mac. Persisted first time this file runs.
+Every receipt this Mac writes carries the same session_id, so this Mac's in-flight PRs are what
+gate this Mac's next push -- not another laptop's.
+"""
+from __future__ import annotations
+import argparse, json, os, pathlib, socket, subprocess, sys, time, uuid
+
+BOARD = pathlib.Path(os.environ.get("IDP_ESTATE_BOARD", str(pathlib.Path.home() / ".claude" / "ESTATE_BOARD.jsonl")))
+SID_FILE = pathlib.Path.home() / ".claude" / "session-id"
+SLO_HOURS = float(os.environ.get("IDP_PR_LAND_SLO_HOURS", "4"))
+
+
+def session_id() -> str:
+    try:
+        SID_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if SID_FILE.exists():
+            v = SID_FILE.read_text().strip()
+            if v:
+                return v
+        v = str(uuid.uuid4())
+        SID_FILE.write_text(v + "\n")
+        return v
+    except Exception:
+        return "unknown"
+
+
+def read_board() -> list[dict]:
+    out = []
+    try:
+        if not BOARD.exists():
+            return out
+        for line in BOARD.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                d = json.loads(line)
+                if isinstance(d, dict):
+                    out.append(d)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return out
+
+
+def append_receipt(entry: dict) -> None:
+    try:
+        BOARD.parent.mkdir(parents=True, exist_ok=True)
+        with BOARD.open("a") as fh:
+            fh.write(json.dumps(entry, sort_keys=True) + "\n")
+    except Exception as e:
+        print(f"BLIND pr-ownership-record: cannot write board ({e}); LAW 38", file=sys.stderr)
+
+
+def latest_state_per_pr(entries: list[dict], sid: str) -> dict:
+    """Fold the append-only log: for each (session, branch) held by THIS session, keep the
+    latest kind_ownership entry."""
+    latest = {}
+    for e in entries:
+        if e.get("kind") != "pr_ownership":
+            continue
+        if e.get("session_id") != sid:
+            continue
+        key = e.get("branch") or e.get("pr")
+        if key is None:
+            continue
+        prev = latest.get(key)
+        if prev is None or float(e.get("ts", 0)) > float(prev.get("ts", 0)):
+            latest[key] = e
+    return latest
+
+
+def now_epoch() -> float:
+    return time.time()
+
+
+def cli():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--branch", help="branch about to be pushed (defaults to current)")
+    ap.add_argument("--sha", help="head sha (defaults to HEAD)")
+    ap.add_argument("--check-only", action="store_true", help="grade in-flight, do not append a receipt")
+    args = ap.parse_args()
+
+    sid = session_id()
+    board = read_board()
+    latest = latest_state_per_pr(board, sid)
+    now = now_epoch()
+
+    # Refuse if this session has ANY still-in-flight PR that is red or overdue.
+    offenders = []
+    for key, e in latest.items():
+        state = str(e.get("state", "in_flight"))
+        # Anything landed/closed is no longer in-flight.
+        if state in ("landed", "closed"):
+            continue
+        # Skip receipts for the branch we're about to re-push -- pushing the SAME branch is not
+        # opening a new PR, it is trying to fix the current one. The point of this fence is to
+        # stop OPENING a new PR while another is broken.
+        if args.branch and str(e.get("branch")) == args.branch:
+            continue
+        opened = float(e.get("opened_at", e.get("ts", now)))
+        overdue = (now - opened) > SLO_HOURS * 3600
+        if state == "red" or overdue:
+            offenders.append((key, e, "red" if state == "red" else "overdue"))
+
+    if offenders:
+        print("FAIL pr-ownership -- your session has in-flight PRs you must land or close first:", file=sys.stderr)
+        for key, e, why in offenders:
+            n = e.get("pr") or ""
+            branch = e.get("branch", "?")
+            age_h = (now - float(e.get("opened_at", e.get("ts", now)))) / 3600
+            print(f"  [{why}] pr#{n} branch {branch} age {age_h:.1f}h -- {e.get('title','')[:80]}", file=sys.stderr)
+        print(f"  See ~/.claude/ESTATE_BOARD.jsonl. Fix red checks, or close the PR, before pushing a new branch.", file=sys.stderr)
+        print(f"  This session id: {sid[:12]}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.check_only:
+        print(f"ok pr-ownership -- session {sid[:12]} clean (0 in-flight red/overdue)")
+        sys.exit(0)
+
+    # Determine current branch / sha for the receipt.
+    def _sh(cmd: list[str]) -> str:
+        try:
+            return subprocess.check_output(cmd, text=True).strip()
+        except Exception:
+            return ""
+
+    branch = args.branch or _sh(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    sha = args.sha or _sh(["git", "rev-parse", "HEAD"])
+
+    if not branch or branch in ("main", "HEAD"):
+        # Not a topic-branch push; skip receipt.
+        print(f"ok pr-ownership -- session {sid[:12]} clean; branch={branch or '?'} not tracked")
+        sys.exit(0)
+
+    entry = {
+        "kind": "pr_ownership",
+        "ts": now,
+        "session_id": sid,
+        "host": socket.gethostname(),
+        "user": os.environ.get("USER", "?"),
+        "branch": branch,
+        "sha": sha,
+        "opened_at": now,
+        "expected_land_by": now + SLO_HOURS * 3600,
+        "state": "in_flight",
+    }
+    append_receipt(entry)
+    print(f"ok pr-ownership -- session {sid[:12]} clean; receipt written for {branch} (slo {SLO_HOURS:.0f}h)")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    cli()

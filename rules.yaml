@@ -2886,3 +2886,41 @@ rules:
     note: the catalog files actually committed to backstage/
   ok: a relative or non-http URL in metadata.links is refused; absolute https URLs including ${ESTATE_ZONE} templates pass; the real backstage/ tree is clean
   fail: a catalog entity carries a relative or non-http URL in metadata.links, or the gate is not discriminating
+- id: pr-ownership
+  fast: true
+  label: pr-ownership
+  statement: A session that already has an in-flight red or overdue PR must land or close it before opening another. This is the accountability door -- no spraying new PRs while your last one is still broken. The rule is proved locally at pre-push (bin/idp-pr-ownership-record) and refreshed hourly against GitHub (.github/workflows/pr-ownership-watch.yml).
+  law: 'incident 2026-09-17: 10 open PRs from one agent, "we push a PR and move on, no accountability. we spray and pray"'
+  origin: An agent that opens a PR and walks away is not caught by any existing gate. bin/idp-max-open-prs-gate caps the repo-wide count but does not enforce ownership; bin/idp-pr-landable grades landability but only when merge-when-green runs. The gap is per-session accountability with pre-push refusal, which is what this row grades.
+  planes:
+  - ci
+  - session
+  session_glob:
+  - '**'
+  run:
+  - python3
+  - bin/idp-pr-ownership-check
+  - --strict
+  cluster:
+    policy: null
+    why: PR ownership is a session-plane concern; no admission policy applies
+  fixtures:
+    must_fail: tests/fixtures/pr-ownership/bad
+    must_pass: tests/fixtures/pr-ownership/good
+  cases:
+  - expect: refuse
+    args:
+    - --strict
+    env:
+      IDP_ESTATE_BOARD: tests/fixtures/pr-ownership/bad/board.jsonl
+      IDP_SESSION_ID: test-session
+    note: a red PR from the same session blocks the push
+  - expect: pass
+    args:
+    - --strict
+    env:
+      IDP_ESTATE_BOARD: tests/fixtures/pr-ownership/good/board.jsonl
+      IDP_SESSION_ID: test-session
+    note: a landed PR does not block
+  ok: this session has no in-flight red or overdue PR
+  fail: this session has an in-flight PR that has not landed within the SLO
