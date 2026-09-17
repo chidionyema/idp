@@ -30,7 +30,7 @@ def _load_state(session_id: str) -> dict:
     try:
         with open(path) as f:
             return json.load(f)
-    except Exception:
+    except Exception:  # noqa: S110
         return {
             "turns": 0,
             "bash_calls": 0,
@@ -50,7 +50,7 @@ def _save_state(session_id: str, state: dict) -> None:
     try:
         with open(path, "w") as f:
             json.dump(state, f)
-    except Exception:
+    except Exception:  # noqa: S110
         pass
 
 
@@ -68,7 +68,7 @@ def _measure_transcript(transcript_path: str, state: dict) -> dict:
                 continue
             try:
                 entry = json.loads(line)
-            except Exception:
+            except Exception:  # noqa: S112
                 continue
             etype = entry.get("type", "")
             if etype == "tool_use":
@@ -96,7 +96,7 @@ def _measure_transcript(transcript_path: str, state: dict) -> dict:
                     or "Refused before it was sent" in content
                 ):
                     state["proxy_refused"] += 1
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     return state
 
@@ -133,7 +133,7 @@ def _format_report(state: dict, session_id: str) -> str:
 def main() -> None:
     try:
         data = json.load(sys.stdin)
-    except Exception:
+    except Exception:  # noqa: S110
         sys.exit(0)
     session_id = data.get("session_id", "unknown")
     transcript_path = data.get("transcript_path", "")
@@ -145,7 +145,7 @@ def main() -> None:
         os.makedirs(STATE_DIR, exist_ok=True)
         with open(os.path.join(STATE_DIR, "efficiency-latest.txt"), "w") as f:
             f.write(report + "\n")
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     print(report)
     sys.exit(0)
