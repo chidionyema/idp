@@ -270,27 +270,47 @@ def add_nudge(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
 def add_stop(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     impl = _signals()
     try:
-        record = impl.stop(session_id=body.get("session_id",""), runtime=body.get("runtime",""), by=body.get("by",""))
-    except impl.InvalidSignal as exc: return {"error": str(exc)}, 400
-    except impl.UnsupportedRuntime as exc: return {"error": str(exc)}, 422
+        record = impl.stop(
+            session_id=body.get("session_id", ""),
+            runtime=body.get("runtime", ""),
+            by=body.get("by", ""),
+        )
+    except impl.InvalidSignal as exc:
+        return {"error": str(exc)}, 400
+    except impl.UnsupportedRuntime as exc:
+        return {"error": str(exc)}, 422
     return record, 502 if not record["ok"] else 200
 
 
 def add_approve(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     impl = _signals()
     try:
-        record = impl.approve(session_id=body.get("session_id",""), runtime=body.get("runtime",""), by=body.get("by",""), text=body.get("text",""))
-    except impl.InvalidSignal as exc: return {"error": str(exc)}, 400
-    except impl.UnsupportedRuntime as exc: return {"error": str(exc)}, 422
+        record = impl.approve(
+            session_id=body.get("session_id", ""),
+            runtime=body.get("runtime", ""),
+            by=body.get("by", ""),
+            text=body.get("text", ""),
+        )
+    except impl.InvalidSignal as exc:
+        return {"error": str(exc)}, 400
+    except impl.UnsupportedRuntime as exc:
+        return {"error": str(exc)}, 422
     return record, 502 if not record["ok"] else 200
 
 
 def add_deny(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     impl = _signals()
     try:
-        record = impl.deny(session_id=body.get("session_id",""), runtime=body.get("runtime",""), by=body.get("by",""), text=body.get("text",""))
-    except impl.InvalidSignal as exc: return {"error": str(exc)}, 400
-    except impl.UnsupportedRuntime as exc: return {"error": str(exc)}, 422
+        record = impl.deny(
+            session_id=body.get("session_id", ""),
+            runtime=body.get("runtime", ""),
+            by=body.get("by", ""),
+            text=body.get("text", ""),
+        )
+    except impl.InvalidSignal as exc:
+        return {"error": str(exc)}, 400
+    except impl.UnsupportedRuntime as exc:
+        return {"error": str(exc)}, 422
     return record, 502 if not record["ok"] else 200
 
 
