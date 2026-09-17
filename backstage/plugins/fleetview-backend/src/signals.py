@@ -8,9 +8,15 @@ it is read at the session's next step, `sb steer <session_id>` is the same call 
 This module is that same, already-real mechanism, reached from a board button instead of a
 terminal -- not a new intervention, a new door onto one that already exists.
 
-Scope, deliberately narrow (founder: "get all done", scoped down to what is real): only `steer`
-is wired, and only for `runtime == "sovereign"` -- the one runtime with a live signal to send it
-to. A runtime with no such mechanism gets an honest `UnsupportedRuntime`, never a button that
+CP8 extends this to all four runtimes. Each runtime uses its own native channel:
+- `sovereign`: Temporal signal (unchanged)
+- `claude-code`: filesystem mailbox at ~/.claude/state/directives/<uuid>.json, read at next
+  SessionStart/PostCompact hook (next-turn delivery; mid-turn terminal-UI path cannot be scripted)
+- `otto`: NATS steer event on estate.agent.otto.<session_id>.steer (Otto's adapter delivers as
+  Telegram)
+- `cyrus`: Linear GraphQL commentCreate mutation on the session's issue
+
+A runtime with no live signal path gets an honest `UnsupportedRuntime`, never a button that
 looks like it worked and did nothing.
 
 No portal-identity auth is wired here yet (CP3's "unauthenticated caller gets 401" is a separate,
@@ -26,16 +32,23 @@ recorded, success or failure, once the input itself has passed validation -- an 
 (missing session_id, blank `by`, ...) never touched a real session and leaves no row, the same
 rule `notes.py`'s `InvalidNote` follows.
 
-CONFIG (LAW 46): ESTATE_DB, default `<repo>/catalog/estate.db` -- same variable and default
-`notes.py` and `bin/estate-twin-runtime` read.
+CONFIG (LAW 46):
+  ESTATE_DB            -- default `<repo>/catalog/estate.db`
+  ESTATE_STATE_PATH_PREFIX -- ledger root, default ~/.claude/state/prompt-ledger/; directives dir
+                              is derived as <ledger_root>/../directives/
+  NATS_URL             -- default nats://nats.event-bus.svc:4222
+  LINEAR_API_KEY       -- Linear API token (or LINEAR_API_KEY_FILE path)
+  LINEAR_API_KEY_FILE  -- path to file containing the Linear API token
 """
 
 from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
 import os
 import sqlite3
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -45,9 +58,9 @@ _DB_DEFAULT = _ROOT / "catalog" / "estate.db"
 MAX_TEXT_LENGTH = 4000
 DEFAULT_NUDGE_TEXT = "Nudge from FleetView: this session has been idle. Please post a status, or wrap up."
 
-# Only sovereign has a live signal path today (see module docstring). Extend this set the day a
-# second runtime grows one -- never fake a delivery for a runtime not in it.
-_SUPPORTED_RUNTIMES = frozenset({"sovereign"})
+_LINEAR_API = "https://api.linear.app/graphql"
+
+_SUPPORTED_RUNTIMES = frozenset({"sovereign", "claude-code", "otto", "cyrus"})
 
 
 class InvalidSignal(ValueError):
@@ -127,7 +140,7 @@ def _record(
     return _row_to_dict(row)
 
 
-def _dispatch_steer(session_id: str, by: str, text: str) -> str | None:
+def _dispatch_steer_sovereign(session_id: str, by: str, text: str) -> str | None:
     """Send the real Temporal steer signal. Returns None on success, an error string on failure --
     never raises, so the caller always gets to record the attempt."""
     try:
@@ -141,6 +154,163 @@ def _dispatch_steer(session_id: str, by: str, text: str) -> str | None:
     if not result.get("ok", False):
         return str(result.get("error") or "signal rejected")
     return None
+
+
+def _dispatch_steer_claude_code(session_id: str, by: str, text: str) -> str | None:
+    """Write the steer text to ~/.claude/state/directives/<raw_uuid>.json.
+
+    `session_id` format is `<repo_or_stem>:<raw_uuid>` -- split on the last colon.
+    The claude-code session reads this mailbox at the next SessionStart or PostCompact hook.
+    Delivery is next-turn, not mid-turn (the mid-turn terminal-UI path cannot be scripted).
+    Returns None on success, error string on failure.
+
+    CONFIG: ESTATE_STATE_PATH_PREFIX -- the ledger root, default ~/.claude/state/prompt-ledger/.
+    The directives dir is derived as <ledger_root>/../directives/.
+    """
+    # Parse the raw uuid from the last colon
+    raw_uuid = session_id.rsplit(":", 1)[-1]
+
+    # Derive directives dir from config
+    ledger_root = Path(
+        os.environ.get(
+            "ESTATE_STATE_PATH_PREFIX",
+            os.path.expanduser("~/.claude/state/prompt-ledger/"),
+        )
+    )
+    directives_dir = ledger_root.parent / "directives"
+
+    try:
+        os.makedirs(directives_dir, exist_ok=True)
+        payload = {
+            "session_id": session_id,
+            "by": by,
+            "text": text,
+            "written_at": _now(),
+        }
+        dest = directives_dir / f"{raw_uuid}.json"
+        dest.write_text(json.dumps(payload), encoding="utf-8")
+    except OSError as exc:
+        return f"OSError writing directive: {exc}"
+    return None
+
+
+def _dispatch_steer_otto(session_id: str, by: str, text: str) -> str | None:
+    """Publish a NATS steer event for Otto. Otto's adapter delivers it as a Telegram message.
+
+    Requires NATS_URL to be set. If not set, returns an error string (never silently drops).
+    Subject: estate.agent.otto.<session_id>.steer
+    Payload matches estate.agent.event.json schema (kind=steer, runtime=otto).
+
+    CONFIG: NATS_URL -- default nats://nats.event-bus.svc:4222
+    """
+    try:
+        import nats  # type: ignore[import]
+    except ImportError as exc:
+        return f"nats library not importable: {exc}"
+
+    nats_url = os.environ.get("NATS_URL", "nats://nats.event-bus.svc:4222")
+    if not os.environ.get("NATS_URL"):
+        return "NATS_URL not configured — cannot reach Otto"
+
+    subject = f"estate.agent.otto.{session_id}.steer"
+    payload = {
+        "session_id": session_id,
+        "runtime": "otto",
+        "kind": "steer",
+        "at": _now(),
+        "phase": "executing",
+        "steer": {
+            "text": text,
+            "author": by,
+            "audit_row": None,
+        },
+    }
+    data = json.dumps(payload).encode()
+
+    async def _publish() -> None:
+        nc = await nats.connect(nats_url)
+        try:
+            await nc.publish(subject, data)
+            await nc.flush()
+        finally:
+            await nc.close()
+
+    try:
+        asyncio.run(_publish())
+    except Exception as exc:  # noqa: BLE001
+        return f"{exc.__class__.__name__}: {exc}"
+    return None
+
+
+def _dispatch_steer_cyrus(session_id: str, by: str, text: str) -> str | None:
+    """Post a Linear comment on the Cyrus session's issue.
+
+    Parses the Linear issue ID from session_id (format: <issue_id>:<uuid> or <slug>:<uuid>).
+    Uses the Linear GraphQL API (https://api.linear.app/graphql) to post a comment.
+
+    CONFIG: LINEAR_API_KEY or LINEAR_API_KEY_FILE -- same vars bin/estate-twin-runtime uses.
+    """
+    # Resolve token -- same two-source shape as bin/estate-twin-runtime's _linear_token()
+    token = os.environ.get("LINEAR_API_KEY", "").strip()
+    if not token:
+        path = os.environ.get("LINEAR_API_KEY_FILE", "")
+        if path and os.path.exists(path):
+            try:
+                token = Path(path).read_text(encoding="utf-8").strip()
+            except OSError:
+                token = ""
+    if not token:
+        return "LINEAR_API_KEY not configured — cannot reach Cyrus"
+
+    # Parse issue ID from session_id -- the part before the last colon
+    issue_id = session_id.rsplit(":", 1)[0]
+
+    comment_body = f"**Steer from FleetView** (by {by}):\n\n{text}"
+    query = """
+mutation CommentCreate($issueId: String!, $body: String!) {
+  commentCreate(input: {issueId: $issueId, body: $body}) {
+    success
+    comment { id }
+  }
+}
+"""
+    variables = {"issueId": issue_id, "body": comment_body}
+
+    if not _LINEAR_API.startswith("https://"):
+        return f"refusing a non-https Linear endpoint: {_LINEAR_API}"
+
+    body_bytes = json.dumps({"query": query, "variables": variables}).encode()
+    req = urllib.request.Request(  # noqa: S310 - scheme asserted above
+        _LINEAR_API,
+        data=body_bytes,
+        headers={"Authorization": token, "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - as above
+            out = json.loads(resp.read())
+    except Exception as exc:  # noqa: BLE001
+        return f"{exc.__class__.__name__}: {exc}"
+
+    if "errors" in out and out.get("data") is None:
+        return f"Linear API error: {out['errors'][0].get('message', 'unknown')}"
+    data = out.get("data") or {}
+    if not (data.get("commentCreate") or {}).get("success"):
+        return "Linear commentCreate returned success=false"
+    return None
+
+
+def _dispatch_steer(session_id: str, runtime: str, by: str, text: str) -> str | None:
+    """Route the steer to the right runtime's native channel."""
+    if runtime == "sovereign":
+        return _dispatch_steer_sovereign(session_id, by, text)
+    elif runtime == "claude-code":
+        return _dispatch_steer_claude_code(session_id, by, text)
+    elif runtime == "otto":
+        return _dispatch_steer_otto(session_id, by, text)
+    elif runtime == "cyrus":
+        return _dispatch_steer_cyrus(session_id, by, text)
+    else:
+        return f"no dispatch path for runtime {runtime!r}"
 
 
 def nudge(session_id: str, runtime: str, by: str, text: str = "") -> dict[str, Any]:
@@ -166,7 +336,7 @@ def nudge(session_id: str, runtime: str, by: str, text: str = "") -> dict[str, A
     if runtime not in _SUPPORTED_RUNTIMES:
         raise UnsupportedRuntime(f"{runtime} has no live signal path yet")
 
-    error = _dispatch_steer(session_id, by, text)
+    error = _dispatch_steer(session_id, runtime, by, text)
     return _record(
         session_id, runtime, "steer", by, text, ok=error is None, error=error
     )

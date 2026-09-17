@@ -179,7 +179,7 @@ jobs:
               nslookup external-secrets-webhook.'"$NS"'.svc.cluster.local 2>&1 | head -10
               echo ""
               echo "== TCP + TLS probe =="
-              curl -kvs --max-time 10 https://external-secrets-webhook.'"$NS"'.svc:443/validate-external-secrets-io-v1-externalsecret 2>&1 | head -40
+              curl -kvs --retry 2 --retry-delay 2 --max-time 10 https://external-secrets-webhook.'"$NS"'.svc:443/validate-external-secrets-io-v1-externalsecret 2>&1 | head -40
               echo ""
               echo "== TCP-only (skip TLS) =="
               curl -kvs --max-time 5 telnet://external-secrets-webhook.'"$NS"'.svc:443 2>&1 | head -10
