@@ -429,6 +429,7 @@ with sync_playwright() as p:
         "settings",
         "visualizer",
         "tools",
+        "fleet",
         "ops",
         "reports",
         "pair",

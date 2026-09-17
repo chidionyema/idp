@@ -52,7 +52,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/aevum-evidence/bad/chain.json
     must_pass: tests/fixtures/aevum-evidence/good/chain.json
-  live_elsewhere: 'bin/idp-ci:685 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
+  live_elsewhere: 'bin/idp-ci:708 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
   cases:
   - expect: refuse
     args:
@@ -2063,7 +2063,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/catalog-platform-owner/bad.py
     must_pass: tests/fixtures/catalog-platform-owner/good.py
-  live_elsewhere: bin/idp-ci:231 -- the layers rung runs catalog-platform --check, which calls the same missing_owners() guard against the real LAYERS dict, not the fixture pair
+  live_elsewhere: bin/idp-ci:236 -- the layers rung runs catalog-platform --check, which calls the same missing_owners() guard against the real LAYERS dict, not the fixture pair
   cases:
   - expect: refuse
     args:
