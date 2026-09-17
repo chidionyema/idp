@@ -71,6 +71,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# bin/idp-install-deps installs tools to ~/.cache/estate-tools/; add to PATH so
+# conftest, helm, kyverno, etc. are found by BDD steps without manual PATH setup.
+_ESTATE_TOOLS = Path.home() / ".cache" / "estate-tools"
+if _ESTATE_TOOLS.is_dir() and str(_ESTATE_TOOLS) not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = str(_ESTATE_TOOLS) + os.pathsep + os.environ.get("PATH", "")
+
 
 # ---------------------------------------------------------------------------
 # Pending features: declared, skipped, and counted. A rule nobody can be
