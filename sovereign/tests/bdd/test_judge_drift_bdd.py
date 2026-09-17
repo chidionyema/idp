@@ -191,7 +191,7 @@ def _sentinel_empty(state, jd_mod):
 @when("fewer than 100 scores are recorded")
 def _record_few(state):
     results = []
-    for i in range(50):
+    for _i in range(50):
         r = state["sentinel"].record_verdict(0.2)
         results.append(r)
     state["alerts"] = [r for r in results if r is not None]
@@ -217,7 +217,7 @@ def _sentinel_with_baseline(state, jd_mod):
 @when("100 low scores are recorded filling the window")
 def _record_full_low(state):
     results = []
-    for i in range(100):
+    for _i in range(100):
         r = state["sentinel"].record_verdict(0.1)
         results.append(r)
     state["alerts"] = [r for r in results if r is not None]
