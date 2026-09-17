@@ -63,7 +63,7 @@ Feature: Forge guard — model training runs are budget-gated and quality-gated
     When the split function is called twice
     Then both results are identical
     And 400 rows are labelled "train"
-    And 100 rows are labelled "held-out"
+    And 100 rows are labelled "eval"
 
   Scenario: Label probability abstain triggers when margin is below threshold
     Given logit scores where both labels are equal
