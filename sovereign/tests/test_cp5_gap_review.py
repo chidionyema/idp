@@ -225,9 +225,10 @@ def test_orch_01_dependency_manifests_have_no_second_orchestration_framework() -
             assert forbidden not in text, (
                 f"{rel} names {forbidden}; ORCH-01 requires an explicit REQ first"
             )
-    assert checked > 0, (
-        "none of the known requirements files exist; re-check ORCH-01's manifest list"
-    )
+    if checked == 0:
+        raise AssertionError(
+            "none of the known requirements files exist; re-check ORCH-01's manifest list"
+        )
 
 
 def test_orch_01_branching_uses_real_temporal_child_workflows_not_a_second_framework() -> (
