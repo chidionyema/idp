@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""idp-main-green-gate -- refuse a new branch when main's last CI run is red.
+
+Incident class (founder 2026-09-17): every branch drawn from a broken main
+inherits its failures. Agents then chase test reds that have nothing to do with
+their own change, waste CI minutes, and pile on PRs that can never go green until
+main itself is fixed. The Andon cord: pull it before branching, not after the PR
+is open.
+
+Exit codes
+----------
+0   main is green (or BLIND -- the push is not refused by an instrument that cannot see)
+1   main is RED -- fix main before opening a new branch
+2   BLIND -- no gh / no network / cannot determine main's state; push proceeds
+
+The caller (the pre-push hook) treats exit 2 as ok and exit 1 as a hard refuse.
+
+Override: IDP_MAIN_GREEN_GATE=0 skips the check (an agent that IS fixing main
+          must be able to push its fix onto main itself).
+"""
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+
+REPO = "chidionyema/idp"
+BRANCH = "main"
+
+if os.environ.get("IDP_MAIN_GREEN_GATE", "1") == "0":
+    print("ok    main-green-gate: IDP_MAIN_GREEN_GATE=0, skipped")
+    sys.exit(0)
+
+
+def _gh(*args: str) -> tuple[int, str]:
+    r = subprocess.run(
+        ["gh", *args], capture_output=True, text=True, timeout=15
+    )
+    return r.returncode, r.stdout.strip()
+
+
+def _blind(reason: str) -> None:
+    print(f"BLIND main-green-gate: {reason}; new branch allowed (LAW 38)")
+    sys.exit(2)
+
+
+# Check gh is available
+rc, _ = _gh("--version")
+if rc != 0:
+    _blind("gh CLI not installed or not authenticated")
+
+# Fetch the latest check-runs for main's HEAD
+rc, out = _gh(
+    "api",
+    f"repos/{REPO}/commits/{BRANCH}/check-runs",
+    "--jq",
+    "[.check_runs[] | {name: .name, conclusion: .conclusion, status: .status}]",
+)
+if rc != 0:
+    _blind(f"cannot read main's check runs: {out[:120]}")
+
+try:
+    import json
+    runs = json.loads(out)
+except Exception:
+    _blind("cannot parse check-run response")
+
+if not runs:
+    _blind("main has no check runs yet")
+
+# Any run still in progress → BLIND (GitHub hasn't decided yet)
+in_progress = [r for r in runs if r.get("status") not in ("completed",)]
+if in_progress:
+    names = ", ".join(r["name"] for r in in_progress[:3])
+    _blind(f"main CI still running ({names}...)")
+
+# Red = failed/action_required/cancelled/timed_out; neutral/skipped/success are fine
+FAIL_CONCLUSIONS = {"failure", "action_required", "cancelled", "timed_out"}
+red = [r for r in runs if r.get("conclusion") in FAIL_CONCLUSIONS]
+if not red:
+    print(f"ok    main-green-gate: main is green ({len(runs)} check(s) passed)")
+    sys.exit(0)
+
+names = ", ".join(r["name"] for r in red[:5])
+print(f"""FAIL  main-green-gate: main is RED -- {len(red)} check(s) failing: {names}
+
+      Opening a new branch from a broken main hands the failures to every PR drawn
+      from it. The Andon cord: fix main first, then branch.
+
+      To see what is failing on main:
+        gh run list --branch main --limit 5
+        gh run view <run-id> --log-failed
+
+      Once main is green, retry your push.
+
+      If you ARE the fix for main, skip this gate:
+        IDP_MAIN_GREEN_GATE=0 git push
+""")
+sys.exit(1)
