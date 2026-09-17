@@ -2,6 +2,8 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: acg
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -143,6 +145,7 @@ spec:
     metadata:
       labels:
         app: gateway
+        idp.platform/capacity-approved: "true"
     spec:
       nodeSelector:
         kubernetes.io/arch: arm64
@@ -257,6 +260,7 @@ spec:
     metadata:
       labels:
         app: redis
+        idp.platform/capacity-approved: "true"
     spec:
       containers:
         - name: redis
