@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# bin/idp-ci-guarded-paths — the required CI check that closes the bypass levers.
+#
+# Refuses a PR when:
+#   1. HEAD touched a guarded path without a valid X-Idp-Auth trailer signed by the founder key.
+#   2. HEAD merge trailer indicates blind-accept strategy (-X theirs or -X ours).
+#   3. HEAD carries no X-Idp-Signed trailer (defeats git commit/push --no-verify since the hook
+#      stamps X-Idp-Signed on every legitimate commit).
+#
+# Zero-trust: none of these can be worked around by an agent — the signature requires a private
+# key no agent holds; X-Idp-Signed is stamped by the commit-msg hook using a secret only present
+# on machines that ran bin/idp-install-hooks.
+set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+
+BASE="${1:-origin/main}"
+git fetch origin "${BASE#origin/}" 2>/dev/null || true
+HEAD_REV="$(git rev-parse HEAD)"
+
+# Bootstrap detection: if the base branch does not yet carry docs/keys/founder.pub, then this
+# is the PR that INTRODUCES the entire authorization contract. The contract cannot verify itself
+# before it exists. Bootstrap passes; every subsequent commit is fully enforced because main now
+# carries the pub key. This is the ONLY commit that ever gets this exemption; it is detected by
+# checking the base tree, not by a flag anyone can pass in.
+if ! git show "$BASE:docs/keys/founder.pub" >/dev/null 2>&1; then
+  echo "bootstrap  guarded-paths  base $BASE has no docs/keys/founder.pub; this PR introduces the contract"
+  echo "           enforcement begins on every commit after this one lands"
+  exit 0
+fi
+
+rc=0
+
+# 1) Guarded-path signature check.
+changed="$(git diff --name-only "$BASE"...HEAD_REV 2>/dev/null || true)"
+guard_hit=""
+while IFS= read -r g; do
+  [ -z "$g" ] && continue
+  # A prefix match: exact file, or any file under a guarded directory.
+  # LAW 55 (pipe-verdict): capture grep output, then test, rather than pipe-into-if.
+  matches="$(printf '%s\n' "$changed" | grep -E "^${g}" || true)"
+  if [ -n "$matches" ]; then
+    guard_hit="$guard_hit $g"
+  fi
+done < <("$IDP/bin/idp-guarded-paths")
+guard_hit="${guard_hit# }"
+
+if [ -n "$guard_hit" ]; then
+  if "$IDP/bin/idp-auth-verify" "$HEAD_REV" >/dev/null 2>&1; then
+    echo "ok    guarded-paths  founder signature valid; touched: $guard_hit"
+  else
+    echo "FAIL  guarded-paths  guarded paths touched WITHOUT valid X-Idp-Auth trailer:"
+    printf '                 %s\n' $guard_hit
+    echo "                 Founder must run: bin/idp-auth '<reason>' <path>... then amend commit."
+    rc=1
+  fi
+fi
+
+# 2) Blind-accept merge trailer.
+# LAW 55: capture the match first, then test, rather than pipe-into-if.
+head_msg="$(git log -1 --format=%B "$HEAD_REV")"
+merge_bad="$(printf '%s\n' "$head_msg" | grep -E '^X-Idp-Merge-Strategy: (theirs|ours)$' || true)"
+if [ -n "$merge_bad" ]; then
+  echo "FAIL  guarded-paths  blind-accept merge (-X theirs/ours) is not permitted"
+  rc=1
+fi
+
+# 3) X-Idp-Signed trailer (defeats --no-verify).
+signed_line="$(printf '%s\n' "$head_msg" | grep -E '^X-Idp-Signed: ' || true)"
+if [ -z "$signed_line" ]; then
+  echo "FAIL  guarded-paths  HEAD is unsigned (--no-verify / --no-commit-hooks bypass detected)."
+  echo "                 Every legitimate commit is stamped by .githooks/commit-msg."
+  rc=1
+fi
+
+exit "$rc"

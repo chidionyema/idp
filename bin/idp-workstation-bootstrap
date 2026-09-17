@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+# bin/idp-workstation-bootstrap — one command that provisions any workstation (Mac, Linux) from
+# nothing but git + curl + an age identity into a fully-authed dev environment.
+#
+# The founder's rule (2026-09-17): "our system must be able to bootstrap itself in any env; we must
+# be able to run vendor independent". A new laptop should reach dev-ready in one command, on any OS
+# family the estate supports, without pasting a secret and without a per-vendor tour.
+#
+# This is the "Level 0 + Level 3" wrapper around `bin/idp-bootstrap-estate`:
+#   Level 0 (bring-up)         portable installer for the estate tool set (age sops oci gh kubectl
+#                              flux jq openssl curl). Idempotent per OS family: brew on macOS,
+#                              apt on Debian/Ubuntu, dnf on RHEL/Fedora, apk on Alpine, curl
+#                              fallback for any Linux the package manager missed.
+#   Level 1 (root trust)       age identity restore is the one hand a person gives (kept out of
+#                              this script; delivered by iCloud Keychain / paper / hardware key /
+#                              the estate's age-key delivery pattern). Verifies presence and refuses
+#                              to proceed if the age key is not readable.
+#   Level 2 (estate credentials) `bin/idp-bootstrap-estate` — the existing orchestrator that mints
+#                              every estate-born credential and writes them to the sops-age vault.
+#   Level 3 (workstation authn) mint an installation token via `bin/idp-github-app token
+#                              platform-engineer`, `gh auth login --with-token` from it, and write
+#                              `~/.kube/config` via `bin/idp-cloud cluster kubeconfig`.
+#
+# States (LAW 38): OK = ran and verified; BLIND = tool or vendor absent and the estate does not
+# depend on it (informational, not a refusal); FAIL = a step that must succeed refused.
+#
+# Vendor-neutral (AGENTS.md 2026-09-17): the local container runtime is never installed by this
+# script. It is a personal choice. A machine with none is a valid state; cluster ops via Flux + GH
+# Actions do not need one.
+#
+# Usage:
+#   bin/idp-workstation-bootstrap                run every phase; keep whatever already works
+#   bin/idp-workstation-bootstrap --preflight    print every phase's plan; write nothing
+#   bin/idp-workstation-bootstrap --check        exit 0 when every phase reports OK
+set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+MODE="${1:-run}"
+case "$MODE" in
+  run|--preflight|--check) ;;
+  -h|--help) sed -n '2,32p' "$0"; exit 0;;
+  *) echo "usage: $0 [run|--preflight|--check]" >&2; exit 2;;
+esac
+
+# Print helpers mirror bin/idp-estate-seed / bin/idp-install-hooks so the run reads as one voice.
+ok()    { printf 'ok      %s\n' "$*"; }
+warn()  { printf 'WARN    %s\n' "$*" >&2; }
+blind() { printf 'BLIND   %s\n' "$*" >&2; }
+fail()  { printf 'FAIL    %s\n' "$*" >&2; RC=1; }
+RC=0
+
+# ---- OS detection -----------------------------------------------------------
+# Answers one of: macos, debian, rhel, alpine, unknown. Never guesses on unknown.
+detect_os() {
+  case "$(uname -s)" in
+    Darwin) echo macos;;
+    Linux)
+      if   [ -r /etc/os-release ]; then
+        . /etc/os-release
+        case "${ID_LIKE:-$ID}" in
+          *debian*|*ubuntu*) echo debian;;
+          *rhel*|*fedora*|*centos*) echo rhel;;
+          alpine) echo alpine;;
+          *) echo unknown;;
+        esac
+      else echo unknown; fi;;
+    *) echo unknown;;
+  esac
+}
+OS="$(detect_os)"
+
+# ---- Level 0: binary bring-up -----------------------------------------------
+# Tool set the estate needs before anything else runs. Each row: <binary> <macos-pkg> <apt-pkg>
+# <dnf-pkg> <apk-pkg>. A dash means "install via curl from upstream" — filled in per-tool below.
+# Order matters: openssl and jq first so estate-seed's own preflight passes.
+declare -a TOOLS=(
+  "openssl  openssl@3          openssl        openssl        openssl"
+  "jq       jq                 jq             jq             jq"
+  "age      age                age            age            age"
+  "sops     sops               -              -              -"
+  "oci      oci-cli            -              -              -"
+  "gh       gh                 gh             gh             github-cli"
+  "kubectl  kubernetes-cli     -              -              -"
+  "flux     fluxcd/tap/flux    -              -              -"
+  "curl     curl               curl           curl           curl"
+  "git      git                git            git            git"
+)
+
+# install_pkg <binary> <pkgname>: install one package with the OS's native package manager, echo
+# BLIND when the OS has no pkgname mapped. Idempotent — a present binary is a no-op.
+install_pkg() {
+  local bin="$1" pkg="$2"
+  command -v "$bin" >/dev/null && { ok "level0 $bin present"; return 0; }
+  [ "$pkg" = "-" ] && { blind "level0 $bin has no $OS package mapping; try upstream curl or file a lane row"; return 0; }
+  case "$OS" in
+    macos)  brew install "$pkg" >/dev/null 2>&1 && ok "level0 $bin installed via brew ($pkg)" || fail "level0 brew install $pkg refused";;
+    debian) sudo apt-get -qq update >/dev/null 2>&1; sudo apt-get -qq -y install "$pkg" >/dev/null 2>&1 && ok "level0 $bin installed via apt ($pkg)" || fail "level0 apt install $pkg refused";;
+    rhel)   sudo dnf -q -y install "$pkg" >/dev/null 2>&1 && ok "level0 $bin installed via dnf ($pkg)" || fail "level0 dnf install $pkg refused";;
+    alpine) sudo apk add --no-progress "$pkg" >/dev/null 2>&1 && ok "level0 $bin installed via apk ($pkg)" || fail "level0 apk add $pkg refused";;
+    *) blind "level0 $bin: OS=$OS not supported; install $bin manually and re-run";;
+  esac
+}
+
+phase0() {
+  echo "-- Level 0: binary bring-up ($OS) --"
+  local row bin macos debian rhel alpine
+  for row in "${TOOLS[@]}"; do
+    read -r bin macos debian rhel alpine <<<"$row"
+    case "$OS" in
+      macos)  install_pkg "$bin" "$macos";;
+      debian) install_pkg "$bin" "$debian";;
+      rhel)   install_pkg "$bin" "$rhel";;
+      alpine) install_pkg "$bin" "$alpine";;
+      *)      command -v "$bin" >/dev/null && ok "level0 $bin present" || blind "level0 $bin absent on unknown OS";;
+    esac
+  done
+}
+
+# ---- Level 1: age identity presence check -----------------------------------
+# The estate stores every provisioned secret in a sops file encrypted to one age recipient. Without
+# the age key, no phase past this one can read the vault. This step never writes an age key; the
+# person delivers it (paper/keychain/hardware key). We only refuse to proceed when it is absent.
+phase1() {
+  echo "-- Level 1: root trust (age identity) --"
+  local key="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
+  if [ -r "$key" ]; then
+    ok "level1 age key readable at $key"
+  else
+    fail "level1 age key not readable at $key; restore it (iCloud Keychain / paper / hardware key) before re-running"
+  fi
+}
+
+# ---- Level 2: estate credentials -------------------------------------------
+# Delegates to bin/idp-bootstrap-estate — the umbrella that runs idp-estate-seed and every vendor
+# bootstrapper in dependency order. Idempotent by design.
+phase2() {
+  echo "-- Level 2: estate credentials (bin/idp-bootstrap-estate) --"
+  [ -x "$IDP/bin/idp-bootstrap-estate" ] || { blind "level2 bin/idp-bootstrap-estate absent in $IDP"; return 0; }
+  if [ "$MODE" = "--preflight" ] || [ "$MODE" = "--check" ]; then
+    "$IDP/bin/idp-bootstrap-estate" --preflight || fail "level2 estate preflight refused"
+  else
+    "$IDP/bin/idp-bootstrap-estate" || fail "level2 estate bootstrap refused"
+  fi
+}
+
+# ---- Level 3: workstation authn --------------------------------------------
+# Two vendor-agnostic couplers the estate reaches through: (1) an OCI-compliant K8s cluster
+# accessed by an OCI CLI cluster-provider door (bin/idp-cloud), (2) a GitHub installation token
+# minted narrow to the platform-engineer lane. The estate does not require either to be present —
+# a machine that only runs unit tests locally does not need cluster access — so both refuse BLIND
+# (LAW 38), not FAIL, when the vendor side is not reachable.
+phase3_kube() {
+  echo "-- Level 3a: kubeconfig via bin/idp-cloud --"
+  [ -x "$IDP/bin/idp-cloud" ] || { blind "level3 bin/idp-cloud absent; kubeconfig not provisioned"; return 0; }
+  command -v oci >/dev/null || { blind "level3 oci CLI absent (level0 should have installed it)"; return 0; }
+  # cluster list requires an OCI session token; bin/idp-oci-bootstrap is the one browser step that
+  # buys the estate that session. If a session is not live, refuse BLIND and print the exact fix.
+  local cl name id kubecfg="$HOME/.kube/config"
+  cl="$("$IDP/bin/idp-cloud" cluster list 2>/dev/null || true)"
+  [ -n "$cl" ] || { blind "level3 no ACTIVE OCI cluster visible; run bin/idp-oci-bootstrap for a session token, or check tenancy"; return 0; }
+  name="$(printf '%s\n' "$cl" | awk 'NR==1{print $1}')"
+  id="$(printf '%s\n' "$cl" | awk 'NR==1{print $2}')"
+  [ "$MODE" = "--check" ] && { [ -r "$kubecfg" ] && ok "level3 kubeconfig present at $kubecfg" || blind "level3 kubeconfig absent at $kubecfg"; return 0; }
+  mkdir -p "$(dirname "$kubecfg")"
+  if [ "$MODE" != "--preflight" ]; then
+    "$IDP/bin/idp-cloud" cluster kubeconfig "$id" --file "$kubecfg" 2>/dev/null \
+      && { chmod 600 "$kubecfg"; ok "level3 kubeconfig written for cluster $name"; } \
+      || fail "level3 kubeconfig mint refused for cluster $name"
+  else
+    ok "level3 would mint kubeconfig for cluster $name to $kubecfg"
+  fi
+}
+
+phase3_gh() {
+  echo "-- Level 3b: gh CLI authn from GitHub App installation token --"
+  command -v gh >/dev/null || { blind "level3 gh CLI absent (level0 should have installed it)"; return 0; }
+  [ -x "$IDP/bin/idp-github-app" ] || { blind "level3 bin/idp-github-app absent"; return 0; }
+  if [ "$MODE" = "--check" ]; then
+    gh auth status >/dev/null 2>&1 && ok "level3 gh CLI authed" || blind "level3 gh CLI not authed"
+    return 0
+  fi
+  if [ "$MODE" = "--preflight" ]; then
+    ok "level3 would mint a platform-engineer installation token and pipe it to gh auth login"
+    return 0
+  fi
+  local tok
+  tok="$("$IDP/bin/idp-github-app" token platform-engineer 2>/dev/null || true)"
+  [ -n "$tok" ] || { blind "level3 GH installation token unavailable (vault or App not seeded yet)"; return 0; }
+  printf '%s' "$tok" | gh auth login --with-token >/dev/null 2>&1 \
+    && ok "level3 gh CLI authed via platform-engineer installation token" \
+    || fail "level3 gh auth login --with-token refused"
+}
+
+# ---- Verify -----------------------------------------------------------------
+# Empirical proof (~/.claude/CLAUDE.md rule): every provisioned surface must answer, not just
+# claim. A green report where nothing actually answers is theatre.
+verify() {
+  echo "-- Verify --"
+  command -v gh >/dev/null && gh auth status >/dev/null 2>&1 && ok "verify gh: $(gh api /user -q .login 2>/dev/null || echo unknown)" || blind "verify gh: not authed"
+  command -v kubectl >/dev/null && kubectl --request-timeout=5s get ns kube-system -o name >/dev/null 2>&1 && ok "verify kubectl: cluster reachable" || blind "verify kubectl: no cluster or no kubeconfig"
+  command -v oci >/dev/null && oci session validate --profile DEFAULT >/dev/null 2>&1 && ok "verify oci: session live" || blind "verify oci: no session or no config"
+}
+
+phase0
+phase1
+phase2
+phase3_kube
+phase3_gh
+verify
+
+[ "$RC" -eq 0 ] && echo "== bootstrap OK ==" || echo "== bootstrap had FAILs (see above) ==" >&2
+exit "$RC"

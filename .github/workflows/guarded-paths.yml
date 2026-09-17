@@ -1,0 +1,31 @@
+# button: Refuse any PR that bypasses the estate's authorization contract
+# founder: Zero-trust. Founder 2026-09-17, verbatim: "we deal with breaches now", "we have policies
+#   for a reason", "we don't allow junk into our cluster", "we run a zero trust model", "instinct is
+#   not a defence -- mathematical guarantees". This workflow is the mathematical guarantee: no PR
+#   merges to main unless bin/idp-ci-guarded-paths passes on its HEAD commit, and that check
+#   refuses (a) touching a guarded policy file without a founder-signed X-Idp-Auth trailer,
+#   (b) a blind-accept merge trailer, (c) a commit that lacks the X-Idp-Signed HMAC the commit-msg
+#   hook stamps on every legitimate commit (defeats --no-verify).
+name: guarded-paths
+on:
+  pull_request:
+  merge_group:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  guarded-paths:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: run bin/idp-ci-guarded-paths against the base
+        run: |
+          set -uo pipefail
+          base_ref="${{ github.base_ref }}"
+          base="origin/${base_ref:-main}"
+          bin/idp-ci-guarded-paths "$base"

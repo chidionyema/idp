@@ -9,9 +9,11 @@
 # With pre-commit installed (repo venv has it) the same checks come from .pre-commit-config.yaml.
 # Then the estate's shared config-syntax default, which this file would otherwise shadow.
 # Fails open on a missing tool: a gate that refuses correct work is an outage (LAW 38).
-# PRE_COMMIT_SKIP=1 bypasses for a WIP commit; the push gate and CI still run.
+#
+# The former PRE_COMMIT_SKIP=1 shortcut was removed 2026-09-17 (founder ruling: zero-trust,
+# breaches handled with mathematical guarantees, never with env-var levers agents can reach).
+# The corresponding fix line further down that told the user how to bypass is gone too.
 set -euo pipefail
-[ -n "${PRE_COMMIT_SKIP:-}" ] && exit 0
 top="$(git rev-parse --show-toplevel)"
 cd "$top"
 mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR)
@@ -64,7 +66,7 @@ fi
 # .pre-commit-config.yaml, that config is the checks (same ruff and shellcheck, repo: local).
 pc="$(command -v pre-commit || true)"; [ -x "$top/.venv/bin/pre-commit" ] && pc="$top/.venv/bin/pre-commit"
 if [ -n "$pc" ] && [ -f "$top/.pre-commit-config.yaml" ]; then
-  PATH="$top/.venv/bin:$PATH" "$pc" run --files "${staged[@]}" || { echo "pre-commit: fix the lines above, or PRE_COMMIT_SKIP=1 for a WIP commit"; exit 1; }
+  PATH="$top/.venv/bin:$PATH" "$pc" run --files "${staged[@]}" || { echo "pre-commit: fix the lines above, no bypass -- fix the lines above and re-commit"; exit 1; }
   shared="${ESTATE_HOOKS:-$HOME/.estate/guards/hooks}/config-syntax-default"
   [ -x "$shared" ] && exec "$shared" "$@"
   exit 0
@@ -86,7 +88,7 @@ for f in "${staged[@]}"; do
       elif ! python3 -m py_compile "$f"; then echo "pre-commit: $f does not compile"; rc=1; fi;;
   esac
 done
-[ "$rc" -eq 0 ] || { echo "pre-commit: fix the lines above, or PRE_COMMIT_SKIP=1 for a WIP commit"; exit "$rc"; }
+[ "$rc" -eq 0 ] || { echo "pre-commit: fix the lines above, no bypass -- fix the lines above and re-commit"; exit "$rc"; }
 
 shared="${ESTATE_HOOKS:-$HOME/.estate/guards/hooks}/config-syntax-default"
 [ -x "$shared" ] && exec "$shared" "$@"
