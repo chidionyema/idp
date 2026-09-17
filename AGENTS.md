@@ -115,6 +115,41 @@ A question about estate state is one `mcp__estate__*` call, never a shell recon.
 tool is two calls (propose, execute), execute refusing on a stale state hash. Extend `mcp/`; never
 add a second server. Full text: `docs/decisions/0006-the-platform-answers-for-itself-over-one-mcp.md`.
 
+## Zero-trust agent cluster access (WJ.1, 2026-09-17)
+
+Agents get **read-only** cluster access through the JIT broker — no OCI login, no kubeconfig paste.
+
+```bash
+# Read cluster state (pods, logs, events) — the only thing agents may do
+bin/idp-kube get pods -n <namespace>
+bin/idp-kube logs -n <namespace> deployment/<name>
+bin/idp-kube get events -n <namespace> --sort-by=.lastTimestamp
+```
+
+**How it works:** `bin/idp-kube` calls `bin/idp-jit identity`, which presents `JIT_AGENT_KEY`
+(stored in `$XDG_STATE_HOME/idp/agent-key`, i.e. `~/.local/state/idp/agent-key`) to the broker's
+`/identity` door. The broker exchanges it for a one-hour `agent-reader` ServiceAccount token.
+That token is read-only — no create, no delete, no exec.
+
+**Provisioning the key on a new machine (founder only — not from an agent session):**
+```bash
+bin/idp-mac-secret-deliver --entry jit-broker --key JIT_AGENT_KEY \
+  --out ~/.local/state/idp/agent-key --service local
+```
+Requires an active OCI session (`bin/idp-oci-bootstrap` → one browser step). Full reference:
+`docs/reference/agent-identity.md`.
+
+**If `bin/idp-kube` fails with "no token" or "broker unavailable":** jit-broker is down.
+Check with `bin/idp-kube get pods -n jit`. The most likely cause is an admission policy
+blocking the broker's own pod — see below.
+
+**OTel injection exclusion — must never be removed:** `platform/edge/inject-otel-endpoint.yaml`
+excludes `jit/jit-broker` and `idp-agent/idp-engine` from the OTel env injection mutation.
+These workloads declare `OTEL_EXPORTER_OTLP_ENDPOINT` inline; the Kyverno `+(name)` add-if-absent
+patch conflicts with any existing `valueFrom` entries in the same env list (e.g. `POD_NAMESPACE`
+via `fieldRef`), causing a dry-run rejection that blocks Flux reconciliation and takes the broker
+down. Fixed in PR #3711 (2026-09-17). Any new OTel mutation policy must carry the same exclusion.
+
 ## Living policy (crew#219 R38): the block below is code, not prose
 
 `sovereign/policy.py` parses the one ```toml block in this file, and `sovereign/config.py`
