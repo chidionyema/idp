@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# .githooks/commit-msg — stamps every commit with X-Idp-Signed so that the guarded-paths CI check
+# can refuse commits that bypassed the hooks with --no-verify. The stamp is an HMAC of the commit
+# message body, keyed by a per-checkout secret that lives in .git/idp-hook-secret (never on the
+# tree). Any commit made without the hooks installed will lack this trailer and be refused server-
+# side. bin/idp-install-hooks provisions the secret.
+set -euo pipefail
+
+msg_file="$1"
+secret_path="$(git rev-parse --git-path idp-hook-secret 2>/dev/null || echo)"
+[ -n "$secret_path" ] || { echo "REFUSE: cannot resolve git dir for hook secret" >&2; exit 1; }
+if [ ! -f "$secret_path" ]; then
+  echo "REFUSE: hook secret missing at $secret_path -- run bin/idp-install-hooks" >&2
+  exit 1
+fi
+secret="$(cat "$secret_path")"
+[ -n "$secret" ] || { echo "REFUSE: hook secret at $secret_path is empty" >&2; exit 1; }
+
+# Do not stamp merge commits produced by git itself; the parent commits already carry stamps.
+# Do not double-stamp if the trailer is already present (idempotent for amend flows).
+if grep -qE '^X-Idp-Signed: ' "$msg_file"; then
+  exit 0
+fi
+
+body="$(cat "$msg_file")"
+sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$secret" 2>/dev/null | awk '{print $2}')"
+[ -n "$sig" ] || { echo "REFUSE: HMAC computation failed" >&2; exit 1; }
+
+# Append two blank lines and the trailer if the message doesn't already end in a trailer block.
+printf '\nX-Idp-Signed: %s\n' "$sig" >> "$msg_file"
