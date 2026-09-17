@@ -29,6 +29,7 @@ spec:
         - https://catalogue.${ESTATE_ZONE}/docs/default/component/founder-gods-view/explanation/architecture/model-stack/
         - https://catalogue.${ESTATE_ZONE}/docs/default/component/founder-gods-view/founder/mac-remote-desk/
         - https://catalogue.${ESTATE_ZONE}/estate
+        - https://catalogue.${ESTATE_ZONE}/fleet
         - https://catalogue.${ESTATE_ZONE}/investigate
         - https://catalogue.${ESTATE_ZONE}/ops
         - https://catalogue.${ESTATE_ZONE}/reports
