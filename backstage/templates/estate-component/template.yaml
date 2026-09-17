@@ -12,6 +12,7 @@ metadata:
     - estate
     - diataxis
     - techdocs
+    - otel
 spec:
   owner: group:default/platform
   type: service

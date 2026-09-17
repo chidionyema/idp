@@ -45,6 +45,7 @@ spec:
           ports:
             - { name: http, containerPort: 8080 }
           env:
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
             - { name: LISTEN_ADDR, value: ":8080" }
             - { name: UPSTREAM_URL, value: "http://litellm.llm.svc.cluster.local:4000" }
             - { name: REDIS_URL, value: "redis://via-negativa-redis.via-negativa.svc.cluster.local:6379" }

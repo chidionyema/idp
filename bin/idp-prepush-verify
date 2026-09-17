@@ -207,6 +207,18 @@ def main() -> int:
     if not diff.strip():
         return 0
 
+    # Fast-path: check whether the MCP endpoint answers before building the diff.
+    # A URLError (daemon not running) is BLIND, not FAIL — CI carries the real gate.
+    probe = call("propose_patch", patch=" ", summary="probe")
+    if probe.get("blind"):
+        sys.stderr.write(
+            f"BLIND verifier: {probe.get('reason', 'daemon unavailable')}; "
+            "start the executor daemon for local verification "
+            "(bin/idp-executor-install, or python3 platform/executor/daemon.py). "
+            "The verifier CI job is the real gate.\n"
+        )
+        return 0
+
     test_paths = args.test_path
     if not test_paths:
         candidate = os.path.join(os.getcwd(), "tests", "test_verifier_hooks.py")

@@ -1,0 +1,66 @@
+# Kyverno visibility — founder ruling 2026-09-16.
+# KyvernoAdmissionControllerDown: Kyverno down = all Enforce policies are no-ops.
+# KyvernoOtelPolicyBlocked: require-otel-endpoint fired — someone tried to deploy dark.
+# KyvernoEnforcePolicyBlocked: any Enforce policy denied something.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kyverno
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: kyverno
+spec:
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames: [kyverno]
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: admission-controller
+  endpoints:
+    - port: metrics-port
+      path: /metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kyverno
+  namespace: monitoring
+spec:
+  groups:
+    - name: kyverno.admission-controller
+      rules:
+        - alert: KyvernoAdmissionControllerDown
+          expr: |
+            kube_deployment_status_replicas_available{
+              namespace="kyverno",deployment="kyverno-admission-controller"
+            } == 0
+          for: 2m
+          labels: { severity: critical, owner: idp }
+          annotations:
+            summary: "Kyverno admission controller has no running pod"
+            description: >-
+              Zero available replicas for 2 minutes. All Enforce policies are silently bypassed:
+              require-otel-endpoint, require-catalogue-entity, no-token-by-default and every other
+              Enforce gate are no-ops until Kyverno comes back.
+    - name: kyverno.policy-enforcement
+      rules:
+        - alert: KyvernoOtelPolicyBlocked
+          expr: |
+            increase(kyverno_admission_requests_total{
+              policy_name="require-otel-endpoint",response_status="deny"}[5m]) > 0
+          labels: { severity: warning, owner: idp }
+          annotations:
+            summary: "require-otel-endpoint blocked a workload"
+            description: >-
+              A Deployment or StatefulSet was refused because it lacked OTEL_EXPORTER_OTLP_ENDPOINT.
+              Wire it to http://signoz-otel-collector.observability.svc:4318 or add a named entry
+              to platform/edge/otel-endpoint-exception.yaml with a crew# justification.
+        - alert: KyvernoEnforcePolicyBlocked
+          expr: |
+            sum(increase(kyverno_admission_requests_total{response_status="deny"}[5m])) > 0
+          labels: { severity: info, owner: idp }
+          annotations:
+            summary: "A Kyverno Enforce policy blocked one or more admissions"
+            description: >-
+              Check kyverno_admission_requests_total labels (policy_name, resource_name) in SigNoz.
