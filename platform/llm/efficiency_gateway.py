@@ -1,6 +1,6 @@
 """Estate efficiency gateway: all 8 token-optimisation mechanisms in one LiteLLM pre-call hook.
 
-MODEL-AGNOSTIC: runs before every vendor call through llm.mumchimp.com.
+MODEL-AGNOSTIC: runs before every vendor call through llm.${ESTATE_ZONE}.
 Applies to: minimax, groq, gemini, cerebras, sambanova, openrouter, ollama.
 Registered as: efficiency_gateway.proxy_handler_instance in litellm_settings.callbacks.
 Mounted at: /etc/litellm/ceilings/efficiency_gateway.py (same ConfigMap as request_ceiling.py).

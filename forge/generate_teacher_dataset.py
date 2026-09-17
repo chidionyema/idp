@@ -255,7 +255,7 @@ def main(argv=None) -> int:
     if not _proxy_url:
         raise RuntimeError(
             "LITELLM_BASE_URL is not set. Direct Anthropic access is banned (LAW 34). "
-            "Run `source ~/.zshrc` or set LITELLM_BASE_URL=https://llm.mumchimp.com."
+            "Run `source ~/.zshrc` or set LITELLM_BASE_URL=https://llm.${ESTATE_ZONE}."
         )
     client = anthropic.Anthropic(
         base_url=router_root(_proxy_url),

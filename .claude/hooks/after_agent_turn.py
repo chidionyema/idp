@@ -50,7 +50,7 @@ def _save_state(session_id: str, state: dict) -> None:
     try:
         with open(path, "w") as f:
             json.dump(state, f)
-    except Exception:
+    except Exception:  # noqa: S110 - hook must never crash the caller session
         pass
 
 
@@ -68,7 +68,7 @@ def _measure_transcript(transcript_path: str, state: dict) -> dict:
                 continue
             try:
                 entry = json.loads(line)
-            except Exception:
+            except Exception:  # noqa: S112 - one bad log line must not stop the sweep
                 continue
             etype = entry.get("type", "")
             if etype == "tool_use":
@@ -96,7 +96,7 @@ def _measure_transcript(transcript_path: str, state: dict) -> dict:
                     or "Refused before it was sent" in content
                 ):
                     state["proxy_refused"] += 1
-    except Exception:
+    except Exception:  # noqa: S110 - hook must never crash the caller session
         pass
     return state
 
@@ -145,7 +145,7 @@ def main() -> None:
         os.makedirs(STATE_DIR, exist_ok=True)
         with open(os.path.join(STATE_DIR, "efficiency-latest.txt"), "w") as f:
             f.write(report + "\n")
-    except Exception:
+    except Exception:  # noqa: S110 - hook must never crash the caller session
         pass
     print(report)
     sys.exit(0)
