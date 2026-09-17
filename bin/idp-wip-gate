@@ -24,6 +24,10 @@ import os
 import subprocess
 import sys
 
+if "--help" in sys.argv:
+    print(__doc__)
+    sys.exit(0)
+
 REPO = "chidionyema/idp"
 MAX_RED = 3  # refuse when this many PRs are failing
 
