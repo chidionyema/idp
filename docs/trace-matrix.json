@@ -213,6 +213,36 @@
   "ticket": null
  },
  {
+  "feature": "features/fleetview/cp6_adapters.feature",
+  "title": "CP6 \u2014 NATS adapters",
+  "scenarios": [
+   "Claude Code tool event reaches NATS",
+   "Stream endpoint relays NATS events as SSE frames",
+   "Stream falls back to heartbeat when NATS is not configured"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "23ebcbad",
+  "pr": 3717,
+  "ticket": null
+ },
+ {
+  "feature": "features/fleetview/cp8_steering.feature",
+  "title": "CP8 \u2014 the steering wheel",
+  "scenarios": [
+   "Steer a sovereign session",
+   "Steer a claude-code session writes the directives mailbox",
+   "Steer an otto session publishes NATS steer event",
+   "Unsupported runtime returns 422",
+   "Steer with missing \"by\" field returns 400"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "23ebcbad",
+  "pr": 3717,
+  "ticket": null
+ },
+ {
   "feature": "features/portal-product/cp1-showcase-live.feature",
   "title": "the showcase page reads live state, never a markdown file",
   "scenarios": [
