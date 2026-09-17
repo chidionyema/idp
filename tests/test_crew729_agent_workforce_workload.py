@@ -210,7 +210,7 @@ def test_the_flux_row_waits_on_what_it_reads_and_checks_no_health():
     subs = {(s["kind"], s["name"]) for s in spec["postBuild"]["substituteFrom"]}
     assert subs == {("ConfigMap", "estate-config"), ("Secret", "github-app")}
     deps = {d["name"] for d in spec["dependsOn"]}
-    assert {"scheduling", "secret-store", "alerts-github", "llm"} <= deps
+    assert {"scheduling", "secret-store", "github-app-creds", "llm"} <= deps
     assert spec["wait"] is True
     assert "healthChecks" not in spec, (
         "a CronJob has no readiness; the drill is the proof"

@@ -29,7 +29,7 @@ Fixture: `--added bin/supply-chain`
 Exit code `0` (the registry expects zero). ✓
 
 ```
-ok    law32 1 new bin file(s) carry a demo+onboarding pair; 231 page(s) above the 200-char floor and in the nav
+ok    law32 1 new bin file(s) carry a demo+onboarding pair; 237 page(s) above the 200-char floor and in the nav
 ```
 
 ## The registry's own lines

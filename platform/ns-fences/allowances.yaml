@@ -246,7 +246,7 @@ flows:
     egress_internet: [443]
     # research: the hourly research engine sends every lane's prompt through the router
     # (platform/research-engine/cronjob.yaml:105, LITELLM_BASE_URL).
-    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta, research, cyrus, via-negativa]
+    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta, research, cyrus, via-negativa, sovereign-system, forge]
   research:
     # The research engine is an hourly CronJob (platform/research-engine/cronjob.yaml, schedule
     # "23 * * * *"), so it holds no long-lived pod and nothing here was measured from one. Every
@@ -472,7 +472,7 @@ flows:
     # guacamole/env.yaml, platform/healthchecks/env.yaml), not only in the one-shot migration
     # Jobs -- these are standing daily diallers, and a database neither can reach is a service
     # that does not start.
-    ingress_from: [backstage, otto-gateway, hindsight, temporal, llm, observability, commerce, dagster, research, guacamole, healthchecks, via-negativa]
+    ingress_from: [backstage, otto-gateway, hindsight, temporal, llm, observability, commerce, dagster, research, guacamole, healthchecks, via-negativa, sovereign-system, forge]
   temporal:
     # 2026-09-06: estate-db-copy-temporal-r2 timed out on estate-rw from this namespace once Calico
     # enforced the fence; estate-db named temporal on its ingress side, this side named nothing.
@@ -627,3 +627,19 @@ flows:
     # estate-rw.estate-db). Nothing here targets via-negativa-redis -- that DSN is
     # via-negativa-redis.via-negativa.svc, same-namespace, and default-deny never touches it.
     egress: [llm, estate-db]
+  sovereign-system:
+    # The sovereign verifier and LangGraph orchestrator (sovereign/deploy/telegram-bot-final.yaml).
+    # All LLM calls must go through the estate proxy in llm; no direct vendor egress is declared
+    # here because the GlobalNetworkPolicy deny-direct-ai-vendor-egress blocks it at the network
+    # layer regardless, and this fence closes the door at the namespace layer too.
+    # estate-db: sovereign writes attestations and session state to the shared Postgres.
+    # observability: standard LAW 50 OTLP collector (added automatically by the generator).
+    egress: [llm, estate-db, observability]
+    ingress_from: []
+  forge:
+    # The teacher-dataset forge (forge/generate_teacher_dataset.py). It calls LLMs to generate
+    # training examples and must go through the proxy (not anthropic.Anthropic() directly --
+    # forge/generate_teacher_dataset.py:252 uses a direct client and must be migrated).
+    # egress_internet is intentionally absent: internet-origin datasets arrive through the
+    # research namespace, not here.
+    egress: [llm, estate-db, observability]

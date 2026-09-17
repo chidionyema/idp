@@ -15,7 +15,7 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, holmes, tailscale-operator, laptop, hermes, science, router-rows, langsmith]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, holmes, tailscale-operator, laptop, hermes, science, router-rows]
         default: all
       delete:
         description: "schedule deletion of one vault entry by name (for a mis-named entry); the entry field is ignored when this is set"
@@ -67,7 +67,6 @@ jobs:
           SEED_GITHUB_APP_SLUG: ${{ secrets.SEED_GITHUB_APP_SLUG }}
           SEED_GITHUB_APP_CLIENT_ID: ${{ secrets.SEED_GITHUB_APP_CLIENT_ID }}
           SEED_GITHUB_APP_PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
-          SEED_LANGSMITH_API_KEY: ${{ secrets.SEED_LANGSMITH_API_KEY }}
         run: |
           set -euo pipefail
           bin/idp-oci-login --check
@@ -191,22 +190,6 @@ jobs:
             fi
             rm -rf "$RUNNER_TEMP/estate-secrets"
           fi
-          if [ "$ENTRY" = langsmith ]; then
-            # LangSmith tracing key (external vendor key, not a router key). Read from
-            # SEED_LANGSMITH_API_KEY GitHub secret and deliver through the sops vault so every
-            # shell that sources estate-secrets gets it without holding it in plaintext.
-            if [ -z "$SEED_LANGSMITH_API_KEY" ]; then echo "FAIL    SEED_LANGSMITH_API_KEY secret is empty"; exit 1; fi
-            tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
-            git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
-            printf '%s' "$SEED_LANGSMITH_API_KEY" | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LANGSMITH_API_KEY LANGSMITH_API_KEY
-            git -C "$RUNNER_TEMP/estate-secrets" add secrets/dev/LANGSMITH_API_KEY.yaml
-            if git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
-                 commit -q -m "langsmith api key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null; then
-              GH_TOKEN="$tok" git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || { echo "error   langsmith key written but the push to estate-secrets was refused"; exit 1; }
-              echo "ok      langsmith key delivered to estate-secrets as LANGSMITH_API_KEY"
-            else
-              echo "info    langsmith key unchanged in estate-secrets"
-            fi
             rm -rf "$RUNNER_TEMP/estate-secrets"
           fi
           rm -f "$ESTATE_ENV_FILE"

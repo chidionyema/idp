@@ -1,0 +1,303 @@
+"""Estate efficiency gateway: all 8 token-optimisation mechanisms in one LiteLLM pre-call hook.
+
+MODEL-AGNOSTIC: runs before every vendor call through llm.mumchimp.com.
+Applies to: minimax, groq, gemini, cerebras, sambanova, openrouter, ollama.
+Registered as: efficiency_gateway.proxy_handler_instance in litellm_settings.callbacks.
+Mounted at: /etc/litellm/ceilings/efficiency_gateway.py (same ConfigMap as request_ceiling.py).
+PYTHONPATH: /etc/litellm/ceilings (set in platform/llm/litellm.yaml env block).
+
+The ceiling (request_ceiling.py) REFUSES oversized requests before they reach this hook.
+This hook OPTIMISES requests that pass the ceiling — reducing tokens billed per call.
+
+MECHANISMS:
+  [1] CacheGuardian        — detects system-prompt drift that kills prefix caching
+  [2] TokenKiller          — deduplicates repeated lines in tool_result messages
+  [3] MCPAdapter           — truncates verbose tool descriptions to MAX_TOOL_DESC_CHARS
+  [4] TokenBudgetOrchestrator — tracks cumulative estimated spend per session key
+  [5] SoLPi                — deduplicates large identical tool-result payloads via handles
+  [6] DynamicContextPruning — prunes duplicate tool_result entries from history
+  [7] CompactionManager    — bounds conversation history to MAX_HISTORY_MSGS
+  [8] GistingSimulator     — gists old assistant turns beyond GIST_AFTER_MSGS
+
+Each mechanism modifies data["messages"] or data["tools"] in place and logs a metric.
+The combined return value is the optimised request body LiteLLM sends to the vendor.
+"""
+
+import hashlib
+import logging
+import os
+from typing import Any, Optional, Union
+
+log = logging.getLogger("estate.efficiency-gateway")
+
+try:
+    from litellm.integrations.custom_logger import CustomLogger
+except ModuleNotFoundError:
+    # Importable on any machine without litellm (CI, laptop).
+    class CustomLogger:  # type: ignore[no-redef]
+        async def async_pre_call_hook(self, *a, **k):
+            raise NotImplementedError
+
+
+CHARS_PER_TOKEN = 4
+MAX_TOOL_DESC_CHARS = int(os.environ.get("ESTATE_MAX_TOOL_DESC_CHARS", "400"))
+MAX_HISTORY_MSGS = int(os.environ.get("ESTATE_MAX_HISTORY_MSGS", "60"))
+GIST_AFTER_MSGS = int(os.environ.get("ESTATE_GIST_AFTER_MSGS", "40"))
+STALE_THRESHOLD = int(os.environ.get("ESTATE_STALE_THRESHOLD", "10"))
+MIN_OBS_CHARS = int(os.environ.get("ESTATE_MIN_OBS_CHARS", "500"))
+
+
+class EstateEfficiencyGateway(CustomLogger):
+    """Runs all 8 token-efficiency mechanisms on every pre-call hook invocation."""
+
+    def __init__(self) -> None:
+        # [1] CacheGuardian
+        self._golden_hash: Optional[str] = None
+        self._cache_hits = 0
+        self._cache_misses = 0
+        # [2] TokenKiller
+        self._tool_line_compressions = 0
+        self._tool_chars_saved = 0
+        # [3] MCPAdapter
+        self._schemas_compressed = 0
+        self._schema_chars_saved = 0
+        # [4] TokenBudgetOrchestrator
+        self._calls = 0
+        self._cumulative_tokens = 0
+        # [5] SoLPi
+        self._obs_handles: dict = {}
+        self._obs_hits = 0
+        # [6] DynamicContextPruning
+        self._pruned_duplicates = 0
+        # [7] CompactionManager
+        self._compactions = 0
+        # [8] GistingSimulator
+        self._gisted = 0
+
+    # ---------------------------------------------------------------------- [1]
+
+    def _cache_guardian(self, messages: list) -> list:
+        """Detect system-prompt drift. A stable first message keeps the prefix cache alive."""
+        if not messages:
+            return messages
+        first = messages[0]
+        if isinstance(first, dict) and first.get("role") == "system":
+            content = str(first.get("content") or "")
+            h = hashlib.sha256(content.encode()).hexdigest()
+            if self._golden_hash is None:
+                self._golden_hash = h
+                self._cache_hits += 1
+                log.info("[1-CacheGuardian] Golden system prompt captured (%s)", h[:8])
+            elif h == self._golden_hash:
+                self._cache_hits += 1
+            else:
+                self._cache_misses += 1
+                log.warning(
+                    "[1-CacheGuardian] System prompt drifted — prefix cache MISS (was %s, now %s)",
+                    self._golden_hash[:8],
+                    h[:8],
+                )
+        return messages
+
+    # ---------------------------------------------------------------------- [2]
+
+    def _token_killer(self, messages: list) -> list:
+        """Strip repeated identical lines from tool_result content."""
+        for msg in messages:
+            if not isinstance(msg, dict) or msg.get("role") != "tool":
+                continue
+            content = msg.get("content")
+            if not isinstance(content, str):
+                continue
+            seen: set = set()
+            out_lines = []
+            for line in content.split("\n"):
+                key = line.strip()
+                if key and key in seen:
+                    self._tool_chars_saved += len(line) + 1
+                    self._tool_line_compressions += 1
+                    continue
+                seen.add(key)
+                out_lines.append(line)
+            msg["content"] = "\n".join(out_lines)
+        return messages
+
+    # ---------------------------------------------------------------------- [3]
+
+    def _mcp_adapter(self, tools: list) -> list:
+        """Truncate verbose tool/function descriptions to MAX_TOOL_DESC_CHARS."""
+        for tool in tools:
+            if not isinstance(tool, dict):
+                continue
+            fn = tool.get("function", tool)
+            desc = fn.get("description") or ""
+            if len(desc) > MAX_TOOL_DESC_CHARS:
+                saved = len(desc) - MAX_TOOL_DESC_CHARS
+                self._schema_chars_saved += saved
+                self._schemas_compressed += 1
+                fn["description"] = desc[:MAX_TOOL_DESC_CHARS] + "…"
+                log.debug("[3-MCPAdapter] Truncated description by %d chars", saved)
+        return tools
+
+    # ---------------------------------------------------------------------- [4]
+
+    def _budget_orchestrator(self, data: dict) -> dict:
+        """Track cumulative estimated token spend per gateway instance (session lifetime)."""
+        self._calls += 1
+        chars = sum(
+            len(str(m.get("content") or ""))
+            for m in data.get("messages") or []
+            if isinstance(m, dict)
+        )
+        est = chars // CHARS_PER_TOKEN
+        self._cumulative_tokens += est
+        log.debug(
+            "[4-BudgetOrchestrator] call=%d est=%d cumulative=%d",
+            self._calls,
+            est,
+            self._cumulative_tokens,
+        )
+        return data
+
+    # ---------------------------------------------------------------------- [5]
+
+    def _sol_pi(self, messages: list) -> list:
+        """Replace repeated large tool-result payloads with a stable handle reference."""
+        for msg in messages:
+            if not isinstance(msg, dict) or msg.get("role") != "tool":
+                continue
+            content = msg.get("content")
+            if not isinstance(content, str) or len(content) < MIN_OBS_CHARS:
+                continue
+            h = hashlib.sha256(content.encode()).hexdigest()[:16]
+            handle = f"#OBS_{h}"
+            if h in self._obs_handles:
+                msg["content"] = (
+                    f"[duplicate observation — see earlier result: {handle}]"
+                )
+                self._obs_hits += 1
+                log.info(
+                    "[5-SoLPi] Replaced %d-char observation with handle %s",
+                    len(content),
+                    handle,
+                )
+            else:
+                self._obs_handles[h] = True
+        return messages
+
+    # ---------------------------------------------------------------------- [6]
+
+    def _dynamic_pruning(self, messages: list) -> list:
+        """Remove duplicate tool_result entries (same tool_call_id + content)."""
+        if len(messages) <= STALE_THRESHOLD:
+            return messages
+        seen: dict = {}
+        result = []
+        for msg in messages:
+            if not isinstance(msg, dict):
+                result.append(msg)
+                continue
+            if msg.get("role") == "tool":
+                key = (
+                    str(msg.get("tool_call_id", "")) + str(msg.get("content", ""))[:80]
+                )
+                if key in seen:
+                    self._pruned_duplicates += 1
+                    log.debug("[6-DynamicPruning] Pruned duplicate tool_result")
+                    continue
+                seen[key] = True
+            result.append(msg)
+        return result
+
+    # ---------------------------------------------------------------------- [7]
+
+    def _compaction_manager(self, messages: list) -> list:
+        """Bound conversation history: drop oldest non-system messages beyond MAX_HISTORY_MSGS."""
+        if len(messages) <= MAX_HISTORY_MSGS:
+            return messages
+        system = [
+            m for m in messages if isinstance(m, dict) and m.get("role") == "system"
+        ]
+        rest = [
+            m
+            for m in messages
+            if not (isinstance(m, dict) and m.get("role") == "system")
+        ]
+        keep = MAX_HISTORY_MSGS - len(system)
+        if len(rest) > keep:
+            dropped = len(rest) - keep
+            rest = rest[dropped:]
+            self._compactions += 1
+            log.info(
+                "[7-CompactionManager] Dropped %d messages, kept %d (+ %d system)",
+                dropped,
+                len(rest),
+                len(system),
+            )
+        return system + rest
+
+    # ---------------------------------------------------------------------- [8]
+
+    def _gisting(self, messages: list) -> list:
+        """Condense old assistant messages: replace body with first 120 chars + length marker."""
+        if len(messages) <= GIST_AFTER_MSGS:
+            return messages
+        boundary = len(messages) - GIST_AFTER_MSGS
+        for msg in messages[:boundary]:
+            if not isinstance(msg, dict) or msg.get("role") != "assistant":
+                continue
+            content = msg.get("content")
+            if not isinstance(content, str) or len(content) <= 200:
+                continue
+            if content.startswith("[GISTED:"):
+                continue
+            msg["content"] = f"[GISTED:{len(content)}ch] {content[:120]}…"
+            self._gisted += 1
+            log.debug(
+                "[8-GistingSimulator] Gisted assistant message (%d chars)", len(content)
+            )
+        return messages
+
+    # ---------------------------------------------------------------------- hook
+
+    async def async_pre_call_hook(
+        self,
+        user_api_key_dict: Any,
+        cache: Any,
+        data: dict,
+        call_type: Union[Any, str],
+    ) -> Optional[dict]:
+        """Run all 8 mechanisms in sequence. Returns the optimised request body."""
+        msgs = list(data.get("messages") or [])
+        tools = list(data.get("tools") or [])
+
+        msgs = self._cache_guardian(msgs)  # [1]
+        msgs = self._sol_pi(msgs)  # [5] dedup before other pruning
+        msgs = self._dynamic_pruning(msgs)  # [6]
+        msgs = self._compaction_manager(msgs)  # [7]
+        msgs = self._gisting(msgs)  # [8]
+        msgs = self._token_killer(msgs)  # [2]
+        tools = self._mcp_adapter(tools)  # [3]
+        data = self._budget_orchestrator(data)  # [4] — always last (reads final state)
+
+        data["messages"] = msgs
+        if tools:
+            data["tools"] = tools
+
+        log.info(
+            "[EfficiencyGateway] [1]cache=%d/%d [2]tool_lines_saved=%d [3]schema_chars=%d "
+            "[4]cumulative_tokens=%d [5]obs_hits=%d [6]pruned=%d [7]compactions=%d [8]gisted=%d",
+            self._cache_hits,
+            self._cache_hits + self._cache_misses,
+            self._tool_line_compressions,
+            self._schema_chars_saved,
+            self._cumulative_tokens,
+            self._obs_hits,
+            self._pruned_duplicates,
+            self._compactions,
+            self._gisted,
+        )
+        return data
+
+
+proxy_handler_instance = EstateEfficiencyGateway()

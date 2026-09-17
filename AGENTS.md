@@ -42,6 +42,35 @@ every entity reference in it must resolve to an entity something defines
 Adding a rule: add a row to `rules.yaml`, add both fixtures, run `bin/idp-rules render-agents-md`
 and `bin/idp-ci`. No new rung, no new gate script.
 
+## Andon cord: main must be green; never more than 3 red PRs (2026-09-17)
+
+**Estate-wide. Applies to every agent, every tool, every workflow.**
+
+Toyota's Stop-the-Line principle, applied to this repository:
+
+1. **main must never fail CI.** A broken main hands its failures to every branch
+   drawn from it. If main is red, that is the only valid task until it is green.
+   No new feature work. No new PRs. Fix main.
+
+2. **Never more than 3 failing PRs open at once.** At the cap the pre-push hook
+   refuses any new branch push. Agents must fix a red PR before opening another.
+
+Both rules are machine-enforced at push time by `bin/idp-main-green-gate` and
+`bin/idp-wip-gate`, wired into `.githooks/pre-push` (new-branch pushes only).
+BLIND (no network / no `gh`) does not refuse the push — LAW 38: a fence a correct
+machine cannot satisfy is an outage.
+
+**Emergency overrides (typed deliberately, never scripted):**
+```
+IDP_MAIN_GREEN_GATE=0 git push   # you are the fix for main
+IDP_WIP_GATE=0        git push   # genuine emergency past the cap
+```
+
+**The reason these rules exist:** Five agent sessions, one after another, each
+opened new PRs while existing ones were red and while main itself was failing.
+The pile-up made it impossible to tell whether any new code was broken or was
+just inheriting the baseline. This is the structural fix.
+
 ## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
 
 **Mandate: On any fresh checkout, run `bin/idp-install-hooks` before your first commit.**

@@ -54,6 +54,7 @@ PR alongside these.
 | `capacity-requests-need-proof` | Audit 1, Enforce 1 | No paid capacity without proof (crew#584) | `edge` | `platform/edge/capacity-policy.yaml` |
 | `dev-loop-mirrord-fence` | Enforce | mirrord agents only where the namespace allows the dev loop | `edge` | `platform/edge/dev-loop-policy.yaml` |
 | `flux-only-writes` | Enforce | Only Flux and the deploy workflow may change the cluster | `edge` | `platform/edge/flux-only-writes.yaml` |
+| `inject-otel-endpoint` | Audit | Inject OTel exporter endpoint into every workload | `edge` | `platform/edge/inject-otel-endpoint.yaml` |
 | `no-token-by-default` | Audit | A pod on the default account gets no Kubernetes token | `edge` | `platform/edge/no-token-by-default.yaml` |
 | `otto-gvisor-admission` | Enforce | otto-gvisor-sandbox requires runtimeClassName:gvisor and no privileged | `edge` | `platform/edge/gvisor-admission.yaml` |
 | `protect-namespaces` | Enforce | A platform namespace cannot be deleted | `edge` | `platform/edge/protect-namespaces.yaml` |

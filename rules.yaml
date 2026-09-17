@@ -52,7 +52,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/aevum-evidence/bad/chain.json
     must_pass: tests/fixtures/aevum-evidence/good/chain.json
-  live_elsewhere: 'bin/idp-ci:703 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
+  live_elsewhere: 'bin/idp-ci:708 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
   cases:
   - expect: refuse
     args:
@@ -446,7 +446,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/migration-not-idempotent
     must_pass: bin/scheduler-migrate
-  live_elsewhere: bin/idp-ci:411 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
+  live_elsewhere: bin/idp-ci:420 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
   cases:
   - expect: refuse
     args:
@@ -1256,7 +1256,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/reloader-blind
     must_pass: tests/fixtures/reloader
-  live_elsewhere: bin/idp-ci:511 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
+  live_elsewhere: bin/idp-ci:49 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
   cases:
   - expect: refuse
     args:
@@ -1879,7 +1879,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
     must_pass: tests/fixtures/catalogue-entity-runtime-service
-  live_elsewhere: bin/idp-ci:511 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
+  live_elsewhere: bin/idp-ci:49 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
   cases:
   - expect: refuse
     args:
@@ -2063,7 +2063,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/catalog-platform-owner/bad.py
     must_pass: tests/fixtures/catalog-platform-owner/good.py
-  live_elsewhere: bin/idp-ci:231 -- the layers rung runs catalog-platform --check, which calls the same missing_owners() guard against the real LAYERS dict, not the fixture pair
+  live_elsewhere: bin/idp-ci:236 -- the layers rung runs catalog-platform --check, which calls the same missing_owners() guard against the real LAYERS dict, not the fixture pair
   cases:
   - expect: refuse
     args:
@@ -2107,6 +2107,46 @@ rules:
     note: the workflows and portal templates actually committed
   ok: every dispatchable workflow has a founder-facing button; the gate is proved both ways
   fail: a workflow the founder can dispatch has no button, or the gate is not discriminating
+- id: main-green-gate
+  fast: true
+  label: main-green-gate
+  statement: 'A new branch is never pushed when main CI is red: every branch drawn from a broken main inherits its failures, and agents that continue opening PRs compound the pile-up rather than fixing the root cause. The gate is BLIND (exit 2, not exit 1) when the GitHub API is unreachable -- a fence a correct machine cannot satisfy is an outage (LAW 38).'
+  law: founder 2026-09-17
+  origin: 'Five agent sessions each opened new PRs while main was failing and while existing PRs were red. The pile-up made it impossible to tell whether new code was broken or just inheriting baseline failures. The fix is the Andon cord: pull before branching, not after the PR is open.'
+  planes:
+  - session
+  run:
+  - python3
+  - bin/idp-main-green-gate
+  cluster:
+    policy: null
+    why: the subject is GitHub CI state, which no admission controller sees
+  fixtures:
+    must_fail: null
+    must_pass: null
+  live_elsewhere: '.githooks/pre-push -- on every new-branch push (remote sha = 000...) this gate fires; BLIND does not refuse (LAW 38); IDP_MAIN_GREEN_GATE=0 skips for the agent that IS fixing main'
+  ok: main is green -- new branch allowed
+  fail: main is RED -- fix main before opening a new branch
+- id: wip-gate
+  fast: true
+  label: wip-gate
+  statement: 'No new branch is pushed when 3 or more PRs are already failing CI (the WIP cap). Agents that open new PRs while existing ones are red compound the pile-up. At the cap the only valid task is to fix a red PR. BLIND (no GitHub API) does not refuse -- LAW 38.'
+  law: founder 2026-09-17
+  origin: 'Same incident class as main-green-gate: the WIP cap is the structural fix. Toyota Stop-the-Line applied to the PR queue. Three is the hard ceiling; below it the agent has room to work in parallel without losing track of what is actually broken.'
+  planes:
+  - session
+  run:
+  - python3
+  - bin/idp-wip-gate
+  cluster:
+    policy: null
+    why: the subject is the open PR list on GitHub, which no admission controller sees
+  fixtures:
+    must_fail: null
+    must_pass: null
+  live_elsewhere: '.githooks/pre-push -- fires on every new-branch push alongside main-green-gate; IDP_WIP_GATE=0 skips for genuine emergencies'
+  ok: fewer than 3 red PRs open -- new branch allowed
+  fail: 3 or more PRs are failing CI -- fix a red PR before opening a new one
 - id: stray-checkout
   label: stray
   statement: 'No untracked, unignored checkout of this repository is nested under its own root: a gate that walks the tree reads the nested copy''s own tests/fixtures/*/bad.yaml or Dockerfile and reports it as a defect in the branch under test'
@@ -2452,7 +2492,7 @@ rules:
   statement: 'No pull request opens without BDD proof, across every agent session: the body carries a BDD-PROOF block naming the head commit, that block carries a runner''s own passing counts rather than a sentence saying the tests passed, and the named commit is the pull request''s own head -- a claim with no run output is refused, and so is a real run on another commit'
   law: LAW 22, LAW 53
   origin: founder 2026-09-12
-  live_elsewhere: bin/idp-ci:85 -- the fast plane runs bin/idp-bdd-proof-gate --live, which reads the most recent pull request on this repository and refuses one carrying no BDD-PROOF block on its own head; on 2026-09-12 it refused PR
+  live_elsewhere: bin/idp-ci:89 -- the fast plane runs bin/idp-bdd-proof-gate --live, which reads the most recent pull request on this repository and refuses one carrying no BDD-PROOF block on its own head; on 2026-09-12 it refused PR
   planes:
   - ci
   - session

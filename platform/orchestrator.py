@@ -14,7 +14,7 @@ import uuid
 import time
 from pathlib import Path
 
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.messages import BaseMessage, ToolMessage, SystemMessage
 from langgraph.graph import StateGraph, END
@@ -188,8 +188,17 @@ async def run_orchestrator(goal: str, worktree: str = None, hook_orchestrator=No
     # 2. Discover Tools
     tools = await client.get_tools()
 
-    # 3. Initialize the Brain
-    model = ChatAnthropic(model_name="claude-3-5-sonnet-20241022", temperature=0)
+    # 3. Initialize the Brain — routes through the estate proxy so ceiling + efficiency_gateway fire.
+    # ChatOpenAI with the LiteLLM base_url works for any model the proxy serves (model-agnostic).
+    # LITELLM_BASE_URL and LITELLM_API_KEY are injected by sovereign/config.py from the secret store.
+    _litellm_url = os.environ.get("LITELLM_BASE_URL", "https://llm.mumchimp.com")
+    _litellm_key = os.environ.get("LITELLM_API_KEY", "")
+    model = ChatOpenAI(
+        model="default",
+        base_url=f"{_litellm_url}/v1",
+        api_key=_litellm_key,
+        temperature=0,
+    )
 
     # 4. Construct the Graph
     graph_builder = StateGraph(AgentState)
