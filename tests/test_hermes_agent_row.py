@@ -333,7 +333,7 @@ def test_the_flux_rows_define_the_generators_substitution_vars():
             "substituteFrom"
         ], name
         # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
-        assert {"name": "alerts-github"} in row["spec"]["dependsOn"], name
+        assert {"name": "github-app-creds"} in row["spec"]["dependsOn"], name
 
 
 def test_this_pod_can_never_register_the_telegram_webhook_again():
