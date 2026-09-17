@@ -117,7 +117,7 @@ async def run_claude_code_adapter(nats_url: str, prefix: str | None = None) -> N
                                 phase=phase,
                                 **extra,
                             )
-                        except Exception:  # noqa: BLE001 — one bad publish must not stop the tail
+                        except Exception:  # noqa: BLE001, S110 — one bad publish must not stop the tail
                             pass
                 except OSError:
                     continue

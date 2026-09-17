@@ -114,7 +114,7 @@ def build_app(routes_path: Path) -> FastAPI:
                 asyncio.create_task(
                     cc_adapter.run_claude_code_adapter(nats_url, ledger_prefix)
                 )
-            except Exception:  # noqa: BLE001 — adapter startup failure must not break the app
+            except Exception:  # noqa: BLE001, S110 — adapter startup failure must not break the app
                 pass
         yield
 

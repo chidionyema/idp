@@ -50,9 +50,9 @@ def _http_get(url: str, auth: tuple[str, str]) -> Any:
     import json
 
     creds = base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
-    req = urllib.request.Request(url, headers={"Authorization": f"Basic {creds}"})
+    req = urllib.request.Request(url, headers={"Authorization": f"Basic {creds}"})  # noqa: S310
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
             return json.loads(resp.read())
     except urllib.error.HTTPError as exc:
         raise TraceUnavailable(
