@@ -130,6 +130,7 @@ def build_app(routes_path: Path) -> FastAPI:
         nats_url = os.environ.get("NATS_URL", "")
 
         if nats_url:
+
             async def gen_nats():
                 # Initial frame: one event per current session so the page renders on connect.
                 body, _status = routes.sessions_envelope()
@@ -142,6 +143,7 @@ def build_app(routes_path: Path) -> FastAPI:
                     last_hb = asyncio.get_event_loop().time()
                     async for event in nats_module.subscribe_stream(nats_url):
                         import json as _json
+
                         yield f"data: {_json.dumps(event)}\n\n"
                         now = asyncio.get_event_loop().time()
                         if now - last_hb >= 30:

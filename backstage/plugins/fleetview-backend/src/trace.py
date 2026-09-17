@@ -33,7 +33,9 @@ def _langfuse_auth() -> tuple[str, str]:
     pub = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
     sec = os.environ.get("LANGFUSE_SECRET_KEY", "")
     if not pub or not sec:
-        raise TraceUnavailable("LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY not configured")
+        raise TraceUnavailable(
+            "LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY not configured"
+        )
     return pub, sec
 
 
@@ -53,7 +55,9 @@ def _http_get(url: str, auth: tuple[str, str]) -> Any:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as exc:
-        raise TraceUnavailable(f"Langfuse HTTP {exc.code}: {exc.reason} — {url}") from exc
+        raise TraceUnavailable(
+            f"Langfuse HTTP {exc.code}: {exc.reason} — {url}"
+        ) from exc
     except Exception as exc:  # noqa: BLE001 — any network failure is a TraceUnavailable
         raise TraceUnavailable(f"Langfuse unreachable: {exc}") from exc
 
