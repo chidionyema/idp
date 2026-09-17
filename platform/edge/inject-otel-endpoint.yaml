@@ -105,6 +105,16 @@ spec:
           - resources:
               namespaces: [backstage]
               names: [rotation-canary*]
+          # ALREADY WIRED — these manifests declare the endpoint inline; injection is a no-op
+          # but the Kyverno +(name) add-if-absent patch conflicts with existing valueFrom entries
+          # in the same env list (POD_NAMESPACE / metadata fieldRef). Exclude them to prevent
+          # the dry-run rejection that blocks Flux reconciliation (crew# observed 2026-09-17).
+          - resources:
+              namespaces: [jit]
+              names: [jit-broker]
+          - resources:
+              namespaces: [idp-agent]
+              names: [idp-engine]
           # PLATFORM WIP — pending OTel instrumentation (crew#584 follow-up)
           - resources:
               namespaces: [epistemic-fabric]

@@ -506,6 +506,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: dispatch sync to estate-graph repo
+        continue-on-error: true   # 404 when estate-graph repo is absent; notification, not a gate
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.ESTATE_GITHUB_PAT || secrets.GITHUB_TOKEN }}
