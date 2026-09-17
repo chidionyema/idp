@@ -152,16 +152,16 @@ describe('item #5: the capability badge', () => {
   });
 });
 
-describe('item #6: nudge a stale session', () => {
+describe('item #6: steer a stale session', () => {
   const staleSovereign = {
     ...runningSession,
     updated_at: '2026-09-12T09:00:00Z', // far more than 20 minutes before "now" in any test run
   };
 
-  it('shows a Nudge button for a stale sovereign session', async () => {
+  it('shows a Steer button for a stale sovereign session', async () => {
     renderFleet(envelope({ sessions: [staleSovereign] }));
     await screen.findByText('sb-1');
-    expect(screen.getByRole('button', { name: 'Nudge' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Steer' })).toBeInTheDocument();
   });
 
   it('shows no button for a session that is not stale', async () => {
@@ -171,16 +171,16 @@ describe('item #6: nudge a stale session', () => {
       envelope({ sessions: [{ ...runningSession, updated_at: new Date().toISOString() }] }),
     );
     await screen.findByText('sb-1');
-    expect(screen.queryByRole('button', { name: 'Nudge' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Steer' })).not.toBeInTheDocument();
   });
 
   it('shows no button for a stale session on a runtime with no live signal path', async () => {
-    renderFleet(envelope({ sessions: [{ ...staleSovereign, runtime: 'claude-code' }] }));
+    renderFleet(envelope({ sessions: [{ ...staleSovereign, runtime: 'github-actions' }] }));
     await screen.findByText('sb-1');
-    expect(screen.queryByRole('button', { name: 'Nudge' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Steer' })).not.toBeInTheDocument();
   });
 
-  it('clicking Nudge posts the session and runtime, and shows the result', async () => {
+  it('clicking Steer posts the session and runtime, and shows the result', async () => {
     let posted: any = null;
     const onFetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
       if (typeof url === 'string' && url.includes('/fleetview/nudge')) {
@@ -198,7 +198,7 @@ describe('item #6: nudge a stale session', () => {
     fireEvent.change(screen.getByLabelText('note author for sb-1'), {
       target: { value: 'chidi' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Nudge' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Steer' }));
 
     expect(await screen.findByText(/Nudged/)).toBeInTheDocument();
     expect(posted).toEqual({ session_id: 'sb-1', runtime: 'sovereign', by: 'chidi' });
@@ -208,12 +208,12 @@ describe('item #6: nudge a stale session', () => {
     renderFleet(envelope({ sessions: [staleSovereign] }));
     await screen.findByText('sb-1');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Nudge' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Steer' }));
 
     expect(await screen.findByText(/Add your name/)).toBeInTheDocument();
   });
 
-  it('a failed nudge shows the failure, never a silent success', async () => {
+  it('a failed steer shows the failure, never a silent success', async () => {
     const onFetch = jest.fn().mockImplementation(async (url: string) => {
       if (typeof url === 'string' && url.includes('/fleetview/nudge')) {
         return { ok: true, json: async () => ({ ok: false, error: 'workflow not found' }) };
@@ -227,7 +227,7 @@ describe('item #6: nudge a stale session', () => {
     fireEvent.change(screen.getByLabelText('note author for sb-1'), {
       target: { value: 'chidi' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Nudge' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Steer' }));
 
     expect(await screen.findByText(/Failed: workflow not found/)).toBeInTheDocument();
   });
@@ -485,7 +485,7 @@ describe('leave a note for a session', () => {
   });
 });
 
-describe('the focus panel: notes and nudges merged, plus an auto-fetched receipt', () => {
+describe('the focus panel: notes and steers merged, plus an auto-fetched receipt', () => {
   it('opening the panel fetches and interleaves notes and signals chronologically', async () => {
     const onFetch = jest.fn().mockImplementation(async (url: string) => {
       if (typeof url === 'string' && url.includes('/fleetview/notes')) {
@@ -536,7 +536,7 @@ describe('the focus panel: notes and nudges merged, plus an auto-fetched receipt
     expect(await screen.findByText(/Receipt: pass/)).toBeInTheDocument();
   });
 
-  it('a failed nudge attempt in the timeline carries its error, never hidden', async () => {
+  it('a failed steer attempt in the timeline carries its error, never hidden', async () => {
     const onFetch = jest.fn().mockImplementation(async (url: string) => {
       if (typeof url === 'string' && url.includes('/fleetview/signals')) {
         return {

@@ -136,7 +136,7 @@ def _ignorable(path: str) -> bool:
     while `.venv/bin/python` was not, which is the same directory judged two ways.
     """
     noise = ("node_modules",)
-    prefixes = (".venv", ".agent", "__pycache__", ".pytest_cache")
+    prefixes = (".venv", ".agent", "__pycache__", ".pytest_cache", ".aevum")
     if path in noise or path == ".DS_Store":
         return True
     return any(path == p or path.startswith(p + "/") for p in prefixes)
