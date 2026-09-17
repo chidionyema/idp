@@ -95,6 +95,7 @@ def test_flux_row_substitutes_the_zone_and_waits_on_both_releases():
         "capacity.yaml",
         "canary-servicemonitor.yaml",
         "api-key-warden.yaml",
+        "kyverno.yaml",
     }  # capacity.yaml: crew#645 CP5; K8sGPT findings PrometheusRule, idp#696;
     # canary-servicemonitor.yaml: the verification canary's gauge, crew#656 CP4;
     # api-key-warden.yaml: VendorKeyInvalid/Unchecked/JobFailed alerts, crew#832 CP3
