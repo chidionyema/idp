@@ -243,15 +243,13 @@ export function Fleet() {
     await loadNotes(sessionId);
   };
 
-  // Item #6: nudge a stale session -- a real Temporal steer signal to the live sovereign
-  // workflow (backend/src/signals.py), sent only when a human presses the button. Never
-  // autonomous: nothing on this page fires this on its own.
+  // Item #6: nudge / steer a session. CP8 extends to all four runtimes. The steer text input
+  // is a plain browser text field -- superwhisper (free tier, local Whisper) dictates into it;
+  // nothing in the estate needs to be built for voice (spec 2026-09-08, line 22).
   const [nudgeStatusBySession, setNudgeStatusBySession] = useState<Record<string, string>>({});
+  const [steerTextBySession, setSteerTextBySession] = useState<Record<string, string>>({});
 
   const sendNudge = async (sessionId: string, runtime: string) => {
-    // No window.prompt fallback: the audit-trail name comes from the same inline author field
-    // the focus panel already offers for notes, so nudging never blocks on a browser-native
-    // dialog the panel can't lay out or test around.
     const by = draftFor(sessionId).author.trim();
     if (!by) {
       setNudgeStatusBySession(current => ({
@@ -260,12 +258,13 @@ export function Fleet() {
       }));
       return;
     }
+    const text = (steerTextBySession[sessionId] ?? '').trim();
     setNudgeStatusBySession(current => ({ ...current, [sessionId]: 'sending…' }));
     try {
       const res = await fetchApi.fetch('plugin://proxy/fleetview/nudge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, runtime, by }),
+        body: JSON.stringify({ session_id: sessionId, runtime, by, ...(text ? { text } : {}) }),
       });
       const body = (await res.json()) as { ok?: boolean; error?: string };
       setNudgeStatusBySession(current => ({
@@ -710,11 +709,22 @@ export function Fleet() {
                           that cannot possibly do anything (see NUDGEABLE_RUNTIMES in fleetBoard.ts). */}
                       {nudgeable ? (
                         <>
+                          <input
+                            aria-label={`steer text for ${s.session_id}`}
+                            placeholder="steer instruction (or dictate with superwhisper)"
+                            value={steerTextBySession[s.session_id] ?? ''}
+                            onChange={e =>
+                              setSteerTextBySession(current => ({
+                                ...current,
+                                [s.session_id]: e.target.value,
+                              }))
+                            }
+                          />
                           <button
                             type="button"
                             onClick={() => void sendNudge(s.session_id, s.runtime)}
                           >
-                            Nudge
+                            Steer
                           </button>
                           {nudgeStatusBySession[s.session_id] && (
                             <span> {nudgeStatusBySession[s.session_id]}</span>
