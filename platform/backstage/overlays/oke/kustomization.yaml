@@ -54,7 +54,7 @@ images:
     # the sidecar cannot pull and Flux reports it. image-automation-controller then rewrites this
     # line from ImagePolicy flux-system/fleetview-backend (platform/image-automation/
     # fleetview-backend.yaml); the marker is how it finds the line.
-    newTag: main-10086-287de699677a162a43a4ce71d126a0eac6d433d7 # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
+    newTag: main-10919-23ebcbad6e53818dbc2f7b193670082c6686c4f9 # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
 patches:
   # The catalogue's database is the one estate Postgres (platform/estate-db), not the server
   # bundled in base -- base keeps that one because compose and k3d have nothing else to talk to.
