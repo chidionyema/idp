@@ -136,7 +136,7 @@ jobs:
                         echo "-- DNS --"
                         nslookup ${SVC}.${NS}.svc.cluster.local 2>&1 | head -6
                         echo "-- TCP handshake --"
-                        curl -kvs --max-time 5 https://${SVC}.${NS}.svc:${PORT}/validate-external-secrets-io-v1-externalsecret 2>&1 | head -30
+                        curl -kvs --retry 2 --retry-delay 2 --max-time 5 https://${SVC}.${NS}.svc:${PORT}/validate-external-secrets-io-v1-externalsecret 2>&1 | head -30
                         echo "-- TCP-only --"
                         curl -kvs --max-time 3 telnet://${SVC}.${NS}.svc:${PORT} 2>&1 | head -8
                     resources:
