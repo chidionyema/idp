@@ -173,15 +173,14 @@ try:
         print("ok    verifier  no Python files in diff")
         sys.exit(0)
     # For modified files, the diff only contains changed lines — partial content
-    # fails structural checks (py_compile for .py, yaml.safe_load for .yaml/.yml).
-    # Replace with full file content when the file exists in the working tree.
+    # fails structural checks (py_compile for .py, yaml.safe_load for .yaml/.yml,
+    # and ast.parse for extensionless Python scripts in bin/).
+    # Replace with full file content for any file that exists in the working tree.
     idp_path = pathlib.Path(idp)
-    _STRUCTURED_EXTS = (".py", ".yaml", ".yml", ".sql")
     for pf in files:
-        if any(pf.path.endswith(ext) for ext in _STRUCTURED_EXTS):
-            full = idp_path / pf.path
-            if full.exists():
-                pf.lines = list(full.read_text().splitlines(keepends=True))
+        full = idp_path / pf.path
+        if full.exists() and full.is_file():
+            pf.lines = list(full.read_text(errors="replace").splitlines(keepends=True))
     ledger_id = str(uuid.uuid4())
     ledger_dir = pathlib.Path(tempfile.mkdtemp()) / ledger_id
     ledger_dir.mkdir(parents=True, exist_ok=True)
