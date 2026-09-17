@@ -71,6 +71,24 @@ opened new PRs while existing ones were red and while main itself was failing.
 The pile-up made it impossible to tell whether any new code was broken or was
 just inheriting the baseline. This is the structural fix.
 
+## Gateway-as-floor: agents emit events, the gateway writes (2026-09-17)
+
+**The gateway is the only writer. Agents have no write capability — not gated, not audited, not wrapped. Removed.**
+
+The harness (judge, PRM, Aevum, dod-guard, pareval, shadow-verify) existed before this rule but was bypassed at session start: every terminal, every Claude Code session, every CI runner was a direct writer with git credentials and a repo mount. Building N enforcement layers around N entry points is lossy — every new entry point is a new hole. This rule inverts the topology.
+
+**What agents may do:** emit an event to the gateway. That is the complete capability set.
+
+**What the gateway does:** on event receipt, materialize a fenced worktree (isolated per-event, no shared state), execute the plan, collect the diff, pass through the full judge/PRM/Aevum/dod-guard chain. Only after DoD v3 signs does anything touch a real branch.
+
+**What every UI becomes:** a gateway client. Terminal, Telegram, Backstage, phone, cron, CI — all emit events. None write. None self-verify. There is no "interactive writer."
+
+**Why this changes agent behavior structurally:** an agent with no git binary, no credentials, no repo mount cannot run tests and call it done, because it cannot run tests. It cannot push, because it cannot push. It can only propose. The gateway decides. The agent's self-model shifts from "worker with tools" to "planner that proposes work" — not as a policy, but because the substrate does not support the old model.
+
+**The migration:** replace every write capability (Claude Code hooks, CI runners, local shells, orchestration jobs) with a gateway client that calls `emit(event)`. The gateway, orchestrator, judge, Aevum, and dod-guard already exist — they were sitting behind a door everyone walked around. This removes the door.
+
+**The one implementation invariant:** worktrees are isolated per-event. Two concurrent proposals must never share a worktree — that would re-introduce the same race condition being eliminated from the agent side.
+
 ## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
 
 **Mandate: On any fresh checkout, run `bin/idp-install-hooks` before your first commit.**
