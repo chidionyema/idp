@@ -17,7 +17,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 opentelemetry = { version = "0.27", features = ["trace"] }
 opentelemetry-otlp = { version = "0.27", features = ["http-proto", "reqwest-client"] }
-opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
 tracing-opentelemetry = "0.28"
 
 [profile.release]
