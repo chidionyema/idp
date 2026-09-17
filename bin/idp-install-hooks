@@ -20,6 +20,12 @@
 #          message names the exact package or endpoint.
 #
 # Idempotent. Safe to run on every checkout, and in CI where the printed report is the receipt.
+case "${1:-}" in
+  -h|--help)
+    echo "bin/idp-install-hooks -- wire .githooks and install all CI-matrix tools; idempotent"
+    exit 0
+    ;;
+esac
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$IDP"
@@ -99,6 +105,7 @@ probe_bin       REC ruff    "pip install ruff; used by bin/idp-ci fast rungs"
 echo ""
 echo "=== installing CI-matrix tools (bin/idp-install-deps) ==="
 if "$IDP/bin/idp-install-deps"; then
+  export PATH="$HOME/.cache/estate-tools:$PATH"
   probe_bin REQ kyverno "bin/idp-install-deps failed to install kyverno"
   probe_bin REQ helm    "bin/idp-install-deps failed to install helm"
 else
