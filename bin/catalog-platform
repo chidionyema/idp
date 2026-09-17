@@ -487,6 +487,12 @@ LAYERS = {
         "Opens an issue for every page, so nothing fires into the void.",
         "group:default/platform",
     ),
+    "github-app-creds": (
+        "security",
+        "GitHub App credentials",
+        "The GitHub App ExternalSecret in isolation; eight rows depend on this Secret for postBuild substitution.",
+        "group:default/platform",
+    ),
     "science": (
         "observability",
         "Science",
