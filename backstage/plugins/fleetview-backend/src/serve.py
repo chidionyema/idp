@@ -37,7 +37,9 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
@@ -78,7 +80,45 @@ def _load_routes(routes_path: Path):
 
 def build_app(routes_path: Path) -> FastAPI:
     routes = _load_routes(routes_path)
-    app = FastAPI(title="FleetView", version="1.1.0")
+
+    _nats_adapter_module = routes_path.parent / "nats_adapter.py"
+    _claude_code_adapter_module = routes_path.parent / "claude_code_adapter.py"
+
+    def _load_nats_adapter():
+        spec = importlib.util.spec_from_file_location(
+            "fleetview_nats_adapter_impl", _nats_adapter_module
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"cannot load module at {_nats_adapter_module}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _load_claude_code_adapter():
+        spec = importlib.util.spec_from_file_location(
+            "fleetview_claude_code_adapter_impl", _claude_code_adapter_module
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"cannot load module at {_claude_code_adapter_module}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        nats_url = os.environ.get("NATS_URL", "")
+        if nats_url:
+            ledger_prefix = os.environ.get("ESTATE_STATE_PATH_PREFIX") or None
+            try:
+                cc_adapter = _load_claude_code_adapter()
+                asyncio.create_task(
+                    cc_adapter.run_claude_code_adapter(nats_url, ledger_prefix)
+                )
+            except Exception:  # noqa: BLE001, S110 — adapter startup failure must not break the app
+                pass
+        yield
+
+    app = FastAPI(title="FleetView", version="1.1.0", lifespan=lifespan)
 
     @app.get(routes.SESSIONS_PATH)
     def sessions():
@@ -87,6 +127,35 @@ def build_app(routes_path: Path) -> FastAPI:
 
     @app.get(routes.STREAM_PATH)
     async def stream():
+        nats_url = os.environ.get("NATS_URL", "")
+
+        if nats_url:
+
+            async def gen_nats():
+                # Initial frame: one event per current session so the page renders on connect.
+                body, _status = routes.sessions_envelope()
+                for record in body.get("sessions") or []:
+                    yield routes.stream_frames([record])[0]
+                # Subscribe to NATS and yield each message as an SSE data frame,
+                # interleaving a heartbeat comment every 30s so proxies keep the connection.
+                try:
+                    nats_module = _load_nats_adapter()
+                    last_hb = asyncio.get_event_loop().time()
+                    async for event in nats_module.subscribe_stream(nats_url):
+                        import json as _json
+
+                        yield f"data: {_json.dumps(event)}\n\n"
+                        now = asyncio.get_event_loop().time()
+                        if now - last_hb >= 30:
+                            yield ": heartbeat\n\n"
+                            last_hb = now
+                except Exception:  # noqa: BLE001 — NATS failure falls back to heartbeat loop
+                    while True:
+                        await asyncio.sleep(30)
+                        yield ": heartbeat\n\n"
+
+            return StreamingResponse(gen_nats(), media_type="text/event-stream")
+
         async def gen():
             # Initial frame: one event per current session so the page renders on connect.
             body, _status = routes.sessions_envelope()
@@ -121,6 +190,16 @@ def build_app(routes_path: Path) -> FastAPI:
     @app.get(routes.SIGNALS_PATH)
     def signals_get(session_id: str):
         body, status = routes.signals_envelope(session_id)
+        return JSONResponse(content=body, status_code=status)
+
+    @app.get(routes.TRACE_PATH)
+    def trace_get(session_id: str):
+        body, status = routes.trace_envelope(session_id)
+        return JSONResponse(content=body, status_code=status)
+
+    @app.get(routes.LEDGER_PATH)
+    def ledger_get(session_id: str):
+        body, status = routes.ledger_tail_envelope(session_id)
         return JSONResponse(content=body, status_code=status)
 
     @app.get(routes.BLAST_RADIUS_PATH)

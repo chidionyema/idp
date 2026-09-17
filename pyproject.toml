@@ -16,6 +16,7 @@ select = ["E9", "F63", "F7", "F82"]
 # exemption for test code. S311 (random not for crypto) fires on tests/pareval's use of
 # random.uniform() to generate statistical test noise, never a credential or token.
 "tests/**/*.py" = ["S101", "S311"]
+"**/tests/**/*.py" = ["S101", "S311"]
 
 [tool.pyright]
 include = ["tests"]

@@ -39,7 +39,14 @@ def grade(path: Path) -> int:
         if r.get("seq") != i:
             return fail(f"record {i} has seq={r.get('seq')} (expected {i})")
 
-        payload = {k: r[k] for k in ("tree", "author", "staged", "event")}
+        if r.get("event") == "gate.run":
+            payload_keys = ("gate_id", "result", "plane", "event")
+        else:
+            payload_keys = ("tree", "author", "staged", "event")
+        try:
+            payload = {k: r[k] for k in payload_keys}
+        except KeyError as exc:
+            return fail(f"record {i} missing expected field {exc}")
         want_ph = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         if r.get("payload_hash") != want_ph:
             return fail(f"record {i} payload_hash mismatch (tampered?)")

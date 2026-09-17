@@ -213,21 +213,6 @@
   "ticket": null
  },
  {
-  "feature": "features/gates/model-routing.feature",
-  "title": "Model routing is an estate service, not a laptop process",
-  "scenarios": [
-   "The cluster router carries every hosted model the laptop router carries",
-   "The router is reachable at llm.<zone> through the one edge",
-   "Upstream keys reach the pod only from the estate vault",
-   "The founder picks and adds models in the Admin UI, never by pull request"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "da950638",
-  "pr": 225,
-  "ticket": "crew#284"
- },
- {
   "feature": "features/portal-product/cp1-showcase-live.feature",
   "title": "the showcase page reads live state, never a markdown file",
   "scenarios": [
@@ -1772,6 +1757,51 @@
   "ticket": null
  },
  {
+  "feature": "features/gates/efficiency-gateway.feature",
+  "title": "The estate efficiency gateway cuts tokens before every vendor call, model-agnostic",
+  "scenarios": [
+   "A stable system prompt keeps the prefix cache alive",
+   "A drifted system prompt is flagged as a cache miss",
+   "Duplicate lines in a tool_result message are stripped",
+   "A tool description longer than the limit is truncated",
+   "A short tool description is not touched",
+   "Each call increments the call counter and the token estimate",
+   "A second identical large tool result is replaced with a reference handle",
+   "A duplicate tool_result with the same tool_call_id and content is pruned",
+   "A history longer than MAX_HISTORY_MSGS is truncated",
+   "System messages are preserved during compaction",
+   "An old assistant turn beyond the gist boundary is condensed",
+   "A recent assistant turn is not condensed",
+   "A realistic session with drift, duplicates, long history, and verbose tools is optimised"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_efficiency_gateway_bdd.py"
+  ],
+  "status": "BOUND",
+  "added_in": "fd519c9b",
+  "pr": 3703,
+  "ticket": null
+ },
+ {
+  "feature": "features/gates/egress-block.feature",
+  "title": "Egress block \u2014 direct AI vendor egress denied at the network layer",
+  "scenarios": [
+   "GlobalNetworkPolicy has correct name and order",
+   "GlobalNetworkSet covers all current AI vendor endpoints",
+   "Policy blocks all namespaces except the approved exempt set",
+   "Egress rule targets the vendor endpoint GlobalNetworkSet by label",
+   "A non-exempt namespace has no allow-egress rule to vendor endpoints",
+   "Policy manifest is valid YAML and passes structural schema check"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_egress_block_bdd.py"
+  ],
+  "status": "BOUND",
+  "added_in": "fd519c9b",
+  "pr": 3703,
+  "ticket": null
+ },
+ {
   "feature": "features/gates/epistemic-and-trajectory.feature",
   "title": "An agent cannot lie about what it sees, and cannot forget what it was told to do",
   "scenarios": [
@@ -1814,6 +1844,30 @@
   "ticket": null
  },
  {
+  "feature": "features/gates/forge-guard.feature",
+  "title": "Forge guard \u2014 model training runs are budget-gated and quality-gated",
+  "scenarios": [
+   "task.yaml carries all required contract fields",
+   "Shipped task.yaml fits within its own declared budget",
+   "A run within budget is not refused by the cost gate",
+   "A run over budget is refused with the spend numbers in the reason",
+   "An unpriced GPU is refused as un-budgetable",
+   "A compute plan with no GPU block defaults to T4",
+   "T4 GPU cost per hour is accurate",
+   "Dataset split is refused below 500 rows",
+   "Dataset split at 500 rows is deterministic and 80/20",
+   "Label probability abstain triggers when margin is below threshold",
+   "Grade counts only answered rows, not abstentions"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_forge_guard_bdd.py"
+  ],
+  "status": "BOUND",
+  "added_in": "fd519c9b",
+  "pr": 3703,
+  "ticket": null
+ },
+ {
   "feature": "features/gates/front-door-login.feature",
   "title": "The front door is a federated login with no local password",
   "scenarios": [
@@ -1843,6 +1897,27 @@
   "ticket": "crew#286"
  },
  {
+  "feature": "features/gates/judge-drift.feature",
+  "title": "Judge drift \u2014 continuous calibration sentinel detects distribution shift",
+  "scenarios": [
+   "Jensen-Shannon divergence is zero for identical distributions",
+   "JS divergence is non-zero for different distributions",
+   "Partial window does not trigger a drift alert",
+   "Drift alert fires when JS divergence exceeds threshold",
+   "JudgeDriftLoop pre_llm always allows (not a blocking gate)",
+   "JudgeDriftLoop reports shadow mode in health check",
+   "ParEval loop halts when max_tasks turns are reached",
+   "ParEval loop allows when turn count is below max_tasks"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_judge_drift_bdd.py"
+  ],
+  "status": "BOUND",
+  "added_in": "fd519c9b",
+  "pr": 3703,
+  "ticket": null
+ },
+ {
   "feature": "features/gates/langfuse-traces.feature",
   "title": "Agent sessions trace to the estate's Langfuse, tagged with their crew issue",
   "scenarios": [
@@ -1870,6 +1945,44 @@
   "added_in": "73640ff4",
   "pr": 253,
   "ticket": "crew#284"
+ },
+ {
+  "feature": "features/gates/model-routing.feature",
+  "title": "Model routing is an estate service, not a laptop process",
+  "scenarios": [
+   "The cluster router carries every hosted model the laptop router carries",
+   "The router is reachable at llm.<zone> through the one edge",
+   "Upstream keys reach the pod only from the estate vault",
+   "The founder picks and adds models in the Admin UI, never by pull request"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_gate_model_routing_bdd.py"
+  ],
+  "status": "BOUND",
+  "added_in": "da950638",
+  "pr": 225,
+  "ticket": "crew#284"
+ },
+ {
+  "feature": "features/gates/orchestrator-routing.feature",
+  "title": "Orchestrator proxy routing \u2014 all LLM calls route through the estate proxy",
+  "scenarios": [
+   "Orchestrator uses a configurable base URL, not a hardcoded vendor URL",
+   "Orchestrator does not import any vendor SDK directly",
+   "Teleological filter prunes 3 or more consecutive tool errors",
+   "Teleological filter leaves fewer than 3 consecutive errors untouched",
+   "Pre-LLM gate halts the agent when any hook signals halt",
+   "Pre-LLM gate passes through cleanly when no hook halts",
+   "Circuit breaker trips at the configured turn threshold",
+   "Orchestrator respects the proxy base URL from environment"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_orchestrator_routing_bdd.py"
+  ],
+  "status": "BOUND",
+  "added_in": "fd519c9b",
+  "pr": 3703,
+  "ticket": null
  },
  {
   "feature": "features/gates/placement-published.feature",
@@ -1916,6 +2029,27 @@
   "status": "BOUND",
   "added_in": "b44756c8",
   "pr": 3464,
+  "ticket": null
+ },
+ {
+  "feature": "features/gates/shadow-verify.feature",
+  "title": "Shadow verify \u2014 workload convergence assertion after change applied in vcluster",
+  "scenarios": [
+   "A ready Deployment with matching replicas passes",
+   "A Deployment that is not ready fails",
+   "An observation silent about readiness fails closed",
+   "A Deployment with fewer available replicas than required fails",
+   "An observation for an unverified kind fails closed",
+   "An observation without requiredReplicas fails closed",
+   "All supported workload kinds are accepted",
+   "A StatefulSet with probe failures fails"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_shadow_verify_bdd.py"
+  ],
+  "status": "BOUND",
+  "added_in": "fd519c9b",
+  "pr": 3703,
   "ticket": null
  },
  {
