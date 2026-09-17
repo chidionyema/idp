@@ -89,6 +89,76 @@ The harness (judge, PRM, Aevum, dod-guard, pareval, shadow-verify) existed befor
 
 **The one implementation invariant:** worktrees are isolated per-event. Two concurrent proposals must never share a worktree — that would re-introduce the same race condition being eliminated from the agent side.
 
+### Enforcement: how write capability is physically removed
+
+Policy is bypassable. Physical removal is not. The enforcement path:
+
+1. **Agent sandbox:** agent processes run in a container (OrbStack/OCI) with no git binary, no credentials mounted, no repo volume. The only outbound socket is the gateway client endpoint. This is not a firewall rule — the binary does not exist in the image.
+2. **Gateway client only:** `bin/idp-gateway-emit <event-json>` is the one tool the sandbox exposes. It validates the event schema and posts to NATS. No other write path exists.
+3. **CI runners:** GitHub Actions runners for agent jobs use the same restricted image. Human-triggered jobs (deploys, rollbacks) use a separate runner class with explicit credential injection, audit-logged per run.
+
+### Enablement: what agents gain, not lose
+
+The gateway client is not a narrowing — it is a richer interface than raw git. Agents can:
+- Propose multi-step plans with dependencies, not just single diffs
+- Request shadow-verify runs against a fenced worktree before committing to a proposal
+- Subscribe to gateway events (watch a build, receive judge feedback, retry a step)
+- Query the estate twin for live cluster state without needing kubeconfig
+
+The constraint is on *writing verified work to a real branch*. Everything else — read, propose, observe, query — remains available and is expanded by the gateway's event model.
+
+### Break-glass: when the cluster is down (black plan)
+
+If the cluster is unavailable and the gateway itself cannot be reached, the estate needs a recovery path. That path must be **narrower, not wider**, than normal operation.
+
+**Break-glass protocol:**
+
+```bash
+# Step 1: mint a time-limited break-glass token (founder hardware key required)
+bin/idp-break-glass mint --reason "<one line>" --ttl 30m --scope recovery
+# Writes a signed token to ~/.local/state/idp/break-glass-token (expires in TTL)
+# Appends a gate.run receipt to .aevum/local.jsonl immediately
+
+# Step 2: agent recovery session starts in restricted mode
+IDP_BREAK_GLASS_TOKEN=$(cat ~/.local/state/idp/break-glass-token) claude
+# The session hook reads the token, enables write capability ONLY to recovery/ branch prefix
+# Every tool call is written to .aevum/local.jsonl before execution
+
+# Step 3: after recovery, post-mortem is mandatory
+# The break-glass token expiry automatically opens a post-mortem PR with the Aevum log
+```
+
+**What break-glass allows:**
+- Write to `recovery/*` branches only — no direct main, no feature branches
+- Run pre-approved recovery scripts: `bin/idp-workstation-bootstrap`, `bin/idp-oci-bootstrap`, `bin/idp-flux-reconcile-force`
+- Read cluster state via `bin/idp-kube` (read-only, same as normal agent access)
+- Emit events to NATS if the gateway is partially up
+
+**What break-glass never allows:**
+- `git push --force` to any branch
+- Direct `kubectl apply` (cluster writes still go through Flux)
+- Skipping the Aevum receipt for any action taken
+- Extending its own TTL
+
+**The post-mortem requirement:** every break-glass session automatically generates a PR titled `recovery/<date>-<reason>` containing the full Aevum log of every action taken. That PR must be reviewed and merged before another break-glass token can be minted. This is the accountability loop.
+
+### Agent-assisted cluster revival
+
+When the cluster is down and a local agent is the best tool to diagnose and sequence the recovery:
+
+```bash
+# Read-only cluster probe (works even when gateway is down — uses saved kubeconfig)
+bin/idp-kube get nodes -o wide
+bin/idp-kube get pods -n flux-system
+bin/idp-kube get events -A --sort-by=.lastTimestamp | tail -30
+
+# Structured recovery sequence (pre-approved, Aevum-logged)
+bin/idp-recovery-seq --plan <plan-name>
+# Plans live in recovery/plans/*.yaml — add plans via PR, not during a break-glass session
+```
+
+The local agent's role in recovery is **diagnosis and sequencing**, not direct cluster writes. It reads state, proposes a sequence, and hands each step to the pre-approved recovery scripts. It does not run `kubectl apply` or `helm upgrade` directly. Those remain Flux-only.
+
 ## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
 
 **Mandate: On any fresh checkout, run `bin/idp-install-hooks` before your first commit.**
