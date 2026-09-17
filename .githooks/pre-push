@@ -107,7 +107,14 @@ if [ -n "$kyv_base" ]; then
 		set -e
 		case "$kyv_rc" in
 		0) echo "ok    kyverno  $kyv_dirs render clean against the cluster's admission policies" ;;
-		2) echo "FAIL  kyverno  helm or kyverno not installed; run bin/idp-install-deps then retry"; exit 1 ;;
+		2)
+			# bin/idp-install-deps installs helm+kyverno; fail if they're still absent after PATH is set.
+			# Other exit-2 causes (kubectl missing, policy fetch failed) are BLIND per LAW 38.
+			if ! command -v kyverno >/dev/null 2>&1 || ! command -v helm >/dev/null 2>&1; then
+				echo "FAIL  kyverno  helm or kyverno not installed; run bin/idp-install-deps then retry"; exit 1
+			fi
+			echo "BLIND kyverno  render skipped (kubectl or policies unavailable); CI enforces the same gate"
+			;;
 		*)
 			echo "FAIL  kyverno  a render in $kyv_dirs is refused by admission policy"
 			printf '%s\n' "$kyv_out" | grep -vE '^ok ' | tail -40
