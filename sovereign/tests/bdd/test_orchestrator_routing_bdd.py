@@ -22,6 +22,34 @@ REPO = Path(__file__).resolve().parents[3]
 ORCH = REPO / "platform" / "orchestrator.py"
 CB_MOD = REPO / "platform" / "telemetry" / "agent_circuit_breaker.py"
 
+# Seed langchain_core stubs so the teleological-filter scenario steps work without
+# the real package installed in the CI acceptance environment.
+if "langchain_core" not in sys.modules:
+    from types import ModuleType
+
+    class _BaseMessage:
+        def __init__(self, content: str = "", **_kw: object) -> None:
+            self.content = content
+
+    class _ToolMessage(_BaseMessage):
+        def __init__(
+            self, content: str = "", tool_call_id: str = "", **_kw: object
+        ) -> None:
+            super().__init__(content)
+            self.tool_call_id = tool_call_id
+
+    class _SystemMessage(_BaseMessage):
+        pass
+
+    _lc = ModuleType("langchain_core")
+    _lc_msgs = ModuleType("langchain_core.messages")
+    _lc_msgs.BaseMessage = _BaseMessage  # type: ignore[attr-defined]
+    _lc_msgs.ToolMessage = _ToolMessage  # type: ignore[attr-defined]
+    _lc_msgs.SystemMessage = _SystemMessage  # type: ignore[attr-defined]
+    _lc.messages = _lc_msgs  # type: ignore[attr-defined]
+    sys.modules["langchain_core"] = _lc
+    sys.modules["langchain_core.messages"] = _lc_msgs
+
 
 def _ast():
     return ast.parse(ORCH.read_text())

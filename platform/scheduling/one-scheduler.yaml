@@ -8,9 +8,6 @@ still_outside_dagster:
 - job: .github/workflows/branch-archive.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'
-- job: .github/workflows/pr-consolidate.yml
-  kind: GitHub Actions cron
-  fold: 'pending: hourly PR consolidator (founder 2026-09-17, cap open PRs); to be declared as a Dagster schedule'
 - job: .github/workflows/catalog-render.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'
@@ -63,6 +60,9 @@ still_outside_dagster:
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'
 - job: .github/workflows/pr-age.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/pr-consolidate.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'
 - job: .github/workflows/probe-mutations.yml

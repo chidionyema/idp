@@ -32,7 +32,7 @@ spec:
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [weave-gitops], names: [weave-gitops*] }
       # commerce-redis is the StatefulSet name; explicit list covers lago* and any redis* variant
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [commerce], names: [lago*, redis*, commerce-redis] }
-      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [llm, idp-agent, via-negativa], names: [redis*, litellm-cache*, via-negativa-redis*] }
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [llm, idp-agent, via-negativa], names: [redis*, litellm-cache*, via-negativa-redis] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [dagster] }
       # VENDOR — third-party image with no OTel SDK; cannot be instrumented
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [notify], names: [apprise*] }
