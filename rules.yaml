@@ -1256,7 +1256,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/reloader-blind
     must_pass: tests/fixtures/reloader
-  live_elsewhere: bin/idp-ci:511 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
+  live_elsewhere: bin/idp-ci:49 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
   cases:
   - expect: refuse
     args:
@@ -1879,7 +1879,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
     must_pass: tests/fixtures/catalogue-entity-runtime-service
-  live_elsewhere: bin/idp-ci:511 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
+  live_elsewhere: bin/idp-ci:49 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
   cases:
   - expect: refuse
     args:
@@ -2492,7 +2492,7 @@ rules:
   statement: 'No pull request opens without BDD proof, across every agent session: the body carries a BDD-PROOF block naming the head commit, that block carries a runner''s own passing counts rather than a sentence saying the tests passed, and the named commit is the pull request''s own head -- a claim with no run output is refused, and so is a real run on another commit'
   law: LAW 22, LAW 53
   origin: founder 2026-09-12
-  live_elsewhere: bin/idp-ci:85 -- the fast plane runs bin/idp-bdd-proof-gate --live, which reads the most recent pull request on this repository and refuses one carrying no BDD-PROOF block on its own head; on 2026-09-12 it refused PR
+  live_elsewhere: bin/idp-ci:89 -- the fast plane runs bin/idp-bdd-proof-gate --live, which reads the most recent pull request on this repository and refuses one carrying no BDD-PROOF block on its own head; on 2026-09-12 it refused PR
   planes:
   - ci
   - session
