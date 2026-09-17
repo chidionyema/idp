@@ -47,6 +47,8 @@ concurrency:
 jobs:
   fast-gate:   # crew#584 CP-C: lint red never boots this workflow's heavy jobs
     uses: ./.github/workflows/fast-gate.yml
+  verifier:    # three-stage gauntlet over the PR diff (structural/symbolic/execution)
+    uses: ./.github/workflows/verifier.yml
   discover:
     needs: fast-gate
     runs-on: ubuntu-latest
