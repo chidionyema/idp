@@ -98,7 +98,6 @@ Core platform functionality, administration, and operational commands.
 | `idp-identity-apply` | Provision front door OIDC client |
 | `idp-image-only-diff` | Show image-only differences |
 | `idp-image-update-pr` | Open/refresh flux image-updates PR (crew#267/439) |
-| `idp-install-colima` | Install colima profile |
 | `idp-install-launchd` | Render and load launchd plists |
 | `idp-install-verifier-hooks` | Install verifier gate hooks |
 | `idp-inventory` | Graded against git declarations (crew#740) |

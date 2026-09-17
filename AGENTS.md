@@ -94,6 +94,14 @@ Why: Raw command output can exceed 50 lines and bloat the context window. `bin/i
 
 Usage: `bin/idp-exec cat large_file.log` instead of `cat large_file.log`
 
+## Workstation bootstrap: bin/idp-workstation-bootstrap on any fresh machine (2026-09-17)
+
+**Mandate: On any fresh workstation (Mac, Linux, CI runner, dev container), run `bin/idp-workstation-bootstrap` once to reach dev-ready. It is idempotent; re-runs keep whatever already works.**
+
+Why (founder 2026-09-17): "our system must be able to bootstrap itself in any env". The prior bootstrap chain (`bin/idp-bootstrap-estate`) assumed the tool set was already installed and did not wire local `gh`/`kubectl` conveniences, so a fresh macbook on 2026-09-17 had age identity but no OCI config, no kubeconfig, and unauthed `gh` — which blocked Lane E (PR #3599) on a laptop-only credential gap. This script closes Level 0 (portable tool install per OS family) and Level 3 (local `gh auth` + `~/.kube/config`) around the existing Level 2 estate bootstrap.
+
+The one hand a person still gives is the age identity restore (iCloud Keychain / paper / hardware key); this script refuses to proceed if `SOPS_AGE_KEY_FILE` is not readable. Vendor-neutral throughout: no local container runtime is installed by this script (see 2026-09-17 container-runtime mandate above).
+
 ## The estate twin: ask the graph, not the cluster (2026-09-12)
 
 Ask before you touch the cluster: `bin/estate-twin-runtime --once --code|--dead|--state|--history <node>|--blast-radius <n>`.

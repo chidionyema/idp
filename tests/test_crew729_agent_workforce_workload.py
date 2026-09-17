@@ -302,7 +302,9 @@ def _fake_gh(tmp: Path, issues: list[dict], comments: dict[int, list[dict]]) -> 
 def _run(tmp: Path, issues, comments, traces=1, keys=True):
     bindir = _fake_gh(tmp, issues, comments)
     env = dict(
-        os.environ, PATH=f"{bindir}:{os.environ['PATH']}", AGENT_WORKFORCE_BOARD="owner/crew"
+        os.environ,
+        PATH=f"{bindir}:{os.environ['PATH']}",
+        AGENT_WORKFORCE_BOARD="owner/crew",
     )
     env["LANGFUSE_HOST"] = _langfuse(traces)
     if keys:
@@ -376,7 +378,9 @@ def test_a_board_that_cannot_be_read_is_blind(tmp_path):
     gh.write_text("#!/bin/sh\nexit 1\n")
     gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
     env = dict(
-        os.environ, PATH=f"{bindir}:{os.environ['PATH']}", AGENT_WORKFORCE_BOARD="owner/crew"
+        os.environ,
+        PATH=f"{bindir}:{os.environ['PATH']}",
+        AGENT_WORKFORCE_BOARD="owner/crew",
     )
     r = subprocess.run(
         [str(ROOT / "bin/idp-agent-workforce-drill")],

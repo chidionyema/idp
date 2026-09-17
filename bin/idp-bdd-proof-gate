@@ -80,15 +80,50 @@ def looks_like_a_pass(block: str) -> bool:
 
 
 def live_pr() -> dict:
-    """The most recent pull request on THIS repository, as gh reports it.
+    """The pull request under test (the CI event's PR), as gh reports it.
 
-    This is what makes the rule a live grade: it is pointed at a real pull request rather
-    than at a fixture pair. `gh` may be absent or unauthenticated in CI; that is BLIND, and
-    BLIND is not a pass -- it is named and the rule is not graded.
+    The previous shape `gh pr list --state all --limit 1` returned the newest PR ANY
+    session opened, not the PR being graded -- so a run for branch A refused because branch
+    B's freshly-opened PR carried no BDD-PROOF block. That false-red is what the founder's
+    comment at bin/idp-ci:73-84 was working around with a load-bearing `|| true`. Fix that
+    class by reading the PR number from the GitHub Actions event payload when it is set
+    (pull_request or merge_group event), and fall back to newest only when neither is
+    present (local invocation).
     """
+    import os
     import subprocess
 
     root = Path(__file__).resolve().parents[1]
+
+    # GHA sets GITHUB_EVENT_PATH to a JSON file describing the triggering event. For
+    # pull_request events its .pull_request.number is the PR under test; for merge_group
+    # its .merge_group.head_ref parses to `refs/heads/gh-readonly-queue/<base>/pr-<n>-...`.
+    pr_number = None
+    ev_path = os.environ.get("GITHUB_EVENT_PATH")
+    if ev_path and Path(ev_path).is_file():
+        try:
+            ev = json.loads(Path(ev_path).read_text())
+            pr_number = (ev.get("pull_request") or {}).get("number")
+            if not pr_number:
+                head = ((ev.get("merge_group") or {}).get("head_ref") or "")
+                # refs/heads/gh-readonly-queue/main/pr-3702-abc123...
+                import re
+                m = re.search(r"/pr-(\d+)-", head)
+                if m:
+                    pr_number = int(m.group(1))
+        except Exception:  # noqa: S110 - malformed event JSON falls through to gh list
+            pass
+
+    if pr_number:
+        out = subprocess.run(
+            ["gh", "pr", "view", str(pr_number),
+             "--json", "number,title,body,headRefOid"],
+            cwd=root, capture_output=True, text=True, timeout=120,
+        )
+        if out.returncode != 0:
+            raise RuntimeError(f"gh could not view PR #{pr_number}: {out.stderr.strip()[:200]}")
+        return json.loads(out.stdout)
+
     out = subprocess.run(
         ["gh", "pr", "list", "--state", "all", "--limit", "1",
          "--json", "number,title,body,headRefOid"],
@@ -102,7 +137,29 @@ def live_pr() -> dict:
     return rows[0]
 
 
+def _self_test() -> int:
+    """Exercise the block extractor + counts predicate on real bytes.
+
+    A gate that has never executed is not a gate (script-compiles rule); this proves the
+    hot path -- extract_block, head_from_block, looks_like_a_pass -- on both the good and
+    the bad shape without hitting the network. Live grading is exercised only when
+    --live is passed with a real GHA event.
+    """
+    good = "BDD-PROOF\nhead: abc1234\n142 passed in 4.51s\nEND-BDD-PROOF"
+    bad_prose = "BDD-PROOF\nhead: abc1234\ni ran the tests and they passed\nEND-BDD-PROOF"
+    bad_none = "no proof block at all here"
+    assert extract_block(good) is not None, "extractor missed a real block"
+    assert extract_block(bad_none) is None, "extractor invented a block"
+    assert head_from_block(extract_block(good)) == "abc1234", "head parser wrong"
+    assert looks_like_a_pass(extract_block(good)) is True, "counts pattern refused a real pass"
+    assert looks_like_a_pass(extract_block(bad_prose)) is False, "prose accepted as pass"
+    print("ok bdd-proof-gate --self-test: extractor + counts predicate both ways")
+    return 0
+
+
 def main() -> int:
+    if "--self-test" in sys.argv or "-h" in sys.argv or "--help" in sys.argv:
+        return _self_test() if "--self-test" in sys.argv else (print(__doc__ or "bdd-proof-gate") or 0)
     if "--live" in sys.argv:
         try:
             pr = live_pr()
