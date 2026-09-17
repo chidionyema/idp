@@ -104,6 +104,7 @@ spec:
           image: ghcr.io/chidionyema/idp-engine
           command: [python3, platform/idp_agent/engine.py]
           env:
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
             - { name: REDIS_URL, value: "redis://idp-agent-redis:6379" }
             - { name: GH_TOKEN_FILE, value: /etc/idp-engine-secrets/GH_TOKEN }
             - { name: IDP_SKIP_LOCAL_VACUUM, value: "1" }

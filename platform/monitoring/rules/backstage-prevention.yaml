@@ -1,0 +1,113 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: backstage-prevention-system
+  namespace: monitoring
+spec:
+  groups:
+    - name: backstage.prevention
+      interval: 30s
+      rules:
+        # Layer 1: Catalog validation errors (pre-merge gate)
+        - alert: CatalogValidationErrorsDetected
+          expr: |
+            increase(backstage_catalog_validation_errors_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+            component: backstage
+            layer: prevention-1
+          annotations:
+            summary: "Catalog validation errors detected"
+            description: "{{ $value }} catalog validation error(s) in the last 5 minutes. Check bin/idp-catalog-validator output."
+            runbook_url: "https://github.com/chidionyema/idp/blob/main/docs/runbooks/catalog-validation-incident.md"
+
+        # Layer 2: API response schema violations (runtime validation)
+        - alert: APISchemaViolationDetected
+          expr: |
+            increase(backstage_schema_violations_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+            component: backstage
+            layer: prevention-2
+          annotations:
+            summary: "API response schema violation detected"
+            description: "{{ $value }} schema violation(s) detected. Invalid data was caught before reaching clients. Incident: {{ $labels.telemetry_id }}"
+            runbook_url: "https://github.com/chidionyema/idp/blob/main/docs/runbooks/api-schema-violation-incident.md"
+
+        # Layer 3: Frontend component crashes
+        - alert: BackstageComponentCrashes
+          expr: |
+            increase(backstage_component_crash_total[5m]) > 5
+          for: 2m
+          labels:
+            severity: high
+            component: backstage
+            layer: prevention-3
+          annotations:
+            summary: "High frontend component crash rate"
+            description: "{{ $value }} component crashes in the last 5 minutes. Component: {{ $labels.component }}"
+            runbook_url: "https://github.com/chidionyema/idp/blob/main/docs/runbooks/frontend-crash-incident.md"
+
+        # Layer 4: Pod restart spike (indicates instability)
+        - alert: BackstagePodRestartSpike
+          expr: |
+            increase(kube_pod_container_status_restarts_total{pod=~"catalogue-.*"}[1h]) > 5
+          for: 5m
+          labels:
+            severity: high
+            component: backstage
+            layer: prevention-4
+          annotations:
+            summary: "Backstage pod restart spike detected"
+            description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last hour. Check for memory leaks or crash loops."
+            runbook_url: "https://github.com/chidionyema/idp/blob/main/docs/runbooks/pod-restart-incident.md"
+
+        # Layer 4: Memory pressure
+        - alert: BackstageMemoryPressure
+          expr: |
+            container_memory_usage_bytes{pod=~"catalogue-.*"} / container_spec_memory_limit_bytes > 0.85
+          for: 5m
+          labels:
+            severity: high
+            component: backstage
+            layer: prevention-4
+          annotations:
+            summary: "Backstage pod memory pressure (85%+)"
+            description: "Pod {{ $labels.pod }} memory usage is {{ $value | humanizePercentage }} of limit."
+            runbook_url: "https://github.com/chidionyema/idp/blob/main/docs/runbooks/memory-pressure-incident.md"
+
+        # Layer 5: Service availability drop
+        - alert: BackstageServiceDegraded
+          expr: |
+            (1 - (count(kube_pod_status_ready{pod=~"catalogue-.*",condition="true"}) / count(kube_pod_status_ready{pod=~"catalogue-.*"}))) > 0.33
+          for: 2m
+          labels:
+            severity: critical
+            component: backstage
+            layer: prevention-5
+          annotations:
+            summary: "Backstage service degraded (less than 2/3 pods ready)"
+            description: "Only {{ $value | humanizePercentage }} of Backstage pods are ready. Current ready count below 2/3 threshold."
+            runbook_url: "https://github.com/chidionyema/idp/blob/main/docs/runbooks/service-degradation-incident.md"
+
+        # Healing dashboard metrics
+        - record: backstage:pod:ready:ratio
+          expr: |
+            count(kube_pod_status_ready{pod=~"catalogue-.*",condition="true"}) / count(kube_pod_status_ready{pod=~"catalogue-.*"})
+
+        - record: backstage:errors:per_minute
+          expr: |
+            (
+              increase(backstage_catalog_validation_errors_total[1m]) +
+              increase(backstage_schema_violations_total[1m]) +
+              increase(backstage_component_crash_total[1m])
+            )
+
+        - record: backstage:uptime:percentage
+          expr: |
+            (1 - (
+              (increase(kube_pod_container_status_restarts_total{pod=~"catalogue-.*"}[1h]) / 60) /
+              count(kube_pod{pod=~"catalogue-.*"})
+            )) * 100
