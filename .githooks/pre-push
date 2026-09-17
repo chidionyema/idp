@@ -172,6 +172,15 @@ try:
     if not files:
         print("ok    verifier  no Python files in diff")
         sys.exit(0)
+    # For modified Python files, the diff only contains changed lines — partial
+    # content fails py_compile. Replace with full file content when the file exists
+    # in the working tree so structural checking is meaningful.
+    idp_path = pathlib.Path(idp)
+    for pf in files:
+        if pf.path.endswith(".py"):
+            full = idp_path / pf.path
+            if full.exists():
+                pf.lines = list(full.read_text().splitlines(keepends=True))
     ledger_id = str(uuid.uuid4())
     ledger_dir = pathlib.Path(tempfile.mkdtemp()) / ledger_id
     ledger_dir.mkdir(parents=True, exist_ok=True)
