@@ -1,0 +1,225 @@
+# button: Diagnose why external-secrets-webhook is stalling Flux
+# founder: Read-only surgical inspection. Dumps deploy state, pods, events, logs, and probes the
+#   validating webhook svc from inside the cluster so a single dispatch names which layer failed:
+#   the deployment not scheduled, pods CrashLoopBackOff, image pull, webhook svc not resolving, TLS
+#   cert not valid, ClusterSecretStore backend unreachable, or ExternalSecret dry-run rejecting on
+#   a specific field. Nothing is deleted, patched or scaled -- diagnose only.
+#
+# On 2026-09-16 the estate had 53 Flux Kustomizations NotReady with
+# `external-secrets-webhook.external-secrets.svc:443/validate ... context deadline exceeded`. The
+# secret-cap theory was wrong (881/2000 secrets, well under). The webhook itself is the actual
+# stall. This workflow is the surgical instrument that names the layer.
+name: webhook-diagnose
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: "Namespace holding the webhook deployment"
+        default: "external-secrets"
+      deployment:
+        description: "Deployment name for the webhook"
+        default: "external-secrets-webhook"
+      reason:
+        description: "Why (one line, kept in the run record)"
+        required: true
+        default: "53 Flux Kustomizations NotReady; webhook validate deadline exceeded"
+permissions:
+  id-token: write
+  contents: read
+concurrency:
+  group: webhook-diagnose
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      OCI_CLI_AUTH: security_token
+      OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+      OCI_REGION: ${{ vars.OCI_REGION }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
+
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
+
+      - name: kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+
+      - name: Mint kubeconfig
+        env:
+          OCI_CLUSTER_NAME: ${{ vars.OCI_CLUSTER_NAME || 'estate' }}
+        run: |
+          set -euo pipefail
+          cl=$(bin/idp-cloud cluster list)
+          cid=$(printf '%s\n' "$cl" | awk -v n="$OCI_CLUSTER_NAME" '$1==n{print $2; exit}')
+          [ -n "$cid" ] || { echo "no ACTIVE cluster named $OCI_CLUSTER_NAME"; exit 1; }
+          mkdir -p "$HOME/.kube"
+          bin/idp-cloud cluster kubeconfig "$cid" --file "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          echo "KUBECONFIG=$HOME/.kube/config" >> "$GITHUB_ENV"
+
+      - name: 1. Deployment state
+        if: always()
+        env:
+          NS: ${{ inputs.namespace }}
+          DEP: ${{ inputs.deployment }}
+        run: |
+          set +e
+          echo "## 1. Deployment state" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n "$NS" get deploy "$DEP" -o wide 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n "$NS" describe deploy "$DEP" 2>&1 | tail -40 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 2. Pod state
+        if: always()
+        env:
+          NS: ${{ inputs.namespace }}
+          DEP: ${{ inputs.deployment }}
+        run: |
+          set +e
+          echo "## 2. Pod state" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n "$NS" get pods -l app.kubernetes.io/name="$DEP" -o wide 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "--- alt selector by name substring ---" | tee -a "$GITHUB_STEP_SUMMARY"
+          kubectl -n "$NS" get pods -o wide 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          for pod in $(kubectl -n "$NS" get pods -o name 2>/dev/null | grep -i webhook); do
+            echo "--- describe $pod ---" | tee -a "$GITHUB_STEP_SUMMARY"
+            kubectl -n "$NS" describe "$pod" 2>&1 | tail -40 | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 3. Recent events
+        if: always()
+        env:
+          NS: ${{ inputs.namespace }}
+        run: |
+          set +e
+          echo "## 3. Recent events (sorted)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n "$NS" get events --sort-by='.lastTimestamp' 2>&1 | tail -30 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 4. Pod logs (last 200 lines)
+        if: always()
+        env:
+          NS: ${{ inputs.namespace }}
+        run: |
+          set +e
+          echo "## 4. Pod logs" >> "$GITHUB_STEP_SUMMARY"
+          for pod in $(kubectl -n "$NS" get pods -o name 2>/dev/null | grep -i webhook); do
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### $pod" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            kubectl -n "$NS" logs "$pod" --all-containers --tail=200 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: 5. Webhook service + endpoints
+        if: always()
+        env:
+          NS: ${{ inputs.namespace }}
+        run: |
+          set +e
+          echo "## 5. Service and Endpoints" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n "$NS" get svc 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n "$NS" get endpoints 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 6. ValidatingWebhookConfiguration
+        if: always()
+        run: |
+          set +e
+          echo "## 6. ValidatingWebhookConfiguration" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          kubectl get validatingwebhookconfiguration 2>&1 | grep -i "external-secret\|externalsecrets" | tee -a "$GITHUB_STEP_SUMMARY"
+          for cfg in $(kubectl get validatingwebhookconfiguration -o name 2>/dev/null | grep -i "external-secret\|externalsecrets"); do
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "--- $cfg ---" | tee -a "$GITHUB_STEP_SUMMARY"
+            kubectl describe "$cfg" 2>&1 | tail -30 | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 7. In-cluster HTTPS probe to the webhook
+        if: always()
+        env:
+          NS: ${{ inputs.namespace }}
+        run: |
+          set +e
+          echo "## 7. HTTPS probe (in-cluster)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          # Spin an ephemeral debug pod on the cluster node network, curl the webhook svc.
+          # No secrets travel; the response body is the diagnostic.
+          kubectl run webhook-probe-$$ --rm -i --restart=Never --namespace="$NS" \
+            --image=curlimages/curl:8.10.1 --timeout=60s -- \
+            sh -c '
+              echo "== DNS resolve =="
+              getent hosts external-secrets-webhook.'"$NS"'.svc 2>&1 || echo "(no getent; using nslookup)"
+              nslookup external-secrets-webhook.'"$NS"'.svc.cluster.local 2>&1 | head -10
+              echo ""
+              echo "== TCP + TLS probe =="
+              curl -kvs --max-time 10 https://external-secrets-webhook.'"$NS"'.svc:443/validate-external-secrets-io-v1-externalsecret 2>&1 | head -40
+              echo ""
+              echo "== TCP-only (skip TLS) =="
+              curl -kvs --max-time 5 telnet://external-secrets-webhook.'"$NS"'.svc:443 2>&1 | head -10
+            ' 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 8. ExternalSecret dry-run refusal sample
+        if: always()
+        run: |
+          set +e
+          echo "## 8. Live ExternalSecret validation failures" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          # Take one ExternalSecret and try a dry-run apply to force the webhook path.
+          # No mutation: server-side dry-run rejects before persisting.
+          es=$(kubectl get externalsecret -A -o jsonpath='{.items[0].metadata.namespace}/{.items[0].metadata.name}' 2>/dev/null)
+          if [ -n "$es" ]; then
+            ns="${es%%/*}"; name="${es##*/}"
+            echo "sampling: $ns/$name" | tee -a "$GITHUB_STEP_SUMMARY"
+            kubectl -n "$ns" get externalsecret "$name" -o yaml 2>&1 | kubectl apply --dry-run=server -f - 2>&1 | head -30 | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "no ExternalSecret found to sample" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 9. Certificate for the webhook svc
+        if: always()
+        env:
+          NS: ${{ inputs.namespace }}
+        run: |
+          set +e
+          echo "## 9. Certificate state" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n "$NS" get certificate,certificaterequest,secret 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 10. Flux Kustomization roll-up
+        if: always()
+        run: |
+          set +e
+          echo "## 10. Flux Kustomizations not-ready" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          kubectl get kustomization -A 2>&1 | awk 'NR==1 || $3!="True"' | head -60 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
