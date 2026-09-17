@@ -446,7 +446,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/migration-not-idempotent
     must_pass: bin/scheduler-migrate
-  live_elsewhere: bin/idp-ci:411 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
+  live_elsewhere: bin/idp-ci:420 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
   cases:
   - expect: refuse
     args:
