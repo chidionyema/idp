@@ -65,17 +65,13 @@ Why: Raw command output can exceed 50 lines and bloat the context window. `bin/i
 
 Usage: `bin/idp-exec cat large_file.log` instead of `cat large_file.log`
 
-## Container runtime: vendor-neutral, OCI-compliant only (2026-09-17)
+## Workstation bootstrap: bin/idp-workstation-bootstrap on any fresh machine (2026-09-17)
 
-**Mandate: the estate does not depend on any specific local container runtime by name. Production is an OCI-compliant image built by `bin/build-image`, published to GHCR, reconciled by Flux to OKE. Any OCI-compliant local runtime is acceptable for laptop iteration (containerd, Docker CE, Podman, OrbStack, Rancher Desktop, Lima). Do not scaffold code, workflows, or docs that require one runtime by name.**
+**Mandate: On any fresh workstation (Mac, Linux, CI runner, dev container), run `bin/idp-workstation-bootstrap` once to reach dev-ready. It is idempotent; re-runs keep whatever already works.**
 
-Why (founder 2026-09-17): "we must be able to run vendor independent". A prior draft of this section mandated OrbStack only; OrbStack is itself a proprietary vendor tool with an OS-version floor (macOS Sonoma+), and mandating it re-created the vendor-lock the estate is trying to escape.
+Why (founder 2026-09-17): "our system must be able to bootstrap itself in any env". The prior bootstrap chain (`bin/idp-bootstrap-estate`) assumed the tool set was already installed and did not wire local `gh`/`kubectl` conveniences, so a fresh macbook on 2026-09-17 had age identity but no OCI config, no kubeconfig, and unauthed `gh` — which blocked Lane E (PR #3599) on a laptop-only credential gap. This script closes Level 0 (portable tool install per OS family) and Level 3 (local `gh auth` + `~/.kube/config`) around the existing Level 2 estate bootstrap.
 
-How to apply:
-- Scripts and workflows that need a container runtime call `docker` (the OCI client name every runtime provides) via a PATH lookup, and BLIND out (LAW 38) if none is found — never install a specific runtime as a side effect.
-- Recommendations by OS are guidance, not policy: OrbStack or Docker CE on macOS, Podman or Docker CE on Linux, containerd in cluster/CI. A machine with none is a valid state; cluster ops via Flux + GH Actions do not need a local runtime.
-- `bin/build-image` is the only sanctioned image build path (R24: multi-arch amd64+arm64, refuses single-arch pushes). It uses `docker buildx` from any OCI runtime on PATH.
-- Any future "install runtime X" script belongs in personal dotfiles, not the estate — the estate has no runtime-install responsibility.
+The one hand a person still gives is the age identity restore (iCloud Keychain / paper / hardware key); this script refuses to proceed if `SOPS_AGE_KEY_FILE` is not readable. Vendor-neutral throughout: no local container runtime is installed by this script (see 2026-09-17 container-runtime mandate above).
 
 ## The estate twin: ask the graph, not the cluster (2026-09-12)
 

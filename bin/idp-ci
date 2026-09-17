@@ -669,6 +669,24 @@ if [ "$_hp" != ".githooks" ]; then
   echo ""
 fi
 
+# Founder 2026-09-17 ("our system must be able to bootstrap itself in any env"): a fresh
+# workstation that has not run bin/idp-workstation-bootstrap will BLIND every level-3 gate
+# (gh auth, kubeconfig) and re-create the concrete gap that stalled lane E (PR #3599) on
+# 2026-09-17. Same LAW-38 shape as the hooks banner above: never a refusal, always a loud
+# banner naming the fix. Probe = the level-0 tool set that estate-seed's own preflight
+# depends on; a missing one means the bootstrap has not run to completion on this clone.
+_wsmissing=""
+for _t in age sops oci gh kubectl jq openssl; do
+  command -v "$_t" >/dev/null 2>&1 || _wsmissing="$_wsmissing $_t"
+done
+_wsmissing="${_wsmissing# }"
+if [ -n "$_wsmissing" ]; then
+  echo ""
+  echo "  WARN  workstn workstation-bootstrap incomplete -- missing: $_wsmissing"
+  echo "                run: bin/idp-workstation-bootstrap (idempotent) to close the gap"
+  echo ""
+fi
+
 timing_summary
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"
