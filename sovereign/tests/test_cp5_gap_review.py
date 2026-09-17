@@ -210,7 +210,20 @@ REQUIREMENTS_FILES = (
     "bin/rca_worker/requirements.txt",
 )
 
-FORBIDDEN_FRAMEWORKS = ("crewai", "langgraph")
+FORBIDDEN_FRAMEWORKS = frozenset(("crewai", "langgraph"))
+
+
+def _declared_packages(path: Path) -> frozenset[str]:
+    """Parse a requirements.txt and return the set of declared package names."""
+    pkgs: set[str] = set()
+    for line in path.read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line or line.startswith("-"):
+            continue
+        m = re.match(r"^([A-Za-z0-9_.-]+)", line)
+        if m:
+            pkgs.add(m.group(1).lower())
+    return frozenset(pkgs)
 
 
 def test_orch_01_dependency_manifests_have_no_second_orchestration_framework() -> None:
@@ -220,11 +233,11 @@ def test_orch_01_dependency_manifests_have_no_second_orchestration_framework() -
         if not path.exists():
             continue
         checked += 1
-        text = path.read_text().lower()
-        for forbidden in FORBIDDEN_FRAMEWORKS:
-            assert forbidden not in text, (
-                f"{rel} names {forbidden}; ORCH-01 requires an explicit REQ first"
-            )
+        declared = _declared_packages(path)
+        intersection = declared & FORBIDDEN_FRAMEWORKS
+        assert intersection == frozenset(), (
+            f"{rel} declares {intersection}; ORCH-01 requires an explicit REQ first"
+        )
     if checked == 0:
         raise AssertionError(
             "none of the known requirements files exist; re-check ORCH-01's manifest list"
