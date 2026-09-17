@@ -19,6 +19,8 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import glob as globmod
+import hashlib
+import json
 import os
 import re
 import subprocess
@@ -154,6 +156,39 @@ def _why(rule: dict) -> None:
     why = " -- ".join(x for x in (rule.get("law"), rule.get("origin")) if x)
     if why:
         print(f"      why: {why}")
+
+
+_AEVUM = os.path.join(ROOT, ".aevum", "local.jsonl")
+_GENESIS = "0" * 64
+
+
+def _aevum_gate_receipt(gate_id: str, result: str, plane: str) -> None:
+    try:
+        path = _AEVUM
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        seq, prior = 0, _GENESIS
+        if os.path.exists(path):
+            lines = [l for l in open(path).read().splitlines() if l.strip()]
+            if lines:
+                last = json.loads(lines[-1])
+                seq = last.get("seq", len(lines) - 1) + 1
+                prior = hashlib.sha256(lines[-1].encode()).hexdigest()
+        payload = {"gate_id": gate_id, "result": result, "plane": plane, "event": "gate.run"}
+        payload_hash = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+        record = {
+            "seq": seq,
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "event": "gate.run",
+            "gate_id": gate_id,
+            "result": result,
+            "plane": plane,
+            "payload_hash": payload_hash,
+            "prior_hash": prior,
+        }
+        with open(path, "a") as fh:
+            fh.write(json.dumps(record, separators=(",", ":")) + "\n")
+    except Exception:  # noqa: BLE001
+        pass  # fails open — LAW 38
 
 
 def run_rule(rule: dict) -> int:
@@ -385,7 +420,9 @@ def cmd_run(args) -> int:
             continue
         if args.rest and rule.get("fast"):
             continue
-        fail |= run_rule(rule)
+        rc = run_rule(rule)
+        _aevum_gate_receipt(rule["id"], "pass" if rc == 0 else "fail", args.plane)
+        fail |= rc
     return fail
 
 

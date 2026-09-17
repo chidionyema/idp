@@ -174,7 +174,7 @@ jobs:
           kubectl get nodes -o wide 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "-- node conditions --" | tee -a "$GITHUB_STEP_SUMMARY"
-          kubectl get nodes -o "custom-columns=NAME:.metadata.name,READY:.status.conditions[?(@.type=='Ready')].status,MEM:.status.conditions[?(@.type=='MemoryPressure')].status,DISK:.status.conditions[?(@.type=='DiskPressure')].status,PID:.status.conditions[?(@.type=='PIDPressure')].status,NET:.status.conditions[?(@.type=='NetworkUnavailable')].status" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          kubectl get nodes -o json 2>&1 | python3 -c 'import json,sys; d=json.load(sys.stdin); h="{:<20} {:<8} {:<8} {:<8} {:<8} {:<8}"; ks=["Ready","MemoryPressure","DiskPressure","PIDPressure","NetworkUnavailable"]; print(h.format("NAME","READY","MEM","DISK","PID","NET")); [print(h.format(n["metadata"]["name"],*[{c["type"]:c["status"] for c in n["status"].get("conditions",[])}.get(k,"??") for k in ks])) for n in d.get("items",[])]' 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "-- kube-system daemonsets --" | tee -a "$GITHUB_STEP_SUMMARY"
           kubectl -n kube-system get ds -o wide 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
