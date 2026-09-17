@@ -54,5 +54,22 @@ def grade(path: Path) -> int:
 
 
 if __name__ == "__main__":
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT
+    args = sys.argv[1:]
+    if args and args[0] in ("--help", "-h"):
+        print(__doc__.strip())
+        sys.exit(0)
+    if args and args[0] == "--self-test":
+        import tempfile, json as _json
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+            _path = Path(f.name)
+            payload = {"tree": "abc", "author": "test", "staged": [], "event": "test"}
+            ph = hashlib.sha256(_json.dumps(payload, sort_keys=True).encode()).hexdigest()
+            rec = {"seq": 0, "ts": "2026-01-01T00:00:00Z", "event": "test",
+                   "tree": "abc", "author": "test", "staged": [],
+                   "payload_hash": ph, "prior_hash": GENESIS}
+            f.write(_json.dumps(rec) + "\n")
+        rc = grade(_path)
+        _path.unlink(missing_ok=True)
+        sys.exit(rc)
+    path = Path(args[0]) if args else DEFAULT
     sys.exit(grade(path))
