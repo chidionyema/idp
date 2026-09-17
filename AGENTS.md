@@ -42,16 +42,34 @@ every entity reference in it must resolve to an entity something defines
 Adding a rule: add a row to `rules.yaml`, add both fixtures, run `bin/idp-rules render-agents-md`
 and `bin/idp-ci`. No new rung, no new gate script.
 
-## Definition of Done — a PR is the beginning, not the end (2026-09-17)
+## Andon cord: main must be green; never more than 3 red PRs (2026-09-17)
 
-**Mandate: Never announce a pull request to the founder as an achievement. A merged PR is the start of the work.**
+**Estate-wide. Applies to every agent, every tool, every workflow.**
 
-A task is only done when all three are true:
-1. It executes on live traffic — a real cron, webhook, or event trigger in production, not a CI fixture
-2. Its output reaches a surface the founder reads: Telegram, crew#102, or mumchimp.com
-3. If it breaks, something reports it within one hour without the founder asking
+Toyota's Stop-the-Line principle, applied to this repository:
 
-A PR that writes to GITHUB_STEP_SUMMARY, a JSONL ledger file, a Backstage TechDocs page, or an OrbStack log is not done. It is ghost code. The next step after every merge is always: wire it into the live execution path. If wiring is blocked, say so explicitly and name the blocker — do not move on to the next build task.
+1. **main must never fail CI.** A broken main hands its failures to every branch
+   drawn from it. If main is red, that is the only valid task until it is green.
+   No new feature work. No new PRs. Fix main.
+
+2. **Never more than 3 failing PRs open at once.** At the cap the pre-push hook
+   refuses any new branch push. Agents must fix a red PR before opening another.
+
+Both rules are machine-enforced at push time by `bin/idp-main-green-gate` and
+`bin/idp-wip-gate`, wired into `.githooks/pre-push` (new-branch pushes only).
+BLIND (no network / no `gh`) does not refuse the push — LAW 38: a fence a correct
+machine cannot satisfy is an outage.
+
+**Emergency overrides (typed deliberately, never scripted):**
+```
+IDP_MAIN_GREEN_GATE=0 git push   # you are the fix for main
+IDP_WIP_GATE=0        git push   # genuine emergency past the cap
+```
+
+**The reason these rules exist:** Five agent sessions, one after another, each
+opened new PRs while existing ones were red and while main itself was failing.
+The pile-up made it impossible to tell whether any new code was broken or was
+just inheriting the baseline. This is the structural fix.
 
 ## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
 
