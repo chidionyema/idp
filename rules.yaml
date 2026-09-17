@@ -2107,6 +2107,46 @@ rules:
     note: the workflows and portal templates actually committed
   ok: every dispatchable workflow has a founder-facing button; the gate is proved both ways
   fail: a workflow the founder can dispatch has no button, or the gate is not discriminating
+- id: main-green-gate
+  fast: true
+  label: main-green-gate
+  statement: 'A new branch is never pushed when main CI is red: every branch drawn from a broken main inherits its failures, and agents that continue opening PRs compound the pile-up rather than fixing the root cause. The gate is BLIND (exit 2, not exit 1) when the GitHub API is unreachable -- a fence a correct machine cannot satisfy is an outage (LAW 38).'
+  law: founder 2026-09-17
+  origin: 'Five agent sessions each opened new PRs while main was failing and while existing PRs were red. The pile-up made it impossible to tell whether new code was broken or just inheriting baseline failures. The fix is the Andon cord: pull before branching, not after the PR is open.'
+  planes:
+  - session
+  run:
+  - python3
+  - bin/idp-main-green-gate
+  cluster:
+    policy: null
+    why: the subject is GitHub CI state, which no admission controller sees
+  fixtures:
+    must_fail: null
+    must_pass: null
+  live_elsewhere: '.githooks/pre-push -- on every new-branch push (remote sha = 000...) this gate fires; BLIND does not refuse (LAW 38); IDP_MAIN_GREEN_GATE=0 skips for the agent that IS fixing main'
+  ok: main is green -- new branch allowed
+  fail: main is RED -- fix main before opening a new branch
+- id: wip-gate
+  fast: true
+  label: wip-gate
+  statement: 'No new branch is pushed when 3 or more PRs are already failing CI (the WIP cap). Agents that open new PRs while existing ones are red compound the pile-up. At the cap the only valid task is to fix a red PR. BLIND (no GitHub API) does not refuse -- LAW 38.'
+  law: founder 2026-09-17
+  origin: 'Same incident class as main-green-gate: the WIP cap is the structural fix. Toyota Stop-the-Line applied to the PR queue. Three is the hard ceiling; below it the agent has room to work in parallel without losing track of what is actually broken.'
+  planes:
+  - session
+  run:
+  - python3
+  - bin/idp-wip-gate
+  cluster:
+    policy: null
+    why: the subject is the open PR list on GitHub, which no admission controller sees
+  fixtures:
+    must_fail: null
+    must_pass: null
+  live_elsewhere: '.githooks/pre-push -- fires on every new-branch push alongside main-green-gate; IDP_WIP_GATE=0 skips for genuine emergencies'
+  ok: fewer than 3 red PRs open -- new branch allowed
+  fail: 3 or more PRs are failing CI -- fix a red PR before opening a new one
 - id: stray-checkout
   label: stray
   statement: 'No untracked, unignored checkout of this repository is nested under its own root: a gate that walks the tree reads the nested copy''s own tests/fixtures/*/bad.yaml or Dockerfile and reports it as a defect in the branch under test'
