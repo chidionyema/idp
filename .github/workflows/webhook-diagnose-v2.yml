@@ -1,0 +1,223 @@
+# button: Three-source diagnostic for the external-secrets stall
+# founder: Founder 2026-09-17: "I'm sure we solved that problem for good, let's get evidence from 3
+#   independent sources." A prior single-log-line diagnosis pointed at cross-node routing (the
+#   2026-09-08 CNI-conflict incident's fingerprint). That claim was theater from one grep. This
+#   workflow deliberately gathers three independent signals; the founder reads which layer three
+#   sources agree on, or he reads that they disagree and the earlier claim is wrong.
+#
+# Convergence rule (printed in the run summary):
+#   A -- Live cross-node TCP matrix (pod-to-pod handshake, node x node)
+#        Kyverno-compliant probe: runAsNonRoot:true, non-privileged port
+#   B -- CNI + node control-plane state (nodes, kube-system, node conditions, CNI daemonsets)
+#   C -- Kubernetes events + resource pressure (events, top nodes, top pods)
+#
+# If A shows all pairs passing, cross-node routing is NOT the problem.
+# If B shows all nodes and CNI healthy, kill the CNI-conflict hypothesis.
+# If C shows OOM or resource pressure, that is the actual answer.
+# Root cause claim requires all three to converge on the same layer.
+name: webhook-diagnose-v2
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: "Namespace of the webhook under test"
+        default: "external-secrets"
+      service:
+        description: "Service name to hit"
+        default: "external-secrets-webhook"
+      port:
+        description: "Service port"
+        default: "443"
+      reason:
+        description: "Why (one line, kept in the run record)"
+        required: true
+        default: "3-source convergence check on the estate stall"
+permissions:
+  id-token: write
+  contents: read
+concurrency:
+  group: webhook-diagnose-v2
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OCI_CLI_AUTH: security_token
+      OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+      OCI_REGION: ${{ vars.OCI_REGION }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
+
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
+
+      - name: kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+
+      - name: Mint kubeconfig
+        env:
+          OCI_CLUSTER_NAME: ${{ vars.OCI_CLUSTER_NAME || 'estate' }}
+        run: |
+          set -euo pipefail
+          cl=$(bin/idp-cloud cluster list)
+          cid=$(printf '%s\n' "$cl" | awk -v n="$OCI_CLUSTER_NAME" '$1==n{print $2; exit}')
+          [ -n "$cid" ] || { echo "no ACTIVE cluster named $OCI_CLUSTER_NAME"; exit 1; }
+          mkdir -p "$HOME/.kube"
+          bin/idp-cloud cluster kubeconfig "$cid" --file "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          echo "KUBECONFIG=$HOME/.kube/config" >> "$GITHUB_ENV"
+
+      - name: SOURCE A -- Live cross-node TCP matrix
+        if: always()
+        env:
+          NS: ${{ inputs.namespace }}
+          SVC: ${{ inputs.service }}
+          PORT: ${{ inputs.port }}
+        run: |
+          set +e
+          echo "## SOURCE A: Live cross-node TCP matrix" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          nodes=$(kubectl get nodes -o name | sed 's|node/||' | tr '\n' ' ')
+          echo "nodes: $nodes" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          for node in $nodes; do
+            jobname="probe-$(date +%s)-$(echo $node | tr '.' '-')"
+            cat <<YAML | kubectl apply -f - >/dev/null 2>&1
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: ${jobname}
+            namespace: ${NS}
+            labels:
+              purpose: webhook-diagnose-v2
+          spec:
+            ttlSecondsAfterFinished: 60
+            backoffLimit: 0
+            template:
+              spec:
+                restartPolicy: Never
+                nodeSelector:
+                  kubernetes.io/hostname: ${node}
+                automountServiceAccountToken: false
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 65532
+                  runAsGroup: 65532
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: probe
+                    image: curlimages/curl:8.10.1
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities: { drop: [ALL] }
+                    command: ["/bin/sh","-c"]
+                    args:
+                      - |
+                        echo "== node=${node} =="
+                        echo "-- DNS --"
+                        nslookup ${SVC}.${NS}.svc.cluster.local 2>&1 | head -6
+                        echo "-- TCP handshake --"
+                        curl -kvs --max-time 5 https://${SVC}.${NS}.svc:${PORT}/validate-external-secrets-io-v1-externalsecret 2>&1 | head -30
+                        echo "-- TCP-only --"
+                        curl -kvs --max-time 3 telnet://${SVC}.${NS}.svc:${PORT} 2>&1 | head -8
+                    resources:
+                      requests: { cpu: 10m, memory: 32Mi }
+                      limits:   { cpu: 100m, memory: 64Mi }
+          YAML
+            for i in $(seq 1 12); do
+              phase=$(kubectl -n "$NS" get job "$jobname" -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null)
+              [ "$phase" = "True" ] && break
+              phase=$(kubectl -n "$NS" get job "$jobname" -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null)
+              [ "$phase" = "True" ] && break
+              sleep 5
+            done
+            pod=$(kubectl -n "$NS" get pod -l job-name="$jobname" -o name 2>/dev/null | head -1)
+            echo "---- node ${node} ----" | tee -a "$GITHUB_STEP_SUMMARY"
+            if [ -n "$pod" ]; then
+              kubectl -n "$NS" logs "$pod" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+              kubectl -n "$NS" get "$pod" -o jsonpath='pod={.metadata.name} node={.spec.nodeName} ip={.status.podIP}{"\n"}' 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+            else
+              echo "(no pod materialized for $jobname; Kyverno or scheduler refused it)" | tee -a "$GITHUB_STEP_SUMMARY"
+              kubectl -n "$NS" describe job "$jobname" 2>&1 | tail -20 | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+            kubectl -n "$NS" delete job "$jobname" --wait=false >/dev/null 2>&1
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: SOURCE B -- CNI + node control-plane state
+        if: always()
+        run: |
+          set +e
+          echo "## SOURCE B: CNI + node control-plane state" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "-- nodes --" | tee -a "$GITHUB_STEP_SUMMARY"
+          kubectl get nodes -o wide 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "-- node conditions --" | tee -a "$GITHUB_STEP_SUMMARY"
+          kubectl get nodes -o custom-columns=NAME:.metadata.name,READY:.status.conditions[?(@.type=='Ready')].status,MEM:.status.conditions[?(@.type=='MemoryPressure')].status,DISK:.status.conditions[?(@.type=='DiskPressure')].status,PID:.status.conditions[?(@.type=='PIDPressure')].status,NET:.status.conditions[?(@.type=='NetworkUnavailable')].status 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "-- kube-system daemonsets --" | tee -a "$GITHUB_STEP_SUMMARY"
+          kubectl -n kube-system get ds -o wide 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "-- kube-system not-Running --" | tee -a "$GITHUB_STEP_SUMMARY"
+          kubectl -n kube-system get pods -o wide 2>&1 | awk 'NR==1 || $3!="Running"' | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "-- CNI-family pods --" | tee -a "$GITHUB_STEP_SUMMARY"
+          kubectl get pods -A -o wide 2>&1 | grep -iE "cilium|calico|flannel|kube-proxy" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: SOURCE C -- Events + resource pressure
+        if: always()
+        env:
+          NS: ${{ inputs.namespace }}
+        run: |
+          set +e
+          echo "## SOURCE C: Events + resource pressure" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "-- events (network/pod/tls related) --" | tee -a "$GITHUB_STEP_SUMMARY"
+          kubectl get events -A --sort-by='.lastTimestamp' 2>&1 | grep -iE "Failed|Unhealthy|NetworkNotReady|BackOff|TLS|handshake|timeout|refused|OOM" | tail -30 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "-- top nodes --" | tee -a "$GITHUB_STEP_SUMMARY"
+          kubectl top nodes 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "-- top pods in $NS --" | tee -a "$GITHUB_STEP_SUMMARY"
+          kubectl -n "$NS" top pods 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "-- webhook pod restart count --" | tee -a "$GITHUB_STEP_SUMMARY"
+          kubectl -n "$NS" get pods -l app.kubernetes.io/name=external-secrets-webhook -o jsonpath='{range .items[*]}{.metadata.name}{" restarts="}{.status.containerStatuses[0].restartCount}{" ready="}{.status.containerStatuses[0].ready}{"\n"}{end}' 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: CONVERGENCE VERDICT
+        if: always()
+        run: |
+          {
+            echo "## Convergence verdict"
+            echo ""
+            echo "Read A / B / C above. A root cause claim requires ALL THREE to converge:"
+            echo ""
+            echo "- If A shows every cross-node handshake succeeds -> routing is NOT the problem"
+            echo "- If B shows all nodes + CNI healthy -> CNI-conflict hypothesis is dead"
+            echo "- If C shows resource pressure on the webhook -> that is likely the answer"
+            echo ""
+            echo "If sources disagree, no root cause is claimed."
+          } >> "$GITHUB_STEP_SUMMARY"
