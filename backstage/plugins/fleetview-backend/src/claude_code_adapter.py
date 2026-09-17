@@ -60,8 +60,11 @@ async def run_claude_code_adapter(nats_url: str, prefix: str | None = None) -> N
     # import — these modules are loaded by importlib path, not as a package, so relative
     # imports are unavailable.
     import importlib.util as _ilu
+
     _nats_module_path = Path(__file__).resolve().parent / "nats_adapter.py"
-    _spec = _ilu.spec_from_file_location("fleetview_nats_adapter_cc_impl", _nats_module_path)
+    _spec = _ilu.spec_from_file_location(
+        "fleetview_nats_adapter_cc_impl", _nats_module_path
+    )
     if _spec is None or _spec.loader is None:
         raise RuntimeError(f"cannot load nats_adapter at {_nats_module_path}")
     nats_adapter = _ilu.module_from_spec(_spec)
@@ -101,7 +104,10 @@ async def run_claude_code_adapter(nats_url: str, prefix: str | None = None) -> N
                         tool_name = row.get("tool_name")
                         if tool_name:
                             text_val = row.get("text") or ""
-                            extra["tool"] = {"name": tool_name, "target": text_val[:500]}
+                            extra["tool"] = {
+                                "name": tool_name,
+                                "target": text_val[:500],
+                            }
                         try:
                             await nats_adapter.publish(
                                 nats_url=nats_url,
