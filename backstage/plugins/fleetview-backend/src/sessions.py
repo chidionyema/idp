@@ -60,6 +60,7 @@ import datetime as dt
 import importlib.util
 import json
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +69,70 @@ SESSIONS_ROUTE = "/api/fleetview/sessions"
 STREAM_ROUTE = "/api/fleetview/stream"
 
 DEFAULT_LEDGER_PREFIX = "~/.claude/state/prompt-ledger/"
+
+# Model-agnostic session source: catalog/estate.db sessions + session_events tables.
+_ROOT = Path(__file__).resolve().parents[4]
+_ESTATE_DB_DEFAULT = _ROOT / "catalog" / "estate.db"
+
+
+def _estate_db_path() -> Path:
+    raw = os.environ.get("ESTATE_DB")
+    return Path(raw) if raw else _ESTATE_DB_DEFAULT
+
+
+def _estate_db_sessions(now: dt.datetime | None = None) -> list[dict[str, Any]]:
+    """Read sessions from estate.db's model-agnostic sessions/session_events tables.
+
+    Returns empty list when the DB is missing or tables are empty -- never raises,
+    because empty-DB and unreachable look different to the board.
+    """
+    db_path = _estate_db_path()
+    if not db_path.is_file():
+        return []
+    now = now or dt.datetime.now(dt.timezone.utc)
+    try:
+        con = sqlite3.connect(str(db_path))
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            """
+            SELECT s.id, s.provider, s.model, s.created_at, s.metadata_json,
+                   MAX(e.ts) AS last_event_ts
+            FROM sessions s
+            LEFT JOIN session_events e ON e.session_id = s.id
+            GROUP BY s.id
+            ORDER BY last_event_ts DESC, s.created_at DESC
+            """
+        ).fetchall()
+        con.close()
+    except sqlite3.Error:
+        return []
+
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        meta: dict[str, Any] = {}
+        try:
+            meta = json.loads(r["metadata_json"] or "{}")
+        except (ValueError, TypeError):
+            pass
+        updated_at = r["last_event_ts"] or r["created_at"]
+        out.append(
+            {
+                "session_id": f"{r['provider']}:{r['id']}",
+                "runtime": r["provider"],
+                "task": meta.get("task") or "",
+                "state": _state_from_freshness(updated_at, now),
+                "repo": meta.get("repo"),
+                "step": meta.get("step"),
+                "updated_at": updated_at,
+                "trace_url": meta.get("trace_url"),
+                "spend_usd": meta.get("spend_usd"),
+                "pull_requests": meta.get("pull_requests") or [],
+                "ticket": meta.get("ticket"),
+                "capability_class": meta.get("capability_class"),
+                "capabilities": meta.get("capabilities"),
+            }
+        )
+    return out
 
 _ESTATE_SESSIONS_MODULE = (
     Path(__file__).resolve().parents[4] / "mcp" / "plugins" / "estate_sessions.py"
@@ -544,15 +609,23 @@ def list_all_sessions(
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Every runtime's sessions on one board.
 
-    This is the function the route serves. Each adapter is independent and one that cannot be
-    reached does not take the board down: the page still shows the runtimes that answered. The
-    unreachable adapter is RECORDED in the returned envelope's `unreachable` list rather than
-    silently dropped -- a dead adapter that looks like a quiet fleet is the failure mode this
-    estate names everywhere else, and a bare `except: pass` here would be exactly that.
+    Prefers the model-agnostic estate.db source when it has rows. Falls back to per-vendor
+    adapters only when the DB is empty or absent. Either way, failed adapters are recorded
+    in `unreachable` rather than silently dropped.
     """
     now = dt.datetime.now(dt.timezone.utc)
-    sessions: list[dict[str, Any]] = []
     unreachable: list[str] = []
+
+    try:
+        db_rows = _estate_db_sessions(now=now)
+    except Exception as exc:  # noqa: BLE001
+        db_rows = []
+        unreachable.append(f"estate-db: {exc.__class__.__name__}: {exc}")
+
+    if db_rows:
+        return db_rows, unreachable
+
+    sessions: list[dict[str, Any]] = []
     for name, fn in (
         ("claude-code", lambda: _claude_code_sessions(now=now)),
         ("other-harnesses", lambda: _other_harness_sessions(catalog, now=now)),
@@ -560,6 +633,6 @@ def list_all_sessions(
     ):
         try:
             sessions.extend(fn())
-        except Exception as exc:  # noqa: BLE001 - an unreachable runtime contributes no rows
+        except Exception as exc:  # noqa: BLE001
             unreachable.append(f"{name}: {exc.__class__.__name__}: {exc}")
     return sessions, unreachable
