@@ -79,7 +79,7 @@ spec:
     # github-token.yaml substitutes ${githubAppIDQuoted}/${githubAppInstallationIDQuoted}
     # from the flux-system/github-app Secret; strict envsubst fails the row until the
     # alerts-github row has rendered it.
-    - name: alerts-github
+    - name: github-app-creds
   postBuild:
     substituteFrom:
       # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
@@ -430,7 +430,7 @@ spec:
     - name: secret-store
     - name: event-bus
     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
-    - name: alerts-github
+    - name: github-app-creds
   timeout: 5m
   healthChecks:
     - apiVersion: apps/v1
@@ -466,7 +466,7 @@ spec:
     - name: scheduling
     - name: secret-store
     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
-    - name: alerts-github
+    - name: github-app-creds
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -501,7 +501,7 @@ spec:
     - name: scheduling
     - name: secret-store
     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
-    - name: alerts-github
+    - name: github-app-creds
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -611,7 +611,7 @@ spec:
     - name: edge
     - name: event-bus
     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
-    - name: alerts-github
+    - name: github-app-creds
     # estate-db-migrate is deliberately absent. It guarded a one-time copy of this
     # gateway's Postgres data onto the estate cluster, because this row is what deletes the
     # old server and the data would have been pruned ahead of being moved. That copy has
@@ -666,7 +666,7 @@ spec:
     - name: edge
     - name: secret-store
     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
-    - name: alerts-github
+    - name: github-app-creds
   timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
@@ -721,7 +721,7 @@ spec:
   dependsOn:
     - name: scheduling
     - name: secret-store
-    - name: alerts-github
+    - name: github-app-creds
     - name: llm
   wait: true
   timeout: 10m
@@ -1359,7 +1359,7 @@ spec:
   # crew#488 CP5: alerts-github owns the App Secret and itself waits on secret-store; naming
   # secret-store here twice over made this row read as a vault casualty on a cluster with none.
   dependsOn:
-    - name: alerts-github
+    - name: github-app-creds
   wait: true
   timeout: 10m
   postBuild:

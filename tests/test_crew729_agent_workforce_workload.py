@@ -210,7 +210,7 @@ def test_the_flux_row_waits_on_what_it_reads_and_checks_no_health():
     subs = {(s["kind"], s["name"]) for s in spec["postBuild"]["substituteFrom"]}
     assert subs == {("ConfigMap", "estate-config"), ("Secret", "github-app")}
     deps = {d["name"] for d in spec["dependsOn"]}
-    assert {"scheduling", "secret-store", "alerts-github", "llm"} <= deps
+    assert {"scheduling", "secret-store", "github-app-creds", "llm"} <= deps
     assert spec["wait"] is True
     assert "healthChecks" not in spec, (
         "a CronJob has no readiness; the drill is the proof"
@@ -302,7 +302,9 @@ def _fake_gh(tmp: Path, issues: list[dict], comments: dict[int, list[dict]]) -> 
 def _run(tmp: Path, issues, comments, traces=1, keys=True):
     bindir = _fake_gh(tmp, issues, comments)
     env = dict(
-        os.environ, PATH=f"{bindir}:{os.environ['PATH']}", AGENT_WORKFORCE_BOARD="owner/crew"
+        os.environ,
+        PATH=f"{bindir}:{os.environ['PATH']}",
+        AGENT_WORKFORCE_BOARD="owner/crew",
     )
     env["LANGFUSE_HOST"] = _langfuse(traces)
     if keys:
@@ -376,7 +378,9 @@ def test_a_board_that_cannot_be_read_is_blind(tmp_path):
     gh.write_text("#!/bin/sh\nexit 1\n")
     gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
     env = dict(
-        os.environ, PATH=f"{bindir}:{os.environ['PATH']}", AGENT_WORKFORCE_BOARD="owner/crew"
+        os.environ,
+        PATH=f"{bindir}:{os.environ['PATH']}",
+        AGENT_WORKFORCE_BOARD="owner/crew",
     )
     r = subprocess.run(
         [str(ROOT / "bin/idp-agent-workforce-drill")],

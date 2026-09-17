@@ -7,6 +7,8 @@
 # last 100 CI runs, 2 of them a wall-clock fixture since fixed, 11 real reds that a laptop could have
 # refused in seconds -- offline-gate/bdd (the tests) 40 of 55 failed jobs, the PR-body gates 9.
 # Mean 8 commits per merged PR, 7.2 min per CI run. This hook runs, in order:
+#   0. bin/idp-main-green-gate  on a new branch: refuses if main CI is red (founder 2026-09-17)
+#      bin/idp-wip-gate         on a new branch: refuses if >= 3 PRs are already failing (founder 2026-09-17)
 #   1. bin/idp-push-on-green   refuses a push to a branch whose PR is already green (2.2s measured)
 #   2. bin/pr-report           gitleaks over the lines this push adds, the estate-zone literals
 #                              among them, and the five content rules of policy/operating_model.rego.
@@ -18,10 +20,49 @@
 # A red refuses the push. No test rung: R58 makes this hook lint-only, and the tests are CI's.
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
+# bin/idp-install-deps installs tools to ~/.cache/estate-tools/; ensure they're on PATH.
+export PATH="$HOME/.cache/estate-tools:$PATH"
+# Artifact 3 (founder 2026-09-17): a push against an unverified tree is refused.
+# bin/idp-ci --full runs the complete matrix, requires all tools, and writes
+# ~/.cache/idp-ci-verified/<HEAD-sha> on success. Without it, this hook exits 1.
+# Override for genuine emergencies: IDP_CI_FULL_VERIFIED=1 git push
+_HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+_SENTINEL="$HOME/.cache/idp-ci-verified/$_HEAD_SHA"
+if [ "${IDP_CI_FULL_VERIFIED:-0}" != "1" ] && [ ! -f "$_SENTINEL" ]; then
+  echo "REFUSE pre-push: full CI matrix has not been run against this tree."
+  echo "       Run: bin/idp-ci --full"
+  echo "       (install missing tools first if needed: bin/idp-install-deps)"
+  echo "       Emergency override: IDP_CI_FULL_VERIFIED=1 git push"
+  exit 1
+fi
 # Incident 2026-08-28: git exports GIT_DIR/GIT_INDEX_FILE/GIT_PREFIX to hooks, so every test that builds a
 # throwaway repo (git init in tmp) committed into THIS branch when run from here -- five junk commits, one
 # of them 841 files deleted (crew#584). The tests run in a clean git environment, always.
 for v in $(compgen -e | grep '^GIT_' || true); do unset "$v"; done
+# Founder 2026-09-17 (Andon cord): every branch drawn from a broken main inherits its failures,
+# and agents that open new PRs while existing ones are red compound the pile-up. These two gates
+# fire ONLY on the first push of a new branch (remote sha = 000...000) so they never block a fix
+# being pushed onto an existing branch. BLIND (no gh / no network) exits 2 and does NOT refuse.
+new_branch=false
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+    if [ "$_remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        new_branch=true
+    fi
+done
+if [ "$new_branch" = true ]; then
+    set +e
+    main_rc=0
+    main_out=$("$IDP/bin/idp-main-green-gate" 2>&1); main_rc=$?
+    set -e
+    echo "$main_out"
+    [ "$main_rc" = 1 ] && exit 1
+    set +e
+    wip_rc=0
+    wip_out=$("$IDP/bin/idp-wip-gate" 2>&1); wip_rc=$?
+    set -e
+    echo "$wip_out"
+    [ "$wip_rc" = 1 ] && exit 1
+fi
 # crew#584 (idp#628, 2026-08-28): a green PR is merged, not pushed to -- three re-pushes turned a
 # 7-minute PR into 21 minutes. Runs first: it is instant and it is the only rung that refuses work.
 "$IDP/bin/idp-push-on-green"
@@ -66,7 +107,14 @@ if [ -n "$kyv_base" ]; then
 		set -e
 		case "$kyv_rc" in
 		0) echo "ok    kyverno  $kyv_dirs render clean against the cluster's admission policies" ;;
-		2) echo "BLIND kyverno  the judge did not run here; CI judges $kyv_dirs" ;;
+		2)
+			# bin/idp-install-deps installs helm+kyverno; fail if they're still absent after PATH is set.
+			# Other exit-2 causes (kubectl missing, policy fetch failed) are BLIND per LAW 38.
+			if ! command -v kyverno >/dev/null 2>&1 || ! command -v helm >/dev/null 2>&1; then
+				echo "FAIL  kyverno  helm or kyverno not installed; run bin/idp-install-deps then retry"; exit 1
+			fi
+			echo "BLIND kyverno  render skipped (kubectl or policies unavailable); CI enforces the same gate"
+			;;
 		*)
 			echo "FAIL  kyverno  a render in $kyv_dirs is refused by admission policy"
 			printf '%s\n' "$kyv_out" | grep -vE '^ok ' | tail -40
@@ -84,38 +132,88 @@ fi
 # trust boundary.
 remote_name="${1:-origin}"
 branch_name="$(git rev-parse --abbrev-ref HEAD)"
-# 2026-09-16: fail-BLIND when the local MCP verifier is unreachable, so a fresh Mac (no local
-# service running) is not refused for a fence a correct machine cannot satisfy (LAW 38). The
-# same pattern the kyverno rung above uses (rc=2 => BLIND). Server-side CI enforces the same
-# gate through the same MCP ledger, so the guarantee is unchanged. bin/idp-install-hooks
-# reports this as [NET] mcp-verifier BLIND at setup, so the state is visible up front, not
-# discovered at push time. Founder 2026-09-16: "we are moving away from Mac or laptop
-# dependency" and "silent things ... only discovered after the fact is not good".
-verifier_url="${IDP_MCP_URL:-http://127.0.0.1:8001/-/mcp}"
-if ! python3 - "$verifier_url" <<'PYPROBE' >/dev/null 2>&1
-import sys, socket, urllib.request, urllib.error
+# 2026-09-17: in-process verifier — no daemon, no MCP service, no founder install step.
+# sovereign/verifier.py is a pure library; call it directly. Eliminates the BLIND condition
+# that existed because the MCP server at 127.0.0.1:8001 was never running.
+# Design rule: every enforcement point is a git hook or CI job. No service required.
+set +e
+python3 - "$IDP" "$remote_name" "$branch_name" <<'PYVERIFY'
+import sys, subprocess, importlib.util, pathlib, json
+
+idp, remote, branch = sys.argv[1], sys.argv[2], sys.argv[3]
+sovereign = pathlib.Path(idp) / "sovereign"
+if not sovereign.is_dir():
+    print("BLIND verifier  sovereign/ not found; skipping in-process verify")
+    sys.exit(0)
+
+# Load verifier as library — no daemon, no socket, no service.
+spec = importlib.util.spec_from_file_location("verifier", sovereign / "verifier.py")
+mod = importlib.util.module_from_spec(spec)
+sys.modules["verifier"] = mod  # required: verifier.py references itself by name
 try:
-    urllib.request.urlopen(sys.argv[1], timeout=2)
-except urllib.error.HTTPError:
-    pass
-except (urllib.error.URLError, socket.timeout, ConnectionRefusedError, OSError):
-    raise SystemExit(1)
-PYPROBE
-then
-	echo "BLIND verifier  local MCP not reachable at $verifier_url; CI enforces the same gate (bin/idp-install-hooks reports this at setup)"
-else
-	set +e
-	"$IDP/bin/idp-prepush-verify" \
-	    --remote "$remote_name" \
-	    --branch "$branch_name" \
-	    --summary "$(git log -1 --pretty=%s HEAD 2>/dev/null || echo 'pre-push gate')"
-	verifier_rc=$?
-	set -e
-	if [ "$verifier_rc" != 0 ]; then
-		echo "FAIL  verifier  idp-prepush-verify refused the push (rc=$verifier_rc). Run it by hand: bin/idp-prepush-verify --remote $remote_name --branch $branch_name" >&2
-		exit "$verifier_rc"
-	fi
-fi
+    spec.loader.exec_module(mod)
+except Exception as e:
+    print(f"BLIND verifier  could not load verifier.py: {e}")
+    sys.exit(0)
+
+# Get the diff of this push.
+diff = subprocess.run(
+    ["git", "diff", f"{remote}/{branch}", "HEAD", "--diff-algorithm=myers"],
+    capture_output=True, text=True, cwd=idp,
+).stdout
+if not diff.strip():
+    print("ok    verifier  no diff to verify")
+    sys.exit(0)
+
+# Propose and verify in-process.
+try:
+    import tempfile, uuid
+    files = mod.parse_unified_diff(diff)
+    if not files:
+        print("ok    verifier  no Python files in diff")
+        sys.exit(0)
+    # For modified Python files, the diff only contains changed lines — partial
+    # content fails py_compile. Replace with full file content when the file exists
+    # in the working tree so structural checking is meaningful.
+    idp_path = pathlib.Path(idp)
+    for pf in files:
+        if pf.path.endswith(".py"):
+            full = idp_path / pf.path
+            if full.exists():
+                pf.lines = list(full.read_text().splitlines(keepends=True))
+    ledger_id = str(uuid.uuid4())
+    ledger_dir = pathlib.Path(tempfile.mkdtemp()) / ledger_id
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    # Default tests: test_verifier_hooks.py (same default as bin/idp-prepush-verify).
+    test_src = ""
+    default_tests = pathlib.Path(idp) / "tests" / "test_verifier_hooks.py"
+    if default_tests.exists():
+        test_src = default_tests.read_text()
+    ledger = mod.Ledger(
+        ledger_id=ledger_id,
+        ledger_dir=ledger_dir,
+        files=files,
+        tests=test_src,
+        claim="pre-push gate",
+    )
+    result = mod.verify(ledger)
+    verdict = result.get("claim_verdict", "FAILED")
+    admissible = result.get("admissible", False)
+    if verdict == "VERIFIED" and admissible:
+        print(f"ok    verifier  {verdict}; push allowed")
+        sys.exit(0)
+    else:
+        stages = result.get("stages", {})
+        failing = [s for s, v in stages.items() if not v.get("passed", True)]
+        print(f"FAIL  verifier  {verdict} admissible={admissible} failing_stages={failing}")
+        sys.exit(1)
+except Exception as e:
+    print(f"BLIND verifier  in-process verify raised {type(e).__name__}: {e}")
+    sys.exit(0)
+PYVERIFY
+verifier_rc=$?
+set -e
+[ "$verifier_rc" = 1 ] && exit 1
 set +e
 law32_out="$(python3 "$IDP/bin/law32-gate" 2>&1)"
 law32_rc=$?

@@ -19,3 +19,9 @@ pyyaml>=6.0
 
 # crew#648 CP1: tests/test_incident_crew648_* validates platform/estate-state/schema.json with jsonschema
 jsonschema==4.26.0
+
+# sovereign/tests/bdd/test_orchestrator_routing_bdd.py imports langchain_core.messages for
+# ToolMessage/SystemMessage fixtures. Without it the acceptance suite dies with
+# ModuleNotFoundError before pytest can grade any orchestrator-routing scenario.
+langchain-core>=0.2
+

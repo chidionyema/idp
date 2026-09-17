@@ -17,15 +17,29 @@ spec:
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [scheduling], names: [balloon*] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [cross-node-drill], names: [cross-node-canary*] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [staging], names: [canary*, canary-gauge*] }
-      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [state], names: [rotation-canary*] }
+      # rotation-canary deploys into backstage namespace (file is in platform/state/ but ns: backstage)
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [backstage], names: [rotation-canary*] }
+      # VENDOR — fully third-party Helm chart namespaces; every workload in these ns is vendor-owned
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [event-bus] }
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [robusta] }
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [estate-db] }
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [chaos-mesh] }
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [temporal] }
       # VENDOR — third-party image, no OTel SDK
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [guacamole], names: [guacamole*, guacd*] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [healthchecks], names: [healthchecks*] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [searxng], names: [searxng*] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [weave-gitops], names: [weave-gitops*] }
-      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [commerce], names: [lago*, redis*] }
-      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [llm, idp-agent, via-negativa], names: [redis*] }
+      # commerce-redis is the StatefulSet name; explicit list covers lago* and any redis* variant
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [commerce], names: [lago*, redis*, commerce-redis] }
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [llm, idp-agent, via-negativa], names: [redis*, litellm-cache*, via-negativa-redis] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [dagster] }
       # VENDOR — third-party image with no OTel SDK; cannot be instrumented
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [notify], names: [apprise*] }
-      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [edge], names: [status-page*] }
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [edge], names: [status-page*, traefik*, external-dns*] }
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [identity], names: [oauth2-proxy*] }
+      # DEMO — sandbox workload, no production traces required
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [demo-sandbox] }
+      # PLATFORM WIP — pending OTel instrumentation (crew#584 follow-up)
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [epistemic-fabric], names: [epistemic-ingest-*] }
+      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [via-negativa], names: [via-negativa-proxy*, via-negativa-rca*] }

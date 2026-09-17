@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Validate .aevum/local.jsonl: non-empty, hash chain intact.
+
+Exit 0 = chain verifies. Exit 1 = tampered, empty, or missing.
+Fail-closed on empty (same rule as bin/idp-evidence-gate for Aevum Postgres chain).
+
+Usage: python3 bin/idp-local-evidence-gate [path/to/local.jsonl]
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+GENESIS = "0" * 64
+DEFAULT = Path(__file__).resolve().parent.parent / ".aevum" / "local.jsonl"
+
+
+def fail(msg: str) -> int:
+    print(f"FAIL  local-evidence {msg}", file=sys.stderr)
+    return 1
+
+
+def grade(path: Path) -> int:
+    if not path.exists():
+        return fail(f"{path} does not exist")
+    lines = [l.strip() for l in path.read_text().splitlines() if l.strip()]
+    if not lines:
+        return fail(f"{path} is empty — no agent actions recorded")
+
+    prior = GENESIS
+    for i, line in enumerate(lines):
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError as exc:
+            return fail(f"record {i} is not valid JSON: {exc}")
+
+        if r.get("seq") != i:
+            return fail(f"record {i} has seq={r.get('seq')} (expected {i})")
+
+        payload = {k: r[k] for k in ("tree", "author", "staged", "event")}
+        want_ph = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+        if r.get("payload_hash") != want_ph:
+            return fail(f"record {i} payload_hash mismatch (tampered?)")
+
+        if r.get("prior_hash") != prior:
+            return fail(f"record {i} prior_hash mismatch (chain broken at {i})")
+
+        prior = hashlib.sha256(line.encode()).hexdigest()
+
+    print(f"ok    local-evidence {path.name}: {len(lines)} records, chain intact")
+    return 0
+
+
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    if args and args[0] in ("--help", "-h"):
+        print(__doc__.strip())
+        sys.exit(0)
+    if args and args[0] == "--self-test":
+        import tempfile, json as _json
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+            _path = Path(f.name)
+            payload = {"tree": "abc", "author": "test", "staged": [], "event": "test"}
+            ph = hashlib.sha256(_json.dumps(payload, sort_keys=True).encode()).hexdigest()
+            rec = {"seq": 0, "ts": "2026-01-01T00:00:00Z", "event": "test",
+                   "tree": "abc", "author": "test", "staged": [],
+                   "payload_hash": ph, "prior_hash": GENESIS}
+            f.write(_json.dumps(rec) + "\n")
+        rc = grade(_path)
+        _path.unlink(missing_ok=True)
+        sys.exit(rc)
+    path = Path(args[0]) if args else DEFAULT
+    sys.exit(grade(path))

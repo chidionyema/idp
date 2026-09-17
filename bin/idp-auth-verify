@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# bin/idp-auth-verify — verify the X-Idp-Auth trailer on a given commit.
+#
+# Reconstructs the exact payload bin/idp-auth signed, verifies against the founder public key
+# at docs/keys/founder.pub (checked into the repo), exits 0 on valid, non-zero otherwise.
+#
+# The payload contract MUST match bin/idp-auth exactly:
+#   line 1: X-Idp-Auth-Timestamp value
+#   line 2: HEAD sha at signing time (from git rev-parse HEAD when signing)
+#   line 3: X-Idp-Auth-Reason value
+#   line 4..: paths from X-Idp-Auth-Paths, one per line
+set -euo pipefail
+
+case "${1:-}" in
+  -h|--help)
+    cat <<'HELP'
+bin/idp-auth-verify -- verify the X-Idp-Auth trailer on a given commit.
+
+Usage:
+  bin/idp-auth-verify [<commit>]        # default HEAD
+  bin/idp-auth-verify --self-test
+
+Reads IDP_FOUNDER_PUBKEY (default docs/keys/founder.pub).
+HELP
+    exit 0
+    ;;
+  --self-test)
+    # Round-trip: generate keypair, sign a real commit body, verify against the pub.
+    tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+    openssl genpkey -algorithm Ed25519 -out "$tmp/key" 2>/dev/null
+    chmod 600 "$tmp/key"
+    openssl pkey -in "$tmp/key" -pubout -out "$tmp/pub" 2>/dev/null
+    # Produce a synthetic commit tree: the payload signs against the CURRENT HEAD's parent sha,
+    # so we mirror that here.
+    parent="$(git rev-parse HEAD 2>/dev/null || echo 0000000)"
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    paths="README.md"
+    payload="$(printf '%s\n%s\nself-test reason\n%s' "$ts" "$parent" "$paths")"
+    printf '%s' "$payload" > "$tmp/payload"
+    openssl pkeyutl -sign -inkey "$tmp/key" -rawin -in "$tmp/payload" -out "$tmp/sig" 2>/dev/null
+    sig="$(base64 -i "$tmp/sig" | tr -d '\n')"
+    if openssl pkeyutl -verify -pubin -inkey "$tmp/pub" -rawin -in "$tmp/payload" -sigfile "$tmp/sig" >/dev/null 2>&1; then
+      echo "ok self-test idp-auth-verify"; exit 0
+    fi
+    echo "FAIL self-test idp-auth-verify: openssl round-trip failed" >&2; exit 1
+    ;;
+esac
+
+commit="${1:-HEAD}"
+PUBKEY="${IDP_FOUNDER_PUBKEY:-docs/keys/founder.pub}"
+[ -f "$PUBKEY" ] || { echo "BLIND: founder public key not present at $PUBKEY" >&2; exit 2; }
+
+msg="$(git log -1 --format=%B "$commit")"
+sig=$(printf '%s\n' "$msg" | awk -F': ' '/^X-Idp-Auth: /{print $2; exit}')
+reason=$(printf '%s\n' "$msg" | awk -F': ' '/^X-Idp-Auth-Reason: /{ $1=""; sub(/^ /,""); print; exit}')
+ts=$(printf '%s\n' "$msg" | awk -F': ' '/^X-Idp-Auth-Timestamp: /{print $2; exit}')
+paths_csv=$(printf '%s\n' "$msg" | awk -F': ' '/^X-Idp-Auth-Paths: /{ $1=""; sub(/^ /,""); print; exit}')
+
+[ -n "$sig" ] || { echo "REFUSE: no X-Idp-Auth trailer on $commit" >&2; exit 1; }
+[ -n "$reason" ] || { echo "REFUSE: no X-Idp-Auth-Reason trailer on $commit" >&2; exit 1; }
+[ -n "$ts" ] || { echo "REFUSE: no X-Idp-Auth-Timestamp trailer on $commit" >&2; exit 1; }
+[ -n "$paths_csv" ] || { echo "REFUSE: no X-Idp-Auth-Paths trailer on $commit" >&2; exit 1; }
+
+# The commit that carries the signature is the same commit whose sha the founder signed; but the
+# sha changes when a trailer is added. So we require that the founder signed the PARENT commit's
+# sha (git rev-parse HEAD when they ran idp-auth is by definition the parent of THIS commit).
+parent_sha=$(git rev-parse "$commit^" 2>/dev/null || echo no-head)
+
+paths_lines=$(printf '%s' "$paths_csv" | tr ',' '\n')
+payload=$(printf '%s\n%s\n%s\n%s' "$ts" "$parent_sha" "$reason" "$paths_lines")
+
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+printf '%s' "$sig" | base64 -d > "$tmp/sig" 2>/dev/null || {
+  echo "REFUSE: X-Idp-Auth trailer is not valid base64" >&2; exit 1
+}
+printf '%s' "$payload" > "$tmp/payload"
+
+if openssl pkeyutl -verify -pubin -inkey "$PUBKEY" -rawin -in "$tmp/payload" -sigfile "$tmp/sig" >/dev/null 2>&1; then
+  echo "ok idp-auth: valid founder signature on $commit (reason: $reason)"
+  exit 0
+fi
+echo "REFUSE: X-Idp-Auth signature does not verify against $PUBKEY for $commit" >&2
+exit 1

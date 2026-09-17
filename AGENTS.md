@@ -42,6 +42,35 @@ every entity reference in it must resolve to an entity something defines
 Adding a rule: add a row to `rules.yaml`, add both fixtures, run `bin/idp-rules render-agents-md`
 and `bin/idp-ci`. No new rung, no new gate script.
 
+## Andon cord: main must be green; never more than 3 red PRs (2026-09-17)
+
+**Estate-wide. Applies to every agent, every tool, every workflow.**
+
+Toyota's Stop-the-Line principle, applied to this repository:
+
+1. **main must never fail CI.** A broken main hands its failures to every branch
+   drawn from it. If main is red, that is the only valid task until it is green.
+   No new feature work. No new PRs. Fix main.
+
+2. **Never more than 3 failing PRs open at once.** At the cap the pre-push hook
+   refuses any new branch push. Agents must fix a red PR before opening another.
+
+Both rules are machine-enforced at push time by `bin/idp-main-green-gate` and
+`bin/idp-wip-gate`, wired into `.githooks/pre-push` (new-branch pushes only).
+BLIND (no network / no `gh`) does not refuse the push — LAW 38: a fence a correct
+machine cannot satisfy is an outage.
+
+**Emergency overrides (typed deliberately, never scripted):**
+```
+IDP_MAIN_GREEN_GATE=0 git push   # you are the fix for main
+IDP_WIP_GATE=0        git push   # genuine emergency past the cap
+```
+
+**The reason these rules exist:** Five agent sessions, one after another, each
+opened new PRs while existing ones were red and while main itself was failing.
+The pile-up made it impossible to tell whether any new code was broken or was
+just inheriting the baseline. This is the structural fix.
+
 ## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
 
 **Mandate: On any fresh checkout, run `bin/idp-install-hooks` before your first commit.**
@@ -64,6 +93,14 @@ Why: Raw command output can exceed 50 lines and bloat the context window. `bin/i
 - Returns the exact exit code of the underlying command
 
 Usage: `bin/idp-exec cat large_file.log` instead of `cat large_file.log`
+
+## Workstation bootstrap: bin/idp-workstation-bootstrap on any fresh machine (2026-09-17)
+
+**Mandate: On any fresh workstation (Mac, Linux, CI runner, dev container), run `bin/idp-workstation-bootstrap` once to reach dev-ready. It is idempotent; re-runs keep whatever already works.**
+
+Why (founder 2026-09-17): "our system must be able to bootstrap itself in any env". The prior bootstrap chain (`bin/idp-bootstrap-estate`) assumed the tool set was already installed and did not wire local `gh`/`kubectl` conveniences, so a fresh macbook on 2026-09-17 had age identity but no OCI config, no kubeconfig, and unauthed `gh` — which blocked Lane E (PR #3599) on a laptop-only credential gap. This script closes Level 0 (portable tool install per OS family) and Level 3 (local `gh auth` + `~/.kube/config`) around the existing Level 2 estate bootstrap.
+
+The one hand a person still gives is the age identity restore (iCloud Keychain / paper / hardware key); this script refuses to proceed if `SOPS_AGE_KEY_FILE` is not readable. Vendor-neutral throughout: no local container runtime is installed by this script (see 2026-09-17 container-runtime mandate above).
 
 ## The estate twin: ask the graph, not the cluster (2026-09-12)
 

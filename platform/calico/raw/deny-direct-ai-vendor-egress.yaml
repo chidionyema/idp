@@ -1,0 +1,91 @@
+# ESTATE-WIDE AI VENDOR EGRESS DENY
+#
+# Problem: every namespace with egress_internet: [443] (21 namespaces as of 2026-09-17:
+# backstage, dagster, monitoring, hermes-agent, agent-workforce, mcp, robusta, otto-gateway,
+# research, observability, edge, identity, cert-manager, external-secrets, tailscale, searxng,
+# temporal, prospector, epistemic-fabric, trivy-system, notify) can dial api.anthropic.com:443,
+# api.openai.com:443 etc. directly, bypassing the llm proxy and all 8 efficiency mechanisms.
+# A new namespace without any fence has zero protection.
+#
+# Fix: one Calico GlobalNetworkPolicy (cluster-scoped, evaluated before any namespace NetworkPolicy)
+# that denies TCP:443 to AI vendor endpoints from every pod in every namespace except the proxy.
+#
+# This is the network-layer guarantee. Code-layer controls (ChatOpenAI base_url, the ceiling,
+# the gateway callbacks) are all bypassed by code that does not use those paths. A packet the
+# kernel drops cannot reach a vendor, regardless of which SDK, framework, or subprocess is used.
+#
+# Architecture (two resources, one file):
+#   GlobalNetworkSet   — declares the AI vendor domains; Calico Felix resolves them to IPs at
+#                        pod start and as DNS TTLs expire. No static CIDR list to maintain.
+#   GlobalNetworkPolicy — deny rule that references the set by label selector. Order: 1 means
+#                         it is evaluated before every namespace-level NetworkPolicy (order: 1000).
+#                         A Deny action terminates; no namespace policy can reinstate the traffic.
+#
+# Exemptions:
+#   llm           — the LiteLLM proxy; its job is calling vendor APIs.
+#   kube-system   — Calico and kube-dns; must not be fenced by a policy they enforce.
+#   flux-system   — the cluster's writer; a quota that refuses Flux locks the cluster's repair path.
+#   kube-public, kube-node-lease — empty by design; no pods run there.
+#
+# Calico version: v3.32.2 (quay.io/calico/node:v3.32.2 in platform/calico/raw/calico-node.yaml).
+# GlobalNetworkSet.spec.allowedEgressDomains: available in Calico OSS since v3.26.
+# GlobalNetworkPolicy destination selector on GlobalNetworkSet labels: available in Calico OSS v3.x.
+# kubernetes.io/metadata.name label on namespaces: set by the apiserver since k8s 1.21.
+apiVersion: projectcalico.org/v3
+kind: GlobalNetworkSet
+metadata:
+  name: ai-vendor-api-endpoints
+  labels:
+    estate.internal/role: ai-vendor-endpoint
+spec:
+  # Calico Felix resolves these FQDNs to IPs and maintains the IPSet as DNS TTLs expire.
+  # Any vendor endpoint added here is blocked estate-wide without touching any namespace fence.
+  allowedEgressDomains:
+  - api.anthropic.com
+  - api.openai.com
+  - api.groq.com
+  - generativelanguage.googleapis.com
+  - api.mistral.ai
+  - api.together.xyz
+  - openrouter.ai
+  - api.openrouter.ai
+  - api.deepseek.com
+  - api.cohere.ai
+  - api.cerebras.ai
+  - api.sambanova.ai
+  - inference.sambanova.net
+  - api.minimax.chat
+---
+apiVersion: projectcalico.org/v3
+kind: GlobalNetworkPolicy
+metadata:
+  name: deny-direct-ai-vendor-egress
+spec:
+  # Order 1: the kernel evaluates this before any namespace-level NetworkPolicy (which Calico
+  # renders at order 1000). A Deny here terminates; allow-internet-egress in any namespace
+  # cannot reinstate the packet.
+  order: 1
+  # kubernetes.io/metadata.name is set on every namespace by the k8s apiserver (k8s 1.21+).
+  # 'not in' excludes the proxy and cluster infrastructure. Every other namespace is covered:
+  # present ones, future ones, and namespaces that have no NetworkPolicy at all.
+  namespaceSelector: >-
+    kubernetes.io/metadata.name not in {
+      'llm',
+      'kube-system',
+      'flux-system',
+      'kube-public',
+      'kube-node-lease'
+    }
+  selector: all()
+  types:
+  - Egress
+  egress:
+  # Deny TCP:443 to any IP in the ai-vendor-api-endpoints GlobalNetworkSet.
+  # Calico matches the label selector against GlobalNetworkSets as well as pods,
+  # and uses the dynamically resolved IPs from allowedEgressDomains as the destination.
+  - action: Deny
+    protocol: TCP
+    destination:
+      selector: 'estate.internal/role == "ai-vendor-endpoint"'
+    ports:
+    - 443

@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""idp-wip-gate -- refuse a new PR when 3 or more PRs are already failing CI.
+
+WIP cap (founder 2026-09-17): AI agents are relentless and lack inherent common
+sense. Without a hard ceiling on in-flight broken work, they happily open new PRs
+while existing ones stay red, compounding the pile-up. The rule is Toyota's Andon
+cord at the PR boundary: finish what you started before you start something new.
+
+The cap is 3 red PRs. At 3 the gate refuses any new branch push. Agents must fix
+at least one red PR to unblock themselves -- which is the whole point.
+
+Exit codes
+----------
+0   fewer than MAX_RED PRs are currently failing CI (or BLIND)
+1   MAX_RED or more PRs are red -- fix a red PR before opening a new one
+2   BLIND -- no gh / no network / cannot determine PR state; push proceeds
+
+Override: IDP_WIP_GATE=0 skips the check (emergency override, typed deliberately).
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+
+if "--help" in sys.argv:
+    print(__doc__)
+    sys.exit(0)
+
+REPO = "chidionyema/idp"
+MAX_RED = 3  # refuse when this many PRs are failing
+
+if os.environ.get("IDP_WIP_GATE", "1") == "0":
+    print("ok    wip-gate: IDP_WIP_GATE=0, skipped")
+    sys.exit(0)
+
+
+def _gh(*args: str) -> tuple[int, str]:
+    r = subprocess.run(
+        ["gh", *args], capture_output=True, text=True, timeout=30
+    )
+    return r.returncode, r.stdout.strip()
+
+
+def _blind(reason: str) -> None:
+    print(f"BLIND wip-gate: {reason}; new branch allowed (LAW 38)")
+    sys.exit(2)
+
+
+rc, _ = _gh("--version")
+if rc != 0:
+    _blind("gh CLI not installed or not authenticated")
+
+# List all open PRs with their check rollup
+rc, out = _gh(
+    "pr", "list",
+    "--repo", REPO,
+    "--state", "open",
+    "--json", "number,headRefName,statusCheckRollup,title",
+    "--limit", "50",
+)
+if rc != 0:
+    _blind(f"cannot list PRs: {out[:120]}")
+
+try:
+    prs = json.loads(out)
+except Exception:
+    _blind("cannot parse PR list")
+
+FAIL_CONCLUSIONS = {"FAILURE", "ACTION_REQUIRED", "CANCELLED", "TIMED_OUT", "ERROR"}
+
+red_prs: list[dict] = []
+for pr in prs:
+    checks = pr.get("statusCheckRollup") or []
+    if not checks:
+        continue
+    # All completed and at least one failed
+    all_done = all(
+        c.get("status", "").upper() in ("COMPLETED", "")
+        for c in checks
+    )
+    has_red = any(
+        c.get("conclusion", "").upper() in FAIL_CONCLUSIONS
+        for c in checks
+    )
+    if all_done and has_red:
+        red_prs.append(pr)
+
+n = len(red_prs)
+if n < MAX_RED:
+    print(f"ok    wip-gate: {n} red PR(s) open (cap is {MAX_RED}); new branch allowed")
+    sys.exit(0)
+
+lines = "\n".join(
+    f"      #{p['number']} {p['headRefName']}: {p['title'][:60]}"
+    for p in red_prs[:6]
+)
+print(f"""FAIL  wip-gate: {n} red PR(s) open -- at the cap of {MAX_RED}. Fix a red PR before opening a new one.
+
+      Red PRs:
+{lines}
+
+      Fix workflow:
+        gh pr checkout <number>          # switch to the red branch
+        <fix the failure>
+        git push                         # re-run CI
+        gh pr merge --squash --auto      # arm the merge when green
+
+      Once fewer than {MAX_RED} PRs are red, retry your push.
+      Emergency override (typed on purpose): IDP_WIP_GATE=0 git push
+""")
+sys.exit(1)

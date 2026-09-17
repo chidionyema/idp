@@ -6,29 +6,38 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use opentelemetry::global;
-use opentelemetry_otlp::WithExportConfig;
+use opentelemetry::trace::TracerProvider as _;
+use opentelemetry::KeyValue;
+use opentelemetry_otlp::{SpanExporter, WithExportConfig};
 use opentelemetry_sdk::runtime;
+use opentelemetry_sdk::trace::TracerProvider;
+use opentelemetry_sdk::Resource;
 
 mod engine;
 mod server;
 
+// OTel wiring for opentelemetry-otlp 0.27 (Cargo.toml pin). The 0.26 pipeline builders
+// (new_pipeline, new_exporter) were removed upstream in 0.27; the replacement is a typed
+// builder on SpanExporter plus a TracerProvider builder that carries the Resource directly.
+// Config::with_resource is deprecated in 0.27, so the resource is set on the provider builder.
+// Behaviour unchanged: HTTP OTLP exporter, batch export on the tokio runtime,
+// service.name = edge-runtime.
 fn init_otel() -> Option<opentelemetry_sdk::trace::Tracer> {
     let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok()?;
-    opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(
-            opentelemetry_otlp::new_exporter()
-                .http()
-                .with_endpoint(endpoint),
-        )
-        .with_trace_config(
-            opentelemetry_sdk::trace::Config::default()
-                .with_resource(opentelemetry_sdk::Resource::new(vec![
-                    opentelemetry::KeyValue::new("service.name", "edge-runtime"),
-                ])),
-        )
-        .install_batch(runtime::Tokio)
-        .ok()
+    let exporter = SpanExporter::builder()
+        .with_http()
+        .with_endpoint(endpoint)
+        .build()
+        .ok()?;
+    let provider = TracerProvider::builder()
+        .with_batch_exporter(exporter, runtime::Tokio)
+        .with_resource(Resource::new(vec![KeyValue::new(
+            "service.name",
+            "edge-runtime",
+        )]))
+        .build();
+    global::set_tracer_provider(provider.clone());
+    Some(provider.tracer("edge-runtime"))
 }
 
 /// `--health`: is the server on this box answering? Exit 0 if it is, 1 if it is not.

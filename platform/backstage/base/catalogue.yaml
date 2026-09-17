@@ -138,13 +138,3 @@ spec:
             optional: false
         - name: tmp
           emptyDir: {}
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: catalogue
-spec:
-  minAvailable: 2   # Layer 4 Prevention: keep 2 pods up even during node drains
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: catalogue

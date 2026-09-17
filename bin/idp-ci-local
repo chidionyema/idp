@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# bin/idp-ci-local — run bin/idp-ci inside a Linux container that mirrors the CI runner shape.
+#
+# Founder 2026-09-17: local gate and CI gate are different machines running different checks; 0/15
+# PRs green in one day. Move #1 of the four-move CI-parity assault: reproduce the CI runner shape
+# on the laptop so the answer local `bin/idp-ci` gives is byte-identical to what CI answers seven
+# minutes later on a push.
+#
+# CI shape (from `.github/workflows/ci.yml` and `.github/actions/estate-tools/action.yml` at HEAD):
+#   base image                 ubuntu-latest (GitHub-hosted runner)
+#   PATH-added binaries        conftest 0.62.0, helm 3.19.0, kyverno 1.19.0, flux 2.9.4,
+#                              kustomize 5.7.1, kubeconform 0.8.0, temporal 1.8.2
+# This script runs `ubuntu:24.04` (closest hosted-runner parallel), curls those exact pinned
+# binaries to `/root/.cache/estate-tools` inside the container, mounts $IDP read-write, and execs
+# `bin/idp-ci` inside. Any OCI-compliant runtime works — the AGENTS.md 2026-09-17 mandate says
+# vendor-neutral, and this script BLINDs cleanly on machines with none (cluster ops via GH
+# Actions do not need a local runtime; LAW 38).
+#
+# Usage:
+#   bin/idp-ci-local                        run the full offline gate inside the container
+#   bin/idp-ci-local -- <args>              pass extra args to bin/idp-ci inside the container
+#   IDP_CI_FAST=1 bin/idp-ci-local          same, with fast-gate mode
+#   IDP_CI_LOCAL_IMAGE=<img> bin/idp-ci-local  override the base image (e.g. debian:12-slim)
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+
+case "${1:-}" in
+  -h|--help)
+    sed -n '2,20p' "$0"; exit 0;;
+esac
+
+RT=""
+for r in docker podman nerdctl; do command -v "$r" >/dev/null 2>&1 && { RT="$r"; break; }; done
+if [ -z "$RT" ]; then
+  echo "BLIND  idp-ci-local: no OCI runtime on PATH." >&2
+  echo "       Install any (orbstack/podman/rancher-desktop/docker-ce) and re-run." >&2
+  echo "       Cluster ops via GH Actions do not need a local runtime (AGENTS.md 2026-09-17)." >&2
+  exit 2
+fi
+
+IMAGE="${IDP_CI_LOCAL_IMAGE:-ubuntu:24.04}"
+
+# Passthrough env vars that bin/idp-ci reads. Keep the list explicit — no wholesale env leak.
+declare -a ENV_ARGS=()
+for v in IDP_CI_FAST IDP_CI_BASE GH_TOKEN GITHUB_TOKEN; do
+  eval "val=\${$v:-}"
+  [ -n "${val:-}" ] && ENV_ARGS+=(-e "$v=$val")
+done
+
+# The install script mirrors .github/actions/estate-tools/action.yml verbatim, so a version bump
+# there is a one-line change here. If the composite drifts, wire a `bin/idp-ci-local --check` that
+# diffs the two.
+install_estate_tools='
+  set -euo pipefail
+  d=/root/.cache/estate-tools; mkdir -p "$d"
+  curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | tar -xz -C "$d" conftest
+  curl -sSL https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz | tar -xz -C "$d" --strip-components=1 linux-amd64/helm
+  curl -sSL https://github.com/kyverno/kyverno/releases/download/v1.19.0/kyverno-cli_v1.19.0_linux_x86_64.tar.gz | tar -xz -C "$d" kyverno
+  curl -sSL https://github.com/fluxcd/flux2/releases/download/v2.9.4/flux_2.9.4_linux_amd64.tar.gz | tar -xz -C "$d" flux
+  curl -sSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.7.1/kustomize_v5.7.1_linux_amd64.tar.gz" | tar -xz -C "$d" kustomize
+  curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar -xz -C "$d" kubeconform
+  chmod +x "$d"/*
+'
+
+# The runner needs curl (installer), git (bin/idp-ci reads history), python3+pyyaml (rules
+# runner), jq (many rungs), shellcheck (script-compiles), ruff (fast gate), docker CLI for the
+# compose-validate rungs. `docker.io` provides the CLI without pulling a daemon in the container.
+in_container='
+  set -euo pipefail
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq >/dev/null
+  apt-get install -y -q --no-install-recommends \
+      curl ca-certificates git bash python3 python3-yaml python3-pip \
+      jq shellcheck docker.io >/dev/null 2>&1 || true
+  # ruff is not always in apt across releases; pip install pins us to a working shape
+  command -v ruff >/dev/null || pip3 install --break-system-packages --quiet ruff==0.6.9 || true
+  '"$install_estate_tools"'
+  export PATH="/root/.cache/estate-tools:$PATH"
+  cd /repo
+  exec bin/idp-ci "$@"
+'
+
+exec "$RT" run --rm -i \
+  -v "$IDP:/repo" \
+  -w /repo \
+  "${ENV_ARGS[@]}" \
+  "$IMAGE" \
+  bash -c "$in_container" -- "$@"

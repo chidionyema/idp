@@ -58,6 +58,7 @@ app:
             - { url: /investigate, label: Investigate, icon: search }
             - { url: /pair, label: Pair, icon: 'kind:group' }
             - { url: /tools, label: Tools, icon: 'kind:component' }
+            - { url: /fleet, label: Fleet, icon: 'kind:group' }
             - { url: /create, label: Create, icon: scaffolder }
             - { url: /catalog-graph, label: Map, icon: 'kind:system' }
             - { url: '/catalog?filters%5Bkind%5D=Component', label: Kubernetes, icon: 'kind:resource' }
