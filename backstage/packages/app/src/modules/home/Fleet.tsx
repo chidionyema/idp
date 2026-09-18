@@ -49,6 +49,7 @@ import {
   NUDGEABLE_RUNTIMES,
   order,
   prLabel,
+  signalWord,
   spendLabel,
   stateLabel,
   summarise,
@@ -184,6 +185,10 @@ export function Fleet() {
       );
       const body = (await res.json()) as { signals: Signal[] };
       setSignalsBySession(current => ({ ...current, [sessionId]: body.signals ?? [] }));
+      setSignalsLoadedBySession(current => ({ ...current, [sessionId]: true }));
+      // The newest signal for each session is what the ack word under the Steer button reads,
+      // and the board may have been steered before this panel was ever opened -- so a send also
+      // sets the flag, below, without waiting for a fetch that may never happen.
     } catch {
       // Same rule as loadNotes: a failed read leaves the panel showing whatever it already had.
     }
@@ -250,6 +255,11 @@ export function Fleet() {
   };
 
   const [nudgeStatusBySession, setNudgeStatusBySession] = useState<Record<string, string>>({});
+  // Whether this session's signal history has been fetched. The ack word below the button is
+  // derived from it, and must not claim 'not yet read' for a signal nobody has looked up yet --
+  // 'not loaded' and 'not read' are different facts, the same distinction the whole ack change
+  // exists to preserve.
+  const [signalsLoadedBySession, setSignalsLoadedBySession] = useState<Record<string, boolean>>({});
   const [steerTextBySession, setSteerTextBySession] = useState<Record<string, string>>({});
   const [stopStatusBySession, setStopStatusBySession] = useState<Record<string, string>>({});
   const [approveStatusBySession, setApproveStatusBySession] = useState<Record<string, string>>({});
@@ -273,7 +283,21 @@ export function Fleet() {
 
   const sendNudge = async (sessionId: string, runtime: string) => {
     const text = (steerTextBySession[sessionId] ?? '').trim();
-    if (!text) return;
+    if (!text) {
+      // 2026-09-18: this used to `return` in silence, so pressing Steer on an empty field did
+      // nothing at all and read as a broken button. The estate's rule is that a surface which
+      // cannot act must say why, so the status line now carries the reason and the audit trail
+      // gets no row -- nothing was sent.
+      setNudgeStatusBySession(cur => ({
+        ...cur,
+        [sessionId]: 'Add your steer text first',
+      }));
+      setTimeout(
+        () => setNudgeStatusBySession(cur => ({ ...cur, [sessionId]: '' })),
+        3000,
+      );
+      return;
+    }
     setNudgeStatusBySession(cur => ({ ...cur, [sessionId]: 'sending…' }));
     try {
       const res = await fetchApi.fetch('plugin://proxy/fleetview/nudge', {
@@ -286,6 +310,11 @@ export function Fleet() {
       setNudgeStatusBySession(cur => ({ ...cur, [sessionId]: success ? '✓ steered' : `Failed: ${body.error ?? res.status}` }));
       if (success) {
         setSteerTextBySession(cur => ({ ...cur, [sessionId]: '' }));
+        // Re-read the audit trail so the ack word under the button reflects the row just
+        // written. Without this the word would wait for the history fold to be opened, and a
+        // reader who never opens it would see no ack state at all -- which is the gap this
+        // whole change exists to close.
+        void loadSignals(sessionId);
         setTimeout(() => setNudgeStatusBySession(cur => ({ ...cur, [sessionId]: '' })), 2000);
       }
     } catch (err) {
@@ -572,6 +601,7 @@ export function Fleet() {
               {order(board.sessions).map(s => {
                 const notes = notesBySession[s.session_id] ?? [];
                 const signals = signalsBySession[s.session_id] ?? [];
+                const signalsLoaded = Boolean(signalsLoadedBySession[s.session_id]);
                 const timeline = timelineFor(notes, signals);
                 const receipt = receiptsBySession[s.session_id];
                 const draft = draftFor(s.session_id);
@@ -665,15 +695,31 @@ export function Fleet() {
                             const ok = st === '✓ steered';
                             const busy = st === 'sending…';
                             const fail = st && !ok && !busy;
+                            // 2026-09-18: what the newest recorded signal for this session
+                            // ACTUALLY achieved. Before this the button said '✓ SENT' and
+                            // stopped there, which described the write and not the read -- and
+                            // SPEC CP8's done-condition is that the session acknowledges it.
+                            // `signals` is already fetched for the history fold, so this costs
+                            // no request.
+                            const newest = signals.length ? signals[0] : undefined;
+                            const ackWord = newest ? signalWord(newest) : null;
                             return (
-                              <Button variant="contained" size="small" disabled={busy}
-                                style={{ fontWeight:800, whiteSpace:'nowrap', fontSize:11, letterSpacing:0.8, minWidth:72, borderRadius:6, height:32,
-                                  background: ok ? '#166534' : fail ? '#7f1d1d' : busy ? '#374151' : undefined,
-                                  color: ok ? '#86efac' : fail ? '#fca5a5' : busy ? '#9ca3af' : '#fff',
-                                  transition: 'background 0.2s, color 0.2s' }}
-                                onClick={() => void sendNudge(s.session_id, s.runtime)}>
-                                {ok ? '✓ SENT' : fail ? '✕ FAIL' : busy ? '…' : 'STEER →'}
-                              </Button>
+                              <Box display="flex" flexDirection="column" style={{ gap:2 }}>
+                                <Button variant="contained" size="small" disabled={busy}
+                                  style={{ fontWeight:800, whiteSpace:'nowrap', fontSize:11, letterSpacing:0.8, minWidth:72, borderRadius:6, height:32,
+                                    background: ok ? '#166534' : fail ? '#7f1d1d' : busy ? '#374151' : undefined,
+                                    color: ok ? '#86efac' : fail ? '#fca5a5' : busy ? '#9ca3af' : '#fff',
+                                    transition: 'background 0.2s, color 0.2s' }}
+                                  onClick={() => void sendNudge(s.session_id, s.runtime)}>
+                                  {ok ? '✓ SENT' : fail ? '✕ FAIL' : busy ? '…' : 'STEER →'}
+                                </Button>
+                                {signalsLoaded && ackWord ? (
+                                  <Typography variant="caption" data-testid={`ack-${s.session_id}`}
+                                    style={{ fontSize:10, color: ackWord === 'read' ? '#7ee787' : ackWord === 'failed' ? '#fca5a5' : '#9ca3af', whiteSpace:'nowrap', textAlign:'center' }}>
+                                    {ackWord}
+                                  </Typography>
+                                ) : null}
+                              </Box>
                             );
                           })()}
                         </Box>
@@ -707,7 +753,22 @@ export function Fleet() {
                               entry.kind === 'note' ? (
                                 <li key={`note-${i}`}><strong style={{ color:'#e6edf3' }}>{entry.author}</strong>: {entry.text}</li>
                               ) : (
-                                <li key={`sig-${i}`}><strong style={{ color:'#e6edf3' }}>{entry.by}</strong> steered: {entry.text} — {entry.ok ? 'delivered' : `failed: ${entry.error}`}</li>
+                                <li key={`sig-${i}`}>
+                                  <strong style={{ color:'#e6edf3' }}>{entry.by}</strong> {
+                                    // 2026-09-18: this said `entry.ok ? 'delivered' : ...`, and
+                                    // `ok` describes the WRITE. A directive file written to
+                                    // ~/.claude/state/directives/ and read by nobody rendered as
+                                    // 'delivered' for a day. SPEC CP8's own done-condition is
+                                    // that the session ACKNOWLEDGES it, so the word now names
+                                    // what was proven: read, or not yet read.
+                                    entry.acknowledged
+                                      ? `${entry.kind} sent, read by the session`
+                                      : entry.ok
+                                        ? `${entry.kind} sent, not yet read`
+                                        : `${entry.kind} failed: ${entry.error}`
+                                  }
+                                  {entry.text ? ` — ${entry.text}` : ''}
+                                </li>
                               )
                             )}
                           </ul>
@@ -748,6 +809,7 @@ export function Fleet() {
                             onChange={e => setDraftsBySession(cur => ({ ...cur, [s.session_id]: { ...draftFor(s.session_id), note: e.target.value } }))}
                             style={{ flex:1, fontSize:12, background:'#0d1117', color:'#e6edf3', border:'1px solid #30363d', borderRadius:4, padding:'4px 8px' }} />
                           <button type="button" onClick={() => void submitNote(s.session_id, s.runtime)}
+                            aria-label={`send note for ${s.session_id}`}
                             style={{ fontSize:11, background:'#21262d', color:'#e6edf3', border:'1px solid #30363d', borderRadius:4, padding:'4px 10px', cursor:'pointer' }}>
                             Note
                           </button>
@@ -775,6 +837,7 @@ export function Fleet() {
                 value={blastNodeId} onChange={e => setBlastNodeId(e.target.value)}
                 style={{ flex:1, fontSize:12, background:'#0d1117', color:'#e6edf3', border:'1px solid #30363d', borderRadius:6, padding:'6px 10px' }} />
               <button type="button" disabled={blastLoading} onClick={() => void checkBlastRadius()}
+                aria-label="check blast radius"
                 style={{ fontSize:12, fontWeight:700, background:'#21262d', color:'#e6edf3', border:'1px solid #30363d', borderRadius:6, padding:'6px 14px', cursor:'pointer' }}>
                 {blastLoading ? '…' : 'Check'}
               </button>
@@ -801,6 +864,7 @@ export function Fleet() {
                 value={receiptsInput} onChange={e => setReceiptsInput(e.target.value)}
                 style={{ flex:1, fontSize:12, background:'#0d1117', color:'#e6edf3', border:'1px solid #30363d', borderRadius:6, padding:'6px 10px' }} />
               <button type="button" disabled={receiptsLoading} onClick={() => void checkReceipts()}
+                aria-label="check receipts"
                 style={{ fontSize:12, fontWeight:700, background:'#21262d', color:'#e6edf3', border:'1px solid #30363d', borderRadius:6, padding:'6px 14px', cursor:'pointer' }}>
                 {receiptsLoading ? '…' : 'Check'}
               </button>

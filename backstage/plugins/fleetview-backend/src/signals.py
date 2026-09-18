@@ -116,10 +116,22 @@ def _connect() -> sqlite3.Connection:
             text       TEXT NOT NULL,
             ok         INTEGER NOT NULL,
             error      TEXT,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            -- 2026-09-18: when the session's own hook CONSUMED the directive. NULL means
+            -- written and not yet read, which is a different fact from ok=0 (the write
+            -- failed). bin/idp-directive-consume is the only writer.
+            read_at    TEXT
         )
         """
     )
+    # Additive migration for a table created before `read_at` existed. Guarded by reading the
+    # table's own columns, so this is idempotent and cannot fail on a fresh database.
+    try:
+        cols = {r[1] for r in con.execute("PRAGMA table_info(fleetview_signals)")}
+        if cols and "read_at" not in cols:
+            con.execute("ALTER TABLE fleetview_signals ADD COLUMN read_at TEXT")
+    except sqlite3.Error:
+        pass
     con.execute(
         "CREATE INDEX IF NOT EXISTS fleetview_signals_session "
         "ON fleetview_signals (session_id, runtime, created_at)"
@@ -132,6 +144,24 @@ def _now() -> str:
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    """One audit row as the API returns it.
+
+    `read_at` is the acknowledgement: when the session's own hook consumed the directive. It is
+    delivered alongside `ok` because the two answer DIFFERENT questions and conflating them is
+    what made the board lie. `ok` describes the WRITE (did the channel accept the dispatch),
+    `read_at` describes the READ (did the agent see it). Measured 2026-09-18, before this field:
+
+        id 21  claude-code:...  deny  ok=0  (no read_at column existed)
+        id 18  claude-code:...  steer ok=1  -- the board rendered this as 'steered'
+
+    The `ok=1` row meant "a file was written to ~/.claude/state/directives/", and nothing read
+    that file for a day. `read_at` is what makes "delivered" and "received" tellable apart.
+
+    Read with `.keys()` rather than `row["read_at"]` because this function is also reached by
+    a database created before the column existed, and a missing acknowledgement must read as
+    absent, not raise.
+    """
+    keys = row.keys()
     return {
         "id": row["id"],
         "session_id": row["session_id"],
@@ -142,6 +172,11 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "ok": bool(row["ok"]),
         "error": row["error"],
         "created_at": row["created_at"],
+        "read_at": row["read_at"] if "read_at" in keys else None,
+        # The two-part verdict the board actually renders, so the page does not have to infer
+        # it from two nullable fields and get it wrong. Never a third state: 'sent' and 'read'
+        # are the only things the tables can prove.
+        "acknowledged": bool("read_at" in keys and row["read_at"]),
     }
 
 

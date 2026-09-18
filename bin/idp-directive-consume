@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""Consume pending steering directives and record that they were read.
+
+THE MISSING HALF (measured 2026-09-18). `signals.py` writes a steer or a stop to
+`~/.claude/state/directives/<session>.json` and records `ok=true`, which means THE FILE WAS
+WRITTEN. The board renders that as "steered". Nothing read the file. Measured:
+
+    ~/.claude/state/directives/
+        abc123def456.json          23:33   (written 2026-09-17)
+        fleet-live-001.json        13:51   (written 2026-09-18)
+
+Two files, both still pending, no reader anywhere in the repo -- `grep -rl directives` found
+only test fixtures. So the button that says "steered" was reporting a mailbox, not a message
+received, and SPEC CP8's own done-condition ("a steer reaches a live session ... each
+acknowledges it, and the newest audit row names the press") was unmet on its second clause.
+
+WHAT THIS IS. The consumer. It runs at a pause point -- a Claude Code SessionStart/PostCompact
+hook, or a pi turn boundary -- reads any pending directive for THIS session, and appends an
+acknowledgement row so the board can show "read at 13:51:20" instead of guessing.
+
+WHY AN APPEND-ONLY LEDGER AND NOT A FILE DELETE. A deleted directive is indistinguishable from
+one that was never written, which is exactly the ambiguity being removed. The directive is
+marked consumed in place (`.consumed`) and the ack is recorded as a row; both survive, so
+"written, never read" stays distinguishable from "written, read, acted on".
+
+CONFIG (LAW 46):
+  ESTATE_STATE_PATH_PREFIX   ledger root; the directives dir is derived as <root>/../directives/
+  ESTATE_DB                  the audit table lives with every other signal row
+  ESTATE_SESSION_ID          the session this hook is running for; falls back to --session
+
+USAGE
+  bin/idp-directive-consume --session <id>          # consume for one session
+  bin/idp-directive-consume --session <id> --peek   # show what is pending, consume nothing
+  bin/idp-directive-consume --install               # print the hook wiring
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import sqlite3
+import sys
+from pathlib import Path
+from typing import Any
+
+DEFAULT_LEDGER_ROOT = "~/.claude/state/prompt-ledger/"
+CONSUMED_SUFFIX = ".consumed"
+
+
+def _directives_dir() -> Path:
+    """`<ledger_root>/../directives/` -- the same derivation signals.py writes with.
+
+    Duplicated rather than imported because signals.py is a plugin module loaded by path and
+    this is a hook that must not depend on the plugin's load order. The two must agree, so the
+    test suite asserts they resolve to the same directory for the same environment.
+    """
+    root = Path(
+        os.environ.get("ESTATE_STATE_PATH_PREFIX")
+        or os.path.expanduser(DEFAULT_LEDGER_ROOT)
+    )
+    return root.parent / "directives"
+
+
+def _db_path() -> Path:
+    from_env = os.environ.get("ESTATE_DB")
+    if from_env:
+        return Path(from_env)
+    return Path(__file__).resolve().parent.parent / "catalog" / "estate.db"
+
+
+def _now() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def _raw_uuid(session_id: str) -> str:
+    """The directive filename is the session id after the last colon -- signals.py's own rule."""
+    return session_id.rsplit(":", 1)[-1]
+
+
+def pending_for(session_id: str) -> list[dict[str, Any]]:
+    """Every directive written for this session that has not been consumed.
+
+    A directive is consumed when a sibling `<name>.consumed` marker exists. The marker rather
+    than a rewrite of the directive keeps the original bytes intact, so what the founder sent is
+    still readable after the fact.
+    """
+    d = _directives_dir()
+    if not d.is_dir():
+        return []
+    name = _raw_uuid(session_id)
+    out: list[dict[str, Any]] = []
+    # The exact name first (the common case), then any file whose own `session_id` matches, so
+    # a session whose id changed shape still gets its message rather than silently never
+    # receiving it.
+    candidates = [d / f"{name}.json"]
+    if d.is_dir():
+        candidates += [p for p in sorted(d.glob("*.json")) if p.name != f"{name}.json"]
+    for path in candidates:
+        if not path.is_file():
+            continue
+        if Path(str(path) + CONSUMED_SUFFIX).exists():
+            continue
+        try:
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(doc, dict):
+            continue
+        sid = str(doc.get("session_id") or "")
+        if sid and sid != session_id and path.name != f"{name}.json":
+            continue
+        out.append({"path": path, "doc": doc})
+    return out
+
+
+def _ensure_ack_column(con: sqlite3.Connection) -> None:
+    """Add `read_at` to fleetview_signals if an older table lacks it.
+
+    An additive migration on a table this tool reads: `signals.py` owns the schema, and a column
+    it does not know about is harmless to it -- whereas refusing to run until the owner ships a
+    migration would leave the loop open, which is the state being fixed. `ALTER TABLE ... ADD
+    COLUMN` is idempotent-guarded by reading the table's own columns first.
+    """
+    try:
+        cols = {r[1] for r in con.execute("PRAGMA table_info(fleetview_signals)")}
+    except sqlite3.Error:
+        return
+    if cols and "read_at" not in cols:
+        try:
+            con.execute("ALTER TABLE fleetview_signals ADD COLUMN read_at TEXT")
+            con.commit()
+        except sqlite3.Error:
+            pass
+
+
+def _mark_read(con: sqlite3.Connection, session_id: str, when: str) -> int:
+    """Stamp every unread signal row for this session. Returns how many were stamped.
+
+    The board's ack state is derived from this column: a signal with `read_at` set has been
+    seen by the agent, and one without is still pending. That is the distinction `ok` cannot
+    carry, because `ok` describes the WRITE and this describes the READ.
+    """
+    try:
+        cur = con.execute(
+            "UPDATE fleetview_signals SET read_at = ? "
+            "WHERE session_id = ? AND kind IN ('steer','stop','approve','deny') "
+            "AND (read_at IS NULL OR read_at = '')",
+            (when, session_id),
+        )
+        con.commit()
+        return cur.rowcount or 0
+    except sqlite3.Error:
+        return 0
+
+
+def consume(session_id: str, *, peek: bool, quiet: bool) -> int:
+    items = pending_for(session_id)
+    if not items:
+        if not quiet:
+            print(json.dumps({"session": session_id, "pending": 0, "consumed": 0}))
+        return 0
+
+    if peek:
+        print(
+            json.dumps(
+                {
+                    "session": session_id,
+                    "pending": len(items),
+                    "directives": [
+                        {
+                            "kind": i["doc"].get("kind"),
+                            "by": i["doc"].get("by"),
+                            "written_at": i["doc"].get("written_at"),
+                            "text": (i["doc"].get("text") or "")[:200],
+                        }
+                        for i in items
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    when = _now()
+    con = None
+    try:
+        con = sqlite3.connect(str(_db_path()))
+        _ensure_ack_column(con)
+        stamped = _mark_read(con, session_id, when)
+    except sqlite3.Error:
+        stamped = 0
+    finally:
+        if con is not None:
+            con.close()
+
+    consumed = 0
+    for item in items:
+        path: Path = item["path"]
+        try:
+            # The marker is written BEFORE the directive is treated as read, so a crash between
+            # the two leaves a marker for a directive the ledger has not stamped -- which reads
+            # as 'read but unstamped', a state a person can see and repair. The reverse order
+            # would silently lose the message.
+            Path(str(path) + CONSUMED_SUFFIX).write_text(
+                json.dumps({"read_at": when, "by": "hook"}), encoding="utf-8"
+            )
+            consumed += 1
+        except OSError:
+            continue
+
+    if not quiet:
+        print(
+            json.dumps(
+                {
+                    "session": session_id,
+                    "pending": len(items),
+                    "consumed": consumed,
+                    "audit_rows_stamped": stamped,
+                }
+            )
+        )
+    return 0
+
+
+def install_guidance() -> int:
+    """Print the wiring rather than writing someone else's hook file.
+
+    Deliberately does not edit `~/.claude/settings.json`: that file holds every hook on this
+    machine, and a tool that rewrites it is a tool that can disable the estate's fences by
+    accident. The snippet below is the whole change, and it is one line.
+    """
+    script = Path(__file__).resolve()
+    print("Add this to the SessionStart and PostCompact hook arrays in")
+    print("  ~/.claude/settings.json   (and the pi equivalent at a turn boundary)")
+    print()
+    print(
+        json.dumps(
+            {
+                "hooks": {
+                    "SessionStart": [
+                        {
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": (
+                                        f"{sys.executable} {script} "
+                                        '--session "$CLAUDE_SESSION_ID" --quiet'
+                                    ),
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            indent=2,
+        )
+    )
+    print()
+    print("It is deliberately fail-open: a hook that cannot read the mailbox says nothing and")
+    print("exits 0, so a broken consumer never blocks a session from starting.")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--session", default=os.environ.get("ESTATE_SESSION_ID")
+                    or os.environ.get("CLAUDE_SESSION_ID"))
+    ap.add_argument("--peek", action="store_true", help="show pending; consume nothing")
+    ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--install", action="store_true", help="print the hook wiring")
+    a = ap.parse_args()
+
+    if a.install:
+        return install_guidance()
+
+    if not a.session:
+        # Fail-open with a reason. A session-start hook that dies because an id is missing takes
+        # the session with it, which is a far worse failure than a missed directive.
+        if not a.quiet:
+            print(
+                "no session id: pass --session or set ESTATE_SESSION_ID."
+                " Nothing consumed.",
+                file=sys.stderr,
+            )
+        return 0
+    return consume(a.session, peek=a.peek, quiet=a.quiet)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

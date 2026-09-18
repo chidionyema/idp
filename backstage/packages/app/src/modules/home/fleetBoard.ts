@@ -100,6 +100,13 @@ export type Signal = {
   ok: boolean;
   error: string | null;
   created_at: string;
+  /** When the session's own hook consumed the directive; null while still unread.
+   *  Distinct from `ok`, which describes the WRITE. A signal can be `ok: true` (the channel
+   *  accepted the dispatch) and `acknowledged: false` (nobody has read it yet) -- and before
+   *  2026-09-18 that combination was rendered on the board as "steered". */
+  read_at: string | null;
+  /** The two-part verdict: true once the agent has provably read it. */
+  acknowledged: boolean;
 };
 
 export type TimelineEntry =
@@ -111,6 +118,8 @@ export type TimelineEntry =
       text: string;
       ok: boolean;
       error: string | null;
+      acknowledged: boolean;
+      read_at: string | null;
     };
 
 /** Notes and signals merged into one chronological read of what happened to a session, oldest
@@ -131,9 +140,40 @@ export function timelineFor(notes: Note[], signals: Signal[]): TimelineEntry[] {
       text: s.text,
       ok: s.ok,
       error: s.error,
+      acknowledged: Boolean(s.acknowledged),
+      read_at: s.read_at ?? null,
     })),
   ];
   return entries.sort((a, b) => a.created_at.localeCompare(b.created_at));
+}
+
+/**
+ * The word for one signal, in the two-part vocabulary the audit table can actually prove.
+ *
+ * SPEC CP8's done-condition is "a steer reaches a live session ... each ACKNOWLEDGES it". Before
+ * this, the board had one word for two different states, and the state it showed was the
+ * optimistic one: a written directive file read as "delivered".
+ *
+ *   failed       the channel refused the dispatch (ok=false) -- nothing was attempted or it erred
+ *   read         the agent consumed it (read_at set)              -- provable, the loop closed
+ *   not yet read the dispatch succeeded and no hook has consumed it -- the honest middle state
+ *
+ * There is deliberately no fourth word: the tables cannot distinguish "the agent read it and
+ * disagreed" from "the agent read it", and inventing that would be a claim, not a measurement.
+ */
+export type SignalWord = 'failed' | 'read' | 'not yet read';
+
+export function signalWord(s: Pick<Signal, 'ok' | 'acknowledged'>): SignalWord {
+  if (!s.ok) return 'failed';
+  return s.acknowledged ? 'read' : 'not yet read';
+}
+
+/** The sentence a reader gets, naming what was proven rather than what was hoped. */
+export function signalSentence(s: Signal): string {
+  const word = signalWord(s);
+  if (word === 'failed') return `${s.kind} failed: ${s.error ?? 'the channel refused it'}`;
+  if (word === 'read') return `${s.kind} ${s.by} sent, read by the session`;
+  return `${s.kind} ${s.by} sent, not yet read`;
 }
 
 const CORRELATION_WINDOW_MINUTES = 15;

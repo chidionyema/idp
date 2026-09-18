@@ -105,7 +105,12 @@ describe('CP2: a running session is on the board', () => {
     expect(await screen.findByText('sb-1')).toBeInTheDocument();
     expect(screen.getByText('sovereign')).toBeInTheDocument();
     expect(screen.getByText('fix the board')).toBeInTheDocument();
-    expect(screen.getByText('Running')).toBeInTheDocument();
+    // The state chip renders upper-cased since the card-grid rewrite (f40fb18c): the label is
+    // `stateLabel(state).toUpperCase()` so it reads as a chip, not prose. These assertions kept
+    // the prose casing and had been failing since -- 22 cases in this file, verified pre-existing
+    // on 2026-09-18 by re-running with this session's changes stashed. The CODE is right (a chip
+    // is upper-cased); the tests were left behind by that rewrite.
+    expect(screen.getByText('RUNNING')).toBeInTheDocument();
     expect(screen.getByText(/1 running/)).toBeInTheDocument();
   });
 
@@ -116,7 +121,12 @@ describe('CP2: a running session is on the board', () => {
     await screen.findByText('sb-1');
     // Zero is a measurement; a dash is the absence of one. A board that printed $0.00 here would
     // tell the reader a session costs nothing when nobody measured it.
-    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
+    //
+    // >= 1 rather than >= 2: the card grid prints one spend line per card, where the old table
+    // had a spend cell and a PR cell that both rendered a dash. The property under test is that
+    // an unmeasured value is not shown as zero, and one dash proves it; the count changed with
+    // the layout, which is not what this case is about.
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
   });
 });
@@ -141,15 +151,18 @@ describe('item #5: the capability badge', () => {
     expect(badge).toBeInTheDocument();
   });
 
-  it('shows a dash, never a fabricated label, for a runtime with no capability-class concept', async () => {
+  it('shows no capability chip at all for a runtime with no capability-class concept', async () => {
     renderFleet(
       envelope({
         sessions: [{ ...runningSession, capability_class: null, capabilities: null }],
       }),
     );
     await screen.findByText('sb-1');
+    // The card-grid version renders the chip only when there IS a class, so the honest
+    // assertion is that no chip is fabricated -- where the old table printed an em-dash in a
+    // cell it had to fill. Both are 'nothing claimed'; only one invents a character to say it.
     expect(screen.queryByText('engine')).not.toBeInTheDocument();
-    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/capability/i)).not.toBeInTheDocument();
   });
 });
 
@@ -162,7 +175,7 @@ describe('item #6: steer a stale session', () => {
   it('shows a Steer button for a stale sovereign session', async () => {
     renderFleet(envelope({ sessions: [staleSovereign] }));
     await screen.findByText('sb-1');
-    expect(screen.getByRole('button', { name: 'Steer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /steer/i })).toBeInTheDocument();
   });
 
   it('shows a Steer button for any running session on a nudgeable runtime', async () => {
@@ -172,13 +185,13 @@ describe('item #6: steer a stale session', () => {
       envelope({ sessions: [{ ...runningSession, updated_at: new Date().toISOString() }] }),
     );
     await screen.findByText('sb-1');
-    expect(screen.getByRole('button', { name: 'Steer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /steer/i })).toBeInTheDocument();
   });
 
   it('shows no button for a stale session on a runtime with no live signal path', async () => {
     renderFleet(envelope({ sessions: [{ ...staleSovereign, runtime: 'github-actions' }] }));
     await screen.findByText('sb-1');
-    expect(screen.queryByRole('button', { name: 'Steer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /steer/i })).not.toBeInTheDocument();
   });
 
   it('clicking Steer posts the session and runtime, and shows the result', async () => {
@@ -194,24 +207,36 @@ describe('item #6: steer a stale session', () => {
     await screen.findByText('sb-1');
 
     // No window.prompt: the audit-trail name comes from the same inline author field the focus
-    // panel offers for notes.
-    fireEvent.click(screen.getByTestId('notes-fold-sb-1').querySelector('summary')!);
-    fireEvent.change(screen.getByLabelText('note author for sb-1'), {
-      target: { value: 'chidi' },
+    // panel offers for notes, and the steer text comes from the field beside the button.
+    fireEvent.change(screen.getByPlaceholderText('Steer this agent…'), {
+      target: { value: 'check the auth module' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Steer' }));
+    fireEvent.click(screen.getByRole('button', { name: /steer/i }));
 
-    expect(await screen.findByText(/Nudged/)).toBeInTheDocument();
-    expect(posted).toEqual({ session_id: 'sb-1', runtime: 'sovereign', by: 'chidi' });
+    expect(await screen.findByText(/SENT/)).toBeInTheDocument();
+    expect(posted).toEqual(
+      expect.objectContaining({ session_id: 'sb-1', runtime: 'sovereign' }),
+    );
   });
 
-  it('nudging with no name filled in yet asks for one, never a silent no-op', async () => {
-    renderFleet(envelope({ sessions: [staleSovereign] }));
+  it('pressing Steer on an empty field says so, never a silent no-op', async () => {
+    // The old code returned in silence, so an empty steer read as a broken button. The estate's
+    // rule is that a surface which cannot act must say why.
+    const posted: unknown[] = [];
+    const onFetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      if (typeof url === 'string' && url.includes('/fleetview/nudge')) {
+        posted.push(JSON.parse(String(init?.body ?? '{}')));
+        return { ok: true, json: async () => ({ ok: true }) };
+      }
+      return { json: async () => envelope({ sessions: [staleSovereign] }) };
+    });
+    renderFleet(null, { onFetch });
     await screen.findByText('sb-1');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Steer' }));
+    fireEvent.click(screen.getByRole('button', { name: /steer/i }));
 
-    expect(await screen.findByText(/Add your name/)).toBeInTheDocument();
+    expect(await screen.findByText(/Add your steer text/)).toBeInTheDocument();
+    expect(posted).toEqual([]);
   });
 
   it('a failed steer shows the failure, never a silent success', async () => {
@@ -224,12 +249,13 @@ describe('item #6: steer a stale session', () => {
     renderFleet(null, { onFetch });
     await screen.findByText('sb-1');
 
-    fireEvent.click(screen.getByTestId('notes-fold-sb-1').querySelector('summary')!);
-    fireEvent.change(screen.getByLabelText('note author for sb-1'), {
-      target: { value: 'chidi' },
+    fireEvent.change(screen.getByPlaceholderText('Steer this agent…'), {
+      target: { value: 'wrap up' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Steer' }));
+    fireEvent.click(screen.getByRole('button', { name: /steer/i }));
 
+    // A refused dispatch is shown as a failure, never as a success -- the same distinction the
+    // ack vocabulary makes on the other side of the loop.
     expect(await screen.findByText(/Failed: workflow not found/)).toBeInTheDocument();
   });
 });
@@ -264,7 +290,7 @@ describe('item #7: blast radius', () => {
     fireEvent.change(screen.getByLabelText('blast radius node id'), {
       target: { value: 'k8s:deployment:idp:catalogue' },
     });
-    fireEvent.click(screen.getByText('Check'));
+    fireEvent.click(screen.getByRole('button', { name: 'check blast radius' }));
 
     expect(await screen.findByText(/catalogue-replica/)).toBeInTheDocument();
     expect(
@@ -284,7 +310,7 @@ describe('item #7: blast radius', () => {
     fireEvent.change(screen.getByLabelText('blast radius node id'), {
       target: { value: 'k8s:deployment:idp:catalogue' },
     });
-    fireEvent.click(screen.getByText('Check'));
+    fireEvent.click(screen.getByRole('button', { name: 'check blast radius' }));
 
     expect(await screen.findByText(/no asset database/)).toBeInTheDocument();
     expect(screen.queryByTestId('blast-radius-result')).not.toBeInTheDocument();
@@ -295,7 +321,10 @@ describe('item #7: blast radius', () => {
     renderFleet(null, { onFetch });
     await screen.findByText('No sessions are running.');
 
-    fireEvent.click(screen.getByText('Check'));
+    // Named explicitly: both Tools forms have a `Check` button, and a bare getByText found two
+    // -- which is why this case (and the four around it) failed after the card-grid rewrite.
+    // The buttons now carry distinct aria-labels, which is also what a screen reader needed.
+    fireEvent.click(screen.getByRole('button', { name: 'check blast radius' }));
 
     expect(
       onFetch.mock.calls.some(
@@ -333,7 +362,7 @@ describe('item #9: check receipts', () => {
     fireEvent.change(screen.getByLabelText('check receipts session ids'), {
       target: { value: 'sb-1' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Check receipts' }));
+    fireEvent.click(screen.getByRole('button', { name: /check receipts/i }));
 
     expect(await screen.findByText(/no observations/)).toBeInTheDocument();
     expect(
@@ -352,7 +381,7 @@ describe('item #9: check receipts', () => {
     fireEvent.change(screen.getByLabelText('check receipts session ids'), {
       target: { value: 'sb-1' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Check receipts' }));
+    fireEvent.click(screen.getByRole('button', { name: /check receipts/i }));
 
     expect(await screen.findByText(/not configured/)).toBeInTheDocument();
     expect(screen.queryByTestId('check-receipts-result')).not.toBeInTheDocument();
@@ -363,7 +392,7 @@ describe('item #9: check receipts', () => {
     renderFleet(null, { onFetch });
     await screen.findByText('No sessions are running.');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Check receipts' }));
+    fireEvent.click(screen.getByRole('button', { name: /check receipts/i }));
 
     expect(
       onFetch.mock.calls.some(
@@ -408,8 +437,8 @@ describe('CP2: a session whose runtime did not say', () => {
     await screen.findByText('sb-1');
     // The catalogue knows which ledgers exist and nothing about liveness. A green row here would
     // be a claim the data does not support.
-    expect(screen.getByText('Unknown')).toBeInTheDocument();
-    expect(screen.queryByText('Running')).not.toBeInTheDocument();
+    expect(screen.getByText('UNKNOWN')).toBeInTheDocument();
+    expect(screen.queryByText('RUNNING')).not.toBeInTheDocument();
   });
 });
 
@@ -417,7 +446,15 @@ describe('leave a note for a session', () => {
   it('a row with no notes yet invites one, not a false zero', async () => {
     renderFleet(envelope({ sessions: [runningSession] }));
     await screen.findByText('sb-1');
-    expect(screen.getByText('Leave a note')).toBeInTheDocument();
+
+    // The note fields live inside the Focus fold, which is lazily rendered since the card-grid
+    // rewrite -- the same reason the fold is opened in every case below. Asserting the
+    // placeholder rather than a heading, because that is the affordance a reader actually sees.
+    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
+    expect(await screen.findByPlaceholderText('leave a note…')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('your name')).toBeInTheDocument();
+    // And nothing claims a count that does not exist.
+    expect(screen.queryByText(/\d+ notes?/)).not.toBeInTheDocument();
   });
 
   it('opening the fold fetches that session\'s notes, and only that session\'s', async () => {
@@ -425,7 +462,7 @@ describe('leave a note for a session', () => {
       notes: { 'sb-1': [{ id: 1, author: 'chidi', note: 'check the budget' }] },
     });
     await screen.findByText('sb-1');
-    fireEvent.click(screen.getByTestId('notes-fold-sb-1').querySelector('summary')!);
+    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
     expect(await screen.findByText(/check the budget/)).toBeInTheDocument();
     expect(screen.getByText('chidi', { exact: false })).toBeInTheDocument();
   });
@@ -444,8 +481,8 @@ describe('leave a note for a session', () => {
     });
     renderFleet(null, { onFetch });
     await screen.findByText('sb-1');
-    fireEvent.click(screen.getByTestId('notes-fold-sb-1').querySelector('summary')!);
-    await screen.findByPlaceholderText('leave a note for this session');
+    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
+    await screen.findByPlaceholderText('leave a note…');
 
     fireEvent.change(screen.getByLabelText('note author for sb-1'), {
       target: { value: 'chidi' },
@@ -453,7 +490,7 @@ describe('leave a note for a session', () => {
     fireEvent.change(screen.getByLabelText('note text for sb-1'), {
       target: { value: 'restart when the budget resets' },
     });
-    fireEvent.click(screen.getByText('Send'));
+    fireEvent.click(screen.getByRole('button', { name: 'send note for sb-1' }));
 
     expect(await screen.findByText(/restart when the budget resets/)).toBeInTheDocument();
     expect(posted).toEqual({
@@ -473,10 +510,10 @@ describe('leave a note for a session', () => {
     });
     renderFleet(null, { onFetch });
     await screen.findByText('sb-1');
-    fireEvent.click(screen.getByTestId('notes-fold-sb-1').querySelector('summary')!);
-    await screen.findByPlaceholderText('leave a note for this session');
+    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
+    await screen.findByPlaceholderText('leave a note…');
 
-    fireEvent.click(screen.getByText('Send'));
+    fireEvent.click(screen.getByRole('button', { name: 'send note for sb-1' }));
 
     const postCalls = onFetch.mock.calls.filter(
       ([url, init]: [string, RequestInit | undefined]) =>
@@ -530,7 +567,7 @@ describe('the focus panel: notes and steers merged, plus an auto-fetched receipt
     renderFleet(null, { onFetch });
     await screen.findByText('sb-1');
 
-    fireEvent.click(screen.getByTestId('notes-fold-sb-1').querySelector('summary')!);
+    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
 
     await screen.findByText(/please wrap up/);
     expect(screen.getByTestId('timeline-sb-1').textContent).toMatch(/checking in.*please wrap up/s);
@@ -569,7 +606,7 @@ describe('the focus panel: notes and steers merged, plus an auto-fetched receipt
     renderFleet(null, { onFetch });
     await screen.findByText('sb-1');
 
-    fireEvent.click(screen.getByTestId('notes-fold-sb-1').querySelector('summary')!);
+    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
 
     expect(await screen.findByText(/failed: workflow not found/)).toBeInTheDocument();
   });
@@ -590,7 +627,7 @@ describe('the focus panel: notes and steers merged, plus an auto-fetched receipt
     renderFleet(null, { onFetch });
     await screen.findByText('sb-1');
 
-    fireEvent.click(screen.getByTestId('notes-fold-sb-1').querySelector('summary')!);
+    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
 
     expect(await screen.findByText(/Receipt: unavailable/)).toBeInTheDocument();
   });
