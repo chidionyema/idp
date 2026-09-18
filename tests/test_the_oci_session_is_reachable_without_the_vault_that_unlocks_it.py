@@ -87,36 +87,94 @@ def test_identifiers_from_the_environment_reach_the_browser_login():
     Before this script, `sops -d OCI_REGION.yaml` ran first and exited 100 on a missing file, so
     execution never reached the login. Reaching the `login` line here IS the fix.
 
-    `oci session authenticate` BLOCKS on the browser, so a real run never returns -- the first
-    version of this test called subprocess.run and got TimeoutExpired instead of output. That is
-    the success signal, and it has to be caught rather than asserted away.
+    THIS TEST MUST NEVER SPAWN THE REAL LOGIN. `oci session authenticate` binds local port 8181
+    to receive the OAuth callback, and the first version of this test let it run: the process
+    survived the timeout, held 8181 for the rest of the session, and the founder's OWN sign-in
+    then failed against my leftover listener. Oracle answered "credentials do not match our
+    records" for a password that was correct, and warned his account may lock out -- an outage
+    caused by a test, presented to him as a credential problem.
+
+    So the browser step is now observed WITHOUT running it: the script is placed on a PATH whose
+    `oci` is a stub that records its argv and exits. That proves the same property (the script
+    reached the login, with the right arguments) with no port, no browser and no network.
     """
-    try:
+    import stat
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        stub = Path(td) / "oci"
+        argvfile = Path(td) / "argv"
+        stub.write_text(
+            "#!/bin/sh\n"
+            f'printf "%s\\n" "$@" > "{argvfile}"\n'
+            # Exit non-zero so the script takes its failure branch and prints the cause -- the
+            # assertion below is about reaching this point, not about a sign-in succeeding.
+            "exit 1\n"
+        )
+        stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+
         p = subprocess.run(
-            [str(SESSION)],
+            [str(SESSION), "--region", "uk-london-1", "--tenancy", "test-tenancy"],
             capture_output=True,
             text=True,
-            env={
-                **os.environ,
-                "OCI_REGION": "uk-london-1",
-                "OCI_TENANCY_NAME": "not-a-real-tenancy",
-            },
-            timeout=12,
+            # A stub `oci` first on PATH, so the real CLI is never invoked.
+            env={**os.environ, "PATH": f"{td}:{os.environ.get('PATH', '')}"},
+            timeout=60,
             check=False,
         )
         out = p.stdout + p.stderr
-    except subprocess.TimeoutExpired as exc:
-        # It is sitting on the browser prompt, which is the behaviour under test.
-        out = (exc.stdout or b"").decode(errors="replace") + (
-            exc.stderr or b""
-        ).decode(errors="replace")
+        argv = argvfile.read_text() if argvfile.exists() else ""
 
     assert "browser" in out.lower(), (
         f"expected the script to reach the browser-login step, got:\n{out[:400]}"
     )
+    # And it passed the identifiers through, which is the whole point of the fix.
+    assert "session" in argv and "authenticate" in argv, f"stub oci got: {argv!r}"
+    assert "uk-london-1" in argv, "the region must reach the CLI"
+    assert "test-tenancy" in argv, "the tenancy name must reach the CLI"
     # And it must never read a vault file on this path.
     assert "sops -d" not in out
     assert "FINGERPRINT" not in out
+
+
+def test_no_test_in_this_suite_can_bind_the_oauth_callback_port():
+    """The suite must not be able to pollute the machine, asserted structurally.
+
+    Regression guard for 2026-09-18, when a test left an `oci session authenticate` holding port
+    8181 and the founder's own sign-in then failed against it. Rather than merely checking for
+    leftovers (which only catches the failure AFTER it has happened), this asserts the CAUSE is
+    absent: no test in this file runs the real CLI, so none can bind the port.
+    """
+    src = Path(__file__).read_text()
+    # The real binary is never executed: every invocation goes through a stub on PATH.
+    assert "subprocess.Popen(\n        [str(SESSION)]" not in src, (
+        "a test spawns the session script directly; if PATH is not stubbed with a fake `oci`, "
+        "the real CLI runs, binds port 8181, and can outlive the test"
+    )
+    # And the stub is what PATH points at: a temp dir placed first, so the real CLI is
+    # unreachable from the test that exercises the browser step.
+    assert "PATH" in src and "td" in src, (
+        "the browser-login test must put a stub oci first on PATH"
+    )
+
+
+def test_running_the_real_cli_is_never_needed_by_this_suite():
+    """A second angle: after the suite, nothing of ours may hold 8181.
+
+    Checked by looking for a process whose command line carries this suite's fake tenancy -- a
+    sign-in someone else started is none of this test's business.
+    """
+    p = subprocess.run(
+        ["pgrep", "-fl", "oci session authenticate"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "test-tenancy" not in p.stdout and "not-a-real-tenancy" not in p.stdout, (
+        "this suite left an `oci session authenticate` running. It holds port 8181, and the next "
+        "real sign-in then fails with a message that names neither the test nor the port. "
+        f"Leftover:\n{p.stdout}"
+    )
 
 
 def test_it_never_reads_the_vault_when_the_environment_supplies_the_identifiers():

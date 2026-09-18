@@ -124,13 +124,36 @@ fi
 
 echo "login   oci     browser opens once; sign in as the tenancy owner in $REGION"
 echo "                (the token lives one hour; nothing is typed into this terminal)"
-if ! oci session authenticate \
+# The CLI's own output is KEPT and shown. The first version of this script sent it to
+# /dev/null and printed a generic "did not complete", which is the silent-failure defect this
+# whole session has been removing -- it left the reader with no way to tell a wrong tenancy name
+# from a closed browser tab from a missing CLI. Measured 2026-09-18: the founder ran it, it
+# failed, and the script had thrown away the one line that said why.
+signin_out="$(oci session authenticate \
 	--region "$REGION" \
 	--tenancy-name "$TENANCY_NAME" \
-	--profile-name "$PROFILE" >/dev/null 2>&1; then
-	echo "FAIL    oci     session sign-in did not complete (was the browser step finished?)" >&2
-	echo "        The CLI polls while the browser page is open; if this process stops, the" >&2
-	echo "        approval is discarded and the sign-in has to be run again." >&2
+	--profile-name "$PROFILE" 2>&1)"
+signin_rc=$?
+# The CLI writes progress to a TTY and is noisy when captured; show the lines that carry a
+# verdict rather than the whole thing. If nothing looks like a verdict, show the tail -- never
+# nothing.
+if [ "$signin_rc" -ne 0 ]; then
+	shown="$(printf '%s\n' "$signin_out" | grep -iE "error|denied|refus|invalid|not found|not authorized|fail|expired|tenancy" | head -6)"
+	[ -n "$shown" ] || shown="$(printf '%s\n' "$signin_out" | grep -v '^$' | tail -6)"
+	echo "FAIL    oci     session sign-in did not complete (exit $signin_rc)" >&2
+	if [ -n "$shown" ]; then
+		printf '%s\n' "$shown" | sed 's/^/        /' >&2
+	fi
+	{
+		echo "        common causes, in the order they actually happen:"
+		echo "          1. the browser step was not finished, or the terminal was closed while it"
+		echo "             polled -- the approval is then discarded and this must be re-run"
+		echo "          2. the tenancy NAME is wrong (it is not the OCID): expected 'chidionyema'"
+			echo "             per docs/reference/oci-tenancy.md"
+		echo "          3. the account signing in is not the tenancy owner"
+		echo "        To see the CLI's own words in full, run its command directly:"
+		echo "          oci session authenticate --region $REGION --tenancy-name $TENANCY_NAME --profile-name $PROFILE"
+	} >&2
 	exit 1
 fi
 
