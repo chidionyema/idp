@@ -1,72 +1,116 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
-import { dark as T } from '../theme/tokens';
+import {
+  Button,
+  IconButton,
+  TextField,
+  Tooltip,
+} from '@mui/material';
 import type { Session } from './fleetBoard';
+import { ACTIVITY_WORD } from './fleetMotion';
 import type { Activity } from './fleetMotion';
 
-/* ------------------------------------------------------------------ *
- * FleetCanvas
+/* ------------------------------------------------------------------------------------------------
+ * FleetCanvas v2 — the fleet as a live canvas AND a control surface.
  *
- * A force-directed "ops board" for the fleet. The layout is computed
- * once per data change and then frozen: a map that rearranges itself on
- * every poll is unreadable, and stability beats beauty in ops tooling.
- * ------------------------------------------------------------------ */
+ * Two jobs, one file. The canvas answers "what is the fleet doing right now" at a glance; the
+ * command deck answers "and what do I do about it" without leaving the picture. They share the
+ * same selection state, which is why they live together: a panel that opens somewhere else on the
+ * page is a second screen, and a second screen is where attention goes to die.
+ *
+ * Everything here is deterministic given the data. The force layout is seeded from the session-id
+ * set, so the same fleet draws the same picture on every poll -- a fleet that rearranges itself
+ * every three seconds is unreadable, and unreadable is the same as absent.
+ * ---------------------------------------------------------------------------------------------- */
 
-// --- design tokens we reference often enough to alias -----------------
-const STATE_COLOR: Record<string, string> = {
-  running: '#22c55e',
-  paused: '#f59e0b',
-  failed: '#ef4444',
-  stopped: T.textMuted,
-  unknown: T.textMuted,
-};
+/* ------------------------------------------------------------------------------------------------
+ * Types
+ * ---------------------------------------------------------------------------------------------- */
 
-const ACTIVITY_WORD: Record<string, string> = {
-  thinking: 'thinking',
-  waiting: 'waiting',
-  stuck: 'stuck',
-  finished: 'finished',
-  unknown: 'unknown',
-};
+export interface Signal {
+  id?: string;
+  kind: string;
+  by?: string;
+  acknowledged?: boolean;
+  error?: string | null;
+  created_at?: string | null;
+}
 
-// The four motions map to existing keyframes in styles.css. We only pick
-// the animation name here; the keyframes themselves are NOT redefined.
-const ACTIVITY_ANIMATION: Record<string, string> = {
-  thinking: 'fleet-breathe 4s ease-in-out infinite',
-  waiting: 'fleet-drift 6s ease-in-out infinite',
-  stuck: 'fleet-jitter 0.125s steps(2, end) infinite',
-  finished: 'none',
-  unknown: 'none',
-};
+export interface Note {
+  id?: string;
+  author?: string;
+  text: string;
+  created_at?: string | null;
+}
 
-const DAILY_CAP_USD = 50;
-const RATE_ALERT_USD_PER_MIN = 5;
-const MIN_RADIUS = 18;
-const MAX_RADIUS = 42;
-const EVENT_COUNT_FOR_MAX_RADIUS = 200;
+export interface FleetCanvasProps {
+  sessions: Session[];
+  board: { state: string; summary?: string; sessions: Session[] };
+  onSubmitSteer?: (
+    sessionId: string,
+    runtime: string,
+    text: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  onAddNote?: (sessionId: string, author: string, note: string) => Promise<void>;
+  signalsBySession?: Record<string, Signal[]>;
+  notesBySession?: Record<string, Note[]>;
+  onRequestSignals?: (sessionId: string) => void;
+  onRequestNotes?: (sessionId: string) => void;
+  onRequestReceipt?: (
+    sessionId: string,
+  ) => { status: string; verdict?: string; reason?: string } | undefined;
+}
 
-// --- deterministic PRNG ----------------------------------------------
-// A seeded PRNG keyed off the session_id hash guarantees the same data
-// always produces the same layout. This is non-negotiable: without it
-// the fleet reshuffles on every poll.
-function hashString(input: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < input.length; i += 1) {
-    h ^= input.charCodeAt(i);
+/* ------------------------------------------------------------------------------------------------
+ * Tokens. Sizes are 11/12/13/14/16 only; spacing is 4/8/12/16/24/32/48 only; radii are 4/8/999
+ * only. These are not suggestions -- a canvas that invents a 15px label reads as a different
+ * product from the page it sits on.
+ * ---------------------------------------------------------------------------------------------- */
+
+const T = {
+  bg: '#0b0d10',
+  surface: '#12151a',
+  surface2: '#171b21',
+  border: '#242a33',
+  textPrimary: '#e6e9ee',
+  textMuted: '#8b93a1',
+  accent: '#5b9dff',
+  green: '#22c55e',
+  amber: '#f59e0b',
+  red: '#ef4444',
+  violet: '#a78bfa',
+} as const;
+
+const FONT_MONO =
+  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+
+/* ------------------------------------------------------------------------------------------------
+ * Deterministic randomness.
+ *
+ * The layout must be a pure function of the data. Math.random() would give a different picture on
+ * every render, and a picture that changes when nothing changed teaches the reader to ignore it.
+ * hashString() seeds makeRng() from the session-id set, so the same fleet always lands the same
+ * way -- and a fleet that gains one agent only moves that agent.
+ * ---------------------------------------------------------------------------------------------- */
+
+function hashString(s: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
   return h >>> 0;
 }
 
 function makeRng(seed: number): () => number {
-  // mulberry32 — small, fast, good enough for layout jitter.
   let a = seed >>> 0;
-  return () => {
+  return function next(): number {
     a |= 0;
     a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
@@ -75,917 +119,1324 @@ function makeRng(seed: number): () => number {
   };
 }
 
-// --- geometry ---------------------------------------------------------
+/* ------------------------------------------------------------------------------------------------
+ * Activity vocabulary.
+ *
+ * `activity` is the four-state field derived server-side from evidence; `state` is elapsed-time
+ * only and cannot tell a thinking agent from a wedged one. The canvas draws activity, and falls
+ * back to `unknown` when the field is absent -- a node that breathes when nobody knows whether it
+ * is alive is the same lie as a green dot.
+ * ---------------------------------------------------------------------------------------------- */
 
-interface LayoutNode {
-  id: string;
+type Activity = 'thinking' | 'waiting' | 'stuck' | 'finished' | 'unknown';
+
+function activityOf(s: Session): Activity {
+  const a = s.activity;
+  if (a === 'thinking' || a === 'waiting' || a === 'stuck' || a === 'finished') return a;
+  return 'unknown';
+}
+
+function activityColor(a: Activity): string {
+  switch (a) {
+    case 'thinking':
+      return T.accent;
+    case 'waiting':
+      return T.amber;
+    case 'stuck':
+      return T.red;
+    case 'finished':
+      return T.green;
+    default:
+      return T.textMuted;
+  }
+}
+
+/** The four motions from styles.css. Reused, never redefined -- the keyframes live in one place. */
+function activityMotion(a: Activity): string {
+  switch (a) {
+    case 'thinking':
+      return 'fleet-breathe 4s ease-in-out infinite';
+    case 'waiting':
+      return 'fleet-drift 6s ease-in-out infinite';
+    case 'stuck':
+      return 'fleet-jitter .125s steps(2, end) infinite';
+    default:
+      return 'none';
+  }
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Geometry helpers.
+ * ---------------------------------------------------------------------------------------------- */
+
+type Pt = { x: number; y: number };
+
+type LaidOutNode = {
+  session: Session;
+  activity: Activity;
   x: number;
   y: number;
-  vx: number;
-  vy: number;
   r: number;
+  /** 0..1 share of today's spend across the visible fleet. Drives the temperature arc. */
+  spendShare: number;
+  /** 0..1 activity level, drives the ring. */
+  level: number;
+};
+
+type RepoEdge = {
+  key: string;
+  repo: string;
+  a: LaidOutNode;
+  b: LaidOutNode;
+  /** Combined throughput of the two endpoints -- particle speed. */
+  throughput: number;
+  /** How many agents sit on this repo -- particle density. */
+  density: number;
+};
+
+/** Radius: 18 at zero events, 42 at 200+. Saturating, so a runaway agent does not eat the canvas. */
+function radiusFor(eventCount: number | null | undefined): number {
+  const n = typeof eventCount === 'number' && Number.isFinite(eventCount) ? eventCount : 0;
+  return 18 + 24 * Math.min(1, Math.max(0, n) / 200);
 }
 
-interface LayoutEdge {
-  a: number;
-  b: number;
+/** Activity level 0..1 from event_count, used for the ring opacity. */
+function levelFor(eventCount: number | null | undefined): number {
+  const n = typeof eventCount === 'number' && Number.isFinite(eventCount) ? eventCount : 0;
+  return Math.min(1, Math.max(0, n) / 200);
 }
 
-function radiusFor(eventCount: number): number {
-  const t = Math.min(1, Math.max(0, eventCount) / EVENT_COUNT_FOR_MAX_RADIUS);
-  return MIN_RADIUS + (MAX_RADIUS - MIN_RADIUS) * t;
+/** Spend temperature: green -> amber -> red by share of the day's spend. */
+function temperatureColor(share: number): string {
+  if (share <= 0.33) return T.green;
+  if (share <= 0.66) return T.amber;
+  return T.red;
 }
 
-/**
- * Deterministic force simulation. Attraction along repo edges, repulsion
- * between all nodes, and a centering force. Runs a fixed number of
- * iterations with no animation — the result is a frozen snapshot.
- */
-function computeLayout(
+function arcPath(cx: number, cy: number, r: number, sweep: number): string {
+  const clamped = Math.max(0, Math.min(1, sweep));
+  if (clamped <= 0) return '';
+  const start = -Math.PI / 2;
+  const end = start + clamped * Math.PI * 2;
+  const x1 = cx + r * Math.cos(start);
+  const y1 = cy + r * Math.sin(start);
+  const x2 = cx + r * Math.cos(end);
+  const y2 = cy + r * Math.sin(end);
+  const large = clamped > 0.5 ? 1 : 0;
+  return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Formatting. A missing value is `—`, never `0` and never `$0.00`. The distinction matters: an
+ * agent that spent nothing and an agent whose spend we cannot read are different facts, and
+ * collapsing them hides the second one.
+ * ---------------------------------------------------------------------------------------------- */
+
+const DASH = '—';
+
+function fmtSpend(v: number | null | undefined): string {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return DASH;
+  return `$${v.toFixed(2)}`;
+}
+
+function fmtCount(v: number | null | undefined): string {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return DASH;
+  return String(v);
+}
+
+function fmtText(v: string | null | undefined): string {
+  if (typeof v !== 'string' || v.length === 0) return DASH;
+  return v;
+}
+
+function fmtPRs(v: string[] | null | undefined): string {
+  if (!Array.isArray(v) || v.length === 0) return DASH;
+  return v.join(', ');
+}
+
+function relTime(iso: string | null | undefined): string {
+  if (typeof iso !== 'string' || iso.length === 0) return DASH;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return DASH;
+  const secs = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Layout.
+ *
+ * A seeded force relaxation. O(n^2) per iteration is fine at 23 nodes and still fine at 200 with
+ * the iteration cap; the point is that it runs ONCE per (session-id set, container size), never
+ * per frame. The result is memoised and the render loop only reads it.
+ * ---------------------------------------------------------------------------------------------- */
+
+function layoutFleet(
   sessions: Session[],
   width: number,
   height: number,
-): LayoutNode[] {
-  const n = sessions.length;
-  if (n === 0) return [];
+): { nodes: LaidOutNode[]; edges: RepoEdge[] } {
+  if (sessions.length === 0 || width <= 0 || height <= 0) {
+    return { nodes: [], edges: [] };
+  }
 
-  const seed = sessions.reduce(
-    (acc, s) => (acc ^ hashString(s.session_id)) >>> 0,
-    0x9e3779b9,
-  );
+  const seed = hashString(sessions.map((s) => s.session_id).join('|'));
   const rng = makeRng(seed);
 
-  const cx = width / 2;
-  const cy = height / 2;
+  const pad = 48;
+  const innerW = Math.max(1, width - pad * 2);
+  const innerH = Math.max(1, height - pad * 2);
 
-  const nodes: LayoutNode[] = sessions.map((s) => {
-    // Seed positions in a jittered ring so the sim has somewhere to start
-    // but the outcome is still fully determined by the data.
-    const angle = rng() * Math.PI * 2;
-    const radius = Math.min(width, height) * (0.15 + rng() * 0.25);
+  // Seed positions on a jittered grid so the relaxation starts spread out rather than piled.
+  const cols = Math.max(1, Math.ceil(Math.sqrt(sessions.length)));
+  const rows = Math.max(1, Math.ceil(sessions.length / cols));
+
+  const totalSpend = sessions.reduce((acc, s) => {
+    const v = typeof s.spend_usd === 'number' && Number.isFinite(s.spend_usd) ? s.spend_usd : 0;
+    return acc + v;
+  }, 0);
+
+  const nodes: LaidOutNode[] = sessions.map((s, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const jx = (rng() - 0.5) * (innerW / cols) * 0.6;
+    const jy = (rng() - 0.5) * (innerH / rows) * 0.6;
+    const x = pad + ((col + 0.5) / cols) * innerW + jx;
+    const y = pad + ((row + 0.5) / rows) * innerH + jy;
+    const spend = typeof s.spend_usd === 'number' && Number.isFinite(s.spend_usd) ? s.spend_usd : 0;
     return {
-      id: s.session_id,
-      x: cx + Math.cos(angle) * radius,
-      y: cy + Math.sin(angle) * radius,
-      vx: 0,
-      vy: 0,
-      r: radiusFor(s.event_count ?? 0),
+      session: s,
+      activity: activityOf(s),
+      x,
+      y,
+      r: radiusFor(s.event_count),
+      spendShare: totalSpend > 0 ? spend / totalSpend : 0,
+      level: levelFor(s.event_count),
     };
   });
 
-  // Edges: agents sharing a repo are linked.
-  const byRepo = new Map<string, number[]>();
-  sessions.forEach((s, i) => {
-    const key = s.repo || '__none__';
-    const list = byRepo.get(key);
-    if (list) list.push(i);
-    else byRepo.set(key, [i]);
-  });
-  const edges: LayoutEdge[] = [];
-  byRepo.forEach((indices) => {
-    for (let i = 0; i < indices.length; i += 1) {
-      for (let j = i + 1; j < indices.length; j += 1) {
-        edges.push({ a: indices[i], b: indices[j] });
-      }
-    }
-  });
+  // Relaxation: repulsion between all pairs, weak centring, and a hard clamp to the box.
+  const iterations = sessions.length > 120 ? 60 : 140;
+  const centreX = width / 2;
+  const centreY = height / 2;
 
-  const ITERATIONS = 300;
-  const REPULSION = 4200;
-  const ATTRACTION = 0.012;
-  const CENTERING = 0.008;
-  const DAMPING = 0.85;
-  const IDEAL_EDGE = 140;
-
-  for (let iter = 0; iter < ITERATIONS; iter += 1) {
-    // Repulsion between all pairs.
-    for (let i = 0; i < n; i += 1) {
-      for (let j = i + 1; j < n; j += 1) {
-        const a = nodes[i];
+  for (let it = 0; it < iterations; it += 1) {
+    const cooling = 1 - it / iterations;
+    for (let i = 0; i < nodes.length; i += 1) {
+      const a = nodes[i];
+      let fx = 0;
+      let fy = 0;
+      for (let j = 0; j < nodes.length; j += 1) {
+        if (i === j) continue;
         const b = nodes[j];
         let dx = a.x - b.x;
         let dy = a.y - b.y;
-        let distSq = dx * dx + dy * dy;
-        if (distSq < 0.01) {
-          // Deterministic nudge for coincident nodes.
-          dx = (rng() - 0.5) * 0.5;
-          dy = (rng() - 0.5) * 0.5;
-          distSq = dx * dx + dy * dy + 0.01;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 0.01) {
+          dx = (rng() - 0.5) * 2;
+          dy = (rng() - 0.5) * 2;
+          d2 = dx * dx + dy * dy;
         }
-        const dist = Math.sqrt(distSq);
-        const force = REPULSION / distSq;
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-        a.vx += fx;
-        a.vy += fy;
-        b.vx -= fx;
-        b.vy -= fy;
+        const d = Math.sqrt(d2);
+        const minGap = a.r + b.r + 16;
+        const force = ((minGap * minGap) / d2) * 0.9;
+        fx += (dx / d) * force;
+        fy += (dy / d) * force;
       }
-    }
-
-    // Attraction along edges.
-    for (let e = 0; e < edges.length; e += 1) {
-      const a = nodes[edges[e].a];
-      const b = nodes[edges[e].b];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-      const force = (dist - IDEAL_EDGE) * ATTRACTION;
-      const fx = (dx / dist) * force;
-      const fy = (dy / dist) * force;
-      a.vx += fx;
-      a.vy += fy;
-      b.vx -= fx;
-      b.vy -= fy;
-    }
-
-    // Centering + integrate.
-    for (let i = 0; i < n; i += 1) {
-      const node = nodes[i];
-      node.vx += (cx - node.x) * CENTERING;
-      node.vy += (cy - node.y) * CENTERING;
-      node.vx *= DAMPING;
-      node.vy *= DAMPING;
-      node.x += node.vx;
-      node.y += node.vy;
-
-      // Keep nodes inside the canvas with a margin equal to their radius.
-      const margin = node.r + 8;
-      if (node.x < margin) node.x = margin;
-      if (node.x > width - margin) node.x = width - margin;
-      if (node.y < margin) node.y = margin;
-      if (node.y > height - margin) node.y = height - margin;
+      // Weak pull to centre keeps the cloud from drifting off the canvas.
+      fx += (centreX - a.x) * 0.004;
+      fy += (centreY - a.y) * 0.004;
+      a.x += fx * cooling * 8;
+      a.y += fy * cooling * 8;
+      a.x = Math.max(pad, Math.min(width - pad, a.x));
+      a.y = Math.max(pad, Math.min(height - pad, a.y));
     }
   }
 
-  return nodes;
+  // Repo edges: agents sharing a repo are joined. One edge per repo pair, not per agent pair --
+  // a repo with six agents is one thick flow, not fifteen lines.
+  const byRepo = new Map<string, LaidOutNode[]>();
+  for (const n of nodes) {
+    const repo = n.session.repo;
+    if (typeof repo !== 'string' || repo.length === 0) continue;
+    const list = byRepo.get(repo);
+    if (list) list.push(n);
+    else byRepo.set(repo, [n]);
+  }
+
+  const edges: RepoEdge[] = [];
+  byRepo.forEach((members, repo) => {
+    if (members.length < 2) return;
+    // Star topology from the first member: keeps edge count linear in agents, not quadratic.
+    const hub = members[0];
+    for (let i = 1; i < members.length; i += 1) {
+      const other = members[i];
+      const throughput =
+        (hub.session.event_count ?? 0) + (other.session.event_count ?? 0);
+      edges.push({
+        key: `${repo}:${hub.session.session_id}:${other.session.session_id}`,
+        repo,
+        a: hub,
+        b: other,
+        throughput,
+        density: members.length,
+      });
+    }
+  });
+
+  return { nodes, edges };
 }
 
-// --- number roll ------------------------------------------------------
-// 150ms fade on change. No library; a keyed span re-mounts and the CSS
-// animation replays. Honours prefers-reduced-motion via the stylesheet.
-function RollingNumber({ value }: { value: number }): JSX.Element {
-  return (
-    <span key={value} className="fleet-num-roll" aria-hidden="true">
-      {value}
-    </span>
-  );
-}
+/* ------------------------------------------------------------------------------------------------
+ * The command deck.
+ * ---------------------------------------------------------------------------------------------- */
 
-// --- ticker -----------------------------------------------------------
-interface TickerProps {
-  counts: Record<string, number>;
-  ratePerMin: number;
-  todaySpend: number;
-  totalAgents: number;
-  activeFilter: string | null;
-  onToggleFilter: (activity: string) => void;
-  filterRef: React.RefObject<HTMLInputElement>;
-  filterText: string;
-  onFilterText: (value: string) => void;
-}
+type SteerState = 'idle' | 'sending' | 'sent' | 'failed';
 
-function Ticker({
-  counts,
-  ratePerMin,
-  todaySpend,
-  totalAgents,
-  activeFilter,
-  onToggleFilter,
-  filterRef,
-  filterText,
-  onFilterText,
-}: TickerProps): JSX.Element {
-  const rateHot = ratePerMin > RATE_ALERT_USD_PER_MIN;
-  const order: Array<{ key: string; glyph: string }> = [
-    { key: 'thinking', glyph: '●' },
-    { key: 'waiting', glyph: '◐' },
-    { key: 'stuck', glyph: '▲' },
-    { key: 'finished', glyph: '✓' },
-  ];
+type DeckProps = {
+  session: Session;
+  anchor: Pt;
+  containerWidth: number;
+  containerHeight: number;
+  signals: Signal[];
+  notes: Note[];
+  onSubmitSteer?: FleetCanvasProps['onSubmitSteer'];
+  onAddNote?: FleetCanvasProps['onAddNote'];
+  onRequestSignals?: FleetCanvasProps['onRequestSignals'];
+  onRequestNotes?: FleetCanvasProps['onRequestNotes'];
+  onRequestReceipt?: FleetCanvasProps['onRequestReceipt'];
+  onClose: () => void;
+};
 
-  return (
-    <div
-      style={{
-        height: 44,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 24,
-        padding: '0 16px',
-        background: T.surface1,
-        borderBottom: `1px solid ${T.borderSubtle}`,
-        fontFamily:
-          'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-        fontSize: 13,
-        lineHeight: 1.5,
-        color: T.textSecondary,
-        flexShrink: 0,
-      }}
-    >
-      {order.map(({ key, glyph }) => {
-        const count = counts[key] ?? 0;
-        const pressed = activeFilter === key;
-        return (
-          <button
-            key={key}
-            type="button"
-            aria-pressed={pressed}
-            aria-label={`Filter: ${count} ${key}`}
-            onClick={() => onToggleFilter(key)}
+const DECK_WIDTH = 360;
+
+function CommandDeck(props: DeckProps): JSX.Element {
+  const {
+    session,
+    anchor,
+    containerWidth,
+    containerHeight,
+    signals,
+    notes,
+    onSubmitSteer,
+    onAddNote,
+    onRequestSignals,
+    onRequestNotes,
+    onRequestReceipt,
+    onClose,
+  } = props;
+
+  const activity = activityOf(session);
+
+  const [steerText, setSteerText] = useState('');
+  const [steerState, setSteerState] = useState<SteerState>('idle');
+  const [steerError, setSteerError] = useState<string | null>(null);
+  const [emptyWarn, setEmptyWarn] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [noteAuthor, setNoteAuthor] = useState('');
+  const [noteText, setNoteText] = useState('');
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [taskExpanded, setTaskExpanded] = useState(false);
+  const [receipt, setReceipt] = useState<
+    { status: string; verdict?: string; reason?: string } | undefined
+  >(undefined);
+  const [receiptFetched, setReceiptFetched] = useState(false);
+
+  const recognitionRef = useRef<any>(null);
+  const sentTimerRef = useRef<number | null>(null);
+  const emptyTimerRef = useRef<number | null>(null);
+
+  // Ask for the timeline once, on open. The parent owns the data; we own the request.
+  useEffect(() => {
+    if (onRequestSignals) onRequestSignals(session.session_id);
+    if (onRequestNotes) onRequestNotes(session.session_id);
+  }, [onRequestSignals, onRequestNotes, session.session_id]);
+
+  // Receipt is fetched on first open only. A verdict is evidence, and evidence does not change
+  // because the panel was reopened.
+  useEffect(() => {
+    if (receiptFetched) return;
+    setReceiptFetched(true);
+    if (onRequestReceipt) {
+      setReceipt(onRequestReceipt(session.session_id));
+    } else {
+      setReceipt(undefined);
+    }
+  }, [onRequestReceipt, session.session_id, receiptFetched]);
+
+  useEffect(() => {
+    return () => {
+      if (sentTimerRef.current !== null) window.clearTimeout(sentTimerRef.current);
+      if (emptyTimerRef.current !== null) window.clearTimeout(emptyTimerRef.current);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          /* recognition already stopped */
+        }
+      }
+    };
+  }, []);
+
+  const speechAvailable =
+    typeof window !== 'undefined' &&
+    typeof (window as any).webkitSpeechRecognition === 'function';
+
+  const startListening = useCallback(() => {
+    if (!speechAvailable) return;
+    const Ctor = (window as any).webkitSpeechRecognition;
+    const rec = new Ctor();
+    rec.continuous = false;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+    rec.onresult = (ev: any) => {
+      let transcript = '';
+      for (let i = ev.resultIndex; i < ev.results.length; i += 1) {
+        transcript += ev.results[i][0].transcript;
+      }
+      setSteerText((prev) => (prev ? `${prev} ${transcript}` : transcript));
+    };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => setListening(false);
+    recognitionRef.current = rec;
+    setListening(true);
+    try {
+      rec.start();
+    } catch {
+      setListening(false);
+    }
+  }, [speechAvailable]);
+
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        /* already stopped */
+      }
+    }
+    setListening(false);
+  }, []);
+
+  const submitSteer = useCallback(async () => {
+    const text = steerText.trim();
+    if (text.length === 0) {
+      // An empty steer must not silently no-op -- the reader would believe it was sent.
+      setEmptyWarn(true);
+      if (emptyTimerRef.current !== null) window.clearTimeout(emptyTimerRef.current);
+      emptyTimerRef.current = window.setTimeout(() => setEmptyWarn(false), 3000);
+      return;
+    }
+    if (!onSubmitSteer) {
+      setSteerState('failed');
+      setSteerError('No steer channel is wired up.');
+      return;
+    }
+    setSteerState('sending');
+    setSteerError(null);
+    try {
+      const res = await onSubmitSteer(session.session_id, session.runtime, text);
+      if (res && res.ok) {
+        setSteerState('sent');
+        setSteerText('');
+        if (sentTimerRef.current !== null) window.clearTimeout(sentTimerRef.current);
+        sentTimerRef.current = window.setTimeout(() => setSteerState('idle'), 2000);
+      } else {
+        setSteerState('failed');
+        setSteerError(res && res.error ? res.error : 'Steer was rejected.');
+      }
+    } catch (err) {
+      setSteerState('failed');
+      setSteerError(err instanceof Error ? err.message : 'Steer failed.');
+    }
+  }, [steerText, onSubmitSteer, session.session_id, session.runtime]);
+
+  const submitNote = useCallback(async () => {
+    const text = noteText.trim();
+    if (text.length === 0) return;
+    if (!onAddNote) return;
+    setNoteBusy(true);
+    try {
+      await onAddNote(session.session_id, noteAuthor.trim() || 'operator', text);
+      setNoteText('');
+      if (onRequestNotes) onRequestNotes(session.session_id);
+    } finally {
+      setNoteBusy(false);
+    }
+  }, [noteText, noteAuthor, onAddNote, session.session_id, onRequestNotes]);
+
+  // Position: prefer the right of the node, flip left when there is no room, clamp vertically.
+  const gap = 24;
+  const preferRight = anchor.x + gap + DECK_WIDTH <= containerWidth - 8;
+  const left = preferRight
+    ? anchor.x + gap
+    : Math.max(8, anchor.x - gap - DECK_WIDTH);
+  const top = Math.max(8, Math.min(containerHeight - 200, anchor.y - 80));
+
+  // Merged timeline, newest first. Notes and signals are different facts and stay labelled.
+  const timeline = useMemo(() => {
+    type Row = { key: string; at: number; node: JSX.Element };
+    const rows: Row[] = [];
+    signals.forEach((sig, i) => {
+      const at = sig.created_at ? Date.parse(sig.created_at) : 0;
+      const when = Number.isFinite(at) ? at : 0;
+      let line: string;
+      if (sig.error) {
+        line = `${sig.kind} ${sig.by ?? 'operator'} failed: ${sig.error}`;
+      } else if (sig.acknowledged) {
+        line = `${sig.kind} ${sig.by ?? 'operator'} sent, read by the session`;
+      } else {
+        // NEVER "delivered" for an unread steer. Delivered is a claim about the reader.
+        line = `${sig.kind} ${sig.by ?? 'operator'} sent, not yet read`;
+      }
+      rows.push({
+        key: `sig-${sig.id ?? i}`,
+        at: when,
+        node: (
+          <div
+            key={`sig-${sig.id ?? i}`}
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              // Fixed column width so the eye scans at a steady rhythm.
-              minWidth: 96,
-              padding: '4px 8px',
-              background: pressed ? T.surface3 : 'transparent',
-              border: `1px solid ${pressed ? T.borderStrong : 'transparent'}`,
-              borderRadius: 4,
-              color: pressed ? T.textPrimary : T.textSecondary,
-              font: 'inherit',
-              cursor: 'pointer',
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: sig.error ? T.red : T.textMuted,
+              padding: '4px 0',
+              borderBottom: `1px solid ${T.border}`,
             }}
           >
-            <span aria-hidden="true">{glyph}</span>
-            <RollingNumber value={count} />
-            <span>{key}</span>
-          </button>
-        );
-      })}
-
-      <span
-        style={{
-          minWidth: 96,
-          color: T.textPrimary,
-          // Amber leading edge when burn rate is hot.
-          borderLeft: rateHot ? `2px solid #f59e0b` : '2px solid transparent',
-          paddingLeft: 8,
-        }}
-      >
-        ${ratePerMin.toFixed(1)}/min
-      </span>
-
-      <span style={{ minWidth: 120, color: T.textSecondary }}>
-        ${todaySpend.toFixed(2)} today
-      </span>
-
-      <span style={{ minWidth: 96, color: T.textSecondary }}>
-        {totalAgents} agents
-      </span>
-
-      <input
-        ref={filterRef}
-        value={filterText}
-        onChange={(e) => onFilterText(e.target.value)}
-        placeholder="filter…"
-        aria-label="Filter agents by text"
-        style={{
-          marginLeft: 'auto',
-          width: 160,
-          height: 28,
-          padding: '0 8px',
-          background: T.surface2,
-          border: `1px solid ${T.border}`,
-          borderRadius: 4,
-          color: T.textPrimary,
-          font: 'inherit',
-          outline: 'none',
-        }}
-      />
-    </div>
-  );
-}
-
-// --- burn bar ---------------------------------------------------------
-interface BurnBarProps {
-  todaySpend: number;
-  ratePerMin: number;
-  totalAgents: number;
-}
-
-function BurnBar({
-  todaySpend,
-  ratePerMin,
-  totalAgents,
-}: BurnBarProps): JSX.Element {
-  const fraction = Math.min(1, Math.max(0, todaySpend / DAILY_CAP_USD));
-  const remaining = 1 - fraction;
-  const edgeOpacity = Math.min(1, ratePerMin / RATE_ALERT_USD_PER_MIN);
-
-  // Below 20% remaining the edge turns amber; below 5% it also pulses.
-  const low = remaining < 0.2;
-  const critical = remaining < 0.05;
-  const edgeColor = low ? '#f59e0b' : T.accent;
-
-  return (
-    <div style={{ padding: '8px 16px 12px', flexShrink: 0 }}>
-      <div
-        style={{
-          position: 'relative',
-          height: 6,
-          width: '100%',
-          background: T.surface3,
-          borderRadius: 3,
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            height: 6,
-            width: `${fraction * 100}%`,
-            background: T.accent,
-            borderRadius: 3,
-            // The leading edge glow encodes the burn rate.
-            boxShadow: `0 0 12px 2px ${edgeColor}`,
-            opacity: 1,
-          }}
-        >
+            {line}
+          </div>
+        ),
+      });
+    });
+    notes.forEach((note, i) => {
+      const at = note.created_at ? Date.parse(note.created_at) : 0;
+      const when = Number.isFinite(at) ? at : 0;
+      rows.push({
+        key: `note-${note.id ?? i}`,
+        at: when,
+        node: (
           <div
+            key={`note-${note.id ?? i}`}
             style={{
-              position: 'absolute',
-              right: 0,
-              top: 0,
-              height: 6,
-              width: 2,
-              background: edgeColor,
-              opacity: edgeOpacity,
-              boxShadow: `0 0 12px 2px ${edgeColor}`,
-              animation: critical
-                ? 'fleet-halo 1.6s ease-out infinite'
-                : 'none',
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: T.textPrimary,
+              padding: '4px 0',
+              borderBottom: `1px solid ${T.border}`,
             }}
-          />
-        </div>
-      </div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          marginTop: 4,
-          fontSize: 11,
-          lineHeight: 1.2,
-          color: T.textMuted,
-          fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-        }}
-      >
-        <span>
-          today ${todaySpend.toFixed(2)} / ${DAILY_CAP_USD}
-        </span>
-        <span>{totalAgents} agents</span>
-      </div>
-    </div>
-  );
-}
+          >
+            <span style={{ color: T.textMuted }}>note {note.author ?? 'operator'}: </span>
+            {note.text}
+          </div>
+        ),
+      });
+    });
+    rows.sort((a, b) => b.at - a.at);
+    return rows;
+  }, [signals, notes]);
 
-// --- detail panel -----------------------------------------------------
-interface DetailPanelProps {
-  session: Session;
-  x: number;
-  y: number;
-  pinned: boolean;
-}
+  const task = session.task ?? '';
+  const taskLines = task.split('\n');
+  const taskTruncatable = taskLines.length > 5 || task.length > 320;
 
-function DetailPanel({
-  session,
-  x,
-  y,
-  pinned,
-}: DetailPanelProps): JSX.Element {
   return (
     <div
+      data-testid="command-deck"
       role="dialog"
-      aria-label={`Details for ${session.runtime} ${session.session_id}`}
+      aria-label={`Command deck for ${session.session_id}`}
       style={{
         position: 'absolute',
-        left: x,
-        top: y,
+        left,
+        top,
+        width: DECK_WIDTH,
         background: T.surface2,
         border: `1px solid ${T.border}`,
         borderRadius: 8,
-        padding: '12px 14px',
-        maxWidth: 320,
+        padding: 16,
         boxShadow: '0 8px 24px rgba(0,0,0,.5)',
         color: T.textPrimary,
-        fontSize: 13,
-        lineHeight: 1.5,
-        pointerEvents: pinned ? 'auto' : 'none',
-        zIndex: 10,
+        zIndex: 20,
+        animation: 'fleet-deck-in 200ms ease-out',
       }}
     >
-      <div
-        style={{
-          fontSize: 14,
-          lineHeight: 1.5,
-          fontWeight: 600,
-          marginBottom: 8,
-          // Clamp the task to three lines.
-          display: '-webkit-box',
-          WebkitLineClamp: 3,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-        }}
-      >
-        {session.task || '(no task)'}
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 8,
-          marginBottom: 8,
-        }}
-      >
+      {/* 1. Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <span
           style={{
-            fontSize: 12,
-            lineHeight: 1.2,
-            padding: '2px 8px',
-            borderRadius: 4,
-            background: T.surface3,
-            color: T.textSecondary,
+            width: 8,
+            height: 8,
+            borderRadius: 999,
+            background: activityColor(activity),
+            animation: activityMotion(activity),
+            flex: '0 0 auto',
           }}
-        >
+          aria-hidden="true"
+        />
+        <span style={{ fontSize: 14, fontWeight: 600, fontFamily: FONT_MONO }}>
           {session.runtime}
         </span>
-        <span
-          style={{
-            fontSize: 12,
-            lineHeight: 1.2,
-            padding: '2px 8px',
-            borderRadius: 4,
-            background: T.surface3,
-            color: T.textSecondary,
-          }}
-        >
-          {session.activity}
+        <span style={{ fontSize: 12, color: T.textMuted, fontFamily: FONT_MONO }}>
+          #{session.session_id.slice(-6)}
         </span>
         <span
           style={{
-            fontSize: 12,
-            lineHeight: 1.2,
-            padding: '2px 8px',
-            borderRadius: 4,
-            background: T.surface3,
-            color: T.textSecondary,
+            fontSize: 11,
+            color: activityColor(activity),
+            border: `1px solid ${activityColor(activity)}`,
+            borderRadius: 999,
+            padding: '0 8px',
+            marginLeft: 4,
           }}
         >
-          {session.state}
+          {activity}
         </span>
+        <button
+          type="button"
+          aria-label="Close command deck"
+          onClick={onClose}
+          style={{
+            marginLeft: 'auto',
+            background: 'transparent',
+            border: 'none',
+            color: T.textMuted,
+            fontSize: 16,
+            cursor: 'pointer',
+            lineHeight: 1,
+            padding: 4,
+          }}
+        >
+          ×
+        </button>
       </div>
 
-      <dl
+      {/* 2. Task */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>TASK</div>
+        <div
+          style={{
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: T.textPrimary,
+            maxHeight: taskExpanded ? 'none' : 5 * 13 * 1.5,
+            overflow: 'hidden',
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {task.length > 0 ? task : DASH}
+        </div>
+        {taskTruncatable ? (
+          <button
+            type="button"
+            onClick={() => setTaskExpanded((v) => !v)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: T.accent,
+              fontSize: 11,
+              cursor: 'pointer',
+              padding: '4px 0 0 0',
+            }}
+          >
+            {taskExpanded ? 'less' : 'more'}
+          </button>
+        ) : null}
+      </div>
+
+      {/* 3. Facts */}
+      <div
         style={{
-          margin: 0,
           display: 'grid',
-          gridTemplateColumns: 'auto 1fr',
-          columnGap: 12,
-          rowGap: 4,
-          fontSize: 13,
-          lineHeight: 1.5,
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: 8,
+          marginBottom: 12,
+          borderTop: `1px solid ${T.border}`,
+          borderBottom: `1px solid ${T.border}`,
+          padding: '8px 0',
         }}
       >
-        <dt style={{ color: T.textMuted }}>events</dt>
-        <dd style={{ margin: 0 }}>{session.event_count}</dd>
-        <dt style={{ color: T.textMuted }}>spend</dt>
-        <dd style={{ margin: 0 }}>{typeof session.spend_usd === 'number' ? `$${session.spend_usd.toFixed(2)}` : '—'}</dd>
-        <dt style={{ color: T.textMuted }}>repo</dt>
-        <dd style={{ margin: 0, wordBreak: 'break-all' }}>
-          {session.repo || '—'}
-        </dd>
-        <dt style={{ color: T.textMuted }}>id</dt>
-        <dd style={{ margin: 0, wordBreak: 'break-all' }}>
-          {session.session_id}
-        </dd>
-      </dl>
+        <Fact label="events" value={fmtCount(session.event_count)} />
+        {/* LAST SEEN.
+            `relTime` was written and then never used, which meant the deck showed events and
+            spend but NOT WHEN THE AGENT LAST DID ANYTHING -- the single most important fact for
+            answering "is this stuck?". It is promoted to the first row because it is what a
+            person looks for, and it reads as a duration, never a timestamp: "17m" is legible at
+            a glance where "2026-09-18T19:37:31Z" is not. */}
+        <Fact label="last seen" value={relTime(session.updated_at)} />
+        <Fact label="spend" value={fmtSpend(session.spend_usd)} />
+        <Fact label="repo" value={fmtText(session.repo)} />
+        <Fact label="ticket" value={fmtText(session.ticket)} />
+        <Fact label="PRs" value={fmtPRs(session.pull_requests)} />
+      </div>
+
+      {/* 4. Steer */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>STEER</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <TextField
+            value={steerText}
+            onChange={(e) => setSteerText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                void submitSteer();
+              }
+            }}
+            placeholder="Steer this agent…"
+            size="small"
+            multiline
+            maxRows={3}
+            fullWidth
+            inputProps={{ 'aria-label': 'Steer text' }}
+            sx={{
+              '& .MuiInputBase-root': {
+                fontSize: 13,
+                background: T.surface,
+                color: T.textPrimary,
+              },
+              '& .MuiOutlinedInput-notchedOutline': { borderColor: T.border },
+            }}
+          />
+          <Tooltip
+            title={
+              speechAvailable
+                ? 'Dictate a steer'
+                : 'Speech recognition is not available in this browser'
+            }
+          >
+            <span>
+              <IconButton
+                aria-label="Dictate steer"
+                disabled={!speechAvailable}
+                onClick={listening ? stopListening : startListening}
+                size="small"
+                sx={{
+                  color: listening ? T.red : T.textMuted,
+                  border: `1px solid ${listening ? T.red : T.border}`,
+                  borderRadius: 8,
+                  animation: listening ? 'fleet-breathe 1s ease-in-out infinite' : 'none',
+                }}
+              >
+                <span style={{ fontSize: 13 }}>🎙</span>
+              </IconButton>
+            </span>
+          </Tooltip>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          <Button
+            variant="contained"
+            size="small"
+            onClick={() => void submitSteer()}
+            disabled={steerState === 'sending'}
+            sx={{
+              fontSize: 12,
+              textTransform: 'none',
+              background: T.accent,
+              color: '#0b0d10',
+              '&:hover': { background: '#7fb2ff' },
+            }}
+          >
+            {steerState === 'sending'
+              ? '…'
+              : steerState === 'sent'
+                ? '✓ SENT'
+                : steerState === 'failed'
+                  ? '✕ FAIL'
+                  : 'STEER →'}
+          </Button>
+          {emptyWarn ? (
+            <span style={{ fontSize: 11, color: T.amber }}>Add your steer text first</span>
+          ) : null}
+        </div>
+        {steerState === 'failed' && steerError ? (
+          <div style={{ fontSize: 11, color: T.red, marginTop: 4 }}>{steerError}</div>
+        ) : null}
+      </div>
+
+      {/* 5. Note */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>NOTE</div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <TextField
+            value={noteAuthor}
+            onChange={(e) => setNoteAuthor(e.target.value)}
+            placeholder="author"
+            size="small"
+            inputProps={{ 'aria-label': 'Note author' }}
+            sx={{
+              width: 120,
+              '& .MuiInputBase-root': {
+                fontSize: 12,
+                background: T.surface,
+                color: T.textPrimary,
+              },
+              '& .MuiOutlinedInput-notchedOutline': { borderColor: T.border },
+            }}
+          />
+          <TextField
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="note"
+            size="small"
+            fullWidth
+            inputProps={{ 'aria-label': 'Note text' }}
+            sx={{
+              '& .MuiInputBase-root': {
+                fontSize: 12,
+                background: T.surface,
+                color: T.textPrimary,
+              },
+              '& .MuiOutlinedInput-notchedOutline': { borderColor: T.border },
+            }}
+          />
+        </div>
+        <Button
+          variant="outlined"
+          size="small"
+          disabled={noteBusy || noteText.trim().length === 0}
+          onClick={() => void submitNote()}
+          sx={{
+            fontSize: 12,
+            textTransform: 'none',
+            color: T.textPrimary,
+            borderColor: T.border,
+          }}
+        >
+          Note
+        </Button>
+      </div>
+
+      {/* 6. History */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>HISTORY</div>
+        <div
+          data-testid="deck-history"
+          style={{
+            maxHeight: 180,
+            overflowY: 'auto',
+            border: `1px solid ${T.border}`,
+            borderRadius: 4,
+            padding: '0 8px',
+            background: T.surface,
+          }}
+        >
+          {timeline.length === 0 ? (
+            <div style={{ fontSize: 12, color: T.textMuted, padding: '8px 0' }}>
+              No notes or signals yet.
+            </div>
+          ) : (
+            timeline.map((row) => row.node)
+          )}
+        </div>
+      </div>
+
+      {/* 7. Receipt */}
+      <div>
+        <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>RECEIPT</div>
+        <div data-testid="deck-receipt" style={{ fontSize: 12, color: T.textPrimary }}>
+          {receipt
+            ? receipt.status === 'unavailable'
+              ? `unavailable — ${receipt.reason ?? 'no reason given'}`
+              : `${receipt.status}${receipt.verdict ? ` — ${receipt.verdict}` : ''}`
+            : 'unavailable — no receipt source is wired up'}
+        </div>
+      </div>
     </div>
   );
 }
 
-// --- node -------------------------------------------------------------
-interface NodeProps {
-  session: Session;
-  node: LayoutNode;
-  hovered: boolean;
-  pinned: boolean;
-  onHover: (id: string | null) => void;
-  onSelect: (id: string) => void;
-}
-
-function Node({
-  session,
-  node,
-  hovered,
-  pinned,
-  onHover,
-  onSelect,
-}: NodeProps): JSX.Element {
-  const stateColor = STATE_COLOR[session.state ?? 'unknown'] ?? T.textMuted;
-  // `activity` is optional on the wire (an older backend omits it) and absent must mean
-  // `unknown`, never a default of thinking -- a node that breathes when nobody knows whether
-  // it is alive is the same lie as a green dot.
-  const activity: Activity = session.activity ?? 'unknown';
-  const animation = ACTIVITY_ANIMATION[activity] ?? 'none';
-  const isStuck = activity === 'stuck';
-  const isFinished = activity === 'finished';
-  const isWaiting = activity === 'waiting';
-  const isThinking = activity === 'thinking';
-
-  const last6 = session.session_id.slice(-6);
-  const initial = (session.runtime || '?').charAt(0).toUpperCase();
-  const label = `${initial} #${last6}`;
-  const activityWord = ACTIVITY_WORD[activity] ?? 'unknown';
-
-  const ariaLabel = `${session.runtime} ${activityWord}. ${
-    session.task || 'no task'
-  }. ${session.event_count} events.`;
-
-  const scale = hovered || pinned ? 1.08 : 1;
-
+function Fact({ label, value }: { label: string; value: string }): JSX.Element {
   return (
-    <g
-      role="button"
-      tabIndex={0}
-      // The session id as a testid, so a test addresses the SESSION rather than a glyph or a
-      // layout position -- both of which change as the design moves.
-      data-testid={`session-${session.session_id}`}
-      aria-label={ariaLabel}
-      onMouseEnter={() => onHover(session.session_id)}
-      onMouseLeave={() => onHover(null)}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect(session.session_id);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect(session.session_id);
-        }
-      }}
-      style={{
-        cursor: 'pointer',
-        outline: 'none',
-        transformOrigin: `${node.x}px ${node.y}px`,
-        transform: `scale(${scale})`,
-        transition:
-          'transform 180ms cubic-bezier(.34,1.56,.64,1)',
-      }}
-    >
-      {/* Stuck halo — a persistent expanding ring, not a one-shot. */}
-      {isStuck && (
-        <circle
-          cx={node.x}
-          cy={node.y}
-          r={node.r}
-          fill="none"
-          stroke={stateColor}
-          strokeWidth={2}
-          style={{
-            transformOrigin: `${node.x}px ${node.y}px`,
-            animation: 'fleet-halo 1.6s ease-out infinite',
-          }}
-        />
-      )}
-
-      {/* Activity ring: solid=thinking, dashed=waiting, none=finished. */}
-      {isThinking && (
-        <circle
-          cx={node.x}
-          cy={node.y}
-          r={node.r + 4}
-          fill="none"
-          stroke={stateColor}
-          strokeWidth={1.5}
-          opacity={0.7}
-        />
-      )}
-      {isWaiting && (
-        <circle
-          cx={node.x}
-          cy={node.y}
-          r={node.r + 4}
-          fill="none"
-          stroke={stateColor}
-          strokeWidth={1.5}
-          strokeDasharray="4 4"
-          opacity={0.7}
-        />
-      )}
-
-      {/* Body — area encodes work done. */}
-      <circle
-        cx={node.x}
-        cy={node.y}
-        r={node.r}
-        fill={T.surface2}
-        stroke={stateColor}
-        strokeWidth={2}
-      />
-
-      {/* Inner pulse — the activity motion lives on a smaller circle so
-          the body stays a stable target. */}
-      <circle
-        cx={node.x}
-        cy={node.y}
-        r={node.r * 0.55}
-        fill={stateColor}
-        opacity={isFinished ? 0.25 : 0.5}
-        style={{
-          transformOrigin: `${node.x}px ${node.y}px`,
-          animation: isFinished ? 'none' : animation,
-        }}
-      />
-
-      {/* Identity label: runtime initial + last 6 of the id. */}
-      <text
-        x={node.x}
-        y={node.y + node.r + 14}
-        textAnchor="middle"
-        fill={T.textSecondary}
-        fontSize={11}
-        style={{ lineHeight: 1.2, pointerEvents: 'none' }}
-      >
-        {label}
-      </text>
-
-      {/* Activity word — colour is never the only channel. */}
-      <text
-        x={node.x}
-        y={node.y + node.r + 26}
-        textAnchor="middle"
-        fill={T.textMuted}
-        fontSize={11}
-        style={{ lineHeight: 1.2, pointerEvents: 'none' }}
-      >
-        {activityWord}
-      </text>
-    </g>
+    <div>
+      <div style={{ fontSize: 11, color: T.textMuted }}>{label}</div>
+      <div style={{ fontSize: 13, color: T.textPrimary, fontFamily: FONT_MONO }}>{value}</div>
+    </div>
   );
 }
 
-// --- main component ---------------------------------------------------
-export interface FleetCanvasProps {
-  sessions: Session[];
-  board?: { state: string; reason?: string };
-}
+/* ------------------------------------------------------------------------------------------------
+ * The canvas.
+ * ---------------------------------------------------------------------------------------------- */
 
-export default function FleetCanvas({
-  sessions,
-  board,
-}: FleetCanvasProps): JSX.Element {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const filterRef = useRef<HTMLInputElement>(null);
+export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
+  const {
+    sessions,
+    board,
+    onSubmitSteer,
+    onAddNote,
+    signalsBySession,
+    notesBySession,
+    onRequestSignals,
+    onRequestNotes,
+    onRequestReceipt,
+  } = props;
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  // Container size drives the layout. ResizeObserver rather than window resize: the canvas is
+  // often in a pane, and a pane can change size without the window changing.
+  //
+  // A MEASUREMENT OF ZERO MUST NOT RENDER NOTHING. Measured 2026-09-18: with `size.w > 0` gating
+  // the whole SVG, a container that reports 0x0 -- jsdom (which implements no ResizeObserver and
+  // lays out nothing), a collapsed pane, a tab that has not been shown yet -- produced a page
+  // with no canvas, no nodes, no message, and NO ERROR. That is the silent-blank failure this
+  // estate keeps removing, so the initial size is a real default and getBoundingClientRect is
+  // only trusted once it reports something.
+  const FALLBACK_W = 1200;
+  const FALLBACK_H = 560;
   const [size, setSize] = useState<{ w: number; h: number }>({
-    w: 960,
-    h: 520,
+    w: FALLBACK_W,
+    h: FALLBACK_H,
   });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [pinnedId, setPinnedId] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
-  const [filterText, setFilterText] = useState('');
+  const [filter, setFilter] = useState<string>('all');
+  const particlesDisabledLogged = useRef(false);
 
-  // Measure the container so the layout can be computed against real
-  // dimensions. ResizeObserver keeps it honest without a window listener.
-  useEffect(() => {
+  // Container size drives the layout. ResizeObserver rather than window resize: the canvas is
+  // often in a pane, and a pane can change size without the window changing.
+  useLayoutEffect(() => {
     const el = containerRef.current;
-    if (!el) return undefined;
-    const update = () => {
+    if (!el) return;
+    const measure = () => {
       const rect = el.getBoundingClientRect();
-      setSize({ w: rect.width || 960, h: rect.height || 520 });
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      // Only adopt a real measurement. A 0 is "not laid out yet", and writing it back would
+      // replace a usable default with nothing -- the failure described above.
+      setSize(w > 0 && h > 0 ? { w, h } : { w: FALLBACK_W, h: FALLBACK_H });
     };
-    update();
-    if (typeof ResizeObserver !== 'undefined') {
-      const ro = new ResizeObserver(update);
+    measure();
+    if (typeof ResizeObserver === 'function') {
+      const ro = new ResizeObserver(measure);
       ro.observe(el);
       return () => ro.disconnect();
     }
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
   }, []);
 
-  // Keyboard: `/` focuses the filter, Escape clears it and unpins.
+  const runtimes = useMemo(() => {
+    const set = new Set<string>();
+    sessions.forEach((s) => set.add(s.runtime));
+    return Array.from(set).sort();
+  }, [sessions]);
+
+  const visibleSessions = useMemo(() => {
+    if (filter === 'all') return sessions;
+    return sessions.filter((s) => s.runtime === filter);
+  }, [sessions, filter]);
+
+  // Layout is memoised on the session-id set and the container size. NEVER per frame.
+  const layoutKey = useMemo(
+    () => visibleSessions.map((s) => s.session_id).join('|'),
+    [visibleSessions],
+  );
+
+  const { nodes, edges } = useMemo(
+    () => layoutFleet(visibleSessions, size.w, size.h),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [layoutKey, size.w, size.h],
+  );
+
+  const nodeById = useMemo(() => {
+    const m = new Map<string, LaidOutNode>();
+    nodes.forEach((n) => m.set(n.session.session_id, n));
+    return m;
+  }, [nodes]);
+
+  const selected = selectedId ? nodeById.get(selectedId) ?? null : null;
+
+  // Edge particles: disabled above 120 sessions. Above that the particle layer is more pixels
+  // than information, and the animation stops reading as flow.
+  const particlesEnabled = sessions.length <= 120;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === '/' && document.activeElement !== filterRef.current) {
-        e.preventDefault();
-        filterRef.current?.focus();
-      } else if (e.key === 'Escape') {
-        setActiveFilter(null);
-        setFilterText('');
-        setPinnedId(null);
-        filterRef.current?.blur();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
-  // Filtering is by activity (ticker) and by free text (filter box).
-  const filtered = useMemo(() => {
-    const text = filterText.trim().toLowerCase();
-    return sessions.filter((s) => {
-      if (activeFilter && s.activity !== activeFilter) return false;
-      if (text) {
-        const hay = `${s.runtime} ${s.task} ${s.repo} ${s.session_id}`.toLowerCase();
-        if (!hay.includes(text)) return false;
-      }
-      return true;
-    });
-  }, [sessions, activeFilter, filterText]);
-
-  // Layout is recomputed only when the filtered set or size changes.
-  const layout = useMemo(
-    () => computeLayout(filtered, size.w, size.h),
-    [filtered, size.w, size.h],
-  );
-
-  const layoutById = useMemo(() => {
-    const map = new Map<string, LayoutNode>();
-    layout.forEach((n) => map.set(n.id, n));
-    return map;
-  }, [layout]);
-
-  // Counts are computed against the full session set so the ticker always
-  // reflects reality, not the current filter.
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {
-      thinking: 0,
-      waiting: 0,
-      stuck: 0,
-      finished: 0,
-      unknown: 0,
-    };
-    sessions.forEach((s) => {
-      const a = s.activity ?? 'unknown';
-      c[a] = (c[a] ?? 0) + 1;
-    });
-    return c;
-  }, [sessions]);
-
-  // Rate = sum of last-hour spend × 60. We approximate "last hour" by
-  // treating spend_usd as the session's hourly burn (the board only
-  // exposes a running total, so this is the best available signal).
-  const ratePerMin = useMemo(() => {
-    const total = sessions.reduce((acc, s) => acc + (s.spend_usd || 0), 0);
-    return total * 60;
-  }, [sessions]);
-
-  const todaySpend = useMemo(
-    () => sessions.reduce((acc, s) => acc + (s.spend_usd || 0), 0),
-    [sessions],
-  );
-
-  const handleToggleFilter = useCallback((activity: string) => {
-    setActiveFilter((prev) => (prev === activity ? null : activity));
-  }, []);
+    if (!particlesEnabled && !particlesDisabledLogged.current) {
+      particlesDisabledLogged.current = true;
+      // eslint-disable-next-line no-console
+      console.warn(
+        `FleetCanvas: edge particles disabled at ${sessions.length} sessions (>120) — density would read as noise, not flow.`,
+      );
+    }
+  }, [particlesEnabled, sessions.length]);
 
   const handleSelect = useCallback((id: string) => {
-    setPinnedId((prev) => (prev === id ? null : id));
+    setSelectedId((prev) => (prev === id ? null : id));
   }, []);
 
-  const handleCanvasClick = useCallback(() => {
-    setPinnedId(null);
-  }, []);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent, id: string) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleSelect(id);
+      }
+    },
+    [handleSelect],
+  );
 
-  // --- unavailable state: never render a fake empty canvas -------------
-  if (board && board.state === 'unavailable') {
-    return (
-      <div
-        style={{
-          height: 'calc(100vh - 240px)',
-          minHeight: 520,
-          background: T.canvas,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: T.textSecondary,
-          fontSize: 14,
-          lineHeight: 1.5,
-          padding: 24,
-          textAlign: 'center',
-        }}
-      >
-        {board.reason || 'Fleet data is unavailable.'}
-      </div>
-    );
-  }
+  // Escape closes the deck. Bound at the document so it works wherever focus is.
+  useEffect(() => {
+    if (!selectedId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedId(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [selectedId]);
 
-  const activeSession =
-    pinnedId != null
-      ? sessions.find((s) => s.session_id === pinnedId) ?? null
-      : hoveredId != null
-        ? sessions.find((s) => s.session_id === hoveredId) ?? null
-        : null;
+  const signals = selectedId ? signalsBySession?.[selectedId] ?? [] : [];
+  const notes = selectedId ? notesBySession?.[selectedId] ?? [] : [];
 
-  const activeNode =
-    activeSession != null
-      ? layoutById.get(activeSession.session_id) ?? null
-      : null;
+  const empty = sessions.length === 0;
+  const unavailable = board.state === 'unavailable';
 
   return (
     <div
+      ref={containerRef}
+      data-testid="fleet-canvas"
       style={{
-        height: 'calc(100vh - 240px)',
-        minHeight: 520,
-        background: T.canvas,
-        display: 'flex',
-        flexDirection: 'column',
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        minHeight: 480,
+        background: T.bg,
         overflow: 'hidden',
+        fontFamily: FONT_MONO,
       }}
     >
-      <Ticker
-        counts={counts}
-        ratePerMin={ratePerMin}
-        todaySpend={todaySpend}
-        totalAgents={sessions.length}
-        activeFilter={activeFilter}
-        onToggleFilter={handleToggleFilter}
-        filterRef={filterRef}
-        filterText={filterText}
-        onFilterText={setFilterText}
-      />
-
-      <BurnBar
-        todaySpend={todaySpend}
-        ratePerMin={ratePerMin}
-        totalAgents={sessions.length}
-      />
-
+      {/* Filter strip. Narrowing the fleet is the first thing a reader does when the board is loud. */}
       <div
-        ref={containerRef}
-        onClick={handleCanvasClick}
         style={{
-          position: 'relative',
-          flex: 1,
-          minHeight: 0,
-          background: T.canvas,
+          position: 'absolute',
+          top: 8,
+          left: 8,
+          display: 'flex',
+          gap: 8,
+          zIndex: 10,
+          flexWrap: 'wrap',
+          maxWidth: size.w - 16,
         }}
       >
-        {filtered.length === 0 ? (
-          <div
+        <FilterChip
+          label={`all (${sessions.length})`}
+          active={filter === 'all'}
+          onClick={() => setFilter('all')}
+        />
+        {runtimes.map((rt) => {
+          const count = sessions.filter((s) => s.runtime === rt).length;
+          return (
+            <FilterChip
+              key={rt}
+              label={`${rt} (${count})`}
+              active={filter === rt}
+              onClick={() => setFilter(rt)}
+            />
+          );
+        })}
+      </div>
+
+      {unavailable ? (
+        <div
+          data-testid="fleet-unavailable"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'column',
+            gap: 8,
+            color: T.textMuted,
+          }}
+        >
+          <div style={{ fontSize: 16, color: T.red }}>Fleet unavailable</div>
+          <div style={{ fontSize: 13 }}>{board.summary ?? 'The source could not be read.'}</div>
+        </div>
+      ) : empty ? (
+        <div
+          data-testid="fleet-empty"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'column',
+            gap: 8,
+            color: T.textMuted,
+          }}
+        >
+          <div style={{ fontSize: 16, color: T.textPrimary }}>No sessions</div>
+          <div style={{ fontSize: 13 }}>{board.summary ?? 'The estate has no sessions.'}</div>
+        </div>
+      ) : null}
+
+      {!empty && !unavailable ? (
+        <svg
+          width={size.w}
+          height={size.h}
+          style={{ position: 'absolute', inset: 0, display: 'block' }}
+          role="presentation"
+        >
+          <defs>
+            {/* The hover glow is a light, not a border. */}
+            <radialGradient id="fleet-hover-glow">
+              <stop offset="0%" stopColor={T.accent} stopOpacity="0.22" />
+              <stop offset="70%" stopColor={T.accent} stopOpacity="0" />
+            </radialGradient>
+          </defs>
+
+          {/* The fleet breathes as one. 0.4% amplitude on the whole node layer: felt, not seen. */}
+          <g
             style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: T.textSecondary,
-              fontSize: 14,
-              lineHeight: 1.5,
-              gap: 12,
+              transformOrigin: `${size.w / 2}px ${size.h / 2}px`,
+              animation: 'fleet-breathe 6s ease-in-out infinite',
+              transformBox: 'fill-box',
             }}
           >
-            <span
-              aria-hidden="true"
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: 999,
-                background: T.textMuted,
-                animation: 'fleet-breathe 4s ease-in-out infinite',
-              }}
-            />
-            No agents running. Nothing to watch.
-          </div>
-        ) : (
-          <svg
-            width="100%"
-            height="100%"
-            style={{ display: 'block' }}
-            role="group"
-            aria-label="Fleet canvas"
-          >
-            {filtered.map((s) => {
-              const node = layoutById.get(s.session_id);
-              if (!node) return null;
-              return (
-                <Node
-                  key={s.session_id}
-                  session={s}
-                  node={node}
-                  hovered={hoveredId === s.session_id}
-                  pinned={pinnedId === s.session_id}
-                  onHover={setHoveredId}
-                  onSelect={handleSelect}
-                />
-              );
-            })}
-          </svg>
-        )}
+            {/* Edges and particles in ONE layer, pointer-events off. */}
+            <g style={{ pointerEvents: 'none' }}>
+              {edges.map((edge) => {
+                const hot =
+                  hoveredId === edge.a.session.session_id ||
+                  hoveredId === edge.b.session.session_id ||
+                  selectedId === edge.a.session.session_id ||
+                  selectedId === edge.b.session.session_id;
+                const stroke = hot ? T.accent : T.border;
+                const midX = (edge.a.x + edge.b.x) / 2;
+                const midY = (edge.a.y + edge.b.y) / 2;
+                const pathId = `edge-${edge.key.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+                // Speed = combined throughput, capped so it reads as flow, not strobe.
+                const speed = Math.max(
+                  1.2,
+                  Math.min(3.5, 1.2 + edge.throughput / 120),
+                );
+                // Density = number of agents on the repo, 2..3 particles.
+                const particleCount = edge.density >= 4 ? 3 : 2;
+                return (
+                  <g key={edge.key}>
+                    <path
+                      id={pathId}
+                      d={`M ${edge.a.x} ${edge.a.y} Q ${midX} ${midY - 24} ${edge.b.x} ${edge.b.y}`}
+                      fill="none"
+                      stroke={stroke}
+                      strokeWidth={hot ? 1.5 : 1}
+                      opacity={hot ? 0.9 : 0.35}
+                    />
+                    {particlesEnabled
+                      ? Array.from({ length: particleCount }).map((_, pi) => (
+                          <circle key={pi} r={2} fill={hot ? T.accent : T.textMuted} opacity={0.8}>
+                            <animateMotion
+                              dur={`${speed}s`}
+                              repeatCount="indefinite"
+                              begin={`${(pi * speed) / particleCount}s`}
+                            >
+                              <mpath href={`#${pathId}`} />
+                            </animateMotion>
+                          </circle>
+                        ))
+                      : null}
+                  </g>
+                );
+              })}
+            </g>
 
-        {activeSession && activeNode && (
-          <DetailPanel
-            session={activeSession}
-            x={Math.min(activeNode.x + activeNode.r + 12, size.w - 340)}
-            y={Math.max(activeNode.y - 40, 8)}
-            pinned={pinnedId === activeSession.session_id}
-          />
-        )}
-      </div>
+            {/* Nodes. */}
+            <g>
+              {nodes.map((node) => {
+                const id = node.session.session_id;
+                const isSelected = selectedId === id;
+                const isHovered = hoveredId === id;
+                const color = activityColor(node.activity);
+                const scale = isHovered ? 1.08 : 1;
+                const stuck = node.activity === 'stuck';
+                // A stuck node reaches out: pulled 4px toward screen centre on a 2s cycle.
+                const pullX = stuck ? (size.w / 2 - node.x) * 0.02 : 0;
+                const pullY = stuck ? (size.h / 2 - node.y) * 0.02 : 0;
+                const ringR = node.r + 6;
+                const arcR = node.r + 10;
+                return (
+                  <g
+                    key={id}
+                    transform={`translate(${node.x + pullX} ${node.y + pullY})`}
+                    style={{
+                      cursor: 'pointer',
+                      willChange: 'transform',
+                      transition: 'transform 180ms cubic-bezier(.34,1.56,.64,1)',
+                      animation: stuck ? 'fleet-drift 2s ease-in-out infinite' : 'none',
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    // The session id as a testid, and the activity in PLAIN WORDS in the
+                    // label. The label is the whole accessibility contract: motion is not
+                    // available to every reader and is nothing at all under
+                    // prefers-reduced-motion, so the word is the signal that always survives.
+                    data-testid={`session-${id}`}
+                    aria-label={`${node.session.runtime} ${id.slice(-6)}: ${ACTIVITY_WORD[node.activity]}, ${node.session.event_count ?? 0} events`}
+                    onClick={() => handleSelect(id)}
+                    onKeyDown={(e) => handleKeyDown(e, id)}
+                    onMouseEnter={() => setHoveredId(id)}
+                    onMouseLeave={() => setHoveredId((prev) => (prev === id ? null : prev))}
+                  >
+                    {/* Hover glow behind the node. */}
+                    {isHovered ? (
+                      <circle
+                        r={node.r * 2.4}
+                        fill="url(#fleet-hover-glow)"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                    ) : null}
+
+                    {/* Stuck halo: expanding ring, keyframes from styles.css. */}
+                    {stuck ? (
+                      <circle
+                        r={node.r + 8}
+                        fill="none"
+                        stroke={T.red}
+                        strokeWidth={2}
+                        opacity={0.6}
+                        style={{
+                          transformOrigin: 'center',
+                          animation: 'fleet-halo 1.6s ease-out infinite',
+                        }}
+                      />
+                    ) : null}
+
+                    {/* Activity ring. */}
+                    <circle
+                      r={ringR}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={1}
+                      opacity={0.25 + node.level * 0.5}
+                    />
+
+                    {/* Cost temperature arc: sweep = share of today's spend. */}
+                    {node.spendShare > 0 ? (
+                      <path
+                        d={arcPath(0, 0, arcR, node.spendShare)}
+                        fill="none"
+                        stroke={temperatureColor(node.spendShare)}
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                      />
+                    ) : null}
+
+                    {/* The node itself. */}
+                    <circle
+                      r={node.r}
+                      fill={T.surface}
+                      stroke={color}
+                      strokeWidth={isSelected ? 2.5 : 1.5}
+                      style={{
+                        transformOrigin: 'center',
+                        transform: `scale(${scale})`,
+                        transition: 'transform 180ms cubic-bezier(.34,1.56,.64,1)',
+                        animation: activityMotion(node.activity),
+                      }}
+                    />
+
+                    {/* Label. */}
+                    <text
+                      x={0}
+                      y={4}
+                      textAnchor="middle"
+                      fontSize={11}
+                      fill={T.textPrimary}
+                      style={{ pointerEvents: 'none', userSelect: 'none' }}
+                    >
+                      {id.slice(-6)}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+          </g>
+
+          {/* Selection tether: 1px accent line from node to deck anchor, with a 3px dot that
+              animates along it once. */}
+          {selected ? (
+            <g style={{ pointerEvents: 'none' }}>
+              {(() => {
+                const gap = 24;
+                const preferRight = selected.x + gap + DECK_WIDTH <= size.w - 8;
+                const anchorX = preferRight
+                  ? selected.x + gap
+                  : Math.max(8, selected.x - gap - DECK_WIDTH);
+                const anchorY = Math.max(8, Math.min(size.h - 200, selected.y - 80));
+                const pathId = 'fleet-tether';
+                return (
+                  <>
+                    <path
+                      id={pathId}
+                      d={`M ${selected.x} ${selected.y} L ${anchorX} ${anchorY}`}
+                      stroke={T.accent}
+                      strokeWidth={1}
+                      fill="none"
+                      opacity={0.7}
+                    />
+                    <circle r={3} fill={T.accent}>
+                      <animateMotion dur="240ms" repeatCount="1" fill="freeze">
+                        <mpath href={`#${pathId}`} />
+                      </animateMotion>
+                    </circle>
+                  </>
+                );
+              })()}
+            </g>
+          ) : null}
+        </svg>
+      ) : null}
+
+      {/* The command deck. */}
+      {selected ? (
+        <CommandDeck
+          session={selected.session}
+          anchor={{ x: selected.x, y: selected.y }}
+          containerWidth={size.w}
+          containerHeight={size.h}
+          signals={signals}
+          notes={notes}
+          onSubmitSteer={onSubmitSteer}
+          onAddNote={onAddNote}
+          onRequestSignals={onRequestSignals}
+          onRequestNotes={onRequestNotes}
+          onRequestReceipt={onRequestReceipt}
+          onClose={() => setSelectedId(null)}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function FilterChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      style={{
+        fontSize: 11,
+        fontFamily: FONT_MONO,
+        color: active ? '#0b0d10' : T.textMuted,
+        background: active ? T.accent : T.surface2,
+        border: `1px solid ${active ? T.accent : T.border}`,
+        borderRadius: 999,
+        padding: '4px 8px',
+        cursor: 'pointer',
+      }}
+    >
+      {label}
+    </button>
   );
 }
