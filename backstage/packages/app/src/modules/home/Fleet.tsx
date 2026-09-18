@@ -282,8 +282,12 @@ export function Fleet() {
         body: JSON.stringify({ session_id: sessionId, runtime, by: 'founder', text }),
       });
       const body = (await res.json()) as { ok?: boolean; error?: string };
-      setNudgeStatusBySession(cur => ({ ...cur, [sessionId]: res.ok && body.ok !== false ? '✓ steered' : `Failed: ${body.error ?? res.status}` }));
-      if (res.ok && body.ok !== false) setSteerTextBySession(cur => ({ ...cur, [sessionId]: '' }));
+      const success = res.ok && body.ok !== false;
+      setNudgeStatusBySession(cur => ({ ...cur, [sessionId]: success ? '✓ steered' : `Failed: ${body.error ?? res.status}` }));
+      if (success) {
+        setSteerTextBySession(cur => ({ ...cur, [sessionId]: '' }));
+        setTimeout(() => setNudgeStatusBySession(cur => ({ ...cur, [sessionId]: '' })), 2000);
+      }
     } catch (err) {
       setNudgeStatusBySession(cur => ({ ...cur, [sessionId]: `Failed: ${err instanceof Error ? err.message : String(err)}` }));
     }
@@ -656,14 +660,25 @@ export function Fleet() {
                             style={{ flex:1 }}
                             inputProps={{ style:{ fontSize:12, color:'#e6edf3', padding:'6px 10px', background:'#010409' } }}
                             InputProps={{ style:{ borderRadius:6, borderColor:'#30363d' } }} />
-                          <Button variant="contained" size="small" color="primary"
-                            style={{ fontWeight:800, whiteSpace:'nowrap', fontSize:11, letterSpacing:0.8, minWidth:64, borderRadius:6, height:32 }}
-                            onClick={() => void sendNudge(s.session_id, s.runtime)}>
-                            STEER →
-                          </Button>
+                          {(() => {
+                            const st = nudgeStatusBySession[s.session_id];
+                            const ok = st === '✓ steered';
+                            const busy = st === 'sending…';
+                            const fail = st && !ok && !busy;
+                            return (
+                              <Button variant="contained" size="small" disabled={busy}
+                                style={{ fontWeight:800, whiteSpace:'nowrap', fontSize:11, letterSpacing:0.8, minWidth:72, borderRadius:6, height:32,
+                                  background: ok ? '#166534' : fail ? '#7f1d1d' : busy ? '#374151' : undefined,
+                                  color: ok ? '#86efac' : fail ? '#fca5a5' : busy ? '#9ca3af' : '#fff',
+                                  transition: 'background 0.2s, color 0.2s' }}
+                                onClick={() => void sendNudge(s.session_id, s.runtime)}>
+                                {ok ? '✓ SENT' : fail ? '✕ FAIL' : busy ? '…' : 'STEER →'}
+                              </Button>
+                            );
+                          })()}
                         </Box>
-                        {nudgeStatusBySession[s.session_id] && (
-                          <Typography variant="caption" style={{ color:'#6b7280' }}>{nudgeStatusBySession[s.session_id]}</Typography>
+                        {nudgeStatusBySession[s.session_id] && nudgeStatusBySession[s.session_id] !== '✓ steered' && nudgeStatusBySession[s.session_id] !== 'sending…' && (
+                          <Typography variant="caption" style={{ color:'#ef4444', fontSize:11 }}>{nudgeStatusBySession[s.session_id]}</Typography>
                         )}
                       </Box>
                     )}
