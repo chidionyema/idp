@@ -389,3 +389,64 @@ def test_which_mechanisms_are_inert_on_a_realistic_payload(monkeypatch, tmp_path
         "CompactionManager carried 89% of this sample's saving; a different mechanism "
         f"dominating is a finding to look at, not to average away. Row: {row}"
     )
+
+
+def test_the_ablation_ranks_the_mechanisms_by_what_removing_them_costs(monkeypatch, tmp_path):
+    """Ablation: disable each mechanism alone and measure the loss.
+
+    A/B tells you the chain as a whole; this tells you which parts are load-bearing. Measured
+    2026-09-18 on the fixed fixture (seed 1337, tiktoken cl100k_base):
+
+        [7] Compaction   removing it costs  35,677 tokens   ESSENTIAL
+        [5] SoLPi        removing it costs   5,975 tokens   ESSENTIAL
+        [3] MCPAdapter   removing it costs     647 tokens   marginal
+        [1] CacheGuardian / [2] TokenKiller / [6] Pruning / [8] Gisting   +0   NO EFFECT
+
+    The four that cost nothing are not dead code -- [6] and [2] overlap with what [7] already
+    drops, and [8] needs >40 messages with a >200-char assistant turn. But they are decorative
+    ON THIS INPUT, and that is a fact about the fixture as much as about them, which is why the
+    fixture is seeded and committed rather than described.
+
+    This test asserts the RANKING, so a change that moves load between mechanisms is a visible
+    diff, not a silent rebalance.
+    """
+    import subprocess as _sp
+    import sys as _sys
+
+    result = _sp.run(
+        [_sys.executable, os.path.join(ROOT, "bin", "estate-efficiency-experiment.py"), "--json"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        timeout=180,
+        check=False,
+    )
+    if result.returncode == 2:
+        pytest.skip("tiktoken not installed; the experiment needs real token counts")
+    assert result.returncode == 0, f"experiment failed: {result.stderr}"
+    data = json.loads(result.stdout)
+    rows = {r["mechanism"]: r for r in data["B_ablation"]["per_mechanism"]}
+
+    # The two load-bearing mechanisms, in order.
+    assert rows["[7] Compaction"]["verdict"] == "ESSENTIAL"
+    assert rows["[5] SoLPi"]["verdict"] == "ESSENTIAL"
+    assert (
+        rows["[7] Compaction"]["tokens_lost_by_removing_it"]
+        > rows["[5] SoLPi"]["tokens_lost_by_removing_it"]
+    ), "compaction carried this fixture; an inversion is a finding, not a licence to reorder"
+
+    # And the four that do nothing, named so the set cannot drift unnoticed.
+    assert set(data["B_ablation"]["no_effect"]) == {
+        "[1] CacheGuardian",
+        "[2] TokenKiller",
+        "[6] Pruning",
+        "[8] Gisting",
+    }, f"the inert set changed: {data['B_ablation']['no_effect']}"
+
+    # The A/B headline, asserted.
+    a = data["A_ab"]
+    assert a["tokens_saved"] == a["tokens_control_all_off"] - a["tokens_treatment_all_on"]
+    assert 60.0 < a["reduction_pct"] < 63.0, (
+        f"the chain's reduction on the fixed fixture moved to {a['reduction_pct']:.2f}%; "
+        "re-measure and update deliberately"
+    )
