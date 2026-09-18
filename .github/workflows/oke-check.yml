@@ -532,7 +532,24 @@ jobs:
       # 0006: one door, no second endpoint). bin/catalog-render carries it forward, because that
       # render force-pushes this branch from origin/main.
       - name: publish the placement measurement for the Ops page
-        if: github.event_name != 'pull_request'
+        # `always()` AND not-a-pull-request. The first version had only the second condition, so
+        # the publish was SKIPPED whenever the gate directly above it failed -- which is every
+        # run since the step was added.
+        #
+        # Measured 2026-09-18, run 35338743209:
+        #
+        #   bin/idp-fits-a-node (placement, from the same receipt)   failure
+        #   publish the placement measurement for the Ops page        skipped
+        #
+        # and `git log origin/state/live-diagram -- docs/placement.json` returns NOTHING: the
+        # document has never once reached the branch. The Ops tile could therefore only ever say
+        # "Placement could not be measured", which reads as a broken instrument and is actually
+        # the instrument correctly reporting a document nobody publishes.
+        #
+        # The consequence was backwards in the worst way: a RED placement gate -- the state worth
+        # showing a person -- was exactly the state that suppressed the publish. `always()` makes
+        # the failing case the one that publishes, which is the point of a measurement.
+        if: ${{ always() && github.event_name != 'pull_request' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
