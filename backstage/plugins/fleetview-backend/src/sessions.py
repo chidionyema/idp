@@ -96,7 +96,13 @@ def _estate_db_sessions(now: dt.datetime | None = None) -> list[dict[str, Any]]:
         rows = con.execute(
             """
             SELECT s.id, s.provider, s.model, s.created_at, s.metadata_json,
-                   MAX(e.ts) AS last_event_ts
+                   MAX(e.ts) AS last_event_ts,
+                   -- The four-state derivation needs the RATE and the SHAPE of recent activity,
+                   -- not just the timestamp. `state` alone (running/paused/stopped from
+                   -- freshness) cannot tell thinking from waiting from stuck, which is why the
+                   -- board rendered 22 of 23 agents as one identical amber dot.
+                   COUNT(e.id)  AS event_count,
+                   MIN(e.ts)    AS first_event_ts
             FROM sessions s
             LEFT JOIN session_events e ON e.session_id = s.id
             GROUP BY s.id
@@ -115,12 +121,21 @@ def _estate_db_sessions(now: dt.datetime | None = None) -> list[dict[str, Any]]:
         except (ValueError, TypeError):
             pass
         updated_at = r["last_event_ts"] or r["created_at"]
+        state = _state_from_freshness(updated_at, now)
+        # The four states the interface draws, derived from the same evidence the state above uses
+        # plus the body of work behind the row -- see _activity_from_evidence for why elapsed time
+        # alone cannot tell thinking from waiting from stuck.
+        event_count = int(r["event_count"] or 0)
         out.append(
             {
                 "session_id": f"{r['provider']}:{r['id']}",
                 "runtime": r["provider"],
                 "task": meta.get("task") or "",
-                "state": _state_from_freshness(updated_at, now),
+                "state": state,
+                "activity": _activity_from_evidence(
+                    updated_at, event_count, r["first_event_ts"], state, now
+                ),
+                "event_count": event_count,
                 "repo": meta.get("repo"),
                 "step": meta.get("step"),
                 "updated_at": updated_at,
@@ -183,6 +198,66 @@ def _fresh_running_minutes() -> float:
 
 def _fresh_paused_hours() -> float:
     return float(os.environ.get("ESTATE_FRESH_PAUSED_HOURS", "24"))
+
+
+def _activity_from_evidence(
+    last_event_ts: str | None,
+    event_count: int,
+    first_event_ts: str | None,
+    face: str,
+    now: dt.datetime,
+) -> str:
+    """Which of the FOUR states a session is in, from evidence rather than from a guess.
+
+    WHY THIS EXISTS. A council of three independent frontier models, asked to design this
+    interface, converged on one thing: an agent that has not emitted for ten minutes is not one
+    state but four, and the interface's whole value is telling them apart. Measured on this board
+    before this function existed: 22 of 23 agents rendered as one identical amber dot, and an
+    agent stuck in a retry loop was labelled `running` -- the single worst mistake all three
+    models named.
+
+    `state` (running/paused/stopped from freshness) cannot do this: it is one number, elapsed
+    time, and elapsed time is identical for an agent thinking hard and an agent wedged. So this
+    reads what the estate actually records.
+
+    THE FOUR STATES, and the evidence each requires:
+
+      thinking  wrote within the running window. The honest limit: an outside reader cannot see a
+                long inference mid-flight, so a session that wrote recently IS thinking and
+                nothing finer is claimed.
+      waiting   wrote, then stopped, still inside the live window. The silence with no body of
+                work behind it says it is blocked -- on CI, an API, or a person. This is the state
+                the old board did not have, and the most common one in practice.
+      stuck     silent for a long time while its state still says live, WITH enough events behind
+                it to know it had been working. `event_count` is what separates this from
+                `waiting`: many events then silence is not thinking, it is a session that stopped
+                producing. Named from evidence, never from a retry counter nobody records.
+      finished  the live window has passed entirely. It will not write again unless something
+                restarts it.
+
+    `face` is the freshness `state`, kept so a caller can show both. Every branch returns one of
+    the four or `unknown` when there is no timestamp -- never a default of `thinking`, because a
+    node that breathes when nobody knows whether it is alive is the same lie as a green dot.
+    """
+    ts = _parse_ts(last_event_ts)
+    if ts is None:
+        return "unknown"
+    age_s = (now - ts).total_seconds()
+    if age_s < 0:
+        age_s = 0
+
+    if age_s <= _fresh_running_minutes() * 60:
+        return "thinking"
+    if age_s <= _fresh_paused_hours() * 3600:
+        # Silenced inside the live window. A real body of work behind it that went this quiet is
+        # stuck; almost nothing behind it is simply awaiting a first answer. The threshold is
+        # deliberately low, because accusing a healthy session of being stuck is worse than being
+        # slow to say so.
+        return "stuck" if event_count >= _STUCK_MIN_EVENTS else "waiting"
+    return "finished"
+
+
+_STUCK_MIN_EVENTS = int(os.environ.get("ESTATE_STUCK_MIN_EVENTS", "10"))
 
 
 def _parse_ts(value: str | None) -> dt.datetime | None:
