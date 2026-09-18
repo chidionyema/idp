@@ -78,8 +78,42 @@ def _load_routes(routes_path: Path):
     return module
 
 
+def _load_config_guard(routes_path: Path):
+    """`config_guard.py`, beside routes.py. Path-loaded like every sibling module here.
+
+    Registered in `sys.modules` before `exec_module` because this module uses `@dataclass`,
+    which resolves `cls.__module__` through `sys.modules` at decoration time. The other
+    siblings get away without it because none of them decorate; the executor link uses the
+    same `sys.modules` idiom for a different reason (singleton state).
+    """
+    path = routes_path.parent / "config_guard.py"
+    spec = importlib.util.spec_from_file_location("fleetview_config_guard", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load config guard at {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["fleetview_config_guard"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def build_app(routes_path: Path) -> FastAPI:
     routes = _load_routes(routes_path)
+
+    # FAIL FAST (2026-09-18). Until this call, a process launched with an empty environment
+    # started, bound its port and served traffic, then answered 502/503 per button while never
+    # saying 'I am not configured'. Validated here because a consequence of a key or an object
+    # store is a fact about this object, not a fact about production -- every startup path,
+    # including the tests, goes through build_app, so there is one check rather than two.
+    #
+    # ESTATE_DB is the only required var: without it every read returns nothing and an empty
+    # board is indistinguishable from a fleet with no work. NATS_URL and LANGFUSE_HOST are
+    # deliberately optional -- unset they turn a feature off, and those routes already answer
+    # 'unavailable' with the reason, which is an honest answer and not a startup failure.
+    _config_guard = _load_config_guard(routes_path)
+    config = _config_guard.require_config()
+    # Printed, not logged: this is what a person reads in a terminal or a pod's first lines,
+    # and a degraded start has to be visible without clicking anything.
+    print(_config_guard.startup_banner(config), flush=True)
 
     _nats_adapter_module = routes_path.parent / "nats_adapter.py"
     _claude_code_adapter_module = routes_path.parent / "claude_code_adapter.py"
