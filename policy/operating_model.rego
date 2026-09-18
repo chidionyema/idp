@@ -158,7 +158,7 @@ deny contains msg if {
 # failed Helm upgrade.
 #
 # This rule reads the DECLARATION, not the cluster: a PR that adds a HelmRelease without
-# `history-max` is refused, because that is the mechanism by which the count grows without
+# `maxHistory` is refused, because that is the mechanism by which the count grows without
 # anyone deciding to grow it. Helm keeps ten revisions per release by default and this fleet
 # has hundreds of releases, so an unbounded release is not a style question -- it is roughly
 # ten Secrets apiece, accumulating for ever, with nothing pruning.
@@ -170,19 +170,23 @@ deny contains msg if {
 # the YAML a PR adds. It does NOT ask anyone to write `Secret-budget:` in the body, which is
 # exactly the paperwork the founder ordered cut on 2026-09-04.
 
-# A HelmRelease whose added lines declare no history-max anywhere in the same document.
+# A HelmRelease whose added lines declare no maxHistory anywhere in the same document.
+# The field is `spec.maxHistory` -- verified against the CRD in
+# clusters/oke/flux-system/gotk-components.yaml, not remembered. An earlier version of this
+# rule matched `history-max`, a name that appears nowhere in the schema, so it would have
+# refused a correct HelmRelease and passed an incorrect one.
 helmrelease_added if {
 	regex.match(`(?m)^\+\s*kind:\s*HelmRelease\s*$`, input.pr.added)
 }
 
 history_max_declared if {
-	regex.match(`(?m)^\+\s*history-max:\s*[0-9]+\s*$`, input.pr.added)
+	regex.match(`(?m)^\+\s*maxHistory:\s*[0-9]+\s*$`, input.pr.added)
 }
 
 deny contains msg if {
 	helmrelease_added
 	not history_max_declared
-	msg := "rule=secret_headroom | a HelmRelease is added with no history-max, so every revision it installs becomes a Secret that nothing ever prunes | fix: declare spec.history-max: 3 (a rollback needs the previous revision; three covers a rollback of a rollback). Incident 2026-09-18: the cluster reached 2,650 Secrets against OKE's 2,000 limit and refused every create, leaving 30 Flux objects NotReady."
+	msg := "rule=secret_headroom | a HelmRelease is added with no maxHistory, so every revision it installs becomes a Secret that nothing ever prunes | fix: declare spec.maxHistory: 3 (a rollback needs the previous revision; three covers a rollback of a rollback). Incident 2026-09-18: the cluster reached 2,650 Secrets against OKE's 2,000 limit and refused every create, leaving 30 Flux objects NotReady."
 }
 
 # The ceiling itself is declared in the repo, never read from a vendor dashboard at judgement

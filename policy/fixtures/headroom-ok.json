@@ -2,7 +2,7 @@
  "pr": {
   "number": 4001,
   "files": ["platform/observability/langfuse.yaml"],
-  "added": "+apiVersion: helm.toolkit.fluxcd.io/v2\n+kind: HelmRelease\n+metadata:\n+  name: langfuse\n+spec:\n+  history-max: 3\n+  chart:\n+    spec:\n+      chart: langfuse\n",
+  "added": "+apiVersion: helm.toolkit.fluxcd.io/v2\n+kind: HelmRelease\n+metadata:\n+  name: langfuse\n+spec:\n+  maxHistory: 3\n+  chart:\n+    spec:\n+      chart: langfuse\n",
   "body": "Bound the Langfuse release's revision history.\n",
   "labels": [],
   "founder": "chidionyema",

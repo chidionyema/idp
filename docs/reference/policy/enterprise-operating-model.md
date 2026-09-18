@@ -77,7 +77,9 @@ NotReady -- Backstage, Crossplane, commerce, otto-gateway, prospector, via-negat
 and nothing in the estate reported the count until Crossplane stopped deploying. The sprawl was
 ordinary rather than stupid, which is the point: 2 declared Secret manifests, ~2,648 created
 dynamically (Helm revisions, cert-manager renewals, ExternalSecret materialisations), with
-`history-max` set on no HelmRelease and nothing pruning.
+`maxHistory` set on no HelmRelease and nothing pruning. (The field is `spec.maxHistory`;
+the name `history-max` appears nowhere in the CRD, and an earlier draft of this standard
+used it -- read the field, do not remember it.)
 
 Three obligations, each with a gate:
 
@@ -86,7 +88,7 @@ the number is in the repo rather than in a vendor dashboard.
 2. **The count is read and published.** A `secrets` row in `bin/idp-cluster-state`, rendered on
 the portal's capacity tile. Absence of the row is FAIL, never clean -- the same rule the
 `capacity` row already follows (crew#584).
-3. **Growth is bounded at the source.** Every HelmRelease declares `history-max`; a release
+3. **Growth is bounded at the source.** Every HelmRelease declares `spec.maxHistory: 3`; a release
 without one is refused by the gate. Default 3 (the estate keeps three revisions, which is what
 a rollback needs; ten is Helm's default and is pure sprawl at this fleet size).
 

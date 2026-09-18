@@ -196,7 +196,7 @@ if sec_limit <= 0:
 pct = sec_n * 100 // sec_limit
 if sec_n > sec_limit:
     print(f"FAIL    secret-headroom  {sec_n:,} Secrets against a {sec_limit:,} limit ({pct}%) -- OKE's resource-leak webhook refuses every new resource, so no Kustomization or HelmRelease can deploy until this drops below the ceiling")
-    print(f"  fix       prune the unbounded growth first: Helm revisions with no history-max, then cert-manager's superseded renewals. Standard 6, docs/reference/policy/enterprise-operating-model.md")
+    print(f"  fix       prune the unbounded growth first: Helm revisions with no spec.maxHistory, then cert-manager's superseded renewals. Standard 6, docs/reference/policy/enterprise-operating-model.md")
     sys.exit(1)
 if steady and sec_n > steady:
     print(f"warn    secret-headroom  {sec_n:,} / {sec_limit:,} ({pct}%), above the {steady:,} steady-state target; headroom for a deploy burst is shrinking")
