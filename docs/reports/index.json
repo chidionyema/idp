@@ -20,7 +20,7 @@
     },
     {
       "file": "docs/reports/forge-spend.md",
-      "generated_at": "2026-09-18T17:35:31Z",
+      "generated_at": "2026-09-18T17:38:34Z",
       "id": "forge-spend",
       "schedule_minutes": 1440,
       "source": "forge/experiments/*.md front matter (usd: per completed run)",
@@ -28,5 +28,5 @@
       "title": "Forge compute spend (Modal + free lanes)"
     }
   ],
-  "updated_at": "2026-09-18T17:35:50Z"
+  "updated_at": "2026-09-18T17:39:01Z"
 }
