@@ -63,6 +63,28 @@ const frontDoorSignInPage = SignInPageBlueprint.make({
   },
 });
 
+// MEASURED 2026-09-18, because this was guessed at twice and both guesses were wrong.
+//
+// The claim was that `/fleet` "breaks" because Backstage's guest session does not persist, so
+// every visit met the sign-in wall. That is FALSE. Driven through a real browser:
+//
+//   first visit  -> the wall, click Enter
+//   reload       -> signed in, no wall
+//   new tab      -> signed in, no wall
+//   localStorage -> ['@backstage/core:SignInPage:provider', 'language', 'sidebarPinState']
+//
+// The guest session is already durable, under Backstage's own key. An earlier version of this
+// file wrote a private `estate.local.guestSession` key to "fix" it -- a mechanism nothing read,
+// invented to solve a problem that does not exist. It was deleted. What actually made the page
+// look broken is recorded in the report for this session:
+//
+//   * the app was titled "Bytesync" (PR #1077), so the tab named a stranger's product;
+//   * `/fleet` is behind sign-in, so a first or signed-out visit renders the WALL, not the
+//     board -- which reads as "the page flashed and broke" when nothing had crashed at all.
+//
+// The lesson is in the report and worth repeating here: a curl proves the API answers, and says
+// nothing about what a person sees. This surface can only be verified in a browser.
+
 export const signInModule = createFrontendModule({
   pluginId: 'app',
   extensions: [frontDoorSignInPage],
