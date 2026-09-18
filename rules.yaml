@@ -1081,7 +1081,7 @@ rules:
   fixtures:
     must_fail: policy/fixtures/headroom-unbounded-release.json
     must_pass: policy/fixtures/headroom-ok.json
-  live_elsewhere: 'bin/idp-cluster-state: a rows secrets, so the live count is published on the capacity tile rather than discovered from an admission refusal. Absence of that row is FAIL, never clean, the same rule the capacity row already follows (crew#584).'
+  live_elsewhere: '.github/workflows/oke-check.yml:528 -- conftest runs this rule against the CLUSTER''s own receipt in the oke-check job: secret_count from state/cluster, secret_limit from estate-defaults.yaml, so the ceiling is graded on live data and not only on the fixture pair. It runs under always(), because a red cluster is exactly the state the measurement exists to publish.'
   cases:
   - expect: pass
     args:
@@ -1261,7 +1261,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/fits-a-node/bad
     must_pass: tests/fixtures/fits-a-node/good
-  live_elsewhere: .github/workflows/oke-check.yml:520 -- the cluster-state job feeds it the same receipt the state collector wrote, so the placement it grades is the one the scheduler saw (#2444)
+  live_elsewhere: .github/workflows/oke-check.yml:553 -- the cluster-state job feeds it the same receipt the state collector wrote, so the placement it grades is the one the scheduler saw (#2444)
   cases:
   - expect: refuse
     args:
@@ -2913,11 +2913,7 @@ rules:
   - expect: pass
     args:
     - platform
-  live_gap: 'chidionyema/idp#2452 -- ROUTE-01''s other ACCEPT clause, runtime bypass-attempt
-    alerting, still has no real Calico deny feed collected anywhere; this rule only closes the
-    build-time half (a second router config landing in an unreviewed namespace), which #2452
-    could not have caught either way (an already-allowed egress_internet hole raises no deny
-    flow, and Calico sees an IP, never a router''s name).'
+  live_elsewhere: 'bin/idp-router-egress-gate:190 -- the gate grades the REAL platform/ tree (bin/idp-router-egress-gate platform), naming every router config the repo carries against the reviewed ledger. It ran only its two fixtures before, so a second router landing in an unreviewed namespace was caught by nothing. The runtime half of ROUTE-01 -- a real Calico deny feed for bypass-attempt alerting -- stays tracked on #2452; that is a different question from whether this rule reads the platform, and this rule now does.'
   ok: a model_list router config in llm or otto-gateway (the two reviewed namespaces) passes; the same config in any other namespace is refused
   fail: a second LiteLLM router lands in an unreviewed namespace and nothing catches it before a cluster where NetworkPolicy cannot tell it apart from the router's own traffic
 - id: catalog-spec-type

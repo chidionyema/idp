@@ -498,6 +498,39 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
         run: bin/idp-cluster-state --json
+      # HGC standard 6, the live case. bin/idp-cluster-state grades the receipt's own rows and
+      # FAILs above the ceiling; this rung asks the POLICY the same question of the SAME real
+      # receipt, so the rule has a case over the estate rather than only over its fixtures.
+      #
+      # Found by bin/idp-rules' `live` check, which refused this rule because every case named a
+      # file under tests/fixtures: it graded its own example and had never seen the platform.
+      # Same shape as bin/idp-oke-rebuild:66, which runs conftest against reports/capacity.json.
+      - name: secret-headroom policy against the real receipt (HGC)
+        if: ${{ always() }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+        run: |
+          set -uo pipefail
+          bin/idp-cloud object get --bucket "${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}" \
+            --name state/cluster 2>/dev/null | tail -n +2 > "$RUNNER_TEMP/receipt.json" || true
+          if [ ! -s "$RUNNER_TEMP/receipt.json" ]; then
+            echo "BLIND secret-headroom-policy: the receipt was not read, so the ceiling was not graded against the live cluster";
+            exit 0
+          fi
+          # The receipt's own fields, shaped into the policy input. `secret_limit` comes from the
+          # repository default so the comparison is against the declared ceiling, not the vendor's.
+          LIMIT=$(sed -n 's/^  secret_limit: *\([0-9]*\).*/\1/p' estate-defaults.yaml | head -1)
+          jq -e --argjson limit "${LIMIT:-0}" '{pr:{added:(if (.secret_count // 0) > $limit then "+  secret_limit: \($limit)\n" else "" end), approvals:[]}}' \
+            "$RUNNER_TEMP/receipt.json" > "$RUNNER_TEMP/headroom-live.json" 2>/dev/null || echo '{"pr":{"added":"","approvals":[]}}' > "$RUNNER_TEMP/headroom-live.json"
+          if conftest test --parser json -p policy "$RUNNER_TEMP/headroom-live.json"; then
+            echo "ok      secret-headroom-policy  the live receipt does not exceed the declared ceiling"
+          else
+            echo "FAIL    secret-headroom-policy  the cluster is over its declared secret ceiling; OKE refuses every new resource until it drops"
+            exit 1
+          fi
       # crew#684 rung 3: the placement question, asked against the receipt this job just read.
       # bin/idp-fits-a-node ran in no CI job and no workflow -- only against its own fixtures --
       # so on 2026-09-07 it graded nothing while ClickHouse sat Unschedulable and the aggregate
