@@ -102,7 +102,7 @@ describe('CP2: a running session is on the board', () => {
 
     // The row is the thing the founder opens the page for: which agent, doing what, and is it
     // still going.
-    expect(await screen.findByText('sb-1')).toBeInTheDocument();
+    expect(await screen.findByTestId('session-id-sb-1')).toBeInTheDocument();
     expect(screen.getByText('sovereign')).toBeInTheDocument();
     expect(screen.getByText('fix the board')).toBeInTheDocument();
     // The state chip renders upper-cased since the card-grid rewrite (f40fb18c): the label is
@@ -118,7 +118,7 @@ describe('CP2: a running session is on the board', () => {
     renderFleet(
       envelope({ sessions: [{ ...runningSession, spend_usd: null, pull_requests: [] }] }),
     );
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
     // Zero is a measurement; a dash is the absence of one. A board that printed $0.00 here would
     // tell the reader a session costs nothing when nobody measured it.
     //
@@ -144,7 +144,7 @@ describe('item #5: the capability badge', () => {
         ],
       }),
     );
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
     const badge = await screen.findByText('engine');
     // MUI Tooltip renders via portal — title is not a native attribute on the chip element.
     // Verify the chip is present; the tooltip content is tested by MUI itself.
@@ -157,7 +157,7 @@ describe('item #5: the capability badge', () => {
         sessions: [{ ...runningSession, capability_class: null, capabilities: null }],
       }),
     );
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
     // The card-grid version renders the chip only when there IS a class, so the honest
     // assertion is that no chip is fabricated -- where the old table printed an em-dash in a
     // cell it had to fill. Both are 'nothing claimed'; only one invents a character to say it.
@@ -174,7 +174,7 @@ describe('item #6: steer a stale session', () => {
 
   it('shows a Steer button for a stale sovereign session', async () => {
     renderFleet(envelope({ sessions: [staleSovereign] }));
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
     expect(screen.getByRole('button', { name: /steer/i })).toBeInTheDocument();
   });
 
@@ -184,13 +184,13 @@ describe('item #6: steer a stale session', () => {
     renderFleet(
       envelope({ sessions: [{ ...runningSession, updated_at: new Date().toISOString() }] }),
     );
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
     expect(screen.getByRole('button', { name: /steer/i })).toBeInTheDocument();
   });
 
   it('shows no button for a stale session on a runtime with no live signal path', async () => {
     renderFleet(envelope({ sessions: [{ ...staleSovereign, runtime: 'github-actions' }] }));
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
     expect(screen.queryByRole('button', { name: /steer/i })).not.toBeInTheDocument();
   });
 
@@ -204,7 +204,7 @@ describe('item #6: steer a stale session', () => {
       return { json: async () => envelope({ sessions: [staleSovereign] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
 
     // No window.prompt: the audit-trail name comes from the same inline author field the focus
     // panel offers for notes, and the steer text comes from the field beside the button.
@@ -231,7 +231,7 @@ describe('item #6: steer a stale session', () => {
       return { json: async () => envelope({ sessions: [staleSovereign] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
 
     fireEvent.click(screen.getByRole('button', { name: /steer/i }));
 
@@ -247,7 +247,7 @@ describe('item #6: steer a stale session', () => {
       return { json: async () => envelope({ sessions: [staleSovereign] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
 
     fireEvent.change(screen.getByPlaceholderText('Steer this agent…'), {
       target: { value: 'wrap up' },
@@ -434,7 +434,7 @@ describe('CP2: the board says which fact it is showing', () => {
 describe('CP2: a session whose runtime did not say', () => {
   it('reads Unknown, never Running', async () => {
     renderFleet(envelope({ sessions: [{ ...runningSession, state: 'unknown' }] }));
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
     // The catalogue knows which ledgers exist and nothing about liveness. A green row here would
     // be a claim the data does not support.
     expect(screen.getByText('UNKNOWN')).toBeInTheDocument();
@@ -445,7 +445,7 @@ describe('CP2: a session whose runtime did not say', () => {
 describe('leave a note for a session', () => {
   it('a row with no notes yet invites one, not a false zero', async () => {
     renderFleet(envelope({ sessions: [runningSession] }));
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
 
     // The note fields live inside the Focus fold, which is lazily rendered since the card-grid
     // rewrite -- the same reason the fold is opened in every case below. Asserting the
@@ -461,7 +461,7 @@ describe('leave a note for a session', () => {
     renderFleet(envelope({ sessions: [runningSession] }), {
       notes: { 'sb-1': [{ id: 1, author: 'chidi', note: 'check the budget' }] },
     });
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
     fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
     expect(await screen.findByText(/check the budget/)).toBeInTheDocument();
     expect(screen.getByText('chidi', { exact: false })).toBeInTheDocument();
@@ -480,7 +480,7 @@ describe('leave a note for a session', () => {
       return { json: async () => envelope({ sessions: [runningSession] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
     fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
     await screen.findByPlaceholderText('leave a note…');
 
@@ -509,7 +509,7 @@ describe('leave a note for a session', () => {
       return { json: async () => envelope({ sessions: [runningSession] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
     fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
     await screen.findByPlaceholderText('leave a note…');
 
@@ -565,7 +565,7 @@ describe('the focus panel: notes and steers merged, plus an auto-fetched receipt
       return { json: async () => envelope({ sessions: [runningSession] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
 
     fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
 
@@ -604,7 +604,7 @@ describe('the focus panel: notes and steers merged, plus an auto-fetched receipt
       return { json: async () => envelope({ sessions: [runningSession] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
 
     fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
 
@@ -625,7 +625,7 @@ describe('the focus panel: notes and steers merged, plus an auto-fetched receipt
       return { json: async () => envelope({ sessions: [runningSession] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
 
     fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
 
@@ -646,7 +646,7 @@ describe('needs attention: triage above the table, not table order', () => {
   it('a healthy, recently-updated session needs no attention section at all', async () => {
     const healthy = { ...runningSession, updated_at: new Date().toISOString() };
     renderFleet(envelope({ sessions: [healthy] }));
-    await screen.findByText('sb-1');
+    await screen.findByTestId('session-id-sb-1');
 
     expect(screen.queryByTestId('needs-attention')).not.toBeInTheDocument();
   });

@@ -17,6 +17,22 @@ export type Session = {
   runtime: string;
   task: string;
   state: 'running' | 'paused' | 'stopped' | 'failed' | 'unknown';
+  /**
+   * The four states the interface draws, derived server-side from evidence (recency plus the body
+   * of work behind the row -- `sessions.py`'s `_activity_from_evidence`).
+   *
+   * NOT the same thing as `state`. `state` is running/paused/stopped from elapsed time alone, and
+   * elapsed time is identical for an agent thinking hard and an agent wedged -- which is why the
+   * board drew 22 of 23 agents as one amber dot. This is what tells them apart.
+   *
+   * Optional, and absent means `unknown`: a session row from an older backend must not silently
+   * render as `thinking`, because a node that breathes when nobody knows whether it is alive is
+   * the same lie as a green dot.
+   */
+  activity?: 'thinking' | 'waiting' | 'stuck' | 'finished' | 'unknown' | null;
+  /** How many events the session has emitted. Surfaced because it is what separates `waiting`
+   *  from `stuck`, so a reader can see the evidence rather than trust the label. */
+  event_count?: number | null;
   repo?: string | null;
   step?: number | null;
   updated_at?: string | null;

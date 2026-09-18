@@ -396,3 +396,60 @@
 .estate-page-actions .estate-action-strong {
   border: 1px solid transparent;
 }
+
+/* ---------------------------------------------------------------------- fleet node motion
+ *
+ * The four states, as MOTION. Not decoration: a council of three frontier models, asked to design
+ * the fleet interface, converged on this being the whole value of it -- an agent silent for ten
+ * minutes is four states, and a person watching a fleet reads movement before they read colour.
+ *
+ * NEVER A SPINNER. A spinner means "working" and would collapse these back into one signal, which
+ * is the mistake the board already made with a single amber dot.
+ *
+ * Each keyframe is deliberately at a different FREQUENCY and a different KIND of motion, so they
+ * cannot be confused at a glance:
+ *
+ *   breathe  4s    scale      slow, alive, calm      -- thinking
+ *   drift    6s    translate  slow, directional       -- waiting (it is heading somewhere)
+ *   jitter   125ms steps      fast, chaotic, wrong    -- stuck (caught pre-attentively)
+ *   (still)  none  none       absence of motion       -- finished
+ */
+
+/* thinking: a slow inhale and exhale. The node is producing, so it looks like it is. */
+@keyframes fleet-breathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.18); opacity: 0.82; }
+}
+
+/* waiting: the node DRIFTS toward what it waits on. The drift is the tell -- a static node says
+   nothing, and a drifting node says "I am blocked and here is the direction of the thing
+   blocking me". Kept tiny (2px) so a fleet at rest does not look like it is twitching. */
+@keyframes fleet-drift {
+  0%   { transform: translateX(0); }
+  50%  { transform: translateX(3px); }
+  100% { transform: translateX(0); }
+}
+
+/* stuck: a hard, fast, stepped jitter. `steps(2,end)` rather than a smooth ease, because a smooth
+   wobble reads as gentle and this must read as WRONG. 8Hz is at the edge of comfortable -- felt
+   rather than watched. */
+@keyframes fleet-jitter {
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(-1px, 0); }
+  50%  { transform: translate(1px, 0); }
+  75%  { transform: translate(0, 1px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* A node whose motion the reader has asked to stop -- prefers-reduced-motion is honoured below,
+   and this class is the same stillness for anyone who wants it. */
+.fleet-node-still { animation: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Motion is the signal, so disabling it loses information -- which is precisely why the state
+     WORD is always rendered beside the dot and never replaced by it. With motion off, the word
+     and the ring style are the whole channel, and they are sufficient: dashed = blocked,
+     faded = over. This is the one place where the accessible path is genuinely different and the
+     reason the word is not optional decoration. */
+  .fleet-node, .fleet-node-ring { animation: none !important; }
+}

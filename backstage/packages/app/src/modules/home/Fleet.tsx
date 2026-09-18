@@ -56,6 +56,8 @@ import {
   timelineFor,
 } from './fleetBoard';
 import type { Board, Note, SessionsEnvelope, Signal } from './fleetBoard';
+import { ACTIVITY_WORD, ACTIVITY_SENTENCE, motionFor, ringStyleFor, needsAPerson } from './fleetMotion';
+import type { Activity } from './fleetMotion';
 
 // THE DESIGN SYSTEM, USED RATHER THAN REINVENTED.
 //
@@ -615,7 +617,6 @@ export function Fleet() {
         {board.state !== 'unavailable' && (
           <>
             <style>{`
-              @keyframes fleet-pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
               @keyframes fleet-mic { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)} 70%{box-shadow:0 0 0 8px rgba(239,68,68,0)} }
             `}</style>
             <div data-testid="fleet-sessions" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(360px,1fr))', gap:16, paddingTop:8 }}>
@@ -637,7 +638,31 @@ export function Fleet() {
                     {/* Header row */}
                     <Box display="flex" alignItems="center" justifyContent="space-between">
                       <Box display="flex" alignItems="center" style={{ gap:7 }}>
-                        <span style={{ width:8, height:8, borderRadius:'50%', background:sc, display:'inline-block', flexShrink:0, animation: isRunning ? 'fleet-pulse 1.6s ease-in-out infinite' : undefined }} />
+                        {/* THE NODE. Motion is the state -- see fleetMotion.ts for why the
+                            council converged on this and why a spinner would destroy it.
+                            The aria-label carries the WORD, because motion alone is not
+                            available to every reader and is not a signal at all under
+                            prefers-reduced-motion. */}
+                        {(() => {
+                          const activity = (s.activity ?? 'unknown') as Activity;
+                          const ring = ringStyleFor(activity);
+                          return (
+                            <Tooltip title={`${ACTIVITY_WORD[activity]} — ${ACTIVITY_SENTENCE[activity]}`}>
+                              <span aria-label={`${ACTIVITY_WORD[activity]}. ${ACTIVITY_SENTENCE[activity]}`}
+                                data-activity={activity}
+                                className="fleet-node-ring"
+                                style={{ width:14, height:14, borderRadius:'50%', border:`1.5px ${ring.borderStyle} ${sc}`,
+                                  opacity: ring.opacity, display:'inline-flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                                <span className="fleet-node" style={{ width:6, height:6, borderRadius:'50%', background:sc,
+                                  display:'inline-block', animation: motionFor(activity) }} />
+                              </span>
+                            </Tooltip>
+                          );
+                        })()}
+                        {needsAPerson((s.activity ?? 'unknown') as Activity) && (
+                          <MuiChip size="small" label="NEEDS YOU"
+                            style={{ background:'#7f1d1d', color:'#fca5a5', fontWeight:800, fontSize:9, height:18, borderRadius:4, letterSpacing:0.6 }} />
+                        )}
                         <MuiChip size="small" label={s.runtime} style={{ background:rc, color:'#fff', fontWeight:700, fontSize:10, height:18, borderRadius:4, letterSpacing:0.4 }} />
                         <MuiChip size="small" label={stateLabel(s.state).toUpperCase()} style={{ background:'transparent', color:sc, border:`1px solid ${sc}`, fontWeight:700, fontSize:10, height:18, borderRadius:4 }} />
                         {capability && (
@@ -651,6 +676,7 @@ export function Fleet() {
                           `#` prefix makes the same bytes read as an identifier, which is what a
                           person needs when they go looking for it in a terminal. */}
                       <Typography variant="caption" title={s.session_id}
+                        data-testid={`session-id-${s.session_id}`}
                         style={{ fontFamily:'monospace', color:T.textMuted, fontSize:11 }}>
                         #{s.session_id.slice(-10)}
                       </Typography>
