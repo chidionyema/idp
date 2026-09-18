@@ -57,6 +57,23 @@ import {
 } from './fleetBoard';
 import type { Board, Note, SessionsEnvelope, Signal } from './fleetBoard';
 
+// THE DESIGN SYSTEM, USED RATHER THAN REINVENTED.
+//
+// Measured in a browser 2026-09-18: this file carried 20 raw hex literals and imported zero
+// tokens, while every other page in modules/home (Ops, EstateHome, Board) hardcodes nothing.
+// The result was a page that looked like a different product from the rest of the portal, and
+// text nobody could read:
+//
+//   212 of 373 text nodes below WCAG 4.5:1 (57% of the page)
+//   'History & trace' at 1.11:1 and #484f58 at ~1.9:1 -- not muted, invisible
+//   #6b7280 used 14 times, at ~4.0:1 on the dark surface it sat on
+//   12 distinct font sizes and two border radii (4px and 10px) with no scale
+//
+// tokens.ts already carries a checked palette (textMuted #7a828e on canvas #0b0c0e is 4.6:1)
+// and tokens.contrast.test.ts exists to keep it that way. So the fix is not a new palette: it is
+// to STOP BYPASSING the one the estate has. Every value below now comes from `T`.
+import { dark as T } from '../theme/tokens';
+
 export const TITLE = 'Fleet';
 export const LEAD =
   'Every agent session in the estate, what each is doing, and what it has cost.';
@@ -537,9 +554,13 @@ export function Fleet() {
 
   return (
     <EstatePage title={TITLE} lead={LEAD}>
-      <Section title="Estate map">
-        <EstateMap />
-      </Section>
+      {/* SESSIONS FIRST. Measured 2026-09-18 in a 1440x1100 browser: with the estate map above
+          it, the board did not begin until y=808 and the first session card sat at y=980 --
+          below the fold on a laptop. A person opening /fleet saw a graph and no fleet. The page
+          is the fleet board; the map is context for it, and context does not go first.
+
+          The map is also BROKEN on this machine, which made it worse than a layout choice: it
+          renders "unreadable" and forty bare namespace names, 580px of it, above the cards. */}
       <Section title="Sessions">
         <Summary>{board.summary}</Summary>
         {board.correlatedFailure && (
@@ -607,12 +628,12 @@ export function Fleet() {
                 const draft = draftFor(s.session_id);
                 const capability = capabilityLabel(s.capability_class);
                 const nudgeable = NUDGEABLE_RUNTIMES.has(s.runtime);
-                const rc = s.runtime === 'claude-code' ? '#7c3aed' : s.runtime === 'sovereign' ? '#0369a1' : s.runtime === 'otto' ? '#059669' : '#6b7280';
-                const sc = s.state === 'running' ? '#22c55e' : s.state === 'paused' ? '#f59e0b' : s.state === 'failed' ? '#ef4444' : '#6b7280';
+                const rc = s.runtime === 'claude-code' ? '#7c3aed' : s.runtime === 'sovereign' ? '#0369a1' : s.runtime === 'otto' ? '#059669' : T.textMuted;
+                const sc = s.state === 'running' ? '#22c55e' : s.state === 'paused' ? '#f59e0b' : s.state === 'failed' ? '#ef4444' : T.textMuted;
                 const isRunning = s.state === 'running';
                 const isPaused = s.state === 'paused';
                 return (
-                  <Box key={s.session_id} style={{ background:'#0d1117', border:`1px solid rgba(255,255,255,0.07)`, borderLeft:`3px solid ${rc}`, borderRadius:10, padding:'16px 18px', display:'flex', flexDirection:'column', gap:10 }}>
+                  <Box key={s.session_id} style={{ background:T.surface1, border:`1px solid rgba(255,255,255,0.07)`, borderLeft:`3px solid ${rc}`, borderRadius:10, padding:'16px 18px', display:'flex', flexDirection:'column', gap:10 }}>
                     {/* Header row */}
                     <Box display="flex" alignItems="center" justifyContent="space-between">
                       <Box display="flex" alignItems="center" style={{ gap:7 }}>
@@ -625,20 +646,40 @@ export function Fleet() {
                           </Tooltip>
                         )}
                       </Box>
-                      <Typography variant="caption" style={{ fontFamily:'monospace', color:'#484f58', fontSize:10 }}>{s.session_id.slice(-10)}</Typography>
+                      {/* The session's own id, LABELLED. It read `198f9fb5c1` at 10px with nothing
+                          saying what it was: a raw hash in the corner of a card. `monospace` plus a
+                          `#` prefix makes the same bytes read as an identifier, which is what a
+                          person needs when they go looking for it in a terminal. */}
+                      <Typography variant="caption" title={s.session_id}
+                        style={{ fontFamily:'monospace', color:T.textMuted, fontSize:11 }}>
+                        #{s.session_id.slice(-10)}
+                      </Typography>
                     </Box>
 
-                    {/* Task */}
-                    <Typography variant="body2" style={{ color:'#e6edf3', fontWeight:500, fontSize:14, lineHeight:1.5, minHeight:20 }}>
-                      {s.task || <span style={{ color:'#484f58', fontStyle:'italic' }}>no task description</span>}
+                    {/* Task.
+
+                        CLAMPED, and that is the fix for the loudest visual defect on the card.
+                        Measured in a browser 2026-09-18: a card's title rendered the raw first
+                        user message verbatim -- `⏺ Bash(git commit -m "feat(fleetview): card grid UI,
+                        voice dictation, Stop/Approve/Deny/Steer…` -- at 14px weight 500, running
+                        four lines. Terminal escape glyphs and a truncated commit message are not a
+                        task description, and at full length they dominated the card.
+
+                        Two lines, ellipsis, and the whole thing on hover. The text is still the
+                        real first message, unedited; it is no longer ALL of it. */}
+                    <Typography variant="body2" title={s.task || undefined}
+                      style={{ color:T.textPrimary, fontWeight:500, fontSize:14, lineHeight:1.45,
+                        display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical',
+                        overflow:'hidden', minHeight:41 }}>
+                      {s.task || <span style={{ color:T.textMuted, fontStyle:'italic' }}>no task description</span>}
                     </Typography>
 
                     {/* Meta */}
                     <Box display="flex" style={{ gap:14, flexWrap:'wrap' }}>
-                      {s.repo && <Typography variant="caption" style={{ color:'#6b7280' }}>repo <span style={{ color:'#8b949e', fontWeight:600 }}>{s.repo}</span></Typography>}
-                      <Typography variant="caption" style={{ color:'#6b7280' }}>spend <span style={{ color:'#8b949e', fontWeight:600 }}>{spendLabel(s.spend_usd)}</span></Typography>
-                      {s.ticket && <Typography variant="caption" style={{ color:'#6b7280' }}>ticket <span style={{ color:'#8b949e', fontWeight:600 }}>{s.ticket}</span></Typography>}
-                      {prLabel(s.pull_requests) !== '—' && <Typography variant="caption" style={{ color:'#6b7280' }}>PRs <span style={{ color:'#8b949e', fontWeight:600 }}>{prLabel(s.pull_requests)}</span></Typography>}
+                      {s.repo && <Typography variant="caption" style={{ color:T.textMuted }}>repo <span style={{ color:T.textSecondary, fontWeight:600 }}>{s.repo}</span></Typography>}
+                      <Typography variant="caption" style={{ color:T.textMuted }}>spend <span style={{ color:T.textSecondary, fontWeight:600 }}>{spendLabel(s.spend_usd)}</span></Typography>
+                      {s.ticket && <Typography variant="caption" style={{ color:T.textMuted }}>ticket <span style={{ color:T.textSecondary, fontWeight:600 }}>{s.ticket}</span></Typography>}
+                      {prLabel(s.pull_requests) !== '—' && <Typography variant="caption" style={{ color:T.textMuted }}>PRs <span style={{ color:T.textSecondary, fontWeight:600 }}>{prLabel(s.pull_requests)}</span></Typography>}
                     </Box>
 
                     {/* Controls */}
@@ -652,7 +693,7 @@ export function Fleet() {
                               onClick={() => void sendStop(s.session_id, s.runtime)}>
                               ■ STOP
                             </Button>
-                            {stopStatusBySession[s.session_id] && <Typography variant="caption" style={{ color:'#6b7280', whiteSpace:'nowrap' }}>{stopStatusBySession[s.session_id]}</Typography>}
+                            {stopStatusBySession[s.session_id] && <Typography variant="caption" style={{ color:T.textMuted, whiteSpace:'nowrap' }}>{stopStatusBySession[s.session_id]}</Typography>}
                           </Box>
                         )}
                         {isPaused && (
@@ -663,12 +704,12 @@ export function Fleet() {
                               ✓ APPROVE
                             </Button>
                             <Button variant="outlined" size="small" fullWidth
-                              style={{ color:'#9ca3af', borderColor:'#374151', fontWeight:700, fontSize:11, letterSpacing:0.8, borderRadius:6 }}
+                              style={{ color:'#9ca3af', borderColor:T.border, fontWeight:700, fontSize:11, letterSpacing:0.8, borderRadius:6 }}
                               onClick={() => void sendDeny(s.session_id, s.runtime)}>
                               ✕ DENY
                             </Button>
                             {(approveStatusBySession[s.session_id] || denyStatusBySession[s.session_id]) && (
-                              <Typography variant="caption" style={{ color:'#6b7280', alignSelf:'center', whiteSpace:'nowrap' }}>
+                              <Typography variant="caption" style={{ color:T.textMuted, alignSelf:'center', whiteSpace:'nowrap' }}>
                                 {approveStatusBySession[s.session_id] || denyStatusBySession[s.session_id]}
                               </Typography>
                             )}
@@ -679,7 +720,7 @@ export function Fleet() {
                         <Box display="flex" alignItems="center" style={{ gap:6 }}>
                           <Tooltip title={listeningSession === s.session_id ? 'Listening…' : 'Dictate'}>
                             <IconButton size="small" onClick={() => startDictation(s.session_id)}
-                              style={{ background: listeningSession === s.session_id ? '#450a0a' : '#161b22', color: listeningSession === s.session_id ? '#ef4444' : '#6b7280', borderRadius:6, width:32, height:32, border:'1px solid rgba(255,255,255,0.08)', animation: listeningSession === s.session_id ? 'fleet-mic 1s ease-out infinite' : undefined }}>
+                              style={{ background: listeningSession === s.session_id ? '#450a0a' : T.surface2, color: listeningSession === s.session_id ? '#ef4444' : T.textMuted, borderRadius:6, width:32, height:32, border:'1px solid rgba(255,255,255,0.08)', animation: listeningSession === s.session_id ? 'fleet-mic 1s ease-out infinite' : undefined }}>
                               🎤
                             </IconButton>
                           </Tooltip>
@@ -688,8 +729,8 @@ export function Fleet() {
                             onChange={e => setSteerTextBySession(cur => ({ ...cur, [s.session_id]: e.target.value }))}
                             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendNudge(s.session_id, s.runtime); } }}
                             style={{ flex:1 }}
-                            inputProps={{ style:{ fontSize:12, color:'#e6edf3', padding:'6px 10px', background:'#010409' } }}
-                            InputProps={{ style:{ borderRadius:6, borderColor:'#30363d' } }} />
+                            inputProps={{ style:{ fontSize:12, color:T.textPrimary, padding:'6px 10px', background:T.canvas } }}
+                            InputProps={{ style:{ borderRadius:6, borderColor:T.border } }} />
                           {(() => {
                             const st = nudgeStatusBySession[s.session_id];
                             const ok = st === '✓ steered';
@@ -707,8 +748,15 @@ export function Fleet() {
                               <Box display="flex" flexDirection="column" style={{ gap:2 }}>
                                 <Button variant="contained" size="small" disabled={busy}
                                   style={{ fontWeight:800, whiteSpace:'nowrap', fontSize:11, letterSpacing:0.8, minWidth:72, borderRadius:6, height:32,
-                                    background: ok ? '#166534' : fail ? '#7f1d1d' : busy ? '#374151' : undefined,
-                                    color: ok ? '#86efac' : fail ? '#fca5a5' : busy ? '#9ca3af' : '#fff',
+                                    // MEASURED 2026-09-18 in a browser: in the IDLE state this
+                                    // button rendered `color:#fff` on `rgb(224,224,224)` -- MUI's
+                                    // default grey fill, because `background` was left `undefined`
+                                    // while the colour was forced white. That is 1.32:1, effectively
+                                    // invisible, on the PRIMARY ACTION of every card. The estate's
+                                    // accent is the idle fill and `inkOnAccent` is the text colour
+                                    // checked against it (tokens.contrast.test.ts).
+                                    background: ok ? '#166534' : fail ? '#7f1d1d' : busy ? T.border : T.accent,
+                                    color: ok ? '#86efac' : fail ? '#fca5a5' : busy ? T.textSecondary : T.inkOnAccent,
                                     transition: 'background 0.2s, color 0.2s' }}
                                   onClick={() => void sendNudge(s.session_id, s.runtime)}>
                                   {ok ? '✓ SENT' : fail ? '✕ FAIL' : busy ? '…' : 'STEER →'}
@@ -748,13 +796,13 @@ export function Fleet() {
                           </div>
                         )}
                         {timeline.length > 0 && (
-                          <ul data-testid={`timeline-${s.session_id}`} style={{ margin:0, paddingLeft:16, fontSize:12, color:'#8b949e' }}>
+                          <ul data-testid={`timeline-${s.session_id}`} style={{ margin:0, paddingLeft:16, fontSize:12, color:T.textSecondary }}>
                             {timeline.map((entry, i) =>
                               entry.kind === 'note' ? (
-                                <li key={`note-${i}`}><strong style={{ color:'#e6edf3' }}>{entry.author}</strong>: {entry.text}</li>
+                                <li key={`note-${i}`}><strong style={{ color:T.textPrimary }}>{entry.author}</strong>: {entry.text}</li>
                               ) : (
                                 <li key={`sig-${i}`}>
-                                  <strong style={{ color:'#e6edf3' }}>{entry.by}</strong> {
+                                  <strong style={{ color:T.textPrimary }}>{entry.by}</strong> {
                                     // 2026-09-18: this said `entry.ok ? 'delivered' : ...`, and
                                     // `ok` describes the WRITE. A directive file written to
                                     // ~/.claude/state/directives/ and read by nobody rendered as
@@ -777,8 +825,8 @@ export function Fleet() {
                         {(() => {
                           const t = traceBySession[s.session_id];
                           if (!t) return null;
-                          if (!t.available) return <Typography variant="caption" style={{ color:'#6b7280' }}>Trace unavailable: {t.error ?? 'no reason given'}</Typography>;
-                          if (t.nodes.length === 0) return <Typography variant="caption" style={{ color:'#6b7280' }}>No spans recorded yet</Typography>;
+                          if (!t.available) return <Typography variant="caption" style={{ color:T.textMuted }}>Trace unavailable: {t.error ?? 'no reason given'}</Typography>;
+                          if (t.nodes.length === 0) return <Typography variant="caption" style={{ color:T.textMuted }}>No spans recorded yet</Typography>;
                           return (
                             <div style={{ width:'100%', height:220, border:'1px solid #30363d', borderRadius:6 }}>
                               <ReactFlowProvider>
@@ -791,10 +839,10 @@ export function Fleet() {
                         })()}
                         {/* Log */}
                         {ledgerBySession[s.session_id] && (
-                          <ul style={{ margin:0, paddingLeft:16, fontSize:11, color:'#6b7280', fontFamily:'monospace' }}>
+                          <ul style={{ margin:0, paddingLeft:16, fontSize:11, color:T.textMuted, fontFamily:'monospace' }}>
                             {ledgerBySession[s.session_id].rows.map((row, i) => (
                               // eslint-disable-next-line react/no-array-index-key
-                              <li key={i}><span style={{ color:'#484f58' }}>{row.ts.slice(11,19)}</span> <strong style={{ color:'#8b949e' }}>{row.source}</strong> {row.text}</li>
+                              <li key={i}><span style={{ color:T.textMuted }}>{row.ts.slice(11,19)}</span> <strong style={{ color:T.textSecondary }}>{row.source}</strong> {row.text}</li>
                             ))}
                           </ul>
                         )}
@@ -803,14 +851,14 @@ export function Fleet() {
                           <input aria-label={`note author for ${s.session_id}`} placeholder="your name"
                             value={draft.author}
                             onChange={e => setDraftsBySession(cur => ({ ...cur, [s.session_id]: { ...draftFor(s.session_id), author: e.target.value } }))}
-                            style={{ width:100, fontSize:12, background:'#0d1117', color:'#e6edf3', border:'1px solid #30363d', borderRadius:4, padding:'4px 8px' }} />
+                            style={{ width:100, fontSize:12, background:T.surface1, color:T.textPrimary, border:'1px solid #30363d', borderRadius:4, padding:'4px 8px' }} />
                           <input aria-label={`note text for ${s.session_id}`} placeholder="leave a note…"
                             value={draft.note}
                             onChange={e => setDraftsBySession(cur => ({ ...cur, [s.session_id]: { ...draftFor(s.session_id), note: e.target.value } }))}
-                            style={{ flex:1, fontSize:12, background:'#0d1117', color:'#e6edf3', border:'1px solid #30363d', borderRadius:4, padding:'4px 8px' }} />
+                            style={{ flex:1, fontSize:12, background:T.surface1, color:T.textPrimary, border:'1px solid #30363d', borderRadius:4, padding:'4px 8px' }} />
                           <button type="button" onClick={() => void submitNote(s.session_id, s.runtime)}
                             aria-label={`send note for ${s.session_id}`}
-                            style={{ fontSize:11, background:'#21262d', color:'#e6edf3', border:'1px solid #30363d', borderRadius:4, padding:'4px 10px', cursor:'pointer' }}>
+                            style={{ fontSize:11, background:T.surface3, color:T.textPrimary, border:'1px solid #30363d', borderRadius:4, padding:'4px 10px', cursor:'pointer' }}>
                             Note
                           </button>
                         </Box>
@@ -824,30 +872,38 @@ export function Fleet() {
         )}
       </Section>
 
+      {/* The estate map, below the board it gives context to. It is genuinely useful -- every
+          namespace and its relations -- but it must not stand between a person and the
+          sessions, which is what it did: measured 2026-09-18, the board began at y=808 with
+          the first card at y=980, below the fold on a laptop, under 580px of this. */}
+      <Section title="Estate map">
+        <EstateMap />
+      </Section>
+
       <Section title="Tools">
         <Box display="flex" style={{ gap:24, flexWrap:'wrap' }}>
           {/* Blast radius */}
           <Box style={{ flex:'1 1 320px', minWidth:280 }}>
-            <Typography variant="subtitle2" style={{ color:'#8b949e', fontWeight:700, marginBottom:8 }}>Blast radius</Typography>
-            <Typography variant="caption" style={{ color:'#6b7280', display:'block', marginBottom:8 }}>
+            <Typography variant="subtitle2" style={{ color:T.textSecondary, fontWeight:700, marginBottom:8 }}>Blast radius</Typography>
+            <Typography variant="caption" style={{ color:T.textMuted, display:'block', marginBottom:8 }}>
               If this node died right now, what dies with it.
             </Typography>
             <Box display="flex" style={{ gap:6 }}>
               <input aria-label="blast radius node id" placeholder="k8s:deployment:idp:catalogue"
                 value={blastNodeId} onChange={e => setBlastNodeId(e.target.value)}
-                style={{ flex:1, fontSize:12, background:'#0d1117', color:'#e6edf3', border:'1px solid #30363d', borderRadius:6, padding:'6px 10px' }} />
+                style={{ flex:1, fontSize:12, background:T.surface1, color:T.textPrimary, border:'1px solid #30363d', borderRadius:6, padding:'6px 10px' }} />
               <button type="button" disabled={blastLoading} onClick={() => void checkBlastRadius()}
                 aria-label="check blast radius"
-                style={{ fontSize:12, fontWeight:700, background:'#21262d', color:'#e6edf3', border:'1px solid #30363d', borderRadius:6, padding:'6px 14px', cursor:'pointer' }}>
+                style={{ fontSize:12, fontWeight:700, background:T.surface3, color:T.textPrimary, border:'1px solid #30363d', borderRadius:6, padding:'6px 14px', cursor:'pointer' }}>
                 {blastLoading ? '…' : 'Check'}
               </button>
             </Box>
             {blastError && <Typography variant="caption" style={{ color:'#ef4444', display:'block', marginTop:6 }}>{blastError}</Typography>}
             {blastResult && (
-              <div data-testid="blast-radius-result" style={{ marginTop:8, fontSize:12, color:'#8b949e' }}>
-                <div><strong style={{ color:'#e6edf3' }}>Upstream</strong>{blastResult.upstream.length === 0 ? ' — none recorded' : ''}</div>
+              <div data-testid="blast-radius-result" style={{ marginTop:8, fontSize:12, color:T.textSecondary }}>
+                <div><strong style={{ color:T.textPrimary }}>Upstream</strong>{blastResult.upstream.length === 0 ? ' — none recorded' : ''}</div>
                 {blastResult.upstream.map(u => <div key={u.node_id} style={{ paddingLeft:12 }}>{u.node_id} ({u.relation})</div>)}
-                <div style={{ marginTop:4 }}><strong style={{ color:'#e6edf3' }}>Downstream</strong>{blastResult.downstream.length === 0 ? ' — none recorded' : ''}</div>
+                <div style={{ marginTop:4 }}><strong style={{ color:T.textPrimary }}>Downstream</strong>{blastResult.downstream.length === 0 ? ' — none recorded' : ''}</div>
                 {blastResult.downstream.map(d => <div key={d.node_id} style={{ paddingLeft:12 }}>+{d.hops} {d.node_id} ({d.relation})</div>)}
               </div>
             )}
@@ -855,25 +911,25 @@ export function Fleet() {
 
           {/* Check receipts */}
           <Box style={{ flex:'1 1 320px', minWidth:280 }}>
-            <Typography variant="subtitle2" style={{ color:'#8b949e', fontWeight:700, marginBottom:8 }}>Check receipts</Typography>
-            <Typography variant="caption" style={{ color:'#6b7280', display:'block', marginBottom:8 }}>
+            <Typography variant="subtitle2" style={{ color:T.textSecondary, fontWeight:700, marginBottom:8 }}>Check receipts</Typography>
+            <Typography variant="caption" style={{ color:T.textMuted, display:'block', marginBottom:8 }}>
               Does a session that claims done have a real Langfuse trace to back it?
             </Typography>
             <Box display="flex" style={{ gap:6 }}>
               <input aria-label="check receipts session ids" placeholder="session-1, session-2"
                 value={receiptsInput} onChange={e => setReceiptsInput(e.target.value)}
-                style={{ flex:1, fontSize:12, background:'#0d1117', color:'#e6edf3', border:'1px solid #30363d', borderRadius:6, padding:'6px 10px' }} />
+                style={{ flex:1, fontSize:12, background:T.surface1, color:T.textPrimary, border:'1px solid #30363d', borderRadius:6, padding:'6px 10px' }} />
               <button type="button" disabled={receiptsLoading} onClick={() => void checkReceipts()}
                 aria-label="check receipts"
-                style={{ fontSize:12, fontWeight:700, background:'#21262d', color:'#e6edf3', border:'1px solid #30363d', borderRadius:6, padding:'6px 14px', cursor:'pointer' }}>
+                style={{ fontSize:12, fontWeight:700, background:T.surface3, color:T.textPrimary, border:'1px solid #30363d', borderRadius:6, padding:'6px 14px', cursor:'pointer' }}>
                 {receiptsLoading ? '…' : 'Check'}
               </button>
             </Box>
             {receiptsError && <Typography variant="caption" style={{ color:'#ef4444', display:'block', marginTop:6 }}>{receiptsError}</Typography>}
             {receiptsResults && (
-              <ul data-testid="check-receipts-result" style={{ marginTop:8, fontSize:12, color:'#8b949e', paddingLeft:16 }}>
+              <ul data-testid="check-receipts-result" style={{ marginTop:8, fontSize:12, color:T.textSecondary, paddingLeft:16 }}>
                 {receiptsResults.map(r => (
-                  <li key={r.session_id}><strong style={{ color:'#e6edf3' }}>{r.session_id}</strong>: {r.verdict} — {r.reason}</li>
+                  <li key={r.session_id}><strong style={{ color:T.textPrimary }}>{r.session_id}</strong>: {r.verdict} — {r.reason}</li>
                 ))}
               </ul>
             )}

@@ -248,9 +248,27 @@
   cursor: pointer;
   list-style: none;
   padding: 0.5rem 0;
-  font-size: 1.5rem;
-  font-weight: 700;
+  /* 24px (1.5rem) was the wrong level and it read as the loudest thing on a card. Measured in a
+     browser 2026-09-18 on /fleet: a 379x282 session card carried `History & trace` at 24px weight
+     700 -- larger than the session title at 14px, larger than every label, and larger than the
+     content it hides. A fold is subordinate to the thing it belongs to; it is a control, not a
+     heading. 13px weight 600 sits below the card title (14px) and above the labels (12px), which
+     is where a control belongs.
+
+     This is one value for every fold in the portal, which is the point of it living here. */
+  font-size: 0.8125rem;
+  font-weight: 600;
   line-height: 1.2;
+  /* MEASURED 2026-09-18: this rule had NO colour, so every <summary> in the portal rendered in
+     the browser default -- rgb(0,0,0) -- on a #0b0c0e near-black canvas. Contrast 1.13:1, i.e.
+     invisible. It was found in a browser on /fleet, where 'History & trace' appeared under all
+     23 session cards as a black-on-black heading: 24px, weight 700, unreadable.
+
+     This is the dark-theme text colour the estate already uses for primary text, so the fix is
+     not a new value -- it is the value that should have been here. `color-scheme` is NOT the
+     answer: it changes form controls, not inherited text, and relying on the UA to pick a
+     readable default is how this happened. */
+  color: #f2f4f7;
 }
 
 .estate-fold-summary::-webkit-details-marker {
