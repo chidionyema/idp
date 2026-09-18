@@ -1062,6 +1062,38 @@ rules:
     - policy/fixtures/opmodel-no-canary.json
   ok: the operating-model policy allows a complete pull request and refuses each incomplete shape
   fail: the operating-model policy did not behave as specified
+- id: secret-headroom
+  label: headroom
+  statement: A HelmRelease declares history-max, and the cluster's secret ceiling is raised only as a deliberate capacity decision
+  law: LAW 44, HGC
+  origin: incident 2026-09-18 (2,650 Secrets against OKE's 2,000 limit, 30 Flux objects NotReady)
+  planes:
+  - ci
+  requires:
+  - conftest
+  run:
+  - conftest
+  - test
+  - --parser
+  - json
+  - -p
+  - policy
+  fixtures:
+    must_fail: policy/fixtures/headroom-unbounded-release.json
+    must_pass: policy/fixtures/headroom-ok.json
+  live_elsewhere: 'bin/idp-cluster-state: a rows secrets, so the live count is published on the capacity tile rather than discovered from an admission refusal. Absence of that row is FAIL, never clean, the same rule the capacity row already follows (crew#584).'
+  cases:
+  - expect: pass
+    args:
+    - policy/fixtures/headroom-ok.json
+  - expect: refuse
+    args:
+    - policy/fixtures/headroom-unbounded-release.json
+  - expect: refuse
+    args:
+    - policy/fixtures/headroom-ceiling-raised.json
+  ok: an unbounded HelmRelease and a raised ceiling are both refused; a bounded release passes
+  fail: the secret-headroom rule did not behave as specified
 - id: no-toil-policy
   label: notoil
   statement: A doc that tells a person to mint a credential by hand is refused; a FOUNDER ACTION line is not

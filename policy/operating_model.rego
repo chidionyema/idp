@@ -149,3 +149,50 @@ deny contains msg if {
 	not "zone-exempt" in input.pr.approvals
 	msg := sprintf("rule=no_zone_literal_added | %s | fix: write the host as <service>.${ESTATE_ZONE} (Flux substitutes it on the cluster; compose, shell and Python read ESTATE_ZONE from the environment; workflows read vars.ESTATE_ZONE); the zone is declared once, in clusters/<cluster>/estate-config.yaml", [hit])
 }
+
+# --- secret_headroom (HGC) ---------------------------------------------------------------
+# Founder, 2026-09-18: "2,650 secrets against a 2,000 limit" is not a number a platform
+# should ever discover from an admission refusal. OKE's resource-leak webhook had refused
+# every create for hours; thirty Flux objects were NotReady (Backstage, Crossplane, commerce,
+# otto-gateway, prospector, via-negativa among them) and the first thing that said so was a
+# failed Helm upgrade.
+#
+# This rule reads the DECLARATION, not the cluster: a PR that adds a HelmRelease without
+# `history-max` is refused, because that is the mechanism by which the count grows without
+# anyone deciding to grow it. Helm keeps ten revisions per release by default and this fleet
+# has hundreds of releases, so an unbounded release is not a style question -- it is roughly
+# ten Secrets apiece, accumulating for ever, with nothing pruning.
+#
+# The default is 3 rather than 5: a rollback needs the previous revision, and three covers a
+# rollback of a rollback. Ten is Helm's default and is pure sprawl at this size.
+#
+# Reading the world rather than the prose (the rule the file's header sets): this looks at
+# the YAML a PR adds. It does NOT ask anyone to write `Secret-budget:` in the body, which is
+# exactly the paperwork the founder ordered cut on 2026-09-04.
+
+# A HelmRelease whose added lines declare no history-max anywhere in the same document.
+helmrelease_added if {
+	regex.match(`(?m)^\+\s*kind:\s*HelmRelease\s*$`, input.pr.added)
+}
+
+history_max_declared if {
+	regex.match(`(?m)^\+\s*history-max:\s*[0-9]+\s*$`, input.pr.added)
+}
+
+deny contains msg if {
+	helmrelease_added
+	not history_max_declared
+	msg := "rule=secret_headroom | a HelmRelease is added with no history-max, so every revision it installs becomes a Secret that nothing ever prunes | fix: declare spec.history-max: 3 (a rollback needs the previous revision; three covers a rollback of a rollback). Incident 2026-09-18: the cluster reached 2,650 Secrets against OKE's 2,000 limit and refused every create, leaving 30 Flux objects NotReady."
+}
+
+# The ceiling itself is declared in the repo, never read from a vendor dashboard at judgement
+# time. A PR that raises it must say so in the same place the number lives.
+secret_ceiling_raised if {
+	regex.match(`(?m)^\+\s*secret_limit:\s*[0-9]+\s*$`, input.pr.added)
+}
+
+deny contains msg if {
+	secret_ceiling_raised
+	not "capacity-exempt" in input.pr.approvals
+	msg := "rule=secret_headroom | the cluster's secret ceiling is raised in this PR | fix: raising a ceiling is a capacity decision, not a config edit -- land the pruning that makes the old ceiling sufficient, or get APPROVE: capacity-exempt from the founder. Incident 2026-09-18: the ceiling was reached, not exceeded by design."
+}
