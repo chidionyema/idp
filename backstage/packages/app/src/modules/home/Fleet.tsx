@@ -33,9 +33,6 @@ import Tooltip from '@material-ui/core/Tooltip';
 import Typography from '@material-ui/core/Typography';
 import dagre from 'dagre';
 import {
-  Background,
-  ReactFlow,
-  ReactFlowProvider,
   type Edge as RFEdge,
   type Node as RFNode,
 } from '@xyflow/react';
@@ -44,16 +41,8 @@ import { Chip, EstatePage, Fold, Section, Summary } from '../shell';
 import { EstateMap } from './EstateMap';
 import {
   attentionReason,
-  capabilityLabel,
-  capabilityTitle,
   NUDGEABLE_RUNTIMES,
-  order,
-  prLabel,
-  signalWord,
-  spendLabel,
-  stateLabel,
   summarise,
-  timelineFor,
 } from './fleetBoard';
 import type { Board, Note, SessionsEnvelope, Signal } from './fleetBoard';
 import { ACTIVITY_WORD, ACTIVITY_SENTENCE, motionFor, ringStyleFor, needsAPerson } from './fleetMotion';
@@ -625,7 +614,38 @@ export function Fleet() {
                 SEEN." Every agent is a node whose radius is the work it has done, whose pulse
                 is the state it is in, and whose ring says whether it is blocked. See
                 FleetCanvas.tsx and docs/specs/2026-09-18-fleet-interface-design.md. */}
-            <FleetCanvas sessions={board.sessions} board={board} />
+            <FleetCanvas
+              sessions={board.sessions}
+              board={board}
+              // The deck is a CONTROL SURFACE, not a read-only panel: without these the page
+              // rendered a canvas whose steer, note and history sections had no data and no
+              // destination. Found by a test asserting "not yet read" against a deck that said
+              // "No notes or signals yet" -- the props existed on the canvas and nothing passed
+              // them.
+              signalsBySession={signalsBySession}
+              notesBySession={notesBySession}
+              onRequestSignals={loadSignals}
+              onRequestNotes={loadNotes}
+              onSubmitSteer={async (sessionId, runtime, text) => {
+                const res = await fetchApi.fetch('plugin://proxy/fleetview/nudge', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ session_id: sessionId, runtime, by: 'founder', text }),
+                });
+                const body = (await res.json()) as { ok?: boolean; error?: string };
+                if (res.ok && body.ok !== false) void loadSignals(sessionId);
+                return { ok: res.ok && body.ok !== false, error: body.error ?? `HTTP ${res.status}` };
+              }}
+              onAddNote={async (sessionId, author, note) => {
+                const res = await fetchApi.fetch('plugin://proxy/fleetview/notes', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ session_id: sessionId, note, author }),
+                });
+                await res.json();
+                void loadNotes(sessionId);
+              }}
+            />
           </>
         )}
       </Section>

@@ -12,6 +12,7 @@ import {
   TextField,
   Tooltip,
 } from '@mui/material';
+import { capabilityLabel, NUDGEABLE_RUNTIMES, stateLabel } from './fleetBoard';
 import type { Session } from './fleetBoard';
 import { ACTIVITY_WORD } from './fleetMotion';
 import type { Activity } from './fleetMotion';
@@ -440,6 +441,8 @@ function CommandDeck(props: DeckProps): JSX.Element {
   const [noteAuthor, setNoteAuthor] = useState('');
   const [noteText, setNoteText] = useState('');
   const [noteBusy, setNoteBusy] = useState(false);
+  /** Why a note was refused. A silent no-op reads as a broken button. */
+  const [noteWarn, setNoteWarn] = useState<string | null>(null);
   const [taskExpanded, setTaskExpanded] = useState(false);
   const [receipt, setReceipt] = useState<
     { status: string; verdict?: string; reason?: string } | undefined
@@ -557,11 +560,25 @@ function CommandDeck(props: DeckProps): JSX.Element {
 
   const submitNote = useCallback(async () => {
     const text = noteText.trim();
-    if (text.length === 0) return;
+    const author = noteAuthor.trim();
+    // A NOTE WITH NO NAME IS NOT SENT, and it is not silently attributed either. The generated
+    // canvas defaulted a blank author to 'operator', which writes a HUMAN's note into the audit
+    // trail under a robot's name -- worse than refusing, because the trail is what a reader
+    // trusts. The card required a name; this keeps that rule and says why, rather than posting
+    // and looking like it worked.
+    if (text.length === 0) {
+      setNoteWarn('Write the note first.');
+      return;
+    }
+    if (author.length === 0) {
+      setNoteWarn('Add your name — an unattributed note is not worth keeping.');
+      return;
+    }
     if (!onAddNote) return;
+    setNoteWarn(null);
     setNoteBusy(true);
     try {
-      await onAddNote(session.session_id, noteAuthor.trim() || 'operator', text);
+      await onAddNote(session.session_id, author, text);
       setNoteText('');
       if (onRequestNotes) onRequestNotes(session.session_id);
     } finally {
@@ -630,12 +647,16 @@ function CommandDeck(props: DeckProps): JSX.Element {
             }}
           >
             <span style={{ color: T.textMuted }}>note {note.author ?? 'operator'}: </span>
-            {note.text}
+            {note.note}
           </div>
         ),
       });
     });
-    rows.sort((a, b) => b.at - a.at);
+    // OLDEST FIRST, matching fleetBoard.timelineFor's own contract: "one chronological read of
+    // what happened to a session, oldest first". The generated canvas reversed this, so a reader
+    // opening HISTORY saw the most recent event at the top and had to read upward to reconstruct
+    // what happened -- the opposite of the page it replaced, for no stated reason.
+    rows.sort((a, b) => a.at - b.at);
     return rows;
   }, [signals, notes]);
 
@@ -758,6 +779,16 @@ function CommandDeck(props: DeckProps): JSX.Element {
           padding: '8px 0',
         }}
       >
+        {/* STATE, which the canvas was not showing at all. `activity` is the four states the
+            node DRAWS; `state` is the process's own report -- running, paused, failed, unknown --
+            and `failed` is the one a reader must never have to open a panel twice to find. It is
+            surfaced as a fact row with the same word the rest of the portal uses (stateLabel), so
+            the page and the deck cannot disagree.
+
+            THIS IS ALSO WHERE THE FIXTURE'S `state` FIELD IS HONOURED. Two tests asserted RUNNING
+            and UNKNOWN against a canvas that rendered neither: the canvas was wrong, not the
+            tests, and this is the row they were looking for. */}
+        <Fact label="state" value={stateLabel(session.state)} />
         <Fact label="events" value={fmtCount(session.event_count)} />
         {/* LAST SEEN.
             `relTime` was written and then never used, which meant the deck showed events and
@@ -767,12 +798,28 @@ function CommandDeck(props: DeckProps): JSX.Element {
             a glance where "2026-09-18T19:37:31Z" is not. */}
         <Fact label="last seen" value={relTime(session.updated_at)} />
         <Fact label="spend" value={fmtSpend(session.spend_usd)} />
+        {/* The capability class, which the card carried and the generated canvas dropped. A
+            runtime with no capability-class concept gets NOTHING here rather than a fabricated
+            label -- the same rule the card followed. */}
+        {capabilityLabel(session.capability_class) ? (
+          <Fact label="capability" value={capabilityLabel(session.capability_class)!} />
+        ) : null}
         <Fact label="repo" value={fmtText(session.repo)} />
         <Fact label="ticket" value={fmtText(session.ticket)} />
         <Fact label="PRs" value={fmtPRs(session.pull_requests)} />
       </div>
 
-      {/* 4. Steer */}
+      {/* 4. Steer.
+          ONLY for a runtime that has a live signal path. `NUDGEABLE_RUNTIMES` is the same set
+          sessions.py enforces server-side, and a runtime outside it has no channel -- so a STEER
+          button there posts a request the backend will refuse with a 422. The card grid checked
+          this; the generated canvas did not, and offered steering to github-actions. A control
+          that cannot work is worse than no control, which is the estate's own rule for the 422. */}
+      {!NUDGEABLE_RUNTIMES.has(session.runtime) ? (
+        <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>
+          No steering channel for {session.runtime}.
+        </div>
+      ) : (
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>STEER</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -855,6 +902,7 @@ function CommandDeck(props: DeckProps): JSX.Element {
           <div style={{ fontSize: 11, color: T.red, marginTop: 4 }}>{steerError}</div>
         ) : null}
       </div>
+      )}
 
       {/* 5. Note */}
       <div style={{ marginBottom: 12 }}>
@@ -908,6 +956,9 @@ function CommandDeck(props: DeckProps): JSX.Element {
           Note
         </Button>
       </div>
+      {noteWarn ? (
+        <div style={{ fontSize: 11, color: T.amber, marginTop: -8, marginBottom: 12 }}>{noteWarn}</div>
+      ) : null}
 
       {/* 6. History */}
       <div style={{ marginBottom: 12 }}>
@@ -1095,7 +1146,7 @@ export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
   return (
     <div
       ref={containerRef}
-      data-testid="fleet-canvas"
+      data-testid="fleet-root"
       style={{
         position: 'relative',
         width: '100%',
@@ -1123,6 +1174,7 @@ export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
           label={`all (${sessions.length})`}
           active={filter === 'all'}
           onClick={() => setFilter('all')}
+          ariaLabel={`Filter: all ${sessions.length}`}
         />
         {runtimes.map((rt) => {
           const count = sessions.filter((s) => s.runtime === rt).length;
@@ -1132,6 +1184,7 @@ export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
               label={`${rt} (${count})`}
               active={filter === rt}
               onClick={() => setFilter(rt)}
+              ariaLabel={`Filter: ${count} ${rt}`}
             />
           );
         })}
@@ -1175,6 +1228,7 @@ export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
 
       {!empty && !unavailable ? (
         <svg
+          data-testid="fleet-canvas"
           width={size.w}
           height={size.h}
           style={{ position: 'absolute', inset: 0, display: 'block' }}
@@ -1289,9 +1343,12 @@ export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
                       />
                     ) : null}
 
-                    {/* Stuck halo: expanding ring, keyframes from styles.css. */}
+                    {/* Stuck halo: expanding ring, keyframes from styles.css. The testid is what
+                        makes "does a stuck node look different" a testable claim rather than a
+                        matter of opinion. */}
                     {stuck ? (
                       <circle
+                        data-testid="halo"
                         r={node.r + 8}
                         fill="none"
                         stroke={T.red}
@@ -1415,16 +1472,21 @@ function FilterChip({
   label,
   active,
   onClick,
+  ariaLabel,
 }: {
   label: string;
   active: boolean;
   onClick: () => void;
+  /** The spoken name. An aria-pressed button says WHETHER it is on and nothing about what it
+   *  filters, so without this a screen reader heard "2 thinking, toggle button". */
+  ariaLabel: string;
 }): JSX.Element {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      aria-label={ariaLabel}
       style={{
         fontSize: 11,
         fontFamily: FONT_MONO,

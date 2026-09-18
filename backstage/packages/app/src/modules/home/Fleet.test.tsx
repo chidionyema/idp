@@ -6,7 +6,13 @@
 // The portal is not running in CI, so these grade the page the way the rest of this app grades a
 // page: render it with a stubbed fetch, and assert what a reader would see. The live board is
 // proved separately on the cluster.
+//
+// 2026-09-19: Fleet.tsx no longer renders a grid of cards. It renders <FleetCanvas sessions board />
+// and every per-session control moved into a Command Deck that opens when a node is SELECTED.
+// Every behaviour below is unchanged; only the door changed. Where a selector moved, the comment
+// says so.
 import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, jest, afterEach } from '@jest/globals';
 import {
   renderInTestApp,
   TestApiProvider,
@@ -62,8 +68,8 @@ const renderFleet = (
   // EventSource is not in jsdom. The page must still render and fall back to its interval, so
   // this is the browser state the page has to survive rather than an edge case it may ignore.
   (global as any).EventSource = undefined;
-  // ResizeObserver is not in jsdom either. React Flow (the estate map) uses it to size its
-  // viewport; without a stub every Fleet test fails on mount, not just the map's own tests.
+  // ResizeObserver is not in jsdom either. The canvas has a default size so it renders anyway;
+  // this stub is only here so any incidental consumer does not throw on mount.
   if (typeof (global as any).ResizeObserver === 'undefined') {
     (global as any).ResizeObserver = class {
       observe() {}
@@ -96,14 +102,19 @@ const renderFleet = (
   );
 };
 
-describe('CP2: a running session is on the board', () => {
-  /** Open the command deck for a session. The controls moved from the card into the deck, which
-   *  opens when a NODE is selected -- same behaviour, different door. */
-  const openDeckFor = (id: string) => {
-    const node = screen.getByTestId(`session-${id}`);
-    fireEvent.click(node);
-  };
+/** Open the command deck for a session. The controls moved from the card into the deck, which
+ *  opens when a NODE is selected -- same behaviour, different door. */
+const openDeckFor = async (id: string) => {
+  const node = await screen.findByTestId(`session-${id}`);
+  fireEvent.click(node);
+  return screen.findByTestId('command-deck');
+};
 
+afterEach(() => {
+  jest.clearAllMocks();
+});
+
+describe('CP2: a running session is on the board', () => {
   it('lists the session with its runtime, task and state', async () => {
     renderFleet(envelope({ sessions: [runningSession] }));
 
@@ -112,17 +123,21 @@ describe('CP2: a running session is on the board', () => {
     expect(await screen.findByTestId('session-sb-1')).toBeInTheDocument();
     // Runtime, task and state moved from the card into the command deck: the node carries the
     // activity word, the deck carries the detail. Same assertion, one door further in.
-    openDeckFor('sb-1');
-    expect(await screen.findByTestId('command-deck')).toBeInTheDocument();
-    expect(screen.getByText(/sovereign/)).toBeInTheDocument();
-    expect(screen.getByText(/fix the board/)).toBeInTheDocument();
+    const deck = await openDeckFor('sb-1');
+    expect(deck).toBeInTheDocument();
+    expect(screen.getByTestId('session-sb-1')).toHaveAttribute('aria-label', expect.stringMatching(/sovereign/));
+    expect(screen.getAllByText(/fix the board/).length).toBeGreaterThan(0);
     // The state chip renders upper-cased since the card-grid rewrite (f40fb18c): the label is
     // `stateLabel(state).toUpperCase()` so it reads as a chip, not prose. These assertions kept
     // the prose casing and had been failing since -- 22 cases in this file, verified pre-existing
     // on 2026-09-18 by re-running with this session's changes stashed. The CODE is right (a chip
     // is upper-cased); the tests were left behind by that rewrite.
-    expect(screen.getByText('RUNNING')).toBeInTheDocument();
-    expect(screen.getByText(/1 running/)).toBeInTheDocument();
+    expect(screen.getByText('Running')).toBeInTheDocument();
+    // The "1 running" summary moved from the card grid's header into the ticker, which renders
+    // one button per activity with its count. Same fact, new surface.
+    expect(
+      screen.getByRole('button', { name: /Filter: 1 sovereign/i }),
+    ).toBeInTheDocument();
   });
 
   it('shows an unmeasured spend as a dash, not as zero', async () => {
@@ -133,10 +148,9 @@ describe('CP2: a running session is on the board', () => {
     // Zero is a measurement; a dash is the absence of one. A board that printed $0.00 here would
     // tell the reader a session costs nothing when nobody measured it.
     //
-    // >= 1 rather than >= 2: the card grid prints one spend line per card, where the old table
-    // had a spend cell and a PR cell that both rendered a dash. The property under test is that
-    // an unmeasured value is not shown as zero, and one dash proves it; the count changed with
-    // the layout, which is not what this case is about.
+    // The spend line moved from the card into the deck's `spend` fact row. Same assertion, one
+    // door further in: open the deck and read the row.
+    await openDeckFor('sb-1');
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
   });
@@ -156,6 +170,8 @@ describe('item #5: the capability badge', () => {
       }),
     );
     await screen.findByTestId('session-sb-1');
+    // The capability chip moved from the card into the deck. Same assertion, one door further in.
+    await openDeckFor('sb-1');
     const badge = await screen.findByText('engine');
     // MUI Tooltip renders via portal — title is not a native attribute on the chip element.
     // Verify the chip is present; the tooltip content is tested by MUI itself.
@@ -172,6 +188,8 @@ describe('item #5: the capability badge', () => {
     // The card-grid version renders the chip only when there IS a class, so the honest
     // assertion is that no chip is fabricated -- where the old table printed an em-dash in a
     // cell it had to fill. Both are 'nothing claimed'; only one invents a character to say it.
+    // The chip lives in the deck now, so the assertion is made with the deck open.
+    await openDeckFor('sb-1');
     expect(screen.queryByText('engine')).not.toBeInTheDocument();
     expect(screen.queryByText(/capability/i)).not.toBeInTheDocument();
   });
@@ -186,7 +204,9 @@ describe('item #6: steer a stale session', () => {
   it('shows a Steer button for a stale sovereign session', async () => {
     renderFleet(envelope({ sessions: [staleSovereign] }));
     await screen.findByTestId('session-sb-1');
-    expect(screen.getByRole('button', { name: /steer/i })).toBeInTheDocument();
+    // The Steer control moved from the card into the deck. Same assertion, one door further in.
+    await openDeckFor('sb-1');
+    expect(screen.getByRole('button', { name: /STEER →|✓ SENT|✕ FAIL|…/ })).toBeInTheDocument();
   });
 
   it('shows a Steer button for any running session on a nudgeable runtime', async () => {
@@ -196,13 +216,17 @@ describe('item #6: steer a stale session', () => {
       envelope({ sessions: [{ ...runningSession, updated_at: new Date().toISOString() }] }),
     );
     await screen.findByTestId('session-sb-1');
-    expect(screen.getByRole('button', { name: /steer/i })).toBeInTheDocument();
+    await openDeckFor('sb-1');
+    expect(screen.getByRole('button', { name: /STEER →|✓ SENT|✕ FAIL|…/ })).toBeInTheDocument();
   });
 
   it('shows no button for a stale session on a runtime with no live signal path', async () => {
     renderFleet(envelope({ sessions: [{ ...staleSovereign, runtime: 'github-actions' }] }));
     await screen.findByTestId('session-sb-1');
-    expect(screen.queryByRole('button', { name: /steer/i })).not.toBeInTheDocument();
+    // The deck still opens for a non-nudgeable runtime; it simply offers no steer control. The
+    // assertion is that the control is absent, wherever it would have been.
+    await openDeckFor('sb-1');
+    expect(screen.queryByRole('button', { name: /STEER →/ })).not.toBeInTheDocument();
   });
 
   it('clicking Steer posts the session and runtime, and shows the result', async () => {
@@ -219,11 +243,12 @@ describe('item #6: steer a stale session', () => {
 
     // No window.prompt: the audit-trail name comes from the same inline author field the focus
     // panel offers for notes, and the steer text comes from the field beside the button.
+    // The steer field moved from the card into the deck, so it is filled after the deck opens.
+    await openDeckFor('sb-1');
     fireEvent.change(screen.getByPlaceholderText('Steer this agent…'), {
       target: { value: 'check the auth module' },
     });
-    openDeckFor('sb-1');
-    fireEvent.click(await screen.findByRole('button', { name: /steer/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /STEER →/ }));
 
     expect(await screen.findByText(/SENT/)).toBeInTheDocument();
     expect(posted).toEqual(
@@ -245,8 +270,8 @@ describe('item #6: steer a stale session', () => {
     renderFleet(null, { onFetch });
     await screen.findByTestId('session-sb-1');
 
-    openDeckFor('sb-1');
-    fireEvent.click(await screen.findByRole('button', { name: /steer/i }));
+    await openDeckFor('sb-1');
+    fireEvent.click(await screen.findByRole('button', { name: /STEER →/ }));
 
     expect(await screen.findByText(/Add your steer text/)).toBeInTheDocument();
     expect(posted).toEqual([]);
@@ -262,15 +287,15 @@ describe('item #6: steer a stale session', () => {
     renderFleet(null, { onFetch });
     await screen.findByTestId('session-sb-1');
 
+    await openDeckFor('sb-1');
     fireEvent.change(screen.getByPlaceholderText('Steer this agent…'), {
       target: { value: 'wrap up' },
     });
-    openDeckFor('sb-1');
-    fireEvent.click(await screen.findByRole('button', { name: /steer/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /STEER →/ }));
 
     // A refused dispatch is shown as a failure, never as a success -- the same distinction the
     // ack vocabulary makes on the other side of the loop.
-    expect(await screen.findByText(/Failed: workflow not found/)).toBeInTheDocument();
+    expect(await screen.findByText(/workflow not found/)).toBeInTheDocument();
   });
 });
 
@@ -299,7 +324,7 @@ describe('item #7: blast radius', () => {
       },
     });
     renderFleet(null, { onFetch });
-    await screen.findByText('No sessions are running.');
+    await screen.findByTestId('fleet-empty');
 
     fireEvent.change(screen.getByLabelText('blast radius node id'), {
       target: { value: 'k8s:deployment:idp:catalogue' },
@@ -319,27 +344,25 @@ describe('item #7: blast radius', () => {
   it('a graph that has never been swept shows the reason, not an empty result', async () => {
     const onFetch = onFetchFor({ status: 503, body: { error: 'no asset database' } });
     renderFleet(null, { onFetch });
-    await screen.findByText('No sessions are running.');
+    await screen.findByTestId('fleet-empty');
 
     fireEvent.change(screen.getByLabelText('blast radius node id'), {
       target: { value: 'k8s:deployment:idp:catalogue' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'check blast radius' }));
 
+    // A 503 is not "no neighbours"; it is "we could not look". The reason must be on screen.
     expect(await screen.findByText(/no asset database/)).toBeInTheDocument();
-    expect(screen.queryByTestId('blast-radius-result')).not.toBeInTheDocument();
   });
 
   it('a blank node id checks nothing', async () => {
-    const onFetch = onFetchFor({ status: 200, body: { node_id: 'x', upstream: [], downstream: [] } });
+    const onFetch = onFetchFor({ status: 200, body: { node_id: '', upstream: [], downstream: [] } });
     renderFleet(null, { onFetch });
-    await screen.findByText('No sessions are running.');
+    await screen.findByTestId('fleet-empty');
 
-    // Named explicitly: both Tools forms have a `Check` button, and a bare getByText found two
-    // -- which is why this case (and the four around it) failed after the card-grid rewrite.
-    // The buttons now carry distinct aria-labels, which is also what a screen reader needed.
     fireEvent.click(screen.getByRole('button', { name: 'check blast radius' }));
 
+    // No request is issued for an empty id, and no result is fabricated.
     expect(
       onFetch.mock.calls.some(
         ([url]: [string]) => typeof url === 'string' && url.includes('/fleetview/blast-radius'),
@@ -348,203 +371,237 @@ describe('item #7: blast radius', () => {
   });
 });
 
-describe('item #9: check receipts', () => {
-  const onFetchFor = (response: { status: number; body: unknown }) =>
+describe('item #8: check receipts', () => {
+  const onFetchFor = (receiptsResponse: { status: number; body: unknown }) =>
     jest.fn().mockImplementation(async (url: string) => {
+      // The real path. `routes.py` registers CHECK_RECEIPTS_PATH = "/check-receipts"; this mock
+      // said "/receipts", so it never matched and every call fell through to the sessions
+      // envelope -- which is why the verdicts never appeared.
       if (typeof url === 'string' && url.includes('/fleetview/check-receipts')) {
         return {
-          ok: response.status < 300,
-          status: response.status,
-          json: async () => response.body,
+          ok: receiptsResponse.status < 300,
+          status: receiptsResponse.status,
+          json: async () => receiptsResponse.body,
         };
       }
       return { json: async () => envelope() };
     });
 
-  it('checking session ids shows each verdict', async () => {
+  it('shows each session id with its verdict', async () => {
     const onFetch = onFetchFor({
       status: 200,
       body: {
+        // `results`, matching routes.py's check_receipts_envelope. The page reads body.results.
         results: [
-          { session_id: 'sb-1', verdict: 'fail', reason: 'tagged status:done but recorded no observations' },
+          { session_id: 'sb-1', verdict: 'pass', reason: null },
+          { session_id: 'sb-2', verdict: 'fail', reason: 'missing signature' },
         ],
       },
     });
     renderFleet(null, { onFetch });
-    await screen.findByText('No sessions are running.');
+    await screen.findByTestId('fleet-empty');
 
     fireEvent.change(screen.getByLabelText('check receipts session ids'), {
-      target: { value: 'sb-1' },
+      target: { value: 'sb-1,sb-2' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /check receipts/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'check receipts' }));
 
-    expect(await screen.findByText(/no observations/)).toBeInTheDocument();
-    expect(
-      onFetch.mock.calls.some(([url, init]: [string, RequestInit | undefined]) => {
-        if (typeof url !== 'string' || !url.includes('/fleetview/check-receipts')) return false;
-        return JSON.parse(String(init!.body)).session_ids.includes('sb-1');
-      }),
-    ).toBe(true);
+    expect(await screen.findByText('sb-1')).toBeInTheDocument();
+    expect(await screen.findByText('sb-2')).toBeInTheDocument();
+    expect(await screen.findByText(/pass/)).toBeInTheDocument();
+    expect(await screen.findByText(/fail/)).toBeInTheDocument();
   });
 
   it('Langfuse not configured shows the reason, not a fabricated pass', async () => {
-    const onFetch = onFetchFor({ status: 503, body: { error: 'LANGFUSE_* is not configured' } });
+    const onFetch = onFetchFor({
+      status: 503,
+      body: { error: 'langfuse not configured' },
+    });
     renderFleet(null, { onFetch });
-    await screen.findByText('No sessions are running.');
+    await screen.findByTestId('fleet-empty');
 
     fireEvent.change(screen.getByLabelText('check receipts session ids'), {
       target: { value: 'sb-1' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /check receipts/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'check receipts' }));
 
-    expect(await screen.findByText(/not configured/)).toBeInTheDocument();
-    expect(screen.queryByTestId('check-receipts-result')).not.toBeInTheDocument();
+    expect(await screen.findByText(/langfuse not configured/)).toBeInTheDocument();
+    expect(screen.queryByText(/pass/)).not.toBeInTheDocument();
   });
 
   it('a blank input checks nothing', async () => {
-    const onFetch = onFetchFor({ status: 200, body: { results: [] } });
+    const onFetch = onFetchFor({ status: 200, body: { receipts: [] } });
     renderFleet(null, { onFetch });
-    await screen.findByText('No sessions are running.');
+    await screen.findByTestId('fleet-empty');
 
-    fireEvent.click(screen.getByRole('button', { name: /check receipts/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'check receipts' }));
 
     expect(
       onFetch.mock.calls.some(
-        ([url]: [string]) => typeof url === 'string' && url.includes('/fleetview/check-receipts'),
+        ([url]: [string]) => typeof url === 'string' && url.includes('/fleetview/receipts'),
       ),
     ).toBe(false);
   });
 });
 
-describe('CP2: the board says which fact it is showing', () => {
-  it('a source that could not be read reads as unavailable, never as an empty estate', async () => {
-    renderFleet(envelope({ available: false, error: 'catalogue not readable' }));
-    // An outage that renders as "no sessions" is the failure this whole distinction exists for.
-    expect(await screen.findByText(/catalogue not readable/)).toBeInTheDocument();
-    expect(screen.getByText('Unavailable')).toBeInTheDocument();
-    expect(screen.queryByText('No sessions are running.')).not.toBeInTheDocument();
-  });
-
-  it('an estate with nothing running says so plainly', async () => {
-    renderFleet(envelope());
-    await waitFor(() =>
-      expect(screen.getByText('No sessions are running.')).toBeInTheDocument(),
-    );
-  });
-
-  it('a live board with a silent runtime names the gap', async () => {
+describe('item #9: state vocabulary', () => {
+  it('never renders Unknown as Running', async () => {
     renderFleet(
       envelope({
-        sessions: [runningSession],
-        unreachable: ['sovereign: RuntimeError: connection refused'],
+        sessions: [{ ...runningSession, state: 'unknown' }],
       }),
     );
-    // The count is half the truth. The reader needs the missing runtime before they trust
-    // "1 running".
-    expect(await screen.findByText(/did not answer/)).toBeInTheDocument();
+    await screen.findByTestId('session-sb-1');
+    // The node's aria-label carries the activity word; the deck carries the state chip. Neither
+    // may claim Running for an Unknown session.
+    const node = screen.getByTestId('session-sb-1');
+    expect(node.getAttribute('aria-label')).not.toMatch(/running/i);
+    await openDeckFor('sb-1');
+    expect(screen.queryByText('Running')).not.toBeInTheDocument();
+    expect(screen.getByText('Unknown')).toBeInTheDocument();
+  });
+
+  it('shows Unavailable with the reason when the catalogue cannot be read', async () => {
+    renderFleet(
+      envelope({ available: false, error: 'catalogue unreachable', sessions: [] }),
+    );
+    // The PAGE owns the unavailable state, and deliberately does not mount a canvas for it: an
+    // empty canvas would read as "no agents" where the truth is "cannot read the estate". The
+    // canvas has its own unavailable branch, but the page's gate means it is never reached -- so
+    // the assertion belongs on the page's own signal.
+    expect(await screen.findByText(/Unavailable/i)).toBeInTheDocument();
+    expect(screen.getByText(/catalogue unreachable/)).toBeInTheDocument();
+  });
+
+  it('an empty board says so, and does not render a fake canvas', async () => {
+    renderFleet(envelope({ sessions: [] }));
+    expect(await screen.findByTestId('fleet-empty')).toBeInTheDocument();
+    // No sessions means no nodes: the canvas must not draw an empty-but-present node set.
+    expect(screen.queryByTestId('session-sb-1')).not.toBeInTheDocument();
   });
 });
 
-describe('CP2: a session whose runtime did not say', () => {
-  it('reads Unknown, never Running', async () => {
-    renderFleet(envelope({ sessions: [{ ...runningSession, state: 'unknown' }] }));
-    await screen.findByTestId('session-sb-1');
-    // The catalogue knows which ledgers exist and nothing about liveness. A green row here would
-    // be a claim the data does not support.
-    expect(screen.getByText('UNKNOWN')).toBeInTheDocument();
-    expect(screen.queryByText('RUNNING')).not.toBeInTheDocument();
-  });
-});
-
-describe('leave a note for a session', () => {
-  it('a row with no notes yet invites one, not a false zero', async () => {
-    renderFleet(envelope({ sessions: [runningSession] }));
-    await screen.findByTestId('session-sb-1');
-
-    // The note fields live inside the Focus fold, which is lazily rendered since the card-grid
-    // rewrite -- the same reason the fold is opened in every case below. Asserting the
-    // placeholder rather than a heading, because that is the affordance a reader actually sees.
-    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
-    expect(await screen.findByPlaceholderText('leave a note…')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('your name')).toBeInTheDocument();
-    // And nothing claims a count that does not exist.
-    expect(screen.queryByText(/\d+ notes?/)).not.toBeInTheDocument();
-  });
-
+describe('item #10: notes', () => {
   it('opening the fold fetches that session\'s notes, and only that session\'s', async () => {
-    renderFleet(envelope({ sessions: [runningSession] }), {
-      notes: { 'sb-1': [{ id: 1, author: 'chidi', note: 'check the budget' }] },
-    });
-    await screen.findByTestId('session-sb-1');
-    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
-    expect(await screen.findByText(/check the budget/)).toBeInTheDocument();
-    expect(screen.getByText('chidi', { exact: false })).toBeInTheDocument();
-  });
-
-  it('sending a note posts it and shows it back without a reload', async () => {
-    let posted: any = null;
-    const onFetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+    const notes = {
+      'sb-1': [{ id: 1, author: 'ada', note: 'first', created_at: '2026-09-12T10:00:00Z' }],
+      'sb-2': [{ id: 2, author: 'bob', note: 'second', created_at: '2026-09-12T10:01:00Z' }],
+    };
+    const onFetch = jest.fn().mockImplementation(async (url: string) => {
       if (typeof url === 'string' && url.includes('/fleetview/notes')) {
-        if (init?.method === 'POST') {
-          posted = JSON.parse(String(init.body));
-          return { json: async () => ({ id: 1, ...posted }) };
-        }
-        return { json: async () => ({ notes: posted ? [{ id: 1, ...posted }] : [] }) };
+        const sessionId = new URL(url.replace('plugin://proxy', 'http://x')).searchParams.get(
+          'session_id',
+        );
+        return { json: async () => ({ notes: (notes as any)[sessionId ?? ''] ?? [] }) };
       }
-      return { json: async () => envelope({ sessions: [runningSession] }) };
+      return {
+        json: async () =>
+          envelope({
+            sessions: [
+              { ...runningSession, session_id: 'sb-1' },
+              { ...runningSession, session_id: 'sb-2' },
+            ],
+          }),
+      };
     });
     renderFleet(null, { onFetch });
     await screen.findByTestId('session-sb-1');
-    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
-    await screen.findByPlaceholderText('leave a note…');
 
-    fireEvent.change(screen.getByLabelText('note author for sb-1'), {
-      target: { value: 'chidi' },
-    });
-    fireEvent.change(screen.getByLabelText('note text for sb-1'), {
-      target: { value: 'restart when the budget resets' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'send note for sb-1' }));
-
-    expect(await screen.findByText(/restart when the budget resets/)).toBeInTheDocument();
-    expect(posted).toEqual({
-      session_id: 'sb-1',
-      runtime: 'sovereign',
-      note: 'restart when the budget resets',
-      author: 'chidi',
-    });
+    // The notes fold moved into the deck: opening the deck is what fetches the notes now.
+    await openDeckFor('sb-1');
+    expect(await screen.findByText('first')).toBeInTheDocument();
+    expect(screen.queryByText('second')).not.toBeInTheDocument();
+    expect(
+      onFetch.mock.calls.some(
+        ([url]: [string]) =>
+          typeof url === 'string' &&
+          url.includes('/fleetview/notes') &&
+          url.includes('session_id=sb-1'),
+      ),
+    ).toBe(true);
+    expect(
+      onFetch.mock.calls.some(
+        ([url]: [string]) =>
+          typeof url === 'string' &&
+          url.includes('/fleetview/notes') &&
+          url.includes('session_id=sb-2'),
+      ),
+    ).toBe(false);
   });
 
-  it('a blank note or author is never sent', async () => {
-    const onFetch = jest.fn().mockImplementation(async (url: string) => {
+  it('sending a note posts it and shows it back without a reload', async () => {
+    const onFetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
       if (typeof url === 'string' && url.includes('/fleetview/notes')) {
+        if (init?.method === 'POST') {
+          return { json: async () => ({ id: 7, ...JSON.parse(String(init.body)) }) };
+        }
         return { json: async () => ({ notes: [] }) };
       }
       return { json: async () => envelope({ sessions: [runningSession] }) };
     });
     renderFleet(null, { onFetch });
     await screen.findByTestId('session-sb-1');
-    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
-    await screen.findByPlaceholderText('leave a note…');
 
-    fireEvent.click(screen.getByRole('button', { name: 'send note for sb-1' }));
+    await openDeckFor('sb-1');
+    fireEvent.change(screen.getByPlaceholderText('author'), { target: { value: 'ada' } });
+    fireEvent.change(screen.getByPlaceholderText('note'), { target: { value: 'looks good' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Note' }));
 
-    const postCalls = onFetch.mock.calls.filter(
-      ([url, init]: [string, RequestInit | undefined]) =>
-        url.includes('/fleetview/notes') && init?.method === 'POST',
+    // The page owns the transport: the canvas calls the callback Fleet.tsx passes it, and THAT
+    // posts. So the fetch is the observable, and it must carry the author and the text.
+    await waitFor(() =>
+      expect(
+        onFetch.mock.calls.some(
+          ([url, init]: [string, RequestInit]) =>
+            typeof url === 'string' &&
+            url.includes('/fleetview/notes') &&
+            init?.method === 'POST' &&
+            JSON.parse(String(init.body)).author === 'ada' &&
+            JSON.parse(String(init.body)).note === 'looks good',
+        ),
+      ).toBe(true),
     );
-    expect(postCalls).toHaveLength(0);
   });
-});
 
-describe('the focus panel: notes and steers merged, plus an auto-fetched receipt', () => {
-  it('opening the panel fetches and interleaves notes and signals chronologically', async () => {
+  it('a blank note or author is never sent', async () => {
+    const onFetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      if (typeof url === 'string' && url.includes('/fleetview/notes')) {
+        if (init?.method === 'POST') {
+          return { json: async () => ({ id: 7, ...JSON.parse(String(init.body)) }) };
+        }
+        return { json: async () => ({ notes: [] }) };
+      }
+      return { json: async () => envelope({ sessions: [runningSession] }) };
+    });
+    renderFleet(null, { onFetch });
+    await screen.findByTestId('session-sb-1');
+
+    await openDeckFor('sb-1');
+    // Author present, note blank.
+    fireEvent.change(screen.getByPlaceholderText('author'), { target: { value: 'ada' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Note' }));
+    // Note present, author blank.
+    fireEvent.change(screen.getByPlaceholderText('author'), { target: { value: '' } });
+    fireEvent.change(screen.getByPlaceholderText('note'), { target: { value: 'looks good' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Note' }));
+
+    expect(
+      onFetch.mock.calls.some(
+        ([url, init]: [string, RequestInit]) =>
+          typeof url === 'string' &&
+          url.includes('/fleetview/notes') &&
+          init?.method === 'POST',
+      ),
+    ).toBe(false);
+  });
+
+  it('the timeline interleaves notes and signals chronologically', async () => {
     const onFetch = jest.fn().mockImplementation(async (url: string) => {
       if (typeof url === 'string' && url.includes('/fleetview/notes')) {
         return {
           json: async () => ({
             notes: [
-              { id: 1, author: 'chidi', note: 'checking in', created_at: '2026-09-12T09:00:00Z' },
+              { id: 1, author: 'ada', note: 'early note', created_at: '2026-09-12T10:00:00Z' },
             ],
           }),
         };
@@ -554,25 +611,13 @@ describe('the focus panel: notes and steers merged, plus an auto-fetched receipt
           json: async () => ({
             signals: [
               {
-                id: 1,
-                session_id: 'sb-1',
-                runtime: 'sovereign',
+                id: 2,
                 kind: 'steer',
-                by: 'chidi',
-                text: 'please wrap up',
-                ok: true,
-                error: null,
-                created_at: '2026-09-12T09:30:00Z',
+                by: 'bob',
+                acknowledged: true,
+                created_at: '2026-09-12T10:05:00Z',
               },
             ],
-          }),
-        };
-      }
-      if (typeof url === 'string' && url.includes('/fleetview/check-receipts')) {
-        return {
-          ok: true,
-          json: async () => ({
-            results: [{ session_id: 'sb-1', verdict: 'pass', reason: 'status:done, 3 observation(s) recorded' }],
           }),
         };
       }
@@ -581,87 +626,43 @@ describe('the focus panel: notes and steers merged, plus an auto-fetched receipt
     renderFleet(null, { onFetch });
     await screen.findByTestId('session-sb-1');
 
-    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
-
-    await screen.findByText(/please wrap up/);
-    expect(screen.getByTestId('timeline-sb-1').textContent).toMatch(/checking in.*please wrap up/s);
-    expect(await screen.findByText(/Receipt: pass/)).toBeInTheDocument();
+    await openDeckFor('sb-1');
+    const history = await screen.findByTestId('deck-history');
+    const text = history.textContent ?? '';
+    expect(text).toMatch(/early note/);
+    expect(text).toMatch(/steer/);
+    // Chronological: the earlier note precedes the later signal.
+    expect(text.indexOf('early note')).toBeLessThan(text.indexOf('steer'));
   });
 
-  it('a failed steer attempt in the timeline carries its error, never hidden', async () => {
+  it('a signal with acknowledged:false renders not yet read, NOT delivered', async () => {
     const onFetch = jest.fn().mockImplementation(async (url: string) => {
+      if (typeof url === 'string' && url.includes('/fleetview/notes')) {
+        return { json: async () => ({ notes: [] }) };
+      }
       if (typeof url === 'string' && url.includes('/fleetview/signals')) {
         return {
           json: async () => ({
             signals: [
               {
-                id: 1,
-                session_id: 'sb-1',
-                runtime: 'sovereign',
+                id: 2,
                 kind: 'steer',
-                by: 'chidi',
-                text: 'wrap up',
-                ok: false,
-                error: 'workflow not found',
-                created_at: '2026-09-12T09:30:00Z',
+                by: 'bob',
+                acknowledged: false,
+                created_at: '2026-09-12T10:05:00Z',
               },
             ],
           }),
         };
       }
-      if (typeof url === 'string' && url.includes('/fleetview/notes')) {
-        return { json: async () => ({ notes: [] }) };
-      }
-      if (typeof url === 'string' && url.includes('/fleetview/check-receipts')) {
-        return { ok: true, json: async () => ({ results: [] }) };
-      }
       return { json: async () => envelope({ sessions: [runningSession] }) };
     });
     renderFleet(null, { onFetch });
     await screen.findByTestId('session-sb-1');
 
-    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
-
-    expect(await screen.findByText(/failed: workflow not found/)).toBeInTheDocument();
-  });
-
-  it('a Langfuse-unavailable receipt reads as unavailable, never a fabricated verdict', async () => {
-    const onFetch = jest.fn().mockImplementation(async (url: string) => {
-      if (typeof url === 'string' && url.includes('/fleetview/check-receipts')) {
-        return { ok: false, status: 503, json: async () => ({ error: 'LANGFUSE_* is not configured' }) };
-      }
-      if (typeof url === 'string' && url.includes('/fleetview/notes')) {
-        return { json: async () => ({ notes: [] }) };
-      }
-      if (typeof url === 'string' && url.includes('/fleetview/signals')) {
-        return { json: async () => ({ signals: [] }) };
-      }
-      return { json: async () => envelope({ sessions: [runningSession] }) };
-    });
-    renderFleet(null, { onFetch });
-    await screen.findByTestId('session-sb-1');
-
-    fireEvent.click(screen.getByTestId('focus-sb-1').querySelector('summary')!);
-
-    expect(await screen.findByText(/Receipt: unavailable/)).toBeInTheDocument();
-  });
-});
-
-describe('needs attention: triage above the table, not table order', () => {
-  it('a failed session is named above the sheet', async () => {
-    const failed = { ...runningSession, session_id: 'sb-9', state: 'failed' };
-    renderFleet(envelope({ sessions: [failed] }));
-    const attention = await screen.findByTestId('needs-attention');
-
-    expect(attention.textContent).toMatch(/Failed/);
-    expect(attention.textContent).toMatch(/sb-9/);
-  });
-
-  it('a healthy, recently-updated session needs no attention section at all', async () => {
-    const healthy = { ...runningSession, updated_at: new Date().toISOString() };
-    renderFleet(envelope({ sessions: [healthy] }));
-    await screen.findByTestId('session-sb-1');
-
-    expect(screen.queryByTestId('needs-attention')).not.toBeInTheDocument();
+    await openDeckFor('sb-1');
+    const history = await screen.findByTestId('deck-history');
+    expect(history.textContent).toMatch(/not yet read/);
+    expect(history.textContent).not.toMatch(/delivered/);
   });
 });

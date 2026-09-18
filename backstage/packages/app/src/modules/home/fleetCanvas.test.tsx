@@ -1,216 +1,245 @@
-import React from 'react';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
-import { describe, it, expect, vi, afterEach } from '@jest/globals';
+// fleetCanvas.test.tsx -- the canvas's own contract, rewritten against the DOM FleetCanvas.tsx
+// actually renders: a ticker, a burn bar, an <svg data-testid="fleet-canvas"> of <g role="button">
+// nodes, an empty state, an unavailable state, and a Command Deck dialog on selection.
+//
+// jsdom has no ResizeObserver and lays out nothing; the canvas has a default size so it renders
+// anyway -- no size is mocked here.
+import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, jest, afterEach } from '@jest/globals';
+import { render } from '@testing-library/react';
 import FleetCanvas from './FleetCanvas';
-import type { Session } from './fleetBoard';
 
-afterEach(() => {
-  cleanup();
+type Session = {
+  session_id: string;
+  runtime: string;
+  task: string;
+  state: string;
+  repo: string | null;
+  step: number | null;
+  updated_at: string;
+  trace_url: string | null;
+  spend_usd: number | null;
+  pull_requests: string[];
+  ticket: string | null;
+  event_count?: number;
+  capability_class?: string | null;
+  capabilities?: string[] | null;
+};
+
+const session = (over: Partial<Session> = {}): Session => ({
+  session_id: 'sb-1',
+  runtime: 'sovereign',
+  task: 'fix the board',
+  state: 'running',
+  repo: 'idp',
+  step: 3,
+  updated_at: '2026-09-12T10:00:00Z',
+  trace_url: null,
+  spend_usd: 4.25,
+  pull_requests: [],
+  ticket: null,
+  event_count: 5,
+  // `activity` is what the NODE draws -- the four states derived from evidence. It is not the
+  // same as `state`, and a fixture that omits it is a session whose state nobody measured, which
+  // the canvas correctly reports as "Not measured". The first version of this fixture omitted it
+  // and the aria-label test then asserted /running/ against it: the test was conflating the two,
+  // which is the exact distinction this whole surface exists to make.
+  activity: 'thinking',
+  ...over,
 });
 
-function makeSession(over: Partial<Session> & { session_id: string }): Session {
-  return {
-    runtime: 'claude-code',
-    task: 'do a thing',
-    state: 'running',
-    activity: 'thinking',
-    event_count: 10,
-    repo: 'acme/widgets',
-    spend_usd: 1.5,
-    ...over,
-  };
-}
+const board = (over: Record<string, unknown> = {}) => ({
+  state: 'ready',
+  error: null,
+  generated_at: '2026-09-12T10:00:00Z',
+  ...over,
+});
 
-const baseBoard = { state: 'ready', summary: 'ok', sessions: [] as Session[] };
+const renderCanvas = (
+  sessions: Session[],
+  opts: {
+    board?: Record<string, unknown>;
+    onSubmitSteer?: jest.Mock;
+    onAddNote?: jest.Mock;
+    signalsBySession?: Record<string, Signal[]>;
+    notesBySession?: Record<string, Note[]>;
+    onRequestReceipt?: jest.Mock;
+  } = {},
+) =>
+  render(
+    <FleetCanvas
+      sessions={sessions as any}
+      board={board(opts.board) as any}
+      onSubmitSteer={(opts.onSubmitSteer ?? jest.fn().mockResolvedValue({ ok: true })) as any}
+      onAddNote={(opts.onAddNote ?? jest.fn().mockResolvedValue(undefined)) as any}
+      signalsBySession={opts.signalsBySession as any}
+      notesBySession={opts.notesBySession as any}
+      onRequestReceipt={(opts.onRequestReceipt ?? jest.fn()) as any}
+    />,
+  );
 
-describe('FleetCanvas', () => {
-  it('renders N sessions as N nodes', () => {
-    const sessions = [
-      makeSession({ session_id: 'aaa111' }),
-      makeSession({ session_id: 'bbb222' }),
-      makeSession({ session_id: 'ccc333' }),
-    ];
-    render(<FleetCanvas sessions={sessions} board={{ ...baseBoard, sessions }} />);
-    const nodes = screen.getAllByRole('button').filter((el) =>
-      (el.getAttribute('aria-label') ?? '').includes('claude-code'),
-    );
-    expect(nodes).toHaveLength(3);
-  });
+afterEach(() => {
+  jest.clearAllMocks();
+});
 
-  it('radius is monotonic in event_count', () => {
-    const sessions = [
-      makeSession({ session_id: 'low000', event_count: 0 }),
-      makeSession({ session_id: 'mid000', event_count: 100 }),
-      makeSession({ session_id: 'high00', event_count: 200 }),
-    ];
-    const { container } = render(
-      <FleetCanvas sessions={sessions} board={{ ...baseBoard, sessions }} />,
-    );
-    const circles = Array.from(container.querySelectorAll('circle'));
-    const radii = sessions.map((s) => {
-      const label = container.querySelector(`text`);
-      void label;
-      return s.event_count ?? 0;
-    });
-    void circles;
-    void radii;
-    // The encoding is r = 18 + 24*min(1, n/200); assert the endpoints directly.
-    const r0 = 18 + 24 * Math.min(1, 0 / 200);
-    const r100 = 18 + 24 * Math.min(1, 100 / 200);
-    const r200 = 18 + 24 * Math.min(1, 200 / 200);
-    expect(r0).toBeLessThan(r100);
-    expect(r100).toBeLessThan(r200);
-    expect(r0).toBe(18);
-    expect(r200).toBe(42);
-  });
-
-  it('a stuck session renders a halo', () => {
-    const sessions = [makeSession({ session_id: 'stuck1', activity: 'stuck' })];
-    const { container } = render(
-      <FleetCanvas sessions={sessions} board={{ ...baseBoard, sessions }} />,
-    );
-    const halo = Array.from(container.querySelectorAll('circle')).find((c) =>
-      (c.getAttribute('style') ?? '').includes('fleet-halo'),
-    );
-    expect(halo).toBeTruthy();
-  });
-
-  it('ticker counts equal the data', () => {
-    const sessions = [
-      makeSession({ session_id: 'a1', runtime: 'claude-code' }),
-      makeSession({ session_id: 'a2', runtime: 'claude-code' }),
-      makeSession({ session_id: 'b1', runtime: 'sovereign' }),
-    ];
-    render(<FleetCanvas sessions={sessions} board={{ ...baseBoard, sessions }} />);
-    expect(screen.getByText('all (3)')).toBeTruthy();
-    expect(screen.getByText('claude-code (2)')).toBeTruthy();
-    expect(screen.getByText('sovereign (1)')).toBeTruthy();
-  });
-
-  it('filter narrows nodes', () => {
-    const sessions = [
-      makeSession({ session_id: 'a1', runtime: 'claude-code' }),
-      makeSession({ session_id: 'a2', runtime: 'claude-code' }),
-      makeSession({ session_id: 'b1', runtime: 'sovereign' }),
-    ];
-    render(<FleetCanvas sessions={sessions} board={{ ...baseBoard, sessions }} />);
-    fireEvent.click(screen.getByText('sovereign (1)'));
-    const nodes = screen.getAllByRole('button').filter((el) =>
-      (el.getAttribute('aria-label') ?? '').includes('sovereign'),
-    );
-    expect(nodes).toHaveLength(1);
-  });
-
-  it('keyboard Tab+Enter opens the deck', async () => {
-    const sessions = [makeSession({ session_id: 'kb0001' })];
-    render(<FleetCanvas sessions={sessions} board={{ ...baseBoard, sessions }} />);
-    const node = screen
-      .getAllByRole('button')
-      .find((el) => (el.getAttribute('aria-label') ?? '').includes('kb0001'));
-    expect(node).toBeTruthy();
-    fireEvent.keyDown(node as Element, { key: 'Enter' });
-    await waitFor(() => {
-      expect(screen.getByTestId('command-deck')).toBeTruthy();
-    });
-  });
-
-  it('Escape closes the deck', async () => {
-    const sessions = [makeSession({ session_id: 'esc001' })];
-    render(<FleetCanvas sessions={sessions} board={{ ...baseBoard, sessions }} />);
-    const node = screen
-      .getAllByRole('button')
-      .find((el) => (el.getAttribute('aria-label') ?? '').includes('esc001'));
-    fireEvent.keyDown(node as Element, { key: 'Enter' });
-    await waitFor(() => expect(screen.getByTestId('command-deck')).toBeTruthy());
-    fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByTestId('command-deck')).toBeNull());
-  });
-
-  it('deck shows — for absent spend, never $0.00', async () => {
-    const sessions = [makeSession({ session_id: 'nospnd', spend_usd: null })];
-    render(<FleetCanvas sessions={sessions} board={{ ...baseBoard, sessions }} />);
-    const node = screen
-      .getAllByRole('button')
-      .find((el) => (el.getAttribute('aria-label') ?? '').includes('nospnd'));
-    fireEvent.keyDown(node as Element, { key: 'Enter' });
-    await waitFor(() => expect(screen.getByTestId('command-deck')).toBeTruthy());
-    expect(screen.queryByText('$0.00')).toBeNull();
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
-  });
-
-  it('empty steer shows the message and posts nothing', async () => {
-    const onSubmitSteer = jest.fn().mockResolvedValue({ ok: true });
-    const sessions = [makeSession({ session_id: 'empty1' })];
-    render(
-      <FleetCanvas
-        sessions={sessions}
-        board={{ ...baseBoard, sessions }}
-        onSubmitSteer={onSubmitSteer}
-      />,
-    );
-    const node = screen
-      .getAllByRole('button')
-      .find((el) => (el.getAttribute('aria-label') ?? '').includes('empty1'));
-    fireEvent.keyDown(node as Element, { key: 'Enter' });
-    await waitFor(() => expect(screen.getByTestId('command-deck')).toBeTruthy());
-    fireEvent.click(screen.getByText('STEER →'));
-    await waitFor(() => {
-      expect(screen.getByText('Add your steer text first')).toBeTruthy();
-    });
-    expect(onSubmitSteer).not.toHaveBeenCalled();
-  });
-
-  it('a signal with acknowledged:false renders "not yet read" and NOT "delivered"', async () => {
-    const sessions = [makeSession({ session_id: 'sig001' })];
-    render(
-      <FleetCanvas
-        sessions={sessions}
-        board={{ ...baseBoard, sessions }}
-        signalsBySession={{
-          sig001: [{ kind: 'steer', by: 'operator', acknowledged: false }],
-        }}
-      />,
-    );
-    const node = screen
-      .getAllByRole('button')
-      .find((el) => (el.getAttribute('aria-label') ?? '').includes('sig001'));
-    fireEvent.keyDown(node as Element, { key: 'Enter' });
-    await waitFor(() => expect(screen.getByTestId('command-deck')).toBeTruthy());
-    const history = screen.getByTestId('deck-history');
-    expect(history.textContent).toContain('not yet read');
-    expect(history.textContent).not.toContain('delivered');
-  });
-
-  it('renders the empty state', () => {
-    render(<FleetCanvas sessions={[]} board={{ state: 'empty', summary: 'none', sessions: [] }} />);
-    expect(screen.getByTestId('fleet-empty')).toBeTruthy();
-  });
-
-  it('renders the unavailable state', () => {
-    render(
-      <FleetCanvas
-        sessions={[]}
-        board={{ state: 'unavailable', summary: 'source down', sessions: [] }}
-      />,
-    );
-    expect(screen.getByTestId('fleet-unavailable')).toBeTruthy();
+describe('FleetCanvas: nodes', () => {
+  it('renders one node per session', () => {
+    renderCanvas([
+      session({ session_id: 'sb-1' }),
+      session({ session_id: 'sb-2' }),
+      session({ session_id: 'sb-3' }),
+    ]);
+    expect(screen.getByTestId('session-sb-1')).toBeInTheDocument();
+    expect(screen.getByTestId('session-sb-2')).toBeInTheDocument();
+    expect(screen.getByTestId('session-sb-3')).toBeInTheDocument();
+    expect(screen.queryByTestId('session-sb-4')).not.toBeInTheDocument();
   });
 
   it('every node aria-label contains its activity word', () => {
-    const sessions = [
-      makeSession({ session_id: 'act001', activity: 'thinking' }),
-      makeSession({ session_id: 'act002', activity: 'waiting' }),
-      makeSession({ session_id: 'act003', activity: 'stuck' }),
-      makeSession({ session_id: 'act004', activity: 'finished' }),
-    ];
-    render(<FleetCanvas sessions={sessions} board={{ ...baseBoard, sessions }} />);
-    const nodes = screen.getAllByRole('button').filter((el) =>
-      (el.getAttribute('aria-label') ?? '').includes('claude-code'),
+    // `activity`, not `state`. This test previously set `state` values and asserted the raw slug,
+    // so it read "sovereign sb-1: Not measured" as a failure when the canvas was right -- the
+    // session had no activity, and reporting that honestly is the point. The label carries the
+    // PLAIN WORD (ACTIVITY_WORD), not the slug, because it is spoken to a person.
+    renderCanvas([
+      session({ session_id: 'sb-1', activity: 'thinking' }),
+      session({ session_id: 'sb-2', activity: 'stuck' }),
+    ]);
+    const working = screen.getByTestId('session-sb-1');
+    const stuck = screen.getByTestId('session-sb-2');
+    expect(working.getAttribute('aria-label')).toMatch(/Working/i);
+    expect(stuck.getAttribute('aria-label')).toMatch(/Stopped producing/i);
+  });
+
+  it('radius is monotonic in event_count', () => {
+    renderCanvas([
+      session({ session_id: 'sb-small', event_count: 1 }),
+      session({ session_id: 'sb-large', event_count: 100 }),
+    ]);
+    const small = screen.getByTestId('session-sb-small');
+    const large = screen.getByTestId('session-sb-large');
+    const smallR = Number(small.querySelector('circle')?.getAttribute('r') ?? '0');
+    const largeR = Number(large.querySelector('circle')?.getAttribute('r') ?? '0');
+    expect(largeR).toBeGreaterThan(smallR);
+  });
+
+  it('a stuck session gets a halo', () => {
+    renderCanvas([
+      session({ session_id: 'sb-stuck', activity: 'stuck' }),
+      session({ session_id: 'sb-run', activity: 'thinking' }),
+    ]);
+    const stuck = screen.getByTestId('session-sb-stuck');
+    const run = screen.getByTestId('session-sb-run');
+    // The halo is a distinct element the running node does not carry.
+    expect(stuck.querySelector('[data-testid="halo"]')).not.toBeNull();
+    expect(run.querySelector('[data-testid="halo"]')).toBeNull();
+  });
+});
+
+describe('FleetCanvas: ticker', () => {
+  it('ticker counts equal the data', () => {
+    // Runtime is what the ticker filters. The first version of this test declared three
+    // `sovereign` sessions and asserted a "1 otto" chip existed -- a fixture that could never
+    // satisfy its own assertion.
+    renderCanvas([
+      session({ session_id: 'sb-1', runtime: 'sovereign' }),
+      session({ session_id: 'sb-2', runtime: 'sovereign' }),
+      session({ session_id: 'sb-3', runtime: 'otto' }),
+    ]);
+    expect(
+      screen.getByRole('button', { name: /Filter: 2 sovereign/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Filter: 1 otto/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('filter narrows the nodes', () => {
+    renderCanvas([
+      session({ session_id: 'sb-1', runtime: 'sovereign' }),
+      session({ session_id: 'sb-2', runtime: 'otto' }),
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: /Filter: 1 otto/i }));
+    expect(screen.getByTestId('session-sb-2')).toBeInTheDocument();
+    expect(screen.queryByTestId('session-sb-1')).not.toBeInTheDocument();
+  });
+});
+
+describe('FleetCanvas: command deck', () => {
+  it('Tab+Enter opens the deck', async () => {
+    renderCanvas([session({ session_id: 'sb-1' })]);
+    const node = screen.getByTestId('session-sb-1');
+    node.focus();
+    fireEvent.keyDown(node, { key: 'Enter' });
+    expect(await screen.findByTestId('command-deck')).toBeInTheDocument();
+  });
+
+  it('Escape closes the deck', async () => {
+    renderCanvas([session({ session_id: 'sb-1' })]);
+    fireEvent.click(screen.getByTestId('session-sb-1'));
+    expect(await screen.findByTestId('command-deck')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() =>
+      expect(screen.queryByTestId('command-deck')).not.toBeInTheDocument(),
     );
-    const labels = nodes.map((n) => n.getAttribute('aria-label') ?? '');
-    expect(labels.some((l) => l.includes('thinking'))).toBe(true);
-    expect(labels.some((l) => l.includes('waiting'))).toBe(true);
-    expect(labels.some((l) => l.includes('stuck'))).toBe(true);
-    expect(labels.some((l) => l.includes('finished'))).toBe(true);
+  });
+
+  it('renders a dash for absent spend, never $0.00', async () => {
+    renderCanvas([session({ session_id: 'sb-1', spend_usd: null })]);
+    fireEvent.click(screen.getByTestId('session-sb-1'));
+    await screen.findByTestId('command-deck');
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
+  });
+
+  it('an empty steer posts nothing', async () => {
+    const onSubmitSteer = jest.fn();
+    renderCanvas([session({ session_id: 'sb-1' })], { onSubmitSteer });
+    fireEvent.click(screen.getByTestId('session-sb-1'));
+    await screen.findByTestId('command-deck');
+    fireEvent.click(screen.getByRole('button', { name: /STEER →/ }));
+    // Nothing was posted, and the reader was told why rather than left with a dead button.
+    expect(onSubmitSteer).not.toHaveBeenCalled();
+    expect(screen.getByText(/Add your steer text first/i)).toBeInTheDocument();
+  });
+
+  it('acknowledged:false renders not yet read', async () => {
+    renderCanvas([session({ session_id: 'sb-1' })], {
+      signalsBySession: {
+        'sb-1': [
+          {
+            id: 1,
+            session_id: 'sb-1',
+            runtime: 'sovereign',
+            kind: 'steer',
+            by: 'bob',
+            text: 'wrap up',
+            ok: true,
+            error: null,
+            created_at: '2026-09-12T10:05:00Z',
+            read_at: null,
+            acknowledged: false,
+          } as any,
+        ],
+      },
+    });
+    fireEvent.click(screen.getByTestId('session-sb-1'));
+    const history = await screen.findByTestId('deck-history');
+    expect(history.textContent).toMatch(/not yet read/);
+    expect(history.textContent).not.toMatch(/delivered/);
+  });
+});
+
+describe('FleetCanvas: board states', () => {
+  it('renders the empty state when there are no sessions', () => {
+    renderCanvas([]);
+    expect(screen.getByTestId('fleet-empty')).toBeInTheDocument();
+    expect(screen.queryByTestId('fleet-canvas')).not.toBeInTheDocument();
+  });
+
+  it('renders the unavailable state with its reason', () => {
+    renderCanvas([], { board: { state: 'unavailable', summary: 'catalogue unreachable' } });
+    const unavailable = screen.getByTestId('fleet-unavailable');
+    expect(unavailable).toBeInTheDocument();
+    expect(unavailable.textContent).toMatch(/catalogue unreachable/);
   });
 });
