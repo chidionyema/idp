@@ -11,7 +11,7 @@
     },
     {
       "file": "docs/reports/flux-state.md",
-      "generated_at": "2026-09-18T20:00:20Z",
+      "generated_at": "2026-09-18T20:15:21Z",
       "id": "flux-state",
       "schedule_minutes": 15,
       "source": "the cluster receipt platform/state/cluster-state.yaml writes to the receipts bucket every 15 minutes",
@@ -20,7 +20,7 @@
     },
     {
       "file": "docs/reports/forge-spend.md",
-      "generated_at": "2026-09-18T20:05:56Z",
+      "generated_at": "2026-09-18T20:21:24Z",
       "id": "forge-spend",
       "schedule_minutes": 1440,
       "source": "forge/experiments/*.md front matter (usd: per completed run)",
@@ -28,5 +28,5 @@
       "title": "Forge compute spend (Modal + free lanes)"
     }
   ],
-  "updated_at": "2026-09-18T20:06:17Z"
+  "updated_at": "2026-09-18T20:21:46Z"
 }
