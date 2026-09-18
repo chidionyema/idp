@@ -75,6 +75,7 @@ _MUTATIONS_MODULE = Path(__file__).resolve().parent / "mutations.py"
 _EXECUTOR_LINK_MODULE = Path(__file__).resolve().parent / "executor_link.py"
 _TRACE_MODULE = Path(__file__).resolve().parent / "trace.py"
 _LEDGER_TAIL_MODULE = Path(__file__).resolve().parent / "ledger_tail.py"
+_DEVICE_ACCESS_MODULE = Path(__file__).resolve().parent / "device_access.py"
 
 
 def _load(path: Path, name: str):
@@ -122,6 +123,15 @@ def _trace():
 
 def _ledger_tail():
     return _load(_LEDGER_TAIL_MODULE, "fleetview_ledger_tail_impl")
+
+
+def _device_access():
+    """`device_access.py` -- what this device's read-only identity is, if anything.
+
+    Path-loaded like every other module here rather than imported as a package, because these
+    files are loaded by importlib path and a relative import is unavailable to them.
+    """
+    return _load(_DEVICE_ACCESS_MODULE, "fleetview_device_access_impl")
 
 
 def _executor_link():
@@ -174,6 +184,7 @@ MUTATIONS_APPROVE_PATH = "/mutations/approve"
 MUTATIONS_REJECT_PATH = "/mutations/reject"
 TRACE_PATH = "/trace"
 LEDGER_PATH = "/ledger"
+DEVICE_STATUS_PATH = "/device-status"
 
 
 def sessions_envelope() -> tuple[dict[str, Any], int]:
@@ -312,6 +323,18 @@ def add_deny(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     except impl.UnsupportedRuntime as exc:
         return {"error": str(exc)}, 422
     return record, 502 if not record["ok"] else 200
+
+
+def device_status_envelope() -> tuple[dict[str, Any], int]:
+    """The body and status for `GET /api/fleetview/device-status`.
+
+    A thin passthrough to `device_access.py` so every route in this file has the same shape:
+    the route function owns the HTTP contract, the impl module owns the logic and holds no
+    response codes of its own. `device_access.py` already answers with a `state` field in both
+    the 200 and the 503 case, which is why this does not need to synthesise one.
+    """
+    impl = _device_access()
+    return impl.device_status_envelope()
 
 
 def signals_envelope(session_id: str) -> tuple[dict[str, Any], int]:

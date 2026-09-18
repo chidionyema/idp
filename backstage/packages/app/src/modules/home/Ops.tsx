@@ -53,6 +53,7 @@ import { guardRows, guardsSentence, guardsUnreadable } from './guards';
 import { ago } from './estate';
 import { canApprove, mutationsSentence, PendingMutation } from './mutations';
 import { ActionResult, useMutations } from './useMutations';
+import { DeviceAccessTile } from './DeviceAccessTile';
 
 /** The page's name, and the word every door to it already uses (nav, app-config, catalogue). */
 export const TITLE = 'Health';
@@ -392,6 +393,10 @@ export const Ops = () => {
         <Summary testId="ops-sentence">{healthSentence(loaded.health)}</Summary>
       )}
       <Tiles>
+        {/* First, because it gates the rest: if this device cannot read the cluster, every
+            tile below is either empty or explaining why, and the reader should learn that
+            here rather than infer it from six blank tiles. */}
+        <DeviceAccessTile />
         {loaded.state === 'ready' && <ClusterTile health={loaded.health} />}
         {founder.state === 'ready' && (
           <FounderTiles data={founder.data} now={now} />

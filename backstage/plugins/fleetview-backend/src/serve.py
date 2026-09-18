@@ -220,6 +220,11 @@ def build_app(routes_path: Path) -> FastAPI:
         body, status = routes.ledger_tail_envelope(session_id)
         return JSONResponse(content=body, status_code=status)
 
+    @app.get(routes.DEVICE_STATUS_PATH)
+    def device_status_get():
+        body, status = routes.device_status_envelope()
+        return JSONResponse(content=body, status_code=status)
+
     @app.get(routes.BLAST_RADIUS_PATH)
     def blast_radius(node_id: str = ""):
         body, status = routes.blast_radius_envelope(node_id)

@@ -198,6 +198,95 @@ def _agent_key() -> str | None:
         return None
 
 
+def _kubeconfig_path() -> str:
+    """Where the agent kubeconfig lives. One path, so every reader agrees on the state."""
+    return os.environ.get("IDP_AGENT_KUBECONFIG") or os.path.join(
+        os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
+        "idp", "agent.kubeconfig")
+
+
+def _token_expiry(path: str) -> float | None:
+    """When the token in this kubeconfig dies, as a unix timestamp, or None.
+
+    Read from the JWT's own `exp` claim rather than from a file mtime, because the file is
+    rewritten on renewal and an mtime would report the renewal, not the expiry. A token that
+    cannot be parsed is reported as None (unknown), never as expired -- guessing a security
+    state is the one thing worse than not showing it.
+    """
+    import base64
+    import time as _time
+    try:
+        with open(path) as fh:
+            doc = json.load(fh)
+        tok = (doc.get("users") or [{}])[0].get("user", {}).get("token", "")
+        payload = tok.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+        exp = claims.get("exp")
+        return float(exp) if exp else None
+    except Exception:  # noqa: BLE001 - an unreadable token is 'unknown', not an exception
+        return None
+
+
+def _status() -> int:
+    """What this device's access is, as JSON. Never mints, never writes, never needs a tap.
+
+    This is the one command the portal tile reads. It answers in the only three states a
+    reader has to distinguish, and it answers them WITHOUT contacting the broker when the
+    key is absent -- a device that holds no key is not provisioned, full stop, and a status
+    call that needs the network to say so would be a status call that lies when offline.
+
+      not_provisioned -- no agent key on this device. Only the owner can fix this, once.
+      active          -- key present AND a live token with time left on it.
+      expiring        -- live token, under 10 minutes left; the daemon's cue to renew.
+      expired         -- key present, token dead or unreadable. One renew fixes it.
+    """
+    import time as _time
+
+    key = _agent_key()
+    kc = _kubeconfig_path()
+    exp = _token_expiry(kc)
+    now = _time.time()
+
+    if not key:
+        state = "not_provisioned"
+    elif exp is None:
+        state = "expired" if os.path.exists(kc) else "not_provisioned"
+    elif exp <= now:
+        state = "expired"
+    elif exp - now < 600:
+        state = "expiring"
+    else:
+        state = "active"
+
+    out = {
+        "state": state,
+        "scope": "read-only",
+        "subject": "system:serviceaccount:agents:agent-reader",
+        "has_key": bool(key),
+        "kubeconfig": kc,
+        "expires_at": exp,
+        "expires_in": (int(exp - now) if exp else None),
+    }
+    print(json.dumps(out))
+    return 0
+
+
+def _renew(path: str, quiet: bool) -> int:
+    """Mint a fresh token and rewrite the kubeconfig. The zero-touch path.
+
+    Deliberately the same `_identity()` the interactive path uses, so the daemon, the tile's
+    Renew button and a human at a terminal all exercise one piece of code. A second renewal
+    implementation is a second place for the identity check to drift.
+    """
+    rc = _identity(path)
+    if rc == 0 and quiet:
+        return 0
+    if rc == 0:
+        print(f"renewed {path}")
+    return rc
+
+
 def _identity(path: str | None) -> int:
     """WJ.1's client half: become an agent of this estate without the founder's credential.
 
@@ -258,7 +347,21 @@ def main(argv: list[str] | None = None) -> int:
     i = sub.add_parser("identity", help="become this estate's read-only agent on any device")
     i.add_argument("--kubeconfig", help="write a kubeconfig here instead of printing the token")
 
+    s = sub.add_parser("status", help="what this device's access IS, as JSON, without minting")
+    s.add_argument("--json", action="store_true", help="always JSON; kept for symmetry")
+
+    r = sub.add_parser("renew", help="mint a fresh token now; the zero-touch path calls this")
+    r.add_argument("--kubeconfig", required=True,
+                   help="rewrite this kubeconfig; a renew with nowhere to write is pointless")
+    r.add_argument("--quiet", action="store_true", help="print nothing on success")
+
     args, extra = ap.parse_known_args(argv)
+
+    if args.cmd == "status":
+        return _status()
+
+    if args.cmd == "renew":
+        return _renew(args.kubeconfig, args.quiet)
 
     if args.cmd == "identity":
         return _identity(args.kubeconfig)
