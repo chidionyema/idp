@@ -21,7 +21,36 @@ ENV_NAME="${OCI_ENV:-dev}"
 for t in oci sops openssl jq; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
 [ -d "$VAULT/secrets/$ENV_NAME" ] || { echo "BLIND vault not at $VAULT"; exit 2; }
 
-vget() { sops -d --extract "[\"$1\"]" "$VAULT/secrets/$ENV_NAME/$1.yaml" 2>/dev/null; }
+# 2026-09-18: this was one line -- `sops -d ... 2>/dev/null` -- and it cost the founder three
+# commands in a row. `2>/dev/null` hid sops's own error, `set -e` then killed the script at the
+# FIRST vget call (line 48, OCI_REGION), so execution never reached line 51's guard. The script
+# exited 100 with no stdout and no stderr, and `bin/idp-oci-login` -- whose only advice is to run
+# this script -- sent him straight back. Two scripts pointing at each other, neither speaking.
+#
+# The two failures are different and must read differently:
+#   * the vault FILE is absent   -> the secret moved (OCI-Vault migration, commit 76ba8be); the
+#                                   fix is a delivery path, not a re-run.
+#   * the file is there, sops fails -> an age key / decryption problem; the fix is the key file.
+# Neither is silent, and neither takes the caller down: this returns non-zero and lets the caller
+# decide, so a missing optional secret cannot abort the whole bootstrap.
+vget() {
+  local f="$VAULT/secrets/$ENV_NAME/$1.yaml"
+  if [ ! -e "$f" ]; then
+    {
+      echo "BLIND vault $1 is not in $VAULT/secrets/$ENV_NAME/"
+      echo "      cause   it moved to OCI Vault (ADR 0017, commit 76ba8be)"
+      echo "      fix     restore THIS device's access -- docs/reference/agent-identity.md"
+      echo "      not     re-running this script; it cannot recreate a secret that is not here"
+    } >&2
+    return 3
+  fi
+  local out
+  if ! out="$(sops -d --extract "[\"$1\"]" "$f" 2>&1)"; then
+    echo "BLIND sops cannot decrypt $1 (SOPS_AGE_KEY_FILE=$SOPS_AGE_KEY_FILE): $(printf %s "$out" | head -1)" >&2
+    return 4
+  fi
+  printf '%s' "$out"
+}
 vput() { # name on argv, VALUE ON STDIN ONLY
   local f="$VAULT/secrets/$ENV_NAME/$1.yaml"
   if [ -e "$f" ] && [ "${2:-}" != replace ]; then cat >/dev/null; echo "vault   $1 kept"; return; fi
@@ -32,9 +61,11 @@ vput() { # name on argv, VALUE ON STDIN ONLY
   printf %s "$v" | SECRET_REPLACE=1 "$VAULT/scripts/secret-add" "$ENV_NAME" "$1" "$1" >/dev/null && echo "vault   $1 written"
 }
 
-REGION="$(vget OCI_REGION)"; TENANCY="$(vget OCI_TENANCY_OCID)"
+# `|| true` where the value may legitimately be absent, so a missing optional secret reports
+# itself through vget's BLIND line and still lets the required-value guard below name the gap.
+REGION="$(vget OCI_REGION || true)"; TENANCY="$(vget OCI_TENANCY_OCID || true)"
 TENANCY_NAME="${OCI_TENANCY_NAME:-$(vget OCI_TENANCY_NAME || true)}"
-[ -n "$REGION" ] && [ -n "$TENANCY" ] || { echo "BLIND vault lacks OCI_REGION / OCI_TENANCY_OCID"; exit 2; }
+[ -n "$REGION" ] && [ -n "$TENANCY" ] || { echo "BLIND vault lacks OCI_REGION / OCI_TENANCY_OCID -- see the BLIND line(s) above for which"; exit 2; }
 [ -n "$TENANCY_NAME" ] || { echo "need OCI_TENANCY_NAME (vault or env): the console tenancy name"; exit 2; }
 
 PROFILE=estate-bootstrap
