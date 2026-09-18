@@ -225,6 +225,14 @@ def build_app(routes_path: Path) -> FastAPI:
         body, status = routes.device_status_envelope()
         return JSONResponse(content=body, status_code=status)
 
+    @app.post(routes.DEVICE_AUTHORIZE_PATH)
+    def device_authorize_post():
+        # POST, not GET: this mints a single-use challenge, and a GET that changed state would
+        # be both wrong and prefetchable. The proxy's allowedMethods for this key already
+        # carries POST (app-config.yaml), so no config change is needed for the route to reach.
+        body, status = routes.device_authorize_envelope()
+        return JSONResponse(content=body, status_code=status)
+
     @app.get(routes.BLAST_RADIUS_PATH)
     def blast_radius(node_id: str = ""):
         body, status = routes.blast_radius_envelope(node_id)

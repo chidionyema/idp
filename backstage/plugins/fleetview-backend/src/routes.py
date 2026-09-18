@@ -76,6 +76,7 @@ _EXECUTOR_LINK_MODULE = Path(__file__).resolve().parent / "executor_link.py"
 _TRACE_MODULE = Path(__file__).resolve().parent / "trace.py"
 _LEDGER_TAIL_MODULE = Path(__file__).resolve().parent / "ledger_tail.py"
 _DEVICE_ACCESS_MODULE = Path(__file__).resolve().parent / "device_access.py"
+_HANDOFF_MODULE = Path(__file__).resolve().parent / "handoff.py"
 
 
 def _load(path: Path, name: str):
@@ -134,6 +135,11 @@ def _device_access():
     return _load(_DEVICE_ACCESS_MODULE, "fleetview_device_access_impl")
 
 
+def _handoff():
+    """`handoff.py` -- the challenge the portal mints and the check that it carries no secret."""
+    return _load(_HANDOFF_MODULE, "fleetview_handoff_impl")
+
+
 def _executor_link():
     """`executor_link.py` carries process-wide state (the one laptop connection, its pending
     replies) -- unlike every other `_load`-by-path helper above, this one MUST return the same
@@ -185,6 +191,7 @@ MUTATIONS_REJECT_PATH = "/mutations/reject"
 TRACE_PATH = "/trace"
 LEDGER_PATH = "/ledger"
 DEVICE_STATUS_PATH = "/device-status"
+DEVICE_AUTHORIZE_PATH = "/device-authorize"
 
 
 def sessions_envelope() -> tuple[dict[str, Any], int]:
@@ -335,6 +342,34 @@ def device_status_envelope() -> tuple[dict[str, Any], int]:
     """
     impl = _device_access()
     return impl.device_status_envelope()
+
+
+def device_authorize_envelope() -> tuple[dict[str, Any], int]:
+    """The body and status for `POST /api/fleetview/device-authorize`.
+
+    Mints a single-use challenge and returns the LOCAL handoff URL. It deliberately does not
+    deliver anything: per the founder's ruling (2026-09-18), key delivery stays out of the
+    portal, which holds no vault credentials and must never see a key or a token. The browser
+    opens `idp-device://`, the device's own helper performs the delivery, and the only thing
+    that crossed between them is the nonce.
+
+    The payload is built by `handoff.handoff_payload`, which runs `assert_no_secret` before
+    returning it -- so this route cannot emit a credential even if a future edit tries to.
+    """
+    handoff = _handoff()
+    challenge = handoff.new_challenge()
+    try:
+        body = handoff.handoff_payload(challenge, state="awaiting_helper")
+        body["url"] = handoff.handoff_url(challenge)
+        body["scheme"] = "idp-device"
+        # Re-check with the two fields added, so the URL itself is proven clean rather than
+        # assumed to be because its inputs were.
+        handoff.assert_no_secret(body, where="device-authorize")
+    except handoff.SecretLeak as exc:
+        # A leak here is a programming error, and it must fail loudly rather than return a
+        # redacted payload nobody notices is redacted.
+        return {"state": "error", "error": f"refusing to emit: {exc}"}, 500
+    return body, 200
 
 
 def signals_envelope(session_id: str) -> tuple[dict[str, Any], int]:

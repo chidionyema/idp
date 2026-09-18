@@ -19,7 +19,19 @@
 // Which is why there is no [Renew] here. Renewal is `bin/idp-jit-device-renew` on a ten-minute
 // timer; the tile reports what the timer achieved. The single button that remains is the one
 // decision that cannot be a timer: putting the agent key on a device that has never had one.
+//
+// AND WHY THE BUTTON IS A LOCAL HANDOFF, NOT A BROWSER FLOW (founder's ruling, 2026-09-18):
+// "Keep key delivery out of the portal... guided local handoff." The portal's strongest
+// property is that it holds no vault credentials and never sees the key or the token. This
+// component opens `idp-device://`, which only something installed on this machine can handle,
+// and the device's own helper performs the delivery. The portal passes a nonce and nothing
+// else -- `handoff.py` enforces that on the server side, and its tests assert it.
+//
+// WHEN NO HELPER IS INSTALLED the button degrades to a guided link, per the ruling: "not a
+// terminal tutorial". The reader gets a one-line instruction and a copyable link, not a shell.
+import { useState } from 'react';
 import { Button, Flex, Text } from '@backstage/ui';
+import { configApiRef, useApi, fetchApiRef } from '@backstage/frontend-plugin-api';
 import { Tile } from '../shell';
 import { useDeviceAccess } from './useDeviceAccess';
 import {
@@ -59,8 +71,42 @@ function StateLine({ access }: { access: DeviceAccess }) {
   );
 }
 
+/** Where the browser sends the handoff request. Same door as every other portal read. */
+export const AUTHORIZE_PATH = 'plugin://proxy/fleetview/device-authorize';
+
+/**
+ * The guided fallback, shown when the browser could not open the local helper.
+ *
+ * Per the ruling this is "a clear 'install/run this helper' step, not a terminal tutorial":
+ * one instruction, one link, no shell, no command list.
+ */
+function GuidedFallback({ url, onRetry }: { url: string; onRetry: () => void }) {
+  return (
+    <Flex direction="column" gap="2">
+      <Text as="span" color="secondary" data-testid="device-guided">
+        This browser could not open the device helper. Install it once and this button will
+        work from then on.
+      </Text>
+      <Flex align="center" gap="2">
+        <Button variant="secondary" data-testid="device-opens-link" onPress={() => window.open(url, '_self')}>
+          Open the helper
+        </Button>
+        <Button variant="secondary" data-testid="device-retry" onPress={onRetry}>
+          Try again
+        </Button>
+      </Flex>
+    </Flex>
+  );
+}
+
 export function DeviceAccessTile() {
   const loaded = useDeviceAccess();
+  const fetchApi = useApi(fetchApiRef);
+  const configApi = useApi(configApiRef);
+  const [handoff, setHandoff] = useState<{ url: string | null; error: string | null }>({
+    url: null,
+    error: null,
+  });
 
   if (loaded.state === 'loading') {
     return (
@@ -75,6 +121,43 @@ export function DeviceAccessTile() {
   const access = loaded.access;
   const action = deviceAction(access);
 
+  /**
+   * Ask the portal for a challenge, then open the local handoff.
+   *
+   * The portal mints a nonce and returns a URL; it never returns a key. If the browser cannot
+   * route the custom scheme -- which is what happens when the helper is not installed -- the
+   * URL is kept and the guided fallback renders, so the reader is never left with a dead
+   * button and no next step.
+   */
+  const authorize = async () => {
+    setHandoff({ url: null, error: null });
+    try {
+      const res = await fetchApi.fetch(AUTHORIZE_PATH, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const body = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || !body.url) {
+        setHandoff({ url: null, error: body.error ?? `the portal answered ${res.status}` });
+        return;
+      }
+      setHandoff({ url: body.url, error: null });
+      // A custom scheme in a same-tab navigation is the standard way a page hands off to a
+      // local app; the browser stays put if nothing is registered, which is the case the
+      // guided fallback below handles.
+      window.location.href = body.url;
+    } catch (err) {
+      setHandoff({
+        url: null,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  // The helper's own path, shown only in the guided fallback so a reader can find it.
+  const helperHint =
+    (configApi.getOptionalString('estate.deviceHelperPath') ?? 'bin/idp-device-authorize');
+
   return (
     <Tile title="Device access" testId="device-access" state={access.state}>
       <StateLine access={access} />
@@ -85,24 +168,24 @@ export function DeviceAccessTile() {
 
       {/* The one button. Only `not_provisioned` has one, and it never prints a command. */}
       {action ? (
-        <Button
-          variant="primary"
-          data-testid="device-authorize"
-          // Opens the estate's own device-authorization door, which is the browser flow that
-          // delivers the agent key. A link rather than an in-page fetch, because the flow is
-          // interactive and belongs to the portal's identity provider, not to this tile.
-          // Until that door exists the button is present and inert rather than absent: an
-          // absent control reads as "nothing to do here", and the honest message is "this is
-          // the one step that is yours, and it is not built yet".
-          onClick={undefined}
-        >
+        <Button variant="primary" data-testid="device-authorize" onPress={() => void authorize()}>
           {action}
         </Button>
       ) : null}
 
-      {action ? (
+      {action && !handoff.url ? (
         <Text as="span" color="secondary" data-testid="device-no-terminal">
           No terminal required.
+        </Text>
+      ) : null}
+
+      {action && handoff.url ? (
+        <GuidedFallback url={handoff.url} onRetry={() => void authorize()} />
+      ) : null}
+
+      {action && handoff.error ? (
+        <Text as="span" color="danger" data-testid="device-error">
+          {handoff.error} — the helper is {helperHint}
         </Text>
       ) : null}
 
