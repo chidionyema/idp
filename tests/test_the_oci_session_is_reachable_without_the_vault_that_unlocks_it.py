@@ -1,0 +1,185 @@
+"""The OCI session must be reachable without reading the vault it exists to unlock.
+
+THE CIRCLE, MEASURED 2026-09-18. `bin/idp-oci-login` renders `~/.oci/config` from
+`estate-secrets/secrets/dev/OCI_*.yaml`. Those files do not exist -- commit `76ba8be` moved the
+estate's dev secrets into OCI Vault -- and reading OCI Vault needs an OCI identity. So:
+
+    vault files  ->  idp-oci-login  ->  OCI session  ->  idp-cloud  ->  vault
+                       ^ needs what it produces
+
+The founder hit it three times in a row, because the only advice the one script gave was to run
+the other one:
+
+    $ bin/idp-oci-login
+    BLIND oci  this device has no OCI API key: secrets/dev/ has no OCI_FINGERPRINT.yaml
+                ...bin/idp-oci-bootstrap cannot fix this
+
+WORSE, THE OTHER SCRIPTS HAD THE SAME ORDERING BUG. `idp-oci-bootstrap`,
+`idp-bootstrap-cloudflare` and `idp-bootstrap-tailscale` each run `sops -d OCI_REGION.yaml`
+BEFORE their browser login -- so a missing vault file kills the script at the line that was
+supposed to earn the credential needed to read the vault. `idp-oci-bootstrap` exits 100 with no
+output at all.
+
+WHAT MAKES THE ROAD A LINE. `oci session authenticate` is a browser login. It needs two
+IDENTIFIERS -- a region and a tenancy name -- and no secret of any kind. Neither is a credential:
+a tenancy name is in every OCI console URL, a region is a location. So `bin/idp-oci-session`
+takes them from the environment, falls back to the vault only when it can actually read it, and
+otherwise explains precisely what to type. Nothing on the path that matters reads a secret.
+
+These tests grade the ordering, which is the whole defect: the script must reach the browser
+login, or say what identifier is missing, and must never die on a vault read it does not need.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+SESSION = REPO / "bin" / "idp-oci-session"
+OLD_LOGIN = REPO / "bin" / "idp-oci-login"
+
+
+def _run(**env: str) -> subprocess.CompletedProcess:
+    e = {k: v for k, v in os.environ.items() if not k.startswith("OCI_")}
+    e.update(env)
+    return subprocess.run(
+        [str(SESSION)], capture_output=True, text=True, env=e, timeout=60, check=False
+    )
+
+
+def test_check_mode_reports_without_changing_anything():
+    """Read-only by default, like every other estate probe."""
+    p = subprocess.run(
+        [str(SESSION), "--check"],
+        capture_output=True,
+        text=True,
+        env=os.environ,
+        timeout=60,
+        check=False,
+    )
+    assert p.returncode in (0, 2)
+    assert p.stdout.strip(), "a check must say something either way"
+    assert "session" in p.stdout.lower()
+
+
+def test_missing_identifiers_name_them_and_do_not_mention_a_command_that_cannot_help():
+    """The message the founder needed three times and never got.
+
+    It must name the two identifiers, say they are not secrets, and say why the vault cannot be
+    the gate. It must NOT tell the reader to run the script that produced the circle.
+    """
+    p = _run()  # _run strips every OCI_* var, which is the state under test
+    out = p.stdout + p.stderr
+    assert "OCI_REGION" in out
+    assert "OCI_TENANCY_NAME" in out
+    assert "NOT secrets" in out or "not secrets" in out.lower()
+    assert "76ba8be" in out, "name the commit that moved the secrets, so the cause is checkable"
+    # And the anti-fix: do not send the reader round the circle again.
+    assert "idp-oci-bootstrap" not in out or "cannot" in out
+
+
+def test_identifiers_from_the_environment_reach_the_browser_login():
+    """The defect in one assertion: with identifiers supplied, the vault must not be consulted.
+
+    Before this script, `sops -d OCI_REGION.yaml` ran first and exited 100 on a missing file, so
+    execution never reached the login. Reaching the `login` line here IS the fix.
+
+    `oci session authenticate` BLOCKS on the browser, so a real run never returns -- the first
+    version of this test called subprocess.run and got TimeoutExpired instead of output. That is
+    the success signal, and it has to be caught rather than asserted away.
+    """
+    try:
+        p = subprocess.run(
+            [str(SESSION)],
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "OCI_REGION": "uk-london-1",
+                "OCI_TENANCY_NAME": "not-a-real-tenancy",
+            },
+            timeout=12,
+            check=False,
+        )
+        out = p.stdout + p.stderr
+    except subprocess.TimeoutExpired as exc:
+        # It is sitting on the browser prompt, which is the behaviour under test.
+        out = (exc.stdout or b"").decode(errors="replace") + (
+            exc.stderr or b""
+        ).decode(errors="replace")
+
+    assert "browser" in out.lower(), (
+        f"expected the script to reach the browser-login step, got:\n{out[:400]}"
+    )
+    # And it must never read a vault file on this path.
+    assert "sops -d" not in out
+    assert "FINGERPRINT" not in out
+
+
+def test_it_never_reads_the_vault_when_the_environment_supplies_the_identifiers():
+    """Ordering, asserted on the CODE rather than on the file.
+
+    A future edit that moved a vault read above the environment check would restore the circle
+    while every other test here still passed, so the ordering is checked in the text. Comments
+    are stripped first: the header explains the fix and therefore mentions both `oci session
+    authenticate` and the vault, and the first version of this test matched the prose at index
+    998 instead of the code at index 5000+.
+    """
+    src = SESSION.read_text()
+    code = "\n".join(ln for ln in src.splitlines() if not ln.lstrip().startswith("#"))
+
+    env_branch = code.index('if [ -z "$REGION" ] || [ -z "$TENANCY_NAME" ]; then')
+    vault_read = code.index("sops -d --extract")
+    browser = code.index("oci session authenticate")
+    assert env_branch < vault_read < browser, (
+        "the environment must be consulted BEFORE the vault, and the browser login must come "
+        "last -- any other order puts a vault read in front of the login that unlocks it. "
+        f"Got env={env_branch} vault={vault_read} browser={browser}"
+    )
+
+
+def test_the_old_login_no_longer_sends_the_reader_to_the_broken_script():
+    """The circle, guarded at its other end.
+
+    `idp-oci-login` used to say 'run bin/idp-oci-bootstrap', which dies at its first line on the
+    same missing files. That instruction is the loop; the comment explaining it is fine.
+    """
+    src = OLD_LOGIN.read_text()
+    code = "\n".join(
+        ln for ln in src.splitlines() if not ln.lstrip().startswith("#")
+    )
+    assert "run bin/idp-oci-bootstrap" not in code, (
+        "idp-oci-login tells the reader to run the script that produced the circle"
+    )
+    assert "idp-oci-session" in src or "agent-identity" in src, (
+        "the missing-key path must route to the browser-login road or the runbook"
+    )
+
+
+def test_it_is_executable_and_syntactically_valid():
+    assert os.access(SESSION, os.X_OK), "bin/idp-oci-session must be executable"
+    p = subprocess.run(["bash", "-n", str(SESSION)], capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+
+
+def test_it_says_the_next_three_steps_in_order():
+    """The road from session to agent identity, so the reader is not left at a prompt.
+
+    Asserted as a shape rather than exact prose: the three commands, in dependency order.
+    """
+    src = SESSION.read_text()
+    for needed in (
+        "bin/idp-cloud whoami",
+        "bin/idp-mac-secret-deliver",
+        "bin/idp-jit identity",
+    ):
+        assert needed in src, f"the success message must name {needed}"
+    # And in that order, because each depends on the one before.
+    assert (
+        src.index("bin/idp-cloud whoami")
+        < src.index("bin/idp-mac-secret-deliver")
+        < src.index("bin/idp-jit identity")
+    )
