@@ -106,7 +106,7 @@ def test_over_the_ceiling_fails_and_names_the_consequence():
     assert "2,650" in out and "2,000" in out, "the arithmetic must be visible"
     assert "132%" in out, "and the percentage, so the overshoot is legible at a glance"
     assert "resource-leak webhook" in out, "name the mechanism that refuses"
-    assert "history-max" in out, "and the fix, which is the pruning"
+    assert "spec.maxHistory" in out, "and the fix, which is the pruning"
 
 
 def test_above_steady_state_warns_but_does_not_fail():
@@ -142,7 +142,9 @@ def test_an_absent_count_fails_and_names_standard_6():
     rc, out = _run(None)
     assert rc == 1, f"an absent count must FAIL, got rc={rc}:\n{out}"
     assert "secret_count" in out
-    assert "standard 6" in out or "HGC" in out, "name the standard so the cause is checkable"
+    assert "standard 6" in out or "HGC" in out, (
+        "name the standard so the cause is checkable"
+    )
 
 
 def test_the_ceiling_comes_from_the_repo():
@@ -165,7 +167,9 @@ def test_the_ceiling_comes_from_the_repo():
 def test_the_receipts_own_limit_wins_when_it_carries_one():
     """A collector that reports its own ceiling is authoritative over the file default."""
     rc, out = _run(3000, limit=4000)
-    assert rc == 0, f"3000/4000 is under the ceiling the receipt declares, got rc={rc}:\n{out}"
+    assert rc == 0, (
+        f"3000/4000 is under the ceiling the receipt declares, got rc={rc}:\n{out}"
+    )
     assert "4,000" in out, "the receipt's limit must be the one used"
 
 

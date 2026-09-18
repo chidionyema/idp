@@ -79,6 +79,7 @@ def _json_bytes(obj: Any) -> int:
     except Exception:  # noqa: BLE001
         return 0
 
+
 try:
     from litellm.integrations.custom_logger import CustomLogger
 except ModuleNotFoundError:
@@ -237,7 +238,9 @@ class EstateEfficiencyGateway(CustomLogger):
             handle = f"#OBS_{h}"
             if h in self._obs_handles:
                 replacement = f"[duplicate observation — see earlier result: {handle}]"
-                self._obs_bytes_saved += len(content.encode()) - len(replacement.encode())
+                self._obs_bytes_saved += len(content.encode()) - len(
+                    replacement.encode()
+                )
                 msg["content"] = replacement
                 self._obs_hits += 1
                 log.info(

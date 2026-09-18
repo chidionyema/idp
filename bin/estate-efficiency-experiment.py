@@ -68,17 +68,34 @@ def _load_gateway():
 
 def _fixture():
     """A deterministic agent transcript: many turns, duplicate lines, a repeated large
-    observation, a verbose tool description. Seeded, so the bytes are identical each run."""
+    observation, a verbose tool description. Seeded, so the bytes are identical each run.
+
+    `random` here is the point of the experiment, not a security choice (ruff S311): the whole
+    value of the A/B and the ablation is that a reader re-runs this file and gets the SAME token
+    counts. A seed is what makes the measurement reproducible; `secrets` would make it
+    unreproducible, which is the opposite of what a measurement needs.
+    """
+    # noqa: S311 -- random is the point of the experiment, not a security choice: a fixed
+    # seed is what makes the token counts reproducible, and `secrets` would make the
+    # measurement unreproducible, which is the opposite of what a measurement needs.
     random.seed(SEED)
     msgs = [{"role": "system", "content": "You are a coding agent. " + "x" * 4000}]
     for i in range(120):
-        msgs.append({"role": "user", "content": f"task step {i} " + "y" * random.randint(50, 300)})
+        msgs.append(
+            {
+                "role": "user",
+                "content": f"task step {i} " + "y" * random.randint(50, 300),  # noqa: S311,
+            }
+        )
         if i % 3 == 0:
             msgs.append(
                 {
                     "role": "tool",
                     "tool_call_id": f"c{i}",
-                    "content": "\n".join(f"line-{j}-{random.randint(0, 999)}" for j in range(200)),
+                    "content": "\n".join(
+                        f"line-{j}-{random.randint(0, 999)}"  # noqa: S311
+                        for j in range(200)
+                    ),
                 }
             )
     msgs.append({"role": "tool", "tool_call_id": "cbig", "content": "z" * 12000})
@@ -128,7 +145,9 @@ def experiment_a(mod, enc) -> dict:
 def experiment_b(mod, enc) -> dict:
     """Ablation: each mechanism off alone. Answers 'what is effective'."""
     full_on = run_gateway(mod.EstateEfficiencyGateway())
-    baseline = _count(enc, full_on["messages"]) + _count(enc, full_on.get("tools") or [])
+    baseline = _count(enc, full_on["messages"]) + _count(
+        enc, full_on.get("tools") or []
+    )
     rows = []
     for attr, label in MECHANISMS:
         out = run_gateway(mod.EstateEfficiencyGateway(), [attr])
@@ -147,7 +166,9 @@ def experiment_b(mod, enc) -> dict:
     return {
         "baseline_all_on_tokens": baseline,
         "per_mechanism": rows,
-        "no_effect": [r["mechanism"] for r in rows if r["tokens_lost_by_removing_it"] <= 0],
+        "no_effect": [
+            r["mechanism"] for r in rows if r["tokens_lost_by_removing_it"] <= 0
+        ],
     }
 
 
@@ -158,7 +179,9 @@ def experiment_c() -> dict:
     import glob
 
     by = collections.defaultdict(lambda: {"tok": 0, "cost": 0.0, "n": 0})
-    for f in glob.glob(os.path.expanduser("~/.pi/agent/sessions/**/*.jsonl"), recursive=True):
+    for f in glob.glob(
+        os.path.expanduser("~/.pi/agent/sessions/**/*.jsonl"), recursive=True
+    ):
         for line in open(f, errors="ignore"):
             line = line.strip()
             if not line:
@@ -198,7 +221,11 @@ def experiment_c() -> dict:
         "rate_flash_per_token": rate_flash,
         "observed": {
             "pro": {"calls": pro["n"], "tokens": pro["tok"], "cost": pro["cost"]},
-            "flash": {"calls": flash["n"], "tokens": flash["tok"], "cost": flash["cost"]},
+            "flash": {
+                "calls": flash["n"],
+                "tokens": flash["tok"],
+                "cost": flash["cost"],
+            },
         },
     }
 
@@ -232,12 +259,18 @@ def main() -> int:
     print("=" * 78)
     print("EXPERIMENT A — A/B. Identical seeded fixture. tiktoken cl100k_base.")
     print("=" * 78)
-    print(f"  control  (chain OFF) : {A['tokens_control_all_off']:>9,} tokens  "
-          f"{A['messages_control']:>5} messages")
-    print(f"  treatment(chain ON)  : {A['tokens_treatment_all_on']:>9,} tokens  "
-          f"{A['messages_treatment']:>5} messages")
-    print(f"  saved                : {A['tokens_saved']:>9,} tokens  "
-          f"{A['reduction_pct']:.2f}% reduction")
+    print(
+        f"  control  (chain OFF) : {A['tokens_control_all_off']:>9,} tokens  "
+        f"{A['messages_control']:>5} messages"
+    )
+    print(
+        f"  treatment(chain ON)  : {A['tokens_treatment_all_on']:>9,} tokens  "
+        f"{A['messages_treatment']:>5} messages"
+    )
+    print(
+        f"  saved                : {A['tokens_saved']:>9,} tokens  "
+        f"{A['reduction_pct']:.2f}% reduction"
+    )
 
     print()
     print("=" * 78)
@@ -246,22 +279,30 @@ def main() -> int:
     print(f"  baseline (all on): {B['baseline_all_on_tokens']:,} tokens\n")
     print(f"  {'mechanism OFF':<20}{'tokens':>10}{'cost of removing':>20}  verdict")
     for r in B["per_mechanism"]:
-        print(f"  {r['mechanism']:<20}{r['tokens_with_it_off']:>10,}"
-              f"{r['tokens_lost_by_removing_it']:>+20,}  {r['verdict']}")
+        print(
+            f"  {r['mechanism']:<20}{r['tokens_with_it_off']:>10,}"
+            f"{r['tokens_lost_by_removing_it']:>+20,}  {r['verdict']}"
+        )
     if B["no_effect"]:
         print(f"\n  no effect at all: {', '.join(B['no_effect'])}")
 
     print()
     print("=" * 78)
-    print("EXPERIMENT C — RATES. From this session's own ledger, no external price sheet.")
+    print(
+        "EXPERIMENT C — RATES. From this session's own ledger, no external price sheet."
+    )
     print("=" * 78)
     if C.get("available"):
         print(f"  unit of work : the {C['flash_calls']} flash calls in this session")
         print(f"  tokens       : {C['flash_tokens']:,}")
         print(f"  actual cost  : ${C['actual_cost_flash_rate']:.6f}  (flash rate)")
-        print(f"  at pro rate  : ${C['counterfactual_cost_pro_rate']:.6f}  (same tokens)")
+        print(
+            f"  at pro rate  : ${C['counterfactual_cost_pro_rate']:.6f}  (same tokens)"
+        )
         print(f"  ratio        : {C['ratio']:.2f}x")
-        print(f"  saved        : ${C['counterfactual_cost_pro_rate'] - C['actual_cost_flash_rate']:.6f}")
+        print(
+            f"  saved        : ${C['counterfactual_cost_pro_rate'] - C['actual_cost_flash_rate']:.6f}"
+        )
     else:
         print(f"  unavailable: {C.get('reason')}")
     return 0

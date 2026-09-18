@@ -33,7 +33,6 @@ login, or say what identifier is missing, and must never die on a vault read it 
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 from pathlib import Path
 
@@ -82,11 +81,15 @@ def test_missing_identifiers_name_them_and_do_not_mention_a_command_that_cannot_
     p = _run()  # _run strips every OCI_* var, which is the state under test
     out = p.stdout + p.stderr
     if "is live" in out:
-        pytest.skip("an OCI session is live, so the identifier path is unreachable by design")
+        pytest.skip(
+            "an OCI session is live, so the identifier path is unreachable by design"
+        )
     assert "OCI_REGION" in out
     assert "OCI_TENANCY_NAME" in out
     assert "NOT secrets" in out or "not secrets" in out.lower()
-    assert "76ba8be" in out, "name the commit that moved the secrets, so the cause is checkable"
+    assert "76ba8be" in out, (
+        "name the commit that moved the secrets, so the cause is checkable"
+    )
     # And the anti-fix: do not send the reader round the circle again.
     assert "idp-oci-bootstrap" not in out or "cannot" in out
 
@@ -216,9 +219,7 @@ def test_the_old_login_no_longer_sends_the_reader_to_the_broken_script():
     same missing files. That instruction is the loop; the comment explaining it is fine.
     """
     src = OLD_LOGIN.read_text()
-    code = "\n".join(
-        ln for ln in src.splitlines() if not ln.lstrip().startswith("#")
-    )
+    code = "\n".join(ln for ln in src.splitlines() if not ln.lstrip().startswith("#"))
     assert "run bin/idp-oci-bootstrap" not in code, (
         "idp-oci-login tells the reader to run the script that produced the circle"
     )
@@ -270,7 +271,14 @@ def test_the_portal_supervisor_starts_three_processes_and_waits_for_each():
     src = portal.read_text()
 
     # All three processes are named, with their ports.
-    for needed in ("serve-fleetview", "18790", "workspace backend", "7107", "workspace app", "3100"):
+    for needed in (
+        "serve-fleetview",
+        "18790",
+        "workspace backend",
+        "7107",
+        "workspace app",
+        "3100",
+    ):
         assert needed in src, f"the supervisor does not start or name {needed}"
 
     # Readiness is a real request, never a port check.
@@ -281,7 +289,9 @@ def test_the_portal_supervisor_starts_three_processes_and_waits_for_each():
     # The two traps are documented IN the script, because a reader hits them here first.
     assert "--restart" in src
     assert "read at start" in src, "the app-config reload trap must be stated"
-    assert "behind sign-in" in src, "the sign-in wall must be stated where the URL is printed"
+    assert "behind sign-in" in src, (
+        "the sign-in wall must be stated where the URL is printed"
+    )
     assert "Enter" in src, "and the one action the reader takes"
 
 

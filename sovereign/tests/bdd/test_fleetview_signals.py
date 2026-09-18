@@ -244,7 +244,11 @@ def test_nudge_with_otto_runtime_no_nats_url_records_ok_false(signals, monkeypat
 def test_approve_on_a_runtime_with_no_channel_is_422_not_502(routes):
     """The button that lied on 2026-09-18, graded on the status code it must not return."""
     body, status = routes.add_approve(
-        {"session_id": "claude-code:fleet-live-001", "runtime": "claude-code", "by": "founder"}
+        {
+            "session_id": "claude-code:fleet-live-001",
+            "runtime": "claude-code",
+            "by": "founder",
+        }
     )
     assert status == 422, (
         f"approve on claude-code returned {status}. 502 means 'attempted and failed', which is "
@@ -306,13 +310,17 @@ def test_steer_still_covers_every_runtime(signals, monkeypatch):
             by="founder",
             text="check the signals",
         )
-        assert record["ok"] is True, f"steer to {runtime} was refused: {record.get('error')}"
+        assert record["ok"] is True, (
+            f"steer to {runtime} was refused: {record.get('error')}"
+        )
 
 
 def test_the_channel_table_names_every_signal_the_module_exposes(signals):
     """A signal added without a row would KeyError at runtime; this makes it a test failure."""
     for name in ("steer", "stop", "approve", "deny"):
-        assert name in signals.SIGNAL_RUNTIMES, f"{name} has no entry in SIGNAL_RUNTIMES"
+        assert name in signals.SIGNAL_RUNTIMES, (
+            f"{name} has no entry in SIGNAL_RUNTIMES"
+        )
         assert signals.SIGNAL_RUNTIMES[name], f"{name} declares no runtime at all"
 
 
@@ -324,7 +332,11 @@ def test_a_missing_engine_is_reported_as_a_502_with_the_real_reason(routes):
     dependency rather than that the far end is broken.
     """
     body, status = routes.add_approve(
-        {"session_id": "sovereign:fleet-live-002", "runtime": "sovereign", "by": "founder"}
+        {
+            "session_id": "sovereign:fleet-live-002",
+            "runtime": "sovereign",
+            "by": "founder",
+        }
     )
     # 502 when the engine cannot be reached; the reason must be specific.
     assert status == 502

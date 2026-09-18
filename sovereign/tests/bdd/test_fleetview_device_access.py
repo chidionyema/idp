@@ -22,7 +22,9 @@ REPO = Path(__file__).resolve().parents[3]
 DEVICE_MODULE = (
     REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "device_access.py"
 )
-ROUTES_MODULE = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "routes.py"
+ROUTES_MODULE = (
+    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "routes.py"
+)
 
 
 def _load(path: Path, name: str):
@@ -38,7 +40,9 @@ def device():
     return _load(DEVICE_MODULE, "fleetview_device_access_under_test")
 
 
-def _stub_status(monkeypatch, device, *, stdout: str = "", returncode: int = 0, stderr: str = ""):
+def _stub_status(
+    monkeypatch, device, *, stdout: str = "", returncode: int = 0, stderr: str = ""
+):
     class _P:
         pass
 
@@ -59,7 +63,9 @@ def test_the_route_reports_and_never_provisions(device):
     become a second way to put a key on a device. Graded by naming, so a future method that
     does provision cannot slip in unnoticed.
     """
-    provision = [n for n in dir(device) if "provision" in n.lower() or "deliver" in n.lower()]
+    provision = [
+        n for n in dir(device) if "provision" in n.lower() or "deliver" in n.lower()
+    ]
     assert provision == [], (
         "device_access.py grew something that can provision: "
         f"{provision}. Putting the agent key on a device is the owner's act alone."
@@ -71,7 +77,9 @@ def test_not_provisioned_is_an_answer_not_an_error(device, monkeypatch):
     _stub_status(
         monkeypatch,
         device,
-        stdout=json.dumps({"state": "not_provisioned", "has_key": False, "expires_in": None}),
+        stdout=json.dumps(
+            {"state": "not_provisioned", "has_key": False, "expires_in": None}
+        ),
     )
     body, status = device.device_status_envelope()
     assert status == 200
@@ -97,7 +105,9 @@ def test_active_carries_the_expiry_the_tile_renders(device, monkeypatch):
     assert body["scope"] == "read-only"
 
 
-def test_a_broken_read_is_unreadable_and_never_a_permissive_default(device, monkeypatch):
+def test_a_broken_read_is_unreadable_and_never_a_permissive_default(
+    device, monkeypatch
+):
     """The failure that matters: an unreadable status must not render as 'Active'.
 
     A status surface that guesses in the permissive direction tells the owner production reads
@@ -127,7 +137,9 @@ def test_a_broken_read_is_unreadable_and_never_a_permissive_default(device, monk
         assert body["state"] != "active"
 
 
-def test_an_unreadable_answer_still_names_a_state_so_the_page_has_one_shape(device, monkeypatch):
+def test_an_unreadable_answer_still_names_a_state_so_the_page_has_one_shape(
+    device, monkeypatch
+):
     """Both the 200 and the 503 carry `state`, so the tile has no absent-field branch."""
     _stub_status(monkeypatch, device, stdout="garbage")
     body, _status = device.device_status_envelope()

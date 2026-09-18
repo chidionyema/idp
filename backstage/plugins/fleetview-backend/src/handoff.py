@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import re
 import secrets
-import time
 from typing import Any
 
 # A challenge lives ten minutes. Long enough to open a helper and finish, short enough that one
@@ -56,7 +55,9 @@ _FORBIDDEN_NAME = re.compile(
 # `eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefgh` -- an 8-char signature. Real HS256 tokens
 # have 43-char signatures, but "real ones are long" is not a property to stake a secret check on.
 _FORBIDDEN_VALUE = [
-    re.compile(r"\bey[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}"),  # JWT, any length
+    re.compile(
+        r"\bey[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}"
+    ),  # JWT, any length
     re.compile(r"\bocid1\.[a-z0-9]+\.[a-z0-9]+\.[a-z0-9]+"),  # OCI OCID
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),  # PEM
     re.compile(r"\bsk-[A-Za-z0-9]{16,}"),  # vendor-style key
@@ -164,8 +165,14 @@ def assert_no_secret(payload: Any, where: str = "response") -> None:
         raise SecretLeak("; ".join(problems))
 
 
-def handoff_payload(challenge: str, *, state: str, expires_in: int | None = None,
-                    subject: str | None = None, kubeconfig: str | None = None) -> dict[str, Any]:
+def handoff_payload(
+    challenge: str,
+    *,
+    state: str,
+    expires_in: int | None = None,
+    subject: str | None = None,
+    kubeconfig: str | None = None,
+) -> dict[str, Any]:
     """Build the tile's payload, then prove it carries no secret before returning it.
 
     Building and checking in one function means a caller cannot construct a payload and forget

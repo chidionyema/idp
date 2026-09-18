@@ -26,7 +26,6 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import json
-import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -83,11 +82,18 @@ def _transcript(path: Path, *, model: str, cost: float | None, turns: int = 2) -
 # ------------------------------------------------------------------- a real row from reality
 
 
-def test_a_transcript_becomes_a_row_with_its_own_model_and_spend(rec, tmp_path, monkeypatch):
+def test_a_transcript_becomes_a_row_with_its_own_model_and_spend(
+    rec, tmp_path, monkeypatch
+):
     """The core claim: the row's numbers come from the transcript, not from a default."""
     home = tmp_path / "home"
     _transcript(
-        home / ".pi" / "agent" / "sessions" / "--Users-x-Documents-code-idp--" / "s_abc.jsonl",
+        home
+        / ".pi"
+        / "agent"
+        / "sessions"
+        / "--Users-x-Documents-code-idp--"
+        / "s_abc.jsonl",
         model="deepseek-v4-pro",
         cost=1.25,
     )
@@ -106,7 +112,12 @@ def test_spend_is_absent_when_the_ledger_carried_no_cost(rec, tmp_path, monkeypa
     """Absent, never 0.0. A zero is a claim; missing is a fact (spendLabel renders '—')."""
     home = tmp_path / "home"
     _transcript(
-        home / ".pi" / "agent" / "sessions" / "--Users-x-Documents-code-idp--" / "s_def.jsonl",
+        home
+        / ".pi"
+        / "agent"
+        / "sessions"
+        / "--Users-x-Documents-code-idp--"
+        / "s_def.jsonl",
         model="deepseek-v4-flash",
         cost=None,
     )
@@ -121,7 +132,12 @@ def test_the_model_is_still_recorded_when_no_cost_exists(rec, tmp_path, monkeypa
     """The two are independent: a missing cost must not cost us the model."""
     home = tmp_path / "home"
     _transcript(
-        home / ".pi" / "agent" / "sessions" / "--Users-x-Documents-code-idp--" / "s_g.jsonl",
+        home
+        / ".pi"
+        / "agent"
+        / "sessions"
+        / "--Users-x-Documents-code-idp--"
+        / "s_g.jsonl",
         model="MiniMax-M2.7",
         cost=None,
     )
@@ -133,7 +149,14 @@ def test_the_model_is_still_recorded_when_no_cost_exists(rec, tmp_path, monkeypa
 def test_a_timestamp_is_required_for_liveness(rec, tmp_path, monkeypatch):
     """A row with no time cannot go stale, and the board would show it for ever."""
     home = tmp_path / "home"
-    p = home / ".pi" / "agent" / "sessions" / "--Users-x-Documents-code-idp--" / "s_h.jsonl"
+    p = (
+        home
+        / ".pi"
+        / "agent"
+        / "sessions"
+        / "--Users-x-Documents-code-idp--"
+        / "s_h.jsonl"
+    )
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps({"message": {"usage": {"totalTokens": 5}}}) + "\n")
     monkeypatch.setenv("HOME", str(home))
@@ -146,7 +169,9 @@ def test_a_timestamp_is_required_for_liveness(rec, tmp_path, monkeypatch):
 # ------------------------------------------------------------------ the honesty rules
 
 
-def test_a_blank_source_is_reported_blind_not_silently_empty(rec, tmp_path, monkeypatch):
+def test_a_blank_source_is_reported_blind_not_silently_empty(
+    rec, tmp_path, monkeypatch
+):
     """'The reader is broken' and 'there are no sessions' must not look alike."""
     home = tmp_path / "home"
     (home / ".pi" / "agent" / "sessions").mkdir(parents=True)
@@ -166,7 +191,9 @@ def test_no_session_directory_at_all_is_blind_and_says_so(rec, tmp_path, monkeyp
     assert any("records no agent sessions" in b for b in blind)
 
 
-def test_an_unreadable_transcript_is_skipped_not_written_blank(rec, tmp_path, monkeypatch):
+def test_an_unreadable_transcript_is_skipped_not_written_blank(
+    rec, tmp_path, monkeypatch
+):
     """One corrupt file must not produce a row of nulls, and must not hide the good ones."""
     home = tmp_path / "home"
     base = home / ".pi" / "agent" / "sessions" / "--Users-x-Documents-code-idp--"
@@ -229,10 +256,17 @@ def test_a_new_timestamp_appends_an_event(rec, tmp_path):
     """The converse: real progress must be recorded, or liveness cannot be derived."""
     con = rec._connect()
     base = dict(
-        session_id="s1", provider="pi", model="m", created_at="2026-09-18T00:00:00+00:00"
+        session_id="s1",
+        provider="pi",
+        model="m",
+        created_at="2026-09-18T00:00:00+00:00",
     )
-    rec.write_observations(con, [rec.Observation(updated_at="2026-09-18T00:01:00+00:00", meta={}, **base)])
-    rec.write_observations(con, [rec.Observation(updated_at="2026-09-18T00:02:00+00:00", meta={}, **base)])
+    rec.write_observations(
+        con, [rec.Observation(updated_at="2026-09-18T00:01:00+00:00", meta={}, **base)]
+    )
+    rec.write_observations(
+        con, [rec.Observation(updated_at="2026-09-18T00:02:00+00:00", meta={}, **base)]
+    )
     assert con.execute("SELECT COUNT(*) FROM session_events").fetchone()[0] == 2
     # And the sequence is contiguous, which is what makes `seq` meaningful.
     seqs = [r[0] for r in con.execute("SELECT seq FROM session_events ORDER BY seq")]

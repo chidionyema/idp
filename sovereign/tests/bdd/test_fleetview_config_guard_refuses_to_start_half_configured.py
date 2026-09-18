@@ -76,7 +76,7 @@ def test_the_refusal_names_the_var_the_consequence_and_the_fix(guard):
     assert len(msg.splitlines()) > 3, "one terse line is not a readable refusal"
 
 
-def test_a_blank_value_counts_as_missing(guard):
+def test_a_blank_value_counts_as_missing(guard, tmp_path):
     """An empty string is the shape a broken launcher actually produces, not a synonym for set."""
     with pytest.raises(guard.ConfigError):
         guard.require_config({"ESTATE_DB": "   "})
@@ -85,22 +85,22 @@ def test_a_blank_value_counts_as_missing(guard):
 # ------------------------------------------------ the degradation, which is equally load-bearing
 
 
-def test_nats_and_langfuse_are_not_required(guard):
+def test_nats_and_langfuse_are_not_required(guard, tmp_path):
     """The local board runs without them; making them required would break it.
 
     This is the test that keeps the guard from being routed around: a `require everything`
     version would be deleted by the first person it annoyed.
     """
-    config = guard.require_config({"ESTATE_DB": "/tmp/estate.db"})
+    config = guard.require_config({"ESTATE_DB": str(tmp_path / "estate.db")})
     assert config.nats_url is None
     assert config.langfuse_host is None
 
 
-def test_a_degraded_start_says_what_is_off_and_what_it_costs(guard):
+def test_a_degraded_start_says_what_is_off_and_what_it_costs(guard, tmp_path):
     """'The trace pane is empty' must be decidable without clicking anything."""
-    config = guard.require_config({"ESTATE_DB": "/tmp/estate.db"})
+    config = guard.require_config({"ESTATE_DB": str(tmp_path / "estate.db")})
     banner = guard.startup_banner(config)
-    assert "/tmp/estate.db" in banner
+    assert str(tmp_path / "estate.db") in banner
     assert "NATS_URL unset" in banner
     assert "LANGFUSE_HOST unset" in banner
     # Each line carries the user-visible consequence, not just the variable name.
@@ -108,10 +108,10 @@ def test_a_degraded_start_says_what_is_off_and_what_it_costs(guard):
     assert "not update live" in banner
 
 
-def test_a_fully_configured_start_reports_no_degradation(guard):
+def test_a_fully_configured_start_reports_no_degradation(guard, tmp_path):
     config = guard.require_config(
         {
-            "ESTATE_DB": "/tmp/estate.db",
+            "ESTATE_DB": str(tmp_path / "estate.db"),
             "NATS_URL": "nats://bus:4222",
             "LANGFUSE_HOST": "https://langfuse.test",
             "LINEAR_API_KEY": "x",
@@ -122,10 +122,12 @@ def test_a_fully_configured_start_reports_no_degradation(guard):
     assert "nats://bus:4222" in banner
 
 
-def test_the_degraded_list_names_the_route_that_suffers(guard):
+def test_the_degraded_list_names_the_route_that_suffers(guard, tmp_path):
     """(name, surface, consequence) -- so a banner can be specific, not a list of vars."""
-    config = guard.require_config({"ESTATE_DB": "/tmp/estate.db"})
-    degraded = {name: (surface, consequence) for name, surface, consequence in config.degraded}
+    config = guard.require_config({"ESTATE_DB": str(tmp_path / "estate.db")})
+    degraded = {
+        name: (surface, consequence) for name, surface, consequence in config.degraded
+    }
     assert "NATS_URL" in degraded
     assert "/stream" in degraded["NATS_URL"][0]
     assert "LANGFUSE_HOST" in degraded
@@ -151,11 +153,11 @@ def test_build_app_validates_before_it_serves(guard):  # noqa: ARG001
     )
 
 
-def test_the_missing_list_is_reusable_without_the_exit_path(guard):
+def test_the_missing_list_is_reusable_without_the_exit_path(guard, tmp_path):
     """A preflight tool can ask without dying, which is what makes this check composable."""
     missing = guard.missing_required({})
     assert [name for name, _why in missing] == ["ESTATE_DB"]
-    assert guard.missing_required({"ESTATE_DB": "/tmp/x"}) == []
+    assert guard.missing_required({"ESTATE_DB": str(tmp_path / "x")}) == []
 
 
 def test_every_required_var_carries_a_reason(guard):
@@ -164,7 +166,9 @@ def test_every_required_var_carries_a_reason(guard):
         assert len(why) > 40, f"{name} has no real explanation: {why!r}"
 
 
-def test_the_banner_reports_the_config_it_was_given_not_the_ambient_environment(guard):
+def test_the_banner_reports_the_config_it_was_given_not_the_ambient_environment(
+    guard, tmp_path
+):
     """The bug the suite found on 2026-09-18, kept as a case.
 
     `degraded` first read `os.environ` directly, so a Config constructed with an explicit env
@@ -181,7 +185,7 @@ def test_the_banner_reports_the_config_it_was_given_not_the_ambient_environment(
 
     config = guard.require_config(
         {
-            "ESTATE_DB": "/tmp/estate.db",
+            "ESTATE_DB": str(tmp_path / "estate.db"),
             "NATS_URL": "nats://bus:4222",
             "LANGFUSE_HOST": "https://langfuse.test",
             "LINEAR_API_KEY": "present",
@@ -194,10 +198,10 @@ def test_the_banner_reports_the_config_it_was_given_not_the_ambient_environment(
     assert "unset" not in guard.startup_banner(config)
 
 
-def test_a_partial_config_reports_only_what_is_actually_missing(guard):
+def test_a_partial_config_reports_only_what_is_actually_missing(guard, tmp_path):
     """And the converse: exactly the missing one, not all of them."""
     config = guard.require_config(
-        {"ESTATE_DB": "/tmp/estate.db", "NATS_URL": "nats://bus:4222"}
+        {"ESTATE_DB": str(tmp_path / "estate.db"), "NATS_URL": "nats://bus:4222"}
     )
     names = [name for name, _s, _c in config.degraded]
     assert names == ["LANGFUSE_HOST", "LINEAR_API_KEY"], (

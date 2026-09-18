@@ -21,7 +21,6 @@ reason, and a guided local handoff is only equivalent to it while the portal sta
 from __future__ import annotations
 
 import importlib.util
-import json
 import re
 from pathlib import Path
 
@@ -107,7 +106,9 @@ def test_the_builder_refuses_a_payload_that_would_carry_a_secret(handoff):
         )
     # An OCI OCID.
     with pytest.raises(handoff.SecretLeak):
-        handoff.assert_no_secret({"v": "ocid1.vaultsecret.oc1.uk-london-1.amaaaaaa"}, where="t")
+        handoff.assert_no_secret(
+            {"v": "ocid1.vaultsecret.oc1.uk-london-1.amaaaaaa"}, where="t"
+        )
     # A PEM block.
     with pytest.raises(handoff.SecretLeak):
         handoff.assert_no_secret({"v": "-----BEGIN PRIVATE KEY-----\nMIIE"}, where="t")
@@ -129,7 +130,9 @@ def test_nested_payloads_are_walked(handoff):
 
 def test_a_credential_shaped_value_under_an_innocent_name_is_caught(handoff):
     """The failure the name check misses, which is why both exist."""
-    payload = {"reason": "auth failed for eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefgh"}
+    payload = {
+        "reason": "auth failed for eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefgh"
+    }
     with pytest.raises(handoff.SecretLeak):
         handoff.assert_no_secret(payload, where="t")
 
@@ -149,8 +152,14 @@ def test_the_kubeconfig_field_may_only_be_a_path(handoff):
     A URL here would turn a location into a fetch, which is how a path field becomes a
     credential-delivery channel.
     """
-    handoff.assert_no_secret({"kubeconfig": "/Users/x/.local/state/idp/agent.kubeconfig"}, where="t")
-    for bad in ("https://evil.test/agent.kubeconfig", "file:///etc/passwd", "ocid1.vaultsecret.oc1.x"):
+    handoff.assert_no_secret(
+        {"kubeconfig": "/Users/x/.local/state/idp/agent.kubeconfig"}, where="t"
+    )
+    for bad in (
+        "https://evil.test/agent.kubeconfig",
+        "file:///etc/passwd",
+        "ocid1.vaultsecret.oc1.x",
+    ):
         with pytest.raises(handoff.SecretLeak):
             handoff.assert_no_secret({"kubeconfig": bad}, where="t")
 
@@ -180,11 +189,19 @@ def test_the_portal_source_never_reads_or_writes_a_credential():
     # Strip the identifiers this module is allowed to name: they are the field names in the
     # DENY list it uses to REFUSE secrets, plus the two it checks for in values.
     scrubbed = text
-    for allowed in ("_FORBIDDEN_NAME", "_FORBIDDEN_VALUE", "SecretLeak", "assert_no_secret"):
+    for allowed in (
+        "_FORBIDDEN_NAME",
+        "_FORBIDDEN_VALUE",
+        "SecretLeak",
+        "assert_no_secret",
+    ):
         scrubbed = scrubbed.replace(allowed, "")
 
     # Now nothing in the scrubbed source may look like it reads or emits a credential.
-    for pat in [r"getenv\(['\"]\w*(TOKEN|SECRET|KEY|PASSWORD)", r"environ\[['\"]\w*(TOKEN|SECRET)"]:
+    for pat in [
+        r"getenv\(['\"]\w*(TOKEN|SECRET|KEY|PASSWORD)",
+        r"environ\[['\"]\w*(TOKEN|SECRET)",
+    ]:
         assert not re.search(pat, scrubbed, re.IGNORECASE), (
             f"handoff.py reads a credential from the environment ({pat}). The portal must hold "
             "none; the local helper is where the cloud identity lives."
@@ -194,7 +211,12 @@ def test_the_portal_source_never_reads_or_writes_a_credential():
 def test_the_routes_module_does_not_touch_the_vault_or_the_key(handoff):  # noqa: ARG001
     """routes.py may build a challenge; it must not read a vault or an agent key."""
     text = ROUTES_MODULE.read_text()
-    for forbidden in ("idp-mac-secret-deliver", "JIT_AGENT_KEY", "agent-key", "secret get"):
+    for forbidden in (
+        "idp-mac-secret-deliver",
+        "JIT_AGENT_KEY",
+        "agent-key",
+        "secret get",
+    ):
         assert forbidden not in text, (
             f"routes.py names {forbidden!r}. Routes answer questions; delivery happens on the "
             "device, through a helper the portal cannot reach."
@@ -209,7 +231,9 @@ def test_the_helper_is_not_shipped_in_the_portal_package():
     """
     plugin_files = {p.name for p in SRC.glob("*.py")}
     for name in ("idp-mac-secret-deliver", "idp-device-authorize"):
-        assert name not in plugin_files, f"{name} must not exist inside the portal package"
+        assert name not in plugin_files, (
+            f"{name} must not exist inside the portal package"
+        )
 
 
 def test_short_signature_jwts_are_caught(handoff):

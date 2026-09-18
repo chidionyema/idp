@@ -44,7 +44,9 @@ MODULE_PATH = os.path.join(ROOT, "platform", "llm", "efficiency_gateway.py")
 def _load():
     spec = importlib.util.spec_from_loader(
         "efficiency_gateway_under_test",
-        importlib.machinery.SourceFileLoader("efficiency_gateway_under_test", MODULE_PATH),
+        importlib.machinery.SourceFileLoader(
+            "efficiency_gateway_under_test", MODULE_PATH
+        ),
         origin=MODULE_PATH,
     )
     mod = importlib.util.module_from_spec(spec)
@@ -115,7 +117,9 @@ def test_token_killer_removes_duplicate_lines(monkeypatch, tmp_path):
     dup = "same line\nsame line\nsame line\nunique"
     _call(gw, [{"role": "tool", "content": dup}])
     assert gw._tool_line_compressions == 2
-    assert gw._tool_bytes_saved > 0, "bytes saved must be recorded, not just a line count"
+    assert gw._tool_bytes_saved > 0, (
+        "bytes saved must be recorded, not just a line count"
+    )
 
 
 # ------------------------------------------------------------------------ [3] MCPAdapter
@@ -193,7 +197,8 @@ def test_compaction_manager_preserves_system_messages(monkeypatch, tmp_path):
     msgs += [{"role": "user", "content": f"m{i}"} for i in range(200)]
     out = _call(gw, msgs)
     assert any(
-        m.get("role") == "system" and m.get("content") == "PINNED" for m in out["messages"]
+        m.get("role") == "system" and m.get("content") == "PINNED"
+        for m in out["messages"]
     )
 
 
@@ -257,7 +262,9 @@ def test_all_8_mechanisms_fire_on_a_realistic_session(monkeypatch, tmp_path):
         )
         if k > 0
     )
-    assert fired >= 3, f"the mechanisms that do fire must keep firing, got {fired}: {row}"
+    assert fired >= 3, (
+        f"the mechanisms that do fire must keep firing, got {fired}: {row}"
+    )
     assert row["m1_cache_hits"] > 0 and row["m3_schemas_compressed"] > 0
     assert row["m7_compactions"] > 0, "compaction carries this sample; it must fire"
     assert row["bytes_saved"] == row["bytes_before"] - row["bytes_after"]
@@ -280,7 +287,9 @@ def test_every_call_writes_a_recomputable_before_and_after(monkeypatch, tmp_path
     row = rows[0]
     for field in ("bytes_before", "bytes_after", "bytes_saved"):
         assert field in row, f"ledger row must carry {field}"
-    assert row["bytes_before"] > 0, "a before-size must be captured or nothing is provable"
+    assert row["bytes_before"] > 0, (
+        "a before-size must be captured or nothing is provable"
+    )
     # The chain total must equal the difference of the two raw sizes, not a separate claim.
     assert row["bytes_saved"] == max(0, row["bytes_before"] - row["bytes_after"])
 
@@ -391,7 +400,9 @@ def test_which_mechanisms_are_inert_on_a_realistic_payload(monkeypatch, tmp_path
     )
 
 
-def test_the_ablation_ranks_the_mechanisms_by_what_removing_them_costs(monkeypatch, tmp_path):
+def test_the_ablation_ranks_the_mechanisms_by_what_removing_them_costs(
+    monkeypatch, tmp_path
+):
     """Ablation: disable each mechanism alone and measure the loss.
 
     A/B tells you the chain as a whole; this tells you which parts are load-bearing. Measured
@@ -414,7 +425,11 @@ def test_the_ablation_ranks_the_mechanisms_by_what_removing_them_costs(monkeypat
     import sys as _sys
 
     result = _sp.run(
-        [_sys.executable, os.path.join(ROOT, "bin", "estate-efficiency-experiment.py"), "--json"],
+        [
+            _sys.executable,
+            os.path.join(ROOT, "bin", "estate-efficiency-experiment.py"),
+            "--json",
+        ],
         capture_output=True,
         text=True,
         cwd=ROOT,
@@ -433,7 +448,9 @@ def test_the_ablation_ranks_the_mechanisms_by_what_removing_them_costs(monkeypat
     assert (
         rows["[7] Compaction"]["tokens_lost_by_removing_it"]
         > rows["[5] SoLPi"]["tokens_lost_by_removing_it"]
-    ), "compaction carried this fixture; an inversion is a finding, not a licence to reorder"
+    ), (
+        "compaction carried this fixture; an inversion is a finding, not a licence to reorder"
+    )
 
     # And the four that do nothing, named so the set cannot drift unnoticed.
     assert set(data["B_ablation"]["no_effect"]) == {
@@ -445,7 +462,9 @@ def test_the_ablation_ranks_the_mechanisms_by_what_removing_them_costs(monkeypat
 
     # The A/B headline, asserted.
     a = data["A_ab"]
-    assert a["tokens_saved"] == a["tokens_control_all_off"] - a["tokens_treatment_all_on"]
+    assert (
+        a["tokens_saved"] == a["tokens_control_all_off"] - a["tokens_treatment_all_on"]
+    )
     assert 60.0 < a["reduction_pct"] < 63.0, (
         f"the chain's reduction on the fixed fixture moved to {a['reduction_pct']:.2f}%; "
         "re-measure and update deliberately"

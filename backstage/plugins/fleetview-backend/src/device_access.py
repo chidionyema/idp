@@ -71,7 +71,9 @@ def device_status() -> dict[str, Any]:
     try:
         doc = json.loads(p.stdout)
     except ValueError as exc:
-        raise DeviceStatusUnavailable(f"status did not return JSON: {p.stdout[:200]}") from exc
+        raise DeviceStatusUnavailable(
+            f"status did not return JSON: {p.stdout[:200]}"
+        ) from exc
 
     if not isinstance(doc, dict) or "state" not in doc:
         raise DeviceStatusUnavailable(f"status returned no state: {str(doc)[:200]}")
