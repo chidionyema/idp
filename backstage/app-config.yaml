@@ -1,9 +1,14 @@
 app:
-  # The estate's own name. This read "Bytesync" from PR #1077 ("brand, Create, Map, icons,
-  # real routes") and was never changed; measured 2026-09-18, the portal a founder opens at
-  # /fleet was titled a stranger's product. The brand is the estate (mumchimp.com); a browser
-  # tab is the first thing anyone reads, so it may not name something else.
-  title: Estate
+  # "Bytesync" is DELIBERATE. Founder-facing decision, docs/decisions/portal-defects-crew612.md:
+  # "app.title and organization.name in backstage/app-config.yaml read Mumchimp; the portal is
+  # the estate portal, not the store. Both now read Bytesync." The parent-company name itself
+  # is an open decision on crew#691, and the catalogue's own org entity
+  # (backstage/org/catalog-info.yaml) refuses to guess one until it lands.
+  #
+  # An agent changed this to "Estate" on 2026-09-18 having read "Bytesync" as a stray vendor
+  # default. It was not: it is the brand the estate chose, and the change was reverted. Do not
+  # "fix" it again without crew#691.
+  title: Bytesync
   baseUrl: http://localhost:3100
 
   # Enable all packages by default, this will discover packages from packages/app/package.json
@@ -106,7 +111,8 @@ app:
                   - relations: { $contains: { type: consumesApi } }
 
 organization:
-  name: Estate
+  # See the app.title note above: Bytesync is the chosen brand, not a vendor default.
+  name: Bytesync
 
 backend:
   # Used for enabling authentication, secret is shared by all backend plugins

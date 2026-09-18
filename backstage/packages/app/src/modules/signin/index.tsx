@@ -65,25 +65,32 @@ const frontDoorSignInPage = SignInPageBlueprint.make({
 
 // MEASURED 2026-09-18, because this was guessed at twice and both guesses were wrong.
 //
-// The claim was that `/fleet` "breaks" because Backstage's guest session does not persist, so
-// every visit met the sign-in wall. That is FALSE. Driven through a real browser:
+// CLAIM 1, WRONG: that the portal was mis-titled "Bytesync" and needed renaming. It is
+// deliberate -- docs/decisions/portal-defects-crew612.md: "app.title and organization.name in
+// backstage/app-config.yaml read Mumchimp; the portal is the estate portal, not the store. Both
+// now read Bytesync." Reverted, and a note is left at the config so it is not "fixed" again.
+//
+// CLAIM 2, WRONG: that the guest session does not persist, so every visit met the sign-in wall.
+// Driven through a real browser:
 //
 //   first visit  -> the wall, click Enter
 //   reload       -> signed in, no wall
 //   new tab      -> signed in, no wall
 //   localStorage -> ['@backstage/core:SignInPage:provider', 'language', 'sidebarPinState']
 //
-// The guest session is already durable, under Backstage's own key. An earlier version of this
-// file wrote a private `estate.local.guestSession` key to "fix" it -- a mechanism nothing read,
-// invented to solve a problem that does not exist. It was deleted. What actually made the page
-// look broken is recorded in the report for this session:
+// The session is already durable under Backstage's own key. An earlier version of this file
+// wrote a private `estate.local.guestSession` key to "fix" it -- a mechanism nothing read,
+// invented for a problem that does not exist. Deleted.
 //
-//   * the app was titled "Bytesync" (PR #1077), so the tab named a stranger's product;
-//   * `/fleet` is behind sign-in, so a first or signed-out visit renders the WALL, not the
-//     board -- which reads as "the page flashed and broke" when nothing had crashed at all.
+// WHAT IS ACTUALLY TRUE, and what the founder was seeing: `/fleet` sits behind sign-in, so a
+// first or signed-out visit renders the WALL, not the board. Verified through Playwright --
+// before Enter the body reads "Bytesync | Guest | Enter as a Guest User", after it the board
+// renders with 23 session cards and its full nav. Nothing crashed, and no console error was
+// raised at any point.
 //
-// The lesson is in the report and worth repeating here: a curl proves the API answers, and says
-// nothing about what a person sees. This surface can only be verified in a browser.
+// The lesson, worth more than either fix: a curl proves the API answers and says NOTHING about
+// what a person sees. This surface can only be verified in a browser. Every claim made about it
+// from a terminal this session was wrong.
 
 export const signInModule = createFrontendModule({
   pluginId: 'app',

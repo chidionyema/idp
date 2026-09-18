@@ -37,6 +37,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 SESSION = REPO / "bin" / "idp-oci-session"
 OLD_LOGIN = REPO / "bin" / "idp-oci-login"
@@ -70,9 +72,17 @@ def test_missing_identifiers_name_them_and_do_not_mention_a_command_that_cannot_
 
     It must name the two identifiers, say they are not secrets, and say why the vault cannot be
     the gate. It must NOT tell the reader to run the script that produced the circle.
+
+    A LIVE SESSION SHORT-CIRCUITS THIS, correctly: with `~/.oci/sessions` populated the script
+    reports the live profile and never reaches the identifier check at all. That is the intended
+    behaviour, so this test SKIPS rather than fails when a session exists -- otherwise it would
+    be asserting the absence of the very thing it wants to happen, and a founder who has just
+    signed in would see a red suite.
     """
     p = _run()  # _run strips every OCI_* var, which is the state under test
     out = p.stdout + p.stderr
+    if "is live" in out:
+        pytest.skip("an OCI session is live, so the identifier path is unreachable by design")
     assert "OCI_REGION" in out
     assert "OCI_TENANCY_NAME" in out
     assert "NOT secrets" in out or "not secrets" in out.lower()
@@ -240,4 +250,56 @@ def test_it_says_the_next_three_steps_in_order():
         src.index("bin/idp-cloud whoami")
         < src.index("bin/idp-mac-secret-deliver")
         < src.index("bin/idp-jit identity")
+    )
+
+
+def test_the_portal_supervisor_starts_three_processes_and_waits_for_each():
+    """bin/idp-portal exists because three faults in one day were the SETUP, not the code.
+
+    Measured 2026-09-18: app-config.yaml was edited while the dev server ran (read at start, so
+    the edit was invisible for ~90 minutes); the fleetview plugin on 18790 is a third process
+    nothing started, and with it down the board renders EMPTY rather than erroring; and /fleet
+    sits behind sign-in, so a first visit shows the wall and reads as a broken page.
+
+    The supervisor is only worth having if it probes real endpoints rather than ports -- a
+    listening socket that answers nothing is exactly the state that made the board look empty.
+    """
+    portal = REPO / "bin" / "idp-portal"
+    assert portal.exists(), "bin/idp-portal is missing"
+    assert os.access(portal, os.X_OK), "bin/idp-portal must be executable"
+    src = portal.read_text()
+
+    # All three processes are named, with their ports.
+    for needed in ("serve-fleetview", "18790", "workspace backend", "7107", "workspace app", "3100"):
+        assert needed in src, f"the supervisor does not start or name {needed}"
+
+    # Readiness is a real request, never a port check.
+    assert "curl -s -m 4 -o /dev/null" in src, "readiness must be an HTTP request"
+    assert "/healthz" in src, "the plugin is probed on a path it actually serves"
+    assert "/api/config" in src, "the backend is probed on a path it actually serves"
+
+    # The two traps are documented IN the script, because a reader hits them here first.
+    assert "--restart" in src
+    assert "read at start" in src, "the app-config reload trap must be stated"
+    assert "behind sign-in" in src, "the sign-in wall must be stated where the URL is printed"
+    assert "Enter" in src, "and the one action the reader takes"
+
+
+def test_the_portal_runbook_documents_all_three_processes():
+    """The doc that said only 'two ports' is why every fault above was invisible.
+
+    `docs/how-to/onboarding/portal.md` said: "Locally it is `yarn start` in `backstage/`
+    (frontend on 3100, backend on 7107)." That is two of three, and it mentions neither the
+    config reload nor the sign-in wall.
+    """
+    doc = (REPO / "docs" / "how-to" / "onboarding" / "portal.md").read_text()
+    for needed in ("18790", "7107", "3100", "bin/idp-portal"):
+        assert needed in doc, f"the runbook does not name {needed}"
+    # The four measured traps.
+    assert "read at START" in doc or "read at start" in doc
+    assert "sign-in" in doc
+    assert "Bytesync" in doc, "the brand is deliberate; the doc must say so"
+    assert "playwright" in doc.lower(), (
+        "the runbook must point at a browser check: a curl proves the API answers and says "
+        "nothing about what a person sees, which is the mistake this whole page records"
     )
