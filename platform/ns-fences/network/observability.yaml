@@ -144,6 +144,9 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: acg
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: agent-workforce
     - namespaceSelector:
         matchLabels:

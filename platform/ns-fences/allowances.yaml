@@ -107,6 +107,17 @@ overrides:
       requests.storage: 20Gi
       pods: "20"
       services.loadbalancers: "0"   # the money layer is reached through the shared Gateway or not at all
+  acg:
+    # The ACG gateway requests 3.5 CPU + 20Gi memory for the 5-layer cascade inference engine
+    # (llama.cpp on arm64, Groq/Cerebras free tier, Vast.ai GPU, degraded floor). Redis runs
+    # beside it with 0.5 CPU + 4Gi memory for the L0 semantic cache. Ceiling set from declared
+    # requests plus one rolling-update surge pod.
+    # services.loadbalancers: 1 for the gateway's public LoadBalancer (edge-facing inference endpoint).
+    hard:
+      requests.cpu: "8000m"
+      requests.memory: 30Gi
+      requests.storage: 110Gi
+      pods: "10"
 
 # Declared cross-namespace traffic. Derived from a scan of every manifest in platform/ for
 # <service>.<namespace>.svc references, then extended by hand where a flow does not appear as a
@@ -122,6 +133,13 @@ overrides:
 # Every namespace additionally gets DNS egress to kube-system and OTLP egress to the collector in
 # observability (LAW 50); those two are in the generator, not repeated per namespace here.
 flows:
+  acg:
+    # The inference gateway is reached from the cluster ingress in edge (LoadBalancer → ingress
+    # controller → gateway pod:8000). Groq, Cerebras, OpenRouter, Google AI, Vast.ai, and
+    # Langsmith are all called over 443 from the gateway; the Langsmith tracing endpoint is also
+    # internet-only 443.
+    ingress_from: [edge]
+    egress_internet: [443]
   # The sandbox shop is reached at sandbox.${ESTATE_ZONE} through the gateway in edge. That intent
   # was written in platform/sandbox/vcluster/network-policy.yaml (allow-ingress-from-edge, 8080),
   # but that kustomization is not reconciled -- measured 2026-09-08, demo-sandbox held 0
@@ -553,7 +571,10 @@ flows:
              # idp-agent admits edge for the same reason demo-sandbox does: the GitHub/Flux
              # webhook route into platform/idp_agent/gateway.py's /webhook/github and
              # /webhook/flux crosses this namespace, so edge must name the return path back.
-             demo-sandbox, idp-agent]
+             demo-sandbox, idp-agent,
+             # acg: the 5-layer cascade inference gateway is reachable at acg.${ESTATE_ZONE};
+             # edge must name the return path or every request is dropped on egress.
+             acg]
     # The public listeners (traefik containerPorts web 8000 and websecure 8443, behind the OCI
     # load balancer with externalTrafficPolicy Local, so the source address is the client's).
     # The traefik pods still held flannel addresses when Calico started enforcing on 2026-09-06,

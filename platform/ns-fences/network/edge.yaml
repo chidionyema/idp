@@ -83,6 +83,9 @@ spec:
   - to:
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: acg
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: backstage
     - namespaceSelector:
         matchLabels:
