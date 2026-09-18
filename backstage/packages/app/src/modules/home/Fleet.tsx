@@ -661,13 +661,13 @@ export function Fleet() {
                         })()}
                         {needsAPerson((s.activity ?? 'unknown') as Activity) && (
                           <MuiChip size="small" label="NEEDS YOU"
-                            style={{ background:'#7f1d1d', color:'#fca5a5', fontWeight:800, fontSize:9, height:18, borderRadius:4, letterSpacing:0.6 }} />
+                            style={{ background:'#7f1d1d', color:'#fca5a5', fontWeight:800, fontSize:11, height:18, borderRadius:4, letterSpacing:0.6 }} />
                         )}
-                        <MuiChip size="small" label={s.runtime} style={{ background:rc, color:'#fff', fontWeight:700, fontSize:10, height:18, borderRadius:4, letterSpacing:0.4 }} />
-                        <MuiChip size="small" label={stateLabel(s.state).toUpperCase()} style={{ background:'transparent', color:sc, border:`1px solid ${sc}`, fontWeight:700, fontSize:10, height:18, borderRadius:4 }} />
+                        <MuiChip size="small" label={s.runtime} style={{ background:rc, color:'#fff', fontWeight:700, fontSize:11, height:18, borderRadius:4, letterSpacing:0.4 }} />
+                        <MuiChip size="small" label={stateLabel(s.state).toUpperCase()} style={{ background:'transparent', color:sc, border:`1px solid ${sc}`, fontWeight:700, fontSize:11, height:18, borderRadius:4 }} />
                         {capability && (
                           <Tooltip title={capabilityTitle(s.capabilities) ?? ''}>
-                            <MuiChip size="small" label={capability} style={{ fontSize:10, height:18, borderRadius:4 }} />
+                            <MuiChip size="small" label={capability} style={{ fontSize:11, height:18, borderRadius:4 }} />
                           </Tooltip>
                         )}
                       </Box>
@@ -677,7 +677,7 @@ export function Fleet() {
                           person needs when they go looking for it in a terminal. */}
                       <Typography variant="caption" title={s.session_id}
                         data-testid={`session-id-${s.session_id}`}
-                        style={{ fontFamily:'monospace', color:T.textMuted, fontSize:11 }}>
+                        style={{ fontFamily:'monospace', color:T.textMuted, fontSize:12 }}>
                         #{s.session_id.slice(-10)}
                       </Typography>
                     </Box>
@@ -715,7 +715,7 @@ export function Fleet() {
                         {isRunning && (
                           <Box display="flex" alignItems="center" style={{ gap:8 }}>
                             <Button variant="contained" size="small" fullWidth
-                              style={{ background:'#7f1d1d', color:'#fca5a5', fontWeight:800, fontSize:11, letterSpacing:1, borderRadius:6, padding:'5px 0' }}
+                              style={{ background:'#7f1d1d', color:'#fca5a5', fontWeight:800, fontSize:12, letterSpacing:1, borderRadius:6, padding:'5px 0' }}
                               onClick={() => void sendStop(s.session_id, s.runtime)}>
                               ■ STOP
                             </Button>
@@ -725,12 +725,12 @@ export function Fleet() {
                         {isPaused && (
                           <Box display="flex" style={{ gap:8 }}>
                             <Button variant="contained" size="small" fullWidth
-                              style={{ background:'#14532d', color:'#86efac', fontWeight:800, fontSize:11, letterSpacing:0.8, borderRadius:6 }}
+                              style={{ background:'#14532d', color:'#86efac', fontWeight:800, fontSize:12, letterSpacing:0.8, borderRadius:6 }}
                               onClick={() => void sendApprove(s.session_id, s.runtime)}>
                               ✓ APPROVE
                             </Button>
                             <Button variant="outlined" size="small" fullWidth
-                              style={{ color:'#9ca3af', borderColor:T.border, fontWeight:700, fontSize:11, letterSpacing:0.8, borderRadius:6 }}
+                              style={{ color:'#9ca3af', borderColor:T.border, fontWeight:700, fontSize:12, letterSpacing:0.8, borderRadius:6 }}
                               onClick={() => void sendDeny(s.session_id, s.runtime)}>
                               ✕ DENY
                             </Button>
@@ -755,7 +755,7 @@ export function Fleet() {
                             onChange={e => setSteerTextBySession(cur => ({ ...cur, [s.session_id]: e.target.value }))}
                             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendNudge(s.session_id, s.runtime); } }}
                             style={{ flex:1 }}
-                            inputProps={{ style:{ fontSize:12, color:T.textPrimary, padding:'6px 10px', background:T.canvas } }}
+                            inputProps={{ style:{ fontSize:13, color:T.textPrimary, padding:'6px 10px', background:T.canvas } }}
                             InputProps={{ style:{ borderRadius:6, borderColor:T.border } }} />
                           {(() => {
                             const st = nudgeStatusBySession[s.session_id];
@@ -773,7 +773,7 @@ export function Fleet() {
                             return (
                               <Box display="flex" flexDirection="column" style={{ gap:2 }}>
                                 <Button variant="contained" size="small" disabled={busy}
-                                  style={{ fontWeight:800, whiteSpace:'nowrap', fontSize:11, letterSpacing:0.8, minWidth:72, borderRadius:6, height:32,
+                                  style={{ fontWeight:800, whiteSpace:'nowrap', fontSize:12, letterSpacing:0.8, minWidth:72, borderRadius:6, height:32,
                                     // MEASURED 2026-09-18 in a browser: in the IDLE state this
                                     // button rendered `color:#fff` on `rgb(224,224,224)` -- MUI's
                                     // default grey fill, because `background` was left `undefined`
@@ -789,7 +789,7 @@ export function Fleet() {
                                 </Button>
                                 {signalsLoaded && ackWord ? (
                                   <Typography variant="caption" data-testid={`ack-${s.session_id}`}
-                                    style={{ fontSize:10, color: ackWord === 'read' ? '#7ee787' : ackWord === 'failed' ? '#fca5a5' : '#9ca3af', whiteSpace:'nowrap', textAlign:'center' }}>
+                                    style={{ fontSize:11, color: ackWord === 'read' ? '#7ee787' : ackWord === 'failed' ? '#fca5a5' : '#9ca3af', whiteSpace:'nowrap', textAlign:'center' }}>
                                     {ackWord}
                                   </Typography>
                                 ) : null}
@@ -798,7 +798,7 @@ export function Fleet() {
                           })()}
                         </Box>
                         {nudgeStatusBySession[s.session_id] && nudgeStatusBySession[s.session_id] !== '✓ steered' && nudgeStatusBySession[s.session_id] !== 'sending…' && (
-                          <Typography variant="caption" style={{ color:'#ef4444', fontSize:11 }}>{nudgeStatusBySession[s.session_id]}</Typography>
+                          <Typography variant="caption" style={{ color:'#ef4444', fontSize:12 }}>{nudgeStatusBySession[s.session_id]}</Typography>
                         )}
                       </Box>
                     )}
@@ -822,7 +822,7 @@ export function Fleet() {
                           </div>
                         )}
                         {timeline.length > 0 && (
-                          <ul data-testid={`timeline-${s.session_id}`} style={{ margin:0, paddingLeft:16, fontSize:12, color:T.textSecondary }}>
+                          <ul data-testid={`timeline-${s.session_id}`} style={{ margin:0, paddingLeft:16, fontSize:13, color:T.textSecondary }}>
                             {timeline.map((entry, i) =>
                               entry.kind === 'note' ? (
                                 <li key={`note-${i}`}><strong style={{ color:T.textPrimary }}>{entry.author}</strong>: {entry.text}</li>
@@ -865,7 +865,7 @@ export function Fleet() {
                         })()}
                         {/* Log */}
                         {ledgerBySession[s.session_id] && (
-                          <ul style={{ margin:0, paddingLeft:16, fontSize:11, color:T.textMuted, fontFamily:'monospace' }}>
+                          <ul style={{ margin:0, paddingLeft:16, fontSize:12, color:T.textMuted, fontFamily:'monospace' }}>
                             {ledgerBySession[s.session_id].rows.map((row, i) => (
                               // eslint-disable-next-line react/no-array-index-key
                               <li key={i}><span style={{ color:T.textMuted }}>{row.ts.slice(11,19)}</span> <strong style={{ color:T.textSecondary }}>{row.source}</strong> {row.text}</li>
@@ -877,14 +877,14 @@ export function Fleet() {
                           <input aria-label={`note author for ${s.session_id}`} placeholder="your name"
                             value={draft.author}
                             onChange={e => setDraftsBySession(cur => ({ ...cur, [s.session_id]: { ...draftFor(s.session_id), author: e.target.value } }))}
-                            style={{ width:100, fontSize:12, background:T.surface1, color:T.textPrimary, border:'1px solid #30363d', borderRadius:4, padding:'4px 8px' }} />
+                            style={{ width:100, fontSize:13, background:T.surface1, color:T.textPrimary, border:'1px solid #30363d', borderRadius:4, padding:'4px 8px' }} />
                           <input aria-label={`note text for ${s.session_id}`} placeholder="leave a note…"
                             value={draft.note}
                             onChange={e => setDraftsBySession(cur => ({ ...cur, [s.session_id]: { ...draftFor(s.session_id), note: e.target.value } }))}
-                            style={{ flex:1, fontSize:12, background:T.surface1, color:T.textPrimary, border:'1px solid #30363d', borderRadius:4, padding:'4px 8px' }} />
+                            style={{ flex:1, fontSize:13, background:T.surface1, color:T.textPrimary, border:'1px solid #30363d', borderRadius:4, padding:'4px 8px' }} />
                           <button type="button" onClick={() => void submitNote(s.session_id, s.runtime)}
                             aria-label={`send note for ${s.session_id}`}
-                            style={{ fontSize:11, background:T.surface3, color:T.textPrimary, border:'1px solid #30363d', borderRadius:4, padding:'4px 10px', cursor:'pointer' }}>
+                            style={{ fontSize:12, background:T.surface3, color:T.textPrimary, border:'1px solid #30363d', borderRadius:4, padding:'4px 10px', cursor:'pointer' }}>
                             Note
                           </button>
                         </Box>
@@ -917,16 +917,16 @@ export function Fleet() {
             <Box display="flex" style={{ gap:6 }}>
               <input aria-label="blast radius node id" placeholder="k8s:deployment:idp:catalogue"
                 value={blastNodeId} onChange={e => setBlastNodeId(e.target.value)}
-                style={{ flex:1, fontSize:12, background:T.surface1, color:T.textPrimary, border:'1px solid #30363d', borderRadius:6, padding:'6px 10px' }} />
+                style={{ flex:1, fontSize:13, background:T.surface1, color:T.textPrimary, border:'1px solid #30363d', borderRadius:6, padding:'6px 10px' }} />
               <button type="button" disabled={blastLoading} onClick={() => void checkBlastRadius()}
                 aria-label="check blast radius"
-                style={{ fontSize:12, fontWeight:700, background:T.surface3, color:T.textPrimary, border:'1px solid #30363d', borderRadius:6, padding:'6px 14px', cursor:'pointer' }}>
+                style={{ fontSize:13, fontWeight:700, background:T.surface3, color:T.textPrimary, border:'1px solid #30363d', borderRadius:6, padding:'6px 14px', cursor:'pointer' }}>
                 {blastLoading ? '…' : 'Check'}
               </button>
             </Box>
             {blastError && <Typography variant="caption" style={{ color:'#ef4444', display:'block', marginTop:6 }}>{blastError}</Typography>}
             {blastResult && (
-              <div data-testid="blast-radius-result" style={{ marginTop:8, fontSize:12, color:T.textSecondary }}>
+              <div data-testid="blast-radius-result" style={{ marginTop:8, fontSize:13, color:T.textSecondary }}>
                 <div><strong style={{ color:T.textPrimary }}>Upstream</strong>{blastResult.upstream.length === 0 ? ' — none recorded' : ''}</div>
                 {blastResult.upstream.map(u => <div key={u.node_id} style={{ paddingLeft:12 }}>{u.node_id} ({u.relation})</div>)}
                 <div style={{ marginTop:4 }}><strong style={{ color:T.textPrimary }}>Downstream</strong>{blastResult.downstream.length === 0 ? ' — none recorded' : ''}</div>
@@ -944,16 +944,16 @@ export function Fleet() {
             <Box display="flex" style={{ gap:6 }}>
               <input aria-label="check receipts session ids" placeholder="session-1, session-2"
                 value={receiptsInput} onChange={e => setReceiptsInput(e.target.value)}
-                style={{ flex:1, fontSize:12, background:T.surface1, color:T.textPrimary, border:'1px solid #30363d', borderRadius:6, padding:'6px 10px' }} />
+                style={{ flex:1, fontSize:13, background:T.surface1, color:T.textPrimary, border:'1px solid #30363d', borderRadius:6, padding:'6px 10px' }} />
               <button type="button" disabled={receiptsLoading} onClick={() => void checkReceipts()}
                 aria-label="check receipts"
-                style={{ fontSize:12, fontWeight:700, background:T.surface3, color:T.textPrimary, border:'1px solid #30363d', borderRadius:6, padding:'6px 14px', cursor:'pointer' }}>
+                style={{ fontSize:13, fontWeight:700, background:T.surface3, color:T.textPrimary, border:'1px solid #30363d', borderRadius:6, padding:'6px 14px', cursor:'pointer' }}>
                 {receiptsLoading ? '…' : 'Check'}
               </button>
             </Box>
             {receiptsError && <Typography variant="caption" style={{ color:'#ef4444', display:'block', marginTop:6 }}>{receiptsError}</Typography>}
             {receiptsResults && (
-              <ul data-testid="check-receipts-result" style={{ marginTop:8, fontSize:12, color:T.textSecondary, paddingLeft:16 }}>
+              <ul data-testid="check-receipts-result" style={{ marginTop:8, fontSize:13, color:T.textSecondary, paddingLeft:16 }}>
                 {receiptsResults.map(r => (
                   <li key={r.session_id}><strong style={{ color:T.textPrimary }}>{r.session_id}</strong>: {r.verdict} — {r.reason}</li>
                 ))}
