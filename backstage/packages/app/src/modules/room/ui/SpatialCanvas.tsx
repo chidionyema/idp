@@ -29,6 +29,15 @@ export interface SpatialCanvasProps {
   /** Which session a person has selected, if any. */
   readonly selected?: string | null;
   onSelect?: (sessionId: string | null) => void;
+  /**
+   * WHERE the selected node is, in the canvas's own pixel space.
+   *
+   * A radial menu anchored on a node needs the node's position, and only the canvas knows it --
+   * the positions are derived from a seeded layout inside this component. Reporting it upward is
+   * what lets the menu snap onto the agent instead of living in a bar at the bottom of the page,
+   * which is the difference between one gesture and a journey across the screen.
+   */
+  onSelectedPosition?: (pos: { x: number; y: number } | null) => void;
 }
 
 // 34..92 rather than 26..64: measured 2026-09-19, the fleet filled 13% of its canvas at the
@@ -266,6 +275,26 @@ export function SpatialCanvas(props: SpatialCanvasProps): JSX.Element {
   }, []);
 
   const hovering = hovered ? nodesRef.current.get(hovered) : null;
+
+  // Report the selected node's position whenever it moves, so the menu follows the agent it
+  // belongs to rather than hanging in place while the node drifts out from under it.
+  useEffect(() => {
+    const report = props.onSelectedPosition;
+    if (!report) return;
+    const tick = () => {
+      const id = props.selected;
+      const n = id ? nodesRef.current.get(id) : null;
+      const c = canvasRef.current;
+      if (!n || !c) {
+        report(null);
+      } else {
+        report({ x: n.x * c.clientWidth, y: n.y * c.clientHeight });
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    let raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [props.selected, props.onSelectedPosition]);
 
   return (
     // THE ROOM OWNS ITS OWN HEIGHT. It was `height: 100%`, which is 100% of whatever the parent

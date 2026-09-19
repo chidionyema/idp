@@ -245,6 +245,12 @@ STOP_PATH = "/stop"
 APPROVE_PATH = "/approve"
 DENY_PATH = "/deny"
 SIGNALS_PATH = "/signals"
+# The channel table the UI must not guess. `SIGNAL_RUNTIMES` in signals.py is the ONLY source of
+# truth for which verb a runtime can actually receive; a front end that hard-codes a second copy
+# will offer a button that the backend refuses, and the person pressing it learns that the board
+# lies. Measured 2026-09-19: the radial menu offered Stop on a `pi` session, which has no stop
+# channel, so the button was enabled for an action that could only ever 422.
+CHANNELS_PATH = "/channels"
 VOICE_PATH = "/voice"
 VOICE_STREAM_PATH = "/voice/stream"
 HISTORY_PATH = "/history"
@@ -437,6 +443,29 @@ def device_authorize_envelope() -> tuple[dict[str, Any], int]:
         # redacted payload nobody notices is redacted.
         return {"state": "error", "error": f"refusing to emit: {exc}"}, 500
     return body, 200
+
+
+def channels_envelope() -> tuple[dict[str, Any], int]:
+    """Which signal each runtime has a live path for, read from signals.py itself.
+
+    Served rather than duplicated so the front end cannot drift from the gate. A runtime absent
+    from a verb's list means the backend will refuse that verb for it -- and the UI should say so
+    before the press, not after.
+    """
+    mod = _signals()
+    table = getattr(mod, "SIGNAL_RUNTIMES", {})
+    return (
+        {
+            "signals": {
+                verb: sorted(runtimes) for verb, runtimes in table.items()
+            },
+            "note": (
+                "A runtime missing from a verb's list has no channel for it; the backend refuses "
+                "that verb for that runtime with 422 and the reason."
+            ),
+        },
+        200,
+    )
 
 
 def signals_envelope(session_id: str) -> tuple[dict[str, Any], int]:

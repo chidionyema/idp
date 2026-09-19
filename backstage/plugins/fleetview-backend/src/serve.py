@@ -287,6 +287,14 @@ def build_app(routes_path: Path) -> FastAPI:
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
+    @app.get(routes.CHANNELS_PATH)
+    def channels_get():
+        # Why this route exists: the radial menu must enable exactly the verbs the backend will
+        # accept, and a second copy of the channel table in the front end is a copy that will
+        # drift. The UI offers what is served here; anything else it shows as unavailable.
+        body, status = routes.channels_envelope()
+        return JSONResponse(body, status_code=status)
+
     @app.get(routes.NOTES_PATH)
     def notes_get(session_id: str):
         body, status = routes.notes_envelope(session_id)

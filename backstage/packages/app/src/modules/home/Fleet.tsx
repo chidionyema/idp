@@ -32,10 +32,11 @@ import {
   type Node as RFNode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Chip, EstatePage, Section, Summary } from '../shell';
-import { summarise } from './fleetBoard';
+import { Chip, EstatePage, Fold, Section, Summary } from '../shell';
+import { attentionReason, summarise } from './fleetBoard';
 import type { Board, Note, SessionsEnvelope, Signal } from './fleetBoard';
 import { SpatialCanvas } from '../room/ui/SpatialCanvas';
+import { RadialMenu } from '../room/ui/RadialMenu';
 import FleetVoice from './FleetVoice';
 import type { Activity } from './fleetMotion';
 
@@ -50,6 +51,17 @@ const cmdStyle: React.CSSProperties = {
   padding: '6px 12px',
   cursor: 'pointer',
 };
+
+/** The note fields: small, monospace, the same shape as every other input on this page. */
+const noteInputStyle = (width: number): React.CSSProperties => ({
+  width,
+  fontSize: 12,
+  background: '#0d1117',
+  color: '#e6edf3',
+  border: '1px solid #30363d',
+  borderRadius: 4,
+  padding: '4px 8px',
+});
 
 // THE DESIGN SYSTEM, USED RATHER THAN REINVENTED.
 //
@@ -196,7 +208,6 @@ export function Fleet() {
       );
       const body = (await res.json()) as { signals: Signal[] };
       setSignalsBySession(current => ({ ...current, [sessionId]: body.signals ?? [] }));
-      setSignalsLoadedBySession(current => ({ ...current, [sessionId]: true }));
       // The newest signal for each session is what the ack word under the Steer button reads,
       // and the board may have been steered before this panel was ever opened -- so a send also
       // sets the flag, below, without waiting for a fetch that may never happen.
@@ -265,17 +276,16 @@ export function Fleet() {
     await loadNotes(sessionId);
   };
 
+  const [listeningSession, setListeningSession] = useState<string | null>(null);
   const [nudgeStatusBySession, setNudgeStatusBySession] = useState<Record<string, string>>({});
   // Whether this session's signal history has been fetched. The ack word below the button is
   // derived from it, and must not claim 'not yet read' for a signal nobody has looked up yet --
   // 'not loaded' and 'not read' are different facts, the same distinction the whole ack change
   // exists to preserve.
-  const [signalsLoadedBySession, setSignalsLoadedBySession] = useState<Record<string, boolean>>({});
   const [steerTextBySession, setSteerTextBySession] = useState<Record<string, string>>({});
   const [stopStatusBySession, setStopStatusBySession] = useState<Record<string, string>>({});
   const [approveStatusBySession, setApproveStatusBySession] = useState<Record<string, string>>({});
   const [denyStatusBySession, setDenyStatusBySession] = useState<Record<string, string>>({});
-  const [listeningSession, setListeningSession] = useState<string | null>(null);
 
   const startDictation = (sessionId: string) => {
     const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
@@ -385,6 +395,34 @@ export function Fleet() {
   // canvas and the voice bar cannot disagree about what is being shown.
   const [voiceActivity, setVoiceActivity] = useState<Activity | null>(null);
   const [voiceSelected, setVoiceSelected] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetchApi
+      // Same discovery scheme as every other call here: the `proxy` hostname resolves to
+      // `${backend.baseUrl}/api/proxy`, so a bare `/api/...` would hit :3100 instead.
+      .fetch('plugin://proxy/fleetview/channels')
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => {
+        if (live && j?.signals) setChannels(j.signals as Record<string, string[]>);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  /** The selected node's position on the canvas, so the menu can snap onto it. */
+  const [nodePos, setNodePos] = useState<{ x: number; y: number } | null>(null);
+  /**
+   * WHICH VERBS EACH RUNTIME CAN ACTUALLY RECEIVE, served by the backend from signals.py.
+   *
+   * The menu must not carry a second copy of the channel table. Measured 2026-09-19: it offered
+   * Stop on a `pi` session, and `SIGNAL_RUNTIMES["stop"]` is {sovereign, claude-code} -- so the
+   * button was enabled for an action the backend can only refuse. Showing an available-looking
+   * control for an impossible action teaches the person that the board lies, which costs more
+   * than the feature was worth. Empty here simply means "not known yet", and the menu shows
+   * everything as unavailable rather than guessing generously.
+   */
+  const [channels, setChannels] = useState<Record<string, string[]>>({});
   // WHO the person just asked about, so the canvas can bring that agent forward.
   const [voiceSpotlight, setVoiceSpotlight] = useState<string | null>(null);
   // The conversation, so "it" and "that one" resolve. Capped: the model needs the last few turns,
@@ -574,7 +612,6 @@ export function Fleet() {
       cancelled = true;
       window.clearInterval(fallback);
       abort?.abort();
-      source?.close();
     };
   }, [fetchApi, discoveryApi]);
 
@@ -640,11 +677,62 @@ export function Fleet() {
                 is the state it is in, and whose ring says whether it is blocked. See
                 FleetCanvas.tsx and docs/specs/2026-09-18-fleet-interface-design.md. */}
             <SpatialCanvas
-              sessions={board.sessions}
+              sessions={
+                voiceActivity
+                  ? board.sessions.filter(x => (x.activity ?? 'unknown') === voiceActivity)
+                  : board.sessions
+              }
               spotlight={voiceSpotlight}
               selected={voiceSelected}
               onSelect={setVoiceSelected}
+              onSelectedPosition={setNodePos}
             />
+            {/* THE MENU IS ON THE NODE. Selecting an agent used to put its four actions in a
+                horizontal bar below the canvas, so a person's eye left the red node at the top
+                and travelled to the bottom of the screen to find the fix -- then back to see
+                whether it worked. Radial, anchored on the agent, one gesture, nothing to travel
+                to. The bottom bar is deleted below, not merely hidden. */}
+            {voiceSelected && nodePos ? (() => {
+              const target = board.sessions.find(x => x.session_id === voiceSelected);
+              if (!target) return null;
+              // Enabled iff the backend's own table says this runtime has a channel for it.
+              // 'dictate' is the one local-only verb: it opens a microphone, not a session
+              // channel, so it does not appear in SIGNAL_RUNTIMES at all.
+              const available = new Set<string>([
+                ...['stop', 'approve', 'deny', 'steer'].filter(v =>
+                  (channels[v] ?? []).includes(target.runtime),
+                ),
+                'dictate',
+              ]);
+              const result =
+                stopStatusBySession[target.session_id] ??
+                approveStatusBySession[target.session_id] ??
+                denyStatusBySession[target.session_id] ??
+                nudgeStatusBySession[target.session_id] ??
+                null;
+              return (
+                <RadialMenu
+                  session={target}
+                  x={nodePos.x}
+                  y={nodePos.y}
+                  available={available}
+                  busy={
+                    result === 'stopping…' ? 'stop' :
+                    result === 'approving…' ? 'approve' : null
+                  }
+                  result={result && !result.endsWith('…') ? result : null}
+                  dictating={listeningSession === target.session_id}
+                  onAct={kind => {
+                    if (kind === 'stop') void sendStop(target.session_id, target.runtime);
+                    if (kind === 'approve') void sendApprove(target.session_id, target.runtime);
+                    if (kind === 'deny') void sendDeny(target.session_id, target.runtime);
+                    if (kind === 'steer') void sendNudge(target.session_id, target.runtime);
+                  if (kind === 'dictate') startDictation(target.session_id);
+                  }}
+                  onDismiss={() => setVoiceSelected(null)}
+                />
+              );
+            })() : null}
 
             {/* VOICE. The whole point of it is that a person does not type: they say "what is
                 stuck" and the canvas narrows, or "stop <agent>" and the agent is selected with
@@ -731,91 +819,114 @@ export function Fleet() {
             ))}
           </div>
         )}
-        {/* THE FOUR SIGNALS. These exist, they work, and they were orphaned when the card grid
-            was replaced by the canvas: `sendStop`, `sendApprove`, `sendDeny` and `sendNudge` were
-            all still in the file with nothing rendering them. The estate's CP3 requires "stop,
-            approve, deny and steer from the page with an audit row for each press", and for a
-            while the page had none of them -- the machinery was there and the surface was not.
+        {/* THE FOUR SIGNALS ARE ON THE NODE.
 
-            They live on the SELECTED agent, because a command needs a target and a target is
-            what selection means. Nothing is sent by picking one: every button names the session
-            it will act on. */}
+            This block used to be a horizontal bar of Stop / Approve / Deny / Steer under the
+            canvas. Selecting an agent at the top-left sent the eye to the bottom of the screen
+            and back -- and that journey, not the button, was the cost of every action. The four
+            now live in a radial menu anchored on the agent itself (room/ui/RadialMenu.tsx), and
+            the bar is deleted rather than hidden, because a second surface for the same four
+            actions is two places to keep true. */}
+
+        {/* THE TRACE, THE LEDGER,        {/* THE TRACE, THE LEDGER, THE RECEIPT AND THE NOTE.
+            All four of these work and all four were orphaned the same way the four signals
+            were: replacing the card grid deleted the surface they rendered on and left the
+            machinery in the file, where `tsc` called it unused and I deleted unused IMPORTS
+            instead of asking why the FEATURES were unused. Every one is a real read the backend
+            already serves. */}
         {voiceSelected && (() => {
           const target = board.sessions.find(x => x.session_id === voiceSelected);
           if (!target) return null;
-          const status =
-            stopStatusBySession[target.session_id] ||
-            approveStatusBySession[target.session_id] ||
-            denyStatusBySession[target.session_id] ||
-            '';
-          const canSteer = NUDGEABLE_RUNTIMES.has(target.runtime);
+          const id = target.session_id;
+          const trace = traceBySession[id];
+          const ledger = ledgerBySession[id];
+          const receipt = receiptsBySession[id];
+          const notes = notesBySession[id] ?? [];
+          const signals = signalsBySession[id] ?? [];
+          const draft = draftFor(id);
           return (
-            <div
-              data-testid="fleet-commands"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                flexWrap: 'wrap',
-                padding: '10px 0',
-                borderTop: '1px solid rgba(255,255,255,0.08)',
-                fontSize: 12,
+            <Fold
+              testId={`detail-${id}`}
+              summary="Trace · ledger · receipt · notes"
+              onToggle={e => {
+                if (!e.currentTarget.open) return;
+                if (!traceBySession[id]) void loadTrace(id);
+                if (!ledgerBySession[id]) void loadLedger(id);
+                if (!receiptsBySession[id]) void loadReceipt(id);
+                if (!notesBySession[id]) void loadNotes(id);
+                if (!signalsBySession[id]) void loadSignals(id);
               }}
             >
-              <strong style={{ fontWeight: 700 }}>
-                {target.runtime} · {String(target.session_id).slice(-6)}
-              </strong>
-              <button
-                type="button"
-                data-testid="cmd-stop"
-                onClick={() => void sendStop(target.session_id, target.runtime)}
-                style={cmdStyle}
-              >
-                Stop
-              </button>
-              <button
-                type="button"
-                data-testid="cmd-approve"
-                onClick={() => void sendApprove(target.session_id, target.runtime)}
-                style={cmdStyle}
-              >
-                Approve
-              </button>
-              <button
-                type="button"
-                data-testid="cmd-deny"
-                onClick={() => void sendDeny(target.session_id, target.runtime)}
-                style={cmdStyle}
-              >
-                Deny
-              </button>
-              {canSteer ? (
-                <button
-                  type="button"
-                  data-testid="cmd-steer"
-                  onClick={() => void sendNudge(target.session_id, target.runtime)}
-                  style={cmdStyle}
-                >
-                  Steer
-                </button>
-              ) : (
-                // A runtime with no live signal path gets NO button, and says why -- the rule
-                // signals.py already enforces server-side with a 422. A control that cannot work
-                // is worse than no control.
-                <span style={{ opacity: 0.6 }}>
-                  {target.runtime} has no steering channel
-                </span>
-              )}
-              {status ? <em style={{ opacity: 0.85 }}>{status}</em> : null}
-              <button
-                type="button"
-                data-testid="cmd-clear"
-                onClick={() => setVoiceSelected(null)}
-                style={{ ...cmdStyle, opacity: 0.6 }}
-              >
-                Clear
-              </button>
-            </div>
+              <div data-testid={`detail-body-${id}`} style={{ fontSize: 12, color: '#a8afba', padding: '8px 0' }}>
+                <div data-testid="detail-trace">
+                  <strong style={{ color: '#e6edf3' }}>Trace</strong>{' '}
+                  {trace
+                    ? trace.available
+                      ? `${trace.nodes?.length ?? 0} span(s)`
+                      : `unavailable — ${trace.error ?? 'no reason given'}`
+                    : 'open to load'}
+                </div>
+                <div data-testid="detail-ledger">
+                  <strong style={{ color: '#e6edf3' }}>Ledger</strong>{' '}
+                  {ledger ? `${ledger.rows.length} row(s)` : 'open to load'}
+                </div>
+                <div data-testid="detail-receipt">
+                  <strong style={{ color: '#e6edf3' }}>Receipt</strong>{' '}
+                  {receipt
+                    ? receipt.status === 'ok'
+                      ? `verdict ${receipt.verdict ?? 'unknown'}`
+                      : receipt.status === 'error'
+                        ? `unavailable — ${receipt.error ?? 'no reason'}`
+                        : receipt.status
+                    : 'open to load'}
+                </div>
+                <div data-testid="detail-history" style={{ marginTop: 6 }}>
+                  <strong style={{ color: '#e6edf3' }}>History</strong>{' '}
+                  {`${notes.length} note(s), ${signals.length} signal(s)`}
+                </div>
+                {signals.slice(0, 4).map((s2: Signal, i: number) => (
+                  <div key={`s-${i}`} style={{ paddingLeft: 8 }}>
+                    {`${s2.kind} ${s2.by} sent, ${
+                      s2.acknowledged ? 'read by the session' : 'not yet read'
+                    }`}
+                  </div>
+                ))}
+                <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <input
+                    aria-label={`note author for ${id}`}
+                    placeholder="your name"
+                    value={draft.author}
+                    onChange={e =>
+                      setDraftsBySession(cur => ({
+                        ...cur,
+                        [id]: { ...draftFor(id), author: e.target.value },
+                      }))
+                    }
+                    style={noteInputStyle(80)}
+                  />
+                  <input
+                    aria-label={`note text for ${id}`}
+                    placeholder="leave a note…"
+                    value={draft.note}
+                    onChange={e =>
+                      setDraftsBySession(cur => ({
+                        ...cur,
+                        [id]: { ...draftFor(id), note: e.target.value },
+                      }))
+                    }
+                    style={noteInputStyle(220)}
+                  />
+                  <button
+                    type="button"
+                    data-testid={`send-note-${id}`}
+                    onClick={() => void submitNote(id, target.runtime)}
+                    style={cmdStyle}
+                  >
+                    Note
+                  </button>
+                </div>
+              </div>
+            </Fold>
           );
         })()}
         <Summary>{board.summary}</Summary>
