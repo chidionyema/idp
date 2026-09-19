@@ -122,7 +122,16 @@ async def voice_stream(websocket: WebSocket):
 
     try:
         while True:
-            message = await websocket.receive()
+            try:
+                message = await websocket.receive()
+            except RuntimeError:
+                # THE DISCONNECT ITSELF RAISES. Starlette raises
+                #   RuntimeError: Cannot call "receive" once a disconnect message has been received
+                # when the peer has gone, so a plain `except WebSocketDisconnect` below never runs
+                # and the traceback lands in the log on every closed tab -- which reads like a
+                # server fault rather than a normal hang-up. Measured 2026-09-19 in the first
+                # end-to-end run. Break instead, and let the finally-cleanup cancel the task.
+                break
 
             if message.get("text") is not None:
                 text = message["text"]

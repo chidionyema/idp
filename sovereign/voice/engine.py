@@ -133,9 +133,18 @@ def load_models() -> Models:
                 f"tts: voices absent ({KOKORO_VOICES}); run bin/voice-models to fetch them"
             )
         else:
-            # int8 first (smaller, faster where supported), then fp32. Whichever loads is recorded
-            # so /healthz reports the truth about what is actually running.
-            for candidate in (KOKORO_MODEL_INT8, KOKORO_MODEL):
+            # FP32 FIRST, AND INT8 NEVER ATTEMPTED BY DEFAULT.
+            #
+            # The blueprint's guidance after the first measurement was explicit: on Ampere A1 we
+            # have 24GB, so int8's memory saving buys nothing, and the int8 graph uses
+            # ConvInteger(10), which ONNXRuntime's CPUExecutionProvider does not implement. Trying
+            # it first cost 12 wasted seconds at every boot and produced an error line that reads
+            # like a fault rather than a decision.
+            #
+            # Set VOICE_ALLOW_INT8=1 to try the small model anyway -- useful the day a runtime ships
+            # the kernel, since int8 would then be the faster option.
+            candidates = (KOKORO_MODEL, KOKORO_MODEL_INT8) if os.environ.get("VOICE_ALLOW_INT8") else (KOKORO_MODEL,)
+            for candidate in candidates:
                 if not os.path.exists(candidate):
                     continue
                 try:
