@@ -28,9 +28,18 @@ export interface RadialMenuProps {
   readonly available: ReadonlySet<string>;
   readonly busy?: string | null;
   readonly result?: string | null;
-  onAct: (kind: 'stop' | 'approve' | 'deny' | 'steer' | 'dictate') => void;
+  onAct: (kind: 'stop' | 'approve' | 'deny' | 'steer' | 'dictate' | 'ping') => void;
   /** True while this agent's mic is open, so the button reports it rather than looking idle. */
   readonly dictating?: boolean;
+  /**
+   * True while this agent's cascade is being pinged, so the button can say so.
+   *
+   * 'ping' is always offered, and the reason is worth writing down: the four signal verbs ask
+   * "may I act on this runtime", and the answer is often no. A cascade question is a READ of a
+   * graph the backend already holds, so it is answerable for any session on any runtime --
+   * greying it out would hide the one question you can always ask.
+   */
+  readonly pinging?: boolean;
   onDismiss: () => void;
 }
 
@@ -44,8 +53,11 @@ const RADIUS = 62;
 // A FIFTH VERB, because the four directions had room and dictation had none. It sits at
 // lower-left, clear of Stop at the top: speaking a steer and stopping an agent are the two a
 // person reaches for in a hurry, and they must not be adjacent.
+// SIX VERBS NOW. The five do things TO an agent; the sixth ASKS about it, so it sits alone in
+// the upper-left, away from every verb that changes state. Pressing Deny when you meant to ask a
+// question is the mistake this separation exists to prevent.
 const ANGLES: Array<{
-  kind: 'stop' | 'approve' | 'deny' | 'steer' | 'dictate';
+  kind: 'stop' | 'approve' | 'deny' | 'steer' | 'dictate' | 'ping';
   label: string;
   deg: number;
 }> = [
@@ -54,6 +66,7 @@ const ANGLES: Array<{
   { kind: 'deny', label: 'Deny', deg: 180 },
   { kind: 'steer', label: 'Steer', deg: 90 },
   { kind: 'dictate', label: '🎤', deg: 135 },
+  { kind: 'ping', label: 'Blast', deg: -135 },
 ];
 
 export function RadialMenu(props: RadialMenuProps): JSX.Element {
@@ -143,7 +156,7 @@ export function RadialMenu(props: RadialMenuProps): JSX.Element {
                 boxShadow: has ? '0 6px 20px rgba(0,0,0,0.5)' : 'none',
               }}
             >
-              {isBusy ? '…' : kind === 'dictate' && props.dictating ? '●' : label}
+              {isBusy ? '…' : kind === 'dictate' && props.dictating ? '●' : kind === 'ping' && props.pinging ? '◉' : label}
             </button>
           );
         })}

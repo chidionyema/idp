@@ -423,6 +423,18 @@ export function Fleet() {
    * everything as unavailable rather than guessing generously.
    */
   const [channels, setChannels] = useState<Record<string, string[]>>({});
+  /**
+   * EVENTS ARRIVED PER SESSION SINCE THE LAST FRAME, which is the only honest driver for a burst.
+   *
+   * Counted by comparing each frame's `event_count` against the last one seen, so a burst is
+   * work that ACTUALLY ARRIVED. A sine wave standing in for activity would animate forever on a
+   * fleet that has stopped, and the one thing this room must never do is show motion where
+   * there is no work. Keyed by session id; a session absent from it has fired nothing.
+   */
+  const [eventRate, setEventRate] = useState<Record<string, number>>({});
+  const lastCount = useRef<Map<string, number>>(new Map());
+  /** The node whose cascade is currently being pinged, or null. Cleared by the canvas. */
+  const [pingFor, setPingFor] = useState<string | null>(null);
   // WHO the person just asked about, so the canvas can bring that agent forward.
   const [voiceSpotlight, setVoiceSpotlight] = useState<string | null>(null);
   // The conversation, so "it" and "that one" resolve. Capped: the model needs the last few turns,
@@ -438,8 +450,17 @@ export function Fleet() {
   const [blastError, setBlastError] = useState<string | null>(null);
   const [blastLoading, setBlastLoading] = useState(false);
 
-  const checkBlastRadius = async () => {
-    const nodeId = blastNodeId.trim();
+  /**
+   * Ask what dies with a node.
+   *
+   * TAKES AN ID RATHER THAN READING STATE, because the radial menu asks this from a click on a
+   * NODE -- and a click does not wait for React to re-render before the answer is wanted. Passing
+   * the id through means the call cannot fire against a stale `blastNodeId` from the previous
+   * selection, which is exactly the bug that would make the sonar appear to point at the wrong
+   * agent. The text field calls it with its own value; the menu calls it with the node's.
+   */
+  const checkBlastRadius = async (explicit?: string) => {
+    const nodeId = (explicit ?? blastNodeId).trim();
     if (!nodeId) return;
     setBlastLoading(true);
     setBlastError(null);
@@ -580,6 +601,18 @@ export function Fleet() {
               // board down on one bad frame would lose every other session with it.
               continue;
             }
+            // MEASURE THE ARRIVAL before the board is replaced: the delta between what this
+            // session had and what it has now is the only real measure of "firing right now".
+            if (frame.session_id && frame.record) {
+              const rec = frame.record as { event_count?: number | null };
+              const nowCount = rec.event_count ?? 0;
+              const was = lastCount.current.get(frame.session_id) ?? nowCount;
+              const delta = Math.max(0, nowCount - was);
+              lastCount.current.set(frame.session_id, nowCount);
+              if (delta > 0) {
+                setEventRate(cur => ({ ...cur, [frame.session_id!]: delta }));
+              }
+            }
             setBoard(current =>
               summarise({
                 available: true,
@@ -607,10 +640,15 @@ export function Fleet() {
     })();
 
     const fallback = window.setInterval(read, POLL_MS);
+    // The rate is a PER-FRAME measurement, so it is cleared a beat later. Without this the last
+    // burst would keep firing for ever, and the room would claim a fleet that is working while
+    // it sat idle -- motion where there is no work, which is the one lie this room must not tell.
+    const decay = window.setInterval(() => setEventRate({}), 1200);
 
     return () => {
       cancelled = true;
       window.clearInterval(fallback);
+      window.clearInterval(decay);
       abort?.abort();
     };
   }, [fetchApi, discoveryApi]);
@@ -686,6 +724,9 @@ export function Fleet() {
               selected={voiceSelected}
               onSelect={setVoiceSelected}
               onSelectedPosition={setNodePos}
+              eventRate={eventRate}
+              pingFor={pingFor}
+              onPingDone={() => setPingFor(null)}
             />
             {/* THE MENU IS ON THE NODE. Selecting an agent used to put its four actions in a
                 horizontal bar below the canvas, so a person's eye left the red node at the top
@@ -702,7 +743,10 @@ export function Fleet() {
                 ...['stop', 'approve', 'deny', 'steer'].filter(v =>
                   (channels[v] ?? []).includes(target.runtime),
                 ),
+                // Neither of these is a session channel: one opens a microphone, the other reads
+                // a graph. Both are answerable for any runtime, so neither is gated.
                 'dictate',
+                'ping',
               ]);
               const result =
                 stopStatusBySession[target.session_id] ??
@@ -722,12 +766,20 @@ export function Fleet() {
                   }
                   result={result && !result.endsWith('…') ? result : null}
                   dictating={listeningSession === target.session_id}
+                  pinging={pingFor === target.session_id}
                   onAct={kind => {
                     if (kind === 'stop') void sendStop(target.session_id, target.runtime);
                     if (kind === 'approve') void sendApprove(target.session_id, target.runtime);
                     if (kind === 'deny') void sendDeny(target.session_id, target.runtime);
                     if (kind === 'steer') void sendNudge(target.session_id, target.runtime);
                   if (kind === 'dictate') startDictation(target.session_id);
+                  if (kind === 'ping') {
+                    // The wave is the answer to "what dies with this". The list below it is the
+                    // same fact in words, for the reader who wants to check rather than watch.
+                    setPingFor(target.session_id);
+                    setBlastNodeId(target.session_id);
+                    void checkBlastRadius(target.session_id);
+                  }
                   }}
                   onDismiss={() => setVoiceSelected(null)}
                 />

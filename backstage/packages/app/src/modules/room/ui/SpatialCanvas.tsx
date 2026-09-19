@@ -21,6 +21,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '../../home/fleetBoard';
 import { ACTIVITY_WORD, ACTIVITY_SENTENCE } from '../../home/fleetMotion';
+import {
+  type Camera,
+  type Particle,
+  type Pulse,
+  WIDE,
+  cameraOn,
+  easeCamera,
+  fire,
+  gravityOf,
+  PULSE_MS,
+  pulseRadius,
+  stepParticles,
+} from './reactor';
 
 export interface SpatialCanvasProps {
   readonly sessions: readonly Session[];
@@ -38,6 +51,25 @@ export interface SpatialCanvasProps {
    * which is the difference between one gesture and a journey across the screen.
    */
   onSelectedPosition?: (pos: { x: number; y: number } | null) => void;
+  /**
+   * EVENTS PER SECOND, keyed by session id -- the live stream's own velocity.
+   *
+   * This is what turns the room from a picture into an instrument. Without it the only thing
+   * that can vary is a total, and a total does not move. It arrives already counted from the
+   * stream, so an agent that emitted nothing this second fires nothing: a quiet room is
+   * genuinely still, and a burst means work arrived rather than that an animation is running.
+   */
+  readonly eventRate?: Readonly<Record<string, number>>;
+  /**
+   * Fire a blast-radius ping for this session id. Null cancels.
+   *
+   * The cascade itself is drawn from the dependency graph the backend already answers; what this
+   * prop carries is only WHICH node asked. The canvas owns the travelling wave, because a wave
+   * has to be drawn every frame and asking React to re-render for it would be absurd.
+   */
+  readonly pingFor?: string | null;
+  /** Called when the ping completes, so the page can clear its own state. */
+  onPingDone?: () => void;
 }
 
 // 34..92 rather than 26..64: measured 2026-09-19, the fleet filled 13% of its canvas at the
@@ -57,6 +89,8 @@ interface Node {
   y: number;
   z: number; // depth, 0..1
   radius: number;
+  /** How hard this node bends the space around it, recomputed every frame from its work. */
+  gravity: number;
   /** Where this agent has been, newest last. The wake. */
   trail: Array<{ x: number; y: number; t: number }>;
 }
@@ -123,6 +157,10 @@ function seedTrail(
 export function SpatialCanvas(props: SpatialCanvasProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const nodesRef = useRef<Map<string, Node>>(new Map());
+  /** Live particles. A ref, not state: they are redrawn every frame and never rendered by React. */
+  const particlesRef = useRef<Particle[]>([]);
+  /** The travelling sonar wave. Survives the effect re-running, which is what makes it travel. */
+  const pulseRefOuter = useRef<Pulse>({ id: '', t: 0 });
   const rafRef = useRef<number>(0);
   const [hovered, setHovered] = useState<string | null>(null);
 
@@ -148,6 +186,7 @@ export function SpatialCanvas(props: SpatialCanvasProps): JSX.Element {
         y: existing?.y ?? 0.1 + 0.8 * ((h2 + i * 0.382) % 1),
         z: existing?.z ?? 0.25 + 0.7 * h3,
         radius: radiusFor(s.event_count ?? 0),
+        gravity: gravityOf(s),
         // SEEDED FROM REAL WORK. A trail that only grows from page-load is empty for the first
         // minute -- which is precisely when someone decides whether to be impressed. The wake's
         // length comes from `event_count`, which the API already returns, so an agent that has
@@ -187,13 +226,82 @@ export function SpatialCanvas(props: SpatialCanvasProps): JSX.Element {
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
 
+    let lastFrame = 0;
+    let camera: Camera = { ...WIDE };
+    // THE WAVE IS A REF, AND THAT IS THE WHOLE POINT.
+    //
+    // Measured 2026-09-19: the wave drew for one frame and then died -- "8729 → 0 → 0 → 0", and
+    // it looked like the source node was missing. It was not. This variable was a `const` inside
+    // an effect whose dependency list includes `pingFor`, so pressing Blast RE-RAN the effect,
+    // rebuilt `pulse` at `t: 0`, and the first frame of every new closure restarted the wave
+    // from the centre. A travelling wave cannot live in a value that is recreated by the thing
+    // that starts it.
+    //
+    // Held across runs, it survives the re-render and the wave actually travels.
+    const pulseRef = pulseRefOuter;
+
     const draw = (now: number) => {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
+      const dt = lastFrame ? Math.min(64, now - lastFrame) : 16;
+      lastFrame = now;
       ctx.clearRect(0, 0, w, h);
 
       const nodes = Array.from(nodesRef.current.values());
       const anySpotlit = Boolean(props.spotlight);
+
+      // ---- WHERE THE CAMERA WANTS TO BE ------------------------------------------------
+      // Selecting an agent PUSHES THE CAMERA INTO IT. This is the drill-down: the macro room
+      // becomes the micro one, because a tooltip about an agent is a caption and a camera
+      // arriving at it is an answer. Dismissing pulls back out along the same path.
+      const selectedNode = props.selected
+        ? nodesRef.current.get(props.selected) ?? null
+        : null;
+      const want: Camera = selectedNode
+        ? cameraOn(selectedNode.x, selectedNode.y)
+        : WIDE;
+      // The ping holds the camera wide: a cascade that travels off-screen answers nothing.
+      camera = easeCamera(camera, props.pingFor ? WIDE : want, dt);
+
+      // ---- THE FIELD ------------------------------------------------------------------
+      // Busy agents warp the space around themselves, so every node is nudged toward every
+      // heavier one. This is the difference between drawing twenty-four dots and drawing a
+      // topology: the room's SHAPE is the fleet's shape, and it changes as the fleet changes.
+      for (const n of nodes) {
+        n.gravity = gravityOf(n.session);
+      }
+      const heavy = nodes.filter(n => n.gravity > 0);
+      for (const n of nodes) {
+        if (n.id === props.selected) continue; // the agent you are inside does not drift away
+        let fx = 0;
+        let fy = 0;
+        for (const g of heavy) {
+          if (g.id === n.id) continue;
+          const dx = g.x - n.x;
+          const dy = g.y - n.y;
+          const dist = Math.hypot(dx, dy) || 0.001;
+          // Only the neighbourhood pulls: an inverse square over the whole room would make one
+          // busy session drag the entire fleet into a single point.
+          if (dist > 0.42) continue;
+          const force = (g.gravity * 0.000013) / Math.max(0.05, dist * dist);
+          fx += (dx / dist) * force;
+          fy += (dy / dist) * force;
+        }
+        n.x += fx * dt;
+        n.y += fy * dt;
+      }
+
+      // ---- THE JETS -------------------------------------------------------------------
+      // A burst fires on EVENTS ARRIVED, so nothing is animated that did not happen. The rate is
+      // the stream's own count for this second; a session that emitted nothing fires nothing.
+      const rate = props.eventRate ?? {};
+      for (const n of nodes) {
+        const arrived = rate[n.id] ?? 0;
+        if (arrived > 0) {
+          fire(particlesRef.current, n.x, n.y, n.id, arrived, n.session.activity);
+        }
+      }
+      stepParticles(particlesRef.current, dt);
 
       for (const n of nodes) {
         // Movement: the room breathes at rest and comes alive when something is named.
@@ -219,11 +327,51 @@ export function SpatialCanvas(props: SpatialCanvasProps): JSX.Element {
         if (n.trail.length > 900) n.trail.splice(0, n.trail.length - 900);
       }
 
+      // ---- THE CAMERA -----------------------------------------------------------------
+      ctx.save();
+      const z = camera.zoom;
+      ctx.translate(w / 2, h / 2);
+      ctx.scale(z, z);
+      ctx.translate(-camera.x * w, -camera.y * h);
+
+      // The field itself, drawn before anything sits in it: a faint lattice that the gravity
+      // displaces. Without it the warp is invisible -- you cannot see space bend unless there is
+      // something in the space to bend.
+      drawField(ctx, w, h, heavy, now);
+
       // Trails behind, nodes in front.
       for (const n of nodes) drawTrail(ctx, n, w, h, props.spotlight === n.id, anySpotlit);
+      drawParticles(ctx, particlesRef.current, w, h);
       const ordered = [...nodes].sort((a, b) => a.z - b.z);
       for (const n of ordered) {
         drawNode(ctx, n, w, h, props.spotlight === n.id, anySpotlit);
+      }
+      ctx.restore();
+
+      // ---- THE SONAR, outside the camera -----------------------------------------------
+      // Drawn in screen space so the wave is the same thickness wherever the camera has pushed
+      // in -- a cascade read from inside a node must still be legible.
+      if (props.pingFor) {
+        // A ping aimed at a NEW node restarts the wave; the same node carries on travelling.
+        if (pulseRef.current.id !== props.pingFor) {
+          pulseRef.current.id = props.pingFor;
+          pulseRef.current.t = 0;
+        }
+        const src = nodesRef.current.get(props.pingFor);
+        if (!src) {
+          props.onPingDone?.();
+        } else {
+          pulseRef.current.t += dt / PULSE_MS;
+          if (pulseRef.current.t >= 1.35) {
+            pulseRef.current.t = 0;
+            props.onPingDone?.();
+          } else {
+            drawPulse(ctx, src, nodes, w, h, pulseRef.current.t, camera);
+          }
+        }
+      } else {
+        // Reset only when the ping is actually cancelled, so a re-render does not rewind it.
+        pulseRefOuter.current.t = 0;
       }
 
       rafRef.current = requestAnimationFrame(draw);
@@ -233,7 +381,14 @@ export function SpatialCanvas(props: SpatialCanvasProps): JSX.Element {
       cancelAnimationFrame(rafRef.current);
       ro.disconnect();
     };
-  }, [props.spotlight, props.selected]);
+    // THE DEPENDENCY LIST WAS A BUG, measured 2026-09-19. It listed only `spotlight` and
+    // `selected`, so the render closure kept the `props` it was created with -- and pressing
+    // Blast set `pingFor` on the PAGE while this loop carried on reading `pingFor: null`. The
+    // sonar drew zero red pixels, six samples in a row, which is how it was caught.
+    //
+    // The rule this restores: every prop read inside the loop must be a dependency, because the
+    // loop is a closure and a closure captures values, not variables.
+  }, [props.spotlight, props.selected, props.eventRate, props.pingFor, props.onPingDone]);
 
   // Click a node to select it. Hit-tested against the same radii the draw pass used, so the thing
   // you click is the thing you see.
@@ -413,6 +568,171 @@ export function SpatialCanvas(props: SpatialCanvasProps): JSX.Element {
       ) : null}
     </div>
   );
+}
+
+/**
+ * THE FIELD: a lattice that the heavy nodes bend.
+ *
+ * WHY DRAW ANYTHING AT ALL. Gravity that only moves the nodes is invisible -- the nodes would
+ * simply sit somewhere and the reader would never know the space was warped, only that the layout
+ * was odd. A grid gives the eye a reference, so the warp reads as the room being pulled rather
+ * than as the nodes being badly placed.
+ *
+ * Cost is deliberately tiny: a 14x9 lattice is 126 short lines per frame, which is nothing even
+ * on the integrated GPU of a laptop, and it is drawn at 6% alpha so it never competes with an
+ * agent for attention.
+ */
+function drawField(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  heavy: readonly Node[],
+  now: number,
+): void {
+  if (heavy.length === 0) return;
+  const COLS = 14;
+  const ROWS = 9;
+
+  // Where a lattice point ends up after the heavy nodes have pulled on it.
+  const warp = (gx: number, gy: number): [number, number] => {
+    let x = gx;
+    let y = gy;
+    for (const g of heavy) {
+      const dx = g.x - gx;
+      const dy = g.y - gy;
+      const dist = Math.hypot(dx, dy) || 0.001;
+      if (dist > 0.5) continue;
+      // Pulled TOWARD the mass, by an amount that falls off with distance, so the lattice
+      // dimples into each busy agent instead of sliding uniformly.
+      const pull = (g.gravity * 0.055) / Math.max(0.09, dist);
+      x += (dx / dist) * pull;
+      y += (dy / dist) * pull;
+    }
+    return [x * w, y * h];
+  };
+
+  ctx.save();
+  // A slow shimmer, so a still room is not a dead one -- but small enough that it reads as
+  // breathing rather than as noise.
+  const shimmer = 0.045 + 0.015 * Math.sin(now * 0.0004);
+  ctx.strokeStyle = `rgba(120,150,190,${shimmer})`;
+  ctx.lineWidth = 1;
+
+  for (let c = 0; c <= COLS; c++) {
+    ctx.beginPath();
+    for (let r = 0; r <= ROWS; r++) {
+      const [px, py] = warp(c / COLS, r / ROWS);
+      if (r === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+  for (let r = 0; r <= ROWS; r++) {
+    ctx.beginPath();
+    for (let c = 0; c <= COLS; c++) {
+      const [px, py] = warp(c / COLS, r / ROWS);
+      if (c === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * THE JETS: work leaving an agent, drawn as a comet rather than a dot.
+ *
+ * Each particle is a two-point line from where it is to where it just was, so a fast particle
+ * reads as a streak and a slow one as a grain. That single trick is the difference between
+ * "sparkles" and "thrust".
+ */
+function drawParticles(
+  ctx: CanvasRenderingContext2D,
+  particles: readonly Particle[],
+  w: number,
+  h: number,
+): void {
+  if (particles.length === 0) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of particles) {
+    const a = Math.max(0, Math.min(1, p.life));
+    // Warm, because this is output: the same family as the thinking colour, one step hotter.
+    ctx.strokeStyle = `rgba(255,214,150,${a * 0.55})`;
+    ctx.lineWidth = 1 + a * 1.6;
+    ctx.beginPath();
+    ctx.moveTo((p.x - p.vx * 12) * w, (p.y - p.vy * 12) * h);
+    ctx.lineTo(p.x * w, p.y * h);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * THE SONAR: one wave leaving one node, and every node it has already reached lit as it passes.
+ *
+ * The point is to SEE a cascade before reading it. A list of affected session ids is a report;
+ * a ring that travels outward and lights what it touches is the same fact in the form a person
+ * can act on at a glance.
+ */
+function drawPulse(
+  ctx: CanvasRenderingContext2D,
+  src: Node,
+  nodes: readonly Node[],
+  w: number,
+  h: number,
+  t: number,
+  camera: Camera,
+): void {
+  // Screen position: the pulse is drawn outside the camera transform, so the source has to be
+  // projected through it by hand.
+  const sx = (src.x - camera.x) * w * camera.zoom + w / 2;
+  const sy = (src.y - camera.y) * h * camera.zoom + h / 2;
+  const reach = pulseRadius({ id: src.id, t });
+  const radius = reach * Math.hypot(w, h) * 0.55;
+
+  ctx.save();
+  // The travelling ring, brightest as it leaves and fading as it spends itself.
+  const fade = Math.max(0, 1 - t);
+  ctx.strokeStyle = `rgba(255,170,90,${fade * 0.75})`;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  // A second, wider and fainter ring: one line reads as a drawn circle, two read as a wave.
+  ctx.strokeStyle = `rgba(255,170,90,${fade * 0.22})`;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(sx, sy, radius * 1.06, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Everything the wave has already passed is marked, so the cascade accumulates rather than
+  // flashing past.
+  for (const n of nodes) {
+    if (n.id === src.id) continue;
+    const nx = (n.x - camera.x) * w * camera.zoom + w / 2;
+    const ny = (n.y - camera.y) * h * camera.zoom + h / 2;
+    const d = Math.hypot(nx - sx, ny - sy);
+    if (d > radius) continue;
+    // Caught in this wave: a bright halo that fades as the wave moves on.
+    const caught = Math.max(0, 1 - (radius - d) / 160) * fade;
+    ctx.strokeStyle = `rgba(255,120,120,${caught * 0.9})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(nx, ny, n.radius * 1.25, 0, Math.PI * 2);
+    ctx.stroke();
+    // And a tether back to the source: the cascade has a direction, and a direction needs a line.
+    ctx.strokeStyle = `rgba(255,120,120,${caught * 0.35})`;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 5]);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(nx, ny);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
 }
 
 function drawTrail(
