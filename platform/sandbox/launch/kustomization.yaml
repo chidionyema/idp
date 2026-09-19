@@ -11,4 +11,7 @@ resources:
   - httproute.yaml
   - gitrepository.yaml
   - shadow-runner.yaml
+  # The ARM voice benchmark: fp32-vs-int8 Kokoro and Whisper RTF on the Ampere A1 nodes.
+  # A Job, so it runs once, logs its numbers and is collected.
+  - arm-voice-bench.yaml
   - live.yaml
