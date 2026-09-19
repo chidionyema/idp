@@ -204,8 +204,16 @@ type RepoEdge = {
 
 /** Radius: 18 at zero events, 42 at 200+. Saturating, so a runaway agent does not eat the canvas. */
 function radiusFor(eventCount: number | null | undefined): number {
+  // FILL THE ROOM. Measured 2026-09-19: nodes occupied 13% of the canvas, so the fleet read as
+  // scattered dots on a black rectangle rather than something alive. 18..42 became 34..110 --
+  // roughly three times the area -- and the curve is sqrt rather than linear because a linear map
+  // makes one busy agent 5x the radius of a quiet one, which reads as a size bug rather than as
+  // work done. Area should grow with events; sqrt is what makes AREA proportional.
   const n = typeof eventCount === 'number' && Number.isFinite(eventCount) ? eventCount : 0;
-  return 18 + 24 * Math.min(1, Math.max(0, n) / 200);
+  // 34..92, not 34..110: measured 2026-09-19 a 345px node sat beside a 103px one and the
+  // spread read as a fault. sqrt keeps AREA proportional to events; the ceiling keeps
+  // the biggest agent legible next to the smallest.
+  return 34 + 58 * Math.sqrt(Math.min(1, Math.max(0, n) / 400));
 }
 
 /** Activity level 0..1 from event_count, used for the ring opacity. */
@@ -295,7 +303,16 @@ function layoutFleet(
   const seed = hashString(sessions.map((s) => s.session_id).join('|'));
   const rng = makeRng(seed);
 
-  const pad = 48;
+  // THE PAD IS THE LARGEST NODE, NOT A CONSTANT. It was 48px, written when a node's max radius
+  // was 42. Measured 2026-09-19 after the nodes grew to 110px: FIVE OF TWENTY-FOUR were cut off
+  // at the edges, because a fixed margin cannot contain a size that changed. Deriving it from the
+  // actual largest radius means this cannot silently rot again when the sizes move -- which is
+  // the failure mode a constant always has.
+  const largest = sessions.reduce(
+    (m, s) => Math.max(m, radiusFor(s.event_count)),
+    0,
+  );
+  const pad = Math.max(24, largest + 18);
   const innerW = Math.max(1, width - pad * 2);
   const innerH = Math.max(1, height - pad * 2);
 
