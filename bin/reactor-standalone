@@ -58,6 +58,42 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self) -> None:  # noqa: N802
+        """Write a real session event, so the room's live channels can be tested against reality.
+
+        WHY THIS EXISTS. The jets fire on the DIFFERENCE in `event_count` between polls, and the
+        fleet was idle -- so the code path could never be exercised and "it never fires" was
+        indistinguishable from "there is nothing to fire about". A test that cannot create the
+        condition it is testing is not a test.
+
+        This inserts rows into `session_events` exactly as an agent does. It is a probe, not a
+        feature: the route takes no arguments and is only served on this local page.
+        """
+        import sqlite3
+
+        path = os.environ.get("ESTATE_DB") or str(HERE.parent / "catalog" / "estate.db")
+        try:
+            con = sqlite3.connect(path)
+            sid = con.execute("SELECT id FROM sessions ORDER BY id LIMIT 1").fetchone()[0]
+            seq = con.execute(
+                "SELECT COALESCE(MAX(seq),0)+1 FROM session_events WHERE session_id=?", (sid,)
+            ).fetchone()[0]
+            for i in range(15):
+                con.execute(
+                    "INSERT INTO session_events (session_id, seq, type, payload_json, ts)"
+                    " VALUES (?,?,?,?,datetime('now'))",
+                    (sid, seq + i, "observed", '{"probe":"reactor"}'),
+                )
+            con.commit()
+            n = con.execute(
+                "SELECT count(*) FROM session_events WHERE session_id=?", (sid,)
+            ).fetchone()[0]
+            con.close()
+            self._send(200, "application/json",
+                       json.dumps({"wrote": 15, "session": sid, "total": n}).encode())
+        except Exception as exc:  # noqa: BLE001 -- a probe that fails must say so
+            self._send(500, "application/json", json.dumps({"error": str(exc)}).encode())
+
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):

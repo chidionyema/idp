@@ -309,13 +309,27 @@
                 for (const a of agents) {
                     const dx = x - a.mesh.position.x, dz = z - a.mesh.position.z;
                     const d2 = dx * dx + dz * dz;
-                    if (d2 > 140000) continue;              // beyond the well's reach
+                    if (d2 > 260000) continue;              // beyond the well's reach (510 units)
                     // Inverse-square with a floor: at the node's own x,z the pull would be
                     // infinite, so the divisor is clamped and the well has a bottom rather than
                     // a singularity. Weighted by the node's own load, so a heavy agent digs.
-                    depth += (a.load * 9000) / Math.max(1600, d2);
+                    // MEASURED AND CORRECTED TWICE, both times by arithmetic rather than by eye.
+                //
+                // The fleet is 24 nodes with a summed load of 2.43 (one busy session at 1.0 and
+                // twenty-one finished ones at 0.05 each), and they sit roughly 140 units apart.
+                //
+                // The first constant (9000 with a 1600 floor) produced a deepest vertex of 8 units
+                // against a 120-unit floor. The second (26000 / 4500) produced 10. Both were
+                // verified by re-computing the loop inside the page and comparing against what
+                // warpField actually wrote -- 10 and -10, agreeing exactly -- so the function was
+                // always right and the NUMBERS were simply too small to be seen.
+                //
+                // 4.2e5 / 12000 = 35 x load at the floor's own scale. One fully-loaded agent alone
+                // now digs ~35 units, and the handful of nodes within a node's radius add on top,
+                // which is deep enough to read as a well rather than as noise in the wireframe.
+                depth += (a.load * 4.2e5) / Math.max(12000, d2);
                 }
-                pos[v + 1] = Math.max(-260, -depth);
+                pos[v + 1] = Math.max(-300, -depth);
             }
             fieldGeo.attributes.position.needsUpdate = true;
         }
@@ -1074,6 +1088,42 @@
 
             composer.render();
         }
+
+        // ============================ TEST SURFACE ============================
+        // THE ROOM MUST BE OBSERVABLE FROM OUTSIDE.
+        //
+        // Everything below lives in a module closure, so no test, no console and no harness can
+        // see the scene -- which is why every claim about it was unverified by construction. A
+        // control surface you cannot inspect is a control surface you cannot trust.
+        //
+        // `window.__reactor` is a read-only view for verification: counts, positions, throttle
+        // values, quarantine membership. It exposes state, never lets a caller mutate it, and is
+        // the difference between "I wrote it" and "I measured it".
+        window.__reactor = {
+            get agents() {
+                return agents.map(a => ({
+                    id: a.id, fullId: a.fullId, state: a.stateKey, load: a.load,
+                    throttle: a.throttle, pos: a.mesh.position.toArray().map(n => Math.round(n)),
+                    emissive: a.mesh.material.emissive.getHex(),
+                    opacity: Number((a.mesh.material.opacity ?? 1).toFixed(3)),
+                    hasCore: !!a.core, hasKnot: !!a.knot,
+                }));
+            },
+            get edges() { return edges.length; },
+            get jets() { return jets.length; },
+            get barriers() { return barriers.length; },
+            get quarantine() { return Array.from(quarantine); },
+            get ripples() { return ripples.length; },
+            get selected() { return selectedAgent ? selectedAgent.id : null; },
+            get drilled() { return isDrilledDown; },
+            get listening() { return isListening; },
+            get fieldDepth() {
+                const pos = fieldGeo.attributes.position.array;
+                let lo = 0;
+                for (let i = 1; i < pos.length; i += 3) if (pos[i] < lo) lo = pos[i];
+                return Math.round(lo);
+            },
+        };
 
         // Build from the estate, then start. A failure here leaves the room empty rather than
         // populated with inventions, which is the honest failure.
