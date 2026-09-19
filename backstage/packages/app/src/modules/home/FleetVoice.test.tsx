@@ -226,7 +226,20 @@ describe('FleetVoice', () => {
     );
   });
 
-  it('shows the intent chip on release and applies a QUERY after the grace window', () => {
+  /**
+   * A QUESTION FILTERS IMMEDIATELY, AND THE CHIP IS FOR MUTATIONS ONLY.
+   *
+   * This test used to assert the opposite -- that releasing showed a chip and that `onFilter`
+   * waited 1.5s for a grace window -- and it was left behind when GRACE_MS was deliberately made
+   * mutation-only. The reason is in FleetVoice's own comment and it is a measurement: a question
+   * changes nothing, so a cancellation window protects nothing, and it cost 1500ms of the 3093ms
+   * before the first spoken clause. Removing it is the whole point of that commit.
+   *
+   * So the assertion is inverted to match the design, and it now checks the thing that actually
+   * protects a person: the query lands at once, and NO chip appears asking to cancel something
+   * that has already run.
+   */
+  it('applies a QUERY immediately, with no grace window and no cancellation chip', () => {
     const onFilter = jest.fn();
     render(<FleetVoice sessions={sessions} onFilter={onFilter} />);
     const button = screen.getByTestId('voice-ptt');
@@ -237,13 +250,10 @@ describe('FleetVoice', () => {
     });
     fireEvent.click(button);
 
-    expect(screen.getByTestId('voice-intent-chip')).toBeTruthy();
-    expect(onFilter).not.toHaveBeenCalled();
-
-    act(() => {
-      jest.advanceTimersByTime(1500);
-    });
+    // The filter has already been applied -- no timer was armed, so no advanceTimersByTime.
     expect(onFilter).toHaveBeenCalledWith('stuck');
+    // And there is nothing to cancel, so there is no chip offering to.
+    expect(screen.queryByTestId('voice-intent-chip')).toBeNull();
   });
 
   it('does NOT send a mutation: opens the deck with text and changes nothing else', () => {
@@ -319,18 +329,36 @@ describe('FleetVoice', () => {
     );
   });
 
-  it('cancels a pending intent on Escape', () => {
-    const onFilter = jest.fn();
-    render(<FleetVoice sessions={sessions} onFilter={onFilter} />);
+  /**
+   * ESCAPE CANCELS A MUTATION, NOT A QUESTION.
+   *
+   * The grace window is mutation-only (see FleetVoice's own comment), so this test now exercises
+   * a STOP -- the case where 1.5 seconds of cancellation genuinely protects someone, because the
+   * command would change a running agent. It previously used "what is stuck", a query that has
+   * no window to cancel, so the chip was never there to escape from and the test was asserting a
+   * behaviour the design had deliberately removed.
+   *
+   * The two things worth checking are both here: nothing is dispatched while the window is open,
+   * and Escape closes it so nothing is dispatched afterwards either.
+   */
+  it('cancels a pending MUTATION on Escape', () => {
+    const onOpenDeck = jest.fn();
+    const onHighlight = jest.fn();
+    render(
+      <FleetVoice sessions={sessions} onOpenDeck={onOpenDeck} onHighlight={onHighlight} />,
+    );
     const button = screen.getByTestId('voice-ptt');
 
     fireEvent.click(button);
     act(() => {
-      FakeSpeechRecognition.instances[0].emitResult('what is stuck', true);
+      FakeSpeechRecognition.instances[0].emitResult('stop agent-beta', true);
     });
     fireEvent.click(button);
 
+    // A mutation DOES show a chip: there is something real to take back for 1.5s.
     expect(screen.getByTestId('voice-intent-chip')).toBeTruthy();
+    // And it has NOT acted yet -- that is the whole value of the window.
+    expect(onHighlight).not.toHaveBeenCalled();
 
     act(() => {
       fireEvent.keyDown(window, { key: 'Escape' });
@@ -341,7 +369,8 @@ describe('FleetVoice', () => {
     act(() => {
       jest.advanceTimersByTime(1500);
     });
-    expect(onFilter).not.toHaveBeenCalled();
+    // Escape means it never runs, even after the window would have closed.
+    expect(onHighlight).not.toHaveBeenCalled();
   });
 
   it('shows a visible state WORD, not only a colour', () => {

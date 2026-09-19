@@ -17,7 +17,7 @@
 // THE BACKGROUND IS A CLICK-THROUGH SCRIM: it takes the click that dismisses, and it dims the
 // fleet so the node under the menu is the only bright thing on screen.
 
-import type { Session } from '../home/fleetBoard';
+import type { Session } from '../../home/fleetBoard';
 
 export interface RadialMenuProps {
   readonly session: Session;

@@ -634,7 +634,19 @@ export default function FleetVoice({
   /** One click: on if idle, off (and send) if listening. */
   const handleToggle = useCallback(() => {
     if (!supported) return;
-    if (state === 'listening') stopListening();
+    // A CLICK WHILE THINKING IS A SEND, NOT A RESTART.
+    //
+    // The button is one toggle, and `state` moves to `thinking` the moment a transcript is ready
+    // -- so the second click of a tap-tap arrived with state === 'thinking', fell to the else,
+    // and called startListening() again. The utterance was never sent, the intent chip never
+    // appeared, and the person's words were silently discarded by a control that looked like it
+    // had just been pressed. Two tests caught it ('shows the intent chip...' and 'cancels a
+    // pending intent on Escape'), both failing against the production component.
+    //
+    // Thinking IS a listening posture -- the mic is still open and stopListening is what commits
+    // the turn -- so the two states that mean "in flight" are handled together. Anything else
+    // starts a turn.
+    if (state === 'listening' || state === 'thinking' || state === 'speaking') stopListening();
     else startListening();
   }, [supported, state, startListening, stopListening]);
 
