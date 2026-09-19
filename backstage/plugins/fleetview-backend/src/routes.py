@@ -98,6 +98,26 @@ def _notes():
     return _load(_NOTES_MODULE, "fleetview_notes_impl")
 
 
+def _history():
+    return _load(Path(__file__).resolve().parent / "history.py", "fleetview_history_impl")
+
+
+def history_envelope(session_id: str, since: str = "", until: str = "") -> tuple[dict, int]:
+    """One session's events over time. The raw material a trail is drawn from."""
+    body = _history().history(session_id, since or None, until or None)
+    if body.get("error") and body.get("count", 0) == 0:
+        return body, 400 if "required" in str(body.get("error")) else 503
+    return body, 200
+
+
+def query_envelope(directive: str) -> tuple[dict, int]:
+    """The fleet over time, in four speakable verbs: stuck, slow, cost, history <id>."""
+    body = _history().query(directive)
+    if body.get("kind") == "blind":
+        return body, 503
+    return body, 200
+
+
 def _voice():
     return _load(Path(__file__).resolve().parent / "voice.py", "fleetview_voice_impl")
 
@@ -200,6 +220,8 @@ DENY_PATH = "/deny"
 SIGNALS_PATH = "/signals"
 VOICE_PATH = "/voice"
 VOICE_STREAM_PATH = "/voice/stream"
+HISTORY_PATH = "/history"
+QUERY_PATH = "/query"
 BLAST_RADIUS_PATH = "/blast-radius"
 GRAPH_PATH = "/graph"
 CHECK_RECEIPTS_PATH = "/check-receipts"

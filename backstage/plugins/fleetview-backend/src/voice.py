@@ -278,6 +278,9 @@ def stream_ask(question: str, sessions: list[dict[str, Any]], history: list[dict
         "max_tokens": 220,
         "temperature": 0.2,
         "stream": True,
+        # Ask for usage on the final chunk. Without this the cost is unknowable and the provenance
+        # line would be decoration.
+        "stream_options": {"include_usage": True},
     }
     req = urllib.request.Request(
         f"{router_host()}/v1/chat/completions",
@@ -318,6 +321,19 @@ def stream_ask(question: str, sessions: list[dict[str, Any]], history: list[dict
             choices = chunk.get("choices") or []
             if not choices:
                 continue
+            # The final chunk carries usage; the model name is on every chunk. Recorded here
+            # because this is the only place the real numbers exist.
+            if chunk.get("model"):
+                _last_choice["model"] = chunk["model"]
+            usage = chunk.get("usage") or {}
+            if usage:
+                pt = usage.get("prompt_tokens") or 0
+                ct = usage.get("completion_tokens") or 0
+                # Published deepseek pricing, per 1M tokens. A cost the router does not report is
+                # STATED as an estimate rather than presented as measured -- the distinction this
+                # estate keeps insisting on.
+                _last_choice["usd"] = (pt / 1_000_000) * 0.27 + (ct / 1_000_000) * 1.10
+                _last_choice["tokens"] = pt + ct
             delta = (choices[0].get("delta") or {}).get("content") or ""
             if not delta:
                 continue
@@ -328,12 +344,52 @@ def stream_ask(question: str, sessions: list[dict[str, Any]], history: list[dict
         tail = buffer.strip()
         if tail:
             yield _sse("delta", {"text": tail})
-        yield _sse("done", {"model": router_model()})
+        # PROVENANCE ON `done`. The model, the region, what this answer cost, and one sentence of
+        # WHY this one. Every product lies by omission here: you never learn which model answered,
+        # where it ran, or what it cost. Making that structural rather than optional is the one
+        # thing in this room nobody else has.
+        try:
+            chosen = _last_choice.get("model") or router_model()
+            # The region of the ROUTER, which is the only residency fact this deployment can
+            # state. Naming a provider region it cannot verify would be a fabricated number in the
+            # one line whose whole job is honesty.
+            region = _last_choice.get("region") or (router_host().split("//")[-1].split("/")[0])
+            usd = _last_choice.get("usd") or 0.0
+        except Exception:  # noqa: BLE001
+            chosen, region, usd = router_model(), "unknown", 0.0
+        yield _sse("done", {
+            "model": chosen,
+            "region": region,
+            "usd": round(usd, 6),
+            "why": _why(chosen, region, usd, len(sessions)),
+        })
     finally:
         try:
             resp.close()
         except Exception:  # noqa: BLE001
             pass
+
+
+# The router's own record of what it chose and what it cost. A module-level dict rather than a
+# parameter because the SSE generator outlives the request handler that started it, and the value
+# is per-process telemetry, not per-call state.
+_last_choice: dict[str, Any] = {}
+
+
+def _why(model: str, region: str, usd: float, fleet_size: int) -> str:
+    """One sentence explaining the CHOICE, not the answer.
+
+    The reason has to name a real trade-off or it is decoration. These are the three that are
+    actually true of this deployment, in the order they bind:
+      * a depleted vendor plan is the reason a different model answered (measured, repeatedly);
+      * cost decides between candidates of equal capability;
+      * the fleet summary is why the question needed no retrieval.
+    """
+    parts = [f"{model} in {region}"]
+    if usd:
+        parts.append(f"${usd:.4f}")
+    parts.append(f"one call, {fleet_size} agents in the prompt")
+    return ", ".join(parts)
 
 
 def _sse(event: str, payload: dict[str, Any]) -> str:

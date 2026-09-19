@@ -159,6 +159,17 @@ def build_app(routes_path: Path) -> FastAPI:
         body, status = routes.sessions_envelope()
         return JSONResponse(content=body, status_code=status)
 
+    @app.get(routes.HISTORY_PATH)
+    def history(session_id: str = "", since: str = "", until: str = ""):
+        payload, status = routes.history_envelope(session_id, since, until)
+        return JSONResponse(content=payload, status_code=status)
+
+    @app.get(routes.QUERY_PATH)
+    def query(directive: str = ""):
+        """GET, because a question is not a mutation and a link to one should be shareable."""
+        payload, status = routes.query_envelope(directive)
+        return JSONResponse(content=payload, status_code=status)
+
     @app.post(routes.VOICE_STREAM_PATH)
     async def voice_stream(body: dict):
         """The same question, streamed as clauses.
