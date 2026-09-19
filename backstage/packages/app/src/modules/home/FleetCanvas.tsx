@@ -1457,6 +1457,54 @@ export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
                       />
                     ) : null}
 
+                    {/* THE TRAIL. How much work this agent has actually done, drawn as an arc
+                        behind it.
+
+                        WHY THIS AND NOT A NUMBER. Measured 2026-09-19: one node held 411 events
+                        and twenty-three held exactly one. That is the single most important fact
+                        about this fleet and NOTHING on screen said it -- the label carried
+                        "411 events" in 11px text nobody reads. An arc is the same fact at a
+                        glance from across the room.
+
+                        It is drawn from the event count the API already returns, not from fetched
+                        history, so it costs no request and cannot disagree with the label. Stroke
+                        width grows with the count too, so a busy agent has a thick hot arc and an
+                        idle one a hairline -- two channels for one fact, because at 101px a thin
+                        arc is invisible and at 292px a thick one is not. */}
+                    {(() => {
+                      const events = node.session.event_count ?? 0;
+                      if (events <= 1) {
+                        // EMPTY READS AS EMPTY. An agent with one event gets a dashed hairline:
+                        // visible as a shape, unmistakable as nothing done.
+                        return (
+                          <circle
+                            data-testid={`trail-${id}`}
+                            r={node.r + 6}
+                            fill="none"
+                            stroke={T.textMuted}
+                            strokeWidth={1}
+                            strokeDasharray="2 6"
+                            opacity={0.35}
+                          />
+                        );
+                      }
+                      // sqrt, like the radius: length should scale with work, not with the raw
+                      // count, or 411 events would wrap the circle many times over.
+                      const sweep = Math.min(1, Math.sqrt(events / 400));
+                      const thickness = 2 + 6 * sweep;
+                      return (
+                        <path
+                          data-testid={`trail-${id}`}
+                          d={arcPath(0, 0, node.r + 6, sweep)}
+                          fill="none"
+                          stroke={color}
+                          strokeWidth={thickness}
+                          strokeLinecap="round"
+                          opacity={0.28 + sweep * 0.5}
+                        />
+                      );
+                    })()}
+
                     {/* The node itself. */}
                     <circle
                       r={node.r}
