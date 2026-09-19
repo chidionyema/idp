@@ -30,6 +30,29 @@ import pytest
 BIN = Path(__file__).resolve().parent.parent / "bin" / "idp-voice"
 
 
+@pytest.fixture()
+def no_faster_whisper(monkeypatch):
+    """Force the pre-faster-whisper path, so the fallback tests test the fallback.
+
+    Measured 2026-09-19: installing faster-whisper (pip, no compile -- whisper-cpp has no bottle
+    on this Intel Mac) made four cases fail, because they asserted the WHISPER_CMD and sibling
+    .txt behaviour while the first-choice engine was silently answering first. The engine order is
+    a product decision, so each test now names the engine it means.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "faster_whisper" or name.startswith("faster_whisper."):
+            raise ImportError("forced off by the test")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.delenv("WHISPER_CMD", raising=False)
+    return None
+
+
 def _load_module():
     """Load bin/idp-voice, which has no .py suffix.
 
@@ -288,14 +311,14 @@ def test_http_timeout_constant_positive(idp):
 # --------------------------------------------------------------------------
 
 
-def test_transcribe_reads_sibling_txt(idp, tmp_path):
+def test_transcribe_reads_sibling_txt(idp, tmp_path, no_faster_whisper):
     wav = tmp_path / "utterance.wav"
     wav.write_bytes(b"")
     (tmp_path / "utterance.txt").write_text("hello there", encoding="utf-8")
     assert idp.transcribe(str(wav)) == "hello there"
 
 
-def test_transcribe_blind_without_whisper_or_txt(idp, tmp_path, monkeypatch):
+def test_transcribe_blind_without_whisper_or_txt(idp, tmp_path, monkeypatch, no_faster_whisper):
     monkeypatch.delenv("WHISPER_CMD", raising=False)
     wav = tmp_path / "utterance.wav"
     wav.write_bytes(b"")
@@ -304,7 +327,7 @@ def test_transcribe_blind_without_whisper_or_txt(idp, tmp_path, monkeypatch):
     assert "no transcriber" in exc.value.message
 
 
-def test_transcribe_uses_whisper_cmd(idp, tmp_path, monkeypatch):
+def test_transcribe_uses_whisper_cmd(idp, tmp_path, monkeypatch, no_faster_whisper):
     wav = tmp_path / "utterance.wav"
     wav.write_bytes(b"")
     # The path is always appended (see transcribe()'s docstring), so a fake that echoes its
@@ -342,9 +365,11 @@ def test_config_overrides(idp, monkeypatch):
 # --------------------------------------------------------------------------
 
 
-def test_check_exit_nonzero_when_nothing(idp, monkeypatch, capsys):
+def test_check_exit_nonzero_when_nothing(idp, monkeypatch, capsys, no_faster_whisper):
+    # Every engine must be absent for this to mean anything. `no_faster_whisper` is what makes
+    # "nothing" true on a machine where the package IS installed -- without it this case asserted
+    # a BLIND state that the box no longer has, and the correct exit 0 looked like a failure.
     monkeypatch.setenv("OLLAMA_HOST", "http://127.0.0.1:1")
-    monkeypatch.delenv("WHISPER_CMD", raising=False)
     monkeypatch.setattr(idp, "_say_available", lambda: False)
     code = idp.mode_check()
     assert code == 2

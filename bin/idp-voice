@@ -148,17 +148,43 @@ async def _get_async(url: str, timeout: float = HTTP_TIMEOUT) -> bytes:
 def transcribe(path: str) -> str:
     """Transcribe an audio file.
 
-    Order of preference:
-      1. WHISPER_CMD set -> run it. THE PATH IS ALWAYS APPENDED, and `{path}` may also be used
-         for a command that needs it in the middle. Appending unconditionally is what makes a
-         plain `whisper-cli` or `whisper` work without the caller having to know this script's
-         template syntax; a command that already contains `{path}` keeps the path where it was
-         written and gets it appended too, which is harmless for every real transcriber (an extra
-         trailing argument naming the same file) and keeps the rule to one sentence.
-      2. A .txt sibling of the wav exists -> read it (so the loop is testable without a model).
-      3. BLIND, naming the variable to set.
+    Order of preference, and the FIRST that applies wins:
+      1. `faster-whisper` if the package is importable. This is the engine the estate's own spec
+         names (docs/specs/2026-09-18-voice-conversation-pipeline.md: "Faster-Whisper
+         large-v3-turbo, CTranslate2, 80-140ms"), it installs with pip and NO COMPILE -- which
+         matters here because whisper-cpp is unavailable: this is an Intel Mac, Homebrew calls it
+         a Tier 3 configuration and has no bottle.
+         Model size from WHISPER_MODEL, default "tiny": ~75MB, and enough to prove the path. The
+         spec's large-v3-turbo is one variable away.
+      2. WHISPER_CMD -> run it. THE PATH IS ALWAYS APPENDED, and `{path}` may also be used when
+         a command needs it in the middle. Appending unconditionally is what makes a plain
+         `whisper-cli` work without the caller learning this script's template syntax.
+      3. A .txt sibling of the wav exists -> read it (so the loop is testable with no model).
+      4. BLIND, naming what to set.
     """
     p = Path(path)
+    if not p.exists():
+        raise blind(f"no such audio file: {p}")
+
+    # faster-whisper first: installed, no compile, and the engine the estate's spec names.
+    try:
+        from faster_whisper import WhisperModel  # noqa: PLC0415 -- optional dependency
+    except ImportError:
+        WhisperModel = None  # type: ignore[assignment]
+    if WhisperModel is not None:
+        model_size = os.environ.get("WHISPER_MODEL", "tiny")
+        try:
+            model = WhisperModel(model_size, device="cpu", compute_type="int8")
+            segments, _info = model.transcribe(str(p), beam_size=1, language="en")
+            text = " ".join(seg.text for seg in segments).strip()
+        except Exception as exc:  # noqa: BLE001 -- a failed model is BLIND, never silent
+            raise blind(f"faster-whisper could not transcribe {p.name}: {exc}")
+        if text:
+            return text
+        # An empty transcript is a real answer (silence), and it is not the same as a failure:
+        # the caller decides what to do with nothing said.
+        return ""
+
     whisper = os.environ.get("WHISPER_CMD")
     if whisper:
         # The path is ALWAYS appended, and `{path}` is substituted when present. A transcriber
@@ -544,11 +570,21 @@ def mode_check() -> int:
     except Blind as exc:
         print(f"BLIND ollama: {exc.message}")
 
-    if os.environ.get("WHISPER_CMD"):
-        print(f"OK    transcriber: {os.environ['WHISPER_CMD']}")
+    # The SAME order transcribe() uses, so --check cannot say BLIND about a machine that can
+    # transcribe. The first version checked only WHISPER_CMD and reported "BLIND transcriber" on
+    # a box where faster-whisper was installed and working -- a status line disagreeing with the
+    # behaviour it describes, which is worse than no status line.
+    try:
+        import faster_whisper  # noqa: F401, PLC0415 -- availability probe
+
+        print(f"OK    transcriber: faster-whisper, model {os.environ.get('WHISPER_MODEL', 'tiny')}")
         ok += 1
-    else:
-        print("BLIND transcriber: set WHISPER_CMD")
+    except ImportError:
+        if os.environ.get("WHISPER_CMD"):
+            print(f"OK    transcriber: {os.environ['WHISPER_CMD']}")
+            ok += 1
+        else:
+            print("BLIND transcriber: pip install faster-whisper, or set WHISPER_CMD")
 
     if _say_available():
         print("OK    speech synthesis: say")
