@@ -129,6 +129,12 @@ flows:
   # the allow would cut the route. It is declared here, where the fence that denies is written.
   demo-sandbox:
     ingress_from: [edge]
+    # The ARM voice benchmark downloads its models at run time: Kokoro's ONNX weights and voices
+    # from github.com, and the faster-whisper weights from huggingface.co. Without this the fence
+    # denies it and the Job fails on a refused connection rather than on anything it measured.
+    # 443 only, and named here rather than in the generated fence, because this is the file the
+    # generator reads -- editing the generated file would be overwritten on the next run.
+    egress_internet: [443]
   trivy-system:
     # The operator and its scan jobs (scanJobsInSameNamespace: false, so they land here too) pull
     # the vulnerability database from a public registry mirror (mirror.gcr.io); declared here so
