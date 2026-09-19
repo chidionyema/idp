@@ -254,15 +254,30 @@ export function SpatialCanvas(props: SpatialCanvasProps): JSX.Element {
           reading experience; this is the same fleet as text, and it is what a screen reader or a
           test can address. The room is not a picture of the fleet -- it is the fleet, with a
           second rendering for readers who cannot use the first. */}
+      {/* VISUALLY HIDDEN, AND THIS TIME ACTUALLY HIDDEN. Measured 2026-09-19 by reading the
+          rendered page: the first attempt was a 1x1 box with `overflow: hidden` and
+          `clip: rect(0 0 0 0)`, and the 24 list items rendered as 24 visible lines of 14px text
+          running down the whole page. `clip` on a parent does not clip a child that is not
+          absolutely positioned, and a 1x1 box does not constrain a list that has its own layout.
+          The room was replaced by a text dump and the canvas was nowhere.
+
+          The reliable pattern: the LIST is absolutely positioned and 1px square, and every CHILD
+          is clipped with `clipPath`, which does apply per-element. `inset(50%)` collapses the
+          visible box to nothing, which is the modern spelling of the same trick. */}
       <ul
         data-testid="room-agents"
         style={{
           position: 'absolute',
+          top: 0,
+          left: 0,
           width: 1,
           height: 1,
+          margin: -1,
+          padding: 0,
+          border: 0,
           overflow: 'hidden',
-          clip: 'rect(0 0 0 0)',
           whiteSpace: 'nowrap',
+          listStyle: 'none',
         }}
       >
         {props.sessions.map(s => (
@@ -271,6 +286,13 @@ export function SpatialCanvas(props: SpatialCanvasProps): JSX.Element {
             data-testid={`agent-${s.session_id}`}
             data-activity={s.activity ?? 'unknown'}
             data-events={s.event_count ?? 0}
+            style={{
+              position: 'absolute',
+              width: 1,
+              height: 1,
+              overflow: 'hidden',
+              clipPath: 'inset(50%)',
+            }}
           >
             {`${s.runtime} ${String(s.session_id).slice(-6)}: ${
               ACTIVITY_WORD[(s.activity ?? 'unknown') as keyof typeof ACTIVITY_WORD]
