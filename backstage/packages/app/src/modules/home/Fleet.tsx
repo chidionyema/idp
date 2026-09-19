@@ -32,18 +32,24 @@ import {
   type Node as RFNode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Chip, EstatePage, Fold, Section, Summary } from '../shell';
-import {
-  attentionReason,
-  NUDGEABLE_RUNTIMES,
-  summarise,
-} from './fleetBoard';
+import { Chip, EstatePage, Section, Summary } from '../shell';
+import { summarise } from './fleetBoard';
 import type { Board, Note, SessionsEnvelope, Signal } from './fleetBoard';
-import { ACTIVITY_WORD, ACTIVITY_SENTENCE, motionFor, ringStyleFor, needsAPerson } from './fleetMotion';
 import { SpatialCanvas } from '../room/ui/SpatialCanvas';
 import FleetVoice from './FleetVoice';
 import type { Activity } from './fleetMotion';
-import type { Activity } from './fleetMotion';
+
+/** Every command button: 32px tall, which is a comfortable click and not a hairline. */
+const cmdStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 600,
+  background: '#21262d',
+  color: '#e6edf3',
+  border: '1px solid #30363d',
+  borderRadius: 6,
+  padding: '6px 12px',
+  cursor: 'pointer',
+};
 
 // THE DESIGN SYSTEM, USED RATHER THAN REINVENTED.
 //
@@ -488,56 +494,86 @@ export function Fleet() {
 
     // The stream replaces the old three-second poll. If it cannot be opened the page still shows
     // what it has; the interval below is the fallback so a board is never frozen on a stale row.
-    let source: EventSource | undefined;
-    if (typeof EventSource !== 'undefined') {
-      // EventSource does not route through fetchApi, so the plugin:// middleware is not in
-      // the path. Resolve the backend URL explicitly via discoveryApi -- wrapped in an IIFE
-      // because the useEffect callback itself is not async.
-      void (async () => {
-        try {
-          const streamBase = await discoveryApi.getBaseUrl('proxy');
-          source = new EventSource(`${streamBase}/fleetview/stream`);
-          source.onmessage = event => {
+    // LIVE UPDATE, AND IT ACTUALLY AUTHENTICATES.
+    //
+    // This was `new EventSource(...)`, which cannot send an Authorization header -- that is a
+    // browser API limitation, not a bug -- so every request arrived with no credentials and the
+    // proxy answered 401. Measured 2026-09-19, in the console of the running page:
+    //
+    //     Failed to load resource: the server responded with a status of 401
+    //
+    // The estate's spec CP2 requires "a change reaches the page under 3 s", and a 401 means the
+    // board fell back to its 15-second poll -- a live board that was never live, with the reason
+    // sitting in the console the whole time.
+    //
+    // `fetch` with a reader CAN carry the token, and the backend already sends SSE frames, so the
+    // fix is to read that stream rather than to change the server. The poll stays as the fallback
+    // it was always meant to be.
+    let abort: AbortController | undefined;
+    void (async () => {
+      try {
+        const res = await fetchApi.fetch('plugin://proxy/fleetview/stream', {
+          headers: { Accept: 'text/event-stream' },
+        });
+        if (!res.ok || !res.body) return;
+        abort = new AbortController();
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done || cancelled) break;
+          buffer += decoder.decode(value, { stream: true });
+          // SSE frames are separated by a blank line.
+          const frames = buffer.split('\n\n');
+          buffer = frames.pop() ?? '';
+          for (const raw of frames) {
+            const dataLine = raw
+              .split('\n')
+              .filter(l => l.startsWith('data:'))
+              .map(l => l.slice(5).trim())
+              .join('');
+            if (!dataLine) continue;
+            let frame: { session_id?: string; record?: unknown };
             try {
-              const frame = JSON.parse(event.data);
-              setBoard(current =>
-                summarise({
-                  available: true,
-                  sessions: [
-                    ...current.sessions.filter(
-                      s => s.session_id !== frame.session_id,
-                    ),
-                    ...(frame.record ? [frame.record] : []),
-                  ],
-                  unreachable: current.unreachable,
-                }),
-              );
-              // CP7: when a new event arrives for a session that already has its Trace fold
-              // open (traceBySession has an entry), reload the trace to show new spans.
-              if (frame.session_id) {
-                setTraceBySession(current => {
-                  if (current[frame.session_id]) {
-                    void loadTrace(frame.session_id);
-                  }
-                  return current;
-                });
-              }
+              frame = JSON.parse(dataLine);
             } catch {
-              // A frame that will not parse is dropped; the next read reconciles. Taking the board
-              // down on one bad frame would lose every other session with it.
+              // A frame that will not parse is dropped; the next read reconciles. Taking the
+              // board down on one bad frame would lose every other session with it.
+              continue;
             }
-          };
-        } catch {
-          source = undefined;
+            setBoard(current =>
+              summarise({
+                available: true,
+                sessions: [
+                  ...current.sessions.filter(s => s.session_id !== frame.session_id),
+                  ...(frame.record ? [frame.record as never] : []),
+                ],
+                unreachable: current.unreachable,
+              }),
+            );
+            // CP7: when a new event arrives for a session that already has its Trace fold open,
+            // reload the trace to show new spans.
+            if (frame.session_id) {
+              setTraceBySession(current => {
+                if (current[frame.session_id!]) void loadTrace(frame.session_id!);
+                return current;
+              });
+            }
+          }
         }
-      })();
-    }
+      } catch {
+        // No stream: the poll below is the fallback, which is what it was always for.
+        abort = undefined;
+      }
+    })();
 
     const fallback = window.setInterval(read, POLL_MS);
 
     return () => {
       cancelled = true;
       window.clearInterval(fallback);
+      abort?.abort();
       source?.close();
     };
   }, [fetchApi, discoveryApi]);
@@ -695,6 +731,93 @@ export function Fleet() {
             ))}
           </div>
         )}
+        {/* THE FOUR SIGNALS. These exist, they work, and they were orphaned when the card grid
+            was replaced by the canvas: `sendStop`, `sendApprove`, `sendDeny` and `sendNudge` were
+            all still in the file with nothing rendering them. The estate's CP3 requires "stop,
+            approve, deny and steer from the page with an audit row for each press", and for a
+            while the page had none of them -- the machinery was there and the surface was not.
+
+            They live on the SELECTED agent, because a command needs a target and a target is
+            what selection means. Nothing is sent by picking one: every button names the session
+            it will act on. */}
+        {voiceSelected && (() => {
+          const target = board.sessions.find(x => x.session_id === voiceSelected);
+          if (!target) return null;
+          const status =
+            stopStatusBySession[target.session_id] ||
+            approveStatusBySession[target.session_id] ||
+            denyStatusBySession[target.session_id] ||
+            '';
+          const canSteer = NUDGEABLE_RUNTIMES.has(target.runtime);
+          return (
+            <div
+              data-testid="fleet-commands"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+                padding: '10px 0',
+                borderTop: '1px solid rgba(255,255,255,0.08)',
+                fontSize: 12,
+              }}
+            >
+              <strong style={{ fontWeight: 700 }}>
+                {target.runtime} · {String(target.session_id).slice(-6)}
+              </strong>
+              <button
+                type="button"
+                data-testid="cmd-stop"
+                onClick={() => void sendStop(target.session_id, target.runtime)}
+                style={cmdStyle}
+              >
+                Stop
+              </button>
+              <button
+                type="button"
+                data-testid="cmd-approve"
+                onClick={() => void sendApprove(target.session_id, target.runtime)}
+                style={cmdStyle}
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                data-testid="cmd-deny"
+                onClick={() => void sendDeny(target.session_id, target.runtime)}
+                style={cmdStyle}
+              >
+                Deny
+              </button>
+              {canSteer ? (
+                <button
+                  type="button"
+                  data-testid="cmd-steer"
+                  onClick={() => void sendNudge(target.session_id, target.runtime)}
+                  style={cmdStyle}
+                >
+                  Steer
+                </button>
+              ) : (
+                // A runtime with no live signal path gets NO button, and says why -- the rule
+                // signals.py already enforces server-side with a 422. A control that cannot work
+                // is worse than no control.
+                <span style={{ opacity: 0.6 }}>
+                  {target.runtime} has no steering channel
+                </span>
+              )}
+              {status ? <em style={{ opacity: 0.85 }}>{status}</em> : null}
+              <button
+                type="button"
+                data-testid="cmd-clear"
+                onClick={() => setVoiceSelected(null)}
+                style={{ ...cmdStyle, opacity: 0.6 }}
+              >
+                Clear
+              </button>
+            </div>
+          );
+        })()}
         <Summary>{board.summary}</Summary>
       </Section>
 
