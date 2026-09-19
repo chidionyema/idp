@@ -37,6 +37,7 @@ import { attentionReason, summarise } from './fleetBoard';
 import type { Board, Note, SessionsEnvelope, Signal } from './fleetBoard';
 import { SpatialCanvas } from '../room/ui/SpatialCanvas';
 import { RadialMenu } from '../room/ui/RadialMenu';
+import { MindPanel } from '../room/ui/MindPanel';
 import FleetVoice from './FleetVoice';
 import type { Activity } from './fleetMotion';
 
@@ -435,6 +436,12 @@ export function Fleet() {
   const lastCount = useRef<Map<string, number>>(new Map());
   /** The node whose cascade is currently being pinged, or null. Cleared by the canvas. */
   const [pingFor, setPingFor] = useState<string | null>(null);
+  /**
+   * THE NODE THE POINTER IS ON. Not a selection: hovering must not open menus or move the camera,
+   * or merely crossing the room would act. It exists so a pronoun has something to mean -- see
+   * FleetVoice's `referent`.
+   */
+  const [pointerOn, setPointerOn] = useState<string | null>(null);
   // WHO the person just asked about, so the canvas can bring that agent forward.
   const [voiceSpotlight, setVoiceSpotlight] = useState<string | null>(null);
   // The conversation, so "it" and "that one" resolve. Capped: the model needs the last few turns,
@@ -724,6 +731,7 @@ export function Fleet() {
               selected={voiceSelected}
               onSelect={setVoiceSelected}
               onSelectedPosition={setNodePos}
+              onHover={setPointerOn}
               eventRate={eventRate}
               pingFor={pingFor}
               onPingDone={() => setPingFor(null)}
@@ -733,6 +741,29 @@ export function Fleet() {
                 and travelled to the bottom of the screen to find the fix -- then back to see
                 whether it worked. Radial, anchored on the agent, one gesture, nothing to travel
                 to. The bottom bar is deleted below, not merely hidden. */}
+            {/* THE INSIDE OF THE AGENT, AT THE AGENT. The camera pushes in; this is what it
+                arrives at. It sits above the radial menu so the two do not cover each other, and
+                it reads the same state and loaders the fold below uses -- a second SURFACE, not a
+                second truth. */}
+            {voiceSelected && nodePos ? (() => {
+              const target = board.sessions.find(x => x.session_id === voiceSelected);
+              if (!target) return null;
+              return (
+                <MindPanel
+                  session={target}
+                  x={nodePos.x}
+                  y={nodePos.y}
+                  rate={eventRate[target.session_id] ?? 0}
+                  traceUrl={target.trace_url ?? null}
+                  trace={traceBySession[target.session_id] ?? null}
+                  ledger={ledgerBySession[target.session_id] ?? null}
+                  onLoadTrace={() => void loadTrace(target.session_id)}
+                  onLoadLedger={() => void loadLedger(target.session_id)}
+                  onClose={() => setVoiceSelected(null)}
+                />
+              );
+            })() : null}
+
             {voiceSelected && nodePos ? (() => {
               const target = board.sessions.find(x => x.session_id === voiceSelected);
               if (!target) return null;
@@ -793,6 +824,10 @@ export function Fleet() {
                 executing" as a hard rule. */}
             <FleetVoice
               sessions={board.sessions}
+              // THE POINTER, THEN THE SELECTION. Preferring the node under the cursor is what
+              // makes "stop it" mean what the hand is on; falling back to the selection keeps
+              // voice usable by touch or by keyboard, where there is no cursor in the room.
+              referent={pointerOn ?? voiceSelected}
               onFilter={setVoiceActivity}
               onHighlight={setVoiceSelected}
               onOpenDeck={(sessionId) => setVoiceSelected(sessionId)}
@@ -924,12 +959,16 @@ export function Fleet() {
                 </div>
                 <div data-testid="detail-receipt">
                   <strong style={{ color: '#e6edf3' }}>Receipt</strong>{' '}
+                  {/* `status === 'ok'` was compared here and `ReceiptState` has no such member --
+                      it is loading | done | error. The branch was dead, so a completed receipt
+                      rendered the literal string "done" instead of its verdict. Every state is
+                      now named, and the three the type actually has are the three shown. */}
                   {receipt
-                    ? receipt.status === 'ok'
-                      ? `verdict ${receipt.verdict ?? 'unknown'}`
+                    ? receipt.status === 'done'
+                      ? `verdict ${receipt.verdict}${receipt.reason ? ` — ${receipt.reason}` : ''}`
                       : receipt.status === 'error'
-                        ? `unavailable — ${receipt.error ?? 'no reason'}`
-                        : receipt.status
+                        ? `unavailable — ${receipt.error}`
+                        : 'loading…'
                     : 'open to load'}
                 </div>
                 <div data-testid="detail-history" style={{ marginTop: 6 }}>

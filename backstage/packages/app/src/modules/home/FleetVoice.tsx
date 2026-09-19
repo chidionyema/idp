@@ -31,6 +31,15 @@ export interface FleetVoiceProps {
   onOpenDeck?: (sessionId: string, text: string) => void;
   /** Highlight a session node before a mutation acts on it. */
   onHighlight?: (sessionId: string) => void;
+  /**
+   * THE NODE THE POINTER IS ON, or the current selection -- what a pronoun means.
+   *
+   * This is the fusion of the two input channels. The person points at a red node and says "stop
+   * that one": the sentence carries the verb and the pointer carries the object, and neither
+   * channel has to guess what the other meant. Without it, "it" is unresolvable and the honest
+   * answer is a refusal -- which is exactly what the room used to give.
+   */
+  referent?: string | null;
   /** Optional: called whenever the state word changes. */
   onStateChange?: (state: VoiceState) => void;
   /**
@@ -147,11 +156,41 @@ export function parseIntent(raw: string): VoiceIntent {
 // Session resolution
 // ---------------------------------------------------------------------------
 
+/**
+ * The words that mean "the one I am pointing at".
+ *
+ * POINTER FUSION, and it is the whole of it. Before this, "stop the stuck one" had to be resolved
+ * by reading the sentence, which is why it refused: the sentence does not name an agent, so there
+ * was nothing to match. With a referent -- the node under the cursor, or the selection it became
+ * -- "it" is not a pronoun the system has to disambiguate. It is a pointer the person is holding,
+ * and the sentence only has to say what to DO.
+ *
+ * This is why the canvas reports hover separately from selection: hovering must not open menus or
+ * move the camera, but it must be available as the thing a pronoun means.
+ */
+const REFERENTS = new Set([
+  'it', 'its', 'this', 'that', 'this one', 'that one', 'them', 'this agent', 'that agent',
+  'the selected', 'the selected one', 'the highlighted', 'the highlighted one', 'here',
+]);
+
+/** Whether an utterance's target is a pointer rather than a name. */
+export function isReferent(target: string): boolean {
+  return REFERENTS.has(target.trim().toLowerCase().replace(/[.?!]$/, ''));
+}
+
 function resolveSession(
   sessions: Session[],
   target: string,
+  /** The node the pointer is on, or the current selection. What a pronoun means. */
+  referent?: string | null,
 ): Session | undefined {
   const needle = target.toLowerCase();
+  // A pronoun resolves to the referent and only the referent. Falling through to a text match
+  // would let "it" match the word "it" in some task description, which is how a command lands on
+  // the wrong agent -- the single worst failure this interface can have.
+  if (isReferent(target)) {
+    return referent ? sessions.find((s) => s.session_id === referent) : undefined;
+  }
   return sessions.find((s) => {
     const id = (s.session_id ?? '').toLowerCase();
     const repo = (s.repo ?? '').toLowerCase();
@@ -182,6 +221,7 @@ const AUTO_SEND_MS = 900;
 
 export default function FleetVoice({
   sessions = [],
+  referent = null,
   onFilter,
   onOpenDeck,
   onHighlight,
@@ -307,7 +347,7 @@ export default function FleetVoice({
       }
 
       if (intent.kind === 'stop') {
-        const session = resolveSession(sessions, intent.target);
+        const session = resolveSession(sessions, intent.target, referent);
         if (!session) {
           setNotice(`No agent named ${intent.target}`);
           speak(`I could not find an agent named ${intent.target}.`);
@@ -320,7 +360,7 @@ export default function FleetVoice({
       }
 
       if (intent.kind === 'steer') {
-        const session = resolveSession(sessions, intent.target);
+        const session = resolveSession(sessions, intent.target, referent);
         if (!session) {
           setNotice(`No agent named ${intent.target}`);
           speak(`I could not find an agent named ${intent.target}.`);

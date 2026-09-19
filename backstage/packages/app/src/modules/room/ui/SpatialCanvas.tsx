@@ -52,6 +52,18 @@ export interface SpatialCanvasProps {
    */
   onSelectedPosition?: (pos: { x: number; y: number } | null) => void;
   /**
+   * WHAT THE POINTER IS OVER, which is what makes "kill it" mean something.
+   *
+   * Without this, voice is a separate channel: the person looks at a red node and says "stop
+   * that one", and the system has to guess from the sentence which of twenty-four agents was
+   * meant. Reported from the canvas, the referent is not inferred at all -- it is the node under
+   * the cursor, and the sentence only has to say what to DO, not which one to do it to.
+   *
+   * It is reported as a referent rather than a selection on purpose: hovering must not select,
+   * or merely moving the mouse across the room would open menus and move the camera.
+   */
+  onHover?: (sessionId: string | null) => void;
+  /**
    * EVENTS PER SECOND, keyed by session id -- the live stream's own velocity.
    *
    * This is what turns the room from a picture into an instrument. Without it the only thing
@@ -430,6 +442,16 @@ export function SpatialCanvas(props: SpatialCanvasProps): JSX.Element {
   }, []);
 
   const hovering = hovered ? nodesRef.current.get(hovered) : null;
+
+  // Report the pointer's referent upward. Held in a ref so a page re-render does not need the
+  // canvas to re-render, and only sent when it CHANGES: a mousemove fires dozens of times a
+  // second and reporting the same id each time would re-render the page for nothing.
+  const lastHover = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastHover.current === hovered) return;
+    lastHover.current = hovered;
+    props.onHover?.(hovered);
+  }, [hovered, props.onHover]);
 
   // Report the selected node's position whenever it moves, so the menu follows the agent it
   // belongs to rather than hanging in place while the node drifts out from under it.
