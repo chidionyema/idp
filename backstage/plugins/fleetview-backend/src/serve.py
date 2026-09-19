@@ -232,19 +232,60 @@ def build_app(routes_path: Path) -> FastAPI:
 
             return StreamingResponse(gen_nats(), media_type="text/event-stream")
 
-        async def gen():
-            # Initial frame: one event per current session so the page renders on connect.
+        async def gen_live():
+            """LIVE FRAMES WITHOUT A BUS, measured from the ledger that is always being written.
+
+            THE GAP THIS CLOSES. Without NATS_URL this route sent the initial frames and then
+            nothing but `: heartbeat` for ever. Measured 2026-09-19: the stream authenticated
+            (after a 401 fix), delivered 24 frames on connect, and then a heartbeat every 30s.
+            Every trail, every jet and every "live" claim in the UI was therefore cosmetic -- the
+            page could only ever be as fresh as the last 15-second poll.
+
+            On this machine there IS a live source and it was already on disk: `session_events`
+            gains a row every time a session writes. Tail ing that table costs one indexed query
+            per second and needs no NATS, no cluster and no new dependency. It is the same table
+            the recorder fills and the same one bin/idp-cluster-state reads.
+
+            The poll is not removed; it is what makes a session that has gone QUIET still move to
+            `stuck` on the board, and a row that only changes when it writes could otherwise sit
+            `running` for ever.
+            """
             body, _status = routes.sessions_envelope()
             for record in body.get("sessions") or []:
                 yield routes.stream_frames([record])[0]
-            # Heartbeat: a comment line keeps the connection open across proxies without
-            # the page misreading it as a session change. The session contract is in
-            # schema/session.json -- nothing here invents one.
-            while True:
-                await asyncio.sleep(30)
-                yield ": heartbeat\n\n"
 
-        return StreamingResponse(gen(), media_type="text/event-stream")
+            seen = routes.newest_event_seq()
+            last_full = asyncio.get_event_loop().time()
+            while True:
+                await asyncio.sleep(1.0)
+                now = asyncio.get_event_loop().time()
+                try:
+                    newest = routes.newest_event_seq()
+                except Exception:  # noqa: BLE001 -- a ledger read that fails is not fatal
+                    newest = seen
+                if newest > seen:
+                    # Something wrote. Send every session that moved, so a burst of tool calls
+                    # arrives as a burst rather than one frame per second.
+                    seen = newest
+                    fresh, _st = routes.sessions_envelope()
+                    for record in fresh.get("sessions") or []:
+                        yield routes.stream_frames([record])[0]
+                elif now - last_full >= 15:
+                    # Nothing wrote: still send the board so a session that has gone quiet moves
+                    # to `stuck` on the page without waiting for a client poll.
+                    last_full = now
+                    fresh, _st = routes.sessions_envelope()
+                    for record in fresh.get("sessions") or []:
+                        yield routes.stream_frames([record])[0]
+                if now - last_full >= 30:
+                    yield ": heartbeat\n\n"
+                    last_full = now
+
+        return StreamingResponse(
+            gen_live(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @app.get(routes.NOTES_PATH)
     def notes_get(session_id: str):

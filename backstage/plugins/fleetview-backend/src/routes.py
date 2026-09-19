@@ -98,6 +98,33 @@ def _notes():
     return _load(_NOTES_MODULE, "fleetview_notes_impl")
 
 
+def newest_event_seq() -> int:
+    """The highest `session_events.id`, or 0.
+
+    THE LIVE SIGNAL ON A MACHINE WITH NO BUS. `session_events` gains a row every time a session
+    writes; its AUTOINCREMENT id only ever rises, so one indexed `MAX(id)` answers "has anything
+    happened since I last looked". One query per second, no dependency, no cluster -- and it is
+    what makes the stream live rather than a heartbeat.
+    """
+    import sqlite3 as _sqlite3
+
+    path = os.environ.get("ESTATE_DB")
+    if not path:
+        root = Path(__file__).resolve().parents[4]
+        path = str(root / "catalog" / "estate.db")
+    if not Path(path).is_file():
+        return 0
+    try:
+        con = _sqlite3.connect(path)
+        try:
+            row = con.execute("SELECT COALESCE(MAX(id), 0) FROM session_events").fetchone()
+            return int(row[0]) if row else 0
+        finally:
+            con.close()
+    except _sqlite3.Error:
+        return 0
+
+
 def _history():
     return _load(Path(__file__).resolve().parent / "history.py", "fleetview_history_impl")
 
