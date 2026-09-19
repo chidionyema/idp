@@ -125,6 +125,58 @@ func (p *patternStore) refresh(redisURL, redisKey, constraintsKey string, topN i
 // connection and reads back an array-of-bulk-strings reply. No external
 // module: this whole proxy is stdlib-only so `go build .` never touches the
 // network.
+//
+// THE BUG THIS FIXES (measured 2026-09-19). resolveRedisURL folds the mounted
+// password into REDIS_URL as url.UserPassword, and that URL is what gets logged
+// at startup -- so the line reads `redis://:<pass>@host:6379` and looks correct.
+// But this function only ever parsed `u.Host` and dialed it. The userinfo was
+// never turned into an AUTH command, so every call below sent SMEMBERS straight
+// out and Redis answered `-NOAUTH Authentication required.` The proxy then took
+// its own fail-open path and served a frozen cache: 7 built-in signatures and
+// zero constraints, every 10 seconds, for four days. The log said `fail-open`
+// and named Redis, which read as a Redis-side outage; Redis was healthy the
+// whole time and the missing byte was on this side.
+//
+// A password in a URL is not authentication. It is a string that looks like it.
+func redisAuth(conn net.Conn, u *url.URL) error {
+	if u.User == nil {
+		return nil
+	}
+	pass, hasPass := u.User.Password()
+	if !hasPass {
+		return nil
+	}
+	user := u.User.Username()
+	// Redis 6+ wants AUTH <user> <pass>; a URL with no username is the classic
+	// AUTH <pass> form and sending an empty first field would be a syntax error.
+	args := []string{"AUTH"}
+	if user != "" {
+		args = append(args, user)
+	}
+	args = append(args, pass)
+	var cmd strings.Builder
+	fmt.Fprintf(&cmd, "*%d\r\n", len(args))
+	for _, a := range args {
+		fmt.Fprintf(&cmd, "$%d\r\n%s\r\n", len(a), a)
+	}
+	if _, err := conn.Write([]byte(cmd.String())); err != nil {
+		return fmt.Errorf("auth write: %w", err)
+	}
+	r := bufio.NewReader(conn)
+	line, err := r.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("auth read: %w", err)
+	}
+	line = strings.TrimRight(line, "\r\n")
+	if !strings.HasPrefix(line, "+OK") {
+		// Deliberately not fatal to the caller: this proxy's posture is
+		// fail-open, and a wrong password should degrade to the frozen
+		// cache with a line naming AUTH, not to refusing traffic.
+		return fmt.Errorf("AUTH rejected: %q", line)
+	}
+	return nil
+}
+
 func redisCommand(redisURL string, args []string, timeout time.Duration) ([]string, error) {
 	u, err := url.Parse(redisURL)
 	if err != nil {
@@ -140,6 +192,10 @@ func redisCommand(redisURL string, args []string, timeout time.Duration) ([]stri
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(timeout))
+
+	if err := redisAuth(conn, u); err != nil {
+		return nil, err
+	}
 
 	var cmd strings.Builder
 	fmt.Fprintf(&cmd, "*%d\r\n", len(args))
