@@ -61,8 +61,8 @@ if [ -z "$live" ]; then
   for d in "$SESSIONS_DIR"/*/; do
     _ow_name="$(basename "$d")"
     [ -f "$d/token" ] || continue
-    if oci session refresh --profile "$_ow_name" --auth security_token >/dev/null 2>&1; then
-      if oci session validate --profile "$_ow_name" --local >/dev/null 2>&1; then
+    if timeout 20 oci session refresh --profile "$_ow_name" --auth security_token >/dev/null 2>&1; then
+      if timeout 15 oci session validate --profile "$_ow_name" --local >/dev/null 2>&1; then
         live="$_ow_name"
         echo "ok      oci-whoami: refreshed expired session for '$_ow_name' (no browser, no founder action)" >&2
         break
@@ -79,7 +79,13 @@ fi
 # a session token is still preferred when one is live, since it carries the founder's own identity.
 if [ -z "$live" ]; then
   for _ow_name in $(sed -n 's/^\[\(.*\)\]$/\1/p' "$HOME/.oci/config" 2>/dev/null); do
-    if oci iam region list --profile "$_ow_name" --auth api_key >/dev/null 2>&1; then
+    # BOUNDED, because this call is the one that hangs. Measured 2026-09-19: with an expired
+    # session and no API key file, `oci iam region list --auth api_key` blocks for ever rather
+    # than failing -- so `idp-oci-whoami` never returned, `idp-oci-session --check` never
+    # returned, and the only symptom a reader saw was a shell timeout with no message at all.
+    # A discovery call must answer, even if the answer is "no": 15s is more than this takes
+    # when it works.
+    if timeout 15 oci iam region list --profile "$_ow_name" --auth api_key >/dev/null 2>&1; then
       live="$_ow_name"
       _ow_auth=api_key
       echo "ok      oci-whoami: no live session; using API-key profile '$_ow_name' (no browser, no founder action)" >&2
