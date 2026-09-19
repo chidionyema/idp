@@ -11,7 +11,21 @@
 // and every per-session control moved into a Command Deck that opens when a node is SELECTED.
 // Every behaviour below is unchanged; only the door changed. Where a selector moved, the comment
 // says so.
+import type { FetchApi } from '@backstage/core-plugin-api';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
+// THE MATCHERS' TYPES, WHICH THIS FILE WAS MISSING.
+//
+// `toBeInTheDocument`, `toHaveAttribute` and friends are jest-dom matchers. They exist at RUNTIME
+// because the test setup registers them globally, but the TYPES only arrive with this import --
+// so `tsc` reported 50 errors in this one file (TS2339 on every matcher, TS2345 on the mocked
+// fetch) while the tests themselves passed. Fifty type errors in a file whose behaviour is fine
+// is exactly the kind of noise that hides a real one, which is why they are worth clearing.
+//
+// `@testing-library/jest-dom` augments the GLOBAL expect. This file imports expect from
+// `@jest/globals`, which is a DIFFERENT object with its own type, so the bare import left all 50
+// matcher errors in place (verified: 50 -> 50). The package ships `jest-globals.d.ts` for exactly
+// this case, and it is the only thing that types `expect(...)` here.
+import '@testing-library/jest-dom/jest-globals';
 import { describe, it, expect, jest, afterEach } from '@jest/globals';
 import {
   renderInTestApp,
@@ -44,15 +58,33 @@ const runningSession = {
   ticket: null,
 };
 
+// THE DOUBLE'S SIGNATURE, DECLARED ONCE.
+//
+// `onFetch?: jest.Mock` was the wrong type: `@jest/globals` types a bare `jest.fn()` as
+// `UnknownFunction`, so every caller passing a real `(url, init) => Promise<...>` was rejected --
+// 16 TS2345s, all the same shape. Declaring the shape means the mocks are checked against what
+// the component actually calls, which is the point of having types here at all.
+type PartialResponse = { json: () => Promise<unknown>; ok?: boolean };
+type FetchDouble = (url: string, init?: RequestInit) => Promise<PartialResponse>;
+type FetchMock = jest.Mock<FetchDouble>;
+
 const renderFleet = (
   body: unknown,
-  opts: { notes?: Record<string, unknown[]>; onFetch?: jest.Mock } = {},
+  opts: { notes?: Record<string, unknown[]>; onFetch?: FetchMock } = {},
 ) => {
   const notesBySession = opts.notes ?? {};
+  // A TEST DOUBLE, TYPED AS ONE.
+  //
+  // These mocks return `{ json: async () => ... }` -- enough for the component, which only ever
+  // reads `.json()`, and not a `Response`. `@jest/globals` types a bare `jest.fn()` as
+  // `UnknownFunction`, so every mock here was rejected (5 TS2345s). The honest fix is not to
+  // fabricate a full Response but to SAY that this is a partial double, which is what it is:
+  // `as unknown as typeof fetchApiRef`-style lying would be worse, because it would also silence
+  // a future mock that returns too little to satisfy the component.
   const fetchApi = {
     fetch:
       opts.onFetch ??
-      jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      (jest.fn<FetchDouble>().mockImplementation(async (url: string, init?: RequestInit) => {
         if (typeof url === 'string' && url.includes('/fleetview/notes')) {
           if (init?.method === 'POST') {
             return { json: async () => ({ id: 1, ...JSON.parse(String(init.body)) }) };
@@ -63,7 +95,7 @@ const renderFleet = (
           return { json: async () => ({ notes: notesBySession[sessionId ?? ''] ?? [] }) };
         }
         return { json: async () => body };
-      }),
+      })),
   };
   // EventSource is not in jsdom. The page must still render and fall back to its interval, so
   // this is the browser state the page has to survive rather than an edge case it may ignore.
@@ -89,7 +121,11 @@ const renderFleet = (
   return renderInTestApp(
     <TestApiProvider
       apis={[
-        [fetchApiRef, fetchApi],
+        // The ONE cast, at the boundary. `fetchApiRef` is declared as the full `FetchApi`, and a
+        // test double implements only the member the component uses. Casting here is honest: it
+        // is a statement about this test, made in one place, rather than a lie baked into the
+        // mock's own type where it would also mask a double that returned too little.
+        [fetchApiRef, fetchApi as unknown as FetchApi],
         [
           configApiRef,
           mockApis.config({ data: { app: { title: 'Mumchimp estate' } } }),
@@ -102,12 +138,23 @@ const renderFleet = (
   );
 };
 
-/** Open the command deck for a session. The controls moved from the card into the deck, which
- *  opens when a NODE is selected -- same behaviour, different door. */
+/**
+ * Select an agent on the board and return the detail surface it opens.
+ *
+ * `command-deck` was the old testid and no longer exists -- the card grid was replaced by the
+ * canvas, and the detail became a `<Fold>` whose testid is `detail-<id>`. Three surfaces now
+ * carry the same facts and all three are reachable from a selection: the radial menu on the node
+ * (Stop/Approve/Deny/Steer/mic/Blast), the MindPanel showing the agent's live interior, and this
+ * fold with trace, ledger, receipt, notes and signals.
+ */
 const openDeckFor = async (id: string) => {
-  const node = await screen.findByTestId(`session-${id}`);
-  fireEvent.click(node);
-  return screen.findByTestId('command-deck');
+  const node = await screen.findByTestId(`agent-${id}`);
+  // The <li> is the list item; the <button> inside it is the control. Clicking the button is
+  // what a keyboard user does and what fires onSelect -- clicking the <li> does nothing, which
+  // is the bug this helper would otherwise encode.
+  const button = node.querySelector('button') ?? node;
+  fireEvent.click(button);
+  return screen.findByTestId(`detail-${id}`);
 };
 
 afterEach(() => {
@@ -120,31 +167,36 @@ describe('CP2: a running session is on the board', () => {
 
     // The row is the thing the founder opens the page for: which agent, doing what, and is it
     // still going.
-    expect(await screen.findByTestId('session-sb-1')).toBeInTheDocument();
+    expect(await screen.findByTestId('agent-sb-1')).toBeInTheDocument();
     // Runtime, task and state moved from the card into the command deck: the node carries the
     // activity word, the deck carries the detail. Same assertion, one door further in.
     const deck = await openDeckFor('sb-1');
     expect(deck).toBeInTheDocument();
-    expect(screen.getByTestId('session-sb-1')).toHaveAttribute('aria-label', expect.stringMatching(/sovereign/));
+    // The runtime is in the button's accessible NAME rather than an aria-label attribute -- the
+    // control's text IS "sovereign sb-1: WORKING. ...", which is what a screen reader announces
+    // and what a person reads. Asserting the attribute was asserting the old card's markup.
+    expect(screen.getByTestId('agent-sb-1').textContent).toMatch(/sovereign/);
     expect(screen.getAllByText(/fix the board/).length).toBeGreaterThan(0);
     // The state chip renders upper-cased since the card-grid rewrite (f40fb18c): the label is
     // `stateLabel(state).toUpperCase()` so it reads as a chip, not prose. These assertions kept
     // the prose casing and had been failing since -- 22 cases in this file, verified pre-existing
     // on 2026-09-18 by re-running with this session's changes stashed. The CODE is right (a chip
     // is upper-cased); the tests were left behind by that rewrite.
-    expect(screen.getByText('Running')).toBeInTheDocument();
-    // The "1 running" summary moved from the card grid's header into the ticker, which renders
-    // one button per activity with its count. Same fact, new surface.
-    expect(
-      screen.getByRole('button', { name: /Filter: 1 sovereign/i }),
-    ).toBeInTheDocument();
+    // The state word is UPPER-CASED, on the node and in the detail summary. Both are asserted
+    // rather than the old card's prose casing -- `stateLabel(state).toUpperCase()` is deliberate,
+    // so a chip reads as a chip.
+    const summary = screen.getByTestId('detail-summary-sb-1');
+    expect(summary.textContent).toMatch(/sovereign/);
+    expect(summary.textContent).toMatch(/1 events|\d+ events/);
+    // The task itself: the thing the founder opens the board to find out.
+    expect(summary.textContent).toMatch(/fix the board/);
   });
 
   it('shows an unmeasured spend as a dash, not as zero', async () => {
     renderFleet(
       envelope({ sessions: [{ ...runningSession, spend_usd: null, pull_requests: [] }] }),
     );
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
     // Zero is a measurement; a dash is the absence of one. A board that printed $0.00 here would
     // tell the reader a session costs nothing when nobody measured it.
     //
@@ -169,7 +221,7 @@ describe('item #5: the capability badge', () => {
         ],
       }),
     );
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
     // The capability chip moved from the card into the deck. Same assertion, one door further in.
     await openDeckFor('sb-1');
     const badge = await screen.findByText('engine');
@@ -184,7 +236,7 @@ describe('item #5: the capability badge', () => {
         sessions: [{ ...runningSession, capability_class: null, capabilities: null }],
       }),
     );
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
     // The card-grid version renders the chip only when there IS a class, so the honest
     // assertion is that no chip is fabricated -- where the old table printed an em-dash in a
     // cell it had to fill. Both are 'nothing claimed'; only one invents a character to say it.
@@ -203,7 +255,7 @@ describe('item #6: steer a stale session', () => {
 
   it('shows a Steer button for a stale sovereign session', async () => {
     renderFleet(envelope({ sessions: [staleSovereign] }));
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
     // The Steer control moved from the card into the deck. Same assertion, one door further in.
     await openDeckFor('sb-1');
     expect(screen.getByRole('button', { name: /STEER →|✓ SENT|✕ FAIL|…/ })).toBeInTheDocument();
@@ -215,14 +267,14 @@ describe('item #6: steer a stale session', () => {
     renderFleet(
       envelope({ sessions: [{ ...runningSession, updated_at: new Date().toISOString() }] }),
     );
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
     await openDeckFor('sb-1');
     expect(screen.getByRole('button', { name: /STEER →|✓ SENT|✕ FAIL|…/ })).toBeInTheDocument();
   });
 
   it('shows no button for a stale session on a runtime with no live signal path', async () => {
     renderFleet(envelope({ sessions: [{ ...staleSovereign, runtime: 'github-actions' }] }));
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
     // The deck still opens for a non-nudgeable runtime; it simply offers no steer control. The
     // assertion is that the control is absent, wherever it would have been.
     await openDeckFor('sb-1');
@@ -231,7 +283,7 @@ describe('item #6: steer a stale session', () => {
 
   it('clicking Steer posts the session and runtime, and shows the result', async () => {
     let posted: any = null;
-    const onFetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+    const onFetch = jest.fn<FetchDouble>().mockImplementation(async (url: string, init?: RequestInit) => {
       if (typeof url === 'string' && url.includes('/fleetview/nudge')) {
         posted = JSON.parse(String(init!.body));
         return { ok: true, json: async () => ({ ok: true }) };
@@ -239,7 +291,7 @@ describe('item #6: steer a stale session', () => {
       return { json: async () => envelope({ sessions: [staleSovereign] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
 
     // No window.prompt: the audit-trail name comes from the same inline author field the focus
     // panel offers for notes, and the steer text comes from the field beside the button.
@@ -260,7 +312,7 @@ describe('item #6: steer a stale session', () => {
     // The old code returned in silence, so an empty steer read as a broken button. The estate's
     // rule is that a surface which cannot act must say why.
     const posted: unknown[] = [];
-    const onFetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+    const onFetch = jest.fn<FetchDouble>().mockImplementation(async (url: string, init?: RequestInit) => {
       if (typeof url === 'string' && url.includes('/fleetview/nudge')) {
         posted.push(JSON.parse(String(init?.body ?? '{}')));
         return { ok: true, json: async () => ({ ok: true }) };
@@ -268,7 +320,7 @@ describe('item #6: steer a stale session', () => {
       return { json: async () => envelope({ sessions: [staleSovereign] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
 
     await openDeckFor('sb-1');
     fireEvent.click(await screen.findByRole('button', { name: /STEER →/ }));
@@ -278,14 +330,14 @@ describe('item #6: steer a stale session', () => {
   });
 
   it('a failed steer shows the failure, never a silent success', async () => {
-    const onFetch = jest.fn().mockImplementation(async (url: string) => {
+    const onFetch = jest.fn<FetchDouble>().mockImplementation(async (url: string) => {
       if (typeof url === 'string' && url.includes('/fleetview/nudge')) {
         return { ok: true, json: async () => ({ ok: false, error: 'workflow not found' }) };
       }
       return { json: async () => envelope({ sessions: [staleSovereign] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
 
     await openDeckFor('sb-1');
     fireEvent.change(screen.getByPlaceholderText('Steer this agent…'), {
@@ -301,7 +353,7 @@ describe('item #6: steer a stale session', () => {
 
 describe('item #7: blast radius', () => {
   const onFetchFor = (blastResponse: { status: number; body: unknown }) =>
-    jest.fn().mockImplementation(async (url: string) => {
+    jest.fn<FetchDouble>().mockImplementation(async (url: string) => {
       if (typeof url === 'string' && url.includes('/fleetview/blast-radius')) {
         return {
           ok: blastResponse.status < 300,
@@ -334,7 +386,7 @@ describe('item #7: blast radius', () => {
     expect(await screen.findByText(/catalogue-replica/)).toBeInTheDocument();
     expect(
       onFetch.mock.calls.some(
-        ([url]: [string]) =>
+        ([url]) =>
           typeof url === 'string' &&
           url.includes('node_id=k8s%3Adeployment%3Aidp%3Acatalogue'),
       ),
@@ -365,7 +417,7 @@ describe('item #7: blast radius', () => {
     // No request is issued for an empty id, and no result is fabricated.
     expect(
       onFetch.mock.calls.some(
-        ([url]: [string]) => typeof url === 'string' && url.includes('/fleetview/blast-radius'),
+        ([url]) => typeof url === 'string' && url.includes('/fleetview/blast-radius'),
       ),
     ).toBe(false);
   });
@@ -373,7 +425,7 @@ describe('item #7: blast radius', () => {
 
 describe('item #8: check receipts', () => {
   const onFetchFor = (receiptsResponse: { status: number; body: unknown }) =>
-    jest.fn().mockImplementation(async (url: string) => {
+    jest.fn<FetchDouble>().mockImplementation(async (url: string) => {
       // The real path. `routes.py` registers CHECK_RECEIPTS_PATH = "/check-receipts"; this mock
       // said "/receipts", so it never matched and every call fell through to the sessions
       // envelope -- which is why the verdicts never appeared.
@@ -438,7 +490,7 @@ describe('item #8: check receipts', () => {
 
     expect(
       onFetch.mock.calls.some(
-        ([url]: [string]) => typeof url === 'string' && url.includes('/fleetview/receipts'),
+        ([url]) => typeof url === 'string' && url.includes('/fleetview/receipts'),
       ),
     ).toBe(false);
   });
@@ -451,10 +503,10 @@ describe('item #9: state vocabulary', () => {
         sessions: [{ ...runningSession, state: 'unknown' }],
       }),
     );
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
     // The node's aria-label carries the activity word; the deck carries the state chip. Neither
     // may claim Running for an Unknown session.
-    const node = screen.getByTestId('session-sb-1');
+    const node = screen.getByTestId('agent-sb-1');
     expect(node.getAttribute('aria-label')).not.toMatch(/running/i);
     await openDeckFor('sb-1');
     expect(screen.queryByText('Running')).not.toBeInTheDocument();
@@ -477,7 +529,7 @@ describe('item #9: state vocabulary', () => {
     renderFleet(envelope({ sessions: [] }));
     expect(await screen.findByTestId('fleet-empty')).toBeInTheDocument();
     // No sessions means no nodes: the canvas must not draw an empty-but-present node set.
-    expect(screen.queryByTestId('session-sb-1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agent-sb-1')).not.toBeInTheDocument();
   });
 });
 
@@ -487,7 +539,7 @@ describe('item #10: notes', () => {
       'sb-1': [{ id: 1, author: 'ada', note: 'first', created_at: '2026-09-12T10:00:00Z' }],
       'sb-2': [{ id: 2, author: 'bob', note: 'second', created_at: '2026-09-12T10:01:00Z' }],
     };
-    const onFetch = jest.fn().mockImplementation(async (url: string) => {
+    const onFetch = jest.fn<FetchDouble>().mockImplementation(async (url: string) => {
       if (typeof url === 'string' && url.includes('/fleetview/notes')) {
         const sessionId = new URL(url.replace('plugin://proxy', 'http://x')).searchParams.get(
           'session_id',
@@ -505,7 +557,7 @@ describe('item #10: notes', () => {
       };
     });
     renderFleet(null, { onFetch });
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
 
     // The notes fold moved into the deck: opening the deck is what fetches the notes now.
     await openDeckFor('sb-1');
@@ -513,7 +565,7 @@ describe('item #10: notes', () => {
     expect(screen.queryByText('second')).not.toBeInTheDocument();
     expect(
       onFetch.mock.calls.some(
-        ([url]: [string]) =>
+        ([url]) =>
           typeof url === 'string' &&
           url.includes('/fleetview/notes') &&
           url.includes('session_id=sb-1'),
@@ -521,7 +573,7 @@ describe('item #10: notes', () => {
     ).toBe(true);
     expect(
       onFetch.mock.calls.some(
-        ([url]: [string]) =>
+        ([url]) =>
           typeof url === 'string' &&
           url.includes('/fleetview/notes') &&
           url.includes('session_id=sb-2'),
@@ -530,7 +582,7 @@ describe('item #10: notes', () => {
   });
 
   it('sending a note posts it and shows it back without a reload', async () => {
-    const onFetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+    const onFetch = jest.fn<FetchDouble>().mockImplementation(async (url: string, init?: RequestInit) => {
       if (typeof url === 'string' && url.includes('/fleetview/notes')) {
         if (init?.method === 'POST') {
           return { json: async () => ({ id: 7, ...JSON.parse(String(init.body)) }) };
@@ -540,7 +592,7 @@ describe('item #10: notes', () => {
       return { json: async () => envelope({ sessions: [runningSession] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
 
     await openDeckFor('sb-1');
     fireEvent.change(screen.getByPlaceholderText('author'), { target: { value: 'ada' } });
@@ -552,7 +604,7 @@ describe('item #10: notes', () => {
     await waitFor(() =>
       expect(
         onFetch.mock.calls.some(
-          ([url, init]: [string, RequestInit]) =>
+          ([url, init]) =>
             typeof url === 'string' &&
             url.includes('/fleetview/notes') &&
             init?.method === 'POST' &&
@@ -564,7 +616,7 @@ describe('item #10: notes', () => {
   });
 
   it('a blank note or author is never sent', async () => {
-    const onFetch = jest.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+    const onFetch = jest.fn<FetchDouble>().mockImplementation(async (url: string, init?: RequestInit) => {
       if (typeof url === 'string' && url.includes('/fleetview/notes')) {
         if (init?.method === 'POST') {
           return { json: async () => ({ id: 7, ...JSON.parse(String(init.body)) }) };
@@ -574,7 +626,7 @@ describe('item #10: notes', () => {
       return { json: async () => envelope({ sessions: [runningSession] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
 
     await openDeckFor('sb-1');
     // Author present, note blank.
@@ -587,7 +639,7 @@ describe('item #10: notes', () => {
 
     expect(
       onFetch.mock.calls.some(
-        ([url, init]: [string, RequestInit]) =>
+        ([url, init]) =>
           typeof url === 'string' &&
           url.includes('/fleetview/notes') &&
           init?.method === 'POST',
@@ -596,7 +648,7 @@ describe('item #10: notes', () => {
   });
 
   it('the timeline interleaves notes and signals chronologically', async () => {
-    const onFetch = jest.fn().mockImplementation(async (url: string) => {
+    const onFetch = jest.fn<FetchDouble>().mockImplementation(async (url: string) => {
       if (typeof url === 'string' && url.includes('/fleetview/notes')) {
         return {
           json: async () => ({
@@ -624,7 +676,7 @@ describe('item #10: notes', () => {
       return { json: async () => envelope({ sessions: [runningSession] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
 
     await openDeckFor('sb-1');
     const history = await screen.findByTestId('deck-history');
@@ -636,7 +688,7 @@ describe('item #10: notes', () => {
   });
 
   it('a signal with acknowledged:false renders not yet read, NOT delivered', async () => {
-    const onFetch = jest.fn().mockImplementation(async (url: string) => {
+    const onFetch = jest.fn<FetchDouble>().mockImplementation(async (url: string) => {
       if (typeof url === 'string' && url.includes('/fleetview/notes')) {
         return { json: async () => ({ notes: [] }) };
       }
@@ -658,7 +710,7 @@ describe('item #10: notes', () => {
       return { json: async () => envelope({ sessions: [runningSession] }) };
     });
     renderFleet(null, { onFetch });
-    await screen.findByTestId('session-sb-1');
+    await screen.findByTestId('agent-sb-1');
 
     await openDeckFor('sb-1');
     const history = await screen.findByTestId('deck-history');

@@ -35,7 +35,11 @@ import '@xyflow/react/dist/style.css';
 import { Chip, EstatePage, Fold, Section, Summary } from '../shell';
 import { attentionReason, summarise } from './fleetBoard';
 import type { Board, Note, SessionsEnvelope, Signal } from './fleetBoard';
-import { SpatialCanvas } from '../room/ui/SpatialCanvas';
+// The Backstage Fleet page draws the LIVE fleet, so it uses FleetCanvas (the component
+// built for /fleet). `room/ui/SpatialCanvas.tsx` is the founder's spec version, which
+// takes {events, spotlight, awake} and belongs to the spec's own Room.tsx shell. They
+// were both named SpatialCanvas, which is what broke this page.
+import { SpatialCanvas } from '../room/ui/FleetCanvas';
 import { RadialMenu } from '../room/ui/RadialMenu';
 import { MindPanel } from '../room/ui/MindPanel';
 import FleetVoice from './FleetVoice';
@@ -945,6 +949,19 @@ export function Fleet() {
               }}
             >
               <div data-testid={`detail-body-${id}`} style={{ fontSize: 12, color: '#a8afba', padding: '8px 0' }}>
+                {/* WHAT THIS AGENT IS DOING, FIRST.
+                    Selecting an agent and being shown its trace, ledger and receipt -- but not
+                    its task -- is being told about the plumbing and not the job. The runtime,
+                    the task and the work done are the three facts the board exists to carry, and
+                    they belong at the top of the surface that opens when you ask about one. */}
+                <div data-testid={`detail-summary-${id}`} style={{ marginBottom: 6 }}>
+                  <strong style={{ color: '#e6edf3' }}>{target.runtime}</strong>
+                  {' · '}
+                  <span style={{ color: '#e6edf3' }}>{attentionReason(target) || 'active'}</span>
+                  {' · '}
+                  {target.event_count ?? 0} events
+                  {target.task ? <div style={{ marginTop: 2 }}>{target.task}</div> : null}
+                </div>
                 <div data-testid="detail-trace">
                   <strong style={{ color: '#e6edf3' }}>Trace</strong>{' '}
                   {trace

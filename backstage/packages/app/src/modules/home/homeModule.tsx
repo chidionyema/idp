@@ -91,7 +91,18 @@ const fleetPage = PageBlueprint.make({
   name: 'fleet',
   params: {
     path: '/fleet',
-    loader: () => import('./Fleet').then(m => <m.Fleet />),
+    // THE FOUNDER'S FLEET REACTOR 2100 IS THE PAGE.
+    //
+    // Until now /fleet rendered ./Fleet -- a Backstage shell wrapping a 2D canvas that was
+    // written for an earlier spec. The founder's Reactor (room/ui/FleetReactorApp.tsx, 549 lines
+    // of their own code: WebGL scene, concentric holographic meshes, spatial radial menu, blast
+    // radius sonar, orbital camera) was on disk and on NO ROUTE AT ALL, so it could never be seen
+    // in the browser. Every claim about it was measured in a standalone preview of a file nobody
+    // could open.
+    //
+    // It mounts here, at /fleet, full-bleed, with no Backstage chrome around it because the
+    // component draws its own HUD.
+    loader: () => import('../room/ui/FleetReactorApp').then(m => <m.default />),
   },
 });
 

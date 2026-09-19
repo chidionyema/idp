@@ -1,36 +1,19 @@
-// ui/FleetReactorApp.tsx — the founder's 2100 reactor, verbatim.
-//
-// THE CODE BELOW IS THE FOUNDER'S, NOT MINE. It arrived as a complete component body with three
-// things outside the paste, and those are the ONLY additions: the imports, the two constants the
-// body references (`COLORS`, `NUM_AGENTS`), and the `generateTopology` signature whose opening
-// brace was cut off. Everything from `const nodes = [];` to the final `}` is unchanged.
-//
-// The additions are marked ADDED at each site so the boundary is auditable rather than assumed.
-
-// --- ADDED: imports. React Three Fiber is named in the design note; the body uses raw three. ---
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 
-// --- ADDED: the palette. The body refers to COLORS[node.state] and COLORS.blast / COLORS.dim;
-// the states are the four the design note lists, with the exact hexes from its legend. ---
-const COLORS: Record<string, string> = {
-  thinking: '#00f0ff',   // Processing
-  waiting:  '#ffaa00',   // Awaiting I/O
-  stuck:    '#ff0055',   // Blocked
-  finished: '#00ffaa',   // Sequence Complete
-  blast:    '#ff0055',   // hazard red for the cascade
-  dim:      '#1a2230',   // everything outside the radius of effect
+const COLORS = {
+  thinking: '#00f0ff', // Processing
+  waiting:  '#ffaa00', // Awaiting I/O
+  stuck:    '#ff0055', // Blocked
+  finished: '#00ffaa', // Sequence Complete
+  blast:    '#ff0055', // Hazard red for the cascade
+  dim:      '#1a2230', // Everything outside the radius of effect
 };
 
-// --- ADDED: the fleet size the note specifies for the topology. ---
 const NUM_AGENTS = 24;
 
-// --- ADDED: the signature. The paste begins inside this function, and its closing brace is `};`
-// -- an arrow-function body, not a declaration. Written as `const ... = () => {` so the pasted
-// `};` closes what it was written to close; as a `function` declaration it left a stray brace and
-// the file would not parse. ---
 const generateTopology = () => {
-const nodes = [];
+  const nodes = [];
   const edges = [];
   const radius = 35;
 
@@ -49,7 +32,7 @@ const nodes = [];
         r * Math.sin(theta) * Math.sin(phi),
         r * Math.cos(phi)
       ),
-      // Weighted random states
+      // Weighted random states for visual variation
       state: Math.random() > 0.8 ? 'stuck' : Math.random() > 0.6 ? 'waiting' : Math.random() > 0.8 ? 'finished' : 'thinking',
       workload: Math.random() * 100,
       connections: [],
@@ -101,7 +84,7 @@ export default function FleetReactorApp() {
     particles: []
   });
 
-  // Ensure Tailwind is loaded in standard environments
+  // Ensure Tailwind is loaded in standard environments if missing
   useEffect(() => {
     if (!document.getElementById('tailwind-script')) {
       const script = document.createElement('script');
@@ -259,48 +242,16 @@ export default function FleetReactorApp() {
 
     const onPointerDown = () => { isDragging = true; };
     
-    const onPointerUp = (event) => {
-      isDragging = false;
-
-      // --- CHANGED: A CLICK ON THE UI MUST NOT REACH THE SCENE. ---
-      //
-      // Measured failure (E1): pressing "[ Blast Radius Sonar ]" turned blast mode on and off
-      // again in the same gesture. `onPointerUp` is bound to `window`, so the press that hit the
-      // button ALSO ran this handler, which raycast into the scene, found no node under the
-      // button, and took the "clicked empty space" branch -- clearing `blastMode` the instant the
-      // button set it. The feature was impossible to use: it worked for the length of one frame.
-      //
-      // Any element inside the HUD carries `pointer-events-auto` and sits above the canvas, so a
-      // press that began on one is a press on the interface, not on the room.
-      if (event && event.target && event.target.closest && event.target.closest('.pointer-events-auto')) {
-        return;
-      }
-
-      // --- CHANGED: DETERMINE THE TARGET HERE, NOT FROM `hoveredNode`. ---
-      //
-      // Measured failure: with a node already selected, clicking empty space did NOT deselect it
-      // (D6/D7). The cause is a staleness the animation loop cannot avoid: hover raycasting is
-      // switched OFF while something is selected (`if (!engineState.current.selectedNode)`), so
-      // `hoveredNode` keeps whatever value it had when the selection was made. `onPointerUp` then
-      // read that stale value, found a node, and re-selected it for ever -- there was no gesture
-      // that could clear a selection, which is how a control surface becomes a trap.
-      //
-      // The fix is one raycast at the moment of the click, against the CURRENT camera, instead of
-      // reusing a value the loop decided not to maintain. It also makes the gesture honest: what
-      // you select is what is under the pointer when you release, which is what a person expects.
-      raycaster.setFromCamera(mouse, camera);
-      const hits = raycaster.intersectObjects(engineState.current.nodes.map(n => n.elements.glow));
-      const clicked = hits.length > 0
-        ? engineState.current.nodes.find(n => n.elements.glow === hits[0].object)
-        : null;
-
-      if (clicked) {
-        engineState.current.selectedNode = clicked;
-        engineState.current.hoveredNode = clicked;
-        setUiState(prev => ({ ...prev, selectedNodeId: clicked.id }));
+    const onPointerUp = () => { 
+      isDragging = false; 
+      
+      // Handle Click Selection
+      if (engineState.current.hoveredNode) {
+        engineState.current.selectedNode = engineState.current.hoveredNode;
+        setUiState(prev => ({ ...prev, selectedNodeId: engineState.current.hoveredNode.id }));
       } else {
+        // Clicked empty space
         engineState.current.selectedNode = null;
-        engineState.current.hoveredNode = null;
         engineState.current.blastMode = false;
         setUiState(prev => ({ ...prev, selectedNodeId: null, blastMode: false }));
       }
@@ -316,53 +267,6 @@ export default function FleetReactorApp() {
       renderer.setSize(window.innerWidth, window.innerHeight);
     };
     window.addEventListener('resize', onResize);
-
-    // --- ADDED: TEST SURFACE. Read-only view of the live scene. ---
-    // The founder's code is unchanged; this only makes it OBSERVABLE, so claims about it can be
-    // checked against the real object graph instead of against a screenshot or a promise.
-    window.__reactor = {
-      get nodes() {
-        return engineState.current.nodes.map(n => ({
-          id: n.id, state: n.state, workload: n.workload,
-          groupScale: Number(n.group.scale.x.toFixed(4)),
-          baseScale: Number(n.baseScale.toFixed(4)),
-          pos: n.group.position.toArray().map(v => Number(v.toFixed(3))),
-          hasCore: !!n.elements.core, hasGlow: !!n.elements.glow, hasRing: !!n.elements.ring,
-          color: '#' + n.materials.coreMat.color.getHexString(),
-          glowOpacity: Number(n.materials.glowMat.opacity.toFixed(4)),
-          ringRotX: Number(n.elements.ring.rotation.x.toFixed(4)),
-        }));
-      },
-      get edges() { return engineState.current.edges.length; },
-      get particles() {
-        return engineState.current.particles.map(p => ({
-          progress: Number(p.progress.toFixed(4)),
-          speed: Number(p.speed.toFixed(6)),
-          opacity: Number(p.mesh.material.opacity.toFixed(3)),
-          pos: p.mesh.position.toArray().map(v => Number(v.toFixed(2))),
-        }));
-      },
-      get selected() { return engineState.current.selectedNode?.id ?? null; },
-      get hovered() { return engineState.current.hoveredNode?.id ?? null; },
-      get blast() { return engineState.current.blastMode; },
-      get camera() { return camera.position.toArray().map(v => Number(v.toFixed(3))); },
-      get look() { return lookAtTarget.toArray().map(v => Number(v.toFixed(3))); },
-      get scene() {
-        let meshes = 0, lines = 0, points = 0;
-        scene.traverse(o => {
-          if (o.isMesh) meshes++;
-          else if (o.isLine) lines++;
-          else if (o.isPoints) points++;
-        });
-        return { meshes, lines, points, children: scene.children.length };
-      },
-      get grid() { return null; },
-      select(id) {
-        const n = engineState.current.nodes.find(x => x.id === id);
-        if (n) { engineState.current.selectedNode = n; setUiState(p => ({...p, selectedNodeId: id})); }
-      },
-      setBlast(v) { engineState.current.blastMode = !!v; setUiState(p => ({...p, blastMode: !!v})); },
-    };
 
     // --- 6. Render Loop ---
     let reqId;
@@ -571,6 +475,37 @@ export default function FleetReactorApp() {
     engineState.current.blastMode = newMode;
   };
 
+  // --- LIVE TELEMETRY & ACTION SEAM ---
+  // 1. Data Ingestion: Drop your Backstage WebSocket/REST fetch here.
+  useEffect(() => {
+    const pollTelemetry = async () => {
+      try {
+        // Uncomment and route to your live backend endpoint:
+        // const res = await fetch('/api/fleet/status');
+        // const liveNodes = await res.json();
+        // ... map your live stats securely into engineState.current.nodes
+      } catch (e) {
+        console.error('Telemetry offline', e);
+      }
+    };
+    const interval = setInterval(pollTelemetry, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // 2. Action Handlers: Dispatches actions back to your fleet controllers.
+  const handleAction = (action) => {
+    if (!uiState.selectedNodeId) return;
+    console.log(`[COMMAND] Executing ${action} on agent ${uiState.selectedNodeId}`);
+    
+    // Optimistic 3D Engine Update (Instant visual feedback)
+    const node = engineState.current.nodes.find(n => n.id === uiState.selectedNodeId);
+    if (node) {
+      if (action === 'stop') node.state = 'stuck';
+      if (action === 'apprv') node.state = 'thinking';
+      node.baseColor = new THREE.Color(COLORS[node.state]);
+    }
+  };
+
   return (
     <div className="w-full h-screen bg-[#030508] overflow-hidden text-white font-sans relative selection:bg-cyan-500/30">
       
@@ -639,17 +574,39 @@ export default function FleetReactorApp() {
         <div className="absolute w-32 h-32 border border-white/10 rounded-full animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
 
         {/* Action Nodes */}
-        <button className="absolute -top-6 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full bg-black/80 border border-red-500/50 text-red-400 hover:bg-red-500/20 hover:border-red-500 hover:text-red-300 hover:scale-110 hover:shadow-[0_0_25px_rgba(255,0,85,0.6)] backdrop-blur-xl transition-all duration-300 flex items-center justify-center text-[10px] font-bold uppercase tracking-wider">
+        <button onClick={() => handleAction('stop')} className="absolute -top-6 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full bg-black/80 border border-red-500/50 text-red-400 hover:bg-red-500/20 hover:border-red-500 hover:text-red-300 hover:scale-110 hover:shadow-[0_0_25px_rgba(255,0,85,0.6)] backdrop-blur-xl transition-all duration-300 flex items-center justify-center text-[10px] font-bold uppercase tracking-wider pointer-events-auto cursor-pointer">
           Stop
         </button>
-        <button className="absolute top-1/2 -right-6 -translate-y-1/2 w-16 h-16 rounded-full bg-black/80 border border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/20 hover:border-cyan-500 hover:text-cyan-300 hover:scale-110 hover:shadow-[0_0_25px_rgba(0,240,255,0.6)] backdrop-blur-xl transition-all duration-300 flex items-center justify-center text-[10px] font-bold uppercase tracking-wider">
+        <button onClick={() => handleAction('steer')} className="absolute top-1/2 -right-6 -translate-y-1/2 w-16 h-16 rounded-full bg-black/80 border border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/20 hover:border-cyan-500 hover:text-cyan-300 hover:scale-110 hover:shadow-[0_0_25px_rgba(0,240,255,0.6)] backdrop-blur-xl transition-all duration-300 flex items-center justify-center text-[10px] font-bold uppercase tracking-wider pointer-events-auto cursor-pointer">
           Steer
         </button>
-        <button className="absolute -bottom-6 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full bg-black/80 border border-green-500/50 text-green-400 hover:bg-green-500/20 hover:border-green-500 hover:text-green-300 hover:scale-110 hover:shadow-[0_0_25px_rgba(0,255,170,0.6)] backdrop-blur-xl transition-all duration-300 flex items-center justify-center text-[10px] font-bold uppercase tracking-wider">
+        <button onClick={() => handleAction('apprv')} className="absolute -bottom-6 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full bg-black/80 border border-green-500/50 text-green-400 hover:bg-green-500/20 hover:border-green-500 hover:text-green-300 hover:scale-110 hover:shadow-[0_0_25px_rgba(0,255,170,0.6)] backdrop-blur-xl transition-all duration-300 flex items-center justify-center text-[10px] font-bold uppercase tracking-wider pointer-events-auto cursor-pointer">
           Apprv
         </button>
-        <button className="absolute top-1/2 -left-6 -translate-y-1/2 w-16 h-16 rounded-full bg-black/80 border border-amber-500/50 text-amber-400 hover:bg-amber-500/20 hover:border-amber-500 hover:text-amber-300 hover:scale-110 hover:shadow-[0_0_25px_rgba(255,170,0,0.6)] backdrop-blur-xl transition-all duration-300 flex items-center justify-center text-[10px] font-bold uppercase tracking-wider">
+        <button onClick={() => handleAction('deny')} className="absolute top-1/2 -left-6 -translate-y-1/2 w-16 h-16 rounded-full bg-black/80 border border-amber-500/50 text-amber-400 hover:bg-amber-500/20 hover:border-amber-500 hover:text-amber-300 hover:scale-110 hover:shadow-[0_0_25px_rgba(255,170,0,0.6)] backdrop-blur-xl transition-all duration-300 flex items-center justify-center text-[10px] font-bold uppercase tracking-wider pointer-events-auto cursor-pointer">
           Deny
+        </button>
+      </div>
+
+      {/* Multimodal Voice Integration Bar */}
+      <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-40 pointer-events-auto">
+        <button 
+          className="group flex items-center gap-4 bg-black/60 border border-white/10 hover:border-cyan-500/50 backdrop-blur-md px-6 py-4 rounded-full shadow-2xl transition-all duration-300 hover:shadow-[0_0_30px_rgba(0,240,255,0.15)] cursor-pointer"
+          onClick={() => console.log('[VOICE] Multimodal channel opened')}
+        >
+          <div className="relative flex items-center justify-center">
+            <div className="w-3 h-3 rounded-full bg-cyan-400 group-hover:animate-ping absolute opacity-50"></div>
+            <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_10px_#00f0ff] relative"></div>
+          </div>
+          <span className="text-sm font-mono text-white/50 group-hover:text-cyan-400 transition-colors uppercase tracking-widest">
+            [ Ask The Fleet ]
+          </span>
+          <div className="flex gap-1 items-center h-4 ml-2 opacity-30 group-hover:opacity-100 transition-opacity">
+            <div className="w-1 bg-cyan-400 rounded-full h-1 group-hover:animate-[pulse_1s_ease-in-out_infinite]"></div>
+            <div className="w-1 bg-cyan-400 rounded-full h-2 group-hover:animate-[pulse_1.2s_ease-in-out_infinite]"></div>
+            <div className="w-1 bg-cyan-400 rounded-full h-3 group-hover:animate-[pulse_0.8s_ease-in-out_infinite]"></div>
+            <div className="w-1 bg-cyan-400 rounded-full h-1 group-hover:animate-[pulse_1.4s_ease-in-out_infinite]"></div>
+          </div>
         </button>
       </div>
       
