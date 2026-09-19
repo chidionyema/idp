@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# The sovereign voice loop, locally, in one command.
+#
+# WHY A WRAPPER. Three things about this stack are easy to get wrong in a way that presents as a
+# broken microphone rather than as a misconfiguration:
+#
+#   1. It needs a Python with `faster-whisper`, `kokoro-onnx`, `fastapi` and `uvicorn`. This
+#      machine's system Python is externally managed (PEP 668), so those live in a venv and the
+#      venv is not on PATH.
+#   2. The models must exist in the cache before the first socket opens, or the first conversation
+#      pays the download while a person waits.
+#   3. Silero VAD needs a SECURE ORIGIN. `http://localhost` counts; `http://<lan-ip>` does NOT,
+#      and the browser refuses the microphone with no useful message. Serving on 127.0.0.1 and
+#      saying so is the difference between "it works" and a silent failure.
+#
+#   bin/voice-loop                    # start on 127.0.0.1:8770
+#   bin/voice-loop --port N
+#   bin/voice-loop --check            # report readiness; start nothing
+set -uo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+VENV="${VOICE_VENV:-/tmp/voice-env}"
+PORT=8770
+MODE=start
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--port) PORT="$2"; shift 2 ;;
+	--check) MODE=check; shift ;;
+	*) echo "unknown argument: $1" >&2; exit 2 ;;
+	esac
+done
+
+ok=0
+if [ -x "$VENV/bin/python" ]; then
+	echo "ok      venv      $VENV"
+else
+	echo "DOWN    venv      $VENV  (python3 -m venv $VENV)"
+	ok=1
+fi
+
+if [ -x "$VENV/bin/python" ]; then
+	missing="$("$VENV/bin/python" - <<'PY' 2>/dev/null
+import importlib
+need = ["fastapi", "uvicorn", "numpy", "faster_whisper", "kokoro_onnx"]
+print(",".join(m for m in need if not importlib.util.find_spec(m)))
+PY
+)"
+	if [ -z "$missing" ]; then
+		echo "ok      packages  all present"
+	else
+		echo "DOWN    packages  missing: $missing"
+		ok=1
+	fi
+fi
+
+CACHE="${VOICE_MODEL_CACHE:-$HOME/.cache/sovereign-voice}"
+for f in kokoro-v1.0.int8.onnx voices-v1.0.bin; do
+	if [ -s "$CACHE/$f" ]; then
+		echo "ok      model     $f"
+	else
+		echo "DOWN    model     $f  (run bin/voice-models)"
+		ok=1
+	fi
+done
+
+if [ -z "${LITELLM_API_KEY:-}" ]; then
+	# Not fatal: the socket, the VAD and the transcription all still work, and the answer says so
+	# out loud. Refusing to start would hide three working layers behind one missing key.
+	echo "warn    router    LITELLM_API_KEY unset -- answers will say so"
+else
+	echo "ok      router    LITELLM_API_KEY present"
+fi
+
+if [ "$MODE" = check ]; then
+	[ "$ok" -eq 0 ] || exit 1
+	echo
+	echo "ready -- bin/voice-loop"
+	exit 0
+fi
+
+if [ "$ok" -ne 0 ]; then
+	echo >&2
+	echo "not ready; fix the lines marked DOWN above" >&2
+	exit 1
+fi
+
+if [ -n "${SKIP_MODEL_WARMUP:-}" ]; then
+	echo "-- starting (warmup skipped) --"
+else
+	echo "-- warming models (this is the 89s import the blueprint measured) --"
+	start=$(date +%s)
+	"$VENV/bin/python" -c "
+import sys; sys.path.insert(0, '$IDP')
+from sovereign.voice import engine
+m = engine.load_models()
+print('asr', m.asr is not None, '| tts', m.tts is not None, '|', m.load_seconds, 's')
+for e in m.errors: print('  ', e)
+" || { echo "warmup failed" >&2; exit 1; }
+	echo "-- warmed in $(( $(date +%s) - start ))s --"
+fi
+
+echo
+echo "voice: http://127.0.0.1:$PORT"
+echo "       (127.0.0.1 specifically: the microphone needs a secure origin)"
+echo
+
+cd "$IDP"
+exec "$VENV/bin/python" -m uvicorn sovereign.voice.server:app --host 127.0.0.1 --port "$PORT"
