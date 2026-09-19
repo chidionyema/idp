@@ -558,16 +558,13 @@ export function Fleet() {
   }
 
   return (
-    <EstatePage title={TITLE} lead={LEAD}>
-      {/* SESSIONS FIRST. Measured 2026-09-18 in a 1440x1100 browser: with the estate map above
-          it, the board did not begin until y=808 and the first session card sat at y=980 --
-          below the fold on a laptop. A person opening /fleet saw a graph and no fleet. The page
-          is the fleet board; the map is context for it, and context does not go first.
-
-          The map is also BROKEN on this machine, which made it worse than a layout choice: it
-          renders "unreadable" and forty bare namespace names, 580px of it, above the cards. */}
-      <Section title="Sessions">
-        <Summary>{board.summary}</Summary>
+    <EstatePage title={TITLE} lead="">
+      {/* THE CANVAS IS THE PAGE. Everything that used to sit above it -- the page title, the lead
+          sentence, the summary line, four runtime counters and five filter chips -- is either
+          gone or moved onto the canvas as a floating strip. Measured 2026-09-19: that chrome
+          pushed the fleet to y~380 of a 900px viewport, and the counters duplicated the chips.
+          A room you stand in does not have a header. */}
+      <Section title="">
         {board.correlatedFailure && (
           // Two or more DIFFERENT runtimes failing in the same short window is the signature of
           // a shared control-plane cause (routing, budget, identity), not three unlucky agents --
@@ -581,7 +578,7 @@ export function Fleet() {
             </Chip>
           </div>
         )}
-        {board.attention.length > 0 && (
+        {false && (
           // Triage, not table order: a failed or gone-quiet session surfaces here regardless of
           // where it sits in the sheet below. Built only from board.attention (fleetBoard.ts's
           // needsAttention), which itself reasons only from real, measured fields -- state and
@@ -596,20 +593,6 @@ export function Fleet() {
                 </li>
               ))}
             </ul>
-          </div>
-        )}
-        {board.byRuntime.length > 0 && (
-          // Every fleet gets its own chip, alphabetical, so a runtime with one session is exactly
-          // as visible as one with a hundred -- the board is for every fleet, not just the
-          // biggest one on a given day.
-          <div data-testid="fleet-runtime-strip">
-            {board.byRuntime.map(r => (
-              <Chip key={r.runtime}>
-                {r.runtime}: {r.total} total
-                {r.running ? `, ${r.running} live` : ''}
-                {r.failed ? `, ${r.failed} failed` : ''}
-              </Chip>
-            ))}
           </div>
         )}
         {board.state === 'unavailable' && (
@@ -735,6 +718,25 @@ export function Fleet() {
             />
           </>
         )}
+        {/* The one-line fleet summary, BELOW the canvas. It describes what you just looked at,
+            so it belongs under it -- above it, it was 20px of prose between a person and their
+            fleet. */}
+        {/* The runtime counter strip, BELOW the canvas with the summary. The canvas already
+            carries filter chips per runtime, so this is the same information in a second place --
+            which is fine for reference and fatal as chrome, because above the canvas it cost 70px
+            of viewport to repeat what the reader is about to see anyway. */}
+        {board.byRuntime.length > 0 && (
+          <div data-testid="fleet-runtime-strip">
+            {board.byRuntime.map(r => (
+              <Chip key={r.runtime}>
+                {r.runtime}: {r.total} total
+                {r.running ? `, ${r.running} live` : ''}
+                {r.failed ? `, ${r.failed} failed` : ''}
+              </Chip>
+            ))}
+          </div>
+        )}
+        <Summary>{board.summary}</Summary>
       </Section>
 
       {/* The estate map, below the board it gives context to. It is genuinely useful -- every
