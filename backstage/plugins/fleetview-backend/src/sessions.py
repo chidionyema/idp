@@ -261,12 +261,32 @@ _STUCK_MIN_EVENTS = int(os.environ.get("ESTATE_STUCK_MIN_EVENTS", "10"))
 
 
 def _parse_ts(value: str | None) -> dt.datetime | None:
+    """A timestamp as an AWARE UTC datetime, or None.
+
+    THE BUG THIS FIXES, measured 2026-09-19. `fromisoformat` returns a NAIVE datetime for a
+    string with no offset, and every caller subtracts it from an aware `now`:
+
+        estate-db: TypeError: can't subtract offset-naive and offset-aware datetimes
+
+    That exception aborted the whole estate.db read, so `list_all_sessions` fell through to the
+    catalogue adapter and the board served ONE row from a file -- `idp:fleet-live-...`, with no
+    event_count and no activity. Twenty-three real sessions were never read at all, which is why
+    every node had a null activity, why the four states never appeared, and why the radial menu
+    showed a number computed from nothing.
+
+    A naive timestamp is not ambiguous here: this estate stores UTC everywhere, and a value with
+    no offset came from a writer that meant UTC. Attaching UTC is the honest reading, and it is
+    done once, in one place, rather than defended at every subtraction.
+    """
     if not isinstance(value, str) or not value:
         return None
     try:
-        return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed
 
 
 def _state_from_freshness(updated_at: str | None, now: dt.datetime) -> str:
