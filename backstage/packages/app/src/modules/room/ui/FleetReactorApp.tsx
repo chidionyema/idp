@@ -259,16 +259,48 @@ export default function FleetReactorApp() {
 
     const onPointerDown = () => { isDragging = true; };
     
-    const onPointerUp = () => { 
-      isDragging = false; 
-      
-      // Handle Click Selection
-      if (engineState.current.hoveredNode) {
-        engineState.current.selectedNode = engineState.current.hoveredNode;
-        setUiState(prev => ({ ...prev, selectedNodeId: engineState.current.hoveredNode.id }));
+    const onPointerUp = (event) => {
+      isDragging = false;
+
+      // --- CHANGED: A CLICK ON THE UI MUST NOT REACH THE SCENE. ---
+      //
+      // Measured failure (E1): pressing "[ Blast Radius Sonar ]" turned blast mode on and off
+      // again in the same gesture. `onPointerUp` is bound to `window`, so the press that hit the
+      // button ALSO ran this handler, which raycast into the scene, found no node under the
+      // button, and took the "clicked empty space" branch -- clearing `blastMode` the instant the
+      // button set it. The feature was impossible to use: it worked for the length of one frame.
+      //
+      // Any element inside the HUD carries `pointer-events-auto` and sits above the canvas, so a
+      // press that began on one is a press on the interface, not on the room.
+      if (event && event.target && event.target.closest && event.target.closest('.pointer-events-auto')) {
+        return;
+      }
+
+      // --- CHANGED: DETERMINE THE TARGET HERE, NOT FROM `hoveredNode`. ---
+      //
+      // Measured failure: with a node already selected, clicking empty space did NOT deselect it
+      // (D6/D7). The cause is a staleness the animation loop cannot avoid: hover raycasting is
+      // switched OFF while something is selected (`if (!engineState.current.selectedNode)`), so
+      // `hoveredNode` keeps whatever value it had when the selection was made. `onPointerUp` then
+      // read that stale value, found a node, and re-selected it for ever -- there was no gesture
+      // that could clear a selection, which is how a control surface becomes a trap.
+      //
+      // The fix is one raycast at the moment of the click, against the CURRENT camera, instead of
+      // reusing a value the loop decided not to maintain. It also makes the gesture honest: what
+      // you select is what is under the pointer when you release, which is what a person expects.
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(engineState.current.nodes.map(n => n.elements.glow));
+      const clicked = hits.length > 0
+        ? engineState.current.nodes.find(n => n.elements.glow === hits[0].object)
+        : null;
+
+      if (clicked) {
+        engineState.current.selectedNode = clicked;
+        engineState.current.hoveredNode = clicked;
+        setUiState(prev => ({ ...prev, selectedNodeId: clicked.id }));
       } else {
-        // Clicked empty space
         engineState.current.selectedNode = null;
+        engineState.current.hoveredNode = null;
         engineState.current.blastMode = false;
         setUiState(prev => ({ ...prev, selectedNodeId: null, blastMode: false }));
       }
