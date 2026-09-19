@@ -47,6 +47,8 @@ import {
 import type { Board, Note, SessionsEnvelope, Signal } from './fleetBoard';
 import { ACTIVITY_WORD, ACTIVITY_SENTENCE, motionFor, ringStyleFor, needsAPerson } from './fleetMotion';
 import FleetCanvas from './FleetCanvas';
+import FleetVoice from './FleetVoice';
+import type { Activity } from './fleetMotion';
 import type { Activity } from './fleetMotion';
 
 // THE DESIGN SYSTEM, USED RATHER THAN REINVENTED.
@@ -379,6 +381,11 @@ export function Fleet() {
   // is wired to a node automatically -- FleetView sessions carry a `repo`, the graph's nodes are
   // `k8s:deployment:...`/`git:branch:...`/`code:module:...`, and guessing a match between them
   // would be exactly the fabricated claim this estate's "measured, not guessed" rule forbids.
+  // What voice narrows the fleet to, and which agent it selected. The PAGE owns them so the
+  // canvas and the voice bar cannot disagree about what is being shown.
+  const [voiceActivity, setVoiceActivity] = useState<Activity | null>(null);
+  const [voiceSelected, setVoiceSelected] = useState<string | null>(null);
+
   const [blastNodeId, setBlastNodeId] = useState('');
   const [blastResult, setBlastResult] = useState<{
     node_id: string;
@@ -617,6 +624,13 @@ export function Fleet() {
             <FleetCanvas
               sessions={board.sessions}
               board={board}
+              // THE PAGE OWNS THESE TWO, so voice and the canvas are looking at the same truth.
+              // Voice cannot narrow a fleet or select an agent if the canvas keeps that state to
+              // itself -- which is exactly why FleetVoice was built, tested, and connected to
+              // nothing.
+              activityFilter={voiceActivity}
+              selectedSessionId={voiceSelected}
+              onSelectSession={setVoiceSelected}
               // The deck is a CONTROL SURFACE, not a read-only panel: without these the page
               // rendered a canvas whose steer, note and history sections had no data and no
               // destination. Found by a test asserting "not yet read" against a deck that said
@@ -645,6 +659,18 @@ export function Fleet() {
                 await res.json();
                 void loadNotes(sessionId);
               }}
+            />
+
+            {/* VOICE. The whole point of it is that a person does not type: they say "what is
+                stuck" and the canvas narrows, or "stop <agent>" and the agent is selected with
+                the deck open. A mutation NEVER sends -- the deck opens pre-filled and the person
+                presses a button they can see, which is the research's "show the target before
+                executing" as a hard rule. */}
+            <FleetVoice
+              sessions={board.sessions}
+              onFilter={setVoiceActivity}
+              onHighlight={setVoiceSelected}
+              onOpenDeck={(sessionId) => setVoiceSelected(sessionId)}
             />
           </>
         )}

@@ -13,7 +13,7 @@ import {
   Tooltip,
 } from '@mui/material';
 import { capabilityLabel, NUDGEABLE_RUNTIMES, stateLabel } from './fleetBoard';
-import type { Session } from './fleetBoard';
+import type { Note, Session, Signal } from './fleetBoard';
 import { ACTIVITY_WORD } from './fleetMotion';
 import type { Activity } from './fleetMotion';
 
@@ -34,22 +34,6 @@ import type { Activity } from './fleetMotion';
  * Types
  * ---------------------------------------------------------------------------------------------- */
 
-export interface Signal {
-  id?: string;
-  kind: string;
-  by?: string;
-  acknowledged?: boolean;
-  error?: string | null;
-  created_at?: string | null;
-}
-
-export interface Note {
-  id?: string;
-  author?: string;
-  text: string;
-  created_at?: string | null;
-}
-
 export interface FleetCanvasProps {
   sessions: Session[];
   board: { state: string; summary?: string; sessions: Session[] };
@@ -63,6 +47,16 @@ export interface FleetCanvasProps {
   notesBySession?: Record<string, Note[]>;
   onRequestSignals?: (sessionId: string) => void;
   onRequestNotes?: (sessionId: string) => void;
+  /**
+   * CONTROLLABLE FROM OUTSIDE. The canvas owned these two pieces of state, so NOTHING could drive
+   * it -- which is why FleetVoice was built, tested and connected to nothing: voice had no way to
+   * narrow the fleet or select an agent. Both are now props with the internal state as the
+   * default, the standard controlled/uncontrolled pattern: pass a value and the canvas follows it.
+   */
+  activityFilter?: Activity | null;
+  selectedSessionId?: string | null;
+  /** Fired when the reader selects a node, so a parent can mirror the selection for voice. */
+  onSelectSession?: (sessionId: string | null) => void;
   onRequestReceipt?: (
     sessionId: string,
   ) => { status: string; verdict?: string; reason?: string } | undefined;
@@ -1023,6 +1017,13 @@ export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
     onRequestSignals,
     onRequestNotes,
     onRequestReceipt,
+    // The two controlled inputs. Destructured HERE, in the component that reads them -- the first
+    // attempt put them in CommandDeck's destructuring, where they were unused, and the runtime
+    // threw "selectedSessionId is not defined" while tsc stayed quiet because the reference was
+    // in a scope that merely did not have it.
+    activityFilter,
+    selectedSessionId,
+    onSelectSession,
   } = props;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1041,7 +1042,21 @@ export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
     w: FALLBACK_W,
     h: FALLBACK_H,
   });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIdState, setSelectedIdState] = useState<string | null>(null);
+  // Controlled when the parent passes a value, internal otherwise. `undefined` means "not
+  // controlled" and `null` means "controlled, nothing selected" -- conflating those is how a
+  // controlled component silently stops responding to its own clicks.
+  const selectedId = selectedSessionId !== undefined ? selectedSessionId : selectedIdState;
+  const setSelectedId = useCallback(
+    (next: string | null | ((prev: string | null) => string | null)) => {
+      setSelectedIdState((prev) => {
+        const resolved = typeof next === 'function' ? next(prev) : next;
+        if (onSelectSession) onSelectSession(resolved);
+        return resolved;
+      });
+    },
+    [onSelectSession],
+  );
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
   const particlesDisabledLogged = useRef(false);
@@ -1075,10 +1090,16 @@ export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
     return Array.from(set).sort();
   }, [sessions]);
 
+  // TWO FILTERS, and they compose. `filter` is the runtime chips along the top (the reader's
+  // hand); `activityFilter` is what voice narrows to ("what is stuck") and what the deck's own
+  // activity chip sets. Applying only one of them is why a voice query would have appeared to do
+  // nothing on a runtime-filtered board.
   const visibleSessions = useMemo(() => {
-    if (filter === 'all') return sessions;
-    return sessions.filter((s) => s.runtime === filter);
-  }, [sessions, filter]);
+    let out = sessions;
+    if (filter !== 'all') out = out.filter((s) => s.runtime === filter);
+    if (activityFilter) out = out.filter((s) => (s.activity ?? 'unknown') === activityFilter);
+    return out;
+  }, [sessions, filter, activityFilter]);
 
   // Layout is memoised on the session-id set and the container size. NEVER per frame.
   const layoutKey = useMemo(
