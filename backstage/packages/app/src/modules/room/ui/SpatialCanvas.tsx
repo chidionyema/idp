@@ -2,9 +2,9 @@
 // The fleet is not a chart. It is a room. Only the EDGES are shown: the stuck,
 // the loud, the new, the dying. The rest stay in the hum. Trails are visible.
 
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AgentId, EventBus, RoomEvents } from '../core/types';
-import type { ModelId } from '../core/types';
+import type {  } from '../core/types';
 
 interface Node {
   id: AgentId;

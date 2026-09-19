@@ -11,7 +11,7 @@
 //
 // @jest/globals is the direct equivalent of vitest's import: same four names, same semantics.
 // Nothing else in the file changes.
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import { Router } from '../routing/router';
 import { ModelRegistry } from '../models/registry';
 import { LiveHealthMap } from '../routing/health';

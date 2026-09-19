@@ -3,7 +3,7 @@
 // speaks, the breath quickens. When the room is awake, it glows. When the
 // room is dim, it is barely there.
 
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 export interface WaveformProps {
   readonly active: boolean;

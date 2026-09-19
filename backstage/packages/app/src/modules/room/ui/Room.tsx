@@ -2,7 +2,7 @@
 // The full-bleed shell. No panel. No section. The room IS the viewport.
 // Everything else floats over it. The cursor is not hidden — it is optional.
 
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SpatialCanvas } from './SpatialCanvas';
 import { Spotlight } from './Spotlight';
 import { Waveform } from './Waveform';

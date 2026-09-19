@@ -3,8 +3,8 @@
 //   router → regional model → alternative lab → cached → local → text → silence
 // Every step is named. Every step is transparent.
 
-import { ok, err, type Result } from '../core/result';
-import type { Failure, ModelId, Modality, RegionId, SovereigntyTier } from '../core/types';
+import { type Result } from '../core/result';
+import type { Failure } from '../core/types';
 import type { Router, RoutingRequest, RoutingDecision } from '../routing/router';
 
 export interface FallbackStep {

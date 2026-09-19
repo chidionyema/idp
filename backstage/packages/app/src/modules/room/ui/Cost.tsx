@@ -2,7 +2,6 @@
 // The cost is felt, not read. A warmth in the air. A dimming. A slowing.
 // The number is always available, but never in your face.
 
-import React from 'react';
 import type { Cost } from '../core/types';
 
 export interface CostGlowProps {

@@ -2,7 +2,7 @@
 // The named agent detaches from the swarm, glides to the center, grows, and
 // speaks. You do not find it on a grid. It comes to you.
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AgentId, Provenance } from '../core/types';
 
 export interface SpotlightProps {
