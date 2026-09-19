@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 // FleetView CP2: the board. Every agent session in the estate on one page, live, no reload.
 //
 // The data comes from the backend CP1 ships (`GET /api/proxy/fleetview/sessions`) and its event stream
@@ -385,6 +386,11 @@ export function Fleet() {
   // canvas and the voice bar cannot disagree about what is being shown.
   const [voiceActivity, setVoiceActivity] = useState<Activity | null>(null);
   const [voiceSelected, setVoiceSelected] = useState<string | null>(null);
+  // WHO the person just asked about, so the canvas can bring that agent forward.
+  const [voiceSpotlight, setVoiceSpotlight] = useState<string | null>(null);
+  // The conversation, so "it" and "that one" resolve. Capped: the model needs the last few turns,
+  // not the whole session, and every turn is latency.
+  const voiceHistory = useRef<{ who: string; text: string }[]>([]);
 
   const [blastNodeId, setBlastNodeId] = useState('');
   const [blastResult, setBlastResult] = useState<{
@@ -630,6 +636,7 @@ export function Fleet() {
               // nothing.
               activityFilter={voiceActivity}
               selectedSessionId={voiceSelected}
+              spotlightSessionId={voiceSpotlight}
               onSelectSession={setVoiceSelected}
               // The deck is a CONTROL SURFACE, not a read-only panel: without these the page
               // rendered a canvas whose steer, note and history sections had no data and no
@@ -683,11 +690,16 @@ export function Fleet() {
               // are spoken at ~300ms and the rest arrives while they are already being said. It
               // is the difference between laggy and instant, and it is the spec's own
               // "micro-clause chunking" applied where it actually matters.
+              onSpotlight={setVoiceSpotlight}
               onClause={async (question, speakClause) => {
                 const res = await fetchApi.fetch('plugin://proxy/fleetview/voice/stream', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ question }),
+                  body: JSON.stringify({
+                    question,
+                    // MEMORY: the last turns, so a follow-up does not have to re-name the agent.
+                    history: voiceHistory.current.slice(-6),
+                  }),
                 });
                 if (!res.ok || !res.body) {
                   throw new Error(`HTTP ${res.status}`);
@@ -718,6 +730,7 @@ export function Fleet() {
                   }
                 }
                 if (spoke === 0) throw new Error('the fleet returned nothing');
+                voiceHistory.current.push({ who: 'person', text: question });
               }}
             />
           </>

@@ -52,6 +52,14 @@ export interface FleetVoiceProps {
    * stays for tests and for any deployment that cannot hold a connection open.
    */
   onClause?: (question: string, speakClause: (text: string) => void) => Promise<void>;
+  /**
+   * THE SPOTLIGHT. Called with a session id when the person NAMES an agent, so the canvas can
+   * bring that agent forward of the fleet and enlarge it.
+   *
+   * This is the difference between "the board filtered" and "the agent came to me". Saying "show
+   * me pi" should not narrow a list; it should detach pi from the swarm.
+   */
+  onSpotlight?: (sessionId: string | null) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -171,6 +179,7 @@ export default function FleetVoice({
   onStateChange,
   onAsk,
   onClause,
+  onSpotlight,
 }: FleetVoiceProps): JSX.Element {
   const recognitionCtor = useMemo(() => getRecognitionCtor(), []);
   const synthesisAvailable = useMemo(() => hasSynthesis(), []);
@@ -314,6 +323,20 @@ export default function FleetVoice({
       // which reads the SAME sessions the board is showing and answers in one or two spoken
       // sentences. A recognised command still acts locally and instantly; only free speech costs
       // a round trip.
+      // A NAMED AGENT COMES FORWARD. Checked before anything else, because "show me pi" is not a
+      // question about the fleet -- it is a request to look at one agent, and answering it with a
+      // filtered list is exactly the chart behaviour this replaces.
+      const named = sessions.find(
+        (s) =>
+          intent.raw.toLowerCase().includes((s.runtime || '').toLowerCase()) ||
+          intent.raw.toLowerCase().includes(String(s.session_id).slice(-6).toLowerCase()),
+      );
+      if (named && /show|look|focus|bring|watch|that one|this one/i.test(intent.raw)) {
+        if (onSpotlight) onSpotlight(named.session_id);
+        if (onHighlight) onHighlight(named.session_id);
+        setNotice(`SHOW ${named.session_id}`);
+      }
+
       setNotice(`ASK: ${intent.raw}`);
 
       // STREAMED FIRST. Each clause is spoken the moment it arrives, so the answer starts
@@ -351,7 +374,7 @@ export default function FleetVoice({
         speak('I could not reach the fleet to answer that.');
       }
     },
-    [onFilter, onHighlight, onOpenDeck, sessions, speak, speakQueued, onAsk, onClause],
+    [onFilter, onHighlight, onOpenDeck, onSpotlight, sessions, speak, speakQueued, onAsk, onClause],
   );
 
   const startListening = useCallback(() => {

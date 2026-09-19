@@ -105,13 +105,13 @@ def _voice():
 def ask_voice(body: dict, sessions: list) -> tuple[dict, int]:
     """Ask the fleet a question in words. The sessions are passed in from the SAME list /sessions
     serves, so the answer cannot describe a fleet the reader is not looking at."""
-    return _voice().ask(body.get("question", ""), sessions)
+    return _voice().ask(body.get("question", ""), sessions, body.get("history"))
 
 
 def stream_voice(body: dict, sessions: list):
     """Clause-by-clause server-sent events. The browser speaks each one as it lands, so the first
     words arrive while the model is still writing the rest."""
-    return _voice().stream_ask(body.get("question", ""), sessions)
+    return _voice().stream_ask(body.get("question", ""), sessions, body.get("history"))
 
 
 def _signals():

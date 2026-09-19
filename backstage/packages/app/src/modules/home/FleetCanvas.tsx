@@ -55,6 +55,19 @@ export interface FleetCanvasProps {
    */
   activityFilter?: Activity | null;
   selectedSessionId?: string | null;
+  /**
+   * THE SPOTLIGHT. A session id that is drawn LARGE, centred, and pulled forward of the fleet.
+   *
+   * This is the interaction that makes the canvas something other than a chart. Saying "show me
+   * pi" detaches that node from the swarm, glides it to the middle at ~3x, dims everything else,
+   * and the deck beside it speaks that agent's real state. You do not find the agent on a grid;
+   * the agent comes to you.
+   *
+   * Kept separate from `selectedSessionId` on purpose: selecting opens the deck (a table of
+   * facts), spotlighting is the presentation (the agent is brought forward). A caller can do one
+   * without the other.
+   */
+  spotlightSessionId?: string | null;
   /** Fired when the reader selects a node, so a parent can mirror the selection for voice. */
   onSelectSession?: (sessionId: string | null) => void;
   onRequestReceipt?: (
@@ -1023,6 +1036,7 @@ export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
     // in a scope that merely did not have it.
     activityFilter,
     selectedSessionId,
+    spotlightSessionId,
     onSelectSession,
   } = props;
 
@@ -1037,7 +1051,9 @@ export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
   // estate keeps removing, so the initial size is a real default and getBoundingClientRect is
   // only trusted once it reports something.
   const FALLBACK_W = 1200;
-  const FALLBACK_H = 560;
+  // The floor only. A real container measures taller and fills it; this is what jsdom and a
+  // collapsed pane get so the canvas is never blank.
+  const FALLBACK_H = 640;
   const [size, setSize] = useState<{ w: number; h: number }>({
     w: FALLBACK_W,
     h: FALLBACK_H,
@@ -1172,7 +1188,8 @@ export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
         position: 'relative',
         width: '100%',
         height: '100%',
-        minHeight: 480,
+        height: 'clamp(520px, calc(100vh - 260px), 1100px)',
+        minHeight: 520,
         background: T.bg,
         overflow: 'hidden',
         fontFamily: FONT_MONO,
@@ -1332,15 +1349,36 @@ export default function FleetCanvas(props: FleetCanvasProps): JSX.Element {
                 const pullY = stuck ? (size.h / 2 - node.y) * 0.02 : 0;
                 const ringR = node.r + 6;
                 const arcR = node.r + 10;
+
+                // THE SPOTLIGHT. When this node is named, it leaves the swarm: it glides to the
+                // centre, grows to about three times its size, and the rest of the fleet fades
+                // behind it. Everything is a CSS transition on transform, so the movement is one
+                // smooth interpolation the browser does itself -- no per-frame work, and it reads
+                // as the agent MOVING rather than the page redrawing.
+                const isSpotlit = spotlightSessionId === id;
+                const anySpotlit = Boolean(spotlightSessionId);
+                const homeX = size.w / 2;
+                const homeY = size.h / 2;
+                // Offset left when the deck is beside it, so the agent is not hidden behind its
+                // own panel.
+                const spotX = size.w * 0.34;
+                const spotY = homeY;
+                const tx = isSpotlit ? spotX : node.x + pullX;
+                const ty = isSpotlit ? spotY : node.y + pullY;
+                const spotScale = isSpotlit ? Math.max(2.2, 120 / Math.max(1, node.r)) : 1;
+                const dimmed = anySpotlit && !isSpotlit;
                 return (
                   <g
                     key={id}
-                    transform={`translate(${node.x + pullX} ${node.y + pullY})`}
+                    transform={`translate(${tx} ${ty}) scale(${spotScale})`}
                     style={{
                       cursor: 'pointer',
-                      willChange: 'transform',
-                      transition: 'transform 180ms cubic-bezier(.34,1.56,.64,1)',
-                      animation: stuck ? 'fleet-drift 2s ease-in-out infinite' : 'none',
+                      willChange: 'transform, opacity',
+                      // 620ms on a soft overshoot: long enough to read as travel, short enough
+                      // that it lands before a person finishes blinking.
+                      transition: 'transform 620ms cubic-bezier(.22,1.2,.36,1), opacity 420ms ease',
+                      opacity: dimmed ? 0.18 : 1,
+                      animation: stuck && !isSpotlit ? 'fleet-drift 2s ease-in-out infinite' : 'none',
                     }}
                     role="button"
                     tabIndex={0}

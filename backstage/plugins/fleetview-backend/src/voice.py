@@ -51,7 +51,11 @@ SYSTEM = (
     "say that you have. If asked to act, say what you would do and that it needs confirmation.\n"
     "\n"
     "Use ONLY the fleet summary below. Never invent a session, a state or a number. If the summary "
-    "does not answer the question, say so plainly."
+    "does not answer the question, say so plainly.\n"
+    "\n"
+    "If there is a RECENT CONVERSATION, it is what you were just asked: use it to resolve \"it\", "
+    "\"that one\" and \"the stuck one\", and answer the follow-up without making the person repeat "
+    "which agent they meant."
 )
 
 
@@ -124,7 +128,30 @@ def fleet_summary(sessions: list[dict[str, Any]], limit: int = 24) -> str:
     return "\n".join(lines)
 
 
-def ask(question: str, sessions: list[dict[str, Any]]) -> tuple[dict[str, Any], int]:
+def history_block(history: list[dict[str, str]] | None, limit: int = 6) -> str:
+    """The last few turns, so "it" and "that one" mean something.
+
+    WHY THIS WAS MISSING AND WHY IT MATTERED MOST. Voice was STATELESS: every question arrived
+    with no idea what had just been said, so "what about that one" was unanswerable and
+    "tell me more" was meaningless. That is the difference between a demo and something a person
+    talks to -- you do not have to re-name the agent every time.
+
+    Capped at six turns because every token here is latency, and the fleet summary is the thing
+    that actually needs the context window.
+    """
+    if not history:
+        return ""
+    tail = [h for h in history if h.get("text")][-limit:]
+    if not tail:
+        return ""
+    lines = ["RECENT CONVERSATION (newest last; use it to resolve \"it\" and \"that one\")"]
+    for h in tail:
+        who = "Person" if (h.get("who") or "person") == "person" else "You"
+        lines.append(f"{who}: {str(h.get('text'))[:200]}")
+    return "\n".join(lines) + "\n\n"
+
+
+def ask(question: str, sessions: list[dict[str, Any]], history: list[dict[str, str]] | None = None) -> tuple[dict[str, Any], int]:
     """Ask the fleet. Returns (body, status).
 
     A missing key is 503 with the reason, not a fallback: silently answering from a local model
@@ -146,7 +173,11 @@ def ask(question: str, sessions: list[dict[str, Any]]) -> tuple[dict[str, Any], 
             {"role": "system", "content": SYSTEM},
             {
                 "role": "user",
-                "content": f"FLEET SUMMARY\n{fleet_summary(sessions)}\n\nQUESTION\n{question}",
+                "content": (
+                    f"FLEET SUMMARY\n{fleet_summary(sessions)}\n\n"
+                    f"{history_block(history)}"
+                    f"QUESTION\n{question}"
+                ),
             },
         ],
         "max_tokens": 220,
@@ -217,7 +248,7 @@ def split_clauses(buffer: str) -> tuple[list[str], str]:
     return parts, buffer[start:]
 
 
-def stream_ask(question: str, sessions: list[dict[str, Any]]):
+def stream_ask(question: str, sessions: list[dict[str, Any]], history: list[dict[str, str]] | None = None):
     """Yield server-sent events: one `delta` per clause, then `done`.
 
     Same prompt, same fleet summary, same read-only rule as `ask` -- the only difference is that
@@ -237,7 +268,11 @@ def stream_ask(question: str, sessions: list[dict[str, Any]]):
             {"role": "system", "content": SYSTEM},
             {
                 "role": "user",
-                "content": f"FLEET SUMMARY\n{fleet_summary(sessions)}\n\nQUESTION\n{question}",
+                "content": (
+                    f"FLEET SUMMARY\n{fleet_summary(sessions)}\n\n"
+                    f"{history_block(history)}"
+                    f"QUESTION\n{question}"
+                ),
             },
         ],
         "max_tokens": 220,
