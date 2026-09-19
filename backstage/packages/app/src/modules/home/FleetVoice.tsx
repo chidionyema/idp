@@ -171,6 +171,15 @@ function resolveSession(
 
 const GRACE_MS = 1500;
 
+/**
+ * How long a pause means "finished".
+ *
+ * 900ms: shorter than a sentence-internal breath (people pause 200-600ms mid-clause) and longer
+ * than the browser's own finalisation. Measured against the alternative: 1500ms felt like the
+ * room was thinking; 600ms cut people off mid-sentence.
+ */
+const AUTO_SEND_MS = 900;
+
 export default function FleetVoice({
   sessions = [],
   onFilter,
@@ -194,14 +203,21 @@ export default function FleetVoice({
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const graceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Fires AUTO_SEND_MS after the last word. Its whole job is that a person never clicks twice. */
+  const autoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finalTranscriptRef = useRef<string>('');
   /** Only the not-yet-final words. Distinct from `interim`, which is the display string. */
   const interimTailRef = useRef<string>('');
   const holdingRef = useRef<boolean>(false);
   const stateRef = useRef<VoiceState>('idle');
+  /** `stopListening` reached from the auto-send timer, which is declared before it. */
+  const stopListeningRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
+    // The auto-send timer must call the CURRENT stopListening, not the one from the
+    // render that scheduled it.
+    stopListeningRef.current = () => {};
     if (onStateChange) onStateChange(state);
   }, [state, onStateChange]);
 
@@ -396,6 +412,11 @@ export default function FleetVoice({
       rec.onresult = (event: any) => {
         let interimText = '';
         let finalText = '';
+        // EVERY RESULT RESETS THE SILENCE TIMER. The browser delivers finals as you pause; if it
+        // has delivered one and nothing follows for AUTO_SEND_MS, the person has stopped talking
+        // and the utterance is over. That timer is the whole difference between "click twice"
+        // and "speak and it goes".
+        restartAutoSend();
         for (let i = event.resultIndex; i < event.results.length; i += 1) {
           const result = event.results[i];
           const transcript = result[0]?.transcript ?? '';
@@ -435,6 +456,10 @@ export default function FleetVoice({
       };
 
       rec.onend = () => {
+        // The recogniser ends on its own after a pause. If we have words and have not sent them,
+        // send now -- otherwise the utterance is stranded until a second click.
+        clearAutoSend();
+        if (!holdingRef.current) return;
         if (holdingRef.current) return;
         setState((prev) => (prev === 'listening' ? 'idle' : prev));
       };
@@ -448,7 +473,30 @@ export default function FleetVoice({
     }
   }, [cancelSynthesis, clearGrace, recognitionCtor, supported]);
 
+  /** Start (or restart) the "they have stopped talking" countdown. */
+  const restartAutoSend = useCallback(() => {
+    if (autoSendTimerRef.current !== null) clearTimeout(autoSendTimerRef.current);
+    autoSendTimerRef.current = setTimeout(() => {
+      autoSendTimerRef.current = null;
+      // Only send if we are still listening and have words. A timer that fires after the person
+      // already clicked Stop must not send twice.
+      if (stateRef.current !== 'listening') return;
+      if (!finalTranscriptRef.current && !interimTailRef.current) return;
+      stopListeningRef.current?.();
+    }, AUTO_SEND_MS);
+  }, []);
+
+  const clearAutoSend = useCallback(() => {
+    if (autoSendTimerRef.current !== null) {
+      clearTimeout(autoSendTimerRef.current);
+      autoSendTimerRef.current = null;
+    }
+  }, []);
+
   const stopListening = useCallback(() => {
+    // This IS the send, so any pending countdown is now moot. Without this a person who taps Stop
+    // and then speaks again would have the old timer fire mid-sentence.
+    clearAutoSend();
     const rec = recognitionRef.current;
     if (rec) {
       try {
@@ -495,8 +543,9 @@ export default function FleetVoice({
     //
     // So a query runs immediately and a mutation keeps its window.
     const isMutation =
-      intent.kind === 'stop' || intent.kind === 'steer' || intent.kind === 'approve' ||
-      intent.kind === 'deny';
+      // Only the kinds this parser can actually produce. approve and deny are not intents here
+      // -- they are buttons in the deck -- and listing them made the check unreachable.
+      intent.kind === 'stop' || intent.kind === 'steer';
     if (!isMutation) {
       applyIntent(intent);
       return;
@@ -505,7 +554,15 @@ export default function FleetVoice({
       graceTimerRef.current = null;
       applyIntent(intent);
     }, GRACE_MS);
-  }, [applyIntent, clearGrace, interim]);
+  }, [applyIntent, clearGrace, clearAutoSend, interim]);
+
+  // The auto-send timer is created in a closure that predates stopListening, so it reaches it
+  // through a ref that always holds the current one. A timer that captured the first render's
+  // stopListening would send the wrong transcript after any re-render.
+  useEffect(() => {
+    stopListeningRef.current = stopListening;
+  }, [stopListening]);
+
 
   const cancelPending = useCallback(() => {
     clearGrace();
