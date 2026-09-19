@@ -55,7 +55,7 @@ spec:
         - name: bench
           # A pinned tag rather than :latest, because a measurement whose inputs can change under it
           # is not a measurement.
-          image: python:3.12-slim
+          image: docker.io/library/python:3.12-slim
           securityContext:
             seccompProfile:
               type: RuntimeDefault
@@ -66,12 +66,14 @@ spec:
             capabilities:
               drop: ["ALL"]
           resources:
+            # A MICRO REQUEST WITH A BURST LIMIT, per crew#584 zealot rule 1. The request reserves
+            # paid capacity around the clock; this job runs for minutes. The LIMIT is what the
+            # benchmark needs, because a throttled container would measure the limit instead of the
+            # CPU. So 100m of reservation and the whole node to burst into.
             requests:
-              cpu: "500m"
+              cpu: "100m"
               memory: 512Mi
             limits:
-              # The whole A1 node, because the measurement is "what does this hardware do", and a
-              # throttled container would measure the limit instead.
               cpu: "6"
               memory: 12Gi
           env:
