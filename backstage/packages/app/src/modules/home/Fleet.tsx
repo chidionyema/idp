@@ -33,7 +33,6 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Chip, EstatePage, Fold, Section, Summary } from '../shell';
-import { EstateMap } from './EstateMap';
 import {
   attentionReason,
   NUDGEABLE_RUNTIMES,
@@ -703,9 +702,6 @@ export function Fleet() {
           namespace and its relations -- but it must not stand between a person and the
           sessions, which is what it did: measured 2026-09-18, the board began at y=808 with
           the first card at y=980, below the fold on a laptop, under 580px of this. */}
-      <Section title="Estate map">
-        <EstateMap />
-      </Section>
 
       <Section title="Tools">
         <Box display="flex" style={{ gap:24, flexWrap:'wrap' }}>

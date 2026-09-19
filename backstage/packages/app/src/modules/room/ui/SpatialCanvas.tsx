@@ -82,6 +82,35 @@ function activityColor(activity: string | null | undefined, alpha: number): stri
   }
 }
 
+/** A wake of the right LENGTH for the work done, drawn before the first frame. */
+function seedTrail(
+  x: number,
+  y: number,
+  events: number,
+  seed: number,
+): Array<{ x: number; y: number; t: number }> {
+  // One point per ~3 events, capped: a trail is a shape, not a data record, and 453 points at
+  // one pixel each is a smudge rather than a ribbon.
+  const points = Math.min(28, Math.max(0, Math.floor(events / 16)));
+  if (points < 2) return [];
+  const now = Date.now();
+  const out: Array<{ x: number; y: number; t: number }> = [];
+  for (let k = points; k >= 0; k--) {
+    const age = k / points; // 1 = oldest
+    // The wake points backward from the agent with a slow curve, so it reads as a path taken
+    // rather than as a straight line.
+    const bend = (seed - 0.5) * 0.16;
+    out.push({
+      x: x - bend * age * (1 - age * 0.5),
+      y: y - 0.05 * age + bend * 0.4 * age,
+      // Time travels forward, so the newest point is now and the oldest is an hour back. The
+      // draw pass fades by age, which is what makes the wake point backward.
+      t: now - age * TRAIL_MS * 0.9,
+    });
+  }
+  return out;
+}
+
 export function SpatialCanvas(props: SpatialCanvasProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const nodesRef = useRef<Map<string, Node>>(new Map());
@@ -110,7 +139,19 @@ export function SpatialCanvas(props: SpatialCanvasProps): JSX.Element {
         y: existing?.y ?? 0.1 + 0.8 * ((h2 + i * 0.382) % 1),
         z: existing?.z ?? 0.25 + 0.7 * h3,
         radius: radiusFor(s.event_count ?? 0),
-        trail: existing?.trail ?? [],
+        // SEEDED FROM REAL WORK. A trail that only grows from page-load is empty for the first
+        // minute -- which is precisely when someone decides whether to be impressed. The wake's
+        // length comes from `event_count`, which the API already returns, so an agent that has
+        // done 453 events opens with a long ribbon and one that has done nothing opens empty.
+        // It is the same fact the radius carries, drawn as history rather than as size.
+        trail: existing?.trail?.length
+          ? existing.trail
+          : seedTrail(
+              0.08 + 0.84 * ((h1 + i * 0.618) % 1),
+              0.1 + 0.8 * ((h2 + i * 0.382) % 1),
+              s.event_count ?? 0,
+              h3,
+            ),
       };
       nodes.set(s.session_id, next);
     });
@@ -148,9 +189,16 @@ export function SpatialCanvas(props: SpatialCanvasProps): JSX.Element {
       for (const n of nodes) {
         // Movement: the room breathes at rest and comes alive when something is named.
         const isSpot = props.spotlight === n.id;
-        const drift = isSpot ? 0.00012 : 0.00035 * (1 - n.z);
-        n.x += (Math.sin(now * 0.0003 + n.z * 6) * 0.5) * drift;
-        n.y += (Math.cos(now * 0.0004 + n.z * 5) * 0.5) * drift;
+        // MEASURED 2026-09-19, by reading the canvas back as a brightness grid: the room drew
+        // six soft blobs and NO trail at all. The movement was 0.00035 of the canvas per frame
+        // -- about 1% a minute -- so every wake was a dot rather than a ribbon, and the one
+        // thing here that a dashboard cannot do was invisible.
+        //
+        // 0.0016 is roughly 10% a minute: still a drift, not a jitter, and the eye reads it as a
+        // ribbon within a few seconds of looking.
+        const drift = isSpot ? 0.0006 : 0.0016 * (0.5 + n.z * 0.5);
+        n.x += Math.sin(now * 0.00021 + n.z * 6) * drift;
+        n.y += Math.cos(now * 0.00027 + n.z * 5) * drift;
         n.x = Math.max(0.04, Math.min(0.96, n.x));
         n.y = Math.max(0.04, Math.min(0.96, n.y));
 
@@ -403,15 +451,15 @@ function drawNode(
   ctx.fill();
 
   if (events <= 1) {
-    // EMPTY READS AS EMPTY: a hairline dashed ring, unmistakable as nothing done, without
-    // disappearing -- a person still needs to see that the agent exists.
-    ctx.strokeStyle = `rgba(122,130,142,${0.4 * dim})`;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 6]);
+    // EMPTY READS AS EMPTY: a hollow ring, unmistakable as nothing done, and VISIBLE. The first
+    // version was a 1px dashed hairline at 40% opacity and it did not register at all -- the
+    // room showed seven agents when the fleet has twenty-four, which is the opposite of telling
+    // the truth about a fleet. Now 1.5px solid at 70%: clearly present, clearly empty.
+    ctx.strokeStyle = `rgba(150,158,170,${0.7 * dim})`;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(cx, cy, r * 0.72, 0, Math.PI * 2);
+    ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.setLineDash([]);
   } else {
     // Filled, because this agent has done something.
     ctx.fillStyle = activityColor(n.session.activity, alpha);

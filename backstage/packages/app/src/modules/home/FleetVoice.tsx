@@ -701,9 +701,25 @@ export default function FleetVoice({
     <div
       data-testid="fleet-voice"
       style={{
-        background: T.surface1,
+        // FLOATING, OVER THE ROOM. It was in normal flow after the canvas, so on a 900px viewport
+        // it sat below the fold: you had to scroll past your fleet to find the thing you talk to.
+        // Voice is the primary input of this room, so it hovers over the room the way a head-up
+        // display hovers -- always reachable, never in the way.
+        //
+        // `position: fixed` rather than absolute: the canvas scrolls with the page and the voice
+        // bar must not. Anchored bottom-centre, which is also where a thumb reaches on a phone,
+        // and constrained to the viewport width so it cannot overflow on a small screen.
+        position: 'fixed',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        bottom: 20,
+        zIndex: 30,
+        width: 'min(720px, calc(100vw - 32px))',
+        boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
+        background: 'rgba(18,19,22,0.94)',
+        backdropFilter: 'blur(10px)',
         border: `1px solid ${T.border}`,
-        borderRadius: 8,
+        borderRadius: 12,
         padding: 12,
         display: 'flex',
         flexDirection: 'column',
