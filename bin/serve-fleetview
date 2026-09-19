@@ -49,6 +49,19 @@ export ESTATE_DB
 #   NATS_URL=nats://127.0.0.1:4222 LANGFUSE_HOST=http://127.0.0.1:3000 bin/serve-fleetview
 : "${NATS_URL:=}"
 
+# VOICE's model door (docs/specs/2026-09-18-voice-conversation-pipeline.md). The estate's router,
+# never a vendor key: LAW 34 says one router key per identity, and the laptop holds
+# LITELLM_API_KEY while the router holds everything else. Unset, /voice answers 503 naming the
+# variable rather than quietly falling back to a local model -- a different engine silently
+# answering the same question is worse than no answer, because the reader cannot tell.
+#
+# Loaded from the vault through scripts/secret-load; this only reports whether it arrived.
+if [ -z "${LITELLM_API_KEY:-}" ]; then
+	echo "fleetview: voice   off (LITELLM_API_KEY unset) -- /voice will answer 503 with the reason"
+else
+	echo "fleetview: voice   on  (router ${LITELLM_HOST:-https://llm.mumchimp.com})"
+fi
+
 # The plugin's module paths. Same two arguments the manual launch used.
 ROUTES="$IDP/backstage/plugins/fleetview-backend/src/routes.py"
 SERVE="$IDP/backstage/plugins/fleetview-backend/src/serve.py"

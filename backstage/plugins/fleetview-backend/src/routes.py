@@ -98,6 +98,16 @@ def _notes():
     return _load(_NOTES_MODULE, "fleetview_notes_impl")
 
 
+def _voice():
+    return _load(Path(__file__).resolve().parent / "voice.py", "fleetview_voice_impl")
+
+
+def ask_voice(body: dict, sessions: list) -> tuple[dict, int]:
+    """Ask the fleet a question in words. The sessions are passed in from the SAME list /sessions
+    serves, so the answer cannot describe a fleet the reader is not looking at."""
+    return _voice().ask(body.get("question", ""), sessions)
+
+
 def _signals():
     return _load(_SIGNALS_MODULE, "fleetview_signals_impl")
 
@@ -182,6 +192,7 @@ STOP_PATH = "/stop"
 APPROVE_PATH = "/approve"
 DENY_PATH = "/deny"
 SIGNALS_PATH = "/signals"
+VOICE_PATH = "/voice"
 BLAST_RADIUS_PATH = "/blast-radius"
 GRAPH_PATH = "/graph"
 CHECK_RECEIPTS_PATH = "/check-receipts"

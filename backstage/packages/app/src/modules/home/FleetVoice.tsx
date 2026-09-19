@@ -33,6 +33,16 @@ export interface FleetVoiceProps {
   onHighlight?: (sessionId: string) => void;
   /** Optional: called whenever the state word changes. */
   onStateChange?: (state: VoiceState) => void;
+  /**
+   * ASK THE FLEET, in words. Anything that is not a command goes here and comes back as a spoken
+   * sentence about the real board.
+   *
+   * WHY THIS PROP EXISTS. Before it, the component pattern-matched commands and answered
+   * everything else with the hardcoded string "I did not understand that" -- there was NO model
+   * call anywhere in this file. So voice could filter the board and nothing else: ask it why
+   * something looked stuck and it said it did not understand, which was true and useless.
+   */
+  onAsk?: (question: string) => Promise<string | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +160,7 @@ export default function FleetVoice({
   onOpenDeck,
   onHighlight,
   onStateChange,
+  onAsk,
 }: FleetVoiceProps): JSX.Element {
   const recognitionCtor = useMemo(() => getRecognitionCtor(), []);
   const synthesisAvailable = useMemo(() => hasSynthesis(), []);
@@ -217,7 +228,10 @@ export default function FleetVoice({
   );
 
   const applyIntent = useCallback(
-    (intent: VoiceIntent) => {
+    // ASYNC, because a question now goes to the model. A recognised command still resolves
+    // synchronously and acts immediately -- only free speech awaits a round trip, so the common
+    // case ("what is stuck") does not pay for the uncommon one ("why does that look stuck").
+    async (intent: VoiceIntent) => {
       setPending(null);
       setInterim('');
       setNotice('');
@@ -261,10 +275,28 @@ export default function FleetVoice({
         return;
       }
 
-      setNotice(`Did not understand: ${intent.raw}`);
-      speak('I did not understand that.');
+      // NOT A COMMAND -> A QUESTION. This is the join to the model: the words go to the backend,
+      // which reads the SAME sessions the board is showing and answers in one or two spoken
+      // sentences. A recognised command still acts locally and instantly; only free speech costs
+      // a round trip.
+      setNotice(`ASK: ${intent.raw}`);
+      if (!onAsk) {
+        speak('I did not understand that, and I cannot ask the fleet on this page.');
+        return;
+      }
+      setState('thinking');
+      try {
+        const answer = await onAsk(intent.raw);
+        speak(answer || 'I could not get an answer about the fleet.');
+      } catch (err) {
+        // Say what failed rather than going silent: a voice that stops answering with no reason
+        // is the failure this estate keeps removing.
+        const why = err instanceof Error ? err.message : String(err);
+        setNotice(`ASK FAILED: ${why}`);
+        speak('I could not reach the fleet to answer that.');
+      }
     },
-    [onFilter, onHighlight, onOpenDeck, sessions, speak],
+    [onFilter, onHighlight, onOpenDeck, sessions, speak, onAsk],
   );
 
   const startListening = useCallback(() => {

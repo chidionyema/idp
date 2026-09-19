@@ -671,6 +671,22 @@ export function Fleet() {
               onFilter={setVoiceActivity}
               onHighlight={setVoiceSelected}
               onOpenDeck={(sessionId) => setVoiceSelected(sessionId)}
+              // ASK THE FLEET. Everything that is not a command goes to the backend, which reads
+              // the SAME sessions the board is showing and answers in one or two spoken
+              // sentences. This is the join that was missing: the component had no model call at
+              // all, so voice could filter the board and answer nothing else.
+              onAsk={async (question) => {
+                const res = await fetchApi.fetch('plugin://proxy/fleetview/voice', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ question }),
+                });
+                const body = (await res.json()) as { answer?: string; error?: string; detail?: string };
+                if (!res.ok || !body.answer) {
+                  throw new Error(body.error ?? `HTTP ${res.status}`);
+                }
+                return body.answer;
+              }}
             />
           </>
         )}

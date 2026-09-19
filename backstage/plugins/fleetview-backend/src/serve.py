@@ -159,6 +159,16 @@ def build_app(routes_path: Path) -> FastAPI:
         body, status = routes.sessions_envelope()
         return JSONResponse(content=body, status_code=status)
 
+    @app.post(routes.VOICE_PATH)
+    async def voice(body: dict):
+        """Voice in, one or two sentences out. Read-only: it can describe the fleet and cannot
+        change it, and the prompt says so in as many words."""
+        # The SAME envelope /sessions serves. One source, so the spoken answer and the board can
+        # never disagree about what the fleet is.
+        envelope, _status = routes.sessions_envelope()
+        payload, status = routes.ask_voice(body, envelope.get("sessions") or [])
+        return JSONResponse(content=payload, status_code=status)
+
     @app.get(routes.STREAM_PATH)
     async def stream():
         nats_url = os.environ.get("NATS_URL", "")
