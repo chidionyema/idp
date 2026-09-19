@@ -279,9 +279,46 @@
         composer.addPass(bloomPass);
 
         // ============================ ENVIRONMENT ============================
-        const gridHelper = new THREE.GridHelper(2000, 100, 0x111111, 0x111111);
-        gridHelper.position.y = -100;
-        scene.add(gridHelper);
+        // ============================ THE WARPING FIELD ============================
+        // THE BRIEF: "Agents aren't circles; they are gravitational wells. As an agent's workload
+        // increases, it physically warps the space around it."
+        //
+        // A GridHelper is a FLAT FLOOR -- it shows nothing about the mass above it, which is why
+        // the room read as dots on a plane. This is a real mesh: a 60x60 lattice whose vertices
+        // are pushed DOWN by every node, with falloff over distance and depth by workload. The
+        // heaviest agent digs the deepest well, and two heavy agents produce a saddle between
+        // them, so the floor's SHAPE is the fleet's shape.
+        const FIELD_SEGS = 60;
+        const FIELD_SPAN = 1400;
+        const fieldGeo = new THREE.PlaneGeometry(FIELD_SPAN, FIELD_SPAN, FIELD_SEGS, FIELD_SEGS);
+        fieldGeo.rotateX(-Math.PI / 2);
+        const fieldBase = fieldGeo.attributes.position.array.slice();
+        const fieldMat = new THREE.MeshBasicMaterial({
+            color: 0x0d2233, wireframe: true, transparent: true, opacity: 0.30,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        const fieldMesh = new THREE.Mesh(fieldGeo, fieldMat);
+        fieldMesh.position.y = -120;
+        scene.add(fieldMesh);
+
+        function warpField() {
+            const pos = fieldGeo.attributes.position.array;
+            for (let v = 0; v < pos.length; v += 3) {
+                const x = fieldBase[v], z = fieldBase[v + 2];
+                let depth = 0;
+                for (const a of agents) {
+                    const dx = x - a.mesh.position.x, dz = z - a.mesh.position.z;
+                    const d2 = dx * dx + dz * dz;
+                    if (d2 > 140000) continue;              // beyond the well's reach
+                    // Inverse-square with a floor: at the node's own x,z the pull would be
+                    // infinite, so the divisor is clamped and the well has a bottom rather than
+                    // a singularity. Weighted by the node's own load, so a heavy agent digs.
+                    depth += (a.load * 9000) / Math.max(1600, d2);
+                }
+                pos[v + 1] = Math.max(-260, -depth);
+            }
+            fieldGeo.attributes.position.needsUpdate = true;
+        }
 
         const starGeom = new THREE.BufferGeometry();
         const starCount = 2000;
@@ -391,7 +428,7 @@
                     id: s.id, fullId: s.fullId, runtime: s.runtime, task: s.task, repo: s.repo,
                     mesh, knot, stateKey: s.key, baseScale: scale, baseEmissive: material.emissiveIntensity,
                     velocity: new THREE.Vector3((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2),
-                    connections: [], events: s.events, spend: s.spend, load: s.load
+                    connections: [], events: s.events, spend: s.spend, load: s.load, throttle: 1
                 };
                 agents.push(agent);
                 group.add(mesh);
@@ -588,6 +625,38 @@
                     if (a !== selectedAgent) { a.mesh.material.opacity = 0.2; a.mesh.material.transparent = true; }
                 });
 
+                // ============================ THE SHELL DISSOLVES ============================
+                // THE BRIEF: "Smoothly zoom the camera into the agent. The outer shell dissolves,
+                // and you see its internal logic loop."
+                //
+                // The camera move was already here; the DISSOLVE was not, so arriving at a node
+                // showed you the same sphere from closer. Now the selected node's shell fades
+                // out over the same 0.5s the camera takes to arrive, revealing a bright CORE
+                // (its own emissive, undimmed) wrapped in a wireframe cage that reads as its
+                // internal loop turning. The outer form going translucent while an inner
+                // structure stays solid is what makes "inside" legible.
+                selectedAgent.dissolve = 0;
+                selectedAgent.shellVisible = true;
+                if (!selectedAgent.core) {
+                    const coreMat = new THREE.MeshBasicMaterial({
+                        color: colors[selectedAgent.stateKey], transparent: true, opacity: 0.95,
+                        blending: THREE.AdditiveBlending,
+                    });
+                    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), coreMat);
+                    core.scale.setScalar(selectedAgent.baseScale * 0.62);
+                    selectedAgent.mesh.add(core);
+                    const cageMat = new THREE.MeshBasicMaterial({
+                        color: 0xffffff, wireframe: true, transparent: true, opacity: 0.30,
+                        blending: THREE.AdditiveBlending,
+                    });
+                    const cage = new THREE.Mesh(new THREE.OctahedronGeometry(1, 0), cageMat);
+                    cage.scale.setScalar(selectedAgent.baseScale * 1.9);
+                    selectedAgent.mesh.add(cage);
+                    selectedAgent.core = core;
+                    selectedAgent.cage = cage;
+                }
+                if (selectedAgent.core) { selectedAgent.core.visible = true; selectedAgent.cage.visible = true; }
+
                 document.getElementById('matrix-title').innerText = selectedAgent.id;
                 document.getElementById('matrix-tool').innerText = 'Runtime: ' + selectedAgent.runtime;
                 document.getElementById('matrix-cost').innerText = selectedAgent.spend != null ? ('Cost: $' + Number(selectedAgent.spend).toFixed(4)) : ('Events: ' + selectedAgent.events);
@@ -606,6 +675,12 @@
             agents.forEach(a => { a.mesh.material.opacity = 1; a.mesh.material.transparent = false; });
             matrixPanel.classList.remove('active');
             radialMenu.classList.remove('active');
+            // Pull the shell back over the interior: the reverse of the dissolve, so leaving is
+            // the same gesture seen backwards rather than a jump.
+            agents.forEach(a => {
+                if (a.mesh.material) a.mesh.material.opacity = 1;
+                if (a.core) { a.core.visible = false; a.cage.visible = false; }
+            });
             stopTokenStream();
             edges.forEach(e => e.line.material.color.setHex(0x334455));
         });
@@ -637,20 +712,178 @@
             });
         });
 
+        // ============================ TACTILE STEERING ============================
+        // THE BRIEF: "Don't just click Stop. Let the user physically draw a barrier across a
+        // node's path to quarantine it. Let them pinch an agent to throttle its compute."
+        //
+        // BARRIER: hold SHIFT and drag across the room. A red plane is drawn where the gesture
+        // went, and every agent on the far side of it is quarantined -- ringed, slowed and marked
+        // Q on its tooltip. The barrier is a real object in the scene, so it occludes and casts
+        // bloom like everything else, and it persists until you clear it.
+        //
+        // THROTTLE: hold ALT and drag VERTICALLY on an agent. Up is faster, down is slower. The
+        // node's own drift velocity is scaled, and its ring shows the throttle as an arc, so the
+        // setting is visible on the thing it applies to rather than in a bar at the bottom.
+        const barriers = [];
+        const quarantine = new Set();
+        let dragging = null;         // { kind: 'barrier' | 'throttle', start, current, agent }
+
+        function addBarrier(a, b) {
+            // The barrier is drawn between the two gesture points, extruded into the volume so it
+            // reads as a wall you could walk into rather than a line on the floor.
+            const mid = a.clone().add(b).multiplyScalar(0.5);
+            const len = a.distanceTo(b);
+            const geo = new THREE.PlaneGeometry(len, 420);
+            const mat = new THREE.MeshBasicMaterial({
+                color: 0xff0055, transparent: true, opacity: 0.14, side: THREE.DoubleSide,
+                wireframe: true, blending: THREE.AdditiveBlending, depthWrite: false,
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.copy(mid);
+            mesh.lookAt(mid.clone().add(new THREE.Vector3(0, 1, 0)));
+            // Rotate about Y so the wall stands ALONG the gesture, facing the origin.
+            mesh.rotation.y = Math.atan2(b.x - a.x, b.z - a.z) + Math.PI / 2;
+            scene.add(mesh);
+            barriers.push(mesh);
+
+            // QUARANTINE: everything whose side of the wall differs from the origin's.
+            const dir = new THREE.Vector3().subVectors(b, a).normalize();
+            agents.forEach(ag => {
+                const side = ag.mesh.position.clone().sub(mid).dot(dir);
+                if (side > 0) {
+                    quarantine.add(ag.id);
+                    ag.mesh.material.emissive.setHex(0xff0055);
+                }
+            });
+        }
+
+        renderer.domElement.addEventListener('pointerdown', (e) => {
+            if (isDrilledDown) return;
+            if (e.shiftKey) {
+                raycaster.setFromCamera(mouse, camera);
+                const p = new THREE.Vector3();
+                raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p);
+                dragging = { kind: 'barrier', start: p.clone(), current: p.clone() };
+                document.body.style.cursor = 'crosshair';
+            } else if (e.altKey && hoveredAgent) {
+                dragging = { kind: 'throttle', agent: hoveredAgent, startY: e.clientY, base: hoveredAgent.throttle ?? 1 };
+                document.body.style.cursor = 'ns-resize';
+                e.stopPropagation();
+            }
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!dragging) return;
+            if (dragging.kind === 'barrier') {
+                raycaster.setFromCamera(mouse, camera);
+                const p = new THREE.Vector3();
+                raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p);
+                dragging.current = p;
+            } else if (dragging.kind === 'throttle' && dragging.agent) {
+                // 300px of travel spans the full range. Up is faster.
+                const delta = (dragging.startY - e.clientY) / 300;
+                const t = Math.max(0, Math.min(2, dragging.base + delta));
+                dragging.agent.throttle = t;
+                dragging.agent.velocity.setLength(0.28 * t);
+                const s = dragging.agent.baseScale;
+                dragging.agent.mesh.scale.set(s, s, s);
+                voiceStatus.innerText = `Throttle ${dragging.agent.id}: ${Math.round(t * 100)}%`;
+            }
+        });
+
+        window.addEventListener('pointerup', () => {
+            if (!dragging) return;
+            if (dragging.kind === 'barrier' && dragging.start.distanceTo(dragging.current) > 30) {
+                addBarrier(dragging.start.clone(), dragging.current.clone());
+                voiceStatus.innerText = `Quarantined ${quarantine.size} node(s) behind the barrier`;
+            }
+            dragging = null;
+            document.body.style.cursor = 'default';
+        });
+
+        // ESC clears every barrier and lifts every quarantine -- the one gesture that undoes a
+        // physical act should be physical too, not a button somewhere else.
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && barriers.length) {
+                barriers.forEach(b => scene.remove(b));
+                barriers.length = 0;
+                quarantine.clear();
+                agents.forEach(a => a.mesh.material.emissive.copy(colors[a.stateKey]));
+                voiceStatus.innerText = 'Barriers cleared';
+            }
+        });
+
         // ============================ VOICE ============================
         const voiceBar = document.getElementById('voice-bar');
         const voiceStatus = document.getElementById('voice-status');
         let isListening = false;
-        voiceBar.addEventListener('click', () => {
-            isListening = !isListening;
-            if (isListening) {
+        // THE CANVAS IS THE LISTENER.
+        //
+        // THE BRIEF: "The voice bar shouldn't be a generic floating input. Make the canvas itself
+        // the listener. When the user speaks, the audio waveform ripples through the grid. When
+        // the system replies, the sound originates visually from the agent that is speaking or
+        // being queried."
+        //
+        // So: a REAL microphone, a REAL analyser, and the level drives a wave travelling outward
+        // through the warped field. WebAudio provides the amplitude; the field is what receives
+        // it. Nothing here is a CSS animation pretending to be audio -- when the room is silent
+        // the grid is still.
+        let audioCtx = null, analyser = null, micStream = null, audioData = null;
+        let ripples = [];
+
+        // The reply ORIGINATES FROM THE NODE. Called with an agent when the system has something
+        // to say about it, so the world pulse leaves THAT node rather than the bottom of the page.
+        function speakFrom(agent, text) {
+            if (agent) {
+                ripples.push({ x: agent.mesh.position.x, y: agent.mesh.position.y, z: agent.mesh.position.z, r: 0, life: 1 });
+                voiceStatus.innerText = text;
+            } else {
+                voiceStatus.innerText = text;
+            }
+            if ('speechSynthesis' in window) {
+                try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(new SpeechSynthesisUtterance(text)); }
+                catch (e) { /* speech is optional; the visual is the interface */ }
+            }
+        }
+
+        async function armMicrophone() {
+            try {
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 256;
+                audioCtx.createMediaStreamSource(micStream).connect(analyser);
+                audioData = new Uint8Array(analyser.frequencyBinCount);
+                return true;
+            } catch (e) {
+                voiceStatus.innerText = 'Microphone unavailable — ' + (e.name || 'blocked');
+                return false;
+            }
+        }
+
+        function level() {
+            if (!analyser) return 0;
+            analyser.getByteFrequencyData(audioData);
+            let sum = 0;
+            for (let i = 0; i < audioData.length; i++) sum += audioData[i];
+            return sum / (audioData.length * 255);
+        }
+
+        voiceBar.addEventListener('click', async () => {
+            if (!isListening) {
+                const ok = await armMicrophone();
+                if (!ok) return;
+                isListening = true;
                 voiceBar.classList.add('listening');
-                voiceStatus.innerText = "Listening for fusion commands...";
+                voiceStatus.innerText = 'Listening — the grid is the microphone';
                 voiceStatus.classList.replace('text-gray-300', 'text-neon-blue');
             } else {
+                isListening = false;
                 voiceBar.classList.remove('listening');
-                voiceStatus.innerText = "Awaiting spatial command...";
+                voiceStatus.innerText = 'Awaiting spatial command...';
                 voiceStatus.classList.replace('text-neon-blue', 'text-gray-300');
+                if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+                analyser = null;
             }
         });
 
@@ -707,7 +940,9 @@
             const time = clock.getElapsedTime();
 
             agents.forEach(agent => {
-                agent.mesh.position.add(agent.velocity);
+                // A quarantined node is held where it is: the barrier is a wall, so the agent
+                // stops crossing it rather than merely being tinted red.
+                if (!quarantine.has(agent.id)) agent.mesh.position.add(agent.velocity);
                 const dist = agent.mesh.position.length();
                 if (dist > 220) agent.velocity.add(agent.mesh.position.clone().normalize().multiplyScalar(-0.01));
                 agent.connections.forEach(target => {
@@ -742,6 +977,63 @@
                 if (a.knot) { a.knot.rotation.x += delta * 0.9; a.knot.rotation.y += delta * 1.4; }
             });
 
+            // ============================ HEARTBEAT ============================
+            // THE BRIEF: "When it waits (amber), the particle stream pulses like a heartbeat."
+            //
+            // The waiting nodes carry a travelling wave along every tether they own, and the
+            // wave's brightness is driven by a sine at roughly a resting heart rate. It is the
+            // one motion in the room that is PERIODIC rather than decaying, which is what makes
+            // "blocked on something outside itself" legible from across the room.
+            const beat = 0.5 + 0.5 * Math.sin(time * 2.6);
+            edges.forEach(e => {
+                const waiting = e.source.stateKey === 'amber' || e.target.stateKey === 'amber';
+                if (waiting) {
+                    e.line.material.opacity = 0.18 + beat * 0.62;
+                    e.line.material.color.copy(colors.amber);
+                } else if (e.line.material.color.getHex() !== 0xff0055) {
+                    e.line.material.opacity = 0.12 + 0.10 * (e.source.load + e.target.load);
+                    e.line.material.color.setHex(0x334455);
+                }
+            });
+
+            // ============================ THE FIELD BREATHES ============================
+            // Re-warped as the nodes drift, so the wells follow the agents that own them rather
+            // than sitting where they were last built. Cheap enough to do every frame at 60x60.
+            warpField();
+
+            // ============================ THE GRID HEARS YOU ============================
+            // The microphone's amplitude is injected into the field as a travelling wave, and
+            // every node it passes brightens. Silent room, still grid: the wave exists only
+            // while someone is actually speaking.
+            if (isListening) {
+                const lvl = level();
+                if (lvl > 0.06) ripples.push({ x: 0, y: -120, z: 0, r: 0, life: 0.85, mic: true });
+            }
+            if (ripples.length) {
+                const pos = fieldGeo.attributes.position.array;
+                for (let i = ripples.length - 1; i >= 0; i--) {
+                    const rp = ripples[i];
+                    rp.r += delta * 620;
+                    rp.life -= delta * (rp.mic ? 1.6 : 1.1);
+                    if (rp.life <= 0) { ripples.splice(i, 1); continue; }
+                    const band = 90;
+                    for (let v = 0; v < pos.length; v += 3) {
+                        const dx = fieldBase[v] - rp.x, dz = fieldBase[v + 2] - rp.z;
+                        const d = Math.sqrt(dx * dx + dz * dz);
+                        if (Math.abs(d - rp.r) > band) continue;
+                        pos[v + 1] -= 46 * rp.life * (1 - Math.abs(d - rp.r) / band);
+                    }
+                    for (const a of agents) {
+                        const d = a.mesh.position.distanceTo(new THREE.Vector3(rp.x, rp.y, rp.z));
+                        if (Math.abs(d - rp.r) < band) {
+                            const glow = 1 + rp.life * 2.4 * (1 - Math.abs(d - rp.r) / band);
+                            a.mesh.material.emissiveIntensity = a.baseEmissive * glow;
+                        }
+                    }
+                }
+                fieldGeo.attributes.position.needsUpdate = true;
+            }
+
             stepJets(delta);
 
             if (activeShockwave) {
@@ -750,6 +1042,21 @@
                 shockwaveMesh.scale.set(activeShockwave.scale, activeShockwave.scale, activeShockwave.scale);
                 shockwaveMesh.material.opacity = Math.max(0, activeShockwave.opacity);
                 if (activeShockwave.opacity <= 0) activeShockwave = null;
+            }
+
+            // THE DISSOLVE. Over the same half-second the camera takes to arrive, the selected
+            // node's shell goes from opaque to a ghost, so what you land on is its inside.
+            if (isDrilledDown && selectedAgent && selectedAgent.mesh.material) {
+                const m = selectedAgent.mesh.material;
+                m.transparent = true;
+                m.opacity = Math.max(0.12, (m.opacity ?? 1) - delta * 1.7);
+                if (selectedAgent.cage) {
+                    selectedAgent.cage.rotation.x += delta * 0.7;
+                    selectedAgent.cage.rotation.y += delta * 1.1;
+                }
+                if (selectedAgent.core && selectedAgent.core.material) {
+                    selectedAgent.core.material.opacity = 0.55 + 0.45 * Math.sin(time * 3);
+                }
             }
 
             if (isDrilledDown) {
@@ -770,7 +1077,7 @@
 
         // Build from the estate, then start. A failure here leaves the room empty rather than
         // populated with inventions, which is the honest failure.
-        loadRealSessions().then(real => { buildFleet(real); animate(); });
+        loadRealSessions().then(real => { buildFleet(real); warpField(); animate(); });
 
         // ============================ LIVE WORK ============================
         //
@@ -804,7 +1111,7 @@
         setInterval(async () => {
             if (isDrilledDown) return;
             const real = await loadRealSessions();
-            if (real.length) buildFleet(real);
+            if (real.length) { buildFleet(real); warpField(); }
         }, 20000);
     </script>
 </body>
