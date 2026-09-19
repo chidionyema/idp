@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# A hard ceiling on any single command an agent session runs.
+#
+# WHY THIS IS A LAW AND NOT A TIMEOUT. Stated 2026-09-19, in these words: "no agent session can
+# run anything that takes over 30 seconds, i wanted you not to force my hand." A founder should
+# not have to police how long a subprocess lives, and an agent that has to be told twice has
+# already spent the founder's attention on something that should have been structural.
+#
+# THE FAILURE IT PREVENTS is not slowness. It is that a long command is a command whose result
+# arrives too late to be corrected: a 320-second portal start, a 4-minute browser sweep, a
+# `yarn start` that never returns. Each one holds the session blind and leaves the founder
+# waiting on something they cannot see. Thirty seconds is long enough for any honest local
+# operation -- a query, a build of one package, a browser check of one page -- and short enough
+# that a failure is announced while the cause is still on screen.
+#
+# WHAT COUNTS. Every command a session runs. Not "long ones": all of them, so that the ceiling is
+# a property of the environment rather than a judgement made per command by the thing being
+# limited. A judgement call is exactly what fails at 3am.
+#
+# AND THE 30 IS A CEILING, NOT A BUDGET. Corrected by the founder on the same day, in these
+# words: "i said no command may exceed 30s, big difference." The first version of this guard got
+# that wrong in practice -- it set the ceiling at 30 and then ran commands at 28 and 29 seconds
+# one after another, which spends the founder's clock to the last drop while technically obeying.
+#
+# A typical command here should take SECONDS. Ten is comfortable, five is good. Reaching the
+# ceiling means the command was mis-shaped and should have been split, started detached, or
+# replaced by a readiness probe -- not that it may continue until 29.9s and report success.
+#
+# WHAT A SESSION DOES WHEN A COMMAND NEEDS LONGER. It does not raise the ceiling. It either
+#   * splits the work into steps that each fit (the estate's own preference -- see how
+#     bin/idp-portal probes readiness instead of sleeping for a fixed period), or
+#   * starts the work detached, in which case it is no longer a command the session is running:
+#     the session returns, and the work reports through a file it can be polled for.
+#
+#   bin/agent-timebox <command> [args...]     # run, hard-killed at 30s
+#   AGENT_TIMEBOX_SECONDS=20 bin/agent-timebox ...
+#   bin/agent-timebox --check                 # prove the ceiling is in force
+set -uo pipefail
+
+LIMIT="${AGENT_TIMEBOX_SECONDS:-30}"
+
+if [ "${1:-}" = "--check" ]; then
+	printf 'agent-timebox: ceiling %ss per command\n' "$LIMIT"
+	# Prove it by attempting to run something that must be cut off, and reporting what happened.
+	# A guard that has never been shown to fire is a guard nobody can rely on.
+	#
+	# THE SELF-TEST IS DELIBERATELY SHORT. The first version tried `sleep 90` with a 30s ceiling,
+	# which takes 30 seconds to prove a 30-second rule -- so the demonstration itself broke the law
+	# it was demonstrating, and the caller's own 28s timeout cut it before it could report. A rule
+	# that cannot be checked inside the budget it imposes is not enforceable. Five seconds proves
+	# exactly the same thing.
+	start=$(date +%s)
+	AGENT_TIMEBOX_SECONDS=5 "$0" sleep 90 >/dev/null 2>&1
+	rc=$?
+	elapsed=$(( $(date +%s) - start ))
+	if [ "$rc" -eq 124 ] && [ "$elapsed" -le 8 ]; then
+		printf 'agent-timebox: ok -- a 90s command was cut at %ss (exit 124). ceiling %ss is in force.\n' "$elapsed" "$LIMIT"
+		exit 0
+	fi
+	printf 'agent-timebox: FAIL -- expected exit 124 within %ss, got exit %s after %ss\n' \
+		"$LIMIT" "$rc" "$elapsed" >&2
+	exit 1
+fi
+
+if [ "$#" -eq 0 ]; then
+	printf 'usage: agent-timebox <command> [args...]\n' >&2
+	exit 2
+fi
+
+# 124 is the exit code timeout(1) uses for "the command was still running when the ceiling
+# arrived", so a caller can tell a slow command from a failed one. That distinction matters: a
+# cut-off query is retried differently from a query that returned an error.
+timeout --signal=TERM --kill-after=2 "$LIMIT" "$@"
+rc=$?
+if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+	printf 'agent-timebox: CUT OFF after %ss (exit %s): %s\n' "$LIMIT" "$rc" "$*" >&2
+	printf 'agent-timebox: do not raise the ceiling -- split the work, or run it detached and poll.\n' >&2
+fi
+exit "$rc"

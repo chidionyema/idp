@@ -40,18 +40,41 @@ ROOT = Path(__file__).resolve().parent.parent
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 PORTAL = os.environ.get("PORTAL_URL", "http://localhost:3100")
 # The bundle takes about 15s to compile on a cold start and the page needs a moment to draw.
-SETTLE_MS = int(os.environ.get("ROOM_SETTLE_MS", "14000"))
+# 14s was the guest-wall settle, and it alone was half the budget. The wall clears in about 8s
+# when the estate is up, so 9 gives the same proof with 5 seconds of headroom for a slower machine
+# -- and a machine that needs longer has a different problem than this script can report.
+SETTLE_MS = int(os.environ.get("ROOM_SETTLE_MS", "4000"))
 
 SCRIPT = r"""
 import { chromium } from 'playwright-core';
 const PORTAL = process.env.PORTAL_URL;
 const SETTLE = Number(process.env.ROOM_SETTLE_MS);
 
-const b = await chromium.launch({
-  executablePath: process.env.CHROME_PATH,
-  headless: true,
-});
-const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
+// ATTACH TO THE LONG-LIVED BROWSER when one is up, instead of launching a new one.
+//
+// A cold Chrome launch plus guest sign-in plus first paint was measured at about ten seconds --
+// for ONE look. The 30-second ceiling is a ceiling, not a budget, and a proof that costs ten
+// seconds is a proof that gets run once and then trusted. bin/room-eye keeps a browser alive on
+// :9222, so this attaches and the whole check runs in about two.
+const CDP = process.env.ROOM_EYE_PORT || '9222';
+const b = await (async () => {
+  try {
+    return await chromium.connectOverCDP(`http://127.0.0.1:${CDP}`);
+  } catch {
+    return await chromium.launch({
+      executablePath: process.env.CHROME_PATH,
+      headless: true,
+    });
+  }
+})();
+// REUSE THE PAGE IF ONE IS ALREADY ON THE ROOM. Connecting over CDP gives back the browser, and
+// asking it for a NEW page opens a blank tab -- which is why eight checks reported "no canvas" and
+// took 13 seconds doing it while the room was open in the tab next door. The first page that is
+// not `about:blank` is the room; otherwise make one.
+const pages = b.contexts().flatMap((c) => c.pages());
+const existing = pages.find((x) => x.url().includes('/fleet'));
+const p = existing ?? await b.newPage({ viewport: { width: 1440, height: 900 } });
+await p.setViewportSize({ width: 1440, height: 900 }).catch(() => {});
 const errs = [];
 p.on('pageerror', e => errs.push(e.message.slice(0, 160)));
 p.on('console', m => {
@@ -62,11 +85,37 @@ const out = { checks: [], errors: errs };
 const ok = (name, pass, detail) => out.checks.push({ name, pass: !!pass, detail: String(detail) });
 
 try {
-  await p.goto(`${PORTAL}/fleet`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await p.waitForTimeout(6000);
+  // EVERY WAIT HERE IS BOUNDED, and the 30-second ceiling is a CEILING, NOT A BUDGET.
+  //
+  // Measured 2026-09-19: this sequence was 12s navigation + 4s settle + 9s wall = 25 seconds
+  // before the first of eight checks had run, and the subprocess was allowed 24, so it was killed
+  // mid-proof. That is a script which technically obeys a 30s limit while spending the founder's
+  // clock to the last drop -- and the founder's correction was exact: "i said no command may
+  // exceed 30s, big difference."
+  //
+  // So the waits are now sized to what the work ACTUALLY takes rather than to how long we might
+  // get away with. domcontentloaded on a warm dev server is ~2s; the guest wall clears in ~2s.
+  // Waiting is only useful up to the point the page is ready, and past that it is just delay.
+  // `commit`, NOT `domcontentloaded`. Identical to the fix in bin/room-eye, and found the same way:
+  // webpack-dev-server serves the HTML instantly and then compiles the bundle, so the document is
+  // not "loaded" while the build runs and a 6s wait on that event times out against a page that
+  // curl fetches in 1.7ms. Readiness is the canvas, asserted below, not a lifecycle event.
+  await p.goto(`${PORTAL}/fleet`, { waitUntil: 'commit', timeout: 8000 });
+  // WAIT FOR THE ROOM, NOT FOR A CLOCK. When this attaches to a browser whose page is already on
+  // /fleet, the navigation is a no-op and a fixed 1.5s sleep is a guess -- which is how the run
+  // above reported "no canvas element" against a page that had one. The canvas IS the readiness
+  // signal; waiting for it is both faster when the page is warm and correct when it is cold.
+  await p.waitForSelector('canvas', { timeout: 8000 }).catch(() => {});
+  await p.waitForTimeout(600);
   // The estate signs a guest in on the way through; if the wall is up, press it once.
   const wall = await p.$('button:has-text("Enter")');
-  if (wall) { await wall.click(); await p.waitForTimeout(SETTLE); }
+  if (wall) {
+    await wall.click();
+    // ONLY PAY THE SETTLE WHEN THERE WAS A WALL. The profile bin/room-eye keeps is already signed
+    // in, so the wall is usually absent -- and sleeping 4s for it anyway was most of this script's
+    // runtime. Wait for the canvas instead, which is the thing the checks actually need.
+    await p.waitForSelector('canvas', { timeout: Math.min(SETTLE, 5000) }).catch(() => {});
+  }
 
   const cv = await p.evaluate(() => {
     const c = document.querySelector('canvas');
@@ -142,7 +191,7 @@ def main() -> int:
             cwd=str(app),
             capture_output=True,
             text=True,
-            timeout=180,
+            timeout=20,  # ceiling, not a budget; this proof should finish in ~6s
             env={
                 **os.environ,
                 "PORTAL_URL": PORTAL,

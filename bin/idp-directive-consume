@@ -155,6 +155,59 @@ def _mark_read(con: sqlite3.Connection, session_id: str, when: str) -> int:
         return 0
 
 
+def hook_output(session_id: str) -> int:
+    """Emit pending steers as hook context, and consume them.
+
+    THE MID-TURN DELIVERY POINT. A `PreToolUse` hook fires before EVERY tool call, so this runs
+    many times inside a single turn -- which is the difference between a steer that lands while
+    the agent is working and one that waits for it to finish. `SessionStart`/`PostCompact` alone
+    give "next-turn delivery": the estate's own words for a steer that arrives after the work it
+    was meant to change.
+
+    Printed on stdout as the hook contract expects, so the words enter the agent's context rather
+    than only the audit table. A steer nobody reads is the failure this whole file exists to
+    remove, and a consumed directive that never reaches the context is that same failure wearing
+    a different hat.
+    """
+    items = pending_for(session_id)
+    if not items:
+        # Silence when there is nothing to say: a hook that prints on every tool call would fill
+        # the agent's context with noise, and the noise would hide the steer that mattered.
+        return 0
+
+    lines = []
+    for item in items:
+        doc = item["doc"]
+        kind = doc.get("kind") or "steer"
+        who = doc.get("by") or "operator"
+        text = (doc.get("text") or "").strip()
+        when = doc.get("written_at") or ""
+        if kind == "stop":
+            lines.append(
+                f"[estate steer] {who} sent STOP at {when}. Finish the current tool call and "
+                f"stop what you are doing; then say what you stopped and why."
+            )
+        else:
+            lines.append(
+                f"[estate steer] {who} sent at {when}: {text}"
+            )
+
+    # Consume first, print second: if printing fails the marker still records that it was read,
+                # and a crash between the two leaves "read but not shown", which a person can see and
+    # repair. The reverse loses the message.
+    consume(session_id, peek=False, quiet=True)
+
+    payload = {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            # `additionalContext` is the field the tool-call path reads.
+            "additionalContext": "\n".join(lines),
+        }
+    }
+    print(json.dumps(payload))
+    return 0
+
+
 def consume(session_id: str, *, peek: bool, quiet: bool) -> int:
     items = pending_for(session_id)
     if not items:
@@ -270,6 +323,11 @@ def main() -> int:
     ap.add_argument("--peek", action="store_true", help="show pending; consume nothing")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--install", action="store_true", help="print the hook wiring")
+    ap.add_argument(
+        "--hook",
+        action="store_true",
+        help="mid-turn mode: emit pending steers as PreToolUse context and consume them",
+    )
     a = ap.parse_args()
 
     if a.install:
@@ -285,6 +343,8 @@ def main() -> int:
                 file=sys.stderr,
             )
         return 0
+    if a.hook:
+        return hook_output(a.session)
     return consume(a.session, peek=a.peek, quiet=a.quiet)
 
 
