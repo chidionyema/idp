@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Prove the fleet room renders, by driving a real browser. Run it, do not ask.
+
+WHY THIS EXISTS. Four times in one session a claim was made about the page from a
+terminal and was wrong -- a curl says the API answers and says nothing about what a
+person sees. Then a probe that read the DOM said the agent list was on the page when it
+was invisible, and another said it was hidden when it was not. The only instrument that
+has never lied about this page is a screenshot and a pixel count.
+
+So this drives Chrome, loads /fleet, waits for the build, and asserts eight things a
+person would notice. It exits non-zero on any failure, so it can be run after every change
+without asking anyone to reload a page by hand.
+
+WHAT IT ASSERTS, and each is a defect that actually happened:
+  * the canvas exists                                        -- it once measured 1168x0
+  * it has real height                                       -- 100% of a parent with no height
+  * it is visible without scrolling                          -- it once began at y=380
+  * it has drawn pixels                                      -- a blank canvas passes a DOM check
+  * no page errors                                           -- 'useRef is not defined' rendered blank
+  * the accessible list exists                               -- the fleet as text, for a screen reader
+  * the accessible list OCCUPIES NO SPACE                    -- it once ran 24 visible lines down the page
+  * real agents reached it                                   -- 24, from the API, not seeded stubs
+
+Usage:  bin/idp-room-prove            # exits 0 when the room renders, 1 when it does not
+        bin/idp-room-prove --json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+PORTAL = os.environ.get("PORTAL_URL", "http://localhost:3100")
+# The bundle takes about 15s to compile on a cold start and the page needs a moment to draw.
+SETTLE_MS = int(os.environ.get("ROOM_SETTLE_MS", "14000"))
+
+SCRIPT = r"""
+import { chromium } from 'playwright-core';
+const PORTAL = process.env.PORTAL_URL;
+const SETTLE = Number(process.env.ROOM_SETTLE_MS);
+
+const b = await chromium.launch({
+  executablePath: process.env.CHROME_PATH,
+  headless: true,
+});
+const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
+const errs = [];
+p.on('pageerror', e => errs.push(e.message.slice(0, 160)));
+p.on('console', m => {
+  if (m.type() === 'error' && !/findDOMNode|401|DevTools/.test(m.text())) errs.push(m.text().slice(0, 160));
+});
+
+const out = { checks: [], errors: errs };
+const ok = (name, pass, detail) => out.checks.push({ name, pass: !!pass, detail: String(detail) });
+
+try {
+  await p.goto(`${PORTAL}/fleet`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await p.waitForTimeout(6000);
+  // The estate signs a guest in on the way through; if the wall is up, press it once.
+  const wall = await p.$('button:has-text("Enter")');
+  if (wall) { await wall.click(); await p.waitForTimeout(SETTLE); }
+
+  const cv = await p.evaluate(() => {
+    const c = document.querySelector('canvas');
+    if (!c) return null;
+    const b = c.getBoundingClientRect();
+    return { w: Math.round(b.width), h: Math.round(b.height), y: Math.round(b.y) };
+  });
+  ok('canvas exists', !!cv, cv ? JSON.stringify(cv) : 'no canvas element');
+  ok('canvas has real height', cv && cv.h > 300, cv ? `${cv.h}px` : 'n/a');
+  ok('canvas visible without scrolling', cv && cv.y < 900, cv ? `y=${cv.y}` : 'n/a');
+
+  const lit = await p.evaluate(() => {
+    const c = document.querySelector('canvas');
+    if (!c) return 0;
+    const ctx = c.getContext('2d');
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4 * 53) if (d[i] > 12) n++;
+    return n;
+  });
+  ok('canvas has drawn pixels', lit > 500, `${lit} lit samples`);
+
+  const list = await p.evaluate(() => {
+    const ul = document.querySelector('[data-testid="room-agents"]');
+    if (!ul) return null;
+    const items = Array.from(ul.querySelectorAll('li'));
+    const sized = items.filter(li => {
+      const b = li.getBoundingClientRect();
+      return b.width > 4 && b.height > 4;
+    });
+    return { items: items.length, sizedVisible: sized.length };
+  });
+  ok('accessible list present', !!list, list ? JSON.stringify(list) : 'absent');
+  ok('accessible list takes no space', list && list.sizedVisible === 0,
+     list ? `${list.sizedVisible} items occupy space` : 'n/a');
+  ok('real agents reached it', list && list.items >= 20, list ? `${list.items} items` : 'n/a');
+  ok('no page errors', errs.length === 0, errs.slice(0, 2).join(' | ') || 'none');
+} catch (e) {
+  ok('browser drive completed', false, String(e).slice(0, 200));
+}
+out.ok = out.checks.every(c => c.pass);
+console.log(JSON.stringify(out));
+await b.close();
+"""
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args()
+
+    if not Path(CHROME).exists():
+        print(f"BLIND room-prove  no Chrome at {CHROME}", file=sys.stderr)
+        return 2
+    # playwright-core resolves from the app package, and the script must live where it can.
+    # playwright-core is hoisted to the workspace root (backstage/node_modules), not installed
+    # per-package -- so the check looks where it actually is. A guard that checks the wrong path
+    # reports BLIND on a machine where the tool is present, which trains a reader to ignore BLIND.
+    app = ROOT / "backstage" / "packages" / "app"
+    have_pw = (ROOT / "backstage" / "node_modules" / "playwright-core").exists() or (
+        app / "node_modules" / "playwright-core"
+    ).exists()
+    if not have_pw:
+        print("BLIND room-prove  playwright-core is not installed under backstage/", file=sys.stderr)
+        return 2
+
+    with tempfile.NamedTemporaryFile("w", suffix=".mjs", dir=str(app), delete=False) as fh:
+        fh.write(SCRIPT)
+        script = fh.name
+    try:
+        proc = subprocess.run(
+            ["node", str(Path(script).relative_to(app))],
+            cwd=str(app),
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env={
+                **os.environ,
+                "PORTAL_URL": PORTAL,
+                "CHROME_PATH": CHROME,
+                "ROOM_SETTLE_MS": str(SETTLE_MS),
+            },
+        )
+    finally:
+        shutil.move(script, "/dev/null") if False else Path(script).unlink(missing_ok=True)
+
+    line = (proc.stdout or "").strip().splitlines()[-1] if proc.stdout.strip() else ""
+    try:
+        result = json.loads(line)
+    except ValueError:
+        print(f"BLIND room-prove  the driver produced no result\n{proc.stdout[-300:]}\n{proc.stderr[-300:]}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        for c in result["checks"]:
+            print(f"  {'PASS' if c['pass'] else 'FAIL'}  {c['name']:<36} {c['detail']}")
+        passed = sum(1 for c in result["checks"] if c["pass"])
+        total = len(result["checks"])
+        print(f"\n{'ok' if result['ok'] else 'FAIL'}    room-prove  {passed}/{total} checks")
+    return 0 if result["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
