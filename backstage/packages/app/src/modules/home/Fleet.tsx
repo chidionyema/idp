@@ -18,7 +18,6 @@ import { useEffect, useRef, useState } from 'react';
 //
 // The page top comes from `modules/shell` like every other page here (crew#843); drawing our own
 // header is what produced four differently-sized titles in the first place.
-import { useEffect, useState } from 'react';
 import { Progress } from '@backstage/core-components';
 import {
   discoveryApiRef,
@@ -26,11 +25,6 @@ import {
   useApi,
 } from '@backstage/frontend-plugin-api';
 import Box from '@material-ui/core/Box';
-import Button from '@material-ui/core/Button';
-import MuiChip from '@material-ui/core/Chip';
-import IconButton from '@material-ui/core/IconButton';
-import TextField from '@material-ui/core/TextField';
-import Tooltip from '@material-ui/core/Tooltip';
 import Typography from '@material-ui/core/Typography';
 import dagre from 'dagre';
 import {
@@ -47,7 +41,7 @@ import {
 } from './fleetBoard';
 import type { Board, Note, SessionsEnvelope, Signal } from './fleetBoard';
 import { ACTIVITY_WORD, ACTIVITY_SENTENCE, motionFor, ringStyleFor, needsAPerson } from './fleetMotion';
-import FleetCanvas from './FleetCanvas';
+import { SpatialCanvas } from '../room/ui/SpatialCanvas';
 import FleetVoice from './FleetVoice';
 import type { Activity } from './fleetMotion';
 import type { Activity } from './fleetMotion';
@@ -610,45 +604,11 @@ export function Fleet() {
                 SEEN." Every agent is a node whose radius is the work it has done, whose pulse
                 is the state it is in, and whose ring says whether it is blocked. See
                 FleetCanvas.tsx and docs/specs/2026-09-18-fleet-interface-design.md. */}
-            <FleetCanvas
+            <SpatialCanvas
               sessions={board.sessions}
-              board={board}
-              // THE PAGE OWNS THESE TWO, so voice and the canvas are looking at the same truth.
-              // Voice cannot narrow a fleet or select an agent if the canvas keeps that state to
-              // itself -- which is exactly why FleetVoice was built, tested, and connected to
-              // nothing.
-              activityFilter={voiceActivity}
-              selectedSessionId={voiceSelected}
-              spotlightSessionId={voiceSpotlight}
-              onSelectSession={setVoiceSelected}
-              // The deck is a CONTROL SURFACE, not a read-only panel: without these the page
-              // rendered a canvas whose steer, note and history sections had no data and no
-              // destination. Found by a test asserting "not yet read" against a deck that said
-              // "No notes or signals yet" -- the props existed on the canvas and nothing passed
-              // them.
-              signalsBySession={signalsBySession}
-              notesBySession={notesBySession}
-              onRequestSignals={loadSignals}
-              onRequestNotes={loadNotes}
-              onSubmitSteer={async (sessionId, runtime, text) => {
-                const res = await fetchApi.fetch('plugin://proxy/fleetview/nudge', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ session_id: sessionId, runtime, by: 'founder', text }),
-                });
-                const body = (await res.json()) as { ok?: boolean; error?: string };
-                if (res.ok && body.ok !== false) void loadSignals(sessionId);
-                return { ok: res.ok && body.ok !== false, error: body.error ?? `HTTP ${res.status}` };
-              }}
-              onAddNote={async (sessionId, author, note) => {
-                const res = await fetchApi.fetch('plugin://proxy/fleetview/notes', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ session_id: sessionId, note, author }),
-                });
-                await res.json();
-                void loadNotes(sessionId);
-              }}
+              spotlight={voiceSpotlight}
+              selected={voiceSelected}
+              onSelect={setVoiceSelected}
             />
 
             {/* VOICE. The whole point of it is that a person does not type: they say "what is
