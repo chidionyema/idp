@@ -108,6 +108,12 @@ def ask_voice(body: dict, sessions: list) -> tuple[dict, int]:
     return _voice().ask(body.get("question", ""), sessions)
 
 
+def stream_voice(body: dict, sessions: list):
+    """Clause-by-clause server-sent events. The browser speaks each one as it lands, so the first
+    words arrive while the model is still writing the rest."""
+    return _voice().stream_ask(body.get("question", ""), sessions)
+
+
 def _signals():
     return _load(_SIGNALS_MODULE, "fleetview_signals_impl")
 
@@ -193,6 +199,7 @@ APPROVE_PATH = "/approve"
 DENY_PATH = "/deny"
 SIGNALS_PATH = "/signals"
 VOICE_PATH = "/voice"
+VOICE_STREAM_PATH = "/voice/stream"
 BLAST_RADIUS_PATH = "/blast-radius"
 GRAPH_PATH = "/graph"
 CHECK_RECEIPTS_PATH = "/check-receipts"

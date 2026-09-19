@@ -190,3 +190,117 @@ def ask(question: str, sessions: list[dict[str, Any]]) -> tuple[dict[str, Any], 
     if not answer:
         return {"error": "the router returned an empty answer"}, 502
     return {"answer": answer, "model": router_model()}, 200
+
+
+def split_clauses(buffer: str) -> tuple[list[str], str]:
+    """Text -> (complete clauses, remainder). The latency mechanism, from the spec.
+
+    "Micro-clause chunking: LLM tokens buffer until a natural phonetic boundary (`, . ? ! ;`),
+    enabling TTS synthesis to start while the LLM is still generating subsequent tokens."
+
+    WITHOUT THIS the browser waits for the whole answer before speaking a word, so a 1.4s model
+    call becomes 7s of silence because the person also waits for the audio to finish. With it, the
+    first clause is spoken ~300ms in and the reply is still being written -- which is the whole
+    difference between "laggy" and "instant".
+
+    An em dash and a colon also end a clause: a model writes "one is stuck: pi #bf061c" and the
+    reader should hear "one is stuck" before the id arrives.
+    """
+    parts: list[str] = []
+    start = 0
+    for i, ch in enumerate(buffer):
+        if ch in ",.;:!?\n":
+            piece = buffer[start : i + 1].strip()
+            if piece:
+                parts.append(piece)
+            start = i + 1
+    return parts, buffer[start:]
+
+
+def stream_ask(question: str, sessions: list[dict[str, Any]]):
+    """Yield server-sent events: one `delta` per clause, then `done`.
+
+    Same prompt, same fleet summary, same read-only rule as `ask` -- the only difference is that
+    the caller hears the beginning while the model is still writing the end.
+    """
+    question = (question or "").strip()
+    if not question:
+        yield _sse("error", {"error": "question is required"})
+        return
+    if not router_key():
+        yield _sse("error", {"error": "no LITELLM_API_KEY on this deployment, so voice has no model"})
+        return
+
+    payload = {
+        "model": router_model(),
+        "messages": [
+            {"role": "system", "content": SYSTEM},
+            {
+                "role": "user",
+                "content": f"FLEET SUMMARY\n{fleet_summary(sessions)}\n\nQUESTION\n{question}",
+            },
+        ],
+        "max_tokens": 220,
+        "temperature": 0.2,
+        "stream": True,
+    }
+    req = urllib.request.Request(
+        f"{router_host()}/v1/chat/completions",
+        data=json.dumps(payload).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {router_key()}",
+        },
+        method="POST",
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=_timeout())
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = (json.loads(exc.read().decode()).get("error") or {}).get("message", "")
+        except Exception:  # noqa: BLE001
+            detail = ""
+        yield _sse("error", {"error": f"the router refused the call ({exc.code})", "detail": detail[:300]})
+        return
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        yield _sse("error", {"error": f"cannot reach the router: {exc}"})
+        return
+
+    buffer = ""
+    try:
+        for raw in resp:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data)
+            except ValueError:
+                continue
+            choices = chunk.get("choices") or []
+            if not choices:
+                continue
+            delta = (choices[0].get("delta") or {}).get("content") or ""
+            if not delta:
+                continue
+            buffer += delta
+            clauses, buffer = split_clauses(buffer)
+            for clause in clauses:
+                yield _sse("delta", {"text": clause})
+        tail = buffer.strip()
+        if tail:
+            yield _sse("delta", {"text": tail})
+        yield _sse("done", {"model": router_model()})
+    finally:
+        try:
+            resp.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _sse(event: str, payload: dict[str, Any]) -> str:
+    """One server-sent event. The browser reads these as they arrive, which is the point."""
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"

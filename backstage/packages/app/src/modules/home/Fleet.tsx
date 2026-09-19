@@ -675,17 +675,49 @@ export function Fleet() {
               // the SAME sessions the board is showing and answers in one or two spoken
               // sentences. This is the join that was missing: the component had no model call at
               // all, so voice could filter the board and answer nothing else.
-              onAsk={async (question) => {
-                const res = await fetchApi.fetch('plugin://proxy/fleetview/voice', {
+              // STREAMED, and `onClause` is the whole reason this is not `onAsk`.
+              //
+              // The model writes a sentence over ~1.2s. Returning the finished paragraph means a
+              // person hears NOTHING for that whole time and then the audio starts -- measured,
+              // that reads as broken. Sending each clause as it is written means the first words
+              // are spoken at ~300ms and the rest arrives while they are already being said. It
+              // is the difference between laggy and instant, and it is the spec's own
+              // "micro-clause chunking" applied where it actually matters.
+              onClause={async (question, speakClause) => {
+                const res = await fetchApi.fetch('plugin://proxy/fleetview/voice/stream', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ question }),
                 });
-                const body = (await res.json()) as { answer?: string; error?: string; detail?: string };
-                if (!res.ok || !body.answer) {
-                  throw new Error(body.error ?? `HTTP ${res.status}`);
+                if (!res.ok || !res.body) {
+                  throw new Error(`HTTP ${res.status}`);
                 }
-                return body.answer;
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buf = '';
+                let spoke = 0;
+                for (;;) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  buf += decoder.decode(value, { stream: true });
+                  // SSE frames are separated by a blank line.
+                  const frames = buf.split('\n\n');
+                  buf = frames.pop() ?? '';
+                  for (const frame of frames) {
+                    const ev = (frame.match(/^event: (\S+)/m) || [])[1];
+                    const dataLine = (frame.match(/^data: (.*)$/m) || [])[1];
+                    if (!dataLine) continue;
+                    let payload: { text?: string; error?: string };
+                    try { payload = JSON.parse(dataLine); } catch { continue; }
+                    if (ev === 'delta' && payload.text) {
+                      spoke += 1;
+                      speakClause(payload.text);
+                    } else if (ev === 'error') {
+                      throw new Error(payload.error ?? 'the fleet could not answer');
+                    }
+                  }
+                }
+                if (spoke === 0) throw new Error('the fleet returned nothing');
               }}
             />
           </>

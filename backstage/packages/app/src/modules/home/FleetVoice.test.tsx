@@ -211,7 +211,7 @@ describe('FleetVoice', () => {
     render(<FleetVoice sessions={sessions} />);
     const button = screen.getByTestId('voice-ptt');
 
-    fireEvent.mouseDown(button);
+    fireEvent.click(button);
     expect(FakeSpeechRecognition.instances.length).toBe(1);
     expect(FakeSpeechRecognition.instances[0].started).toBe(true);
     expect(screen.getByTestId('voice-state-word').textContent).toBe(
@@ -231,11 +231,11 @@ describe('FleetVoice', () => {
     render(<FleetVoice sessions={sessions} onFilter={onFilter} />);
     const button = screen.getByTestId('voice-ptt');
 
-    fireEvent.mouseDown(button);
+    fireEvent.click(button);
     act(() => {
       FakeSpeechRecognition.instances[0].emitResult('what is stuck', true);
     });
-    fireEvent.mouseUp(button);
+    fireEvent.click(button);
 
     expect(screen.getByTestId('voice-intent-chip')).toBeTruthy();
     expect(onFilter).not.toHaveBeenCalled();
@@ -260,14 +260,14 @@ describe('FleetVoice', () => {
     );
     const button = screen.getByTestId('voice-ptt');
 
-    fireEvent.mouseDown(button);
+    fireEvent.click(button);
     act(() => {
       FakeSpeechRecognition.instances[0].emitResult(
         'steer agent-beta try the other branch',
         true,
       );
     });
-    fireEvent.mouseUp(button);
+    fireEvent.click(button);
 
     act(() => {
       jest.advanceTimersByTime(1500);
@@ -286,11 +286,11 @@ describe('FleetVoice', () => {
     render(<FleetVoice sessions={sessions} />);
     const button = screen.getByTestId('voice-ptt');
 
-    fireEvent.mouseDown(button);
+    fireEvent.click(button);
     act(() => {
       FakeSpeechRecognition.instances[0].emitResult('what is stuck', true);
     });
-    fireEvent.mouseUp(button);
+    fireEvent.click(button);
 
     act(() => {
       jest.advanceTimersByTime(1500);
@@ -324,11 +324,11 @@ describe('FleetVoice', () => {
     render(<FleetVoice sessions={sessions} onFilter={onFilter} />);
     const button = screen.getByTestId('voice-ptt');
 
-    fireEvent.mouseDown(button);
+    fireEvent.click(button);
     act(() => {
       FakeSpeechRecognition.instances[0].emitResult('what is stuck', true);
     });
-    fireEvent.mouseUp(button);
+    fireEvent.click(button);
 
     expect(screen.getByTestId('voice-intent-chip')).toBeTruthy();
 
@@ -349,7 +349,8 @@ describe('FleetVoice', () => {
     const word = screen.getByTestId('voice-state-word');
     expect(word.textContent).toBe('IDLE');
 
-    fireEvent.mouseDown(screen.getByTestId('voice-ptt'));
+    // ONE click. The control toggles, so this is the whole gesture.
+    fireEvent.click(screen.getByTestId('voice-ptt'));
     expect(screen.getByTestId('voice-state-word').textContent).toBe(
       'LISTENING',
     );

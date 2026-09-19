@@ -43,6 +43,15 @@ export interface FleetVoiceProps {
    * something looked stuck and it said it did not understand, which was true and useless.
    */
   onAsk?: (question: string) => Promise<string | null>;
+  /**
+   * ASK, STREAMED. `speakClause` is called for each clause AS IT ARRIVES, so the first words are
+   * heard about a second before the sentence is finished.
+   *
+   * WHY BOTH THIS AND `onAsk`: a caller with a one-shot endpoint still works, and one with a
+   * streamed endpoint gets the latency. Streaming is what a person feels; the non-streaming prop
+   * stays for tests and for any deployment that cannot hold a connection open.
+   */
+  onClause?: (question: string, speakClause: (text: string) => void) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +170,7 @@ export default function FleetVoice({
   onHighlight,
   onStateChange,
   onAsk,
+  onClause,
 }: FleetVoiceProps): JSX.Element {
   const recognitionCtor = useMemo(() => getRecognitionCtor(), []);
   const synthesisAvailable = useMemo(() => hasSynthesis(), []);
@@ -200,6 +210,31 @@ export default function FleetVoice({
       } catch {
         /* ignore */
       }
+    }
+  }, []);
+
+  /**
+   * Speak a clause and let the next one queue behind it.
+   *
+   * `speak()` CANCELS whatever is being said before starting, which is right when a whole answer
+   * arrives at once and wrong for a stream: cancelling per clause cuts the clause off mid-word,
+   * so a streamed reply would stutter. `speak()` does not queue, and `speechSynthesis.speak()`
+   * does -- calling it repeatedly is exactly a queue. So this is the same call and no cancel.
+   */
+  const speakQueued = useCallback((text: string) => {
+    if (!hasSynthesis() || !text.trim()) return;
+    try {
+      const utter = new window.SpeechSynthesisUtterance(text);
+      utter.onend = () => {
+        // Only leave SPEAKING when the whole queue has drained, or the state would flip to idle
+        // between clauses and a barge-in would look like it did nothing.
+        if (!window.speechSynthesis.speaking && stateRef.current === 'speaking') {
+          setState('idle');
+        }
+      };
+      window.speechSynthesis.speak(utter);
+    } catch {
+      /* a synthesis failure must not stop the stream */
     }
   }, []);
 
@@ -280,6 +315,26 @@ export default function FleetVoice({
       // sentences. A recognised command still acts locally and instantly; only free speech costs
       // a round trip.
       setNotice(`ASK: ${intent.raw}`);
+
+      // STREAMED FIRST. Each clause is spoken the moment it arrives, so the answer starts
+      // sounding at ~300ms and continues while the model is still writing. `speakQueued` queues
+      // rather than cancels, because cancelling per clause would cut off the clause before it.
+      if (onClause) {
+        setState('thinking');
+        try {
+          await onClause(intent.raw, (clause) => {
+            setState('speaking');
+            speakQueued(clause);
+          });
+          return;
+        } catch (err) {
+          const why = err instanceof Error ? err.message : String(err);
+          setNotice(`ASK FAILED: ${why}`);
+          speak('I could not reach the fleet to answer that.');
+          return;
+        }
+      }
+
       if (!onAsk) {
         speak('I did not understand that, and I cannot ask the fleet on this page.');
         return;
@@ -296,7 +351,7 @@ export default function FleetVoice({
         speak('I could not reach the fleet to answer that.');
       }
     },
-    [onFilter, onHighlight, onOpenDeck, sessions, speak, onAsk],
+    [onFilter, onHighlight, onOpenDeck, sessions, speak, speakQueued, onAsk, onClause],
   );
 
   const startListening = useCallback(() => {
@@ -337,8 +392,22 @@ export default function FleetVoice({
         setInterim(shown);
       };
 
-      rec.onerror = () => {
-        setNotice('Microphone unavailable');
+      rec.onerror = (event: { error?: string }) => {
+        // THE REASON, not a shrug. Measurement 2026-09-19: Chrome's SpeechRecognition fires
+        // `start` then `end` with NO error when it cannot reach Google's speech service, and the
+        // old handler reported every cause as "Microphone unavailable" -- so a missing network,
+        // a denied permission and a silent room were indistinguishable, and the only one a
+        // person can fix was impossible to identify.
+        const code = event?.error || 'unknown';
+        const WHY: Record<string, string> = {
+          'not-allowed': 'Microphone blocked. Allow it for this site in the address bar.',
+          'service-not-allowed': 'This browser will not use its speech service here (needs https).',
+          'no-speech': 'Heard nothing. Try again closer to the mic.',
+          network: 'Speech needs the browser\'s online speech service and could not reach it.',
+          aborted: 'Stopped.',
+          audio: 'No microphone device found.',
+        };
+        setNotice(`Voice: ${WHY[code] ?? code}`);
         setState('idle');
       };
 
@@ -393,6 +462,22 @@ export default function FleetVoice({
     setPending(intent);
     setState('thinking');
     clearGrace();
+
+    // THE GRACE WINDOW IS FOR MUTATIONS, NOT FOR QUESTIONS.
+    //
+    // GRACE_MS is a cancellation window: a command changes something, so the reader gets 1.5s to
+    // take it back. A QUESTION changes nothing -- there is nothing to cancel -- so making it wait
+    // is 1.5 seconds of dead air for no protection at all. Measured: the first spoken clause
+    // arrived at 3093ms, of which 1500ms was this timer doing nothing useful for a query.
+    //
+    // So a query runs immediately and a mutation keeps its window.
+    const isMutation =
+      intent.kind === 'stop' || intent.kind === 'steer' || intent.kind === 'approve' ||
+      intent.kind === 'deny';
+    if (!isMutation) {
+      applyIntent(intent);
+      return;
+    }
     graceTimerRef.current = setTimeout(() => {
       graceTimerRef.current = null;
       applyIntent(intent);
@@ -409,6 +494,11 @@ export default function FleetVoice({
 
   // --- push-to-talk handlers ------------------------------------------------
 
+  // CLICK TO TOGGLE, NOT HOLD. Holding a mouse button while speaking means one hand is occupied
+  // at the exact moment a person is talking, and it makes every failure feel like a stuck button.
+  // A click starts listening; the SAME click again stops it and sends what was heard. The
+  // browser's own end-of-speech detection ends the turn on its own a moment after you stop
+  // talking, so the second click is a fallback rather than the normal path.
   const handlePressStart = useCallback(() => {
     if (!supported) return;
     holdingRef.current = true;
@@ -420,6 +510,13 @@ export default function FleetVoice({
     holdingRef.current = false;
     stopListening();
   }, [stopListening, supported]);
+
+  /** One click: on if idle, off (and send) if listening. */
+  const handleToggle = useCallback(() => {
+    if (!supported) return;
+    if (state === 'listening') stopListening();
+    else startListening();
+  }, [supported, state, startListening, stopListening]);
 
   // --- barge-in -------------------------------------------------------------
 
@@ -572,11 +669,9 @@ export default function FleetVoice({
         data-testid="voice-ptt"
         variant="contained"
         disabled={!supported}
-        onMouseDown={handlePressStart}
-        onMouseUp={handlePressEnd}
-        onMouseLeave={handlePressEnd}
-        onTouchStart={handlePressStart}
-        onTouchEnd={handlePressEnd}
+        // ONE CLICK. `onClick` rather than down/up: see handleToggle's comment. touch and mouse
+        // both raise click, so both input paths work without a second pair of handlers.
+        onClick={handleToggle}
         style={{
           background: supported ? T.accent : T.surface3,
           color: supported ? T.inkOnAccent : T.textMuted,
@@ -585,7 +680,7 @@ export default function FleetVoice({
           fontSize: 14,
         }}
       >
-        🎤 Hold to talk
+        🎤 Ask the fleet
       </Button>
 
       {disabledReason ? (

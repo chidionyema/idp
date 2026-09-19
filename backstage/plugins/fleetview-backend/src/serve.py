@@ -159,6 +159,27 @@ def build_app(routes_path: Path) -> FastAPI:
         body, status = routes.sessions_envelope()
         return JSONResponse(content=body, status_code=status)
 
+    @app.post(routes.VOICE_STREAM_PATH)
+    async def voice_stream(body: dict):
+        """The same question, streamed as clauses.
+
+        TWO ROUTES, ON PURPOSE. `/voice` returns one JSON answer and stays for any caller that
+        wants a single response; `/voice/stream` sends each clause as it is written. The browser
+        uses the stream, because a person waiting in silence for a finished paragraph is the
+        difference between this feeling instant and feeling broken.
+        """
+        envelope, _status = routes.sessions_envelope()
+        sessions = envelope.get("sessions") or []
+
+        def gen():
+            for chunk in routes.stream_voice(body, sessions):
+                yield chunk
+
+        return StreamingResponse(gen(), media_type="text/event-stream", headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        })
+
     @app.post(routes.VOICE_PATH)
     async def voice(body: dict):
         """Voice in, one or two sentences out. Read-only: it can describe the fleet and cannot
