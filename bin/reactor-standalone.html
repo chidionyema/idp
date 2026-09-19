@@ -1020,8 +1020,17 @@
             // every node it passes brightens. Silent room, still grid: the wave exists only
             // while someone is actually speaking.
             if (isListening) {
+                // THE THRESHOLD WAS 12x TOO HIGH, measured with Chrome's fake audio device: the
+                // analyser's mean over 128 bins sits at 0.004-0.006 for continuous speech, because
+                // averaging divides the signal by the bin count. A gate of 0.06 therefore fired
+                // zero times on a live microphone -- the feature looked broken while the audio
+                // was arriving perfectly.
+                //
+                // 0.012 is roughly twice the floor: quiet speech still crosses it, and an idle
+                // room (0.003-0.004 with the device open) does not, so the grid stays still when
+                // nobody is talking, which is the property that matters.
                 const lvl = level();
-                if (lvl > 0.06) ripples.push({ x: 0, y: -120, z: 0, r: 0, life: 0.85, mic: true });
+                if (lvl > 0.012) ripples.push({ x: 0, y: -120, z: 0, r: 0, life: 0.85, mic: true });
             }
             if (ripples.length) {
                 const pos = fieldGeo.attributes.position.array;
