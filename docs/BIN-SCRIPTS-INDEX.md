@@ -44,7 +44,6 @@ Core platform functionality, administration, and operational commands.
 | `idp-cloud` | Primitive layer between estate operator scripts and cloud APIs |
 | `idp-cluster-state` | Read cluster's own state receipt from ObjectStore (crew#345) |
 | `idp-compile-helm` | Compile Helm charts |
-| `idp-conscience` | Ethical check for operations |
 | `idp-continuity-lane` | Maintain service continuity |
 | `idp-contract` | Contract verification |
 | `idp-convergence-proof` | Prove system convergence |
@@ -301,7 +300,6 @@ Policy gates and verification logic.
 | `idp-evidence-gate` | Evidence collection gate |
 | `idp-flux-subst-gate` | Flux substitution gate |
 | `idp-gate-demo` | Gate demonstration |
-| `idp-grader-exit-gate` | Grader exit validation |
 | `idp-mechanism-gate` | Mechanism validation gate |
 | `idp-reasoning-gateway-hook` | Session grading hook |
 | `idp-session-gate` | Session operation gate |

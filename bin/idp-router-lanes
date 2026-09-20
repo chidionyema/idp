@@ -42,7 +42,7 @@ def lanes(config_path: str) -> list[str]:
 
 def zone(estate_config: str) -> str:
     """`ESTATE_ZONE: <zone>` in clusters/oke/estate-config.yaml (R70: the one place a hostname
-    comes from; the same read .github/workflows/conscience-ask.yml does)."""
+    comes from (R70: the one place a hostname comes from)."""
     for line in pathlib.Path(estate_config).read_text().splitlines():
         parts = line.split()
         if len(parts) >= 2 and parts[0] == "ESTATE_ZONE:":
