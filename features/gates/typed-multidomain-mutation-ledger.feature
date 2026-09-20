@@ -56,3 +56,36 @@ Feature: The typed multi-domain mutation ledger
       Then the bundle is admitted to a new branch named after the ledger
       And the branch is never "main"
       And pr_required is true
+      And the admission reports its delivery outcome
+
+  Rule: A mutation carries a pre-validated inverse or it is refused (ADR 0024).
+    Scenario: A proposal arrives with no reversibility envelope
+      Given an agent has proposed a mutation touching "code, manifest, sql" with no envelope
+      When the Deterministic Verifier evaluates the whole bundle
+      Then the bundle is refused with violation code "NO_INVERSE"
+      And the refusal names the missing envelope, not a paraphrase
+
+    Scenario: A proposal carries an inverse that merely echoes the forward action
+      Given an agent has proposed a mutation whose envelope answers the forward with itself
+      When the Deterministic Verifier evaluates the whole bundle
+      Then the bundle is refused with violation code "NO_INVERSE"
+      And the refusal names an inverse that reverses nothing
+
+    Scenario: A proposal claims an irreversible exemption with a forged token
+      Given an agent has proposed a destructive mutation claiming an exemption it did not sign
+      When the Deterministic Verifier evaluates the whole bundle
+      Then the bundle is refused with violation code "NO_INVERSE"
+      And the refusal is a signature verdict, not a prefix match
+
+    Scenario: A proposal carries a deterministic inverse with a state probe
+      Given an agent has proposed a reversible mutation with a deterministic inverse
+      When the Deterministic Verifier evaluates the whole bundle
+      Then the inverse is accepted and the bundle is graded on its own merits
+
+  Rule: A declared probe is executed against the real machine, not read as a string.
+
+    Scenario: The inverse's probe is run against state the forward created
+      Given a forward mutation has created a file on the real filesystem
+      When the rollback path performs the inverse
+      Then verify_inverse runs the declared probe and reports the machine's exit code
+      And the probe holds only after the inverse has run

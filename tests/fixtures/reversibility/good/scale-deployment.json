@@ -1,0 +1,14 @@
+{
+  "mutation_id": "mut-scale-payment-0001",
+  "target": "deployment/payment-processor",
+  "forward": {
+    "action": "scale_deployment",
+    "parameters": { "name": "payment-processor", "replicas": 5, "current_replicas": 2 }
+  },
+  "inverse_spec": {
+    "type": "deterministic_inverse",
+    "action": "scale_deployment",
+    "parameters": { "name": "payment-processor", "replicas": 2 },
+    "verification_probe": "kubectl get deployment payment-processor -o jsonpath='{.status.readyReplicas}' == 2"
+  }
+}
