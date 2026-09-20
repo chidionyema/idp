@@ -68,6 +68,10 @@ from pathlib import Path
 _SESSIONS_MODULE = Path(__file__).resolve().parent / "sessions.py"
 _NOTES_MODULE = Path(__file__).resolve().parent / "notes.py"
 _SIGNALS_MODULE = Path(__file__).resolve().parent / "signals.py"
+# The Observer lives in platform/intent/, NOT beside this file: it is a producer of contracts that
+# the backend merely reads, and the voice service is its peer, not its parent. Resolved from the
+# module's own location so it does not depend on the process's working directory.
+_OBSERVER_MODULE = Path(__file__).resolve().parents[4] / "platform" / "intent" / "observer.py"
 _BLAST_MODULE = Path(__file__).resolve().parent / "blast.py"
 _GRAPH_MODULE = Path(__file__).resolve().parent / "graph.py"
 _EVALS_MODULE = Path(__file__).resolve().parent / "evals.py"
@@ -173,6 +177,17 @@ def _signals():
     return _load(_SIGNALS_MODULE, "fleetview_signals_impl")
 
 
+def _observer():
+    """The Observer, loaded by path exactly as every other sibling module here is.
+
+    WHY BY PATH. `routes.py` is executed by `serve.py` through `importlib.util.spec_from_file_location`
+    (see `_load_routes`), so it is NOT a package and a relative import would fail at runtime. Every
+    neighbour -- `_signals`, `_graph`, `_blast` -- is reached the same way, and the fixed
+    `sys.modules` name is what makes two callers share one module instance instead of two.
+    """
+    return _load(_OBSERVER_MODULE, "idp_intent_observer")
+
+
 def _blast():
     return _load(_BLAST_MODULE, "fleetview_blast_impl")
 
@@ -253,6 +268,12 @@ STOP_PATH = "/stop"
 APPROVE_PATH = "/approve"
 DENY_PATH = "/deny"
 SIGNALS_PATH = "/signals"
+# THE CONTRACTS CHANNEL. The Reactor's `requestAnimationFrame` loop polls this to render a node per
+# spoken request. Its own path rather than a filter on /signals, because a contract has a lifecycle
+# (PENDING -> RUNNING -> COMPLETED) and a signal is a moment; merging them would make the board
+# re-derive "is this still running" from a list of moments, which is the ticket-board shape the
+# founder's spec replaces.
+CONTRACTS_PATH = "/contracts"
 REPLIES_PATH = "/replies"
 WORK_PATH = "/work"
 KILL_PATH = "/kill"
@@ -689,6 +710,27 @@ def ledger_tail_envelope(session_id: str) -> tuple[dict[str, Any], int]:
         return {"rows": rows}, 200
     except Exception as exc:  # noqa: BLE001 — soft failure for the log pane
         return {"rows": [], "error": str(exc)}, 200
+
+
+def contracts_envelope(limit: int = 10) -> tuple[dict[str, Any], int]:
+    """`GET /api/fleetview/contracts` -- the action contracts a person is currently watching.
+
+    ALWAYS 200 WITH A POSSIBLY-EMPTY LIST, the rule `signals_envelope` and `notes_envelope` follow:
+    nobody having asked for anything yet is not an error, and a board that showed an error there
+    would train its reader to ignore the error.
+
+    THE READ IS SOFT. The Observer commits contracts from its own process, so a database that is
+    mid-migration, or absent because nothing has ever been asked, must not take down the HUD. On
+    any failure the rows are empty AND the reason is carried in the body -- an empty list and an
+    unreadable database look identical to a page, so the reason is the difference between a quiet
+    fleet and a broken one. That distinction is not optional (AGENTS.md section 8).
+    """
+    impl = _observer()
+    try:
+        rows = impl.contracts_for(limit)
+        return {"contracts": rows}, 200
+    except Exception as exc:  # noqa: BLE001 -- soft read; see the docstring
+        return {"contracts": [], "error": str(exc)}, 200
 
 
 def _now() -> str:

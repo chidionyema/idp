@@ -395,6 +395,14 @@ def build_app(routes_path: Path) -> FastAPI:
         result, status = routes.add_deny(body)
         return JSONResponse(content=result, status_code=status)
 
+    # SPOKEN REQUESTS AS TRACKED CONTRACTS. The Reactor polls this beside /sessions; a contract is a
+    # node. Read-only and always 200, like /signals -- see routes.contracts_envelope for why an
+    # unreadable database is reported IN the body rather than as a status code.
+    @app.get(routes.CONTRACTS_PATH)
+    def contracts_get(limit: int = 10):
+        body, status = routes.contracts_envelope(limit)
+        return JSONResponse(content=body, status_code=status)
+
     @app.get(routes.SIGNALS_PATH)
     def signals_get(session_id: str):
         body, status = routes.signals_envelope(session_id)

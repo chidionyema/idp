@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idp.estate/schema/intent/action-contract.schema.json",
+  "title": "Autonomous Action Contract",
+  "description": "A spoken request, crystallised into a checkable form. The vocabulary contains no estate name -- no zone, no registry, no provider (the same rule schema/intent/*.schema.json follows).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["feature", "given", "when", "then", "agents_required"],
+  "properties": {
+    "feature": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "The outcome, named. A person should be able to read this alone and know what was asked for."
+    },
+    "given": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The precondition that must hold before the scenario begins."
+    },
+    "when": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The triggering action or condition."
+    },
+    "then": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The checkable outcome. If a person cannot say yes or no to this, it is not a then."
+    },
+    "agents_required": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Parallel workers this work needs. Capped at 5 because the estate runs on the OKE always-free tier: 4 Ampere A1 instances, 24GB total."
+    }
+  }
+}
