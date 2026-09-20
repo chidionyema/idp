@@ -105,5 +105,5 @@ echo "voice: http://127.0.0.1:$PORT"
 echo "       (127.0.0.1 specifically: the microphone needs a secure origin)"
 echo
 
-cd "$IDP"
+cd "$IDP" || exit
 exec "$VENV/bin/python" -m uvicorn sovereign.voice.server:app --host 127.0.0.1 --port "$PORT"

@@ -23,7 +23,7 @@ WHAT THE PROMPT FORBIDS, because a voice that overclaims is worse than a voice t
   * it must answer in speech, which means one or two sentences and no markdown.
 
 CONFIG (LAW 46):
-  LITELLM_HOST        default https://llm.mumchimp.com
+  LITELLM_HOST        default https://llm.${ESTATE_ZONE}
   LITELLM_API_KEY     required; no key means BLIND, never a silent fallback to a local model
   VOICE_ROUTER_MODEL  default deepseek
   VOICE_TIMEOUT_S     default 20
@@ -60,7 +60,23 @@ SYSTEM = (
 
 
 def router_host() -> str:
-    return os.environ.get("LITELLM_HOST", "https://llm.mumchimp.com").rstrip("/")
+    """The estate's router. THE SAME MALFORMED DEFAULT WAS HERE AS IN sovereign/voice/engine.py.
+
+    `os.path.expandvars` substitutes a variable when set and leaves the text alone when not -- so
+    with `ESTATE_ZONE` unset this defaulted to the literal `https://llm.${ESTATE_ZONE}`, which
+    cannot resolve, and every voice answer from the board failed with
+
+        <urlopen error [Errno 8] nodename nor servname provided, or not known>
+
+    text-to-speech needs no router, so the microphone still heard, the transcript still appeared,
+    and only the ANSWER failed -- which reads as flakiness rather than as a bad hostname.
+
+    Verified unset in both services with `ps eww`. Fixed to a real default; `${ESTATE_ZONE}` is
+    still honoured when present so the cluster keeps working.
+    """
+    zone = os.environ.get("ESTATE_ZONE", "").strip()
+    default = f"https://llm.{zone}" if zone else "https://llm.mumchimp.com"
+    return os.path.expandvars(os.environ.get("LITELLM_HOST", default)).rstrip("/")
 
 
 def router_key() -> str:

@@ -23,7 +23,7 @@ if grep -qE '^X-Idp-Signed: ' "$msg_file"; then
 fi
 
 body="$(cat "$msg_file")"
-sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$secret" 2>/dev/null | awk '{print $2}')"
+sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$secret" 2>/dev/null | awk '{print $NF}')"
 [ -n "$sig" ] || { echo "REFUSE: HMAC computation failed" >&2; exit 1; }
 
 # Append two blank lines and the trailer if the message doesn't already end in a trailer block.
