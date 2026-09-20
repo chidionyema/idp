@@ -126,6 +126,52 @@ def _is_ignored(path: os.PathLike | str, root: str) -> bool:
     return False
 
 
+def _nested_worktrees(root: str) -> frozenset[str] | None:
+    """Every linked worktree of this repository that sits INSIDE `root`, as absolute paths.
+
+    The fourth repeat of the incident this module exists for (2026-09-20). Sessions now check
+    out their workspace at `.claude/worktrees/<agent>/`, and a linked worktree is NOT an
+    untracked file: git registers it under `.git/worktrees/`, so it never appears in
+    `git ls-files --others --ignored`, and `_ignored` has no entry to prune it by. Adding a
+    `.gitignore` line for it therefore changes nothing -- measured, 2026-09-20: the pattern was
+    added, `walk_tree` still descended into 999 directories of the copy, and `is_this_tree`
+    still answered True. A gitignore line here is decoration, and LAW 28 names that.
+
+    `git worktree list --porcelain` is the authority for the same reason git is the authority
+    above: no naming convention, and no list a later session has to have read. A worktree of
+    this repository at the conventional sibling path (`../idp-wt-*`) is already outside `root`
+    and needs no special case; only a nested one is pruned.
+    """
+    if GIT is None:
+        return None
+    try:
+        p = subprocess.run(  # noqa: S603 -- fixed argv, no shell; the only variable is cwd
+            [GIT, "worktree", "list", "--porcelain"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if p.returncode != 0:
+        return None
+    nested = set()
+    for line in p.stdout.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        # realpath, not abspath: git reports the canonical path, while `root` may be reached
+        # through a symlink. Measured 2026-09-20 on macOS, where tempfile returns
+        # /var/folders/... and git reports /private/var/folders/... -- abspath made the prefix
+        # comparison miss, so this arm of the self-test failed for a reason that had nothing to
+        # do with the predicate it exists to prove.
+        path = os.path.realpath(line[len("worktree ") :])
+        if path.startswith(root + os.sep):
+            nested.add(path)
+    return frozenset(nested)
+
+
 def is_this_tree(
     path: os.PathLike | str, root: os.PathLike | str | None = None
 ) -> bool:
@@ -134,10 +180,10 @@ def is_this_tree(
     A path outside `root` is not a nested checkout of it -- a caller grading a fixture directory
     in /tmp must still be told yes -- and `root` itself is always this tree.
     """
-    root = os.path.abspath(
+    root = os.path.realpath(
         root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     )
-    target = os.path.abspath(path)
+    target = os.path.realpath(path)
     if target == root:
         return True
     if not target.startswith(root + os.sep):
@@ -145,13 +191,24 @@ def is_this_tree(
     if _ignored(root) is None:
         # git could not answer. Refuse to scan nothing silently; the caller's gate exits non-zero.
         return False
+    nested = _nested_worktrees(root)
+    if nested is None:
+        return False
+    if any(target == w or target.startswith(w + os.sep) for w in nested):
+        return False
     return not _is_ignored(target, root)
 
 
 def walk_tree(root: os.PathLike | str):
     """os.walk over THIS repository: ignored directories are pruned, never entered."""
-    root = os.path.abspath(root)
+    # realpath, so `root` and the paths `git worktree list` reports are compared in the same
+    # form. abspath left the symlinked temp root (/var/folders/...) uncanonicalised while git
+    # reported /private/var/folders/..., so the prune set never matched (measured 2026-09-20).
+    root = os.path.realpath(root)
     if _ignored(root) is None:
+        return
+    nested = _nested_worktrees(root)
+    if nested is None:
         return
     for dirpath, dirnames, filenames in os.walk(root):
         # `.git` is pruned by name, not by gitignore: git never lists its own object store as
@@ -167,7 +224,9 @@ def walk_tree(root: os.PathLike | str):
         dirnames[:] = sorted(
             d
             for d in dirnames
-            if d != ".git" and not _is_ignored(os.path.join(dirpath, d), root)
+            if d != ".git"
+            and not _is_ignored(os.path.join(dirpath, d), root)
+            and os.path.realpath(os.path.join(dirpath, d)) not in nested
         )
         yield dirpath, dirnames, filenames
 
@@ -242,7 +301,8 @@ def _self_test() -> int:
         expect(is_this_tree(base, base), "the root itself must be this tree")
 
         # The walk must not enter the ignored directory, and must never enter .git.
-        walked = [os.path.relpath(d, base) for d, _, _ in walk_tree(base)]
+        # walk_tree yields canonical paths (realpath), so the base is canonicalised to match.
+        walked = [os.path.relpath(d, os.path.realpath(base)) for d, _, _ in walk_tree(base)]
         expect(
             "nested" not in walked,
             f"walk_tree entered an ignored directory: {sorted(walked)}",
@@ -257,6 +317,47 @@ def _self_test() -> int:
             "kept" in walked,
             f"walk_tree pruned the real directory too: {sorted(walked)}",
         )
+
+        # A linked worktree INSIDE the tree. This is the 2026-09-20 case, and it is not an
+        # untracked file: git registers it under .git/worktrees/, so no gitignore entry can
+        # prune it. The predicate must be `git worktree list`, and it must be proved here or
+        # the fourth repeat of this incident ships with a self-test claiming the third is fixed.
+        subprocess.run(
+            [GIT, "add", "-A"], cwd=tmp, capture_output=True, check=False
+        )
+        subprocess.run(  # noqa: S603
+            [GIT, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"],
+            cwd=tmp,
+            capture_output=True,
+            check=False,
+        )
+        nested_wt = base / "nested-wt"
+        add = subprocess.run(  # noqa: S603
+            [GIT, "worktree", "add", "-q", "--detach", str(nested_wt)],
+            cwd=tmp,
+            capture_output=True,
+            check=False,
+        )
+        if add.returncode != 0:
+            failures.append(
+                "could not create the nested worktree this arm exists to test: "
+                + add.stderr.decode(errors="replace").strip()
+            )
+        else:
+            (nested_wt / "bad.yaml").write_text("a nested worktree's fixture\n")
+            expect(
+                not is_this_tree(nested_wt / "bad.yaml", base),
+                "a linked worktree inside the root must NOT be this tree",
+            )
+            walked_nested = [
+                os.path.relpath(d, os.path.realpath(base))
+                for d, _, _ in walk_tree(base)
+                if os.path.relpath(d, os.path.realpath(base)).startswith("nested-wt")
+            ]
+            expect(
+                not walked_nested,
+                f"walk_tree entered a linked worktree: {walked_nested[:3]}",
+            )
 
     if failures:
         for f in failures:
