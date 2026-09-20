@@ -502,9 +502,6 @@ jobs:
       # FAILs above the ceiling; this rung asks the POLICY the same question of the SAME real
       # receipt, so the rule has a case over the estate rather than only over its fixtures.
       #
-      # Found by bin/idp-rules' `live` check, which refused this rule because every case named a
-      # file under tests/fixtures: it graded its own example and had never seen the platform.
-      # Same shape as bin/idp-oke-rebuild:66, which runs conftest against reports/capacity.json.
       - name: secret-headroom policy against the real receipt (HGC)
         if: ${{ always() }}
         env:

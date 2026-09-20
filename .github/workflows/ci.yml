@@ -90,15 +90,8 @@ jobs:
           # diff touches (fetch-depth 0 above makes the three-dot diff real); empty on main = every dir
           IDP_CI_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
           MIGRATE_HEALTH_WAIT: "240"
-          # 2026-09-13: bin/idp-rules runs the bdd-proof row on this plane, and that row's argv is
-          # the gate BARE -- no --live flag, because the registry cannot know which plane is
-          # calling it. Bare, the gate grades the most recent pull request, which needs `gh` to be
-          # authenticated. This job set no GH_TOKEN, so `gh pr list` answered "set the GH_TOKEN
-          # environment variable", the gate reported BLIND, and BLIND is a fail-closed FAIL -- run
-          # 34770829160 printed `bdd-proof-gate: BLIND, cannot read a pull request` and then
-          # `FAIL idp-ci` while every other rung in the same run was green. The token is the read
-          # the rule needs; the alternative (deleting the row or letting BLIND pass) is the defect
-          # the row exists to catch.
+          # GH_TOKEN is read by the bdd-proof gate (still a live gate) which reads the newest PR;
+          # without it the gate reports BLIND and fails closed.
           GH_TOKEN: ${{ github.token }}
           # crew#584: the bdd job below runs the bdd and incident suites once, strictly; this job
           # ran the same 132 s again (run 33202098401). Locally bin/idp-ci still runs them.

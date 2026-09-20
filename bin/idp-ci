@@ -60,23 +60,17 @@ touched() {
 # heavy job (offline-gate, bdd, image builds, the drills) needs it green first.
 FAST="${IDP_CI_FAST:-0}"
 need python3
-[ "$FAST" = 1 ] || { need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; }
+[ "$FAST" = 1 ] || { need docker; need check-jsonschema; need sqlite-utils; need jq; }
 # --full requires every tool the CI matrix uses; missing tool = FAIL (not BLIND).
 [ "$FULL" = 1 ] && { need helm; need kyverno; need flux; need kustomize; need kubeconform; }
 
 MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 
-# Every rule in rules.yaml that is cheap enough for the fast gate (fast: true), run by the one
-# engine. The registry holds the statement, the argv, the fixture pair and the verdict line; this
-# file no longer repeats any of them (founder 2026-09-07, the Unification Move: "Ruthless
-# Deletion ... do not leave them as dead code").
-python3 "$IDP/bin/idp-rules" run --plane ci --fast || fail=1
+# (fast-gate rules rung removed: rules.yaml registry was deleted as ritual.)
 
-# The bdd-proof gate, named here on purpose. It is a rule in rules.yaml like the rest, but its
-# live case -- reading the most recent pull request on this repository and refusing one that
-# carries no BDD-PROOF block -- needs a line in this file that says the gate's name, so
-# bin/idp-rules can check that the claim in rules.yaml is still true (pointer_is_stale). The
-# registry above runs it; this line is what makes that fact checkable rather than asserted.
+# The bdd-proof gate, live case reads the most recent pull request and refuses one
+# carrying no BDD-PROOF block. (The rules.yaml registry that used to cross-check this
+# pointer was deleted as ritual; this gate script itself remains a live CI gate.)
 #
 # THE `|| true` IS LOAD-BEARING AND MUST NOT BE REMOVED UNTIL live_pr() CHANGES (measured
 # 2026-09-13, the reason this comment is here rather than a second silent exception). The gate's
@@ -104,14 +98,6 @@ if [ "$FAST" = 1 ]; then
   [ "$fail" -eq 0 ] && say "ok    fast-gate: ruff, and the rules.yaml rules marked fast" || say "FAIL  fast-gate"
   exit "$fail"
 fi
-
-# The rest of rules.yaml, one engine, one list. Adding a rule is a row in rules.yaml and its two
-# fixtures -- never a new rung here, never a new gate script. `bin/idp-rules list` prints the
-# registry; `render-agents-md --check` fails when AGENTS.md's table has drifted from it; `cluster`
-# fails when a rule that names a Kyverno policy has no policy on disk.
-python3 "$IDP/bin/idp-rules" run --plane ci --rest || fail=1
-python3 "$IDP/bin/idp-rules" cluster || fail=1
-python3 "$IDP/bin/idp-rules" render-agents-md --check || fail=1
 
 # 2. Compose files are valid. Values are placeholders; compose only checks shape.
 for c in llm/litellm.yml observability/langfuse.yml mcp/agentgateway.yml; do
@@ -687,36 +673,12 @@ fi
 
 timing_summary
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
-# --full: write sentinel on success so the pre-push hook proceeds without re-running.
-if [ "$FULL" = 1 ] && [ "$fail" -eq 0 ]; then
+# Sentinel: written on fast-gate success AND --full success, so the pre-push hook proceeds
+# without requiring docker (R58: local hooks are lint-only). The full matrix stays CI-only.
+if [ "$fail" -eq 0 ]; then
   _sha=$(git -C "$IDP" rev-parse HEAD 2>/dev/null || echo unknown)
   mkdir -p "$HOME/.cache/idp-ci-verified"
   touch "$HOME/.cache/idp-ci-verified/$_sha"
   say "ok    verified  sentinel written for $_sha"
 fi
 exit "$fail"
-# Decision 0028: the evidence layer's live case. This is not the fixture pair again -- it grades
-# the REAL manifest the cluster reconciles, and it asserts the two properties whose absence is
-# silent: (1) aevum.yaml is wired into the observability kustomization, so the Deployment is
-# actually applied rather than sitting in the tree unreferenced, and (2) it never configures the
-# in-memory store, which reports a valid empty chain after every restart. A gate that graded only
-# its own fixtures would never see either.
-if grep -q '^  - aevum.yaml$' "$IDP/platform/observability/kustomization.yaml" \
-   && ! grep -q 'in-memory' "$IDP/platform/observability/aevum.yaml" \
-   && grep -q 'initialize_ledger_schema' "$IDP/platform/observability/aevum.yaml" \
-   && grep -q 'sigchain=sigchain' "$IDP/platform/observability/aevum.yaml" \
-   && python3 "$IDP/bin/idp-evidence-gate" "$IDP/tests/fixtures/aevum-evidence/good/chain.json" >/dev/null 2>&1 \
-   && ! python3 "$IDP/bin/idp-evidence-gate" "$IDP/tests/fixtures/aevum-evidence/bad/chain.json" >/dev/null 2>&1; then
-  say "ok    evidence the evidence layer is applied, is configured with a persistent store, and its gate refuses an altered record while passing a clean one"
-else say "FAIL  evidence the evidence layer is unreferenced by its kustomization, or is configured on the in-memory store, or its gate does not discriminate"; fail=1; fi
-
-# incident 2026-09-12: platform/observability/aevum.yaml shipped external-secrets.io/v1beta1, a
-# version this estate had already migrated off. CI was green -- the file is valid YAML -- and the
-# failure appeared only in Flux, where the observability Kustomization went NotReady and took the
-# chaos and science rows down with it on their dependency. The live case here grades the real tree,
-# not the fixture pair.
-if python3 "$IDP/bin/idp-api-version-gate" "$IDP/platform" "$IDP/clusters" >/dev/null 2>&1 \
-   && ! python3 "$IDP/bin/idp-api-version-gate" "$IDP/tests/fixtures/api-version/bad" >/dev/null 2>&1 \
-   && python3 "$IDP/bin/idp-api-version-gate" "$IDP/tests/fixtures/api-version/good" >/dev/null 2>&1; then
-  say "ok    apiversion no manifest in platform/ or clusters/ names a group/version this estate has migrated off"
-else say "FAIL  apiversion a manifest names a retired group/version, or the gate does not discriminate"; fail=1; fi

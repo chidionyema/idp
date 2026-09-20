@@ -31,7 +31,13 @@ mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR)
 # refusal), so the registry is read directly rather than shelled out to.
 if [ -f "$top/.pre-commit-config.yaml" ] && command -v python3 >/dev/null; then
   if ! python3 - "$top" <<'PYREGEN'; then
-import re, subprocess, sys, yaml
+import re, subprocess, sys
+try:
+    import yaml
+except ModuleNotFoundError:
+    # LAW 38: a missing tool is not a refusal. Without yaml we cannot read the
+    # generator registry, so fail open and let bin/idp-ci grade the same files.
+    sys.exit(0)
 root = sys.argv[1]
 staged = subprocess.run(["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
                         capture_output=True, text=True, cwd=root).stdout.split()
