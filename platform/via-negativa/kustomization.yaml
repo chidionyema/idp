@@ -12,6 +12,7 @@ resources:
   - redis.yaml
   - proxy.yaml
   - rca.yaml
+  - redteam-promoter.yaml
 images:
   # Neither image has been built yet -- this PR is what makes build-multiarch discover
   # `negative-constraints-proxy` and `rca_worker` for the first time (bin/dockerfiles).
@@ -23,3 +24,5 @@ images:
     newTag: main-9887-56f087a6fa28cefe401c9f43778186e28d036618 # {"$imagepolicy": "flux-system:negative-constraints-proxy:tag"}
   - name: ghcr.io/chidionyema/rca_worker
     newTag: main-9887-56f087a6fa28cefe401c9f43778186e28d036618 # {"$imagepolicy": "flux-system:via-negativa-rca:tag"}
+  - name: ghcr.io/chidionyema/redteam_promoter
+    newTag: main-9887-56f087a6fa28cefe401c9f43778186e28d036618 # {"$imagepolicy": "flux-system:redteam-promoter:tag"}

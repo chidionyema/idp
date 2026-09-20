@@ -108,6 +108,11 @@ SOCKET_PATH = os.environ.get(
 # mature tool for this and it is already on PATH (measured: /usr/local/bin/timeout).
 TIMEOUT_BIN = os.environ.get("IDP_TIMEOUT_BIN", "/usr/local/bin/timeout")
 
+# An inverse verification probe is a state assertion, not a workload: it is a `kubectl get` or an
+# `ls`, and a probe that has not answered in this many seconds is a probe nobody can trust (the
+# estate's own answer to "a wait longer than 10s is a missing event"). Bounded, never unbounded.
+PROBE_CEILING_SEC = int(os.environ.get("IDP_PROBE_CEILING_SEC", "30"))
+
 
 def _runner_argv(
     job_id: str, command: str, cwd: str | None, ceiling_sec: int
@@ -328,6 +333,8 @@ class Handler(socketserver.StreamRequestHandler):
             self._reply(self._seal_mutation(request))
         elif verb == "admit_mutation":
             self._reply(self._admit_mutation(request))
+        elif verb == "verify_inverse":
+            self._reply(self._verify_inverse(request))
         elif verb == "health":
             self._reply(
                 {
@@ -648,6 +655,12 @@ class Handler(socketserver.StreamRequestHandler):
         sql_migration = request.get("sql_migration") or ""
         tests = request.get("tests") or ""
         claim = request.get("claim", "")
+        # The reversibility envelope (ADR 0024): the inverse a mutation must carry before it can
+        # be admitted. Optional at propose time so an agent can open a ledger and fill it before
+        # `verify_mutation`, but `verify_mutation` refuses a proposal that arrives without one --
+        # the door is at verification, not at proposal, because verification is the last moment
+        # before a change is sealed and the only place an inverse can still be supplied.
+        envelope = request.get("envelope")
         if not (code_patch.strip() or manifest_patch.strip() or sql_migration.strip()):
             return {"ok": False, "error": "nothing to propose"}
 
@@ -666,6 +679,7 @@ class Handler(socketserver.StreamRequestHandler):
             "tests": tests,
             "claim": claim,
             "domains": domains,
+            "envelope": envelope if isinstance(envelope, dict) else None,
         }
         files = self._mutation_files(proposal)
         if not files:
@@ -732,6 +746,26 @@ class Handler(socketserver.StreamRequestHandler):
             }
 
         files = self._mutation_files(proposal)
+        # ADR 0024 / 0025, enforced at the one place a mutation is graded: before the gauntlet
+        # runs, the envelope must carry an inverse. This is the field the ledger door always
+        # implied and nothing required -- a mutation nobody can take back is refused here, not
+        # discovered later. `bin/idp-reversibility-gate` owns the judgement (shape, probe,
+        # signature); this handler only asks it, so there is one implementation of the rule and
+        # not a second one living in the daemon (LAW 43).
+        reversible, why = self._mutation_is_reversible(proposal)
+        if not reversible:
+            try:
+                os.unlink(proposal_path)
+            except OSError:
+                pass
+            return {
+                "ok": False,
+                "admissible": False,
+                "per_domain": {},
+                "error": why,
+                "ledger_dir": ledger_dir,
+                "violation_code": "NO_INVERSE",
+            }
         ledger = Ledger(
             ledger_id=ledger_id,
             ledger_dir=Path(ledger_dir),
@@ -760,6 +794,109 @@ class Handler(socketserver.StreamRequestHandler):
             except OSError:
                 pass
         return verdict
+
+    def _mutation_is_reversible(self, proposal: dict) -> tuple[bool, str]:
+        """Does this proposal carry a verifiable inverse? Ask the gate, never re-decide here.
+
+        `bin/idp-reversibility-gate` is the one implementation (LAW 43). A gate that exits 2
+        (BLIND -- it could not read its schema or verifier) is a REFUSAL here, deliberately:
+        unlike a push hook, this is the last door before a mutation is admitted, and failing
+        open would admit an unproven inverse. The BLIND state exists so the operator can see
+        *why* a correct envelope was refused and fix the gate's input (LAW 38's remedy), not so
+        the daemon can admit work it could not judge.
+        """
+        envelope = proposal.get("envelope")
+        if not isinstance(envelope, dict):
+            return False, (
+                "no mutation envelope on this proposal: an admitted mutation must carry "
+                "`envelope` with an inverse_spec (ADR 0024)"
+            )
+        gate = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "bin",
+            "idp-reversibility-gate",
+        )
+        if not os.path.exists(gate):
+            return False, f"reversibility gate not found at {gate}"
+        import subprocess  # local: kept out of the pure import path used by the tests
+        import tempfile
+
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+                json.dump(envelope, handle)
+                path = handle.name
+            proc = subprocess.run(
+                [sys.executable, gate, path], capture_output=True, text=True, timeout=30
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return False, f"reversibility gate could not be run: {exc}"
+        finally:
+            try:
+                os.unlink(path)
+            except (OSError, UnboundLocalError):
+                pass
+        if proc.returncode == 0:
+            return True, ""
+        detail = (proc.stdout or proc.stderr or "").strip().splitlines()
+        return False, "NO_INVERSE: " + (detail[-1] if detail else "gate refused")
+
+    def _run_inverse_probe(self, probe: str, cwd: str | None = None) -> dict:
+        """Execute a declared verification probe against the real machine and report what happened.
+
+        This is the half `bin/idp-reversibility-gate` cannot do: the gate grades the envelope's
+        SHAPE, and this runs the command it declared. Before this method existed the probe was a
+        string in a JSON document that no code ever read -- a test described, never taken. The
+        estate's empirical-proof rule is the reason this had to become real code rather than a
+        claim in a docstring.
+
+        The probe is a shell command because that is what the envelope declares (an assertion
+        against live state: `kubectl get ... == 2`). It is executed with `shell=True` DELIBERATELY
+        and the blast radius is bounded three ways: (1) it comes from an envelope that verify_mutation
+        already admitted, (2) it runs with a hard timeout, (3) its exit code -- not its output --
+        is the verdict, so a probe cannot "pass" by printing something clever. A probe whose
+        command cannot run at all is BLIND (`executed: False`), never a pass (LAW 38).
+        """
+        if not isinstance(probe, str) or not probe.strip():
+            return {"executed": False, "passed": False, "reason": "empty probe"}
+        import subprocess  # local: kept out of the pure import path used by the tests
+
+        try:
+            proc = subprocess.run(
+                probe,
+                shell=True,
+                cwd=cwd or live_worktree(),
+                capture_output=True,
+                text=True,
+                timeout=PROBE_CEILING_SEC,
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "executed": True,
+                "passed": False,
+                "exit_code": None,
+                "probe": probe,
+                "reason": f"the probe did not finish within {PROBE_CEILING_SEC}s",
+            }
+        except OSError as exc:
+            return {
+                "executed": False,
+                "passed": False,
+                "probe": probe,
+                "reason": f"the probe could not be run: {exc}",
+            }
+        return {
+            "executed": True,
+            "passed": proc.returncode == 0,
+            "exit_code": proc.returncode,
+            "probe": probe,
+            "stdout": (proc.stdout or "")[-4000:],
+            "stderr": (proc.stderr or "")[-4000:],
+            "reason": (
+                "the probe held: the state is what the inverse promised"
+                if proc.returncode == 0
+                else f"the probe did not hold (exit {proc.returncode})"
+            ),
+        }
 
     def _seal_mutation(self, request: dict) -> dict:
         """Rule (new)'s producer half: attest the WHOLE bundle's bytes, not one file's.
@@ -871,6 +1008,16 @@ class Handler(socketserver.StreamRequestHandler):
         with open(proposal_path) as handle:
             proposal = json.load(handle)
         files = self._mutation_files(proposal)
+        # Record the envelope beside the admitted bytes, so the inverse's probe outlives the
+        # proposal record this handler is about to spend. `verify_inverse` reads the probe from
+        # here -- without this write the probe would be deleted along with the proposal, and the
+        # declared test would vanish exactly when the rollback path needs it.
+        envelope = proposal.get("envelope")
+        if isinstance(envelope, dict):
+            admitted_envelope = os.path.join(admitted_dir, f"{ledger_id}.json")
+            with open(admitted_envelope, "w") as handle:
+                json.dump(envelope, handle)
+            os.chmod(admitted_envelope, stat.S_IRUSR | stat.S_IWUSR)
         branch = f"mutation/{ledger_id}"
         claim = proposal.get("claim") or "typed multi-domain mutation ledger"
         os.unlink(proposal_path)  # spent: this ledger cannot mint a second branch
@@ -885,6 +1032,10 @@ class Handler(socketserver.StreamRequestHandler):
                 "branch": None,
                 "error": f"admitted, but the branch could not be built: {exc}",
             }
+        # Deliver: push the branch and open its PR, so the admitted mutation is reachable by
+        # Greenlane Row 3 instead of sitting as a local ref nobody lists. Fail-soft -- the
+        # admission stands even when delivery cannot happen (see _deliver_mutation).
+        delivery = self._deliver_mutation(branch, claim)
         return {
             "ok": True,
             "validated": True,
@@ -893,7 +1044,157 @@ class Handler(socketserver.StreamRequestHandler):
             "branch": branch,
             "commit_sha": commit_sha,
             "pr_required": True,
+            **delivery,
         }
+
+    def _deliver_mutation(self, branch: str, claim: str) -> dict:
+        """Push the admitted branch and open its PR -- the delivery the ledger always implied.
+
+        Before this, `admit_mutation` built a real commit on `refs/heads/mutation/<ledger_id>`
+        and stopped there: the branch was local, nothing pushed it, and Greenlane Row 3 (which
+        lists open `mutation/*` pull requests) had nothing to find. The sanctioned path was
+        therefore unreachable, and an agent's only way to land a change was the hand edit ADR
+        0025 exists to replace. This is the last step of that path, and it runs HERE, in the one
+        writer, so the agent never touches git (option A of the delivery decision, 2026-09-19).
+
+        FAIL-SOFT, deliberately: the mutation is already admitted and its bytes are on disk. A
+        push that fails (no credential, no remote, offline) must NOT lose the admission -- it is
+        reported in `delivery_error` so a caller can retry, because an admitted mutation that
+        cannot be delivered is a fact somebody needs, never a 500.
+
+        The credential is GH_TOKEN, the same one every other `gh` caller in the estate uses
+        (bin/idp-catalog-push, the workflows). The daemon holds no GitHub secret of its own; a
+        push with no token is BLIND -- reported, not retried in a loop.
+        """
+        import subprocess  # local: kept out of the pure import path used by the tests
+
+        root = live_worktree()
+        # `--force-with-lease` is NOT used: this ref is brand new (update-ref created it), so a
+        # plain push either creates it or fails because it already exists -- and a pre-existing
+        # remote branch for this ledger id means this mutation was already delivered once, which
+        # must be reported rather than overwritten (a rewrite would detach the PR from the
+        # commit the executor actually sealed).
+        try:
+            push = subprocess.run(
+                ["git", "push", "origin", f"refs/heads/{branch}:refs/heads/{branch}"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env={**os.environ},
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return {"pushed": False, "delivery_error": f"git push could not be run: {exc}"}
+        if push.returncode != 0:
+            return {
+                "pushed": False,
+                "delivery_error": f"git push failed: {(push.stderr or push.stdout).strip()[:300]}",
+            }
+
+        try:
+            pr = subprocess.run(
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--head",
+                    branch,
+                    "--base",
+                    "main",
+                    "--title",
+                    f"mutation: {claim[:60]}",
+                    "--body",
+                    (
+                        f"Admitted reversible mutation `{branch}`.\n\n"
+                        f"The Deterministic Verifier sealed this bundle and the executor admitted "
+                        f"it; the branch carries exactly the files the admitted bundle named, and "
+                        f"its envelope declares the inverse (ADR 0024). Greenlane Row 3 "
+                        f"(`bin/idp-admitted-mutation-diff`) re-proves all of that before anything "
+                        f"lands.\n\nClaim: {claim}\n"
+                    ),
+                ],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env={**os.environ},
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return {
+                "pushed": True,
+                "delivery_error": f"the branch is pushed but the PR could not be opened: {exc}",
+            }
+        if pr.returncode != 0:
+            # A PR that already exists for this head is not an error -- `admit_mutation` may be
+            # retried after a partial delivery, and `gh pr create` refuses a duplicate. Report the
+            # URL from the existing PR rather than a failure.
+            existing = subprocess.run(
+                ["gh", "pr", "view", branch, "--json", "url", "-q", ".url"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                env={**os.environ},
+            )
+            if existing.returncode == 0 and existing.stdout.strip():
+                return {"pushed": True, "pr_url": existing.stdout.strip(), "pr_existing": True}
+            return {
+                "pushed": True,
+                "delivery_error": f"the PR could not be opened: {(pr.stderr or pr.stdout).strip()[:300]}",
+            }
+        return {"pushed": True, "pr_url": (pr.stdout or "").strip()}
+
+    def _verify_inverse(self, request: dict) -> dict:
+        """Run the declared inverse's verification probe against the real machine (empirical proof).
+
+        This is the verb that makes `verification_probe` operational. Before it, the probe was a
+        string in a JSON envelope that no code read: a test described in a document, never taken.
+        The estate's empirical-proof rule refuses that -- a claim is not a proof -- so this runs
+        the probe for real and returns the machine's own exit code.
+
+        The probe MAY be supplied two ways: as `probe` directly (a caller finishing a rollback it
+        just performed), or via `ledger_id`, in which case the probe is read from the envelope the
+        admitted bundle carries. A probe that cannot run is BLIND (`executed: False`), never a
+        pass, and the caller -- the founder's rollback path -- decides what to do with it.
+        """
+        probe = request.get("probe")
+        ledger_id = request.get("ledger_id", "")
+        if not isinstance(probe, str) or not probe.strip():
+            if not isinstance(ledger_id, str) or not ledger_id:
+                return {
+                    "ok": False,
+                    "executed": False,
+                    "error": "verify_inverse needs a `probe` string or a `ledger_id`",
+                }
+            admitted = os.path.join(ledger_root(), "admitted", f"{ledger_id}.json")
+            if not os.path.exists(admitted):
+                return {
+                    "ok": False,
+                    "executed": False,
+                    "error": (
+                        f"no admitted envelope for {ledger_id!r}; verify_inverse reads the probe "
+                        "from the envelope an admit_mutation recorded"
+                    ),
+                }
+            try:
+                envelope = json.load(open(admitted))
+            except (OSError, ValueError) as exc:
+                return {"ok": False, "executed": False, "error": f"envelope unreadable: {exc}"}
+            probe = ((envelope.get("inverse_spec") or {}).get("verification_probe") or "")
+            if not probe.strip():
+                return {
+                    "ok": False,
+                    "executed": False,
+                    "error": (
+                        "this mutation declared an irreversible exemption, not a deterministic "
+                        "inverse: there is no probe to run, which is why the exemption needed a "
+                        "signature (ADR 0024)"
+                    ),
+                }
+        cwd = request.get("cwd")
+        result = self._run_inverse_probe(probe, cwd if isinstance(cwd, str) else None)
+        result["ok"] = bool(result.get("passed"))
+        return result
 
     def _reply(self, payload: dict) -> None:
         """Answer the caller, and treat a departed caller as a non-event.

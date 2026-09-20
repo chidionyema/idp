@@ -499,7 +499,8 @@ def register_mcp_tools(
         description=(
             "Propose code+manifest+SQL as one ledger spanning all three domains, instead of "
             "three unrelated calls with three unrelated verdicts. Answers a ledger id; call "
-            "verify_mutation with it next."
+            "verify_mutation with it next. Pass `envelope` with an `inverse_spec` (ADR 0024) -- "
+            "verify_mutation refuses a proposal without one."
         ),
     )(propose_mutation)
 
@@ -508,7 +509,9 @@ def register_mcp_tools(
         description=(
             "Run the gauntlet (structural, SQL, symbolic, execution) over every domain in the "
             "ledger. All-or-nothing: if any domain fails, the whole mutation is unverified, and "
-            "per_domain names exactly which domain failed with its own real stage message."
+            "per_domain names exactly which domain failed with its own real stage message. "
+            "Refuses a proposal whose envelope carries no verifiable inverse (ADR 0024), with "
+            "violation_code NO_INVERSE."
         ),
     )(verify_mutation)
 
@@ -523,10 +526,24 @@ def register_mcp_tools(
     mcp.tool(
         name="admit_mutation",
         description=(
-            "Admit an attested bundle onto a new Git branch (never main, never live). Returns "
-            "pr_required True always -- this verb never merges; the founder merges."
+            "Admit an attested bundle onto a new Git branch (never main, never live), then push "
+            "it and open its PR so the Greenlane can land it. Returns pr_required True always -- "
+            "this verb never merges; the founder (or the Greenlane row) merges. Delivery is "
+            "fail-soft: the admission stands even when the push or PR fails, and "
+            "delivery_error says why."
         ),
     )(admit_mutation)
+
+    mcp.tool(
+        name="verify_inverse",
+        description=(
+            "Run a mutation's declared verification probe against the real machine and return "
+            "its exit code -- this is what makes `verification_probe` operational rather than a "
+            "string in an envelope nobody reads. Pass `probe` directly, or a `ledger_id` whose "
+            "admitted envelope carries one. `executed: False` is BLIND (the probe could not "
+            "run), never a pass."
+        ),
+    )(verify_inverse)
 
 
 def simulate_command(
@@ -776,6 +793,7 @@ def propose_mutation(
     sql_migration: str = "",
     tests: str = "",
     claim: str = "",
+    envelope: dict | None = None,
 ) -> dict:
     """Propose code+manifest+SQL as one ledger, never three unrelated calls.
 
@@ -783,6 +801,10 @@ def propose_mutation(
     the three payload fields must be non-empty; the daemon refuses an all-empty call before a
     ledger is opened. Non-blocking, same as propose_patch -- read the verdict later with
     verify_mutation, never a wait_for_verdict verb (this ticket's own "remove the verb" rule).
+
+    `envelope` is the reversibility envelope (ADR 0024): the `inverse_spec` this mutation will
+    be undone by. It may be supplied here or left None and supplied before verification, but
+    `verify_mutation` refuses a proposal that has none -- see `bin/idp-reversibility-gate`.
     """
     return _verifier_call(
         {
@@ -792,6 +814,7 @@ def propose_mutation(
             "sql_migration": sql_migration,
             "tests": tests,
             "claim": claim,
+            "envelope": envelope,
         }
     )
 
@@ -818,14 +841,39 @@ def seal_mutation(ledger_id: str, tests: str = "", claim: str = "") -> dict:
 
 
 def admit_mutation(ledger_id: str, attestation: dict | None = None) -> dict:
-    """Admit an attested bundle onto a new Git branch. Never writes live, never merges.
+    """Admit an attested bundle, push its branch, and open its PR. Never writes live, never merges.
 
-    ADR 0025: the founder is the sole merger on every Glass-Break change. pr_required is
-    always True here -- there is no Trust Threshold row yet for this class of change.
+    ADR 0025: the agent never touches git -- the gateway (this door) builds the commit, pushes
+    the branch and opens the pull request, then Greenlane Row 3 proves it again before anything
+    lands. pr_required is always True: this verb never merges. Delivery is fail-soft; a failure
+    is reported in `delivery_error` and the admission still stands.
     """
     return _verifier_call(
         {"verb": "admit_mutation", "ledger_id": ledger_id, "attestation": attestation}
     )
+
+
+def verify_inverse(
+    probe: str = "",
+    ledger_id: str = "",
+    cwd: str = "",
+) -> dict:
+    """Run the declared inverse's verification probe against the real machine.
+
+    This is what makes `verification_probe` operational: the daemon executes the command for
+    real and returns its exit code, rather than the envelope being a test nobody takes. Supply
+    the probe directly (finishing a rollback you just performed) or a `ledger_id` whose admitted
+    envelope carries it. `executed: False` is BLIND -- the probe could not run -- and is never a
+    pass (LAW 38).
+    """
+    payload: dict = {"verb": "verify_inverse"}
+    if probe:
+        payload["probe"] = probe
+    if ledger_id:
+        payload["ledger_id"] = ledger_id
+    if cwd:
+        payload["cwd"] = cwd
+    return _verifier_call(payload)
 
 
 if __name__ == "__main__":  # pragma: no cover - a human reading the door
