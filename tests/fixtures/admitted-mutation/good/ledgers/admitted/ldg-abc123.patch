@@ -1,0 +1,5 @@
+--- a/mutdoor_code.py
++++ b/mutdoor_code.py
+@@ -0,0 +1,2 @@
++def add(a, b):
++    return a + b

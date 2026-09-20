@@ -124,4 +124,21 @@ jobs:
                   --json number -q '.[].number')
           for r in ${rem:-}; do try_land "$r"; done
 
-          test -n "$n$rem" || echo "ok      deploy-when-green  nothing to land on this tick"
+          # Row 3 (ADR 0025/0024): an admitted, reversible mutation. The executor proposed,
+          # verified, sealed and admitted it; bin/idp-admitted-mutation-diff proves the branch is
+          # mutation/<ledger_id>, that the admitted envelope carries a verifiable inverse (graded
+          # by bin/idp-reversibility-gate), and that the diff touches nothing the admitted bundle
+          # never named. A branch that grew a second change after it was verified is not the
+          # change that was verified, and waits for the founder. Like Row 2, landing still goes
+          # through try_land, so a mutation PR with no green rollup is SKIP, never MERGE.
+          mut=$(gh pr list --base main --state open --head "mutation/" \
+                  --json number,headRefName -q '.[] | select(.headRefName | startswith("mutation/")) | .number')
+          for p in ${mut:-}; do
+            if bin/idp-admitted-mutation-diff --pr "$p"; then
+              try_land "$p"
+            else
+              echo "ok      deploy-when-green  #$p is not an admitted reversible mutation; it waits for the founder"
+            fi
+          done
+
+          test -n "$n$rem$mut" || echo "ok      deploy-when-green  nothing to land on this tick"
