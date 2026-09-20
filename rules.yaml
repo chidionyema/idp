@@ -583,30 +583,6 @@ rules:
       VM_SHARED_ROOTS: $HOME
     args:
     - $HOME
-  # The refused argument is spelled `$OUTSIDE`, not a literal absolute path.
-  #
-  # WHY (incident 2026-09-13, CI run 34796984403). This case named
-  # `/private/tmp` as its argument, and the `vmmount` row went red on the Linux
-  # runner with `cites 1 thing(s) that do not exist: /private/tmp (no such
-  # path)`. `/private/tmp` is real on macOS -- it is what `/tmp` resolves to --
-  # and it does not exist on the runner, so the fixture was a claim about the
-  # machine the row was written on rather than about the gate.
-  #
-  # That reading also hid the more interesting half. `bin/vm-shared-path` reads
-  # `real=$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)/$(basename "$p")`, so
-  # when the parent does not exist the `cd` is swallowed and the refusal that
-  # follows is the refusal of a path that does not exist -- true, but not the
-  # property this row claims to grade. The run would have passed while grading
-  # nothing, which is the shape LAW 2 forbids. So the row now proves the gate
-  # with a path that exists on EVERY platform and is genuinely outside the
-  # shared root:
-  #
-  #   $OUTSIDE expands to `/` -- exists on macOS and on Linux, is not under
-  #   `$HOME`, and is named `..` from the shared root. The gate must refuse it
-  #   for being outside the tree.
-  #
-  # `$OUTSIDE` is resolved by bin/idp-rules at grade time, next to the existing
-  # `$HOME` expansion, so the row never carries a machine's own path in its text.
   - expect: refuse
     env:
       VM_SHARED_ROOTS: $HOME
@@ -2156,13 +2132,13 @@ rules:
   fixtures:
     must_fail: null
     must_pass: null
-  live_elsewhere: '.githooks/pre-push -- on every new-branch push (remote sha = 000...) this gate fires; BLIND does not refuse (LAW 38); IDP_MAIN_GREEN_GATE=0 skips for the agent that IS fixing main'
+  live_elsewhere: .githooks/pre-push -- on every new-branch push (remote sha = 000...) this gate fires; BLIND does not refuse (LAW 38); IDP_MAIN_GREEN_GATE=0 skips for the agent that IS fixing main
   ok: main is green -- new branch allowed
   fail: main is RED -- fix main before opening a new branch
 - id: wip-gate
   fast: true
   label: wip-gate
-  statement: 'No new branch is pushed when 3 or more PRs are already failing CI (the WIP cap). Agents that open new PRs while existing ones are red compound the pile-up. At the cap the only valid task is to fix a red PR. BLIND (no GitHub API) does not refuse -- LAW 38.'
+  statement: No new branch is pushed when 3 or more PRs are already failing CI (the WIP cap). Agents that open new PRs while existing ones are red compound the pile-up. At the cap the only valid task is to fix a red PR. BLIND (no GitHub API) does not refuse -- LAW 38.
   law: founder 2026-09-17
   origin: 'Same incident class as main-green-gate: the WIP cap is the structural fix. Toyota Stop-the-Line applied to the PR queue. Three is the hard ceiling; below it the agent has room to work in parallel without losing track of what is actually broken.'
   planes:
@@ -2176,7 +2152,7 @@ rules:
   fixtures:
     must_fail: null
     must_pass: null
-  live_elsewhere: '.githooks/pre-push -- fires on every new-branch push alongside main-green-gate; IDP_WIP_GATE=0 skips for genuine emergencies'
+  live_elsewhere: .githooks/pre-push -- fires on every new-branch push alongside main-green-gate; IDP_WIP_GATE=0 skips for genuine emergencies
   ok: fewer than 3 red PRs open -- new branch allowed
   fail: 3 or more PRs are failing CI -- fix a red PR before opening a new one
 - id: stray-checkout
@@ -2260,7 +2236,7 @@ rules:
   fail: 'the agent acted outside its declared plan. Measured 2026-09-12: this session''s stated goal was "fix the gates, fix the class they exposed, do no more than that", and a grep of its own 1.7MB transcript counts treewalk 169 references (the work) against rule-guard 51, pi/agent/extensions 39 and addopts/-n auto 66 (all drift). The founder stopped it twice by hand. A prompt cannot fix this -- attention weights the most recent tokens, so the newest error out-competes the original objective by construction. The harness must refuse.'
 - id: prm
   label: prm
-  statement: 'A reasoning step''s own completed-work claim is refused unless the transcript, up to and including that step, already holds three independent pieces of evidence for it (reusing the epistemic gate''s own count), the step''s tool call binds to the declared plan''s active goal (reusing the trajectory lock''s own authorize()), and the step is not a repeat of a (tool, target) pair already run this session. Process supervision, graded per step, not only at the end of the transcript'
+  statement: A reasoning step's own completed-work claim is refused unless the transcript, up to and including that step, already holds three independent pieces of evidence for it (reusing the epistemic gate's own count), the step's tool call binds to the declared plan's active goal (reusing the trajectory lock's own authorize()), and the step is not a repeat of a (tool, target) pair already run this session. Process supervision, graded per step, not only at the end of the transcript
   law: founder essay 2026-09-14, the Reasoning Gateway ("Process Reward Models... evaluates the correctness of each step... rather than just the final outcome")
   origin: docs/tickets/2026-09-14-reasoning-gateway.md, deliverable D1
   planes:
@@ -2286,7 +2262,7 @@ rules:
   fail: 'a step made a completed-work claim (e.g. "I verified the database is up") with zero independent evidence gathered by that point in the transcript -- the blind-assumption case the founder''s essay names. Deterministic: reuses bin/idp-epistemic''s claim/evidence/witness logic and bin/idp-trajectory''s plan-binding logic, imported rather than re-implemented (R43); no frontier LLM judge, per the ticket''s own stated risk.'
 - id: budget
   label: budget
-  statement: 'A reasoning run is halted the instant one of three ceilings trips -- a repeated (tool, target) pair proving zero new evidence, a running sum of declared cost_usd crossing --max-cost-usd, or the existing per-goal branch budget (bin/idp-trajectory''s budget_per_goal) -- and the best-so-far plan (goal, subgoal completion, steps and dollars spent) is surfaced instead of a claim the run finished'
+  statement: A reasoning run is halted the instant one of three ceilings trips -- a repeated (tool, target) pair proving zero new evidence, a running sum of declared cost_usd crossing --max-cost-usd, or the existing per-goal branch budget (bin/idp-trajectory's budget_per_goal) -- and the best-so-far plan (goal, subgoal completion, steps and dollars spent) is surfaced instead of a claim the run finished
   law: founder essay 2026-09-14, the Reasoning Gateway ("Test-Time Compute Budgeting... Budget exhaustion -> forced termination -- the agent stops thinking and executes the best-so-far plan when the budget runs out")
   origin: docs/tickets/2026-09-14-reasoning-gateway.md, deliverable D2
   planes:
@@ -2313,7 +2289,7 @@ rules:
   fail: 'a run crossed a ceiling and was not stopped -- the unbounded-loop case the founder''s essay names. Deterministic: reuses bin/idp-trajectory''s own budget_per_goal/authorize() for the branch ceiling and bin/idp-epistemic''s target-normalisation for the information-gain ceiling, imported rather than re-implemented (R43); the cost ceiling sums only a step''s own declared cost_usd, never a fabricated number.'
 - id: contract
   label: contract
-  statement: 'Every tool call declares a pre-condition and a post-condition in plain English (`<subject> <op> <value>`, or `<subject> passes`/`fails`, with an optional `within <N>s` deadline); a deterministic script -- never the agent -- checks the post-condition against declared observations after the tool runs, and refuses the next step the instant the post-condition still fails at its deadline'
+  statement: Every tool call declares a pre-condition and a post-condition in plain English (`<subject> <op> <value>`, or `<subject> passes`/`fails`, with an optional `within <N>s` deadline); a deterministic script -- never the agent -- checks the post-condition against declared observations after the tool runs, and refuses the next step the instant the post-condition still fails at its deadline
   law: founder essay 2026-09-14, the Reasoning Gateway ("Design-by-Contract for Tool Calls... A deterministic script (NOT the agent) checks the post-condition against the live system. If it fails, the PRM penalises the trajectory and the agent is forced to adapt before continuing")
   origin: docs/tickets/2026-09-14-reasoning-gateway.md, deliverable D3
   planes:
@@ -2663,31 +2639,19 @@ rules:
   - expect: pass
     args:
     - tests/test_breaker_extension.py::TestItBlocksProvedRepetition::test_it_never_blocks_nine_different_findings
-    note: 'REFUSING DIRECTION on the extension plane. Nine targets, nine distinct causes: nothing
-      blocks. This is R38 -- a guard that refuses correct work is an outage -- asserted through
-      extensions/breaker/decide.mjs, the module pi actually calls.'
+    note: 'REFUSING DIRECTION on the extension plane. Nine targets, nine distinct causes: nothing blocks. This is R38 -- a guard that refuses correct work is an outage -- asserted through extensions/breaker/decide.mjs, the module pi actually calls.'
   - expect: pass
     args:
     - tests/test_breaker_extension.py::TestItBlocksProvedRepetition::test_it_blocks_on_the_third_identical_finding
-    note: 'PERMITTING DIRECTION on the extension plane. Three targets carrying the same CVE set in
-      three different orders do block on the fourth, and the block names a lever. The same CVE
-      list reordered must fingerprint identically, or the real 2026-09-12 incident -- six red pull
-      requests, one cause, three different log positions -- would never have been grouped.'
+    note: PERMITTING DIRECTION on the extension plane. Three targets carrying the same CVE set in three different orders do block on the fourth, and the block names a lever. The same CVE list reordered must fingerprint identically, or the real 2026-09-12 incident -- six red pull requests, one cause, three different log positions -- would never have been grouped.
   - expect: pass
     args:
     - tests/test_breaker_extension.py::TestItIsBlindRatherThanSilent::test_it_reports_blind_when_the_tool_is_absent
-    note: 'THE BLIND-OR-SILENT CASE. When the tool cannot be found the extension reports BLIND, never
-      a quiet pass -- a guard that cannot run its check must say so, not read as clean.'
+    note: THE BLIND-OR-SILENT CASE. When the tool cannot be found the extension reports BLIND, never a quiet pass -- a guard that cannot run its check must say so, not read as clean.
   - expect: pass
     live: true
     note: the whole breaker test module over the real tree
   fixtures:
-    # These two files ARE the two directions the cases above prove: bad/ is a no-op repeated (no
-    # finding, so it can never lock) and good/ is one CVE set in two orders (a finding, so it
-    # locks). The row graded them through pytest node ids and named the pair nowhere, so
-    # bin/idp-rule-coverage could not see the link and reported the directory as a fixture graded
-    # by no rule -- the exact orphan shape that gate exists to catch. Declaring the pair here is
-    # the wiring, not an exemption.
     must_fail: tests/fixtures/breaker-enforcement/bad
     must_pass: tests/fixtures/breaker-enforcement/good
   ok: a command with no finding cannot lock, and a proved pattern still locks
@@ -2720,36 +2684,14 @@ rules:
     live: true
     args:
     - --check
-    note: 'LIVE: the boundary is graded on THIS repository rather than on an example of one, so
-      the row fails the day the daemon restates the ceiling, the door loses its entry point or
-      the launchd job goes missing on the machine that is actually running agents. Two fixture
-      cases alone graded a tree that never moves: every one of the six real breaches this rule
-      was written for would have passed them.'
+    note: 'LIVE: the boundary is graded on THIS repository rather than on an example of one, so the row fails the day the daemon restates the ceiling, the door loses its entry point or the launchd job goes missing on the machine that is actually running agents. Two fixture cases alone graded a tree that never moves: every one of the six real breaches this rule was written for would have passed them.'
   ok: the executor daemon applies one ceiling, imported from the door, and every half of the boundary is present -- and the boundary holds on this repository, not only on an example of one
   fail: a ceiling is restated in the daemon, or the boundary is half built and nothing says so
 - id: dod-v3-verified-not-asserted
   label: verified-not-asserted
-  statement: 'Honestly scoped to ONE of DoD v3''s five required letters -- (c) "Verified, not
-    asserted": a doc''s own `**Status:**` line claiming built/done/proven live/doored, that
-    also names a Kubernetes-shaped capability path (`platform/<name>/` or
-    `backstage/plugins/<name>/`), must show either a real manifest for that path (a Dockerfile
-    plus a `kind: Deployment` naming it) or an honest `**Not done:**` line -- a one-off curl or
-    test the builder ran against its own daemon is not a manifest and does not satisfy this.
-    This row does NOT cover the other four letters (sellable, installable-fast-benchmarked,
-    procurement-passable, owned); those have no document schema in this repo yet and are not
-    claimed here.'
-  law: 'LAW 38, founder 2026-09-15 (DoD v3, "final cut"): "Done" means commercially ready and
-    viable, five checks, all five required, none self-graded -- (c) is "verified by a
-    non-builder, scheduled check that keeps confirming, not a one-off curl the builder ran
-    itself, no matter how real the response." ~/.claude/docs/founder/2026-09-15T0947Z-standing-rule-definition-of-done-is-environment-verified-and-commercially-viable.md'
-  origin: 'Two incidents the same day. docs/tickets/2026-09-15-typed-multidomain-mutation-ledger.md
-    opens `**Status:** built, smoke-tested, and doored` and names
-    `backstage/plugins/fleetview-backend/`, `platform/estate-db/` and `platform/executor/` --
-    none of which had a Dockerfile plus a live-tree `kind: Deployment` manifest, and the doc
-    carried no `**Not done:**` line. Separately, a concurrent agent (task a6316e4fdcd04f1f6,
-    "Deploy fleetview-backend for real") replied `DONE:` with a "Founder receipt" that was its
-    own curl to its own `127.0.0.1:18790` launchd daemon -- real output, but not independent, and
-    not a manifest. Both were the same shape: a claim graded only by the claimant.'
+  statement: 'Honestly scoped to ONE of DoD v3''s five required letters -- (c) "Verified, not asserted": a doc''s own `**Status:**` line claiming built/done/proven live/doored, that also names a Kubernetes-shaped capability path (`platform/<name>/` or `backstage/plugins/<name>/`), must show either a real manifest for that path (a Dockerfile plus a `kind: Deployment` naming it) or an honest `**Not done:**` line -- a one-off curl or test the builder ran against its own daemon is not a manifest and does not satisfy this. This row does NOT cover the other four letters (sellable, installable-fast-benchmarked, procurement-passable, owned); those have no document schema in this repo yet and are not claimed here.'
+  law: 'LAW 38, founder 2026-09-15 (DoD v3, "final cut"): "Done" means commercially ready and viable, five checks, all five required, none self-graded -- (c) is "verified by a non-builder, scheduled check that keeps confirming, not a one-off curl the builder ran itself, no matter how real the response." ~/.claude/docs/founder/2026-09-15T0947Z-standing-rule-definition-of-done-is-environment-verified-and-commercially-viable.md'
+  origin: 'Two incidents the same day. docs/tickets/2026-09-15-typed-multidomain-mutation-ledger.md opens `**Status:** built, smoke-tested, and doored` and names `backstage/plugins/fleetview-backend/`, `platform/estate-db/` and `platform/executor/` -- none of which had a Dockerfile plus a live-tree `kind: Deployment` manifest, and the doc carried no `**Not done:**` line. Separately, a concurrent agent (task a6316e4fdcd04f1f6, "Deploy fleetview-backend for real") replied `DONE:` with a "Founder receipt" that was its own curl to its own `127.0.0.1:18790` launchd daemon -- real output, but not independent, and not a manifest. Both were the same shape: a claim graded only by the claimant.'
   planes:
   - ci
   - session
@@ -2767,21 +2709,17 @@ rules:
   - expect: refuse
     args:
     - tests/fixtures/dod-live-claim/bad.md
-    note: claims built/doored, names a platform/ path with no Dockerfile and no Deployment
-      anywhere in the real tree, and carries no `**Not done:**` line
+    note: claims built/doored, names a platform/ path with no Dockerfile and no Deployment anywhere in the real tree, and carries no `**Not done:**` line
   - expect: pass
     args:
     - tests/fixtures/dod-live-claim/good.md
-    note: the identical claim, honestly downgraded with a `**Not done:**` line naming the gap --
-      inventory, not done, and the gate agrees
+    note: the identical claim, honestly downgraded with a `**Not done:**` line naming the gap -- inventory, not done, and the gate agrees
   - expect: pass
     args:
     - tests/fixtures/dod-live-claim/good-deployed.md
     env:
       DOD_LIVE_CLAIM_SEARCH_ROOT: tests/fixtures/dod-live-claim/deployed-good
-    note: 'the same claim shape, graded against a self-contained fixture tree that DOES carry a
-      real Dockerfile and `kind: Deployment` manifest naming the capability -- the gate passes a
-      claim only when the environment itself backs it, not the doc''s own say-so'
+    note: 'the same claim shape, graded against a self-contained fixture tree that DOES carry a real Dockerfile and `kind: Deployment` manifest naming the capability -- the gate passes a claim only when the environment itself backs it, not the doc''s own say-so'
   - expect: pass
     live: true
     args:
@@ -2791,31 +2729,15 @@ rules:
     - docs/tickets/2026-09-14-bayesian-mcts-k8s-sre.md
     - docs/tickets/2026-09-14-mcts-mcp-server.md
     - docs/tickets/2026-09-14-reasoning-gateway.md
-    note: 'LIVE, and deliberately narrow: six real ticket docs from this estate''s own tree, none
-      of which carry an unbacked live claim today, so this case grades the estate rather than an
-      example of one. It deliberately excludes
-      docs/tickets/2026-09-15-typed-multidomain-mutation-ledger.md, the ticket this row exists
-      to catch -- that doc is genuinely RED right now (see `origin` above) and fixing the
-      mutation-ledger deployment itself is separately tracked and out of this row''s scope.
-      Sweeping it into a bare repo-wide default-docs() case and asserting the whole tree green
-      would be exactly the false pass this gate was built to catch, so it is named here instead
-      as a known, live, unclosed gap -- not asserted, not hidden.'
-  ok: a doc's completion claim about a named capability path is backed by a real manifest in
-    the tree or an honest `**Not done:**` line -- never the claim alone, and never a one-off curl
-  fail: 'a `**Status:**` line claims built/done/doored, names a capability path with no
-    Dockerfile and no `kind: Deployment` manifest anywhere in the tree, and the doc says nothing
-    about it'
-  why: 'Measured 2026-09-15: this gate run cold against the real repo (no env override) finds
-    exactly the mutation-ledger doc''s three unbacked claims and nothing else -- see origin.
-    This row covers letter (c) of DoD v3''s five-letter bar only; letters (a) sellable, (b)
-    installable-fast-benchmarked, (d) procurement-passable and (e) owned have no document schema
-    in this repo to grade against yet, and inventing one here would be exactly the ungrounded
-    schema LAW 38 warns against. Not claimed, not hidden.'
+    note: 'LIVE, and deliberately narrow: six real ticket docs from this estate''s own tree, none of which carry an unbacked live claim today, so this case grades the estate rather than an example of one. It deliberately excludes docs/tickets/2026-09-15-typed-multidomain-mutation-ledger.md, the ticket this row exists to catch -- that doc is genuinely RED right now (see `origin` above) and fixing the mutation-ledger deployment itself is separately tracked and out of this row''s scope. Sweeping it into a bare repo-wide default-docs() case and asserting the whole tree green would be exactly the false pass this gate was built to catch, so it is named here instead as a known, live, unclosed gap -- not asserted, not hidden.'
+  ok: a doc's completion claim about a named capability path is backed by a real manifest in the tree or an honest `**Not done:**` line -- never the claim alone, and never a one-off curl
+  fail: 'a `**Status:**` line claims built/done/doored, names a capability path with no Dockerfile and no `kind: Deployment` manifest anywhere in the tree, and the doc says nothing about it'
+  why: 'Measured 2026-09-15: this gate run cold against the real repo (no env override) finds exactly the mutation-ledger doc''s three unbacked claims and nothing else -- see origin. This row covers letter (c) of DoD v3''s five-letter bar only; letters (a) sellable, (b) installable-fast-benchmarked, (d) procurement-passable and (e) owned have no document schema in this repo to grade against yet, and inventing one here would be exactly the ungrounded schema LAW 38 warns against. Not claimed, not hidden.'
 - id: a-script-is-not-built-until-it-runs
   fast: true
   label: script-compiles
   statement: 'A script added to bin/ is not built until it has been EXECUTED once: it must answer --self-test, --self-check or --dry-run with exit 0 in bounded time. A parser and a linter both pass a script that has never run, which is exactly how a wrong variable name, a missing command or an unresolvable import reaches a session as a load failure -- so the compile is the run.'
-  law: 'LAW 43 / LAW 45, founder 2026-09-13 (verbatim) "no script shold be built withiut conpiler, enforce it ... aget should not eve have to do it, should be auuto"'
+  law: LAW 43 / LAW 45, founder 2026-09-13 (verbatim) "no script shold be built withiut conpiler, enforce it ... aget should not eve have to do it, should be auuto"
   origin: 'founder 2026-09-13, after watching a session hot-reload a file nobody had compiled. bin/idp-script-compiles was committed in 8913a251 and reached this branch with NO row in this registry, so it graded nothing on the repository plane: the coverage gate (bin/idp-rule-coverage) named tests/fixtures/script-compiles as a fixture graded by no rule and no test. A rule the agent must remember to follow is a wish (LAW 44); the row below is what makes the caller structural rather than remembered.'
   planes:
   - ci
@@ -2844,19 +2766,10 @@ rules:
     args:
     - --files
     - bin/idp-script-compiles
-    note: 'LIVE, and deliberately narrow: the gate is pointed at ITSELF in the real tree, so this
-      case grades the estate rather than an example and cannot be satisfied by fixtures alone.
-      A bare run over all of bin/ is the honest whole-tree reading and it is RED today -- 257 of
-      286 scripts answer no --self-test, --self-check or --dry-run -- so it is not asserted here
-      as a pass. That number is the gap this row exists to close and it is quoted in `why` below;
-      asserting it green would be the false pass this gate was built to catch.'
-  ok: the gate refuses a script that has never run and passes one that has; it is pointed at the
-    real tree, and the 257 scripts still without a self-test are named rather than passed over
-  fail: an executable under bin/ has never been executed and nothing refuses it, so a load failure
-    reaches a session as a surprise
-  why: 'Measured 2026-09-13: a bare run over all of bin/ reports `FAIL: 257 of 286 script(s) do not
-    run`. The estate is genuinely short, and the shortfall is stated here rather than asserted
-    green. This row closes that gap one script at a time; the count may only fall.'
+    note: 'LIVE, and deliberately narrow: the gate is pointed at ITSELF in the real tree, so this case grades the estate rather than an example and cannot be satisfied by fixtures alone. A bare run over all of bin/ is the honest whole-tree reading and it is RED today -- 257 of 286 scripts answer no --self-test, --self-check or --dry-run -- so it is not asserted here as a pass. That number is the gap this row exists to close and it is quoted in `why` below; asserting it green would be the false pass this gate was built to catch.'
+  ok: the gate refuses a script that has never run and passes one that has; it is pointed at the real tree, and the 257 scripts still without a self-test are named rather than passed over
+  fail: an executable under bin/ has never been executed and nothing refuses it, so a load failure reaches a session as a surprise
+  why: 'Measured 2026-09-13: a bare run over all of bin/ reports `FAIL: 257 of 286 script(s) do not run`. The estate is genuinely short, and the shortfall is stated here rather than asserted green. This row closes that gap one script at a time; the count may only fall.'
 - id: deterministic-verifier
   label: verifier
   statement: 'A claim of completed work is not the agent''s to make: the agent may only propose a patch into an ephemeral ledger, three graders the proposer does not control run against the exact bytes -- structural (the bytes compile), symbolic (Z3 over the guard the patch itself declares, which refuses to discharge "tests pass"), and execution (the SUPPLIED TEST SUITE runs in a throwaway tree and the pytest exit code is the verdict, so a proposal carrying no test is refused) -- and an attestation is minted only when all three pass, bound to the SHA-256 of the artifact actually verified. Take the claim away from the claimant'
@@ -2878,16 +2791,11 @@ rules:
   - expect: pass
     args:
     - tests/fixtures/verifier-oath/sealed
-    note: the same proposal with a passing execution stage -- the attestation is bound to the
-      SHA-256 of the exact bytes that were graded, and a byte changed afterwards no longer verifies
+    note: the same proposal with a passing execution stage -- the attestation is bound to the SHA-256 of the exact bytes that were graded, and a byte changed afterwards no longer verifies
   - expect: pass
     live: true
     args: []
-    note: 'LIVE: the three-stage gauntlet is run against the real module in this tree with the
-      binding suite CI runs, so the row grades the estate rather than an example. Named with the
-      cwd it needs -- the binding resolves its .feature through bdd_features_base_dir in
-      sovereign/pytest.ini, and it has to run from sovereign/, which is how .github/workflows/ci.yml
-      line 227 invokes it. A root-cwd run dies on import with IndexError: list index out of range.'
+    note: 'LIVE: the three-stage gauntlet is run against the real module in this tree with the binding suite CI runs, so the row grades the estate rather than an example. Named with the cwd it needs -- the binding resolves its .feature through bdd_features_base_dir in sovereign/pytest.ini, and it has to run from sovereign/, which is how .github/workflows/ci.yml line 227 invokes it. A root-cwd run dies on import with IndexError: list index out of range.'
   ok: a patch is admitted only through the three-stage gauntlet, the ledger is the only place an agent can write, and the seal binds the attestation to the bytes that were actually graded (measured 2026-09-13, 9 passed, PYTEST_RC=0)
   fail: a claim of completed work reaches the estate on the word of the agent that made it, with no structural, symbolic or execution grader in front of it, or an attestation whose subject is not the SHA-256 of the graded artifact
 - id: router-egress-ledger
@@ -2921,7 +2829,7 @@ rules:
   label: catalog-type
   statement: A catalog entity whose spec.type is not in schema/catalog-ontology.json cannot be queried reliably -- the frontend receives 200 [] indistinguishable from "no results" and "catalog broken", and an agent inventing a type propagates the gap every time it runs. The enum is the contract; the contract is checked before the commit exists.
   law: 'incident: phone-nav blank page (founder-surface type absent from ontology), /dagster page blank (relative URL, same root cause class)'
-  origin: 'spec.type is a free-form string in stock Backstage; the catalog API returns 200 [] for any unknown type. A frontend querying founder-surface got an empty list when no entity declared that type, and a relative /dagster URL caused the same blank-page failure in the scheduler surface. schema/catalog-ontology.json closes the enum; this gate refuses any type not in it. Template kind and scaffold ${{ }} tokens are skipped -- they use Backstage scaffold syntax, not real entity values.'
+  origin: spec.type is a free-form string in stock Backstage; the catalog API returns 200 [] for any unknown type. A frontend querying founder-surface got an empty list when no entity declared that type, and a relative /dagster URL caused the same blank-page failure in the scheduler surface. schema/catalog-ontology.json closes the enum; this gate refuses any type not in it. Template kind and scaffold ${{ }} tokens are skipped -- they use Backstage scaffold syntax, not real entity values.
   planes:
   - ci
   - session
@@ -2984,3 +2892,130 @@ rules:
     note: the catalog files actually committed to backstage/
   ok: a relative or non-http URL in metadata.links is refused; absolute https URLs including ${ESTATE_ZONE} templates pass; the real backstage/ tree is clean
   fail: a catalog entity carries a relative or non-http URL in metadata.links, or the gate is not discriminating
+- id: mutation-reversibility
+  fast: true
+  label: reversibility
+  statement: 'A mutation that carries no inverse is a mutation nobody can take back: every envelope the estate admits names either a deterministic inverse with a state probe, or an irreversible exemption whose attestation is a real signature over the envelope subject -- never a token that merely looks like one. A gate that cannot read its schema or its verifier is BLIND (exit 2), because a machine that cannot judge has not found a defect (LAW 38).'
+  law: ADR 0024 (Otto runs every tool and asks only for the unundoable), ADR 0025 (agents hold no write on production), LAW 38 (a guard that refuses correct work is an outage)
+  origin: 'The estate had three things that look like reversibility and none of them is it: bin/idp-rollback-only-diff gates a diff that is ALREADY a rollback; rewind is a destructive capability an agent may invoke rather than an obligation attached to a forward mutation; ADR 0024 routes the un-undoable to a human but never demanded the artefact exist. This gate closes that gap as a field on the envelope the ledger door (docs/specs/2026-09-15-typed-multidomain-mutation-ledger-door.md) already consumes -- not as a second envelope beside it (LAW 43). The rejected first draft accepted a human quorum token by startswith("sig-live-quorum-"), which a forged string passes; the exemption path here runs sovereign.verifier.verify_attestation (ed25519 over the subject), the same check admission runs, and the fixture that carries the magic-prefix shape is refused by that signature check rather than by luck.'
+  planes:
+  - ci
+  - session
+  session_glob:
+  - intents/**/*.json
+  - schema/mutation-envelope.schema.json
+  run:
+  - python3
+  - bin/idp-reversibility-gate
+  cluster:
+    policy: null
+    why: a mutation envelope is not a Kubernetes object; admission never sees one. The executor daemon consumes the envelope and the ledger door verifies it -- that is where this rule's refusal lands.
+  fixtures:
+    must_fail: tests/fixtures/reversibility/bad
+    must_pass: tests/fixtures/reversibility/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/reversibility/bad
+    note: no-inverse (missing inverse_spec), inverse-is-forward (an inverse that reverses nothing), prefix-forgery (a magic-prefix string the ed25519 check refuses)
+  - expect: pass
+    args:
+    - tests/fixtures/reversibility/good
+    note: scale-deployment (self-inverse with different parameters) and different-action (a genuinely different verb)
+  ok: an envelope with no inverse, an inverse that echoes the forward, or a forged exemption token is refused; a deterministic inverse and a genuinely signed exemption pass; the gate exits 2 (BLIND) when it cannot read its schema or verifier
+  fail: an admitted mutation carries no verifiable inverse, or the gate refuses correct work because it could not read its own inputs (LAW 38)
+  live_elsewhere: platform/executor/daemon.py:810 -- _mutation_is_reversible runs this gate on every verify_mutation, so a proposal without an inverse is refused with violation_code NO_INVERSE before the gauntlet runs
+- id: redteam-payload-promotion
+  fast: true
+  label: redteam-promoter
+  statement: 'A red-team payload that defeated the proxy must become a signature the proxy blocks: the promoter derives a signature from the payload and writes it through the RCA worker''s one _persist, closing the loop from the eval plane to the live prompt path. A payload whose content is all dynamic values derives NOTHING -- promoting it would ban a bare UUID and refuse correct work (LAW 38) -- and an unreadable payload is BLIND (exit 2), never a promotion.'
+  law: the missing wire of the adversarial loop -- red_team_payloads generates attacks and the proxy blocks known signatures, but nothing taught the proxy what red team had already proved defeating, so a hole stayed open until the same lesson arrived as an incident. LAW 38 (a signature derived from pure noise refuses correct work), LAW 43 (one writer of via_negativa:banned_signatures -- the promoter calls the RCA worker's own _persist, never a second mechanism)
+  origin: 'The estate had every part of an adversarial loop and no wire between them: platform/eval/red_team_payloads.py generates and classifies payloads, platform/eval/red_team_loop.py scans transcripts for fired payloads, bin/negative-constraints-proxy blocks a tool call whose normalized name or arguments match via_negativa:banned_signatures, and bin/rca_worker/worker.py writes that set -- but only from real production failures. Nothing promoted a synthetic payload the red team proved defeating. This is the wire. It is deliberately not an inference micro-model on the hot path: a defeating payload becomes a signature the proxy rejects at set-membership cost, so the loop is self-improving with no added latency on every prompt. The derivation is checked against the proxy''s OWN Go source (builtinSignatures, normalize, match) in tests/test_redteam_promoter.py, so the two cannot drift.'
+  planes:
+  - ci
+  session_glob:
+  - platform/eval/red_team_payloads.py
+  - bin/negative-constraints-proxy/main.go
+  run:
+  - python3
+  - bin/redteam_promoter/promoter.py
+  - grade
+  cluster:
+    policy: null
+    why: the promoter is a workload (platform/via-negativa/redteam-promoter.yaml) that writes a Redis set, not a Kubernetes object; admission never sees a payload
+  fixtures:
+    must_fail: tests/fixtures/redteam-promoter/bad
+    must_pass: tests/fixtures/redteam-promoter/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/redteam-promoter/bad
+    note: a payload whose content is only a UUID derives no signature
+  - expect: pass
+    args:
+    - tests/fixtures/redteam-promoter/good
+    note: a defeating shell_injection payload derives a signature the proxy honours
+  live_elsewhere: 'platform/via-negativa/redteam-promoter.yaml:1 -- the promoter consumes estate.eval.redteam.defeated off NATS and writes through the RCA worker''s _persist. BOTH HALVES NOW EXIST 2026-09-19: platform/eval/red_team_loop.py calls publish_defeated() the moment a payload is detected, so a defeat reaches the promoter without a human in the middle. tests/test_redteam_promoter.py asserts the publisher''s subject equals the consumer''s, so the two cannot drift apart in silence.'
+  ok: a defeating payload derives a signature the proxy blocks; a dynamic-only payload derives nothing and is refused; the graded tree is clean and the derivation is checked against the proxy's own source
+  fail: a payload that defeated the proxy cannot be promoted, or the promoter derives a signature from pure noise and would refuse correct work
+- id: admitted-mutation-reversible
+  fast: true
+  label: admitted-mutation
+  statement: A pull request may auto-merge through the Greenlane as a reversible mutation only when the executor ADMITTED that ledger, the admitted envelope carries a verifiable inverse (bin/idp-reversibility-gate grades it), and the branch touches nothing the admitted bundle never named. The branch must be `mutation/<ledger_id>` -- the executor's own naming. Anything else waits for the founder like any other platform change.
+  law: ADR 0025 (the Greenlane grows a row at a time, and a row is admitted only when its scope binary exists with a refused and a passed fixture), ADR 0024 (every mutation carries its inverse), LAW 43 (the reversibility judgement is bin/idp-reversibility-gate, called, never re-decided)
+  origin: 'ADR 0025 gave the Greenlane exactly one row (the image-tag bump, proved by bin/idp-image-only-diff) and fixed how it grows: a row is admitted when its scope binary exists, proved both ways. This is the estate''s first non-tag row: a mutation the executor proposed, verified, sealed and admitted -- a change carrying its own inverse and a Deterministic Verifier signature over the exact bundle bytes. The binary reads the executor''s own ledger (only verify_mutation -> seal_mutation -> admit_mutation can write it) rather than trusting a branch name or a label, so a PR that lacks any of the four facts waits for the founder. Built as a row in the ONE existing mechanism, never a second merge path (the stitching ADR 0025 forbids).'
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-admitted-mutation-diff
+  - --fixture-dir
+  cluster:
+    policy: null
+    why: this grades a pull request's diff against the executor's own ledger on disk; admission controllers see Kubernetes objects and never a ledger
+  fixtures:
+    must_fail: tests/fixtures/admitted-mutation/bad
+    must_pass: tests/fixtures/admitted-mutation/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/admitted-mutation/bad
+    note: a plain feature branch and an admitted ledger whose envelope has no inverse_spec
+  - expect: pass
+    args:
+    - tests/fixtures/admitted-mutation/good
+    note: an admitted mutation branch whose envelope carries a deterministic inverse and whose diff matches the admitted bundle
+  live_elsewhere: .github/workflows/deploy-when-green.yml:1 -- Row 3 calls this binary on an open mutation/* PR, so an admitted reversible mutation lands without the founder while every other change waits
+  ok: an admitted reversible mutation on a mutation/<ledger_id> branch passes; a non-mutation branch or an admitted envelope without an inverse is refused; an unreadable ledger is BLIND and never a pass
+  fail: a pull request that is not an admitted reversible mutation is treated as landable, or a real one is refused
+- id: mcp-first
+  fast: true
+  label: mcp-first
+  statement: A question about estate state is answered by the platform, not by a scheduled report, another session's transcript, or an ad-hoc read of the store
+  law: ADR 0006
+  origin: 'Measured 2026-09-19, one session, one question (''is component X live?'') answered wrong twice: it read docs/reports/flux-state.md, an artifact a scheduled workflow rewrites every 15 minutes, and reported a row dated the previous day as current cluster state; it quoted an oke-check job log the same way; it searched ~/.claude/projects/*.jsonl -- OTHER SESSIONS'' PRIVATE TRANSCRIPTS -- to infer what a peer could do; and it reported the wrong CNI by quoting a commit message from weeks earlier. At no point did it call the tool that answers the question. ADR 0006 settled this on 2026-08-25 and the rule had no mechanism behind it, so the habit survived the rule. The gate grades a COMMAND STRING, not a model: a Claude, a DeepSeek, a local harness or a person are refused by the same bytes, which is what makes it model-agnostic. Each of the three substitutions carries a typed escape marker, because each is legitimate in itself and illegitimate as a SUBSTITUTE for the call -- and an absolute
+    fence would be LAW 38, since get_estate_state answered available:false on the day this was written.'
+  planes:
+  - ci
+  - session
+  session_glob:
+  - '*.sh'
+  - bin/*
+  run:
+  - python3
+  - bin/idp-mcp-first-gate
+  cluster:
+    policy: null
+    why: this grades how a session ASKED a question, which no admission controller can see
+  fixtures:
+    must_fail: tests/fixtures/mcp-first/bad
+    must_pass: tests/fixtures/mcp-first/good
+  cases:
+  - expect: refuse
+    args:
+    - tests/fixtures/mcp-first/bad/recon.sh
+  - expect: pass
+    args:
+    - tests/fixtures/mcp-first/good/ask.sh
+  ok: the platform is asked, not substituted for
+  fail: a state question is answered by a scheduled report, a peer's transcript, or the raw store

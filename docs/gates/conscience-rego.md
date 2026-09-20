@@ -24,7 +24,7 @@ Exit code `1` (the registry expects non-zero). ✓
 [33mWARN[0m - policy/fixtures/conscience-bad.json - main - rule=new_script_has_a_test | tenet=enterprise | the PR changes a bin/ script and no file under tests/ | fix: add the test that proves the script both ways, or a --selftest wired into bin/idp-ci
 [33mWARN[0m - policy/fixtures/conscience-bad.json - main - rule=no_floating_tag | tenet=future-looking | an added image line floats on :latest | fix: pin the tag and let Flux image automation (idp#222) roll it
 [31mFAIL[0m - policy/fixtures/conscience-bad.json - main - rule=no_provider_in_diff | tenet=portable | an added line names a cloud provider outside platform/oci, platform/secret-store or clusters/ | fix: move the provider-specific line into the compute provisioner or the cluster row, and keep the platform blind to who owns the servers (R36)
-[31m31 tests, 26 passed, 4 warnings, 1 failure, 0 exceptions[0m
+[31m33 tests, 28 passed, 4 warnings, 1 failure, 0 exceptions[0m
 ```
 
 ## Permitted
@@ -34,7 +34,7 @@ Fixture: `policy/fixtures/conscience-clean.json`
 Exit code `0` (the registry expects zero). ✓
 
 ```
-[32m31 tests, 31 passed, 0 warnings, 0 failures, 0 exceptions[0m
+[32m33 tests, 33 passed, 0 warnings, 0 failures, 0 exceptions[0m
 ```
 
 ## The registry's own lines

@@ -29,7 +29,7 @@ Exit code `1` (the registry expects non-zero). ✓
 [31mFAIL[0m - policy/fixtures/placement-misplaced.json - main - com.example.offsite-backup (check 'offsite-backup') has never pinged. It is not late -- it has never run.
 [31mFAIL[0m - policy/fixtures/placement-misplaced.json - main - com.example.offsite-backup is scheduled in the 3 o'clock hour and this machine is asleep then. It belongs on a host that stays awake.
 [31mFAIL[0m - policy/fixtures/placement-misplaced.json - main - com.example.offsite-backup is survival work (backup, restore drill or key escrow) and it runs only here. If this laptop is what fails, it was never running.
-[31m31 tests, 21 passed, 0 warnings, 10 failures, 0 exceptions[0m
+[31m33 tests, 23 passed, 0 warnings, 10 failures, 0 exceptions[0m
 ```
 
 ## Permitted
@@ -39,7 +39,7 @@ Fixture: `policy/fixtures/placement-ok.json`
 Exit code `0` (the registry expects zero). ✓
 
 ```
-[32m31 tests, 31 passed, 0 warnings, 0 failures, 0 exceptions[0m
+[32m33 tests, 33 passed, 0 warnings, 0 failures, 0 exceptions[0m
 ```
 
 ## The registry's own lines

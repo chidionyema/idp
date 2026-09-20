@@ -22,7 +22,7 @@ Exit code `1` (the registry expects non-zero). ✓
 In tests/fixtures/shell-lint/bad.sh line 5:
 cd /var/tmp/does-not-exist
 ^------------------------^ SC2164 (warning): Use 'cd ... || exit' or 'cd ... || return' in case cd fails.
-Did you mean:
+Did you mean: 
 cd /var/tmp/does-not-exist || exit
 For more information:
   https://www.shellcheck.net/wiki/SC2164 -- Use 'cd ... || exit' or 'cd ... |...
