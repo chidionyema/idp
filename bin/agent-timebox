@@ -50,7 +50,11 @@ if [ "${1:-}" = "--check" ]; then
 	# that cannot be checked inside the budget it imposes is not enforceable. Five seconds proves
 	# exactly the same thing.
 	start=$(date +%s)
-	AGENT_TIMEBOX_SECONDS=5 "$0" sleep 90 >/dev/null 2>&1
+	# The 90 is the SUBJECT of the test, not a wait: the ceiling must cut this child at 5s, so a
+	# longer argument is what proves the cut happened rather than a command that finished. This
+	# line blocks for AGENT_TIMEBOX_SECONDS (5 here), never for 90 -- the elapsed check below
+	# refuses anything over 8. sleep-ok: the sleep is the graded artifact of a timeout drill.
+	AGENT_TIMEBOX_SECONDS=5 "$0" sleep 90 >/dev/null 2>&1  # sleep-ok: the subject of the timeout drill, cut at the 5s ceiling
 	rc=$?
 	elapsed=$(( $(date +%s) - start ))
 	if [ "$rc" -eq 124 ] && [ "$elapsed" -le 8 ]; then
