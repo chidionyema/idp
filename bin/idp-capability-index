@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""idp-capability-index -- an agent can discover what it can do, without asking a person.
+
+    bin/idp-capability-index                 the whole index, grouped, as markdown
+    bin/idp-capability-index --grep TERM     tools whose name or description matches
+    bin/idp-capability-index --json          machine-readable, for a caller
+    bin/idp-capability-index --check         fail if the checked-in index is stale
+
+WHY THIS EXISTS. The founder, 2026-09-20, after an agent asked him for an OCI credential:
+
+    "agents should not even be chatting to me they should just be working autonomously"
+    "the fact i keep getting interrupted when this estate contains everything for agents to work
+     autonomous means our knowledge base and behaviour is not right"
+
+He was right, and this is the defect stated plainly: the estate has 361 tools in `bin/` and
+NOTHING listed them. Measured the same day -- 349 of the 361 carry a description in their own
+header (215 python docstrings, 134 shell comment blocks). The knowledge was on disk the whole time.
+
+So an agent that needed to reach the cluster did not DISCOVER `bin/idp-cloud`; it asked the founder
+for the key. The failure was not a missing capability and not a missing permission. It was a missing
+INDEX. That is the class of defect this file closes, and it is why the fix is a generator rather
+than an instruction to read the directory:
+
+  * a list kept by hand drifts the moment a tool is added (this estate has caught that repeatedly);
+  * this is derived from the tools THEMSELVES, so a new tool appears without anyone remembering;
+  * and `--check` fails when the committed index and the directory disagree, so drift is a red
+    gate instead of a surprise at 3am.
+
+WHAT IT DELIBERATELY EXCLUDES, and why: `bin/lib` is a Python package directory, `bin/dockerfiles`
+holds Containerfiles, and neither is a command. A "tool" here is an executable regular file OR a
+file whose header claims one -- so a script with mode 644 that is meant to be run is still indexed.
+THIS IS THE SAME DISTINCTION THE PATH FIX NEEDED: an agent that put `bin/lib` on PATH would offer a
+command that cannot run.
+
+RELATION TO THE OTHER INDEXES. `docs/onboarding/tools.md` and `docs/demo/tools.md` were written by
+hand for humans. `bin/catalog-gen` builds the platform catalogue from inventory. This is the one an
+AGENT reads before it decides to ask a person for something, and it is generated so it cannot rot.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+BINDIR = ROOT / "bin"
+INDEX = ROOT / "docs" / "reference" / "capability-index.md"
+
+# Directories under bin/ that hold library code, not commands. Named explicitly rather than
+# skipped by a pattern: a glob that quietly matches nothing reports a clean tree, which is how a
+# missing index stays missing.
+NOT_COMMANDS = {"lib", "dockerfiles", "__pycache__"}
+
+# A heading line that introduces the REASONING rather than the capability. Stripped only when it
+# is the whole first line, so a description that legitimately opens with the word "why" survives.
+REASONING_HEADING = re.compile(
+    r"^(why (this|it) exists|where this sits|what this (is|does) not do)\b.*$", re.I
+)
+
+# The first sentence is the capability; the rest is the reasoning. Grading the whole block would
+# make every entry a paragraph, and a list nobody can scan is a list nobody reads.
+FIRST_SENTENCE = re.compile(r"^(.*?[.?!])(\s|$)", re.S)
+
+
+def summarise(text: str, limit: int = 220) -> str:
+    """The capability, as one sentence, from a docstring that may open with something else.
+
+    THE PREFIX IS STRIPPED, and this was a real gap: `idp-jit`, `idp-jit-grants` and
+    `idp-device-authorize` -- the three tools that answer "how does an agent work without
+    interrupting the founder" -- each open with their own name (`idp-jit -- how an agent asks...`)
+    or with a `WHY THIS EXISTS` heading, so the extractor's first SENTENCE came back as the tool's
+    own name and the index listed them as UNDOCUMENTED. Measured 2026-09-20, those five entries
+    were the exact knowledge the founder was missing when he said agents should stop asking him.
+
+    A tool that cannot be found by PURPOSE is a tool that will be rediscovered by asking a person.
+    """
+    flat = re.sub(r"\s+", " ", text.strip())
+    # Strip the leading `name -- ` / `name: ` / `name — ` prefix every estate header uses.
+    flat = re.sub(r"^[a-z0-9][a-z0-9._-]{2,40}\s*(?:--|—|:)\s*", "", flat, count=1, flags=re.I)
+    # Drop a leading reasoning heading if that is all the first line is.
+    first_line, _, rest = flat.partition(". ")
+    if REASONING_HEADING.match(first_line.strip()):
+        flat = rest.strip() or flat
+    m = FIRST_SENTENCE.match(flat)
+    one = (m.group(1) if m else flat).strip()
+    return one if len(one) <= limit else one[: limit - 1].rstrip() + "\u2026"
+
+
+def describe(path: Path) -> tuple[str, str]:
+    """(usage, description) for one tool, from its own header.
+
+    A tool that describes itself in neither form is REPORTED as undocumented rather than skipped.
+    A silently absent entry looks identical to a tool that does not exist, and "we could not find
+    it" is the exact experience this file is meant to end.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return "", f"(UNREADABLE: {exc})"
+
+    if path.suffix == ".py":
+        try:
+            doc = ast.get_docstring(ast.parse(text))
+        except SyntaxError:
+            doc = None
+        if doc:
+            return _usage_of(doc), summarise(doc)
+    elif path.suffix in (".sh", ".bash") or text.startswith("#!"):
+        lines: list[str] = []
+        for line in text.splitlines():
+            if line.startswith("#!"):
+                continue
+            if line.startswith("#"):
+                lines.append(line.lstrip("#").strip())
+            elif line.strip() == "" and not lines:
+                continue
+            else:
+                break
+        block = "\n".join(l for l in lines if l)
+        if block:
+            return _usage_of(block), summarise(block)
+
+    return "", "(undocumented: no header description)"
+
+
+def _usage_of(block: str) -> str:
+    """The first `bin/<name> ...` line in a header, which is the shape every tool uses for usage."""
+    for line in block.splitlines():
+        s = line.strip()
+        if s.startswith("bin/") or s.startswith("idp-"):
+            return s
+    return ""
+
+
+def collect() -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    if not BINDIR.is_dir():
+        return rows
+    for path in sorted(BINDIR.iterdir()):
+        if path.name.startswith(".") or path.name in NOT_COMMANDS:
+            continue
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            continue
+        usage, desc = describe(path)
+        rows.append(
+            {
+                "name": path.name,
+                "executable": "yes" if path.stat().st_mode & 0o111 else "no",
+                "usage": usage,
+                "description": desc,
+            }
+        )
+    return rows
+
+
+def render(rows: list[dict[str, str]]) -> str:
+    undocumented = [r for r in rows if r["description"].startswith("(undocumented")]
+    not_exec = [r for r in rows if r["executable"] == "no"]
+    out: list[str] = [
+        "# Capability index -- what an agent can do without asking a person",
+        "",
+        "<!-- GENERATED by bin/idp-capability-index. Do not edit: run the tool. -->",
+        "",
+        "Every tool in `bin/`, described from its own header. An agent reads this before it",
+        "decides it needs to ask the founder for something -- the estate has the capability or",
+        "the record shows it does not, and either answer is better than an interruption.",
+        "",
+        f"**{len(rows)} tools.** {len(rows) - len(undocumented)} describe themselves; "
+        f"{len(undocumented)} do not.",
+        "",
+        "Find a tool by purpose:  `idp-capability-index --grep <term>`",
+        "",
+        "| tool | what it does |",
+        "|---|---|",
+    ]
+    for r in rows:
+        flag = "" if r["executable"] == "yes" else " `(not +x)`"
+        out.append(f"| `{r['name']}`{flag} | {r['description']} |")
+
+    if not_exec:
+        # REPORTED, not hidden: a tool that cannot execute is a capability that is claimed and
+        # absent, and the estate has caught that class more than once.
+        out += [
+            "",
+            f"## {len(not_exec)} tool(s) not marked executable",
+            "",
+            "Named because a script that cannot run is not a capability:",
+            "",
+        ]
+        out += [f"- `{r['name']}`" for r in not_exec]
+
+    if undocumented:
+        out += [
+            "",
+            f"## {len(undocumented)} tool(s) with no header description",
+            "",
+            "These cannot be discovered by purpose, only by name. Each is a knowledge gap, not a",
+            "style issue: an agent that cannot tell what a tool does will ask a person instead.",
+            "",
+        ]
+        out += [f"- `{r['name']}`" for r in undocumented]
+
+    return "\n".join(out) + "\n"
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    g = ap.add_mutually_exclusive_group()
+    g.add_argument("--json", action="store_true", help="machine-readable index")
+    g.add_argument("--grep", metavar="TERM", help="tools matching a term in name or description")
+    g.add_argument("--check", action="store_true", help="fail when the committed index is stale")
+    g.add_argument("--write", action="store_true", help="write the index")
+    args = ap.parse_args()
+
+    rows = collect()
+
+    if args.grep:
+        term = args.grep.lower()
+        hits = [
+            r
+            for r in rows
+            if term in r["name"].lower() or term in r["description"].lower()
+        ]
+        for r in hits:
+            print(f"{r['name']:38s} {r['description']}")
+        print(f"\n{len(hits)} of {len(rows)} tool(s) match {args.grep!r}", file=sys.stderr)
+        return 0 if hits else 1
+
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+
+    body = render(rows)
+
+    if args.check:
+        if not INDEX.is_file():
+            print(f"FAIL  {INDEX.relative_to(ROOT)} does not exist; run bin/idp-capability-index --write")
+            return 1
+        if INDEX.read_text(encoding="utf-8") != body:
+            print(
+                f"FAIL  {INDEX.relative_to(ROOT)} is STALE against bin/. A tool was added, removed "
+                f"or re-described and the index was not regenerated, so an agent reading it sees a "
+                f"capability list that is not the one on disk.\n"
+                f"      Fix: bin/idp-capability-index --write"
+            )
+            return 1
+        print(f"ok    capability-index   {len(rows)} tools, index current")
+        return 0
+
+    if args.write:
+        INDEX.parent.mkdir(parents=True, exist_ok=True)
+        INDEX.write_text(body, encoding="utf-8")
+        print(f"wrote {len(rows)} tools into {INDEX.relative_to(ROOT)}")
+        return 0
+
+    print(body)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
