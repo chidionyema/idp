@@ -43,9 +43,14 @@ if "--tree" in sys.argv:
 else:
     ROOT = pathlib.Path(__file__).resolve().parents[1]
 MODULE = ROOT / "platform" / "llm" / "request_ceiling.py"
+DECREE_MODULE = ROOT / "platform" / "llm" / "execution_decree.py"
 CONFIG = ROOT / "platform" / "llm" / "config.yaml"
 DEPLOY = ROOT / "platform" / "llm" / "litellm.yaml"
 KUSTOMIZATION = ROOT / "platform" / "llm" / "kustomization.yaml"
+
+# The wait ceiling, and it is not tunable. Founder, 2026-09-13: "60 secsos is the nnax". A ceiling
+# above this is the breach wearing the fix's clothes.
+MAX_WAIT_CEILING = 60
 
 # A working window. Above any real turn; low enough that the refusal fires while the money is
 # still unspent. The ceiling is compared against the module's declared default.
@@ -127,6 +132,50 @@ def main() -> int:
             "platform/llm/kustomization.yaml does not generate the litellm-request-ceiling "
             "ConfigMap, so the mount has nothing to mount"
         )
+
+    # 5. THE EXECUTION DECREE, graded by the same three requirements.
+    #
+    # It is a second router callback and it fails in the identical way: registered in config.yaml,
+    # absent from the ConfigMap, ModuleNotFoundError on every request. The check above is hardcoded
+    # to `request-ceiling`, so it was GREEN while the decree's module was mounted by nothing -- a
+    # gate that cannot fail on the new callback reports a number it did not measure. Both callbacks
+    # are now graded, and adding a third means adding it here, deliberately.
+    decree = read(DECREE_MODULE)
+    if not decree:
+        pass  # already reported by read(); an absent module is a FAIL, never a skip
+    else:
+        if "async_pre_call_hook" not in decree:
+            fail("execution_decree.py defines no async_pre_call_hook, so it cannot refuse anything")
+        if "proxy_handler_instance" not in decree:
+            fail(
+                "execution_decree.py exposes no proxy_handler_instance, which is the name "
+                "config.yaml registers"
+            )
+        # The ceiling is the ONE number this decree may not be tuned around. A decree whose bound
+        # was raised is the seventh breach, not a fix.
+        d = re.search(r"ESTATE_WAIT_CEILING_SEC\",\s*\"(\d+)\"", decree)
+        if not d:
+            fail("execution_decree.py declares no ESTATE_WAIT_CEILING_SEC default to grade")
+        elif int(d.group(1)) > MAX_WAIT_CEILING:
+            fail(
+                f"the wait ceiling is {int(d.group(1))}s, above the {MAX_WAIT_CEILING}s decree: "
+                f"a ceiling raised to fit an offender is the breach, not a control"
+            )
+        if "execution_decree.proxy_handler_instance" not in config:
+            fail(
+                "platform/llm/config.yaml does not register execution_decree.proxy_handler_instance "
+                "as a callback, so the module is on disk and nothing loads it"
+            )
+        if "request-ceiling-decree" not in deploy:
+            fail(
+                "platform/llm/litellm.yaml does not mount the execution decree, so the registered "
+                "callback fails import at request time -- an outage, not a control"
+            )
+        if "execution_decree.py" not in kustomization:
+            fail(
+                "platform/llm/kustomization.yaml does not carry execution_decree.py, so the "
+                "ConfigMap the mount names omits the module the router imports"
+            )
 
     if failures:
         for f in failures:

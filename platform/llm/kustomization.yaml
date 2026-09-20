@@ -25,6 +25,13 @@ configMapGenerator:
     files:
       - request_ceiling.py
       - efficiency_gateway.py
+      # THE EXECUTION DECREE, and it must be in this list for the same reason the ceiling is: a
+      # callback registered in config.yaml whose module is not in this ConfigMap loads as a
+      # ModuleNotFoundError at request time -- an outage, not a control (R38, and the note on
+      # PYTHONPATH in litellm.yaml). These three files ship together or none of them does.
+  - name: litellm-request-ceiling-decree
+    files:
+      - execution_decree.py
 generatorOptions:
   disableNameSuffixHash: false
 

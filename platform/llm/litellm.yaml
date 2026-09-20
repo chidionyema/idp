@@ -112,6 +112,11 @@ spec:
             # The ceiling module, on the path the router imports from. PYTHONPATH above names
             # this directory, so `request_ceiling.proxy_handler_instance` resolves at start.
             - { name: request-ceiling, mountPath: /etc/litellm/ceilings, readOnly: true }
+            # The execution decree, mounted into the SAME directory the PYTHONPATH above names, so
+            # `execution_decree.proxy_handler_instance` resolves at start for the same reason and
+            # fails the same way if it is missing. Separate volume, one directory: the two modules
+            # are independently revocable, and neither can be present without the other's path.
+            - { name: request-ceiling-decree, mountPath: /etc/litellm/ceilings, readOnly: true }
             - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }
             - { name: langfuse, mountPath: /run/secrets/litellm/langfuse, readOnly: true }
             - { name: sso, mountPath: /run/secrets/litellm/sso, readOnly: true }
@@ -168,6 +173,8 @@ spec:
           configMap: { name: litellm-config }
         - name: request-ceiling
           configMap: { name: litellm-request-ceiling }
+        - name: request-ceiling-decree
+          configMap: { name: litellm-request-ceiling-decree }
         - name: upstream
           secret: { secretName: litellm-upstream }
         - name: langfuse
