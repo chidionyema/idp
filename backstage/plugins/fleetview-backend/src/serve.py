@@ -48,6 +48,12 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 _EXECUTOR_LINK_MODULE = Path(__file__).resolve().parent / "executor_link.py"
 
+# How many `/stream` connections may be open at once. See the note on the route: each one costs a
+# query per second against the ledger, and nothing bounded them. Read from the environment so a
+# deployment with many legitimate viewers can raise it without a code change.
+_STREAM_CLIENTS = 0
+MAX_STREAM_CLIENTS = int(os.environ.get("FLEETVIEW_MAX_STREAMS", "32"))
+
 
 def _load_executor_link():
     """Same fixed-name `sys.modules` cache `routes.py`'s `_executor_link()` uses, and for the
@@ -154,14 +160,42 @@ def build_app(routes_path: Path) -> FastAPI:
 
     app = FastAPI(title="FleetView", version="1.1.0", lifespan=lifespan)
 
+    # The open-stream counter lives at MODULE level (see _STREAM_CLIENTS above) and is deliberately
+    # NOT reset here: this factory can run more than once in a process, and resetting would forget
+    # the connections that are still open -- turning the cap into a latch that never releases.
+
+    # CORS FOR THE BOARD'S OWN BROWSER FETCHES.
+    #
+    # The Reactor reads /replies directly rather than through Backstage's proxy, because the proxy
+    # answers any path it does not know with index.html -- so `res.json()` sees `<!DOCTYPE` and the
+    # reply feed is silently empty. A direct call makes it a cross-origin request from
+    # localhost:3100, and without these headers the browser blocks it before it is sent.
+    #
+    # LOOPBACK ONLY. This is a local development service; `*` would let any page in the browser
+    # read the estate's session ledger and post to it.
+    from fastapi.middleware.cors import CORSMiddleware  # noqa: PLC0415
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:3100",
+            "http://127.0.0.1:3100",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type"],
+    )
+
     @app.get(routes.SESSIONS_PATH)
     def sessions():
         body, status = routes.sessions_envelope()
         return JSONResponse(content=body, status_code=status)
 
     @app.get(routes.HISTORY_PATH)
-    def history(session_id: str = "", since: str = "", until: str = ""):
-        payload, status = routes.history_envelope(session_id, since, until)
+    def history(session_id: str = "", since: str = "", until: str = "", limit: int = 500):
+        payload, status = routes.history_envelope(session_id, since, until, limit)
         return JSONResponse(content=payload, status_code=status)
 
     @app.get(routes.QUERY_PATH)
@@ -202,7 +236,38 @@ def build_app(routes_path: Path) -> FastAPI:
         return JSONResponse(content=payload, status_code=status)
 
     @app.get(routes.STREAM_PATH)
-    async def stream():
+    async def stream(request: Request):
+        # A CLIENT CAP, because this route is the most expensive one here.
+        #
+        # Each connected client costs one indexed query per second against the ledger, plus a full
+        # fleet read every 15 seconds -- proven to deliver (measured 2026-09-20: 39 frames in 5
+        # seconds) and completely unbounded. One browser tab is fine; a leaked tab, a reload loop,
+        # or a monitoring script pointed at it is a self-inflicted load test on the same sqlite file
+        # the board needs for /sessions.
+        #
+        # The cap is deliberately generous (32) and each client holds a slot for its connection's
+        # life. A refused client gets a 503 with the reason rather than a silent hang, so a person
+        # who hits it can tell the difference between "too many boards open" and "the backend is
+        # down" -- the same rule every other failure here follows.
+        global _STREAM_CLIENTS
+        if _STREAM_CLIENTS >= MAX_STREAM_CLIENTS:
+            return JSONResponse(
+                content={
+                    "error": f"{_STREAM_CLIENTS} streams already open (limit {MAX_STREAM_CLIENTS})",
+                    "fix": "close another board tab, or raise FLEETVIEW_MAX_STREAMS",
+                },
+                status_code=503,
+            )
+        _STREAM_CLIENTS += 1
+        try:
+            return await _stream_body()
+        finally:
+            # RELEASED WHEN THE RESPONSE SETTLES, which for a StreamingResponse is when the
+            # generator finishes or the client disconnects. Without this the count only ever rises
+            # and the cap becomes a one-way latch -- the bug that turns a safeguard into an outage.
+            _STREAM_CLIENTS -= 1
+
+    async def _stream_body():
         nats_url = os.environ.get("NATS_URL", "")
 
         if nats_url:
@@ -333,6 +398,94 @@ def build_app(routes_path: Path) -> FastAPI:
     @app.get(routes.SIGNALS_PATH)
     def signals_get(session_id: str):
         body, status = routes.signals_envelope(session_id)
+        return JSONResponse(content=body, status_code=status)
+
+    # THE REPLY CHANNEL. GET reads what the sessions said; POST is how a session records it.
+    # The writer is the session's own hook -- the pi extension, or bin/idp-directive-consume -- so
+    # a runtime gains a voice the moment it can make one HTTP call.
+    @app.get(routes.REPLIES_PATH)
+    def replies_get(session_id: str = "", limit: int = 20):
+        body, status = routes.reply_envelope(session_id, limit)
+        return JSONResponse(content=body, status_code=status)
+
+    # ------------------------------------------------------------------ identity on the
+    # DESTRUCTIVE PATHS
+    #
+    # WHY THIS EXISTS. Measured by review 2026-09-20: `POST /work` accepted a caller-supplied pid
+    # for ANY session id with no authentication, and `POST /kill` then signalled it. CORS is not an
+    # access control -- a page can send a cross-origin request without a preflight by using
+    # `Content-Type: text/plain`, and FastAPI's `await request.json()` does not care about the
+    # header -- so ANY web page the user visited could chain `/work` -> `/kill` and SIGTERM a
+    # process of its choosing. The only guard was a substring test on the process's command line.
+    #
+    # `FLEETVIEW_BOARD_KEY` is a shared secret on that pair, following the pattern the executor
+    # relay already uses (`FLEETVIEW_EXECUTOR_KEY`). It is UNLIKE the executor key in one way that
+    # matters: the BROWSER must present it, so it cannot be a secret in the cryptographic sense --
+    # anything the page can read, a page can leak. What it buys is that a drive-by page cannot
+    # forge the call without first reading this app's own memory, and it makes the tampering
+    # deliberate rather than accidental.
+    #
+    # THE HONEST GAP, stated rather than implied: this is not user authentication. On loopback,
+    # with this board as the only client, it raises the bar from "any page" to "a page that can
+    # read the board's key". Real identity is the estate's own C4/C5 work and is not claimed here.
+    #
+    # `/work` GET stays open: it is a read of non-sensitive telemetry (branch, step, pid), the
+    # board polls it for display, and requiring a key on a read would break every viewer without
+    # closing anything -- the write is what is destructive.
+    def _check_board_key(x_board_key: str | None) -> None:
+        import os as _os
+
+        expected = _os.environ.get("FLEETVIEW_BOARD_KEY")
+        key_file = _os.environ.get("FLEETVIEW_BOARD_KEY_FILE")
+        if not expected and key_file:
+            try:
+                expected = Path(key_file).read_text().strip() or None
+            except FileNotFoundError:
+                expected = None
+        # UNSET MEANS NO ENFORCEMENT, deliberately: a laptop run must keep working with no vault
+        # loaded, and the alternative -- a service that refuses to start -- is worse for the case
+        # this rule actually protects (a public deployment). The estate's secrets work is what sets
+        # it in the cluster, and the log warns so an unset key is visible rather than assumed.
+        if expected and x_board_key != expected:
+            raise HTTPException(status_code=401, detail="bad or missing board key")
+
+    # WHAT EACH SESSION IS WORKING ON. GET reads it; POST is the session's own report.
+    @app.get(routes.WORK_PATH)
+    def work_get():
+        body, status = routes.work_envelope()
+        return JSONResponse(content=body, status_code=status)
+
+    @app.post(routes.WORK_PATH)
+    async def work_post(request: Request, x_board_key: str | None = Header(default=None)):
+        # `/work` writes the PID that `/kill` will signal, so it is half of the destructive chain
+        # even though it is not destructive itself.
+        _check_board_key(x_board_key)
+        try:
+            payload = await request.json()
+        except Exception:  # noqa: BLE001
+            return JSONResponse(content={"error": "body must be JSON"}, status_code=400)
+        body, status = routes.post_work(payload if isinstance(payload, dict) else {})
+        return JSONResponse(content=body, status_code=status)
+
+    # THE HARD STOP. SIGTERM against the PID the session reported; for a rogue or wedged agent
+    # that will never reach the turn boundary /stop waits for.
+    @app.post(routes.KILL_PATH)
+    async def kill_post(request: Request, x_board_key: str | None = Header(default=None)):
+        _check_board_key(x_board_key)
+        try:
+            payload = await request.json()
+        except Exception:  # noqa: BLE001
+            return JSONResponse(content={"error": "body must be JSON"}, status_code=400)
+        body, status = routes.kill_envelope(payload if isinstance(payload, dict) else {})
+        return JSONResponse(content=body, status_code=status)
+
+    @app.post(routes.REPLIES_PATH)
+    async def replies_post(request: Request):
+        try:
+            payload = await request.json()
+        except Exception:  # noqa: BLE001 -- a body that is not JSON never reached a session
+            return JSONResponse(content={"error": "body must be JSON"}, status_code=400)
+        body, status = routes.post_reply(payload if isinstance(payload, dict) else {})
         return JSONResponse(content=body, status_code=status)
 
     @app.get(routes.TRACE_PATH)

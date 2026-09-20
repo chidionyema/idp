@@ -27,14 +27,271 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
-from . import engine
+from . import engine, turnlog
 
 app = FastAPI(title="sovereign voice")
+
+# CORS FOR THE BACKSTAGE ORIGIN, because the voice socket cannot go through Backstage's proxy.
+#
+# Backstage's proxy-backend (0.6.16) is HTTP-only: it forwards requests, not upgrades, so a
+# WebSocket to /voice/stream cannot be proxied the way /fleetview is. The Reactor therefore dials
+# this process directly, which makes it a cross-origin call from localhost:3100, and without these
+# headers the browser blocks it before a single frame moves.
+#
+# The allowed origins are LOOPBACK ONLY. This is a local development service; opening it to `*`
+# would let any page in the browser open a microphone-bearing socket to the estate's voice engine.
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3100",
+        "http://127.0.0.1:3100",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
+)
+
+# THE VAD AND ONNX ASSETS, SERVED FROM THIS PROCESS.
+#
+# They were loaded from jsdelivr until 2026-09-19, when the page failed on the founder's own
+# machine with "Cannot read properties of undefined (reading 'MicVAD')" while loading perfectly
+# in a headless test -- a browser-side block that the server cannot see and therefore cannot
+# explain. A voice interface that needs a third-party CDN to be reachable is not a voice
+# interface, so the eight files now ship in ./static and are served from here. The directory is
+# optional: a checkout without it still serves the page, and the browser console says what is
+# missing rather than the socket dying silently.
+_STATIC = __import__("pathlib").Path(__file__).parent / "static"
+if _STATIC.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
+
+
+@app.get("/log")
+def voice_log(limit: int = 50):
+    """Every voice turn, newest first -- the instrument for latency and friction.
+
+    WHY THIS EXISTS. The founder, 2026-09-20: "often i have to repeat myself many times -- you need
+    to have logs so you can monitor the latency and friction of all voice comms and troubleshoot
+    and address all frictions." Nothing recorded a turn until now.
+    """
+    return {"turns": turnlog.recent(limit)}
+
+
+@app.get("/log/summary")
+def voice_log_summary(limit: int = 200):
+    """The friction numbers: empty rate, median first-clause latency, per-voice speed.
+
+    The view to open when something feels wrong. `empty_rate` is the one behind "I had to say it
+    again"; `first_clause_median_s` is what a person experiences as "it is slow".
+    """
+    return turnlog.summary(limit)
+
+
+@app.get("/voices")
+def voices():
+    """Every voice this host can speak with, so the choice belongs to the person listening.
+
+    WHY THIS ROUTE EXISTS. Choosing a voice was an edit to engine.py and a restart -- so the
+    founder was told to pick between two voices somebody else had already narrowed to, and said,
+    correctly, "why do i have to take my pick". Both engines ship 60+ voices between them; there
+    was never a reason to offer two.
+
+    KOKORO'S LIST IS POPULATED EVEN WHEN IT IS NOT LIVE.
+    Measured 2026-09-19: the founder opened the picker looking for the kokoro voice he had been
+    using and it was not there -- because the list was read from `m.tts`, which is None until the
+    model loads, and the model only loads when kokoro is selected. So the way to find a kokoro
+    voice was to already be using one. The catalogue is now read from the model's own voice file,
+    which needs no inference session, so all 54 names are listed on a fresh process.
+    """
+    import subprocess  # noqa: PLC0415
+
+    m = engine.models()
+    kokoro: list[str] = []
+
+    # From the loaded model when there is one...
+    if m.tts is not None:
+        try:
+            kokoro = sorted(m.tts.get_voices())
+        except Exception:  # noqa: BLE001 -- a model that cannot list voices still speaks
+            kokoro = []
+
+    # ...otherwise from the voices FILE, which is a torch .pt -- and a .pt is a ZIP ARCHIVE, so
+    # its voice names are just its member filenames. Reading the directory listing gives all 54
+    # names with no onnxruntime session and no 350MB model load, and without installing torch
+    # (a 2GB dependency) purely to list strings.
+    if not kokoro:
+        try:
+            import zipfile  # noqa: PLC0415
+
+            with zipfile.ZipFile(engine.KOKORO_VOICES) as z:
+                kokoro = sorted(
+                    n[:-4] for n in z.namelist() if n.endswith(".npy")
+                )
+        except Exception:  # noqa: BLE001 -- an unreadable file is not fatal; the list is empty
+            kokoro = []
+
+    # macOS voices. The novelty entries are filtered by name: they are real installed voices that
+    # say "Doo da doo da dum" and are not candidates for reading a fleet report aloud.
+    NOVELTY = {
+        "Albert", "Bad News", "Bahh", "Bells", "Boing", "Bubbles", "Cellos", "Fred",
+        "Good News", "Jester", "Junior", "Organ", "Superstar", "Trinoids", "Whisper",
+        "Wobble", "Zarvox",
+    }
+    macos: list[str] = []
+    if os.path.exists("/usr/bin/say"):
+        try:
+            out = subprocess.run(
+                ["/usr/bin/say", "-v", "?"], capture_output=True, text=True, timeout=10
+            ).stdout
+            for line in out.splitlines():
+                # `Name (English (UK))   en_GB   # example`
+                head = line.split("#")[0].strip()
+                if not head:
+                    continue
+                parts = head.split()
+                if len(parts) < 2:
+                    continue
+                locale = parts[-1]
+                name = " ".join(parts[:-1]).strip()
+                if not locale.startswith("en_") or name in NOVELTY:
+                    continue
+                macos.append(name)
+        except Exception:  # noqa: BLE001
+            macos = []
+
+    return {
+        "engine": m.tts_engine,
+        "current": {
+            "engine": m.tts_engine,
+            "kokoro": engine.KOKORO_VOICE,
+            "say": engine.SAY_VOICE,
+            "piper": engine.PIPER_VOICE,
+        },
+        "kokoro": kokoro,
+        "say": sorted(set(macos)),
+        # Piper voices present on this host. Listed from DISK, so the picker is complete whether or
+        # not a voice has been used yet -- the same fault that hid the Kokoro voices until one was
+        # already selected, and which the piper branch of /voice/select would otherwise repeat.
+        "piper": engine.piper_voices(),
+    }
+
+
+@app.post("/voice/preview")
+async def preview_voice(payload: dict):
+    """Speak one fixed sentence in a candidate voice, WITHOUT making it live.
+
+    WHY A PREVIEW SEPARATE FROM /voice/select. Auditioning a voice should not change the voice
+    mid-conversation, and it should not require applying first and undoing after. This renders one
+    sentence and returns raw Float32 24kHz PCM -- the same format the socket sends -- so the
+    browser plays it through the same code path it uses for a real answer. What you hear in the
+    preview is exactly what you will hear on a turn.
+    """
+    m = engine.models()
+    want_engine = str(payload.get("engine") or "").strip().lower()
+    want_voice = str(payload.get("voice") or "").strip()
+    if want_engine not in ("say", "kokoro", "piper") or not want_voice:
+        return JSONResponse(
+            content={"error": "engine ('say'|'kokoro') and voice are required"}, status_code=400
+        )
+
+    sample = str(payload.get("text") or "").strip() or (
+        "Four agents are stuck, all paused. Two on the harness audit, two on the commit."
+    )
+    loop = asyncio.get_running_loop()
+
+    if want_engine == "say":
+        if not os.path.exists("/usr/bin/say"):
+            return JSONResponse(content={"error": "no /usr/bin/say here"}, status_code=400)
+        pcm = await loop.run_in_executor(None, engine.synthesise_say_with, want_voice, sample)
+    elif want_engine == "piper":
+        pcm = await loop.run_in_executor(None, engine.synthesise_piper_with, want_voice, sample)
+    else:
+        # LOAD KOKORO ON DEMAND FOR A PREVIEW TOO.
+        #
+        # It returned 503 here when the model was not loaded, which made the picker show 54
+        # kokoro voices that could not be auditioned until one had already been applied -- the
+        # same "you must already be using it to choose it" fault that hid af_heart in the first
+        # place. The first kokoro preview pays the model load (~7s); every later one does not.
+        if m.tts is None:
+            await loop.run_in_executor(None, engine.ensure_kokoro)
+        if m.tts is None:
+            return JSONResponse(
+                content={"error": "kokoro model is unavailable on this host"}, status_code=503
+            )
+        pcm = await loop.run_in_executor(None, engine.synthesise_kokoro_with, want_voice, sample)
+
+    if not pcm:
+        return JSONResponse(content={"error": "synthesis failed"}, status_code=502)
+    # Raw PCM, not JSON: the browser decodes it straight into an AudioBuffer, the same as a turn.
+    return Response(content=pcm, media_type="application/octet-stream")
+
+
+@app.post("/voice/select")
+async def select_voice(payload: dict):
+    """Switch the speaking voice at runtime. No restart, no edit, no deploy.
+
+    THE POINT IS THAT THE PERSON LISTENING CHOOSES. Picking a voice was an edit to engine.py plus
+    a process restart, which turned a 60-option choice into a two-option ultimatum. This route
+    takes {engine: "say"|"kokoro", voice: "..."} and returns the state now live.
+
+    Kokoro's model is loaded lazily on first use here, because a host that prefers a macOS voice
+    should never pay the 350MB model load to be told it can also use Kokoro.
+    """
+    m = engine.models()
+    want_engine = str(payload.get("engine") or "").strip().lower()
+    want_voice = str(payload.get("voice") or "").strip()
+    if want_engine not in ("say", "kokoro", "piper"):
+        return JSONResponse(
+            content={"error": "engine must be 'say' or 'kokoro'"}, status_code=400
+        )
+    if not want_voice:
+        return JSONResponse(content={"error": "voice is required"}, status_code=400)
+
+    if want_engine == "piper":
+        if not engine.piper_voices():
+            return JSONResponse(
+                content={"error": f"no Piper voices in {engine.PIPER_DIR}"}, status_code=400
+            )
+        engine.PIPER_VOICE = want_voice
+        m.tts_engine = "piper"
+        m.tts_model = f"piper:{want_voice}"
+        return {"engine": "piper", "voice": want_voice}
+
+    if want_engine == "say":
+        if not os.path.exists("/usr/bin/say"):
+            return JSONResponse(
+                content={"error": "no /usr/bin/say on this host"}, status_code=400
+            )
+        engine.SAY_VOICE = want_voice
+        m.tts_engine = "say"
+        m.tts_model = f"say:{want_voice}"
+        return {"engine": "say", "voice": want_voice}
+
+    # kokoro: load the model on first request for this engine.
+    if m.tts is None:
+        # In a thread: the load is tens of seconds on this class of CPU and must not block the
+        # event loop, or every other socket in the process stalls while a voice is chosen.
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, engine.ensure_kokoro)
+
+    if m.tts is None:
+        return JSONResponse(
+            content={"error": "kokoro model is not available on this host"}, status_code=503
+        )
+    engine.KOKORO_VOICE = want_voice
+    m.tts_engine = "kokoro"
+    m.tts_model = os.path.basename(engine.KOKORO_MODEL)
+    return {"engine": "kokoro", "voice": want_voice}
 
 
 @app.get("/healthz")
@@ -50,7 +307,11 @@ def healthz():
     return {
         "ready": m.ready,
         "asr": m.asr is not None,
-        "tts": m.tts is not None,
+        # `tts` must be true for EITHER engine, not just Kokoro. It read `m.tts is not None`,
+        # which is the Kokoro object -- so selecting the faster macOS engine would have made this
+        # report `tts: false` on a host that can speak perfectly well.
+        "tts": m.tts_engine is not None,
+        "tts_engine": m.tts_engine,
         "tts_model": m.tts_model,
         "load_seconds": m.load_seconds,
         "errors": m.errors,
@@ -65,7 +326,18 @@ def index():
     from pathlib import Path
 
     page = Path(__file__).parent / "client.html"
-    return HTMLResponse(page.read_text() if page.exists() else "<h1>client.html missing</h1>")
+    body = page.read_text() if page.exists() else "<h1>client.html missing</h1>"
+    # NO-CACHE ON THE PAGE ITSELF.
+    #
+    # Measured 2026-09-19: the founder's browser kept running an old client.html for many
+    # reloads while the server had long since moved on -- so a fix shipped, was verified on the
+    # server, and never reached the person. The page is the one file whose every edit must land
+    # immediately, so it is served no-store rather than left to the browser's heuristics. The
+    # /static/ assets are versioned by query string (?v=2) and stay cacheable.
+    return HTMLResponse(
+        body,
+        headers={"Cache-Control": "no-store, must-revalidate", "Pragma": "no-cache"},
+    )
 
 
 @app.websocket("/voice/stream")
@@ -81,29 +353,50 @@ async def voice_stream(websocket: WebSocket):
         except Exception:  # noqa: BLE001 -- the peer is gone; the loop below will notice
             pass
 
-    async def pipeline(question: str) -> None:
-        """Answer one utterance, clause by clause, speaking each as it arrives."""
+    async def pipeline(question: str, log: "turnlog.Turn") -> None:
+        """Answer one utterance, clause by clause, speaking each as it arrives.
+
+        `log` ACCUMULATES THE TIMINGS. Before this, every number here was computed, sent to the
+        browser, displayed for a moment, and lost -- so "I had to repeat myself" and "it is slow"
+        were unfalsifiable. The turn is now written to `voice_turns` whatever happens, including
+        when it is interrupted.
+        """
         turn_started = time.time()
         first_audio: float | None = None
         spoken: list[str] = []
+        m = engine.models()
+        log.engine = m.tts_engine or ""
+        log.voice = m.tts_model or ""
         try:
             async for clause in engine.llm_clauses(question, history):
+                # THE FIRST CLAUSE IS THE LATENCY. Marked before synthesis, because from the
+                # person's side "it started answering" begins when the text exists, and the
+                # synthesis time is measured separately below.
+                log.first_clause()
                 # Synthesis is CPU-bound and blocks; a thread keeps the socket responsive so a
                 # barge-in arriving DURING synthesis is still seen.
                 loop = asyncio.get_running_loop()
+                tts_started = time.time()
                 pcm = await loop.run_in_executor(None, engine.synthesise, clause)
+                log.tts_s += time.time() - tts_started
                 if first_audio is None:
                     first_audio = round(time.time() - turn_started, 3)
                 if pcm:
                     await websocket.send_bytes(pcm)
                 await send_json({"type": "clause", "text": clause})
                 spoken.append(clause)
+                log.clauses += 1
         except asyncio.CancelledError:
             # BARGE-IN. The person is talking. Report the interruption honestly and re-raise so
             # the task really is dead rather than merely quiet.
+            log.outcome = "interrupted"
+            log.detail = " ".join(spoken)[:200]
+            turnlog.record(log)
             await send_json({"type": "interrupted", "after": " ".join(spoken)})
             raise
         else:
+            log.finished()
+            turnlog.record(log)
             history.append({"role": "user", "content": question})
             history.append({"role": "assistant", "content": " ".join(spoken)})
             del history[:-8]
@@ -152,6 +445,18 @@ async def voice_stream(websocket: WebSocket):
             loop = asyncio.get_running_loop()
             transcript, asr_seconds = await loop.run_in_executor(None, engine.transcribe, pcm)
             if not transcript:
+                # AN EMPTY TRANSCRIPT IS THE FRICTION ITSELF -- the person spoke and nothing came
+                # back. Counted, so "I had to say it three times" becomes a number rather than a
+                # complaint.
+                turnlog.record(
+                    turnlog.Turn(
+                        started=started,
+                        asr_s=asr_seconds,
+                        words=0,
+                        outcome="empty",
+                        detail=f"{round(len(pcm) / 4 / engine.ASR_SAMPLE_RATE, 2)}s of audio produced no words",
+                    )
+                )
                 await send_json({"type": "empty"})
                 continue
 
@@ -165,9 +470,10 @@ async def voice_stream(websocket: WebSocket):
                 }
             )
 
+            log = turnlog.Turn(started=started, asr_s=asr_seconds, words=len(transcript.split()))
             if current and not current.done():
                 current.cancel()
-            current = asyncio.create_task(pipeline(transcript))
+            current = asyncio.create_task(pipeline(transcript, log))
 
     except WebSocketDisconnect:
         pass

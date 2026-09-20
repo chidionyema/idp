@@ -130,6 +130,14 @@ def _estate_db_sessions(now: dt.datetime | None = None) -> list[dict[str, Any]]:
             {
                 "session_id": f"{r['provider']}:{r['id']}",
                 "runtime": r["provider"],
+                # THE MODEL, WHICH WAS QUERIED AND THROWN AWAY.
+                #
+                # `s.model` is in the SELECT above and never reached the output, so the board could
+                # not say whether an agent was running deepseek-v4-pro or a flash model -- which is
+                # the difference between a long deliberation and a quick check, and the first thing
+                # asked about a session that is behaving oddly. Found 2026-09-20 answering "should
+                # be able to see underlying model also as well as harness".
+                "model": r["model"] or meta.get("model") or "",
                 "task": meta.get("task") or "",
                 "state": state,
                 "activity": _activity_from_evidence(

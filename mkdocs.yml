@@ -27,6 +27,10 @@ nav:
       - AI model stack: explanation/architecture/model-stack.md
   - Own models, every experiment: reference/forge/index.md
   - Estate showcase: SHOWCASE.md
+  - "The estate, consolidated":
+      - One index of every estate document: estate/INDEX.md
+      - Snapshot for the external consultant: estate/ESTATE-SNAPSHOT-FOR-CONSULTANT.md
+      - Every platform layer (all 105): estate/PLATFORM-LAYERS-FULL-INVENTORY.md
   - Conscience: CONSCIENCE.md
   - "Founder: shipped, changed for you, stuck": FOUNDER.md
   - "Union: the founder and the crew":
