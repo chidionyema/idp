@@ -52,10 +52,16 @@ _PLUGINS = os.path.join(
 sys.path.insert(0, os.path.abspath(_PLUGINS))
 from estate_executor import (  # noqa: E402
     CEILING_SEC,
+    LocalExecutor,
     execute_command,
     read_job,
     simulate_command,
 )
+
+# The daemon's own job registry, in-process on purpose: this handler IS the far side, so its
+# `submit()` must not open a second connection to the socket it is currently serving. Using the
+# socket-backed `Executor` here recursed until the caller timed out (measured 2026-09-20).
+_LOCAL_REGISTRY = LocalExecutor()
 
 # The Deterministic Verifier, imported rather than reimplemented (LAW 43). It is a module in
 # `sovereign/`, so it is reached by PATH for the same reason the door is: a package import would
@@ -316,7 +322,17 @@ class Handler(socketserver.StreamRequestHandler):
                 }
             )
         elif verb == "read":
-            self._reply({"ok": True, "result": read_job(request.get("job_id", ""))})
+            self._reply(
+                {
+                    "ok": True,
+                    # THE LOCAL REGISTRY, or this handler calls back into the socket it is serving
+                    # and deadlocks until the caller's timeout expires. Same reason `_execute`
+                    # passes it.
+                    "result": read_job(
+                        request.get("job_id", ""), executor=_LOCAL_REGISTRY
+                    ),
+                }
+            )
         elif verb == "propose_patch":
             self._reply(self._propose_patch(request))
         elif verb == "verify":
@@ -371,6 +387,10 @@ class Handler(socketserver.StreamRequestHandler):
             cwd=request.get("cwd"),
             ceiling_sec=request.get("ceiling_sec", CEILING_SEC),
             mutates_live_worktree=bool(request.get("mutates_live_worktree", False)),
+            # THE DAEMON IS ALREADY THE FAR SIDE. Passing no executor would send `submit()` back
+            # over the socket this handler is serving, and the daemon would wait on its own reply
+            # until the ceiling expired. `_LOCAL_REGISTRY` mints the id in-process instead.
+            executor=_LOCAL_REGISTRY,
         )
         if not verdict.get("accepted"):
             # Relay `refused`/`fatal`/`reason` when the door set them. The feature grades these
