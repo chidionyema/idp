@@ -274,6 +274,9 @@ def execute_command(
         resolved_cwd = cwd
 
     job = executor.submit(command, cwd=resolved_cwd, ceiling_sec=effective)
+    # Evidence fires only after acceptance is certain, and never blocks it (fail-open). The
+    # accepted envelope is the door's answer; the receipt is a side effect.
+    _record_action(job.job_id, command)
     return {
         "accepted": True,
         "job_id": job.job_id,
@@ -347,6 +350,50 @@ def _report_failure(
         }
         client.xadd(stream, {"payload": json.dumps(payload)})
     except Exception:  # noqa: S110, BLE001 - fail-open: running commands outranks shipping telemetry
+        pass
+
+
+def _record_action(job_id: str, command: str, event_type: str = "mcp.tools/call") -> None:
+    """Fire-and-forget one agent action into the estate's future-proof Aevum ledger.
+
+    The ONE bridge that makes platform/observability/aevum.yaml operational. Until 2026-09-20
+    nothing on the hot path recorded an agent action there -- the only producer was
+    bin/idp-evidence-write's per-repo unsigned hash chain, which the founder's order ("get Aevum
+    wired for all current and future repos") rejected. This posts to the aevum Service's
+    /v1/evidence route (added in aevum_factory.py, one pod, one signing key) so every accepted
+    command becomes a signed, hash-chained receipt in the Postgres ledger.
+
+    FAIL-OPEN, for the same reason as _report_failure: recording is evidence, and evidence must
+    never block execution (LAW 38). An unreachable aevum pod is a WARN and the job still runs.
+    It does NOT write a local file in its place -- a local copy that "looks recorded" while the
+    ledger is empty is exactly the defect the recorder docstring names (a chain that reports
+    valid while recording nothing).
+    """
+    import urllib.request  # lazy: nothing imported unless a record is actually attempted
+
+    endpoint = os.environ.get(
+        "AEVUM_EVIDENCE_URL", "http://aevum.observability.svc:8000/v1/evidence"
+    )
+    try:
+        data = json.dumps(
+            {
+                "event_type": event_type,
+                "actor": os.environ.get("AEVUM_ACTOR", "estate-executor"),
+                "payload": {
+                    "job_id": job_id,
+                    "command": command,
+                },
+            }
+        ).encode()
+        request = urllib.request.Request(
+            endpoint,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=1.0) as _answer:  # noqa: S310
+            pass
+    except Exception:  # noqa: S110, BLE001 - evidence never blocks execution
         pass
 
 
