@@ -112,11 +112,59 @@ def plan() -> int:
 
 
 def status() -> int:
-    if MARKER.exists():
-        print(f"REVOKED: the agent has no bash access (marker {MARKER})")
-    else:
+    """The three states, and why each has its own exit code.
+
+    THE FIRST VERSION OF THIS RETURNED 0 FOR ALL THREE, measured 2026-09-20. That made OPEN -- the
+    breach this whole file exists to end -- indistinguishable from REVOKED at the one place a caller
+    can read: the exit code. `bin/idp-rules` decides a case with `returncode == 0` for `expect: pass`
+    and `!= 0` for `expect: refuse`, so a gate that always exits 0 can be graded neither way. It was
+    therefore unprovable, and an unprovable gate is the same hand-kept record as the ones this file
+    was written to replace.
+
+      0  REVOKED  the marker exists -- the access is gone. This is the safe state.
+      1  OPEN     no marker -- the agent still holds bash. THIS IS THE BREACH, and it now FAILS.
+      2  BLIND    the state could not be read at all (the directory exists but cannot be opened,
+                  or the probe raised). BLIND never claims a verdict (LAW 28): a machine that
+                  cannot judge has not found a defect, and it has not found safety either.
+
+    WHY A MISSING DIRECTORY IS OPEN AND NOT BLIND. Corrected the same day, after this file first
+    reported BLIND on the founder's own machine. `--apply` is what creates STATE_DIR, so on a machine
+    where the revocation was NEVER APPLIED the directory is absent -- and that absence is not an
+    inability to judge, it is the definite finding that the agent holds bash. It is the common case,
+    not the exotic one: it is the state of every machine before the marker is written. Answering
+    BLIND there would hide the breach behind an excuse, and the breach is the thing this file exists
+    to announce. Only a directory that IS there and cannot be read is genuinely undecidable.
+
+    WHY BLIND IS NOT 0. `exists()` swallows a permission error and answers False, so the earlier
+    version reported OPEN for a directory it could not open -- it failed OPEN, in the direction that
+    permits. That is the `pgrep -c -x pi` defect this file's own comment warns about (a probe that
+    counted 0 while seven sessions ran, turning a refusal into a green light). Nothing here may
+    resolve an unreadable state into a permission again.
+    """
+    try:
+        if MARKER.is_file():
+            print(f"REVOKED: the agent has no bash access (marker {MARKER})")
+            return 0
+        if STATE_DIR.exists() and not STATE_DIR.is_dir():
+            print(
+                f"BLIND: cannot read agent access state: {STATE_DIR} exists but is not a directory",
+                file=sys.stderr,
+            )
+            return 2
+        if STATE_DIR.is_dir():
+            # Reachable and empty of the marker: judge it, readably.
+            if not os.access(STATE_DIR, os.R_OK):
+                print(
+                    f"BLIND: cannot read agent access state: {STATE_DIR} is not readable",
+                    file=sys.stderr,
+                )
+                return 2
+        # No directory, or a readable directory with no marker: the agent holds bash. Definite.
         print(f"OPEN: the agent still has bash access (no marker at {MARKER})")
-    return 0
+        return 1
+    except OSError as exc:
+        print(f"BLIND: cannot read agent access state: {exc}", file=sys.stderr)
+        return 2
 
 
 def apply() -> int:
@@ -165,20 +213,84 @@ def revert() -> int:
 
 
 def self_test() -> int:
-    """A script that has never executed is not built (LAW 45). This proves it runs."""
-    import io
-    from contextlib import redirect_stdout
+    """A script that has never executed is not built (LAW 45). This proves it runs.
 
-    buf = io.StringIO()
-    with redirect_stdout(buf):
-        status()
-    said = buf.getvalue().strip()
-    head = said.split(":", 1)[0]
-    if head in ("REVOKED", "OPEN"):
-        print(f"ok    idp-agent-no-bash reports a state: {said}")
-        return 0
-    print("FAIL  idp-agent-no-bash could not report a state", file=sys.stderr)
-    return 1
+    And it proves the EXIT CODES, not just the words: the defect this replaced printed the right
+    three sentences and returned 0 for every one of them, so a check that only read stdout would
+    have called it healthy. Each state is exercised against a directory this function owns.
+    """
+    import io
+    import tempfile
+    from contextlib import redirect_stderr, redirect_stdout
+
+    global STATE_DIR, MARKER
+    keep_dir, keep_marker = STATE_DIR, MARKER
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            cases: list[tuple[str, int, str]] = []
+
+            # REVOKED: a marker is present.
+            STATE_DIR = Path(tmp)
+            MARKER = STATE_DIR / "BASH_REVOKED"
+            MARKER.write_text("revoked_by=self-test\n")
+            buf, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(buf), redirect_stderr(err):
+                cases.append(("REVOKED", status(), buf.getvalue().strip()))
+
+            # OPEN: no marker, but a readable directory -- the breach, and it must be nonzero.
+            MARKER.unlink()
+            buf, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(buf), redirect_stderr(err):
+                cases.append(("OPEN", status(), buf.getvalue().strip()))
+
+            # BLIND: a directory that exists but is not a directory at all -- undecidable.
+            # A MISSING directory is NOT this case: it is OPEN, and the next block proves it.
+            STATE_DIR = Path(tmp) / "absent"
+            MARKER = STATE_DIR / "BASH_REVOKED"
+            buf, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(buf), redirect_stderr(err):
+                missing = status()
+
+            # A missing directory is a definite reading, not an inability to judge.
+            if missing == 1:
+                print(
+                    "ok    idp-agent-no-bash: a machine where --apply never ran reports OPEN, not BLIND"
+                )
+            else:
+                print(
+                    f"FAIL  idp-agent-no-bash: a missing state dir said {missing}, wanted 1 (OPEN)",
+                    file=sys.stderr,
+                )
+                return 1
+
+            # A path that exists but is a FILE where a directory belongs: genuinely undecidable.
+            notdir = Path(tmp) / "not-a-dir"
+            notdir.write_text("this is a file, not a directory\n")
+            STATE_DIR = notdir
+            MARKER = STATE_DIR / "BASH_REVOKED"
+            buf, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(buf), redirect_stderr(err):
+                cases.append(("BLIND", status(), (buf.getvalue() + err.getvalue()).strip()))
+    finally:
+        STATE_DIR, MARKER = keep_dir, keep_marker
+
+    wanted = {"REVOKED": 0, "OPEN": 1, "BLIND": 2}
+    bad = [
+        f"{name} said {code}, wanted {wanted[name]}"
+        for name, code, _ in cases
+        if code != wanted[name] or not cases
+    ]
+    for name, code, said in cases:
+        head = said.split(":", 1)[0]
+        if head != name:
+            bad.append(f"{name} reported {head!r}")
+    if bad:
+        print("FAIL  idp-agent-no-bash exit codes: " + "; ".join(bad), file=sys.stderr)
+        return 1
+    print(
+        "ok    idp-agent-no-bash: REVOKED=0, OPEN=1 (the breach fails), BLIND=2 (unreadable is not a verdict)"
+    )
+    return 0
 
 
 def main(argv: list[str]) -> int:
