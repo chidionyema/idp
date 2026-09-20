@@ -1,46 +1,23 @@
-# AGENTS.md — the rules of this repository, and the gate that reads them
+# AGENTS.md — the rules of this repository
 
 This file is the version-controlled boundary for agent work in `idp` (crew #180, CP6).
 The estate's laws live in `~/AGENTS.md`; this file holds only what is specific to this
-repo. Each row names the gate that enforces it and the two fixtures that document what the
-gate calls bad and good.
+repo.
 
-The rung that re-ran every gate against those two fixtures on every single run was deleted on
-2026-09-04 (founder: "run each of the nine gates in the AGENTS.md table against its two
-fixtures ... this is stupid"). It graded this file's own fixtures, so no defect in the estate
-could ever fail it and no change to the estate could ever pass it differently. The gates
-themselves still run, against the repository, where a real defect can trip them.
-
-Every rule lives in `rules.yaml`, one row each: the statement, the law it serves, the argv that
-grades it, the fixture pair that proves it both ways, and the planes it is enforced on (the
-repository's CI, a session hook, the cluster's admission controller). `bin/idp-rules` is the only
-thing that reads it -- `run` grades the repository, `cluster` checks the admission policy a row
-names is on disk, `session` grades the files a hook hands it, and `render-agents-md` writes the
-table below. The table is generated: edit `rules.yaml`, not these lines. `bin/idp-ci` runs
-`bin/idp-rules render-agents-md --check`, so a row and its rule cannot drift apart.
-
-Before 2026-09-07 each rule was a bash rung in `bin/idp-ci`, a hand-written row here and, for
-several, a third copy inside `bin/policy-test` -- so a rule could be worded one way, graded
-another, and listed a third. Fifteen fixtures under `policy/fixtures` were named by no runner at
-all. Founder, the Unification Move: "Ruthless Deletion ... Do not leave them as dead code. Do not
-deprecate them. Eradicate them."
-
-The full generated rule table (85 rows) lives in `docs/policy/rules-table.md`, not here --
-it is re-graded by CI every run but no longer re-injected into agent context every turn
-(founder, 2026-09-14: it was ~32KB of the ~37KB in this file, loaded on every single turn
-for no reason). Open it when you need to look up a specific gate.
-
-Rules that are already types or tools, and so need no row: compose files must parse
-(`docker compose config`), the gateway config must match its release schema
-(`check-jsonschema`), every catalog entity must match the Backstage schema, and every
-script must pass `shellcheck`, every generator must be idempotent (two runs over one
-inventory, byte-identical), the generated catalogue must carry a relationship graph, and
-every entity reference in it must resolve to an entity something defines
+Rules here are already types or tools, and so need no registry row and no separate gate
+script: compose files must parse (`docker compose config`), the gateway config must match
+its release schema (`check-jsonschema`), every catalog entity must match the Backstage
+schema, every script must pass `shellcheck`, every generator must be idempotent (two runs
+over one inventory, byte-identical), the generated catalogue must carry a relationship
+graph, and every entity reference in it must resolve to an entity something defines
 (`bin/catalog-refcheck`, proved both ways in the same run). Those run unconditionally in
 `bin/idp-ci`.
 
-Adding a rule: add a row to `rules.yaml`, add both fixtures, run `bin/idp-rules render-agents-md`
-and `bin/idp-ci`. No new rung, no new gate script.
+There is no `rules.yaml`, no `bin/idp-rules`, and no generated rule table in this repo any
+more: the 100-row registry and its engine were deleted (via-negativa, 2026-09-20) because a
+registry that re-described rules already enforced as types and tools is a second copy that
+can drift, not an additional gate (AGENTS.md estate law: one of each layer). A rule is a
+rung in `bin/idp-ci`, not a row in a table.
 
 ## Andon cord: main must be green; never more than 3 red PRs (2026-09-17)
 
@@ -71,105 +48,41 @@ opened new PRs while existing ones were red and while main itself was failing.
 The pile-up made it impossible to tell whether any new code was broken or was
 just inheriting the baseline. This is the structural fix.
 
+## Done is operating, not pushed: a PR is only the beginning of done (2026-09-20)
+
+**Estate-wide. Applies to every agent, every tool, every workflow.**
+
+A commit is not done. A push is not done. **A PR open is only the beginning of
+done.** The only thing that ends a piece of work is the thing running in
+production, proven by a real log line — not by a green CI gate, not by an HTTP
+200, not by "the diff looks right."
+
+The full path from a change to done is:
+
+1. commit
+2. push → PR
+3. CI green
+4. merge to `main`
+5. `build-multiarch.yml` builds amd64 + arm64, Trivy, cosign → OCI tag
+6. Flux image-reflector polls → `image-automation` writes `flux/image-updates`
+7. `deploy-when-green` merges
+8. **operating in the cluster, evidenced by a production log line**
+
+Steps 1–7 are "built." Step 8 is "operating." They are different facts — say
+which one you mean, and never report a step as if it were the one after it
+(estate law: built and operating are different facts; proof, not assertion).
+A step is only reached when the one before it is measured green.
+
+This is the same rule as "proof, not assertion" and "a gate that cannot fail is
+not a gate," stated once so no agent can treat opening a PR as the finish line.
+The PR is the beginning of done; the production log line is done.
+
 ## Gateway-as-floor: agents emit events, the gateway writes (2026-09-17)
 
-**The gateway is the only writer. Agents have no write capability — not gated, not audited, not wrapped. Removed.**
-
-The harness (judge, PRM, Aevum, dod-guard, pareval, shadow-verify) existed before this rule but was bypassed at session start: every terminal, every Claude Code session, every CI runner was a direct writer with git credentials and a repo mount. Building N enforcement layers around N entry points is lossy — every new entry point is a new hole. This rule inverts the topology.
-
-**What agents may do:** emit an event to the gateway. That is the complete capability set.
-
-**What the gateway does:** on event receipt, materialize a fenced worktree (isolated per-event, no shared state), execute the plan, collect the diff, pass through the full judge/PRM/Aevum/dod-guard chain. Only after DoD v3 signs does anything touch a real branch.
-
-**What every UI becomes:** a gateway client. Terminal, Telegram, Backstage, phone, cron, CI — all emit events. None write. None self-verify. There is no "interactive writer."
-
-**Why this changes agent behavior structurally:** an agent with no git binary, no credentials, no repo mount cannot run tests and call it done, because it cannot run tests. It cannot push, because it cannot push. It can only propose. The gateway decides. The agent's self-model shifts from "worker with tools" to "planner that proposes work" — not as a policy, but because the substrate does not support the old model.
-
-**The migration:** replace every write capability (Claude Code hooks, CI runners, local shells, orchestration jobs) with a gateway client that calls `emit(event)`. The gateway, orchestrator, judge, Aevum, and dod-guard already exist — they were sitting behind a door everyone walked around. This removes the door.
-
-**The one implementation invariant:** worktrees are isolated per-event. Two concurrent proposals must never share a worktree — that would re-introduce the same race condition being eliminated from the agent side.
-
-### Enforcement: how write capability is physically removed
-
-Policy is bypassable. Physical removal is not. The enforcement path:
-
-1. **Agent sandbox:** agent processes run in a container (OrbStack/OCI) with no git binary, no credentials mounted, no repo volume. The only outbound socket is the gateway client endpoint. This is not a firewall rule — the binary does not exist in the image.
-2. **Gateway client only:** `bin/idp-gateway-emit <event-json>` is the one tool the sandbox exposes. It validates the event schema and posts to NATS. No other write path exists.
-3. **CI runners:** GitHub Actions runners for agent jobs use the same restricted image. Human-triggered jobs (deploys, rollbacks) use a separate runner class with explicit credential injection, audit-logged per run.
-
-### Enablement: what agents gain, not lose
-
-The gateway client is not a narrowing — it is a richer interface than raw git. Agents can:
-- Propose multi-step plans with dependencies, not just single diffs
-- Request shadow-verify runs against a fenced worktree before committing to a proposal
-- Subscribe to gateway events (watch a build, receive judge feedback, retry a step)
-- Query the estate twin for live cluster state without needing kubeconfig
-
-The constraint is on *writing verified work to a real branch*. Everything else — read, propose, observe, query — remains available and is expanded by the gateway's event model.
-
-### Break-glass: when the cluster is down (black plan)
-
-If the cluster is unavailable and the gateway itself cannot be reached, the estate needs a recovery path. That path must be **narrower, not wider**, than normal operation.
-
-**Break-glass protocol:**
-
-```bash
-# Step 1: mint a time-limited break-glass token (founder hardware key required)
-bin/idp-break-glass mint --reason "<one line>" --ttl 30m --scope recovery
-# Writes a signed token to ~/.local/state/idp/break-glass-token (expires in TTL)
-# Appends a gate.run receipt to .aevum/local.jsonl immediately
-
-# Step 2: agent recovery session starts in restricted mode
-IDP_BREAK_GLASS_TOKEN=$(cat ~/.local/state/idp/break-glass-token) claude
-# The session hook reads the token, enables write capability ONLY to recovery/ branch prefix
-# Every tool call is written to .aevum/local.jsonl before execution
-
-# Step 3: after recovery, post-mortem is mandatory
-# The break-glass token expiry automatically opens a post-mortem PR with the Aevum log
-```
-
-**What break-glass allows:**
-- Write to `recovery/*` branches only — no direct main, no feature branches
-- Run pre-approved recovery scripts: `bin/idp-workstation-bootstrap`, `bin/idp-oci-bootstrap`, `bin/idp-flux-reconcile-force`
-- Read cluster state via `bin/idp-kube` (read-only, same as normal agent access)
-- Emit events to NATS if the gateway is partially up
-
-**What break-glass never allows:**
-- `git push --force` to any branch
-- Direct `kubectl apply` (cluster writes still go through Flux)
-- Skipping the Aevum receipt for any action taken
-- Extending its own TTL
-
-**The post-mortem requirement:** every break-glass session automatically generates a PR titled `recovery/<date>-<reason>` containing the full Aevum log of every action taken. That PR must be reviewed and merged before another break-glass token can be minted. This is the accountability loop.
-
-### Agent-assisted cluster revival — Claude Code unrestricted
-
-When the cluster is down, the gateway is unreachable, and the estate needs to be revived, **Claude Code on the founder's machine is the recovery tool**. In this scenario the gateway-as-floor rule is explicitly suspended for the duration of the recovery session. This is not a loophole — it is the designed exception.
-
-**What triggers this:** the cluster is confirmed down (`bin/idp-kube` returns no nodes), the gateway pod is not running, and Flux cannot reconcile anything. Normal operation is impossible by definition.
-
-**How to start a recovery session:**
-
-```bash
-# Confirm the cluster is actually down (not just a probe failure)
-bin/idp-kube get nodes 2>&1
-bin/idp-kube get pods -n flux-system 2>&1
-
-# Start Claude Code in recovery mode — full write capability, Aevum-logged
-IDP_RECOVERY_MODE=1 claude
-# The session hook records a gate.run receipt at start: {gate_id: "break-glass", result: "open", plane: "recovery"}
-# Every subsequent tool call appends to .aevum/local.jsonl before execution
-```
-
-**What Claude Code can do in recovery mode:**
-- Full shell access, git, kubectl — everything needed to diagnose and fix
-- Push to `recovery/*` branches directly (Flux can reconcile from these)
-- Run `kubectl apply` for emergency patches if Flux itself is down
-- Restart pods, rotate secrets, re-seed vault, re-bootstrap OCI credentials
-
-**The one hard constraint:** every action taken must be committed to `.aevum/local.jsonl` before it executes. The session hook enforces this — if the receipt write fails, the tool call is blocked (LAW 38 exception: if the Aevum path itself is corrupted, the founder types `IDP_AEVUM_SKIP=1` explicitly at the terminal — never scripted).
-
-**After recovery:** a post-mortem PR is required within 24 hours. Title: `recovery/<date>-<reason>`. Must include the full `.aevum/local.jsonl` diff from the session. No new break-glass session opens until this PR is merged.
+The gateway is the only writer; agents have no write capability and emit events to it. The full
+rule — the harness it replaces (judge, PRM, Aevum, dod-guard, pareval, shadow-verify), the
+break-glass protocol, and the agent-assisted cluster revival exception — is
+`docs/reference/gateway-as-floor.md`.
 
 ## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
 
@@ -215,40 +128,21 @@ A question about estate state is one `mcp__estate__*` call, never a shell recon.
 tool is two calls (propose, execute), execute refusing on a stale state hash. Extend `mcp/`; never
 add a second server. Full text: `docs/decisions/0006-the-platform-answers-for-itself-over-one-mcp.md`.
 
+### The tools, and how to call them when the door is shut
+
+`mcp/plugins/` exposes `get_estate_state`, `get_workload_state(app)`, `get_workload_logs(app, tail)`,
+`ask_holmes(q)`, `get_catalog_drift(rule)`, `recall`, and the propose/execute pairs. When
+`bin/idp-mcp-door` BLINDs on an unset `MCP_GATEWAY_KEY`, the plugin functions run against the
+local store — still one query, not a recon sweep. **When a peer's state is unknown, ask the peer**
+(the crew board), never their transcript: `~/.claude/projects/*.jsonl` records what a session
+believed, including beliefs it later corrected. Full text, with the 2026-09-19 incident that paid
+for it: `docs/reference/platform-queries.md`.
+
 ## Zero-trust agent cluster access (WJ.1, 2026-09-17)
 
-Agents get **read-only** cluster access through the JIT broker — no OCI login, no kubeconfig paste.
-
-```bash
-# Read cluster state (pods, logs, events) — the only thing agents may do
-bin/idp-kube get pods -n <namespace>
-bin/idp-kube logs -n <namespace> deployment/<name>
-bin/idp-kube get events -n <namespace> --sort-by=.lastTimestamp
-```
-
-**How it works:** `bin/idp-kube` calls `bin/idp-jit identity`, which presents `JIT_AGENT_KEY`
-(stored in `$XDG_STATE_HOME/idp/agent-key`, i.e. `~/.local/state/idp/agent-key`) to the broker's
-`/identity` door. The broker exchanges it for a one-hour `agent-reader` ServiceAccount token.
-That token is read-only — no create, no delete, no exec.
-
-**Provisioning the key on a new machine (founder only — not from an agent session):**
-```bash
-bin/idp-mac-secret-deliver --entry jit-broker --key JIT_AGENT_KEY \
-  --out ~/.local/state/idp/agent-key --service local
-```
-Requires an active OCI session (`bin/idp-oci-bootstrap` → one browser step). Full reference:
-`docs/reference/agent-identity.md`.
-
-**If `bin/idp-kube` fails with "no token" or "broker unavailable":** jit-broker is down.
-Check with `bin/idp-kube get pods -n jit`. The most likely cause is an admission policy
-blocking the broker's own pod — see below.
-
-**OTel injection exclusion — must never be removed:** `platform/edge/inject-otel-endpoint.yaml`
-excludes `jit/jit-broker` and `idp-agent/idp-engine` from the OTel env injection mutation.
-These workloads declare `OTEL_EXPORTER_OTLP_ENDPOINT` inline; the Kyverno `+(name)` add-if-absent
-patch conflicts with any existing `valueFrom` entries in the same env list (e.g. `POD_NAMESPACE`
-via `fieldRef`), causing a dry-run rejection that blocks Flux reconciliation and takes the broker
-down. Fixed in PR #3711 (2026-09-17). Any new OTel mutation policy must carry the same exclusion.
+Agents get **read-only** cluster access through the JIT broker — no OCI login, no kubeconfig paste:
+`bin/idp-kube get pods -n <namespace>`. Full path, provisioning, failure modes and the OTel
+injection exclusion that must never be removed: `docs/reference/agent-identity.md`.
 
 ## Living policy (crew#219 R38): the block below is code, not prose
 
@@ -275,7 +169,7 @@ usual env override (`sb config --lint` lists them).
 ```toml
 [capabilities]
 nondestructive = ["fs_commit", "fs_read", "git_status", "tool_result", "doc_commit", "budget_refill"]
-destructive = ["fs_delete", "git_push_force", "db_drop", "service_destroy", "rewind"]
+destructive = ["fs_delete", "git_push_force", "db_drop", "service_destroy", "rewind", "provision_paid_compute"]
 engine = ["fs_read", "fs_commit", "git_status", "tool_result", "doc_commit"]
 intake = ["fs_commit", "doc_commit"]
 shadow = ["fs_read"]
