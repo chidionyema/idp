@@ -66,10 +66,10 @@ spec:
             capabilities:
               drop: ["ALL"]
           resources:
-            # A MICRO REQUEST WITH A BURST LIMIT, per crew#584 zealot rule 1: a request over 250m
-            # reserves paid capacity around the clock, and this job runs for minutes. The LIMIT is
-            # what the benchmark needs, because a throttled container would measure the limit
-            # instead of the CPU.
+            # A MICRO REQUEST WITH A BURST LIMIT, per crew#584 zealot rule 1. The request reserves
+            # paid capacity around the clock; this job runs for minutes. The LIMIT is what the
+            # benchmark needs, because a throttled container would measure the limit instead of the
+            # CPU. So 100m of reservation and the whole node to burst into.
             requests:
               cpu: "100m"
               memory: 512Mi
@@ -81,23 +81,6 @@ spec:
             # and makes the timing depend on the neighbours rather than on the CPU.
             - name: OMP_NUM_THREADS
               value: "6"
-            # HOME AND PATH AGAINST THE WRITABLE VOLUME.
-            #
-            # Measured on the first ARM run, 2026-09-19:
-            #
-            #     ERROR: Could not install packages due to an OSError: [Errno 30]
-            #     Read-only file system: '/.local'
-            #
-            # `readOnlyRootFilesystem: true` is required by the cluster's security policies, and pip
-            # defaults to $HOME/.local. With HOME unset in this image it resolved to `/.local` on the
-            # read-only root, so the Job died before it measured anything. HOME now points at the
-            # emptyDir, and PATH picks up the scripts pip installs there.
-            - name: HOME
-              value: /tmp
-            - name: PATH
-              value: /tmp/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin
-            - name: PYTHONUSERBASE
-              value: /tmp/.local
             - name: HF_HOME
               value: /tmp/hf
             - name: VOICE_MODEL_CACHE
@@ -136,9 +119,7 @@ spec:
               awk '/MemTotal/{printf "%.1f GB RAM\n", $2/1048576}' /proc/meminfo
 
               echo "=== INSTALL ==="
-              # --user, explicitly: with a read-only root the only writable site is the user
-              # base, and saying so is more robust than relying on HOME being honoured by pip.
-              pip install --user --quiet --no-cache-dir onnxruntime kokoro-onnx numpy faster-whisper
+              pip install --quiet --no-cache-dir onnxruntime kokoro-onnx numpy faster-whisper
               python -c "import onnxruntime as o; print('ort', o.__version__, o.get_available_providers())"
 
               echo "=== MODELS ==="
@@ -193,4 +174,4 @@ spec:
       volumes:
         - name: tmp
           emptyDir:
-            sizeLimit: 24Gi
+            sizeLimit: 20Gi
