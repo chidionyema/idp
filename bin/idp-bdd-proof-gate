@@ -124,17 +124,19 @@ def live_pr() -> dict:
             raise RuntimeError(f"gh could not view PR #{pr_number}: {out.stderr.strip()[:200]}")
         return json.loads(out.stdout)
 
-    out = subprocess.run(
-        ["gh", "pr", "list", "--state", "all", "--limit", "1",
-         "--json", "number,title,body,headRefOid"],
-        cwd=root, capture_output=True, text=True, timeout=120,
+    # No event PR, so this is a local invocation -- and a local invocation has no pull request
+    # under test. The fallback used to grade whatever `gh pr list --limit 1` returned, which is
+    # the newest PR on the repository from ANY session or bot. Measured 2026-09-20: the bot's
+    # flux/image-updates PR #3812 opened mid-run, and `IDP_CI_FAST=1 bin/idp-ci` on an unrelated
+    # branch failed `bdd-proof` because that PR carries no BDD-PROOF block -- the same class of
+    # false-red the docstring above records being fixed once already, surviving in the fallback.
+    # BLIND is the honest answer: this gate cannot grade a PR it was not handed, and a verdict
+    # invented from an unrelated PR is worse than no verdict (LAW 38 -- a fence a correct
+    # machine cannot satisfy is an outage). Grading happens in CI, where the event names the PR.
+    raise RuntimeError(
+        "no pull request is named by this run (GITHUB_EVENT_PATH is unset), so there is no PR "
+        "to grade; bdd-proof is graded in CI, where the event names the pull request"
     )
-    if out.returncode != 0:
-        raise RuntimeError(f"gh could not list pull requests: {out.stderr.strip()[:200]}")
-    rows = json.loads(out.stdout or "[]")
-    if not rows:
-        raise RuntimeError("no pull request exists on this repository to grade")
-    return rows[0]
 
 
 def _self_test() -> int:
