@@ -1,46 +1,23 @@
-# AGENTS.md — the rules of this repository, and the gate that reads them
+# AGENTS.md — the rules of this repository
 
 This file is the version-controlled boundary for agent work in `idp` (crew #180, CP6).
 The estate's laws live in `~/AGENTS.md`; this file holds only what is specific to this
-repo. Each row names the gate that enforces it and the two fixtures that document what the
-gate calls bad and good.
+repo.
 
-The rung that re-ran every gate against those two fixtures on every single run was deleted on
-2026-09-04 (founder: "run each of the nine gates in the AGENTS.md table against its two
-fixtures ... this is stupid"). It graded this file's own fixtures, so no defect in the estate
-could ever fail it and no change to the estate could ever pass it differently. The gates
-themselves still run, against the repository, where a real defect can trip them.
-
-Every rule lives in `rules.yaml`, one row each: the statement, the law it serves, the argv that
-grades it, the fixture pair that proves it both ways, and the planes it is enforced on (the
-repository's CI, a session hook, the cluster's admission controller). `bin/idp-rules` is the only
-thing that reads it -- `run` grades the repository, `cluster` checks the admission policy a row
-names is on disk, `session` grades the files a hook hands it, and `render-agents-md` writes the
-table below. The table is generated: edit `rules.yaml`, not these lines. `bin/idp-ci` runs
-`bin/idp-rules render-agents-md --check`, so a row and its rule cannot drift apart.
-
-Before 2026-09-07 each rule was a bash rung in `bin/idp-ci`, a hand-written row here and, for
-several, a third copy inside `bin/policy-test` -- so a rule could be worded one way, graded
-another, and listed a third. Fifteen fixtures under `policy/fixtures` were named by no runner at
-all. Founder, the Unification Move: "Ruthless Deletion ... Do not leave them as dead code. Do not
-deprecate them. Eradicate them."
-
-The full generated rule table (85 rows) lives in `docs/policy/rules-table.md`, not here --
-it is re-graded by CI every run but no longer re-injected into agent context every turn
-(founder, 2026-09-14: it was ~32KB of the ~37KB in this file, loaded on every single turn
-for no reason). Open it when you need to look up a specific gate.
-
-Rules that are already types or tools, and so need no row: compose files must parse
-(`docker compose config`), the gateway config must match its release schema
-(`check-jsonschema`), every catalog entity must match the Backstage schema, and every
-script must pass `shellcheck`, every generator must be idempotent (two runs over one
-inventory, byte-identical), the generated catalogue must carry a relationship graph, and
-every entity reference in it must resolve to an entity something defines
+Rules here are already types or tools, and so need no registry row and no separate gate
+script: compose files must parse (`docker compose config`), the gateway config must match
+its release schema (`check-jsonschema`), every catalog entity must match the Backstage
+schema, every script must pass `shellcheck`, every generator must be idempotent (two runs
+over one inventory, byte-identical), the generated catalogue must carry a relationship
+graph, and every entity reference in it must resolve to an entity something defines
 (`bin/catalog-refcheck`, proved both ways in the same run). Those run unconditionally in
 `bin/idp-ci`.
 
-Adding a rule: add a row to `rules.yaml`, add both fixtures, run `bin/idp-rules render-agents-md`
-and `bin/idp-ci`. No new rung, no new gate script.
+There is no `rules.yaml`, no `bin/idp-rules`, and no generated rule table in this repo any
+more: the 100-row registry and its engine were deleted (via-negativa, 2026-09-20) because a
+registry that re-described rules already enforced as types and tools is a second copy that
+can drift, not an additional gate (AGENTS.md estate law: one of each layer). A rule is a
+rung in `bin/idp-ci`, not a row in a table.
 
 ## Andon cord: main must be green; never more than 3 red PRs (2026-09-17)
 
