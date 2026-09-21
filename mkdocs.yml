@@ -31,7 +31,6 @@ nav:
       - One index of every estate document: estate/INDEX.md
       - Snapshot for the external consultant: estate/ESTATE-SNAPSHOT-FOR-CONSULTANT.md
       - Every platform layer (all 105): estate/PLATFORM-LAYERS-FULL-INVENTORY.md
-  - Conscience: CONSCIENCE.md
   - "Founder: shipped, changed for you, stuck": FOUNDER.md
   - "Union: the founder and the crew":
       - The road to 9D (two stages): /docs/default/component/crew/ROAD-TO-9D/
@@ -163,7 +162,6 @@ nav:
       - Reasoning Gateway end-to-end: tutorials/demo/reasoning-gateway-end-to-end.md
       - Reasoning gateway Stop hook (module): tutorials/demo/reasoning_gateway_hook.py.md
       - idp-reasoning-gateway-hook: tutorials/demo/idp-reasoning-gateway-hook.md
-      - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
       - Evidence layer: tutorials/demo/evidence.md
       - Estate next: tutorials/demo/estate-next.md
@@ -294,7 +292,6 @@ nav:
       - Estate compiler: how-to/onboarding/intent.md
       - Retention knob: how-to/onboarding/signoz-retention.md
       - Estate Mac screen: how-to/onboarding/founder-screen-access.md
-      - Conscience: how-to/onboarding/conscience.md
       - Estate showcase: how-to/onboarding/estate-showcase.md
       - Estate next: how-to/onboarding/estate-next.md
       - Plist gate: how-to/onboarding/plist.md
@@ -416,7 +413,6 @@ nav:
       - graphview: gates/estate-graph-view.md
       - twin: gates/estate-twin.md
       - bdd-proof: gates/bdd-proof.md
-      - ethos: gates/conscience.md
       - describe: gates/job-described.md
       - vmmount: gates/vm-shared-path.md
       - fences: gates/ns-fence.md
@@ -435,7 +431,6 @@ nav:
       - capacity: gates/capacity-policy.md
       - opmodel: gates/operating-model-policy.md
       - notoil: gates/no-toil-policy.md
-      - ethos-rego: gates/conscience-rego.md
       - shell: gates/shell-lint.md
       - hardcode: gates/hardcoded-path.md
       - codeloc: gates/defs-load-by-path.md

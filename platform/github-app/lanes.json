@@ -16,10 +16,6 @@
     "issues": "write",
     "checks": "read"
   },
-  "conscience-reader": {
-    "metadata": "read",
-    "contents": "read"
-  },
   "recovery": {
     "metadata": "read",
     "contents": "read"
