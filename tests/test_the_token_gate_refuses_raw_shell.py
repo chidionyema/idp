@@ -114,10 +114,17 @@ def test_a_non_bash_tool_is_not_this_gates_business() -> None:
     assert gate.run({"tool_name": "Read", "tool_input": {"file_path": "/etc/hosts"}}) == 0
 
 
-def test_the_refusal_names_the_wrapper_and_the_release() -> None:
-    text = gate._refusal("cat huge.log", "/repo")
-    assert "bin/idp-exec" in text
-    assert "IDP_TOKEN_GATE=0" in text
+def test_the_refusal_hands_back_a_command_the_gate_then_allows() -> None:
+    """A refusal is only worth printing if its own suggestion survives the gate.
+
+    Graded as a round trip, not as wording: the raw form is refused, the form the
+    refusal offers is allowed, and the offer really is the text the user reads.
+    """
+    raw = "cat huge.log"
+    offered = gate._suggestion(raw)
+    assert offered in gate._refusal(raw, REPO)
+    assert verdict(raw) == 2
+    assert verdict(offered) == 0
 
 
 def test_the_suggestion_is_withheld_when_it_cannot_be_built() -> None:
