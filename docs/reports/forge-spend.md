@@ -1,6 +1,6 @@
 # Forge compute spend
 
-Generated 2026-09-21T20:06:07Z. Cumulative spend across recorded Forge runs (5 spend-bearing record(s)).
+Generated 2026-09-21T22:50:45Z. Cumulative spend across recorded Forge runs (5 spend-bearing record(s)).
 
 **Cumulative Modal/compute spend: **$0.7095** against a $5.00 cap.**
 
