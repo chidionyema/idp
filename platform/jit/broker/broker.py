@@ -678,7 +678,9 @@ class Broker:
         # corrected signature against the same nonce.
         seen = self._enrollment_nonces.pop(nonce, None)
         if seen is None:
-            raise Refused("unknown or already-used nonce; ask the broker for a fresh one")
+            raise Refused(
+                "unknown or already-used nonce; ask the broker for a fresh one"
+            )
         if self.now() - seen > self.ENROLLMENT_NONCE_TTL_SECONDS:
             raise Refused("the nonce expired; ask the broker for a fresh one")
         if not self._age_agreement_valid(nonce, ephemeral, mac):
