@@ -814,7 +814,7 @@ def reply(
         _redact_mod = _ilu.module_from_spec(_spec)
         _spec.loader.exec_module(_redact_mod)
         text, _removed = _redact_mod.redact(text)
-    except Exception:  # noqa: BLE001 -- a missing scrubber must not drop a message
+    except Exception:  # noqa: BLE001,S110 -- a missing scrubber must not drop a message
         # Fail OPEN, deliberately, and unlike almost every other guard here: losing a conversation
         # turn is worse than the residual risk of a secret the patterns would have caught, and this
         # is a mitigation rather than a boundary.
@@ -1021,8 +1021,8 @@ def _pid_for(session_id: str) -> tuple[int | None, str]:
     # 3. Identity, where the platform exposes it.
     expected = ("pi", "node")
     try:
-        proc = subprocess.run(
-            ["ps", "-o", "command=", "-p", str(pid)],
+        proc = subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
+            ["ps", "-o", "command=", "-p", str(pid)],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
             capture_output=True,
             text=True,
             timeout=5,

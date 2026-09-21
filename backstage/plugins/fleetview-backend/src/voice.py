@@ -211,7 +211,7 @@ def ask(
         "max_tokens": 220,
         "temperature": 0.2,
     }
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
         f"{router_host()}/v1/chat/completions",
         data=json.dumps(payload).encode(),
         headers={
@@ -221,7 +221,7 @@ def ask(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=_timeout()) as resp:
+        with urllib.request.urlopen(req, timeout=_timeout()) as resp:  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
             doc = json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         # The router reports a depleted vendor plan as an error envelope with a 4xx; pass its
@@ -324,7 +324,7 @@ def stream_ask(
         # line would be decoration.
         "stream_options": {"include_usage": True},
     }
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
         f"{router_host()}/v1/chat/completions",
         data=json.dumps(payload).encode(),
         headers={
@@ -334,7 +334,7 @@ def stream_ask(
         method="POST",
     )
     try:
-        resp = urllib.request.urlopen(req, timeout=_timeout())
+        resp = urllib.request.urlopen(req, timeout=_timeout())  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
     except urllib.error.HTTPError as exc:
         detail = ""
         try:
@@ -422,7 +422,7 @@ def stream_ask(
     finally:
         try:
             resp.close()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001,S110
             pass
 
 

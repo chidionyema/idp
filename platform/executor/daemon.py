@@ -209,15 +209,15 @@ def _build_mutation_commit(
     env["GIT_INDEX_FILE"] = index_path
     try:
         head_sha = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            ["git", "rev-parse", "HEAD"],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
             cwd=live_root,
             env=env,
             capture_output=True,
             text=True,
             check=True,
         ).stdout.strip()
-        subprocess.run(
-            ["git", "read-tree", head_sha],
+        subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
+            ["git", "read-tree", head_sha],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
             cwd=live_root,
             env=env,
             check=True,
@@ -225,7 +225,7 @@ def _build_mutation_commit(
         )
         for proposed in files:
             blob_sha = subprocess.run(
-                ["git", "hash-object", "-w", "--stdin"],
+                ["git", "hash-object", "-w", "--stdin"],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
                 cwd=live_root,
                 env=env,
                 input=proposed.content,
@@ -233,8 +233,8 @@ def _build_mutation_commit(
                 text=True,
                 check=True,
             ).stdout.strip()
-            subprocess.run(
-                [
+            subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
+                [  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
                     "git",
                     "update-index",
                     "--add",
@@ -249,23 +249,23 @@ def _build_mutation_commit(
                 capture_output=True,
             )
         tree_sha = subprocess.run(
-            ["git", "write-tree"],
+            ["git", "write-tree"],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
             cwd=live_root,
             env=env,
             capture_output=True,
             text=True,
             check=True,
         ).stdout.strip()
-        commit_sha = subprocess.run(
-            ["git", "commit-tree", tree_sha, "-p", head_sha, "-m", message],
+        commit_sha = subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
+            ["git", "commit-tree", tree_sha, "-p", head_sha, "-m", message],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
             cwd=live_root,
             env=env,
             capture_output=True,
             text=True,
             check=True,
         ).stdout.strip()
-        subprocess.run(
-            ["git", "update-ref", f"refs/heads/{branch}", commit_sha],
+        subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
+            ["git", "update-ref", f"refs/heads/{branch}", commit_sha],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
             cwd=live_root,
             env=env,
             check=True,
@@ -412,7 +412,7 @@ class Handler(socketserver.StreamRequestHandler):
             job_id, request["command"], request.get("cwd"), verdict["ceiling_sec"]
         )
         try:
-            subprocess.Popen(
+            subprocess.Popen(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
                 argv,
                 start_new_session=True,
                 stdout=subprocess.DEVNULL,
@@ -849,7 +849,7 @@ class Handler(socketserver.StreamRequestHandler):
             ) as handle:
                 json.dump(envelope, handle)
                 path = handle.name
-            proc = subprocess.run(
+            proc = subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
                 [sys.executable, gate, path], capture_output=True, text=True, timeout=30
             )
         except (OSError, subprocess.SubprocessError) as exc:
@@ -885,7 +885,7 @@ class Handler(socketserver.StreamRequestHandler):
         import subprocess  # local: kept out of the pure import path used by the tests
 
         try:
-            proc = subprocess.run(
+            proc = subprocess.run(  # noqa: S602 -- shell=True on a probe verify_mutation already admitted; bounded by a timeout, exit code is the only verdict
                 probe,
                 shell=True,
                 cwd=cwd or live_worktree(),
@@ -1099,8 +1099,8 @@ class Handler(socketserver.StreamRequestHandler):
         # must be reported rather than overwritten (a rewrite would detach the PR from the
         # commit the executor actually sealed).
         try:
-            push = subprocess.run(
-                ["git", "push", "origin", f"refs/heads/{branch}:refs/heads/{branch}"],
+            push = subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
+                ["git", "push", "origin", f"refs/heads/{branch}:refs/heads/{branch}"],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
                 cwd=root,
                 capture_output=True,
                 text=True,
@@ -1119,8 +1119,8 @@ class Handler(socketserver.StreamRequestHandler):
             }
 
         try:
-            pr = subprocess.run(
-                [
+            pr = subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
+                [  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
                     "gh",
                     "pr",
                     "create",
@@ -1155,8 +1155,8 @@ class Handler(socketserver.StreamRequestHandler):
             # A PR that already exists for this head is not an error -- `admit_mutation` may be
             # retried after a partial delivery, and `gh pr create` refuses a duplicate. Report the
             # URL from the existing PR rather than a failure.
-            existing = subprocess.run(
-                ["gh", "pr", "view", branch, "--json", "url", "-q", ".url"],
+            existing = subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
+                ["gh", "pr", "view", branch, "--json", "url", "-q", ".url"],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
                 cwd=root,
                 capture_output=True,
                 text=True,

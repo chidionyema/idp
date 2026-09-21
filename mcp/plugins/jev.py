@@ -146,7 +146,7 @@ def _ensure_table(db_path: str) -> None:
         con = sqlite3.connect(db_path, timeout=5)
         con.executescript(sql)
         con.close()
-    except Exception:
+    except Exception:  # noqa: S110 -- the failure is non-fatal by design; the caller reads the absent result
         pass  # BLIND: cannot create table on locked/inaccessible DB
 
 
@@ -168,7 +168,7 @@ def _upsert(decision: JevDecision, db_path: str) -> None:
         con.execute(sql, row)
         con.commit()
         con.close()
-    except Exception:
+    except Exception:  # noqa: S110 -- the failure is non-fatal by design; the caller reads the absent result
         pass  # BLIND: never fail a Jev call because the DB is locked
 
 

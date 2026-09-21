@@ -279,14 +279,14 @@ def synthesise(command: str, *, timeout: float = 60.0) -> dict[str, Any]:
         "response_format": {"type": "json_object"},
         "temperature": 0,
     }
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
         LITELLM_URL,
         data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json", **_auth_headers()},
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
             payload = json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         raise Refused(f"router refused the request: HTTP {exc.code}") from exc

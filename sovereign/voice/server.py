@@ -374,7 +374,7 @@ async def voice_stream(websocket: WebSocket):
     async def send_json(payload: dict) -> None:
         try:
             await websocket.send_text(json.dumps(payload))
-        except Exception:  # noqa: BLE001 -- the peer is gone; the loop below will notice
+        except Exception:  # noqa: BLE001,S110 -- the peer is gone; the loop below will notice
             pass
 
     async def pipeline(question: str, log: "turnlog.Turn") -> None:

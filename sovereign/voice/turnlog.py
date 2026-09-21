@@ -130,7 +130,7 @@ def record(turn: Turn) -> None:
             con.commit()
         finally:
             con.close()
-    except Exception:  # noqa: BLE001 -- a logging failure must never fail a voice turn
+    except Exception:  # noqa: BLE001,S110 -- a logging failure must never fail a voice turn
         pass
 
 

@@ -33,7 +33,7 @@ GOOD = ROOT / "tests" / "fixtures" / "reversibility" / "good"
 
 
 def _run(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
+    return subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
         [sys.executable, str(GATE), *args],
         capture_output=True,
         text=True,
@@ -288,7 +288,7 @@ def test_admit_delivers_by_pushing_and_opening_a_pr():
 
     import types
 
-    handler = types.SimpleNamespace(live_worktree=lambda: "/tmp/x")
+    handler = types.SimpleNamespace(live_worktree=lambda: "/tmp/x")  # noqa: S108 -- a literal path in an assertion, never opened
     handler._deliver_mutation = daemon.Handler._deliver_mutation.__get__(handler)
 
     import unittest.mock as mock
@@ -315,7 +315,7 @@ def test_delivery_failure_does_not_lose_the_admission():
         stdout = ""
         stderr = "fatal: could not read Username for 'https://github.com'"
 
-    handler = types.SimpleNamespace(live_worktree=lambda: "/tmp/x")
+    handler = types.SimpleNamespace(live_worktree=lambda: "/tmp/x")  # noqa: S108 -- a literal path in an assertion, never opened
     handler._deliver_mutation = daemon.Handler._deliver_mutation.__get__(handler)
 
     with mock.patch("subprocess.run", return_value=_Fail()):
@@ -327,7 +327,7 @@ def test_delivery_failure_does_not_lose_the_admission():
 
 def test_admit_mutation_calls_delivery():
     """The wire: admit_mutation must reach _deliver_mutation, or the path stays unreachable."""
-    subprocess.run(["true"], check=True)
+    subprocess.run(["true"], check=True)  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
     src = (ROOT / "platform" / "executor" / "daemon.py").read_text()
     assert "_deliver_mutation(branch, claim)" in src, (
         "admit_mutation does not call _deliver_mutation -- the admitted branch would sit "

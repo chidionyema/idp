@@ -46,8 +46,8 @@ class TestJevLayerPureFunctions:
     def test_strip_secrets_removes_password(self):
         ctx = {"user": "alice", "password": "secret123", "token": "abc"}
         stripped = jev_module._strip_secrets(ctx)
-        assert stripped["password"] == "[REDACTED]"
-        assert stripped["token"] == "[REDACTED]"
+        assert stripped["password"] == "[REDACTED]"  # noqa: S105 -- a test fixture value, not a credential
+        assert stripped["token"] == "[REDACTED]"  # noqa: S105 -- a test fixture value, not a credential
         assert stripped["user"] == "alice"
         assert stripped["_password_redacted"] is True
 

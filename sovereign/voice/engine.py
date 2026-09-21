@@ -487,7 +487,7 @@ def fleet_summary() -> str:
 
     host = os.environ.get("FLEETVIEW_URL", "http://127.0.0.1:18790")
     try:
-        with urllib.request.urlopen(f"{host}/sessions", timeout=5) as resp:
+        with urllib.request.urlopen(f"{host}/sessions", timeout=5) as resp:  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
             sessions = (json.load(resp) or {}).get("sessions") or []
     except Exception as exc:  # noqa: BLE001
         return f"FLEET CONTEXT UNAVAILABLE ({exc.__class__.__name__}). Say so if asked about it."
@@ -547,7 +547,7 @@ async def llm_clauses(question: str, history: list[dict[str, str]] | None = None
         "temperature": 0.3,
         "stream": True,
     }
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
         f"{ROUTER_HOST}/v1/chat/completions",
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
@@ -563,7 +563,7 @@ async def llm_clauses(question: str, history: list[dict[str, str]] | None = None
 
     def pump():
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
                 buffer = ""
                 for raw in resp:
                     line = raw.decode("utf-8", "replace").strip()
@@ -722,7 +722,7 @@ def synthesise_say_with(voice: str, text: str) -> bytes | None:
     try:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             out = f.name
-        subprocess.run(
+        subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
             [
                 "/usr/bin/say",
                 "-o",
@@ -781,7 +781,7 @@ def _synthesise_say(text: str) -> bytes | None:
     try:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             out = f.name
-        subprocess.run(
+        subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
             [
                 "/usr/bin/say",
                 "-o",
