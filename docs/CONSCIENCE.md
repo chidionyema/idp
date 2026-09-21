@@ -4,7 +4,7 @@
 
 **🧠 5/7 tenets green — red: future-looking, research.** moved +0 since the last reading.
 
-Measured 2026-09-20T12:29:21+00:00 on `runnervmlun5p`. The score is read from the receipt, never from a file scan (LAW 50). A red row has one open issue labelled `conscience`; a tenet nobody can measure is BLIND, and BLIND is never green.
+Measured 2026-09-21T14:20:13+00:00 on `runnervmlun5p`. The score is read from the receipt, never from a file scan (LAW 50). A red row has one open issue labelled `conscience`; a tenet nobody can measure is BLIND, and BLIND is never green.
 
 | | Tenet | Ethos | Measured | Green when | PR rule |
 |---|---|---|---|---|---|
@@ -16,10 +16,11 @@ Measured 2026-09-20T12:29:21+00:00 on `runnervmlun5p`. The score is read from th
 | 🟢 | secure | Zero-friction seamless security. Security that is invisible and automatic. | `exit 0` | `== 0` | `no_static_secret_in_diff` (deny) |
 | 🟢 | survivable | Every routed surface survives losing one node. | `exit 0` | `== 0` | `drill_named` (deny) |
 
-## Trend, last 13 readings
+## Trend, last 14 readings
 
 | When | Score | Red |
 |---|---|---|
+| 2026-09-21T14:20:13+00:00 | 5/7 | future-looking, research |
 | 2026-09-20T12:29:21+00:00 | 5/7 | future-looking, research |
 | 2026-09-19T11:58:31+00:00 | 5/7 | future-looking, research |
 | 2026-09-18T12:17:36+00:00 | 5/7 | future-looking, research |
