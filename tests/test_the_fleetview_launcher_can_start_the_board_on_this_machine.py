@@ -57,7 +57,9 @@ class TestTheInterpreterIsResolvedNotAssumed:
         """
         proc = _check()
         assert proc.returncode == 0, proc.stderr
-        line = [ln for ln in proc.stdout.splitlines() if ln.startswith("fleetview: python")]
+        line = [
+            ln for ln in proc.stdout.splitlines() if ln.startswith("fleetview: python")
+        ]
         assert line, f"--check named no interpreter:\n{proc.stdout}"
         chosen = line[0].split()[2]
         probe = subprocess.run(
@@ -86,7 +88,9 @@ class TestTheInterpreterIsResolvedNotAssumed:
         """
         system_python = "/usr/bin/python3"
         if not Path(system_python).exists():
-            pytest.skip("no /usr/bin/python3 on this machine to stand in for a weak interpreter")
+            pytest.skip(
+                "no /usr/bin/python3 on this machine to stand in for a weak interpreter"
+            )
         weak = subprocess.run(
             [
                 system_python,
@@ -98,7 +102,9 @@ class TestTheInterpreterIsResolvedNotAssumed:
             timeout=120,
         )
         if weak.returncode == 0:
-            pytest.skip(f"{system_python} can mount a route here; nothing weak to refuse")
+            pytest.skip(
+                f"{system_python} can mount a route here; nothing weak to refuse"
+            )
 
         proc = _check({"FV_PYTHON": system_python})
         assert proc.returncode != 0, (
@@ -131,7 +137,9 @@ class TestTheZoneIsReadFromWhereItIsDeclared:
         """The zone check used to live inside the `LITELLM_API_KEY is set` arm with an exit 1
         behind it, so a line printing which router voice would use could kill the board. Voice is
         optional; the board is not. With the key set and the zone unset, --check still succeeds."""
-        proc = _check({"LITELLM_API_KEY": "not-a-real-key-this-test-only-sets-the-branch"})
+        proc = _check(
+            {"LITELLM_API_KEY": "not-a-real-key-this-test-only-sets-the-branch"}
+        )
         assert proc.returncode == 0, (
             "an optional feature's reporting line stopped the launcher:\n" + proc.stderr
         )
@@ -152,7 +160,9 @@ class TestTheSelfTestExecutesWhatItClaims:
             timeout=300,
             cwd=str(ROOT),
         )
-        line = [ln for ln in proc.stdout.splitlines() if ln.startswith("fleetview: python")]
+        line = [
+            ln for ln in proc.stdout.splitlines() if ln.startswith("fleetview: python")
+        ]
         assert line, proc.stdout
         chosen = line[0].split()[2]
 
@@ -191,7 +201,9 @@ class TestAnUnsweptGraphIsNamedNotCrashed:
         import importlib.util
 
         monkeypatch.setenv("ESTATE_DB", str(db_path))
-        spec = importlib.util.spec_from_file_location("fv_graph_under_test", SRC / "graph.py")
+        spec = importlib.util.spec_from_file_location(
+            "fv_graph_under_test", SRC / "graph.py"
+        )
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
         spec.loader.exec_module(module)
@@ -202,7 +214,9 @@ class TestAnUnsweptGraphIsNamedNotCrashed:
     ):
         db = tmp_path / "estate.db"
         con = sqlite3.connect(db)
-        con.execute("CREATE TABLE assets (id TEXT)")  # what a real un-swept estate.db holds
+        con.execute(
+            "CREATE TABLE assets (id TEXT)"
+        )  # what a real un-swept estate.db holds
         con.commit()
         con.close()
 
@@ -218,8 +232,12 @@ class TestAnUnsweptGraphIsNamedNotCrashed:
         db = tmp_path / "estate.db"
         con = sqlite3.connect(db)
         con.execute("CREATE TABLE nodes (id TEXT, domain TEXT, type TEXT, status TEXT)")
-        con.execute("CREATE TABLE edges (source_id TEXT, target_id TEXT, relation TEXT)")
-        con.execute("INSERT INTO nodes VALUES ('n1', 'compute', 'Deployment', 'serving')")
+        con.execute(
+            "CREATE TABLE edges (source_id TEXT, target_id TEXT, relation TEXT)"
+        )
+        con.execute(
+            "INSERT INTO nodes VALUES ('n1', 'compute', 'Deployment', 'serving')"
+        )
         con.execute("INSERT INTO edges VALUES ('n1', 'n2', 'routes to')")
         con.commit()
         con.close()

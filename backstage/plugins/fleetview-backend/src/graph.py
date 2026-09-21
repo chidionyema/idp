@@ -55,7 +55,9 @@ def graph_snapshot() -> dict[str, Any]:
         # turn it into the 503 it already knows how to send.
         missing = {"nodes", "edges"} - {
             row[0]
-            for row in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            for row in con.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
         }
         if missing:
             raise GraphUnavailable(
