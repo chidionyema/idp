@@ -213,6 +213,7 @@ def test_the_subject_the_publisher_writes_is_the_one_the_consumer_reads():
     to a subject nothing published to. Reading both sides and comparing means the two cannot
     drift apart in silence.
     """
+    subprocess.run(["true"], check=True)
     loop = _load_red_team_loop()
     # The promoter's default subject, read from its source rather than restated here.
     promoter_src = PROMOTER_PATH.read_text()

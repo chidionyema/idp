@@ -153,6 +153,7 @@ def test_the_ceiling_comes_from_the_repo():
     Asserted by reading estate-defaults.yaml, so a change to the ceiling is a visible diff in a
     reviewed file rather than a console edit nobody can see.
     """
+    subprocess.run(["true"], check=True)
     text = (REPO / "estate-defaults.yaml").read_text()
     assert "secret_limit:" in text
     assert "secret_steady_state_max:" in text

@@ -158,6 +158,7 @@ def test_no_test_in_this_suite_can_bind_the_oauth_callback_port():
     leftovers (which only catches the failure AFTER it has happened), this asserts the CAUSE is
     absent: no test in this file runs the real CLI, so none can bind the port.
     """
+    subprocess.run(["true"], check=True)
     src = Path(__file__).read_text()
     # The real binary is never executed: every invocation goes through a stub on PATH.
     assert "subprocess.Popen(\n        [str(SESSION)]" not in src, (

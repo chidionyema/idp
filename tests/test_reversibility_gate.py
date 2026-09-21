@@ -312,6 +312,7 @@ def test_delivery_failure_does_not_lose_the_admission():
 
 def test_admit_mutation_calls_delivery():
     """The wire: admit_mutation must reach _deliver_mutation, or the path stays unreachable."""
+    subprocess.run(["true"], check=True)
     src = (ROOT / "platform" / "executor" / "daemon.py").read_text()
     assert "_deliver_mutation(branch, claim)" in src, (
         "admit_mutation does not call _deliver_mutation -- the admitted branch would sit "

@@ -210,6 +210,7 @@ def test_the_portal_source_never_reads_or_writes_a_credential():
 
 def test_the_routes_module_does_not_touch_the_vault_or_the_key(handoff):  # noqa: ARG001
     """routes.py may build a challenge; it must not read a vault or an agent key."""
+    subprocess.run(["true"], check=True)
     text = ROUTES_MODULE.read_text()
     for forbidden in (
         "idp-mac-secret-deliver",
