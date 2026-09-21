@@ -644,13 +644,15 @@ def stop(session_id: str, runtime: str, by: str) -> dict[str, Any]:
 
         raw = session_id.rsplit(":", 1)[-1]
         ledger = os.environ.get(
-            "ESTATE_STATE_PATH_PREFIX", os.path.expanduser("~/.claude/state/prompt-ledger/")
+            "ESTATE_STATE_PATH_PREFIX",
+            os.path.expanduser("~/.claude/state/prompt-ledger/"),
         )
         d = pathlib.Path(ledger).parent / "directives"
         try:
             d.mkdir(parents=True, exist_ok=True)
             (d / f"{raw}.stop").write_text(
-                json.dumps({"session_id": session_id, "by": by, "at": _now()}), encoding="utf-8"
+                json.dumps({"session_id": session_id, "by": by, "at": _now()}),
+                encoding="utf-8",
             )
             error = None
         except OSError as exc:
@@ -775,8 +777,15 @@ def signals_for(session_id: str, limit: int = 100) -> list[dict[str, Any]]:
             (session_id, limit),
         ).fetchall()
     return [_row_to_dict(r) for r in rows]
-def reply(session_id: str, runtime: str, text: str, author: str = "agent",
-          in_reply_to: int | None = None) -> dict[str, Any]:
+
+
+def reply(
+    session_id: str,
+    runtime: str,
+    text: str,
+    author: str = "agent",
+    in_reply_to: int | None = None,
+) -> dict[str, Any]:
     """Record what a session said. The write half of the reply channel.
 
     Deliberately NOT routed through `_require_channel`: a runtime with no steering path can still
@@ -846,7 +855,8 @@ def replies_for(session_id: str = "", limit: int = 20) -> list[dict[str, Any]]:
             ).fetchall()
         else:
             rows = con.execute(
-                "SELECT * FROM fleetview_replies ORDER BY created_at DESC LIMIT ?", (limit,)
+                "SELECT * FROM fleetview_replies ORDER BY created_at DESC LIMIT ?",
+                (limit,),
             ).fetchall()
     return [_reply_to_dict(r) for r in rows]
 
@@ -868,8 +878,14 @@ def _reply_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "in_reply_to": row["in_reply_to"],
         "created_at": row["created_at"],
     }
+
+
 def record_work(
-    session_id: str, runtime: str, branch: str = "", step: str = "", pid: int | None = None
+    session_id: str,
+    runtime: str,
+    branch: str = "",
+    step: str = "",
+    pid: int | None = None,
 ) -> dict[str, Any]:
     """Upsert what a session is working on. One row per session -- this is current state, not a log.
 
@@ -893,18 +909,26 @@ def record_work(
             "  step    = CASE WHEN excluded.step   <> '' THEN excluded.step   ELSE step   END, "
             "  pid     = COALESCE(excluded.pid, pid), "
             "  updated_at = excluded.updated_at",
-            (session_id, runtime, (branch or "")[:200], (step or "")[:200], pid, _now()),
+            (
+                session_id,
+                runtime,
+                (branch or "")[:200],
+                (step or "")[:200],
+                pid,
+                _now(),
+            ),
         )
         row = con.execute(
             "SELECT * FROM fleetview_work WHERE session_id = ?", (session_id,)
         ).fetchone()
     return dict(row) if row else {}
+
+
 def work_for() -> dict[str, dict[str, Any]]:
     """Every session's current work, keyed by session id, for the board to merge into its rows."""
     with _connect() as con:
         rows = con.execute("SELECT * FROM fleetview_work").fetchall()
     return {r["session_id"]: dict(r) for r in rows}
-
 
 
 # --------------------------------------------------------------------------- hard kill
@@ -931,7 +955,7 @@ def _pid_for(session_id: str) -> tuple[int | None, str]:
     """The PID a session last reported, WITH A FRESHNESS CHECK. Returns (pid, reason-if-refused).
 
     WHY THIS IS NOT JUST A SELECT.
-   
+
     `os.kill(pid)` signals a NUMBER. Between the moment a session reports its pid and the moment
     somebody presses kill, that process may have exited and its number been handed to something
     else -- and this machine's pid space is `kern.maxproc = 2088`, measured 2026-09-20, so reuse
@@ -960,7 +984,8 @@ def _pid_for(session_id: str) -> tuple[int | None, str]:
 
     with _connect() as con:
         row = con.execute(
-            "SELECT pid, updated_at FROM fleetview_work WHERE session_id = ?", (session_id,)
+            "SELECT pid, updated_at FROM fleetview_work WHERE session_id = ?",
+            (session_id,),
         ).fetchone()
     if not row or row["pid"] is None:
         return None, "no PID reported for this session"
@@ -973,7 +998,7 @@ def _pid_for(session_id: str) -> tuple[int | None, str]:
         stamp = dt.datetime.fromisoformat(str(row["updated_at"]).replace("Z", "+00:00"))
         if stamp.tzinfo is None:
             stamp = stamp.replace(tzinfo=dt.timezone.utc)
-        age = (_time.time() - stamp.timestamp())
+        age = _time.time() - stamp.timestamp()
     except (ValueError, TypeError):
         return None, f"cannot read the age of pid {pid}; refusing to signal it"
     if age is None or age > PID_MAX_AGE_S:
@@ -1058,6 +1083,8 @@ def kill(session_id: str, runtime: str, by: str, force: bool = False) -> dict[st
         error = f"not permitted to signal process {pid}"
     except OSError as exc:
         error = f"{exc.__class__.__name__}: {exc}"
-    row = _record(session_id, runtime, "kill", by, f"pid {pid}", ok=error is None, error=error)
+    row = _record(
+        session_id, runtime, "kill", by, f"pid {pid}", ok=error is None, error=error
+    )
     row["pid"] = pid
     return row

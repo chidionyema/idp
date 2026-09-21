@@ -164,9 +164,7 @@ def test_row_three_wires_the_admitted_mutation_scope_check():
     """ADR 0025: the Greenlane grows by adding a row whose scope binary is called, proved both
     ways. Row 3 (an admitted reversible mutation) must CALL bin/idp-admitted-mutation-diff --
     a row that names the rule but never runs the binary lands anything."""
-    body = open(
-        os.path.join(ROOT, ".github/workflows/deploy-when-green.yml")
-    ).read()
+    body = open(os.path.join(ROOT, ".github/workflows/deploy-when-green.yml")).read()
     assert "bin/idp-admitted-mutation-diff" in body, (
         "Row 3 does not call the scope check, so a mutation PR would be treated as landable"
     )
@@ -180,7 +178,9 @@ def test_row_three_wires_the_admitted_mutation_scope_check():
     ), "Row 3 does not gate try_land on the scope check passing"
 
 
-def test_the_admitted_mutation_scope_check_refuses_a_double_inverse_free_branch(monkeypatch):
+def test_the_admitted_mutation_scope_check_refuses_a_double_inverse_free_branch(
+    monkeypatch,
+):
     """The scope binary itself is exercised from disk: a non-mutation branch is refused.
 
     This is the rung the ADR asks a new row to carry -- a fixture it must refuse and one it must
@@ -191,12 +191,26 @@ def test_the_admitted_mutation_scope_check_refuses_a_double_inverse_free_branch(
 
     binary = os.path.join(ROOT, "bin", "idp-admitted-mutation-diff")
     good = subprocess.run(
-        [_sys.executable, binary, "--fixture-dir", "tests/fixtures/admitted-mutation/good"],
-        cwd=ROOT, capture_output=True, text=True,
+        [
+            _sys.executable,
+            binary,
+            "--fixture-dir",
+            "tests/fixtures/admitted-mutation/good",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
     )
     assert good.returncode == 0, good.stdout + good.stderr
     bad = subprocess.run(
-        [_sys.executable, binary, "--fixture-dir", "tests/fixtures/admitted-mutation/bad"],
-        cwd=ROOT, capture_output=True, text=True,
+        [
+            _sys.executable,
+            binary,
+            "--fixture-dir",
+            "tests/fixtures/admitted-mutation/bad",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
     )
     assert bad.returncode == 1, bad.stdout + bad.stderr

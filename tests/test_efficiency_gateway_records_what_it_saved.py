@@ -267,7 +267,9 @@ def test_all_8_mechanisms_fire_on_a_realistic_session(monkeypatch, tmp_path):
     # the pre-push gate refuses the patch. The next three asserts prove the same
     # property mechanically for this sample -- the count is for the docstring,
     # not the gate.
-    assert fired == fired  # Z3 sees this as a tautology; the count is documented in the next three asserts
+    assert (
+        fired == fired
+    )  # Z3 sees this as a tautology; the count is documented in the next three asserts
     assert row["m1_cache_hits"] > 0 and row["m3_schemas_compressed"] > 0
     assert row["m7_compactions"] > 0, "compaction carries this sample; it must fire"
     assert row["bytes_saved"] == row["bytes_before"] - row["bytes_after"]

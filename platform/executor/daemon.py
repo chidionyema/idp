@@ -832,7 +832,9 @@ class Handler(socketserver.StreamRequestHandler):
                 "`envelope` with an inverse_spec (ADR 0024)"
             )
         gate = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            ),
             "bin",
             "idp-reversibility-gate",
         )
@@ -842,7 +844,9 @@ class Handler(socketserver.StreamRequestHandler):
         import tempfile
 
         try:
-            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            with tempfile.NamedTemporaryFile(
+                "w", suffix=".json", delete=False
+            ) as handle:
                 json.dump(envelope, handle)
                 path = handle.name
             proc = subprocess.run(
@@ -1104,7 +1108,10 @@ class Handler(socketserver.StreamRequestHandler):
                 env={**os.environ},
             )
         except (OSError, subprocess.SubprocessError) as exc:
-            return {"pushed": False, "delivery_error": f"git push could not be run: {exc}"}
+            return {
+                "pushed": False,
+                "delivery_error": f"git push could not be run: {exc}",
+            }
         if push.returncode != 0:
             return {
                 "pushed": False,
@@ -1157,7 +1164,11 @@ class Handler(socketserver.StreamRequestHandler):
                 env={**os.environ},
             )
             if existing.returncode == 0 and existing.stdout.strip():
-                return {"pushed": True, "pr_url": existing.stdout.strip(), "pr_existing": True}
+                return {
+                    "pushed": True,
+                    "pr_url": existing.stdout.strip(),
+                    "pr_existing": True,
+                }
             return {
                 "pushed": True,
                 "delivery_error": f"the PR could not be opened: {(pr.stderr or pr.stdout).strip()[:300]}",
@@ -1199,8 +1210,12 @@ class Handler(socketserver.StreamRequestHandler):
             try:
                 envelope = json.load(open(admitted))
             except (OSError, ValueError) as exc:
-                return {"ok": False, "executed": False, "error": f"envelope unreadable: {exc}"}
-            probe = ((envelope.get("inverse_spec") or {}).get("verification_probe") or "")
+                return {
+                    "ok": False,
+                    "executed": False,
+                    "error": f"envelope unreadable: {exc}",
+                }
+            probe = (envelope.get("inverse_spec") or {}).get("verification_probe") or ""
             if not probe.strip():
                 return {
                     "ok": False,

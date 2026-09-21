@@ -91,7 +91,9 @@ def test_a_backgrounded_command_is_exempt() -> None:
     assert verdict("sleep 600", run_in_background=True) == 0
 
 
-def test_a_repo_without_the_wrapper_is_not_gated(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_repo_without_the_wrapper_is_not_gated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """LAW 38: a fence a correct machine cannot satisfy is an outage.
 
     A session working somewhere that ships no bin/idp-exec is not on this platform, and
@@ -111,7 +113,9 @@ def test_a_path_outside_any_wrapper_repo_resolves_to_none() -> None:
 
 
 def test_a_non_bash_tool_is_not_this_gates_business() -> None:
-    assert gate.run({"tool_name": "Read", "tool_input": {"file_path": "/etc/hosts"}}) == 0
+    assert (
+        gate.run({"tool_name": "Read", "tool_input": {"file_path": "/etc/hosts"}}) == 0
+    )
 
 
 def test_the_refusal_hands_back_a_command_the_gate_then_allows() -> None:

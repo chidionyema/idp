@@ -197,7 +197,9 @@ _CONTRACTS_INDEX = (
 # first version of this file created only `action_contracts`, so the signal insert raised
 # `sqlite3.OperationalError: no such table: fleetview_signals` on a fresh database -- the test that
 # drives a real SQLite file is what found it, and it would have found the founder instead.
-_SIGNALS_MODULE = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "signals.py"
+_SIGNALS_MODULE = (
+    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "signals.py"
+)
 
 
 def _signals_impl():
@@ -212,7 +214,9 @@ def _signals_impl():
     if name in sys.modules:
         return sys.modules[name]
     spec = importlib.util.spec_from_file_location(name, _SIGNALS_MODULE)
-    if spec is None or spec.loader is None:  # pragma: no cover -- environment, not logic
+    if (
+        spec is None or spec.loader is None
+    ):  # pragma: no cover -- environment, not logic
         raise Blind(f"cannot load {_SIGNALS_MODULE}")
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
@@ -252,7 +256,7 @@ def address(transcript: str, trigger: str) -> str | None:
         raise Refused("empty trigger phrase would address every utterance")
     if not low.startswith(head):
         return None
-    command = text[len(head):].lstrip(" ,:;-\u2014\t")
+    command = text[len(head) :].lstrip(" ,:;-\u2014\t")
     if not command:
         return None
     return command
@@ -373,7 +377,9 @@ def commit(
     """
     contract_id = f"aac_{uuid.uuid4().hex[:12]}"
     now = _now()
-    with con:  # commits on success, rolls back on exception -- and the rollback is the point
+    with (
+        con
+    ):  # commits on success, rolls back on exception -- and the rollback is the point
         con.execute(
             "INSERT INTO action_contracts (contract_id, session_id, source_surface, raw_transcript,"
             " address_phrase, bdd_json, status, voice_turn_id, model, created_at, updated_at)"
@@ -486,7 +492,9 @@ def listen(
                 # before it executes. This is the server-side half of that promise: the heard text
                 # is printed before the contract exists, so a mishearing is visible in the record
                 # even when the synthesis succeeds.
-                print(f"observer: heard {transcript!r} -> command {command!r}", flush=True)
+                print(
+                    f"observer: heard {transcript!r} -> command {command!r}", flush=True
+                )
                 if dry_run:
                     print("observer: dry run, not synthesising", flush=True)
                     exchanged += 1
@@ -587,14 +595,24 @@ def main(argv: list[str] | None = None) -> int:
         prog="observer",
         description="Turn an addressed spoken request into a tracked BDD action contract.",
     )
-    p.add_argument("--trigger", default=DEFAULT_TRIGGER, help="address phrase (default: agents)")
-    p.add_argument("--session", default=os.environ.get("IDP_SESSION_ID", "active_session"))
-    p.add_argument("--surface", default="voice", help="which surface the request came from")
+    p.add_argument(
+        "--trigger", default=DEFAULT_TRIGGER, help="address phrase (default: agents)"
+    )
+    p.add_argument(
+        "--session", default=os.environ.get("IDP_SESSION_ID", "active_session")
+    )
+    p.add_argument(
+        "--surface", default="voice", help="which surface the request came from"
+    )
     p.add_argument("--once", action="store_true", help="commit one contract and exit")
-    p.add_argument("--dry-run", action="store_true", help="print what was heard; commit nothing")
+    p.add_argument(
+        "--dry-run", action="store_true", help="print what was heard; commit nothing"
+    )
     p.add_argument("--list", action="store_true", help="show recent contracts and exit")
     p.add_argument("--json", action="store_true", help="with --list, emit JSON")
-    p.add_argument("--timeout", type=float, default=30.0, help="socket read timeout, seconds")
+    p.add_argument(
+        "--timeout", type=float, default=30.0, help="socket read timeout, seconds"
+    )
     args = p.parse_args(argv)
 
     try:

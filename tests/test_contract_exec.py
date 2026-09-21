@@ -129,9 +129,12 @@ def test_a_contract_with_no_command_is_refused_not_guessed(mod):
     with pytest.raises(mod.Refused) as exc:
         mod.dispatch(con, cid, dry_run=False)
     assert "no command" in str(exc.value)
-    assert con.execute(
-        "SELECT status FROM action_contracts WHERE contract_id = ?", (cid,)
-    ).fetchone()["status"] == "PENDING"
+    assert (
+        con.execute(
+            "SELECT status FROM action_contracts WHERE contract_id = ?", (cid,)
+        ).fetchone()["status"]
+        == "PENDING"
+    )
     assert mod.stub.calls == []
     con.close()
 
@@ -143,10 +146,14 @@ def test_dispatch_hands_the_command_to_the_executor_and_records_the_job(mod):
     assert mod.dispatch(con, cid, dry_run=False) == "RUNNING"
 
     assert mod.stub.calls == ["echo hello"]
-    row = con.execute("SELECT * FROM action_contracts WHERE contract_id = ?", (cid,)).fetchone()
+    row = con.execute(
+        "SELECT * FROM action_contracts WHERE contract_id = ?", (cid,)
+    ).fetchone()
     assert row["status"] == "RUNNING"
     assert row["job_id"] == "exec-test-1"
-    signal = con.execute("SELECT text FROM fleetview_signals WHERE kind = 'dispatched'").fetchone()
+    signal = con.execute(
+        "SELECT text FROM fleetview_signals WHERE kind = 'dispatched'"
+    ).fetchone()
     assert cid in signal["text"]
     con.close()
 
@@ -162,15 +169,19 @@ def test_an_executor_refusal_becomes_REFUSED_and_never_a_running_node(mod, monke
     con = mod._connect()
     mod.migrate(con)
     assert mod.dispatch(con, cid, dry_run=False) == "REFUSED"
-    row = con.execute("SELECT status, error, job_id FROM action_contracts WHERE contract_id = ?",
-                      (cid,)).fetchone()
+    row = con.execute(
+        "SELECT status, error, job_id FROM action_contracts WHERE contract_id = ?",
+        (cid,),
+    ).fetchone()
     assert row["status"] == "REFUSED"
     assert "not bounded" in row["error"]
     assert row["job_id"] is None
     con.close()
 
 
-def test_a_finished_job_completes_the_contract_and_a_failed_one_blocks_it(mod, monkeypatch):
+def test_a_finished_job_completes_the_contract_and_a_failed_one_blocks_it(
+    mod, monkeypatch
+):
     for exit_code, expected in ((0, "COMPLETED"), (1, "BLOCKED")):
         stub = StubExecutor(state="finished", exit_code=exit_code)
         monkeypatch.setattr(mod, "_executor", lambda s=stub: s)
@@ -179,8 +190,10 @@ def test_a_finished_job_completes_the_contract_and_a_failed_one_blocks_it(mod, m
         mod.migrate(con)
         assert mod.dispatch(con, cid, dry_run=False) == "RUNNING"
         assert mod.dispatch(con, cid, dry_run=False) == expected
-        row = con.execute("SELECT exit_code, finished_at FROM action_contracts WHERE contract_id = ?",
-                          (cid,)).fetchone()
+        row = con.execute(
+            "SELECT exit_code, finished_at FROM action_contracts WHERE contract_id = ?",
+            (cid,),
+        ).fetchone()
         assert row["exit_code"] == exit_code
         assert row["finished_at"]
         con.close()
@@ -207,8 +220,12 @@ def test_a_job_the_executor_has_forgotten_stays_RUNNING(mod, monkeypatch):
     forgetful.job_id = "something-else"
     mod.stub = forgetful  # type: ignore[assignment]
     assert mod.dispatch(con, cid, dry_run=False) == "RUNNING"
-    assert con.execute("SELECT status FROM action_contracts WHERE contract_id = ?",
-                       (cid,)).fetchone()["status"] == "RUNNING"
+    assert (
+        con.execute(
+            "SELECT status FROM action_contracts WHERE contract_id = ?", (cid,)
+        ).fetchone()["status"]
+        == "RUNNING"
+    )
     con.close()
 
 
@@ -216,7 +233,9 @@ def test_a_terminal_contract_is_never_redispatched(mod):
     cid = _seed(mod)
     con = mod._connect()
     mod.migrate(con)
-    con.execute("UPDATE action_contracts SET status = 'COMPLETED' WHERE contract_id = ?", (cid,))
+    con.execute(
+        "UPDATE action_contracts SET status = 'COMPLETED' WHERE contract_id = ?", (cid,)
+    )
     con.commit()
     assert mod.dispatch(con, cid, dry_run=False) == "COMPLETED"
     assert mod.stub.calls == []
@@ -229,8 +248,12 @@ def test_dry_run_dispatches_nothing(mod):
     mod.migrate(con)
     mod.dispatch(con, cid, dry_run=True)
     assert mod.stub.calls == []
-    assert con.execute("SELECT job_id FROM action_contracts WHERE contract_id = ?",
-                       (cid,)).fetchone()["job_id"] is None
+    assert (
+        con.execute(
+            "SELECT job_id FROM action_contracts WHERE contract_id = ?", (cid,)
+        ).fetchone()["job_id"]
+        is None
+    )
     con.close()
 
 
@@ -248,8 +271,12 @@ def test_tick_advances_one_bad_contract_without_stopping_the_others(mod):
     mod.migrate(con)
     assert mod.tick(con, dry_run=False, limit=10) == 1
     assert mod.stub.calls == ["echo ok"]
-    assert con.execute("SELECT status FROM action_contracts WHERE contract_id = ?",
-                       (good,)).fetchone()["status"] == "RUNNING"
+    assert (
+        con.execute(
+            "SELECT status FROM action_contracts WHERE contract_id = ?", (good,)
+        ).fetchone()["status"]
+        == "RUNNING"
+    )
     con.close()
 
 
@@ -286,8 +313,9 @@ def test_a_missing_daemon_does_not_mark_the_contract_BLOCKED(mod, monkeypatch, a
     mod.migrate(con)
     mod.dispatch(con, cid, dry_run=False)
     mod.dispatch(con, cid, dry_run=False)
-    status = con.execute("SELECT status FROM action_contracts WHERE contract_id = ?",
-                         (cid,)).fetchone()["status"]
+    status = con.execute(
+        "SELECT status FROM action_contracts WHERE contract_id = ?", (cid,)
+    ).fetchone()["status"]
     assert status in ("PENDING", "RUNNING")
     con.close()
 
@@ -335,7 +363,9 @@ def test_this_module_contains_no_second_spawn_path():
 
     tree = ast.parse(EXEC.read_text())
     for node in ast.walk(tree):
-        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(
+            node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
             body = node.body
             # Drop a leading docstring, which is prose, not a call.
             if (
@@ -348,4 +378,6 @@ def test_this_module_contains_no_second_spawn_path():
             node.body = body or [ast.Pass()]
     code = ast.unparse(tree)
     for banned in ("subprocess", "Popen", "os.system", "os.spawn", "setsid", "nohup"):
-        assert banned not in code, f"{banned} is a second spawn path; use execute_command"
+        assert banned not in code, (
+            f"{banned} is a second spawn path; use execute_command"
+        )

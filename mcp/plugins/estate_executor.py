@@ -78,14 +78,14 @@ _NEVER = (
 )
 
 
-def explicit_ceiling_sec(command: str) ->Optional[int]:
+def explicit_ceiling_sec(command: str) -> Optional[int]:
     """The ceiling a command sets on itself, in seconds, or None when it sets none.
 
     Every spelling is read. The earlier form of this check caught `timeout 150` and missed
     `timeout 2m` and `gtimeout -k 5 150` -- it parsed the `5` from `-k 5` and passed the real
     number. A rule that catches one spelling is a rule the agent steps around without meaning to.
     """
-    ceiling:Optional[int] = None
+    ceiling: Optional[int] = None
     for match in _TIMEOUT_RE.finditer(command):
         args = match.group(1)
         # `-k 5` / `--kill-after=5` is a grace period, never the ceiling, and its digit must not
@@ -113,11 +113,11 @@ class Job:
     job_id: str
     command: str
     ceiling_sec: int
-    cwd:Optional[str] = None
+    cwd: Optional[str] = None
     accepted_at: float = field(default_factory=time.time)
     state: str = "accepted"
-    exit_code:Optional[int] = None
-    log:Optional[str] = None
+    exit_code: Optional[int] = None
+    log: Optional[str] = None
 
 
 def _daemon_socket_path() -> str:
@@ -205,7 +205,7 @@ class Executor:
         self._lock = threading.Lock()
 
     def submit(
-        self, command: str, cwd:Optional[str] = None, ceiling_sec: int = CEILING_SEC
+        self, command: str, cwd: Optional[str] = None, ceiling_sec: int = CEILING_SEC
     ) -> Job:
         """Start the work on the daemon, and return a Job describing what was started.
 
@@ -241,10 +241,10 @@ class Executor:
             self._jobs[job.job_id] = job
         return job
 
-    def get(self, job_id: str) ->Optional[Job]:
+    def get(self, job_id: str) -> Optional[Job]:
         return self._jobs.get(job_id)
 
-    def finish(self, job_id: str, exit_code: int, log: str = "") ->Optional[Job]:
+    def finish(self, job_id: str, exit_code: int, log: str = "") -> Optional[Job]:
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
@@ -273,7 +273,7 @@ class LocalExecutor(Executor):
     """
 
     def submit(
-        self, command: str, cwd:Optional[str] = None, ceiling_sec: int = CEILING_SEC
+        self, command: str, cwd: Optional[str] = None, ceiling_sec: int = CEILING_SEC
     ) -> Job:
         with self._lock:
             self._seq += 1
@@ -297,9 +297,9 @@ def _refusal(reason: str, *, detail: str = "") -> dict:
 def execute_command(
     command: str,
     *,
-    cwd:Optional[str] = None,
+    cwd: Optional[str] = None,
     ceiling_sec: int = CEILING_SEC,
-    executor:Optional[Executor] = None,
+    executor: Optional[Executor] = None,
     mutates_live_worktree: bool = False,
 ) -> dict:
     """The one door. Accept a command, bound it, hand it to the detached executor.
@@ -400,7 +400,7 @@ def execute_command(
         return {
             "accepted": False,
             "error": (
-                "the executor daemon is not reachable, so nothing was started: " f"{exc}"
+                f"the executor daemon is not reachable, so nothing was started: {exc}"
             ),
             "refused": True,
             "fatal": True,
@@ -450,7 +450,7 @@ def _sync_from_disk(job: Job, executor: Executor) -> None:
 
 
 def _report_failure(
-    job_id: str, command: str, cwd:Optional[str], exit_code: int, log_text: str
+    job_id: str, command: str, cwd: Optional[str], exit_code: int, log_text: str
 ) -> None:
     """Feed a failed job to the via-negativa RCA worker (Primitive D, bin/rca_worker/worker.py).
 
@@ -484,7 +484,7 @@ def _report_failure(
         pass
 
 
-def read_job(job_id: str, *, executor:Optional[Executor] = None) -> dict:
+def read_job(job_id: str, *, executor: Optional[Executor] = None) -> dict:
     """Read one job's outcome. Never waits -- a door that waits is the thing this replaces.
 
     TWO STORES, ONE ANSWER. When a caller injects a stub, the stub owns the outcome (every test
@@ -543,7 +543,7 @@ def register_mcp_tools(
     # `executor=`) stay the ones under test.
     def execute_command_tool(
         command: str,
-        cwd:Optional[str] = None,
+        cwd: Optional[str] = None,
         ceiling_sec: int = CEILING_SEC,
         mutates_live_worktree: bool = False,
     ) -> dict:
@@ -701,7 +701,7 @@ def register_mcp_tools(
 def simulate_command(
     command: str,
     *,
-    cwd:Optional[str] = None,
+    cwd: Optional[str] = None,
     ceiling_sec: int = CEILING_SEC,
     mutates_live_worktree: bool = False,
 ) -> dict:
@@ -725,7 +725,7 @@ def simulate_command(
 
 def _refusals_for(
     command: str,
-    cwd:Optional[str],
+    cwd: Optional[str],
     ceiling_sec: int,
     mutates_live_worktree: bool = False,
 ) -> list[dict]:
@@ -932,7 +932,7 @@ def seal_payload(payload_path: str, tests: str = "", claim: str = "") -> dict:
     )
 
 
-def admit_payload(payload_path: str, attestation:Optional[dict] = None) -> dict:
+def admit_payload(payload_path: str, attestation: Optional[dict] = None) -> dict:
     """Admit a sealed payload. A payload without the seal is intercepted, never admitted."""
     return _verifier_call(
         {"verb": "admit", "payload_path": payload_path, "attestation": attestation}
@@ -945,7 +945,7 @@ def propose_mutation(
     sql_migration: str = "",
     tests: str = "",
     claim: str = "",
-    envelope:Optional[dict] = None,
+    envelope: Optional[dict] = None,
 ) -> dict:
     """Propose code+manifest+SQL as one ledger, never three unrelated calls.
 
@@ -992,7 +992,7 @@ def seal_mutation(ledger_id: str, tests: str = "", claim: str = "") -> dict:
     )
 
 
-def admit_mutation(ledger_id: str, attestation:Optional[dict] = None) -> dict:
+def admit_mutation(ledger_id: str, attestation: Optional[dict] = None) -> dict:
     """Admit an attested bundle, push its branch, and open its PR. Never writes live, never merges.
 
     ADR 0025: the agent never touches git -- the gateway (this door) builds the commit, pushes

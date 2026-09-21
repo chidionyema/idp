@@ -186,7 +186,9 @@ def _gateway_line() -> str:
         with open(LEDGER) as f:
             rows = [json.loads(line) for line in f if line.strip()]
     except Exception:  # noqa: BLE001
-        return "    [gateway] no ledger at ~/.estate/efficiency-ledger.jsonl — has not run"
+        return (
+            "    [gateway] no ledger at ~/.estate/efficiency-ledger.jsonl — has not run"
+        )
     if not rows:
         return "    [gateway] ledger present but empty — the 8 mechanisms have not run"
     saved = sum(int(r.get("bytes_saved", 0) or 0) for r in rows if isinstance(r, dict))

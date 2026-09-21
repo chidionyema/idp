@@ -36,7 +36,7 @@ import json
 import os
 import time
 import uuid
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Any
 
 try:
@@ -152,7 +152,6 @@ def _ensure_table(db_path: str) -> None:
 
 def _upsert(decision: JevDecision, db_path: str) -> None:
     """UPSERT into estate.db. BLIND on failure (never blocks the call)."""
-    import sqlite3
 
     _ensure_table(db_path)
     row = decision.to_row()
@@ -200,7 +199,9 @@ def _strip_secrets(context: dict[str, Any]) -> dict[str, Any]:
         elif isinstance(v, dict):
             out[k] = _strip_secrets(v)
         elif isinstance(v, list) and v and isinstance(v[0], dict):
-            out[k] = [_strip_secrets(item) if isinstance(item, dict) else item for item in v]
+            out[k] = [
+                _strip_secrets(item) if isinstance(item, dict) else item for item in v
+            ]
         else:
             out[k] = v
     if any(sek in k.lower() for sek in SECRET_KEYS for k in context):
@@ -289,7 +290,9 @@ def _build_questions(
 ) -> dict[str, dict[str, Any]]:
     """Build the questions dict for the TypeSafe API."""
     if qtype == "choice":
-        criteria = options if isinstance(options, dict) else {str(o): o for o in options}
+        criteria = (
+            options if isinstance(options, dict) else {str(o): o for o in options}
+        )
         return {
             "decision": {
                 "type": "choice",
@@ -389,7 +392,9 @@ def jev_choice(
         question=question,
         answer=result.get("choice"),
         confidence=result.get("confidence"),
-        probabilities=json.dumps(result.get("probabilities")) if result.get("probabilities") else None,
+        probabilities=json.dumps(result.get("probabilities"))
+        if result.get("probabilities")
+        else None,
         escalated=result.get("escalated", False),
         latency_ms=result.get("latency_ms"),
         created_at=__import__("datetime").datetime.utcnow().isoformat() + "Z",
@@ -419,7 +424,9 @@ def jev_score(
         question=question,
         answer=result.get("level"),
         confidence=result.get("confidence"),
-        probabilities=json.dumps(result.get("probabilities")) if result.get("probabilities") else None,
+        probabilities=json.dumps(result.get("probabilities"))
+        if result.get("probabilities")
+        else None,
         escalated=result.get("escalated", False),
         latency_ms=result.get("latency_ms"),
         created_at=__import__("datetime").datetime.utcnow().isoformat() + "Z",
@@ -489,7 +496,9 @@ def register_mcp_tools(datasette, mcp) -> None:  # pragma: no cover - estate MCP
         When escalated=true the caller should route to human review or deeper analysis.
         When Jev is unavailable: {escalated: true, _fallback: "jev_unavailable", confidence: null}.
         """
-        return jev_choice(repo, layer, decision_id, context, question, options, required_confidence)
+        return jev_choice(
+            repo, layer, decision_id, context, question, options, required_confidence
+        )
 
     async def _jev_score(
         repo: str,
@@ -512,7 +521,9 @@ def register_mcp_tools(datasette, mcp) -> None:  # pragma: no cover - estate MCP
 
         Returns {score, level, confidence, probabilities: {level: float}, escalated, latency_ms}.
         """
-        return jev_score(repo, layer, decision_id, context, question, levels, required_confidence)
+        return jev_score(
+            repo, layer, decision_id, context, question, levels, required_confidence
+        )
 
     async def _jev_noul(
         repo: str,

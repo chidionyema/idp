@@ -25,6 +25,7 @@ Fleetview backend owns -- one store, not two -- and WAL is already on for the tw
 WHY IT NEVER RAISES. A voice turn that fails because its LOGGING failed would be absurd. Every
 write is wrapped, and a failure is counted rather than propagated.
 """
+
 from __future__ import annotations
 
 import os
@@ -144,7 +145,8 @@ def recent(limit: int = 50) -> list[dict[str, Any]]:
         try:
             con.execute(_DDL)
             rows = con.execute(
-                "SELECT * FROM voice_turns ORDER BY id DESC LIMIT ?", (max(1, min(limit, 500)),)
+                "SELECT * FROM voice_turns ORDER BY id DESC LIMIT ?",
+                (max(1, min(limit, 500)),),
             ).fetchall()
         finally:
             con.close()
@@ -187,13 +189,22 @@ def summary(limit: int = 200) -> dict[str, Any]:
         "asr_median_s": median([t.get("asr_s") for t in turns]),
         "first_clause_median_s": median([t.get("llm_first_s") for t in turns]),
         "first_clause_p90_s": (
-            round(sorted(t["llm_first_s"] for t in turns if t.get("llm_first_s") is not None)[
-                int(len([t for t in turns if t.get("llm_first_s") is not None]) * 0.9)
-            ], 3)
+            round(
+                sorted(
+                    t["llm_first_s"] for t in turns if t.get("llm_first_s") is not None
+                )[
+                    int(
+                        len([t for t in turns if t.get("llm_first_s") is not None])
+                        * 0.9
+                    )
+                ],
+                3,
+            )
             if any(t.get("llm_first_s") is not None for t in turns)
             else None
         ),
         "by_voice": {
-            k: {"n": len(v), "first_clause_median_s": median(v)} for k, v in sorted(by_voice.items())
+            k: {"n": len(v), "first_clause_median_s": median(v)}
+            for k, v in sorted(by_voice.items())
         },
     }

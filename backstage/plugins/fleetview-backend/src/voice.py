@@ -53,8 +53,8 @@ SYSTEM = (
     "Use ONLY the fleet summary below. Never invent a session, a state or a number. If the summary "
     "does not answer the question, say so plainly.\n"
     "\n"
-    "If there is a RECENT CONVERSATION, it is what you were just asked: use it to resolve \"it\", "
-    "\"that one\" and \"the stuck one\", and answer the follow-up without making the person repeat "
+    'If there is a RECENT CONVERSATION, it is what you were just asked: use it to resolve "it", '
+    '"that one" and "the stuck one", and answer the follow-up without making the person repeat '
     "which agent they meant."
 )
 
@@ -116,7 +116,9 @@ def fleet_summary(sessions: list[dict[str, Any]], limit: int = 24) -> str:
     stuck = counts.get("stuck", 0)
     lines = [
         f"{len(sessions)} agents total. "
-        + ", ".join(f"{n} {k}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+        + ", ".join(
+            f"{n} {k}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1])
+        )
         + ".",
     ]
     if stuck:
@@ -166,14 +168,18 @@ def history_block(history: list[dict[str, str]] | None, limit: int = 6) -> str:
     tail = [h for h in history if h.get("text")][-limit:]
     if not tail:
         return ""
-    lines = ["RECENT CONVERSATION (newest last; use it to resolve \"it\" and \"that one\")"]
+    lines = ['RECENT CONVERSATION (newest last; use it to resolve "it" and "that one")']
     for h in tail:
         who = "Person" if (h.get("who") or "person") == "person" else "You"
         lines.append(f"{who}: {str(h.get('text'))[:200]}")
     return "\n".join(lines) + "\n\n"
 
 
-def ask(question: str, sessions: list[dict[str, Any]], history: list[dict[str, str]] | None = None) -> tuple[dict[str, Any], int]:
+def ask(
+    question: str,
+    sessions: list[dict[str, Any]],
+    history: list[dict[str, str]] | None = None,
+) -> tuple[dict[str, Any], int]:
     """Ask the fleet. Returns (body, status).
 
     A missing key is 503 with the reason, not a fallback: silently answering from a local model
@@ -223,10 +229,15 @@ def ask(question: str, sessions: list[dict[str, Any]], history: list[dict[str, s
         # place.
         detail = ""
         try:
-            detail = (json.loads(exc.read().decode()).get("error") or {}).get("message", "")
+            detail = (json.loads(exc.read().decode()).get("error") or {}).get(
+                "message", ""
+            )
         except Exception:  # noqa: BLE001
             detail = ""
-        return {"error": f"the router refused the call ({exc.code})", "detail": detail[:300]}, 502
+        return {
+            "error": f"the router refused the call ({exc.code})",
+            "detail": detail[:300],
+        }, 502
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         return {"error": f"cannot reach the router: {exc}"}, 503
     except (ValueError, UnicodeDecodeError) as exc:
@@ -237,7 +248,9 @@ def ask(question: str, sessions: list[dict[str, Any]], history: list[dict[str, s
         err = doc.get("error")
         return {
             "error": "the router returned no answer",
-            "detail": (err.get("message") if isinstance(err, dict) else str(err or ""))[:300],
+            "detail": (err.get("message") if isinstance(err, dict) else str(err or ""))[
+                :300
+            ],
         }, 502
     answer = ((choices[0].get("message") or {}).get("content") or "").strip()
     if not answer:
@@ -270,7 +283,11 @@ def split_clauses(buffer: str) -> tuple[list[str], str]:
     return parts, buffer[start:]
 
 
-def stream_ask(question: str, sessions: list[dict[str, Any]], history: list[dict[str, str]] | None = None):
+def stream_ask(
+    question: str,
+    sessions: list[dict[str, Any]],
+    history: list[dict[str, str]] | None = None,
+):
     """Yield server-sent events: one `delta` per clause, then `done`.
 
     Same prompt, same fleet summary, same read-only rule as `ask` -- the only difference is that
@@ -281,7 +298,10 @@ def stream_ask(question: str, sessions: list[dict[str, Any]], history: list[dict
         yield _sse("error", {"error": "question is required"})
         return
     if not router_key():
-        yield _sse("error", {"error": "no LITELLM_API_KEY on this deployment, so voice has no model"})
+        yield _sse(
+            "error",
+            {"error": "no LITELLM_API_KEY on this deployment, so voice has no model"},
+        )
         return
 
     payload = {
@@ -318,10 +338,18 @@ def stream_ask(question: str, sessions: list[dict[str, Any]], history: list[dict
     except urllib.error.HTTPError as exc:
         detail = ""
         try:
-            detail = (json.loads(exc.read().decode()).get("error") or {}).get("message", "")
+            detail = (json.loads(exc.read().decode()).get("error") or {}).get(
+                "message", ""
+            )
         except Exception:  # noqa: BLE001
             detail = ""
-        yield _sse("error", {"error": f"the router refused the call ({exc.code})", "detail": detail[:300]})
+        yield _sse(
+            "error",
+            {
+                "error": f"the router refused the call ({exc.code})",
+                "detail": detail[:300],
+            },
+        )
         return
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         yield _sse("error", {"error": f"cannot reach the router: {exc}"})
@@ -375,16 +403,22 @@ def stream_ask(question: str, sessions: list[dict[str, Any]], history: list[dict
             # The region of the ROUTER, which is the only residency fact this deployment can
             # state. Naming a provider region it cannot verify would be a fabricated number in the
             # one line whose whole job is honesty.
-            region = _last_choice.get("region") or (router_host().split("//")[-1].split("/")[0])
+            region = (
+                _last_choice.get("region")
+                or (router_host().split("//")[-1].split("/")[0])
+            )
             usd = _last_choice.get("usd") or 0.0
         except Exception:  # noqa: BLE001
             chosen, region, usd = router_model(), "unknown", 0.0
-        yield _sse("done", {
-            "model": chosen,
-            "region": region,
-            "usd": round(usd, 6),
-            "why": _why(chosen, region, usd, len(sessions)),
-        })
+        yield _sse(
+            "done",
+            {
+                "model": chosen,
+                "region": region,
+                "usd": round(usd, 6),
+                "why": _why(chosen, region, usd, len(sessions)),
+            },
+        )
     finally:
         try:
             resp.close()

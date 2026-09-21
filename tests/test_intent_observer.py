@@ -48,7 +48,9 @@ def _load_observer(monkeypatch, tmp_path: Path):
     return mod
 
 
-def test_the_migration_is_idempotent_and_creates_the_contract_table(monkeypatch, tmp_path):
+def test_the_migration_is_idempotent_and_creates_the_contract_table(
+    monkeypatch, tmp_path
+):
     """Running it twice must not raise. The boot path runs on every connection."""
     mod = _load_observer(monkeypatch, tmp_path)
     con = mod._connect()
@@ -59,7 +61,9 @@ def test_the_migration_is_idempotent_and_creates_the_contract_table(monkeypatch,
     con.close()
 
 
-def test_an_addressed_utterance_becomes_a_contract_with_a_real_signal_row(monkeypatch, tmp_path):
+def test_an_addressed_utterance_becomes_a_contract_with_a_real_signal_row(
+    monkeypatch, tmp_path
+):
     """The load-bearing path: address -> synthesise -> commit.
 
     The signal insert is asserted in full because a partial insert is the defect this test exists
@@ -114,7 +118,9 @@ def test_an_addressed_utterance_becomes_a_contract_with_a_real_signal_row(monkey
     con.close()
 
 
-def test_an_unaddressed_utterance_is_recorded_and_never_becomes_a_contract(monkeypatch, tmp_path):
+def test_an_unaddressed_utterance_is_recorded_and_never_becomes_a_contract(
+    monkeypatch, tmp_path
+):
     """The negative case, which is the whole point of the address phrase.
 
     A remark ABOUT the fleet must not fire a contract; but it must still be recorded, or the
@@ -167,7 +173,13 @@ def test_over_ceiling_agent_counts_are_refused(monkeypatch, tmp_path):
     for n in (0, 6, 40):
         with pytest.raises(mod.Refused):
             mod.normalise(
-                {"feature": "f", "given": "g", "when": "w", "then": "t", "agents_required": n}
+                {
+                    "feature": "f",
+                    "given": "g",
+                    "when": "w",
+                    "then": "t",
+                    "agents_required": n,
+                }
             )
 
 

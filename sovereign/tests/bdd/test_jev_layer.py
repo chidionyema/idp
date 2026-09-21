@@ -9,9 +9,9 @@ Scenarios:
   no secret leakage -- context with password key -> stripped, password_redacted flag set
   policy jev drift  -- policy.py jev keys match AGENTS.md [jev] section
 """
+
 from __future__ import annotations
 
-import os
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -83,14 +83,22 @@ class TestJevLayerPureFunctions:
         assert qs["truth"]["instructions"] == "Is this urgent?"
 
     def test_parse_answer_choice(self):
-        ans = {"choice": "billing", "confidence": 0.85, "probabilities": {"billing": 0.9, "technical": 0.1}}
+        ans = {
+            "choice": "billing",
+            "confidence": 0.85,
+            "probabilities": {"billing": 0.9, "technical": 0.1},
+        }
         result = jev_module._parse_answer(ans, "choice", 0.7, 120.0)
         assert result["choice"] == "billing"
         assert result["confidence"] == 0.85
         assert result["escalated"] is False
 
     def test_parse_answer_choice_low_confidence(self):
-        ans = {"choice": "billing", "confidence": 0.4, "probabilities": {"billing": 0.5}}
+        ans = {
+            "choice": "billing",
+            "confidence": 0.4,
+            "probabilities": {"billing": 0.5},
+        }
         result = jev_module._parse_answer(ans, "choice", 0.7, 80.0)
         assert result["escalated"] is True
 
@@ -151,13 +159,17 @@ class TestJevLayerPolicyIntegration:
         assert p.jev["timeout_ms"] == 2000
         assert p.jev["model"] == "jev-1.13.0"
 
-    def test_jev_section_required(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_jev_section_required(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         """Missing [jev] section raises PolicyError, not a silent default."""
         real = policy.agents_md_path().read_text()
         # Remove the [jev] section by truncating before it
         jev_start = real.find("\n[jev]")
-        assert jev_start >= -1  # if find returned -1, the section is missing; subsequent raises the real error
-        stale = real[:jev_start] + "\n" + real[real.find("\n```", jev_start):]
+        assert (
+            jev_start >= -1
+        )  # if find returned -1, the section is missing; subsequent raises the real error
+        stale = real[:jev_start] + "\n" + real[real.find("\n```", jev_start) :]
         copy = tmp_path / "AGENTS.md"
         copy.write_text(stale)
         monkeypatch.setenv(policy.AGENTS_MD_ENV, str(copy))
@@ -172,7 +184,11 @@ class TestJevLayerDatabase:
         db = str(tmp_path / "test.db")
         jev_module._ensure_table(db)
         con = sqlite3.connect(db)
-        rows = list(con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='jev_decisions'"))
+        rows = list(
+            con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='jev_decisions'"
+            )
+        )
         con.close()
         assert len(rows) == 1
 
@@ -203,7 +219,11 @@ class TestJevLayerDatabase:
         jev_module._upsert(decision, db)
 
         con = sqlite3.connect(db)
-        rows = list(con.execute("SELECT repo, layer, decision_id, confidence FROM jev_decisions"))
+        rows = list(
+            con.execute(
+                "SELECT repo, layer, decision_id, confidence FROM jev_decisions"
+            )
+        )
         con.close()
         assert len(rows) == 1
         assert rows[0][0] == "sovereign"

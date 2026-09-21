@@ -194,7 +194,9 @@ def build_app(routes_path: Path) -> FastAPI:
         return JSONResponse(content=body, status_code=status)
 
     @app.get(routes.HISTORY_PATH)
-    def history(session_id: str = "", since: str = "", until: str = "", limit: int = 500):
+    def history(
+        session_id: str = "", since: str = "", until: str = "", limit: int = 500
+    ):
         payload, status = routes.history_envelope(session_id, since, until, limit)
         return JSONResponse(content=payload, status_code=status)
 
@@ -220,10 +222,14 @@ def build_app(routes_path: Path) -> FastAPI:
             for chunk in routes.stream_voice(body, sessions):
                 yield chunk
 
-        return StreamingResponse(gen(), media_type="text/event-stream", headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        })
+        return StreamingResponse(
+            gen(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.post(routes.VOICE_PATH)
     async def voice(body: dict):
@@ -464,7 +470,9 @@ def build_app(routes_path: Path) -> FastAPI:
         return JSONResponse(content=body, status_code=status)
 
     @app.post(routes.WORK_PATH)
-    async def work_post(request: Request, x_board_key: str | None = Header(default=None)):
+    async def work_post(
+        request: Request, x_board_key: str | None = Header(default=None)
+    ):
         # `/work` writes the PID that `/kill` will signal, so it is half of the destructive chain
         # even though it is not destructive itself.
         _check_board_key(x_board_key)
@@ -478,13 +486,17 @@ def build_app(routes_path: Path) -> FastAPI:
     # THE HARD STOP. SIGTERM against the PID the session reported; for a rogue or wedged agent
     # that will never reach the turn boundary /stop waits for.
     @app.post(routes.KILL_PATH)
-    async def kill_post(request: Request, x_board_key: str | None = Header(default=None)):
+    async def kill_post(
+        request: Request, x_board_key: str | None = Header(default=None)
+    ):
         _check_board_key(x_board_key)
         try:
             payload = await request.json()
         except Exception:  # noqa: BLE001
             return JSONResponse(content={"error": "body must be JSON"}, status_code=400)
-        body, status = routes.kill_envelope(payload if isinstance(payload, dict) else {})
+        body, status = routes.kill_envelope(
+            payload if isinstance(payload, dict) else {}
+        )
         return JSONResponse(content=body, status_code=status)
 
     @app.post(routes.REPLIES_PATH)

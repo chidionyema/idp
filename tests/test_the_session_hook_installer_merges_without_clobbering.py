@@ -107,9 +107,7 @@ def test_a_repoint_keeps_the_entry_a_command_hook_with_a_timeout() -> None:
             "Stop": [
                 {
                     "matcher": "",
-                    "hooks": [
-                        {"type": "command", "command": stale, "timeout": 15}
-                    ],
+                    "hooks": [{"type": "command", "command": stale, "timeout": 15}],
                 }
             ]
         }
@@ -129,7 +127,9 @@ def test_a_hooks_key_of_the_wrong_shape_is_refused_not_overwritten() -> None:
 
 
 def test_an_unparseable_settings_file_is_left_exactly_as_it_was(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
 ) -> None:
     config = tmp_path / ".claude"
     config.mkdir()

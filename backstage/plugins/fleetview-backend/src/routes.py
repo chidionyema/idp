@@ -71,7 +71,9 @@ _SIGNALS_MODULE = Path(__file__).resolve().parent / "signals.py"
 # The Observer lives in platform/intent/, NOT beside this file: it is a producer of contracts that
 # the backend merely reads, and the voice service is its peer, not its parent. Resolved from the
 # module's own location so it does not depend on the process's working directory.
-_OBSERVER_MODULE = Path(__file__).resolve().parents[4] / "platform" / "intent" / "observer.py"
+_OBSERVER_MODULE = (
+    Path(__file__).resolve().parents[4] / "platform" / "intent" / "observer.py"
+)
 _BLAST_MODULE = Path(__file__).resolve().parent / "blast.py"
 _GRAPH_MODULE = Path(__file__).resolve().parent / "graph.py"
 _EVALS_MODULE = Path(__file__).resolve().parent / "evals.py"
@@ -121,7 +123,9 @@ def newest_event_seq() -> int:
     try:
         con = _sqlite3.connect(path)
         try:
-            row = con.execute("SELECT COALESCE(MAX(id), 0) FROM session_events").fetchone()
+            row = con.execute(
+                "SELECT COALESCE(MAX(id), 0) FROM session_events"
+            ).fetchone()
             return int(row[0]) if row else 0
         finally:
             con.close()
@@ -130,7 +134,9 @@ def newest_event_seq() -> int:
 
 
 def _history():
-    return _load(Path(__file__).resolve().parent / "history.py", "fleetview_history_impl")
+    return _load(
+        Path(__file__).resolve().parent / "history.py", "fleetview_history_impl"
+    )
 
 
 def history_envelope(
@@ -489,9 +495,7 @@ def channels_envelope() -> tuple[dict[str, Any], int]:
     table = getattr(mod, "SIGNAL_RUNTIMES", {})
     return (
         {
-            "signals": {
-                verb: sorted(runtimes) for verb, runtimes in table.items()
-            },
+            "signals": {verb: sorted(runtimes) for verb, runtimes in table.items()},
             "note": (
                 "A runtime missing from a verb's list has no channel for it; the backend refuses "
                 "that verb for that runtime with 422 and the reason."

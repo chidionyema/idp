@@ -78,7 +78,9 @@ def _load(path: Path, name: str):
     if name in sys.modules:
         return sys.modules[name]
     spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:  # pragma: no cover -- environment, not logic
+    if (
+        spec is None or spec.loader is None
+    ):  # pragma: no cover -- environment, not logic
         raise Blind(f"cannot load {path}")
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
@@ -171,7 +173,10 @@ def _socket_path() -> Path:
     `IDP_EXECUTOR_SOCKET` first, because daemon.py honours that variable and a checker reading a
     different path would report BLIND while the daemon was answering on the one it was told to use.
     """
-    return Path(os.environ.get("IDP_EXECUTOR_SOCKET") or (Path.home() / ".estate" / "executor.sock"))
+    return Path(
+        os.environ.get("IDP_EXECUTOR_SOCKET")
+        or (Path.home() / ".estate" / "executor.sock")
+    )
 
 
 def _daemon_is_up() -> bool:
@@ -245,7 +250,9 @@ def dispatch(con: sqlite3.Connection, contract_id: str, *, dry_run: bool) -> str
             " VALUES (?, 'executor', 'dispatched', 'executor', ?, 1, ?)",
             (row["session_id"], f"{contract_id} -> {job_id}", obs._now()),
         )
-    print(f"ok    {contract_id} dispatched as {job_id} (ceiling {result.get('ceiling_sec')}s)")
+    print(
+        f"ok    {contract_id} dispatched as {job_id} (ceiling {result.get('ceiling_sec')}s)"
+    )
     return "RUNNING"
 
 
@@ -280,7 +287,9 @@ def _poll(con: sqlite3.Connection, row: sqlite3.Row, *, dry_run: bool) -> str:
         return "RUNNING"
     result = _executor().read_job(job_id)
     if not result.get("found"):
-        print(f"note  {row['contract_id']}: executor does not know {job_id}; left RUNNING")
+        print(
+            f"note  {row['contract_id']}: executor does not know {job_id}; left RUNNING"
+        )
         return "RUNNING"
     if result.get("state") == "accepted":
         return "RUNNING"
@@ -296,7 +305,13 @@ def _poll(con: sqlite3.Connection, row: sqlite3.Row, *, dry_run: bool) -> str:
         con.execute(
             "UPDATE action_contracts SET status = ?, exit_code = ?, finished_at = ?, updated_at = ?"
             " WHERE contract_id = ?",
-            (status, exit_code, _observer()._now(), _observer()._now(), row["contract_id"]),
+            (
+                status,
+                exit_code,
+                _observer()._now(),
+                _observer()._now(),
+                row["contract_id"],
+            ),
         )
     print(f"ok    {row['contract_id']} -> {status} (exit {exit_code})")
     return status
@@ -350,12 +365,16 @@ def main(argv: list[str] | None = None) -> int:
         prog="contract-exec",
         description="Hand a tracked action contract to the estate's one executor.",
     )
-    p.add_argument("--tick", action="store_true", help="advance every runnable contract one step")
+    p.add_argument(
+        "--tick", action="store_true", help="advance every runnable contract one step"
+    )
     p.add_argument("--dispatch", metavar="CONTRACT_ID", help="dispatch one contract")
     p.add_argument("--command", metavar="SHELL", help="attach a command to a contract")
     p.add_argument("--status", action="store_true", help="what each contract is doing")
     p.add_argument("--json", action="store_true", help="with --status, emit JSON")
-    p.add_argument("--dry-run", action="store_true", help="say what would run; dispatch nothing")
+    p.add_argument(
+        "--dry-run", action="store_true", help="say what would run; dispatch nothing"
+    )
     p.add_argument("--limit", type=int, default=10, help="contracts per tick")
     args = p.parse_args(argv)
 

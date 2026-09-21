@@ -100,7 +100,9 @@ def wire(settings: dict) -> list[str]:
             entries.append({"type": "command", "command": command, "timeout": timeout})
             report.append(f"ok    claude  {event}/{matcher or '*'} WIRED: {rel}")
         elif existing.get("command") == command:
-            report.append(f"ok    claude  {event}/{matcher or '*'} already wired: {rel}")
+            report.append(
+                f"ok    claude  {event}/{matcher or '*'} already wired: {rel}"
+            )
         else:
             was = existing["command"]
             existing["command"] = command
@@ -132,7 +134,9 @@ def main() -> int:
             # Refuse rather than overwrite: a settings.json we cannot parse is one we
             # must not rewrite, or every guard already in it disappears.
             print(f"FAIL  claude  cannot parse {path}: {exc}", file=sys.stderr)
-            print("        fix the JSON and re-run bin/idp-install-hooks", file=sys.stderr)
+            print(
+                "        fix the JSON and re-run bin/idp-install-hooks", file=sys.stderr
+            )
             return 1
         if not isinstance(settings, dict):
             print(f"FAIL  claude  {path} is not a JSON object", file=sys.stderr)

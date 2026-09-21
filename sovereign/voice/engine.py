@@ -61,7 +61,9 @@ MODEL_CACHE = os.environ.get("VOICE_MODEL_CACHE") or str(
 KOKORO_MODEL = os.environ.get("VOICE_KOKORO_MODEL") or str(
     __import__("pathlib").Path(MODEL_CACHE) / "kokoro-v1.0.onnx"
 )
-KOKORO_MODEL_INT8 = str(__import__("pathlib").Path(MODEL_CACHE) / "kokoro-v1.0.int8.onnx")
+KOKORO_MODEL_INT8 = str(
+    __import__("pathlib").Path(MODEL_CACHE) / "kokoro-v1.0.int8.onnx"
+)
 KOKORO_VOICES = os.environ.get("VOICE_KOKORO_VOICES") or str(
     __import__("pathlib").Path(MODEL_CACHE) / "voices-v1.0.bin"
 )
@@ -143,7 +145,9 @@ if not _zone:
         "Set ESTATE_ZONE in the environment or via bin/idp-workstation-bootstrap."
     )
 _default_host = f"https://llm.{_zone}"
-ROUTER_HOST = os.path.expandvars(os.environ.get("LITELLM_HOST", _default_host)).rstrip("/")
+ROUTER_HOST = os.path.expandvars(os.environ.get("LITELLM_HOST", _default_host)).rstrip(
+    "/"
+)
 
 # A HOST THAT STILL CONTAINS `${` NEVER RESOLVED, so say so at import rather than at the first
 # question. A silent placeholder is how this survived: the process started, reported healthy, and
@@ -182,6 +186,7 @@ SYSTEM_PROMPT = os.environ.get(
 
 
 # --------------------------------------------------------------------------- model loading
+
 
 @dataclass
 class Models:
@@ -263,7 +268,11 @@ def load_models() -> Models:
         m.tts_engine = "piper"
         m.tts_model = f"piper:{PIPER_VOICE}"
 
-    if m.tts_engine is None and TTS_ENGINE != "kokoro" and os.path.exists("/usr/bin/say"):
+    if (
+        m.tts_engine is None
+        and TTS_ENGINE != "kokoro"
+        and os.path.exists("/usr/bin/say")
+    ):
         m.tts_engine = "say"
         m.tts_model = f"say:{SAY_VOICE}"
 
@@ -288,7 +297,11 @@ def load_models() -> Models:
                 #
                 # Set VOICE_ALLOW_INT8=1 to try the small model anyway -- useful the day a runtime ships
                 # the kernel, since int8 would then be the faster option.
-                candidates = (KOKORO_MODEL, KOKORO_MODEL_INT8) if os.environ.get("VOICE_ALLOW_INT8") else (KOKORO_MODEL,)
+                candidates = (
+                    (KOKORO_MODEL, KOKORO_MODEL_INT8)
+                    if os.environ.get("VOICE_ALLOW_INT8")
+                    else (KOKORO_MODEL,)
+                )
                 for candidate in candidates:
                     if not os.path.exists(candidate):
                         continue
@@ -298,7 +311,9 @@ def load_models() -> Models:
                         m.tts_engine = "kokoro"
                         break
                     except Exception as exc:  # noqa: BLE001 - try the next candidate
-                        m.errors.append(f"tts({os.path.basename(candidate)}): {exc.__class__.__name__}")
+                        m.errors.append(
+                            f"tts({os.path.basename(candidate)}): {exc.__class__.__name__}"
+                        )
                 if m.tts is None:
                     m.errors.append(
                         f"tts: no Kokoro model loaded from {MODEL_CACHE}; run bin/voice-models"
@@ -390,6 +405,7 @@ def ensure_kokoro() -> bool:
 
 # --------------------------------------------------------------------------- the loop
 
+
 def transcribe(pcm: bytes) -> tuple[str, float]:
     """16kHz float32 PCM in, text out, with how long it took.
 
@@ -440,7 +456,9 @@ def clauses(text: str):
         # word that follows, which a lookbehind cannot see. If the mark just closed `e.g.` and a
         # word follows, keep scanning past it instead of splitting.
         tail = buf[:end].lower().rstrip()
-        if any(tail.endswith(a) for a in ABBREVIATIONS) and buf[end:end + 1] not in ("",):
+        if any(tail.endswith(a) for a in ABBREVIATIONS) and buf[end : end + 1] not in (
+            "",
+        ):
             nextmatch = CLAUSE_END.search(buf, end)
             if not nextmatch:
                 break
@@ -478,11 +496,17 @@ def fleet_summary() -> str:
 
     counts: dict[str, int] = {}
     for sess in sessions:
-        counts[sess.get("activity") or "unknown"] = counts.get(sess.get("activity") or "unknown", 0) + 1
-    head = ", ".join(f"{n} {k}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+        counts[sess.get("activity") or "unknown"] = (
+            counts.get(sess.get("activity") or "unknown", 0) + 1
+        )
+    head = ", ".join(
+        f"{n} {k}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1])
+    )
 
     rows = []
-    for sess in sessions[:20]:  # capped: a prompt that grows with the fleet grows the latency too
+    for sess in sessions[
+        :20
+    ]:  # capped: a prompt that grows with the fleet grows the latency too
         sid = str(sess.get("session_id") or "")[-8:]
         rows.append(
             f"- {sid} {sess.get('runtime')} {sess.get('activity')} "
@@ -552,7 +576,9 @@ async def llm_clauses(question: str, history: list[dict[str, str]] | None = None
                         chunk = json.loads(body)
                     except json.JSONDecodeError:
                         continue
-                    delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content") or ""
+                    delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get(
+                        "content"
+                    ) or ""
                     if not delta:
                         continue
                     buffer += delta
@@ -560,7 +586,9 @@ async def llm_clauses(question: str, history: list[dict[str, str]] | None = None
                     for clause in ready:
                         loop.call_soon_threadsafe(queue.put_nowait, ("clause", clause))
                 if buffer.strip():
-                    loop.call_soon_threadsafe(queue.put_nowait, ("clause", buffer.strip()))
+                    loop.call_soon_threadsafe(
+                        queue.put_nowait, ("clause", buffer.strip())
+                    )
         except Exception as exc:  # noqa: BLE001 -- a router failure is spoken, not crashed
             loop.call_soon_threadsafe(
                 queue.put_nowait, ("error", f"The router could not be reached: {exc}")
@@ -697,10 +725,12 @@ def synthesise_say_with(voice: str, text: str) -> bytes | None:
         subprocess.run(
             [
                 "/usr/bin/say",
-                "-o", out,
+                "-o",
+                out,
                 "--file-format=WAVE",
                 f"--data-format=LEF32@{TTS_SAMPLE_RATE}",
-                "-v", voice,
+                "-v",
+                voice,
                 text,
             ],
             check=True,
@@ -754,10 +784,12 @@ def _synthesise_say(text: str) -> bytes | None:
         subprocess.run(
             [
                 "/usr/bin/say",
-                "-o", out,
+                "-o",
+                out,
                 "--file-format=WAVE",
                 f"--data-format=LEF32@{TTS_SAMPLE_RATE}",
-                "-v", SAY_VOICE,
+                "-v",
+                SAY_VOICE,
                 text,
             ],
             check=True,

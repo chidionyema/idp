@@ -202,7 +202,9 @@ GOOD_SQL = "CREATE TABLE mutdoor_widgets (id INTEGER PRIMARY KEY, name TEXT);\n"
 BROKEN_SQL = "CREATE TABLE mutdoor_widgets (id INTEGER PRIMARY KEY, name TEXT NOT VALID GARBAGE HERE);\n"
 
 
-def _propose(context, *, code="", manifest="", sql="", tests="", claim="", envelope="DEFAULT"):
+def _propose(
+    context, *, code="", manifest="", sql="", tests="", claim="", envelope="DEFAULT"
+):
     # A proposal must carry a reversibility envelope (ADR 0024) or `verify_mutation` refuses it
     # with NO_INVERSE. Every setup proposal in this suite is a reversible mutation, so the
     # default envelope is the well-formed one; the scenarios that deliberately test a MISSING or
@@ -229,12 +231,20 @@ def _default_envelope(*, code="", manifest="", sql=""):
         "target": "deployment/mutdoor",
         "forward": {
             "action": "apply_bundle",
-            "parameters": {"code": bool(code), "manifest": bool(manifest), "sql": bool(sql)},
+            "parameters": {
+                "code": bool(code),
+                "manifest": bool(manifest),
+                "sql": bool(sql),
+            },
         },
         "inverse_spec": {
             "type": "deterministic_inverse",
             "action": "delete_bundle",
-            "parameters": {"code": bool(code), "manifest": bool(manifest), "sql": bool(sql)},
+            "parameters": {
+                "code": bool(code),
+                "manifest": bool(manifest),
+                "sql": bool(sql),
+            },
             "verification_probe": (
                 "the estate's checkout reports no mutdoor_* file from this ledger"
             ),
@@ -673,10 +683,10 @@ def _propose_with_envelope(context, envelope):
     )
 
 
-@given("an agent has proposed a mutation touching \"code, manifest, sql\" with no envelope")
-def an_agent_has_proposed_with_no_envelope(
-    context: dict[str, Any], door: Door
-) -> None:
+@given(
+    'an agent has proposed a mutation touching "code, manifest, sql" with no envelope'
+)
+def an_agent_has_proposed_with_no_envelope(context: dict[str, Any], door: Door) -> None:
     context["door"] = door
     proposal = _propose(
         context,
@@ -691,10 +701,10 @@ def an_agent_has_proposed_with_no_envelope(
     context["ledger_id"] = proposal["ledger_id"]
 
 
-@given("an agent has proposed a mutation whose envelope answers the forward with itself")
-def an_agent_has_proposed_an_echo_inverse(
-    context: dict[str, Any], door: Door
-) -> None:
+@given(
+    "an agent has proposed a mutation whose envelope answers the forward with itself"
+)
+def an_agent_has_proposed_an_echo_inverse(context: dict[str, Any], door: Door) -> None:
     context["door"] = door
     proposal = _propose_with_envelope(context, ECHO_INVERSE_ENVELOPE)
     assert proposal.get("ok") is True, f"setup proposal was refused: {proposal!r}"
@@ -807,11 +817,19 @@ def the_rollback_path_performs_the_inverse(context: dict[str, Any], door: Door) 
     # Probe BEFORE the inverse: the file the forward created is still present, so the declared
     # assertion ("the artifact is gone") must not hold. This is the half a shape-check cannot do.
     context["probe_before"] = door.request(
-        {"verb": "verify_inverse", "probe": context["probe"], "cwd": context["rollback_cwd"]}
+        {
+            "verb": "verify_inverse",
+            "probe": context["probe"],
+            "cwd": context["rollback_cwd"],
+        }
     )
     context["artifact"].unlink()  # the inverse itself
     context["probe_after"] = door.request(
-        {"verb": "verify_inverse", "probe": context["probe"], "cwd": context["rollback_cwd"]}
+        {
+            "verb": "verify_inverse",
+            "probe": context["probe"],
+            "cwd": context["rollback_cwd"],
+        }
     )
 
 

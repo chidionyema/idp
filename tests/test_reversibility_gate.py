@@ -59,7 +59,9 @@ def test_prefix_forgery_is_refused_by_signature_not_by_luck():
     """The specific string the rejected design accepted must not admit a destructive forward."""
     forgery = json.loads((BAD / "prefix-forgery.json").read_text())
     assert forgery["forward"]["action"] == "drop_bucket"
-    token = base64.b64decode(forgery["inverse_spec"]["attestation"]["signature"]).decode()
+    token = base64.b64decode(
+        forgery["inverse_spec"]["attestation"]["signature"]
+    ).decode()
     assert token.startswith("sig-live-quorum-"), (
         "the fixture must carry the magic-prefix shape, or this test proves nothing"
     )
@@ -144,7 +146,9 @@ def test_a_signature_over_a_different_subject_is_refused(tmp_path):
                 "scheme": "estate-ed25519",
                 "subject": signed_subject,
                 "public_key": base64.b64encode(pub).decode(),
-                "signature": base64.b64encode(sk.sign(signed_subject.encode())).decode(),
+                "signature": base64.b64encode(
+                    sk.sign(signed_subject.encode())
+                ).decode(),
             },
         },
     }
@@ -167,6 +171,7 @@ def test_blind_paths_exit_two_and_never_refuse():
 
 
 # --- the door itself: verify_mutation refuses a proposal with no inverse ---
+
 
 def _daemon_module():
     import importlib.util as _ilu
@@ -205,6 +210,7 @@ def test_the_daemon_refuses_a_proposal_with_a_forged_exemption():
 
 # --- operational: the probe is EXECUTED, not merely declared -------------------------------
 
+
 def test_the_probe_runs_against_the_real_filesystem(tmp_path):
     """The claim that matters: a probe string becomes a real command with a real exit code.
 
@@ -221,14 +227,18 @@ def test_the_probe_runs_against_the_real_filesystem(tmp_path):
     # Forward state: the file is still there, so the inverse's probe must FAIL (exit 1).
     before = daemon.Handler._run_inverse_probe(None, probe, str(tmp_path))
     assert before["executed"] is True, before
-    assert before["passed"] is False, f"a probe passed while the forward state was present: {before}"
+    assert before["passed"] is False, (
+        f"a probe passed while the forward state was present: {before}"
+    )
     assert before["exit_code"] == 1, before
 
     # Perform the inverse: delete what the forward created.
     artifact.unlink()
     after = daemon.Handler._run_inverse_probe(None, probe, str(tmp_path))
     assert after["executed"] is True, after
-    assert after["passed"] is True, f"the probe did not hold after the inverse ran: {after}"
+    assert after["passed"] is True, (
+        f"the probe did not hold after the inverse ran: {after}"
+    )
     assert after["exit_code"] == 0, after
 
 
@@ -251,6 +261,7 @@ def test_a_probe_that_cannot_run_is_blind_not_a_pass(tmp_path):
 
 # --- delivery: the gateway pushes the branch and opens the PR (option A, 2026-09-19) --------
 
+
 def test_admit_delivers_by_pushing_and_opening_a_pr():
     """`admit_mutation` must not stop at a local ref -- the sanctioned path has to be reachable.
 
@@ -268,7 +279,9 @@ def test_admit_delivers_by_pushing_and_opening_a_pr():
 
         class _R:
             returncode = code
-            stdout = "https://github.com/chidionyema/idp/pull/9999\n" if "pr" in argv else ""
+            stdout = (
+                "https://github.com/chidionyema/idp/pull/9999\n" if "pr" in argv else ""
+            )
             stderr = ""
 
         return _R()
@@ -286,7 +299,9 @@ def test_admit_delivers_by_pushing_and_opening_a_pr():
     assert result["pushed"] is True, result
     assert "pull/9999" in result.get("pr_url", ""), result
     assert any("push" in c for c in calls), f"git push was not run: {calls}"
-    assert any("pr" in c and "create" in c for c in calls), f"gh pr create was not run: {calls}"
+    assert any("pr" in c and "create" in c for c in calls), (
+        f"gh pr create was not run: {calls}"
+    )
 
 
 def test_delivery_failure_does_not_lose_the_admission():

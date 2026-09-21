@@ -134,18 +134,30 @@ def voices():
             import zipfile  # noqa: PLC0415
 
             with zipfile.ZipFile(engine.KOKORO_VOICES) as z:
-                kokoro = sorted(
-                    n[:-4] for n in z.namelist() if n.endswith(".npy")
-                )
+                kokoro = sorted(n[:-4] for n in z.namelist() if n.endswith(".npy"))
         except Exception:  # noqa: BLE001 -- an unreadable file is not fatal; the list is empty
             kokoro = []
 
     # macOS voices. The novelty entries are filtered by name: they are real installed voices that
     # say "Doo da doo da dum" and are not candidates for reading a fleet report aloud.
     NOVELTY = {
-        "Albert", "Bad News", "Bahh", "Bells", "Boing", "Bubbles", "Cellos", "Fred",
-        "Good News", "Jester", "Junior", "Organ", "Superstar", "Trinoids", "Whisper",
-        "Wobble", "Zarvox",
+        "Albert",
+        "Bad News",
+        "Bahh",
+        "Bells",
+        "Boing",
+        "Bubbles",
+        "Cellos",
+        "Fred",
+        "Good News",
+        "Jester",
+        "Junior",
+        "Organ",
+        "Superstar",
+        "Trinoids",
+        "Whisper",
+        "Wobble",
+        "Zarvox",
     }
     macos: list[str] = []
     if os.path.exists("/usr/bin/say"):
@@ -201,7 +213,8 @@ async def preview_voice(payload: dict):
     want_voice = str(payload.get("voice") or "").strip()
     if want_engine not in ("say", "kokoro", "piper") or not want_voice:
         return JSONResponse(
-            content={"error": "engine ('say'|'kokoro') and voice are required"}, status_code=400
+            content={"error": "engine ('say'|'kokoro') and voice are required"},
+            status_code=400,
         )
 
     sample = str(payload.get("text") or "").strip() or (
@@ -211,10 +224,16 @@ async def preview_voice(payload: dict):
 
     if want_engine == "say":
         if not os.path.exists("/usr/bin/say"):
-            return JSONResponse(content={"error": "no /usr/bin/say here"}, status_code=400)
-        pcm = await loop.run_in_executor(None, engine.synthesise_say_with, want_voice, sample)
+            return JSONResponse(
+                content={"error": "no /usr/bin/say here"}, status_code=400
+            )
+        pcm = await loop.run_in_executor(
+            None, engine.synthesise_say_with, want_voice, sample
+        )
     elif want_engine == "piper":
-        pcm = await loop.run_in_executor(None, engine.synthesise_piper_with, want_voice, sample)
+        pcm = await loop.run_in_executor(
+            None, engine.synthesise_piper_with, want_voice, sample
+        )
     else:
         # LOAD KOKORO ON DEMAND FOR A PREVIEW TOO.
         #
@@ -226,9 +245,12 @@ async def preview_voice(payload: dict):
             await loop.run_in_executor(None, engine.ensure_kokoro)
         if m.tts is None:
             return JSONResponse(
-                content={"error": "kokoro model is unavailable on this host"}, status_code=503
+                content={"error": "kokoro model is unavailable on this host"},
+                status_code=503,
             )
-        pcm = await loop.run_in_executor(None, engine.synthesise_kokoro_with, want_voice, sample)
+        pcm = await loop.run_in_executor(
+            None, engine.synthesise_kokoro_with, want_voice, sample
+        )
 
     if not pcm:
         return JSONResponse(content={"error": "synthesis failed"}, status_code=502)
@@ -260,7 +282,8 @@ async def select_voice(payload: dict):
     if want_engine == "piper":
         if not engine.piper_voices():
             return JSONResponse(
-                content={"error": f"no Piper voices in {engine.PIPER_DIR}"}, status_code=400
+                content={"error": f"no Piper voices in {engine.PIPER_DIR}"},
+                status_code=400,
             )
         engine.PIPER_VOICE = want_voice
         m.tts_engine = "piper"
@@ -286,7 +309,8 @@ async def select_voice(payload: dict):
 
     if m.tts is None:
         return JSONResponse(
-            content={"error": "kokoro model is not available on this host"}, status_code=503
+            content={"error": "kokoro model is not available on this host"},
+            status_code=503,
         )
     engine.KOKORO_VOICE = want_voice
     m.tts_engine = "kokoro"
@@ -443,7 +467,9 @@ async def voice_stream(websocket: WebSocket):
 
             started = time.time()
             loop = asyncio.get_running_loop()
-            transcript, asr_seconds = await loop.run_in_executor(None, engine.transcribe, pcm)
+            transcript, asr_seconds = await loop.run_in_executor(
+                None, engine.transcribe, pcm
+            )
             if not transcript:
                 # AN EMPTY TRANSCRIPT IS THE FRICTION ITSELF -- the person spoke and nothing came
                 # back. Counted, so "I had to say it three times" becomes a number rather than a
@@ -470,7 +496,9 @@ async def voice_stream(websocket: WebSocket):
                 }
             )
 
-            log = turnlog.Turn(started=started, asr_s=asr_seconds, words=len(transcript.split()))
+            log = turnlog.Turn(
+                started=started, asr_s=asr_seconds, words=len(transcript.split())
+            )
             if current and not current.done():
                 current.cancel()
             current = asyncio.create_task(pipeline(transcript, log))

@@ -23,6 +23,7 @@ WHY NOT RENDER-SIDE ONLY. Redaction at the writer means the secret never enters 
 appears in the audit trail, and is not readable by anything else that reads `fleetview_replies` --
 including the fleet-wide feed the panel shows.
 """
+
 from __future__ import annotations
 
 import re
@@ -59,10 +60,23 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("slack token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b")),
     ("aws access key id", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
     ("google api key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
-    ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b")),
-    ("private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----")),
+    (
+        "jwt",
+        re.compile(
+            r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"
+        ),
+    ),
+    (
+        "private key block",
+        re.compile(
+            r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"
+        ),
+    ),
     # An Authorization header, which is the shape a curl transcript produces.
-    ("authorization header", re.compile(r"(?i)\bauthorization\s*:\s*(?:bearer|basic|token)\s+\S+")),
+    (
+        "authorization header",
+        re.compile(r"(?i)\bauthorization\s*:\s*(?:bearer|basic|token)\s+\S+"),
+    ),
     # A URL with credentials embedded: scheme://user:pass@host
     ("credentials in a URL", re.compile(r"\b[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@")),
 )
@@ -85,6 +99,7 @@ def redact(text: str) -> tuple[str, list[str]]:
     found: list[str] = []
     out = text
     for why, pattern in _PATTERNS:
+
         def _sub(m: re.Match[str], why: str = why) -> str:
             found.append(why)
             # PRESERVE THE NAME in an assignment, so `TOKEN=abc` becomes `TOKEN=[REDACTED:...]` and

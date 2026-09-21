@@ -50,7 +50,9 @@ def publish_defeated(payload, evidence: str) -> bool:
     try:
         with socket.create_connection((host, int(port)), timeout=5) as s:
             s.sendall(b'CONNECT {"verbose":false,"pedantic":false}\r\n')
-            s.sendall(f"PUB {DEFEATED_SUBJECT} {len(body)}\r\n".encode() + body + b"\r\n")
+            s.sendall(
+                f"PUB {DEFEATED_SUBJECT} {len(body)}\r\n".encode() + body + b"\r\n"
+            )
             s.sendall(b"PING\r\n")
             s.settimeout(3)
             s.recv(64)

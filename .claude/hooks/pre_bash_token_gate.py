@@ -94,7 +94,9 @@ def _heredoc_delim(cmd: str, i: int) -> tuple[str, int] | None:
     gate cannot read is not one it gets to call safe.
     """
     j = i + 2
-    if j < len(cmd) and cmd[j] == "-":  # <<-DELIM strips leading tabs from the terminator
+    if (
+        j < len(cmd) and cmd[j] == "-"
+    ):  # <<-DELIM strips leading tabs from the terminator
         j += 1
     while j < len(cmd) and cmd[j] in " \t":
         j += 1
@@ -337,7 +339,9 @@ def run(payload: dict) -> int:
         return 0
 
     if os.environ.get("IDP_TOKEN_GATE") == "0":
-        sys.stderr.write("[token-gate] RELEASED by IDP_TOKEN_GATE=0 for this command.\n")
+        sys.stderr.write(
+            "[token-gate] RELEASED by IDP_TOKEN_GATE=0 for this command.\n"
+        )
         return 0
 
     # The gate binds where the wrapper exists, and nowhere else. A session working in a

@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import datetime as dt
 import importlib.util
-import os
 import sys
 from pathlib import Path
 
@@ -81,7 +80,9 @@ def test_silence_with_almost_nothing_behind_it_is_waiting(sessions):
     """
     assert _act(sessions, 16, 1) == "waiting"
     assert _act(sessions, 16, 9) == "waiting"
-    assert _act(sessions, 16, 10) == "stuck", "the threshold is exact and this is its edge"
+    assert _act(sessions, 16, 10) == "stuck", (
+        "the threshold is exact and this is its edge"
+    )
 
 
 def test_past_the_live_window_is_finished(sessions):
@@ -93,14 +94,19 @@ def test_no_timestamp_is_unknown_never_thinking(sessions):
     now = dt.datetime.now(dt.timezone.utc)
     assert sessions._activity_from_evidence(None, 5, None, "unknown", now) == "unknown"
     assert sessions._activity_from_evidence("", 5, None, "unknown", now) == "unknown"
-    assert sessions._activity_from_evidence("not-a-date", 5, None, "unknown", now) == "unknown"
+    assert (
+        sessions._activity_from_evidence("not-a-date", 5, None, "unknown", now)
+        == "unknown"
+    )
 
 
 def test_a_clock_skewed_row_is_not_in_the_future(sessions):
     """A timestamp ahead of now clamps to 0 seconds, never a negative age."""
     now = dt.datetime.now(dt.timezone.utc)
     ahead = (now + dt.timedelta(minutes=5)).isoformat()
-    assert sessions._activity_from_evidence(ahead, 10, None, "running", now) == "thinking"
+    assert (
+        sessions._activity_from_evidence(ahead, 10, None, "running", now) == "thinking"
+    )
 
 
 def test_every_state_is_one_of_the_four_or_unknown(sessions):
@@ -109,7 +115,9 @@ def test_every_state_is_one_of_the_four_or_unknown(sessions):
     now = dt.datetime.now(dt.timezone.utc)
     for mins in (0, 5, 15, 16, 60, 1439, 1441, 10000):
         for n in (0, 1, 9, 10, 100, 10000):
-            got = sessions._activity_from_evidence(_ts(sessions, mins), n, None, "paused", now)
+            got = sessions._activity_from_evidence(
+                _ts(sessions, mins), n, None, "paused", now
+            )
             assert got in allowed, f"{mins}m/{n} events gave {got!r}"
 
 

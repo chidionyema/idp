@@ -99,7 +99,7 @@ class Registry:
     def put(self, proposal: dict) -> None:
         self.proposals[proposal["proposal_id"]] = proposal
 
-    def get(self, proposal_id: str) ->Optional[dict]:
+    def get(self, proposal_id: str) -> Optional[dict]:
         return self.proposals.get(proposal_id)
 
     def drop(self, proposal_id: str) -> None:
@@ -155,10 +155,10 @@ def simulate_change(
     source: str | dict,
     *,
     graders: dict,
-    registry:Optional[Registry] = None,
-    cfg:Optional[dict] = None,
-    resource_versions:Optional[dict[str, str]] = None,
-    git_sha:Optional[str] = None,
+    registry: Optional[Registry] = None,
+    cfg: Optional[dict] = None,
+    resource_versions: Optional[dict[str, str]] = None,
+    git_sha: Optional[str] = None,
     now: Optional[dt.datetime] = None,
 ) -> dict:
     """Run every named grader over `source` and return a bounded proposal.
@@ -246,10 +246,10 @@ def simulate_change(
 
 def execute_change(
     proposal_id: str,
-    presented_hash:Optional[str],
+    presented_hash: Optional[str],
     *,
-    registry:Optional[Registry] = None,
-    cfg:Optional[dict] = None,
+    registry: Optional[Registry] = None,
+    cfg: Optional[dict] = None,
     now: Optional[dt.datetime] = None,
 ) -> dict:
     """Execute the world's only door for a graded proposal.
@@ -539,7 +539,7 @@ def _live_graders(source):
             "detail": detail or "shadow observation unreadable",
         }
 
-    def _prefix(proc) ->Optional[tuple[str], str]:
+    def _prefix(proc) -> Optional[tuple[str], str]:
         """The grader bins print a leading ok/FAIL/BLIND token; the verdict must come from that
         token, never from the exit code -- idp-fits-a-node returns 0 on BLIND too, so an exit-code
         reader would fold a blind read into a pass (the silent failure the estate's rules forbid)."""

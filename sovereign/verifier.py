@@ -470,7 +470,18 @@ def stage_execution(
             # Include the user site-packages so `pip install --user pytest` and similar
             # work in the sandbox. PYTHONPATH must be appended to, not replaced -- the
             # sandbox dir stays so its own modules resolve first.
-            "PYTHONPATH": os.pathsep.join(filter(None, [str(sandbox), os.environ.get("PYTHONPATH", ""), site.getusersitepackages() if site.getusersitepackages() else ""])),
+            "PYTHONPATH": os.pathsep.join(
+                filter(
+                    None,
+                    [
+                        str(sandbox),
+                        os.environ.get("PYTHONPATH", ""),
+                        site.getusersitepackages()
+                        if site.getusersitepackages()
+                        else "",
+                    ],
+                )
+            ),
         },
         capture_output=True,
         text=True,

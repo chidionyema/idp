@@ -55,6 +55,7 @@ USAGE.
 has. `--dry-run` derives and prints the signature without writing, which is what the
 fixture tests grade.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -72,7 +73,9 @@ WORKER_PATH = ROOT / "bin" / "rca_worker" / "worker.py"
 # normalizeRe). Kept in lockstep by hand, and the promoter's own fixture test fails if a
 # derived signature would not survive this normalization as a substring.
 _DYNAMIC = [
-    re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"),
+    re.compile(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    ),
     re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?"),
     re.compile(r"/(?:tmp|var/folders)/[\w./-]+"),
     re.compile(r"\b[0-9a-fA-F]{16,}\b"),
@@ -188,7 +191,10 @@ def promote(payload: dict, *, dry_run: bool = False) -> dict:
         confidence_score=1.0,
     )
     if not worker.rule_allowed(nc):
-        return {"promoted": False, "reason": "the derived rule was refused by rule_allowed"}
+        return {
+            "promoted": False,
+            "reason": "the derived rule was refused by rule_allowed",
+        }
 
     import asyncio
 
@@ -263,7 +269,9 @@ def consume(subject: str = "estate.eval.redteam.defeated") -> int:
 
     def log(msg: object) -> None:
         print(
-            json.dumps({"msg": msg, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}),
+            json.dumps(
+                {"msg": msg, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+            ),
             flush=True,
         )
 
@@ -323,13 +331,17 @@ def _grade(paths: list[str]) -> int:
         try:
             payload = json.loads(target.read_text())
         except (OSError, json.JSONDecodeError) as exc:
-            print(f"BLIND: cannot read {target}: {exc} (exit 2, LAW 38)", file=sys.stderr)
+            print(
+                f"BLIND: cannot read {target}: {exc} (exit 2, LAW 38)", file=sys.stderr
+            )
             return 2
         signature = derive_signature(payload)
         if signature:
             print(f"PASS  {target}: derives {signature!r}")
         else:
-            print(f"REFUSE  {target}: no stable signature -- promoting this bans nothing")
+            print(
+                f"REFUSE  {target}: no stable signature -- promoting this bans nothing"
+            )
             worst = 1
     return worst
 
@@ -354,7 +366,11 @@ def _selftest() -> int:
 
     # A payload whose only content is dynamic values derives NOTHING -- it must not ban a
     # single common word, which would refuse correct work (LAW 38).
-    thin = {"id": "rt-002", "tool_target": "", "content": "1234-5678-90ab-cdef-1234-5678-90ab"}
+    thin = {
+        "id": "rt-002",
+        "tool_target": "",
+        "content": "1234-5678-90ab-cdef-1234-5678-90ab",
+    }
     check("a dynamic-only payload derives no signature", derive_signature(thin) == "")
 
     empty = {"id": "rt-003", "tool_target": "", "content": ""}
@@ -366,12 +382,16 @@ def _selftest() -> int:
     if failures:
         print("FAIL redteam-promoter --selftest: " + "; ".join(failures))
         return 1
-    print(f"ok redteam-promoter: derived {sig!r}; thin and empty payloads derive nothing")
+    print(
+        f"ok redteam-promoter: derived {sig!r}; thin and empty payloads derive nothing"
+    )
     return 0
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Promote defeating red-team payloads to bans")
+    parser = argparse.ArgumentParser(
+        description="Promote defeating red-team payloads to bans"
+    )
     parser.add_argument("--selftest", action="store_true")
     sub = parser.add_subparsers(dest="cmd")
     p = sub.add_parser("promote")
@@ -393,11 +413,17 @@ def main(argv: list[str]) -> int:
         try:
             payload = json.loads(Path(ns.payload_file).read_text())
         except (OSError, json.JSONDecodeError) as exc:
-            print(f"BLIND: cannot read {ns.payload_file}: {exc} (exit 2)", file=sys.stderr)
+            print(
+                f"BLIND: cannot read {ns.payload_file}: {exc} (exit 2)", file=sys.stderr
+            )
             return 2
         result = promote(payload, dry_run=ns.dry_run)
         print(json.dumps(result, indent=2))
-        return 0 if result.get("promoted") or result.get("dry_run") or result.get("reason") else 1
+        return (
+            0
+            if result.get("promoted") or result.get("dry_run") or result.get("reason")
+            else 1
+        )
     parser.print_help()
     return 0
 
