@@ -74,6 +74,23 @@ nav:
       - Secret blockers: how-to/onboarding/secret-blockers.md
       - Gitops sync: how-to/onboarding/gitops-sync.md
       - Helmrelease drift: how-to/onboarding/helmrelease-drift.md
+      - agent timebox: how-to/onboarding/agent-timebox.md
+      - contract exec: how-to/onboarding/contract-exec.md
+      - estate efficiency experiment: how-to/onboarding/estate-efficiency-experiment.py.md
+      - estate efficiency report: how-to/onboarding/estate-efficiency-report.md
+      - gate reactor css: how-to/onboarding/gate-reactor-css.md
+      - gate undeclared: how-to/onboarding/gate-undeclared.md
+      - gen reactor css: how-to/onboarding/gen-reactor-css.md
+      - lookat: how-to/onboarding/lookat.md
+      - observer: how-to/onboarding/observer.md
+      - promoter: how-to/onboarding/promoter.py.md
+      - reactor standalone: how-to/onboarding/reactor-standalone.md
+      - room eye: how-to/onboarding/room-eye.md
+      - room eyes: how-to/onboarding/room-eyes.md
+      - serve fleetview: how-to/onboarding/serve-fleetview.md
+      - voice loop: how-to/onboarding/voice-loop.md
+      - voice models: how-to/onboarding/voice-models.md
+
   - Reference:
       - reference/index.md
       - Oracle tenancy: reference/oci-tenancy.md
@@ -111,6 +128,23 @@ nav:
       - Estate clock recording: demo/dagster.md
       - Dashboards recording: demo/superset.md
       - Portal: tutorials/demo/idp.md
+      - agent timebox: tutorials/demo/agent-timebox.md
+      - contract exec: tutorials/demo/contract-exec.md
+      - estate efficiency experiment: tutorials/demo/estate-efficiency-experiment.py.md
+      - estate efficiency report: tutorials/demo/estate-efficiency-report.md
+      - gate reactor css: tutorials/demo/gate-reactor-css.md
+      - gate undeclared: tutorials/demo/gate-undeclared.md
+      - gen reactor css: tutorials/demo/gen-reactor-css.md
+      - lookat: tutorials/demo/lookat.md
+      - observer: tutorials/demo/observer.md
+      - promoter: tutorials/demo/promoter.py.md
+      - reactor standalone: tutorials/demo/reactor-standalone.md
+      - room eye: tutorials/demo/room-eye.md
+      - room eyes: tutorials/demo/room-eyes.md
+      - serve fleetview: tutorials/demo/serve-fleetview.md
+      - voice loop: tutorials/demo/voice-loop.md
+      - voice models: tutorials/demo/voice-models.md
+
       - The agent that couldn't lie: tutorials/demo/truthteller-demo.md
       - The circuit breaker: tutorials/demo/circuit-breaker.md
       - Breaker enforcement: tutorials/demo/breaker.md
