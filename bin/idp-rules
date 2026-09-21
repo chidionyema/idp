@@ -564,6 +564,15 @@ def cmd_session(args) -> int:
             if any(rel.startswith(d) for d in FIXTURE_DIRS):
                 skipped_fixtures += 1
                 continue
+            # mcp-first-macOS-fix: on macOS the working tree path may have a different case
+            # than the script's ROOT (case-insensitive filesystem, case-preserving realpath).
+            # relpath therefore returns a path with `..` segments and the FIXTURE_DIRS startswith
+            # check above misses. Normalize both sides through realpath so the comparison holds.
+            import sys as _sys
+            _norm_rel = _sys.intern(os.path.realpath(rel))
+            if any(_norm_rel.startswith(os.path.realpath(d) + os.sep) or _norm_rel == os.path.realpath(d) for d in FIXTURE_DIRS):
+                skipped_fixtures += 1
+                continue
             graded += 1
             met, out, _ = run_case(rule, {"expect": "pass", "args": [rel]})
             if not met:
