@@ -18,7 +18,6 @@ on:
       - probes/**
       - bin/idp-prove
       - bin/idp-verdict
-      - bin/idp-login-drill
       - platform/backstage/**
       - backstage/app-config.container.yaml
       - .github/workflows/verdict-backstage.yml
