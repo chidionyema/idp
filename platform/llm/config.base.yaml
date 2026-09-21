@@ -121,7 +121,7 @@ litellm_settings:
   # on 2026-09-13 and did not sever -- it grades the hour's total, so one session at 737,169 per
   # call is indistinguishable from 200 sessions at 3,700. Its own comment says it:
   # "It reports and warns; it does not sever the router."
-  callbacks: ["otel", "request_ceiling.proxy_handler_instance", "efficiency_gateway.proxy_handler_instance"]
+  callbacks: ["otel", "request_ceiling.proxy_handler_instance", "efficiency_gateway.proxy_handler_instance", "zeroedge_gateway.proxy_handler_instance"]
   # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
   # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
   # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.
