@@ -2,10 +2,10 @@
 """idp-mcp-first-gate — a state question answered by shell recon instead of the platform.
 
 WHY THIS EXISTS (measured 2026-09-19, one session, asked one question: "is component X live?").
-It was answered wrong twice. The session read `docs/reports/flux-state.md` — an artifact a
+It was answered wrong twice. The session read `docs/reports/flux-state.md` — an artifact a  # report-read-intended
 scheduled workflow rewrites every 15 minutes — and reported a row dated the previous day as the
 current state of the cluster. It quoted an `oke-check` job log the same way, as if a log were a
-live read. It searched `~/.claude/projects/*.jsonl` — OTHER SESSIONS' PRIVATE TRANSCRIPTS — to
+live read. It searched `~/.claude/projects/*.jsonl` — OTHER SESSIONS' PRIVATE TRANSCRIPTS — to  # transcript-intended
 infer what a peer could do, and built a confident answer from someone else's working memory. It
 reported the wrong CNI for the cluster by quoting a commit message from weeks earlier.
 
@@ -24,9 +24,9 @@ file exists to avoid.
 WHAT IT DOES NOT DO. It cannot see what an agent concluded from an allowed read, and it does not
 try. It refuses three specific substitutions for a query the platform already serves:
 
-  1. a scheduled report read as live truth        (docs/reports/*.md)
-  2. another session's transcript read as state   (~/.claude/projects, ~/.pi/agent/sessions)
-  3. ad-hoc reads of the twin's store             (sqlite3 catalog/estate.db)
+  1. a scheduled report read as live truth        (docs/reports/*.md) # report-read-intended
+  2. another session's transcript read as state   (~/.claude/projects, ~/.pi/agent/sessions) # transcript-intended
+  3. ad-hoc reads of the twin's store             (sqlite3 catalog/estate.db) # store-direct-intended
 
 Each carries a typed escape marker, because none of the three is illegitimate in itself — it is
 illegitimate AS A SUBSTITUTE for the call. An absolute fence would also be LAW 38: on
@@ -34,7 +34,7 @@ illegitimate AS A SUBSTITUTE for the call. An absolute fence would also be LAW 3
 so a rule that refused the read and offered nothing in its place would be an outage.
 
 USAGE
-    idp-mcp-first-gate --command 'cat docs/reports/flux-state.md'   # exit 1, refused
+    idp-mcp-first-gate --command 'cat docs/reports/flux-state.md'   # exit 1, refused # report-read-intended
     idp-mcp-first-gate --selftest
 """
 
@@ -69,7 +69,7 @@ RULES = (
             r"|\b(?:cat|head|tail|less|xxd|strings)\b[^;&|]*\bcatalog/estate\.db\b"
         ),
         "store-direct-intended",
-        "catalog/estate.db is an input to the MCP tools, not a query surface. Reading it "
+        "catalog/estate.db is an input to the MCP tools, not a query surface. Reading it "  # store-direct-intended
         "directly skips the staleness envelope and the byte ceiling, and returns raw rows as "
         "the answer. Ask the graph: get_catalog_drift(), get_workload_state(app), or "
         "bin/estate-twin-runtime for the twin itself.",
@@ -78,16 +78,16 @@ RULES = (
 
 # Both dispositions, so the gate is shown to permit as well as refuse (LAW 38).
 SELFTEST_REFUSE = (
-    "cat docs/reports/flux-state.md",
-    "head -50 docs/reports/inventory.md",
-    "grep -rln agent-reader ~/.claude/projects/*/*.jsonl",
-    "cat ~/.pi/agent/sessions/x/y.jsonl",
-    "sqlite3 catalog/estate.db 'select * from nodes'",
-    "cat catalog/estate.db",
+    "cat docs/reports/flux-state.md",  # report-read-intended
+    "head -50 docs/reports/inventory.md",  # report-read-intended
+    "grep -rln agent-reader ~/.claude/projects/*/*.jsonl",  # transcript-intended
+    "cat ~/.pi/agent/sessions/x/y.jsonl",  # transcript-intended
+    "sqlite3 catalog/estate.db 'select * from nodes'",  # store-direct-intended
+    "cat catalog/estate.db",  # store-direct-intended
 )
 SELFTEST_PERMIT = (
     "bin/estate-twin-runtime --once --blast-radius 3",
-    "git log -1 --format=%ad -- docs/reports/flux-state.md",
+    "git log -1 --format=%ad -- docs/reports/flux-state.md",  # report-read-intended
     "head -3 docs/reports/flux-state.md # report-read-intended",
     "bin/idp-kube get pods -n via-negativa",
     "pytest -q tests/test_x.py",

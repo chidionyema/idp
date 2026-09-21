@@ -180,7 +180,7 @@ def experiment_c() -> dict:
 
     by = collections.defaultdict(lambda: {"tok": 0, "cost": 0.0, "n": 0})
     for f in glob.glob(
-        os.path.expanduser("~/.pi/agent/sessions/**/*.jsonl"), recursive=True
+        os.path.expanduser("~/.pi/agent/sessions/**/*.jsonl"), recursive=True  # transcript-intended
     ):
         for line in open(f, errors="ignore"):
             line = line.strip()

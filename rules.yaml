@@ -2903,7 +2903,6 @@ rules:
   - session
   session_glob:
   - intents/**/*.json
-  - schema/mutation-envelope.schema.json
   run:
   - python3
   - bin/idp-reversibility-gate

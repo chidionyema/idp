@@ -402,7 +402,7 @@ jobs:
                 exit 0 ;;
             esac
             echo "  waiting ${SECONDS}s: ${line:-no receipt yet}"
-            sleep 60
+            sleep 60 # sleep-ok: rotation-canary waits for the running pod to answer with the rotated value
           done
           echo "FAIL rotation-canary no running pod answered sha256=$want within 25m of the vault write at $wrote"
           exit 1
