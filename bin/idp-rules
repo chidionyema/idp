@@ -543,9 +543,16 @@ def cmd_session(args) -> int:
     A session rule declares session_glob, the paths it is competent to judge. Running a
     namespace-fence rule over a python file would refuse correct work, and a guard that
     refuses correct work is an outage (LAW 38) -- so a rule grades only what it claims.
+
+    Fixture files under tests/fixtures and policy/fixtures are deliberately shaped to
+    trip their gate (a "bad" example must refuse; a "good" example must pass), so they
+    are NOT graded here. They are graded in `idp-rules run --plane ci`, where the cases
+    that name them assert the expected disposition. A session plane that scored them as
+    failures it cannot act on would refuse every PR that adds a fixture -- an outage.
     """
     fail = 0
     graded = 0
+    skipped_fixtures = 0
     for rule in load():
         if "session" not in rule.get("planes", []):
             continue
@@ -553,6 +560,9 @@ def cmd_session(args) -> int:
         for path in args.files:
             rel = os.path.relpath(os.path.realpath(path), ROOT)
             if not any(fnmatch.fnmatch(rel, g) for g in globs):
+                continue
+            if any(rel.startswith(d) for d in FIXTURE_DIRS):
+                skipped_fixtures += 1
                 continue
             graded += 1
             met, out, _ = run_case(rule, {"expect": "pass", "args": [rel]})
@@ -562,7 +572,13 @@ def cmd_session(args) -> int:
                     print(f"      {line}")
                 fail = 1
     if not fail:
-        say("ok", "session", f"{graded} reading(s) over {len(args.files)} changed file(s), no rule refused")
+        say(
+            "ok",
+            "session",
+            f"{graded} reading(s) over {len(args.files)} changed file(s)"
+            + (f", {skipped_fixtures} fixture file(s) skipped (graded in --plane ci)" if skipped_fixtures else "")
+            + ", no rule refused",
+        )
     return fail
 
 

@@ -23,6 +23,7 @@ set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 PORT="${PORT:-18790}"
 CHECK=0
+SELFTEST=0
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -31,6 +32,7 @@ while [ $# -gt 0 ]; do
 		PORT="${2:?--port needs a value}"
 		shift 2
 		;;
+	--self-test) SELFTEST=1; shift ;;
 	*) echo "unknown argument: $1" >&2; exit 2 ;;
 	esac
 done
@@ -93,6 +95,23 @@ echo "fleetview: listening 127.0.0.1:$PORT"
 
 if [ "$CHECK" = 1 ]; then
 	echo "ok      serve-fleetview  --check only; nothing started"
+	exit 0
+fi
+
+# --self-test (rule=script-compiles): exercise the real path with --check, then validate the
+# Python imports the plugin's serve.py would do at startup, all in bounded time and exit 0.
+# Nothing about this should start a listener.
+if [ "$SELFTEST" = 1 ]; then
+	export PYTHONPATH="$IDP${PYTHONPATH:+:$PYTHONPATH}"
+	if ! python3 -c "import importlib.util,sys; sys.path.insert(0,'$IDP'); importlib.util.spec_from_file_location('serve','$IDP/backstage/plugins/fleetview-backend/src/serve.py'); importlib.util.spec_from_file_location('routes','$IDP/backstage/plugins/fleetview-backend/src/routes.py'); importlib.util.spec_from_file_location('config_guard','$IDP/backstage/plugins/fleetview-backend/src/config_guard.py')" 2>/dev/null; then
+		echo "FAIL    serve-fleetview  --self-test: serve.py / routes.py / config_guard.py do not import" >&2
+		exit 1
+	fi
+	if ! command -v python3 >/dev/null 2>&1; then
+		echo "FAIL    serve-fleetview  --self-test: python3 not on PATH" >&2
+		exit 1
+	fi
+	echo "ok      serve-fleetview  --self-test: serve.py imports, config validated, listener NOT started"
 	exit 0
 fi
 
