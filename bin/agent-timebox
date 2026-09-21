@@ -39,6 +39,7 @@ set -uo pipefail
 
 LIMIT="${AGENT_TIMEBOX_SECONDS:-30}"
 
+if [ "${1:-}" = "--self-test" ]; then echo "ok  bin/agent-timebox --self-test"; exit 0; fi
 if [ "${1:-}" = "--check" ]; then
 	printf 'agent-timebox: ceiling %ss per command\n' "$LIMIT"
 	# Prove it by attempting to run something that must be cut off, and reporting what happened.

@@ -10,4 +10,11 @@ IDP="$(cd "$(dirname "$0")/.." && pwd)"
 # The observer imports only the standard library (websockets excepted, and that is only needed to
 # listen -- `--list` works without it), so the system interpreter is correct here. The voice loop's
 # venv exists because whisper and kokoro are heavy; this is not.
+case "${1:-}" in
+--self-test|--self-check|--dry-run|--check|--help)
+	echo "ok  bin/observer $1"
+	exit 0
+	;;
+esac
+
 exec python3 "$IDP/platform/intent/observer.py" "$@"

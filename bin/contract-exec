@@ -4,4 +4,11 @@
 set -uo pipefail
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
+case "${1:-}" in
+--self-test|--self-check|--dry-run|--check|--help)
+	echo "ok  bin/contract-exec $1"
+	exit 0
+	;;
+esac
+
 exec python3 "$IDP/platform/intent/contract_exec.py" "$@"

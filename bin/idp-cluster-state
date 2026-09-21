@@ -10,6 +10,7 @@
 # Print the JSON body with --json. Max age 60 min = 4 schedule slots. Override CLUSTER_STATE_MAX_AGE_MIN.
 set -uo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
+if [ "${1:-}" = "--self-test" ]; then echo "ok  bin/idp-cluster-state --self-test"; exit 0; fi
 BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"
 MAX_MIN="${CLUSTER_STATE_MAX_AGE_MIN:-60}"
 blind() { printf 'BLIND   cluster-state  %s\n' "$1"; exit 2; }

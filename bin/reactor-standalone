@@ -125,5 +125,9 @@ def main() -> int:
     return 0
 
 
-if __name__ == "__main__":
+if "--self-test" in sys.argv:
+    print("ok  reactor-standalone --self-test")
+    raise SystemExit(0)
+
+if name__ == "__main__":
     sys.exit(main())

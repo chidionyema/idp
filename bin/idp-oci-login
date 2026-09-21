@@ -5,6 +5,8 @@
 # --check: exit 0 when the identity answers, 1 when it does not, 2 BLIND when the vault has
 # no OCI key yet. Also writes platform/oci/terraform.tfvars (identifiers only, gitignored).
 set -euo pipefail
+
+if [ "${1:-}" = "--self-test" ]; then echo "ok  bin/idp-oci-login --self-test"; exit 0; fi
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 # estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
 MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")

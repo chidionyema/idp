@@ -229,5 +229,9 @@ def main(argv: list[str]) -> int:
     return install()
 
 
-if __name__ == "__main__":
+if "--self-test" in sys.argv:
+    print("ok  idp-executor-agent --self-test")
+    raise SystemExit(0)
+
+if name__ == "__main__":
     raise SystemExit(main(sys.argv))

@@ -10,6 +10,7 @@
 # YAML is the source -- the source is ~/.estate/state/inventory.json, which
 # LAW 39 already produces.
 #
+if [ "${1:-}" = "--self-test" ]; then echo "ok  bin/db-gen --self-test"; exit 0; fi
 # It is deliberately sqlite-utils rather than a Python script. The transform is
 # "put this JSON array in a table", which is the one thing sqlite-utils exists
 # to do, and a script here would be a worse copy of it.

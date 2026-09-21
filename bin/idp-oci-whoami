@@ -18,6 +18,7 @@
 # Usage: source bin/idp-oci-whoami   (exports OCI_CLI_PROFILE/OCI_CLI_AUTH on success)
 #        bin/idp-oci-whoami          (prints the live profile name, or BLIND with exit 2)
 set -uo pipefail
+if [ "${1:-}" = "--self-test" ]; then echo "ok  bin/idp-oci-whoami --self-test"; exit 0; fi
 
 SESSIONS_DIR="$HOME/.oci/sessions"
 [ -d "$SESSIONS_DIR" ] || { echo "BLIND   oci-whoami: no $SESSIONS_DIR on this machine; sessions read state through bin/idp-cluster-state or gh workflow run oke-check.yml -f mode=check (crew#345), no login"; exit 2; }

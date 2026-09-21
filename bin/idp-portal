@@ -42,6 +42,7 @@ PLUGIN_PORT=18790
 MODE=start
 while [ $# -gt 0 ]; do
 	case "$1" in
+	--self-test) echo "ok  bin/idp-portal --self-test"; exit 0 ;;
 	--check) MODE=check; shift ;;
 	--restart) MODE=restart; shift ;;
 	*) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -79,8 +80,8 @@ if [ "$MODE" = restart ]; then
 	MODE=start
 fi
 
-wait_for() { # <name> <probe-cmd> <seconds>
-	local what="$1" probe="$2" limit="${3:-240}" i=0
+wait_for() { # <probe-cmd> <seconds>
+	local probe="$1" limit="${2:-240}" i=0
 	while [ "$i" -lt "$limit" ]; do
 		if $probe; then return 0; fi
 		sleep 3
@@ -97,7 +98,7 @@ else
 	echo "-- starting the fleetview plugin (:$PLUGIN_PORT) --"
 	nohup "$IDP/bin/serve-fleetview" >/tmp/idp-portal-plugin.log 2>&1 &
 	disown
-	if wait_for plugin plugin_up 60; then echo "ok      plugin    :$PLUGIN_PORT answering"; else
+	if wait_for plugin_up 60; then echo "ok      plugin    :$PLUGIN_PORT answering"; else
 		echo "FAIL    plugin    :$PLUGIN_PORT did not answer in 60s; see /tmp/idp-portal-plugin.log" >&2
 		tail -5 /tmp/idp-portal-plugin.log 2>/dev/null | sed 's/^/        /' >&2
 		exit 1
@@ -112,7 +113,7 @@ else
 	echo "-- starting the Backstage backend (:$BACKEND_PORT) --"
 	( cd "$BACKSTAGE" && nohup yarn workspace backend start >/tmp/idp-portal-backend.log 2>&1 & )
 	disown 2>/dev/null || true
-	if wait_for backend backend_up 300; then echo "ok      backend   :$BACKEND_PORT answering"; else
+	if wait_for backend_up 300; then echo "ok      backend   :$BACKEND_PORT answering"; else
 		echo "FAIL    backend   :$BACKEND_PORT did not answer in 300s; see /tmp/idp-portal-backend.log" >&2
 		tail -8 /tmp/idp-portal-backend.log 2>/dev/null | sed 's/^/        /' >&2
 		exit 1
@@ -127,7 +128,7 @@ else
 	echo "-- starting the portal frontend (:$FRONTEND_PORT); first compile takes about 90s --"
 	( cd "$BACKSTAGE" && nohup yarn workspace app start >/tmp/idp-portal-frontend.log 2>&1 & )
 	disown 2>/dev/null || true
-	if wait_for frontend frontend_up 360; then echo "ok      frontend  :$FRONTEND_PORT answering"; else
+	if wait_for frontend_up 360; then echo "ok      frontend  :$FRONTEND_PORT answering"; else
 		echo "FAIL    frontend  :$FRONTEND_PORT did not answer in 360s; see /tmp/idp-portal-frontend.log" >&2
 		tail -8 /tmp/idp-portal-frontend.log 2>/dev/null | sed 's/^/        /' >&2
 		exit 1

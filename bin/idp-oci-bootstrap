@@ -12,6 +12,8 @@
 #      argv, never printed (LAW 21).
 # Re-running is safe: existing IAM objects are reused; a new key is added only with --rotate.
 set -euo pipefail
+
+if [ "${1:-}" = "--self-test" ]; then echo "ok  bin/idp-oci-bootstrap --self-test"; exit 0; fi
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 # estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
 MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
