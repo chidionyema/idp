@@ -116,6 +116,7 @@ class Policy:
     routing: Mapping[str, Any] = field(default_factory=dict)
     merge: Mapping[str, Any] = field(default_factory=dict)
     invariants: Mapping[str, Any] = field(default_factory=dict)
+    jev: Mapping[str, Any] = field(default_factory=dict)
 
     def monthly_spend_usd(self) -> float:
         """What the per-day defaults add up to over the contract month."""
@@ -127,7 +128,7 @@ class Policy:
         return float(self.cost["contract_min_usd_month"]) <= spend <= float(self.cost["contract_max_usd_month"])
 
 
-REQUIRED_SECTIONS = ("capabilities", "fsm", "budget", "cost", "routing", "merge", "invariants")
+REQUIRED_SECTIONS = ("capabilities", "fsm", "budget", "cost", "routing", "merge", "invariants", "jev")
 
 
 def load(path: Path | None = None) -> Policy:
@@ -155,6 +156,7 @@ def load(path: Path | None = None) -> Policy:
         routing=dict(data["routing"]),
         merge=dict(data["merge"]),
         invariants=dict(data["invariants"]),
+        jev=dict(data["jev"]),
     )
 
 

@@ -216,6 +216,12 @@ pending_owner_required_on = ["main"]
 "blind.halt_after_min" = 5
 "alerts.digest_over_per_hour" = 50
 "spiffe.max_missed_heartbeats" = 3
+
+[jev]
+default_confidence_floor = 0.7
+timeout_ms = 2000
+escalate_on_timeout = true
+model = "jev-1.13.0"
 ```
 
 

@@ -107,9 +107,43 @@ jq -c --arg sha "$inv_sha256" --arg gen_at "$generated_at" --arg inv_path "$INV"
 S=$(command -v sqlite3 || echo /usr/bin/sqlite3)
 if [ -f "$DB" ] && [ -x "$S" ]; then
   "$S" "$DB" ".restore '$tmp'" || { echo "db-gen: restore into $DB failed" >&2; exit 1; }
+  # jev_decisions is written by mcp/plugins/jev.py between runs. The restore step
+  # above does NOT drop it because it exists in the destination but not the source.
+  # If the table does not yet exist (first time after this change), create it here.
+  "$S" "$DB" "CREATE TABLE IF NOT EXISTS jev_decisions (
+    id TEXT PRIMARY KEY,
+    repo TEXT NOT NULL,
+    layer TEXT NOT NULL,
+    decision_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT,
+    confidence REAL,
+    probabilities TEXT,
+    escalated INTEGER NOT NULL DEFAULT 0,
+    latency_ms REAL,
+    created_at TEXT NOT NULL
+  );" 2>/dev/null || true
+  "$S" "$DB" "CREATE INDEX IF NOT EXISTS idx_jevd_repo ON jev_decisions(repo);" 2>/dev/null || true
+  "$S" "$DB" "CREATE INDEX IF NOT EXISTS idx_jevd_confidence ON jev_decisions(confidence) WHERE confidence IS NOT NULL;" 2>/dev/null || true
   rm -f "$tmp"
 else
   # First run, or no sqlite3: nothing has the file open, so a move is safe.
+  # Create jev_decisions table in the new DB (it's added by the restore step on subsequent runs).
+  "$S" "$tmp" "CREATE TABLE IF NOT EXISTS jev_decisions (
+    id TEXT PRIMARY KEY,
+    repo TEXT NOT NULL,
+    layer TEXT NOT NULL,
+    decision_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT,
+    confidence REAL,
+    probabilities TEXT,
+    escalated INTEGER NOT NULL DEFAULT 0,
+    latency_ms REAL,
+    created_at TEXT NOT NULL
+  );" 2>/dev/null || true
+  "$S" "$tmp" "CREATE INDEX IF NOT EXISTS idx_jevd_repo ON jev_decisions(repo);" 2>/dev/null || true
+  "$S" "$tmp" "CREATE INDEX IF NOT EXISTS idx_jevd_confidence ON jev_decisions(confidence) WHERE confidence IS NOT NULL;" 2>/dev/null || true
   mv "$tmp" "$DB"
 fi
 
