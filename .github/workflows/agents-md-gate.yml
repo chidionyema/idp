@@ -10,7 +10,7 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: AGENTS.md must be ≤300 lines
         run: |
           lines=$(wc -l < AGENTS.md)
