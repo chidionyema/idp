@@ -23,13 +23,17 @@ test that invents its own calling convention proves nothing about the router.
 
 import asyncio
 import importlib.util
-import json
 import pathlib
 import sys
 
 import pytest
 
-MODULE = pathlib.Path(__file__).resolve().parents[1] / "platform" / "llm" / "zeroedge_gateway.py"
+MODULE = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "platform"
+    / "llm"
+    / "zeroedge_gateway.py"
+)
 
 
 def _load():
@@ -88,11 +92,19 @@ def test_proceed_applies_the_returned_body(mod, monkeypatch):
     """A `proceed` answer replaces the body with the optimized one."""
     monkeypatch.setenv("ZEROEDGE_URL", "http://zeroedge.test")
     hook = mod.ZeroEdgeGateway()
-    optimized = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}],
-                 "metadata": {"_zeroedge": {"routing": {"model": "gpt-4o-mini"}}}}
+    optimized = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": "hi"}],
+        "metadata": {"_zeroedge": {"routing": {"model": "gpt-4o-mini"}}},
+    }
     monkeypatch.setattr(
-        hook, "_post",
-        lambda path, payload: {"action": "proceed", "status_code": 200, "body": optimized},
+        hook,
+        "_post",
+        lambda path, payload: {
+            "action": "proceed",
+            "status_code": 200,
+            "body": optimized,
+        },
     )
     out = _call(mod, hook, _request())
     assert out == optimized
@@ -104,9 +116,13 @@ def test_reject_raises_the_status_the_service_named(mod, monkeypatch):
     monkeypatch.setenv("ZEROEDGE_URL", "http://zeroedge.test")
     hook = mod.ZeroEdgeGateway()
     monkeypatch.setattr(
-        hook, "_post",
-        lambda path, payload: {"action": "reject", "status_code": 402,
-                               "error": "budget_exceeded"},
+        hook,
+        "_post",
+        lambda path, payload: {
+            "action": "reject",
+            "status_code": 402,
+            "error": "budget_exceeded",
+        },
     )
     with pytest.raises(Exception) as exc:
         _call(mod, hook, _request())
