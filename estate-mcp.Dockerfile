@@ -53,22 +53,20 @@ RUN pip install --no-cache-dir "datasette==1.0a38" "datasette-mcp==0.1a0" "pyyam
 # plist path, which is not mounted into this image; see the plugin's own docstring
 # for the residual.
 COPY mcp/plugins /app/plugins
-# The grader programs, their registry, and the trees the graders read by path at run time.
+# The grader programs and the trees they read by path at run time.
 # ESTATE_REPO_ROOT=/app makes the plugin resolve `/app/bin/...`.
 #
-# `bin/` carries the six grader programs themselves. `rules.yaml` is bin/idp-rules' registry.
-# `policy/fixtures` and `tests/fixtures` are read BY bin/idp-rules when it grades a rule against
-# its two fixtures (a rule row names both), so a laws grade without them is a laws grade that
-# cannot run. These are the whole of what the graders touch; nothing else in the tree is copied,
-# and each path here is one a grader was observed to open.
+# `bin/` carries the grader programs themselves; the fixture trees are what they read. rules.yaml
+# and bin/idp-rules were deleted 2026-09-21 (founder ruling: a rule is a rung in bin/idp-ci, not a
+# row in a table), so the registry is no longer copied and the laws grade in mcp/plugins/
+# estate_simulate.py reports UNKNOWN rather than folding per-rule verdicts.
 #
-# The build context is this repository's root, not mcp/. The graders live at bin/ and
-# rules.yaml at the root, and a Docker build can only COPY from its own context -- the previous
-# mcp/-rooted context made every one of these COPY lines unresolvable, so the image could not be
-# built at all once the graders were named. estate-scheduler.Dockerfile already builds from the
-# root for the same reason, and that is the row bin/dockerfiles now emits for this file too.
+# The build context is this repository's root, not mcp/. The graders live at bin/, and a Docker
+# build can only COPY from its own context -- the previous mcp/-rooted context made every one of
+# these COPY lines unresolvable, so the image could not be built at all once the graders were
+# named. estate-scheduler.Dockerfile already builds from the root for the same reason, and that is
+# the row bin/dockerfiles now emits for this file too.
 COPY bin /app/bin
-COPY rules.yaml /app/rules.yaml
 COPY policy/fixtures /app/policy/fixtures
 COPY tests/fixtures /app/tests/fixtures
 USER datasette

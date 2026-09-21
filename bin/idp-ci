@@ -66,11 +66,11 @@ need python3
 
 MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 
-# Every rule in rules.yaml that is cheap enough for the fast gate (fast: true), run by the one
-# engine. The registry holds the statement, the argv, the fixture pair and the verdict line; this
-# file no longer repeats any of them (founder 2026-09-07, the Unification Move: "Ruthless
-# Deletion ... do not leave them as dead code").
-python3 "$IDP/bin/idp-rules" run --plane ci --fast || fail=1
+# The 100-row rule registry (rules.yaml) and its engine (bin/idp-rules) were deleted 2026-09-21 on
+# the founder's ruling. A rule is a rung in this file, not a row in a table: every check below runs
+# the thing itself. The registry was a second copy of checks already enforced as types and tools,
+# and its live gate manufactured work -- it refused rules whose only grader was a job the founder
+# had just deleted, which is a table defending itself rather than the estate.
 
 # The bdd-proof gate, named here on purpose. It is a rule in rules.yaml like the rest, but its
 # live case -- reading the most recent pull request on this repository and refusing one that
@@ -101,17 +101,9 @@ if [ "$FAST" = 1 ]; then
   timing_summary
   # 1e. crew#679 CP5: the incident register is generated from tests/test_incident_*.py; a new
   # incident test without its committed row is refused here, so the chaos drills never drift.
-  [ "$fail" -eq 0 ] && say "ok    fast-gate: ruff, and the rules.yaml rules marked fast" || say "FAIL  fast-gate"
+  [ "$fail" -eq 0 ] && say "ok    fast-gate: ruff" || say "FAIL  fast-gate"
   exit "$fail"
 fi
-
-# The rest of rules.yaml, one engine, one list. Adding a rule is a row in rules.yaml and its two
-# fixtures -- never a new rung here, never a new gate script. `bin/idp-rules list` prints the
-# registry; `render-agents-md --check` fails when AGENTS.md's table has drifted from it; `cluster`
-# fails when a rule that names a Kyverno policy has no policy on disk.
-python3 "$IDP/bin/idp-rules" run --plane ci --rest || fail=1
-python3 "$IDP/bin/idp-rules" cluster || fail=1
-python3 "$IDP/bin/idp-rules" render-agents-md --check || fail=1
 
 # 2. Compose files are valid. Values are placeholders; compose only checks shape.
 for c in llm/litellm.yml observability/langfuse.yml mcp/agentgateway.yml; do
