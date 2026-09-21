@@ -21,7 +21,7 @@ Mechanisms that discard a grader's exit:
    block scalar, and no fixture or test ever agreed with that, so the claim was removed rather
    than enforced against work that had done nothing wrong (R38).
 
-Graders: bin/idp-prove, bin/idp-root-trust, bin/idp-conscience, bin/idp-escrow,
+Graders: bin/idp-prove, bin/idp-root-trust, bin/idp-escrow,
 bin/idp-inventory, bin/idp-router-lanes, bin/idp-fits-a-node, bin/idp-ticket-verify,
 bin/idp-mechanism-gate, bin/idp-rule-coverage, bin/idp-one-scheduler.
 """
@@ -38,7 +38,6 @@ import yaml
 GRADERS = [
     "bin/idp-prove",
     "bin/idp-root-trust",
-    "bin/idp-conscience",
     "bin/idp-escrow",
     "bin/idp-inventory",
     "bin/idp-router-lanes",

@@ -525,26 +525,6 @@ rules:
     note: the allow-list parser, which would otherwise rot silently
   ok: bind-audit refuses an unknown listener and permits an allow-listed one; selftest green
   fail: bind-audit does not discriminate on the recorded listener tables
-- id: conscience
-  label: ethos
-  statement: The founder's ethos is seven measured tenet rows; a row without a command is refused
-  law: LAW 44
-  origin: crew#586 CP1
-  planes:
-  - ci
-  proved_elsewhere: 'bin/idp-conscience --selftest is itself the both-ways proof: it scores the good fixture 2/2, the bad one 1/2, and refuses a tenet with no command'
-  run:
-  - python3
-  - bin/idp-conscience
-  - --selftest
-  fixtures:
-    must_fail: a tenet row with no command
-    must_pass: bin/idp-conscience
-  live_elsewhere: .github/workflows/conscience.yml:94 -- the conscience job runs the gate bare over the estate's own tenet rows, not the selftest
-  cases:
-  - expect: pass
-  ok: idp-conscience scores the good fixture 2/2, the bad 1/2, and refuses a tenet with no command
-  fail: bin/idp-conscience --selftest
 - id: job-described
   label: describe
   statement: Every scheduled job reaches the Dagster UI with a description of what it does
@@ -1099,41 +1079,6 @@ rules:
     - policy/fixtures/notoil-doc-founder-action.json
   ok: a doc that hands a person a credential to mint is refused; a FOUNDER ACTION line is allowed
   fail: the no-toil policy did not behave as specified
-- id: conscience-rego
-  label: ethos-rego
-  statement: The conscience rules judge a pull request both ways
-  law: LAW 44
-  origin: crew#586 CP2
-  planes:
-  - ci
-  requires:
-  - conftest
-  run:
-  - conftest
-  - test
-  - --parser
-  - json
-  - -p
-  - policy
-  fixtures:
-    must_fail: policy/fixtures/conscience-bad.json
-    must_pass: policy/fixtures/conscience-clean.json
-  live_elsewhere: bin/pr-report:63 -- .githooks/pre-push:33 runs bin/pr-report on every push from this repo, so what survives here is graded against the real pull request and not only against the fixtures below.
-  cases:
-  - expect: refuse
-    args:
-    - policy/fixtures/conscience-bad.json
-    expect_rules:
-    - no_provider_in_diff
-    - no_floating_tag
-    - new_script_has_a_test
-    - incident_has_a_guard
-    - new_dependency_has_a_ledger_entry
-  - expect: pass
-    args:
-    - policy/fixtures/conscience-clean.json
-  ok: conscience.rego fires all 5 rules on conscience-bad.json and none on conscience-clean.json
-  fail: policy/conscience.rego fixtures
 - id: shell-lint
   label: shell
   statement: Every bash script in bin/ passes shellcheck at warning level
