@@ -322,55 +322,6 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: layer-chaos
-  title: 'Chaos drills'
-  description: 'The scheduled breakages and the proof each one was survived.'
-  annotations:
-    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=chaos'
-    estate/flux-kustomization: 'chaos'
-    estate/path: './platform/chaos'
-    estate/cluster: 'oke'
-  tags: [platform, resilience]
-  links:
-    - url: https://signoz.${ESTATE_ZONE}
-      title: 'Live logs and metrics'
-spec:
-  type: platform-layer
-  lifecycle: production
-  owner: group:default/platform
-  system: resilience
-  dependsOn:
-    - component:default/layer-chaos-mesh
-    - component:default/layer-observability
-    - component:default/layer-monitoring
-    - component:default/layer-backstage
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: layer-chaos-mesh
-  title: 'Chaos engine'
-  description: 'Breaks things on purpose, on a schedule, to prove the estate survives.'
-  annotations:
-    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=chaos-mesh'
-    estate/flux-kustomization: 'chaos-mesh'
-    estate/path: './platform/chaos/mesh'
-    estate/cluster: 'oke'
-  tags: [platform, resilience]
-  links:
-    - url: https://signoz.${ESTATE_ZONE}
-      title: 'Live logs and metrics'
-spec:
-  type: platform-layer
-  lifecycle: production
-  owner: group:default/platform
-  system: resilience
-  dependsOn:
-    - component:default/layer-scheduling
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
   name: layer-cluster-state
   title: 'Cluster state'
   description: 'Renders what the cluster is right now, for the checks that read it.'
@@ -465,27 +416,6 @@ spec:
   system: products
   dependsOn:
     - component:default/layer-secret-store
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: layer-cross-node-drill
-  title: 'Cross-node network drill'
-  description: 'Two small canaries, one on each worker, that call each other over the network every few seconds and write down what they saw. It answers the two questions a week-long outage in September 2026 could not: do pods on different machines still reach each other, and does the traffic still arrive under the sender''s own address rather than the machine''s. If either stops being true it is a red row within the hour instead of a month of unexplained timeouts.'
-  annotations:
-    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=cross-node-drill'
-    estate/flux-kustomization: 'cross-node-drill'
-    estate/path: './platform/cross-node-drill'
-    estate/cluster: 'oke'
-  tags: [platform, resilience]
-  links:
-    - url: https://signoz.${ESTATE_ZONE}
-      title: 'Live logs and metrics'
-spec:
-  type: platform-layer
-  lifecycle: production
-  owner: group:default/platform
-  system: resilience
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -651,29 +581,6 @@ spec:
   dependsOn:
     - component:default/layer-edge
     - component:default/layer-secret-store
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: layer-drills
-  title: 'Drills'
-  description: 'Every rehearsed failure and the run that last passed it.'
-  annotations:
-    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=drills'
-    estate/flux-kustomization: 'drills'
-    estate/path: './platform/drills'
-    estate/cluster: 'oke'
-  tags: [platform, resilience]
-  links:
-    - url: https://signoz.${ESTATE_ZONE}
-      title: 'Live logs and metrics'
-spec:
-  type: platform-layer
-  lifecycle: production
-  owner: group:default/platform
-  system: resilience
-  dependsOn:
-    - component:default/layer-github-app-creds
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

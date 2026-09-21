@@ -85,12 +85,72 @@ declare -a TOOLS=(
   "git      git                git            git            git"
 )
 
-# install_pkg <binary> <pkgname>: install one package with the OS's native package manager, echo
-# BLIND when the OS has no pkgname mapped. Idempotent — a present binary is a no-op.
+TOOLS_DIR="${TOOLS_DIR:-$HOME/.cache/estate-tools}"   # the path bin/idp-install-deps and CI's estate-tools share
+AGE_VER="1.2.1"
+
+# install_upstream <binary>: fetch one tool straight from its upstream release, with no package
+# manager at all. This exists because a package manager is an assumption, not a given: measured
+# 2026-09-21, this Mac has no Homebrew (/opt/homebrew/bin/brew and /usr/local/bin/brew both
+# absent), so the entire macos branch of install_pkg was dead code that reported
+# "brew install oci-cli refused" for a brew that was never there -- pointing the reader at the
+# wrong defect. Returns 0 only when the binary afterwards answers for itself.
+install_upstream() {
+  local bin="$1"
+  local uos uarch
+  uos="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  uarch="$(uname -m)"; [ "$uarch" = "x86_64" ] && uarch="amd64"; [ "$uarch" = "aarch64" ] && uarch="arm64"
+  case "$bin" in
+    oci)
+      # oci-cli is a pip package in this estate, never a brew formula: all 14 install sites
+      # across 7 workflows use .github/requirements/oci-cli.txt. The cryptography pin is load
+      # bearing -- 46+ ships no macOS x86_64/universal2 wheel (PyPI JSON API, 2026-09-21), so on
+      # an Intel Mac an unconstrained resolve falls back to compiling Rust via maturin and fails.
+      command -v uv >/dev/null 2>&1 || return 1
+      local cons; cons="$(mktemp)"
+      echo 'cryptography<46' >"$cons"
+      uv tool install oci-cli --python 3.12 --constraints "$cons" >/dev/null 2>&1
+      local rc=$?
+      rm -f "$cons"
+      [ "$rc" -eq 0 ] || return 1
+      command -v oci >/dev/null 2>&1 || [ -x "$HOME/.local/bin/oci" ] || return 1
+      return 0 ;;
+    age)
+      mkdir -p "$TOOLS_DIR"
+      local tmp; tmp="$(mktemp -d)"
+      if curl -fsSL -o "$tmp/age.tgz" \
+           "https://github.com/FiloSottile/age/releases/download/v${AGE_VER}/age-v${AGE_VER}-${uos}-${uarch}.tar.gz" \
+         && tar xzf "$tmp/age.tgz" -C "$tmp"; then
+        find "$tmp" -type f -name 'age' -exec cp {} "$TOOLS_DIR/age" \; 2>/dev/null
+        find "$tmp" -type f -name 'age-keygen' -exec cp {} "$TOOLS_DIR/age-keygen" \; 2>/dev/null
+        chmod +x "$TOOLS_DIR/age" "$TOOLS_DIR/age-keygen" 2>/dev/null
+      fi
+      rm -rf "$tmp"
+      [ -x "$TOOLS_DIR/age" ] && "$TOOLS_DIR/age" --version >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
+
+# install_pkg <binary> <pkgname>: bring one tool up. Upstream first, package manager second, so a
+# machine with no package manager still reaches dev-ready. Idempotent — a present binary is a
+# no-op, and $TOOLS_DIR counts as present because that is where install_upstream and
+# bin/idp-install-deps both put things.
 install_pkg() {
   local bin="$1" pkg="$2"
   command -v "$bin" >/dev/null && { ok "level0 $bin present"; return 0; }
-  [ "$pkg" = "-" ] && { blind "level0 $bin has no $OS package mapping; try upstream curl or file a lane row"; return 0; }
+  [ -x "$TOOLS_DIR/$bin" ] && { ok "level0 $bin present ($TOOLS_DIR)"; return 0; }
+  if install_upstream "$bin"; then
+    ok "level0 $bin installed from upstream (no package manager needed)"
+    return 0
+  fi
+  [ "$pkg" = "-" ] && { blind "level0 $bin has no $OS package mapping and no upstream recipe; file a lane row"; return 0; }
+  # Name the real defect rather than blaming the package manager for refusing: if it is not
+  # installed, "brew install X refused" is a lie about what happened.
+  local mgr
+  case "$OS" in macos) mgr=brew;; debian) mgr=apt-get;; rhel) mgr=dnf;; alpine) mgr=apk;; *) mgr="";; esac
+  if [ -n "$mgr" ] && ! command -v "$mgr" >/dev/null 2>&1; then
+    fail "level0 $bin absent: no upstream recipe succeeded and $mgr is not installed on this $OS"
+    return 0
+  fi
   case "$OS" in
     macos)  brew install "$pkg" >/dev/null 2>&1 && ok "level0 $bin installed via brew ($pkg)" || fail "level0 brew install $pkg refused";;
     debian) sudo apt-get -qq update >/dev/null 2>&1; sudo apt-get -qq -y install "$pkg" >/dev/null 2>&1 && ok "level0 $bin installed via apt ($pkg)" || fail "level0 apt install $pkg refused";;
@@ -259,7 +319,7 @@ phase3_gh() {
 }
 
 # ---- Verify -----------------------------------------------------------------
-# Empirical proof (~/.claude/CLAUDE.md rule): every provisioned surface must answer, not just
+# Empirical proof (AGENTS.md section 3): every provisioned surface must answer, not just
 # claim. A green report where nothing actually answers is theatre.
 verify() {
   echo "-- Verify --"

@@ -110,10 +110,11 @@ jobs:
               | jq -c --arg repo "${repo#chidionyema/}" '.[]|{repo:$repo,workflow:.workflowName,conclusion,created_at:.createdAt}' >> "$RUNNER_TEMP/runs.ndjson" || echo "BLIND runs of $repo not read"
           done
           jq -s . "$RUNNER_TEMP/runs.ndjson" > "$RUNNER_TEMP/runs.json"
-          drill=$(gh run list -R chidionyema/idp -w login-drill.yml -L 1 --status completed --json databaseId,updatedAt --jq '.[0]')
-          echo "$drill" | jq -r .updatedAt > "$RUNNER_TEMP/drill.at"
-          gh run view "$(echo "$drill" | jq -r .databaseId)" -R chidionyema/idp --log 2>/dev/null | grep -E "(sso|paths|FAIL) +login-drill" | sed -E 's/^[^Z]*Z //' > "$RUNNER_TEMP/drill.log" || echo "BLIND drill log not read"
-          echo "issues $(jq length "$RUNNER_TEMP/issues.json") runs $(jq length "$RUNNER_TEMP/runs.json") drill rows $(wc -l < "$RUNNER_TEMP/drill.log")"
+          # The login drill is deleted (founder 2026-09-21). An empty drill.at / drill.log keeps
+          # the snapshot's shape for every downstream reader rather than leaving it undefined.
+          : > "$RUNNER_TEMP/drill.at"
+          : > "$RUNNER_TEMP/drill.log"
+          echo "issues $(jq length "$RUNNER_TEMP/issues.json") runs $(jq length "$RUNNER_TEMP/runs.json") drill rows 0"
       # version 2 (founder 2026-09-03, docs/founder/estate-snapshot-is-mandatory.md): what moved and
       # what waits. Every source is a file; a source that cannot be read is a BLIND line and an
       # empty or UNKNOWN field, never a green row.

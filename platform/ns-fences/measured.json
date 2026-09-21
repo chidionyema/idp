@@ -14,11 +14,6 @@
     "memory_mib": 160,
     "pods": 3
   },
-  "chaos-mesh": {
-    "cpu_millicores": 25,
-    "memory_mib": 256,
-    "pods": 3
-  },
   "dagster": {
     "cpu_millicores": 2350,
     "memory_mib": 8320,

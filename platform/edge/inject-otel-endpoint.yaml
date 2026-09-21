@@ -62,7 +62,6 @@ spec:
                 - calico-system
                 - calico-apiserver
                 - scheduling
-                - cross-node-drill
                 - staging
                 - state
           # VENDOR workloads — third-party images with no OTel SDK; injection is dead weight
@@ -94,7 +93,7 @@ spec:
               names: [status-page*, traefik*, external-dns*]
           # VENDOR — fully third-party Helm chart namespaces
           - resources:
-              namespaces: [event-bus, robusta, estate-db, chaos-mesh, temporal]
+              namespaces: [event-bus, robusta, estate-db, temporal]
           - resources:
               namespaces: [identity]
               names: [oauth2-proxy*]

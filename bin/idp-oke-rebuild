@@ -15,7 +15,7 @@
 #                        Always Free A1 allowance is one node, so a parallel drill cluster needs
 #                        paid capacity (founder decision, crew#220).
 #
-# LAW 43: every step is the mature tool (oci, tofu, flux, kubectl, curl). This file only orders
+# every step is the mature tool (oci, tofu, flux, kubectl, curl). This file only orders
 # them, times them and refuses to say PASS for a step it could not measure.
 set -uo pipefail
 export SUPPRESS_LABEL_WARNING=True
@@ -23,7 +23,7 @@ IDP="$(cd "$(dirname "$0")/.." && pwd)"
 TF="$IDP/platform/oci"
 MODE="${1:---check}"   # --plan-pool: crew#289, the node-pool decision with its cost line
 export OCI_CLUSTER_NAME="${OCI_CLUSTER_NAME:-estate}"
-# LAW 46: no product hostname or pack count in this script. Each cluster's expectations live in
+# no product hostname or pack count in this script. Each cluster's expectations live in
 # platform/oci/clusters/<name>.env; env vars override; nothing known means the row is BLIND, never a
 # measurement of production while a drill cluster serves nothing (review idp#96, 2026-08-25).
 CL="$TF/clusters/$OCI_CLUSTER_NAME.env"
@@ -94,7 +94,7 @@ fi
 # crew#325: the cluster reads one vault (flux-system/estate-vars) and CI writes the tofu vault. When a
 # second vault holds ACTIVE secrets (left by the 02:26Z lost-state apply) every CI write is invisible
 # to the cluster; this row names the split and the import. Its failure is never the PR's fault.
-# The inventory is the instrument (LAW 28), so every line is shown, not the step helper's last 100 chars.
+# The inventory is the instrument, so every line is shown, not the step helper's last 100 chars.
 VS=$("$IDP/bin/idp-vault-split-guard" "$TF" 2>&1); vsrc=$?
 printf '%-5s %-18s rc=%-3s %4ss  %s\n' "$([ $vsrc -eq 0 ] && echo ok || echo FAIL)" vault-split "$vsrc" 0 "$(printf '%s\n' "$VS" | grep -cE '^(ok|REFUSE|BLIND)') vault row(s) below"
 printf '%s\n' "$VS" | sed 's/^/      | /'
@@ -109,10 +109,9 @@ if ! step door-heartbeat "$IDP/bin/idp-door-heartbeat" && [ "${OKE_CHECK_EXPECT_
   printf '%-5s %-18s rc=%-3s %4ss  %s\n' ok door-heartbeat 0 0 "pull_request: the receipt absence above is the cluster's clock, not this PR"
 fi
 [ -n "${GH_REPO:-}" ] || export GH_REPO="${GITHUB_REPOSITORY:-}"
-if ! step drill-heartbeat "$IDP/bin/idp-drill-heartbeat" login-drill.yml 1560 && [ "${OKE_CHECK_EXPECT_CHANGES:-0}" = "1" ]; then
-  FAILED="${FAILED% drill-heartbeat}"
-  printf '%-5s %-18s rc=%-3s %4ss  %s\n' ok drill-heartbeat 0 0 "pull_request: the drill absence above is the schedule, not this PR"
-fi
+# The drill-heartbeat rung graded how long ago login-drill.yml last went green. Both the drill
+# and its heartbeat are deleted (founder 2026-09-21); door-heartbeat above still grades the
+# front door's own receipt, which is the fact this rung was standing in for.
 case "$MODE" in
   --check)
     # rc=2 is drift. Say which resources, not the plan's closing note: a tail nobody can read is
