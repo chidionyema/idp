@@ -73,6 +73,40 @@ def _models(destructive: bool) -> list[str]:
     return list(config.SB_MODEL_CONSENSUS)
 
 
+async def _jev_prescreen(op: str, destructive: bool) -> tuple[bool, float]:
+    """Gate the consensus fan-out with Jev noul (ADR 0030 T1).
+
+    Asks: "Is consensus likely to be reached on this operation without timeout?"
+
+    Returns (proceed_to_fanout: bool, confidence: float).
+    proceed_to_fanout=True  -> run full consensus (3-model vote).
+    proceed_to_fanout=False -> consensus is likely, use cheap model.
+
+    When Jev is unavailable or confidence < floor, runs the full fan-out
+    and logs jev_low_confidence / jev_unavailable."""
+    if not destructive:
+        return (True, 0.0)
+    try:
+        from mcp.plugins.jev import jev_noul
+
+        threshold = float(config.get("jev.default_confidence_floor").value or 0.7)
+        result = jev_noul(
+            repo="sovereign",
+            layer="consensus",
+            decision_id="consensus_pre_screen",
+            context={"operation": op, "destructive": destructive},
+            question="Is consensus likely to be reached on this operation without timeout?",
+            threshold=threshold,
+        )
+        confidence = result.get("confidence")
+        escalated = result.get("escalated", True)
+        if escalated or confidence is None:
+            return (True, confidence or 0.0)
+        return (False, confidence)
+    except Exception:
+        return (True, 0.0)
+
+
 async def _one_vote(client: httpx.AsyncClient, model: str, op: str, index: int) -> dict[str, Any]:
     """One model's proposal. Never raises: a model that errors is a vote
     that did not arrive, which is exactly how a timeout is treated, and a
@@ -109,8 +143,31 @@ async def collect(op: str, destructive: bool, deadline_s: float | None = None) -
     The deadline is enforced here rather than left to httpx's own timeout,
     because "the proxy answered in 29.9s and the fan-out started 5s ago"
     and "the proxy answered in 31s" have to be told apart -- one is a
-    counted vote and the other is discarded."""
+    counted vote and the other is discarded.
+
+    Jev pre-screen (ADR 0030 T1): for destructive ops, a Jev noul gate asks
+    "Is consensus likely?" before running the 3-model fan-out. If confidence
+    >= floor, uses the cheap model instead. Falls back to full fan-out when
+    Jev is unavailable or confidence < floor."""
     deadline_s = deadline_s if deadline_s is not None else float(config.get("consensus.timeout_s").value)
+
+    jev_confidence: float | None = None
+    if destructive:
+        proceed_to_fanout, jev_confidence = await _jev_prescreen(op, destructive)
+        if not proceed_to_fanout:
+            return [
+                {
+                    "model": str(ck.get("consensus.cheap_model")),
+                    "index": 0,
+                    "proposal": _EMPTY,
+                    "stale": False,
+                    "error": None,
+                    "elapsed_s": 0.0,
+                    "jev_skip": True,
+                    "jev_confidence": jev_confidence,
+                }
+            ]
+
     models = _models(destructive)
     if not config.LITELLM_BASE_URL:
         return [
