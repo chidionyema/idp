@@ -20,7 +20,7 @@ Exit code `1` (the registry expects non-zero). ✓
 
 ```
 [31mFAIL[0m - policy/fixtures/notoil-doc-manual.json - main - Policy Violation: Instructions contain manual human toil steps. Automate the bootstrapping sequence.
-[31m31 tests, 30 passed, 0 warnings, 1 failure, 0 exceptions[0m
+[31m33 tests, 32 passed, 0 warnings, 1 failure, 0 exceptions[0m
 ```
 
 ## Permitted
@@ -30,7 +30,7 @@ Fixture: `policy/fixtures/notoil-doc-founder-action.json`
 Exit code `0` (the registry expects zero). ✓
 
 ```
-[32m31 tests, 31 passed, 0 warnings, 0 failures, 0 exceptions[0m
+[32m33 tests, 33 passed, 0 warnings, 0 failures, 0 exceptions[0m
 ```
 
 ## The registry's own lines

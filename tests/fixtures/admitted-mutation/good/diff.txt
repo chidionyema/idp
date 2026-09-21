@@ -1,0 +1,7 @@
+diff --git a/mutdoor_code.py b/mutdoor_code.py
+index 0000000..1111111 100644
+--- a/mutdoor_code.py
++++ b/mutdoor_code.py
+@@ -0,0 +1,2 @@
++def add(a, b):
++    return a + b

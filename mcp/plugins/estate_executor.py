@@ -77,14 +77,14 @@ _NEVER = (
 )
 
 
-def explicit_ceiling_sec(command: str) ->Optional[int]:
+def explicit_ceiling_sec(command: str) -> int | None:
     """The ceiling a command sets on itself, in seconds, or None when it sets none.
 
     Every spelling is read. The earlier form of this check caught `timeout 150` and missed
     `timeout 2m` and `gtimeout -k 5 150` -- it parsed the `5` from `-k 5` and passed the real
     number. A rule that catches one spelling is a rule the agent steps around without meaning to.
     """
-    ceiling:Optional[int] = None
+    ceiling: int | None = None
     for match in _TIMEOUT_RE.finditer(command):
         args = match.group(1)
         # `-k 5` / `--kill-after=5` is a grace period, never the ceiling, and its digit must not
@@ -112,19 +112,83 @@ class Job:
     job_id: str
     command: str
     ceiling_sec: int
-    cwd:Optional[str] = None
+    cwd: str | None = None
     accepted_at: float = field(default_factory=time.time)
     state: str = "accepted"
-    exit_code:Optional[int] = None
-    log:Optional[str] = None
+    exit_code: int | None = None
+    log: str | None = None
+
+
+def _daemon_socket_path() -> str:
+    """Where the executor daemon listens. Read from the environment, never a literal (LAW 46).
+
+    The same variable the daemon itself defaults to, so the door and the thing behind it cannot
+    drift to two different sockets -- a door pointing at the wrong socket answers `accepted` to
+    every caller and runs nothing, which is the defect this function exists to end.
+    """
+    return os.environ.get(
+        "IDP_EXECUTOR_SOCKET", os.path.expanduser("~/.estate/executor.sock")
+    )
+
+
+def _ask_daemon(request: dict, *, timeout: float = 10.0) -> dict:
+    """One request, one reply over the executor's UNIX socket.
+
+    THE DAEMON IS THE ONLY THING THAT SPAWNS. Before this function existed, `Executor.submit()`
+    minted a job id, stored it in a dict, and returned -- so `execute_command` answered
+    `accepted: True` and started no process at all, while the daemon's own socket path executed
+    commands correctly. The sanctioned door ran nothing and reported success: a silent no-op with
+    a receipt, which AGENTS.md section 8 calls a lie.
+
+    A dead daemon is NOT a lost job and NOT a success. It raises, and the caller turns that into a
+    refusal naming the fix -- because a caller that cannot tell "running" from "nobody is home"
+    is the defect, not the outage.
+    """
+    import socket as _socket
+
+    path = _daemon_socket_path()
+    if not path or not os.path.exists(path):
+        raise ConnectionRefusedError(
+            f"no executor daemon at {path}; start it with bin/exec-daemon "
+            f"(bin/idp-executor-status reports the socket)"
+        )
+    sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    try:
+        sock.settimeout(timeout)
+        sock.connect(path)
+        sock.sendall(json.dumps(request).encode("utf-8") + b"\n")
+        raw = b""
+        while b"\n" not in raw and len(raw) < 4_000_000:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            raw += chunk
+    finally:
+        sock.close()
+    if not raw:
+        raise ConnectionRefusedError(
+            f"the executor daemon at {path} closed the connection with no reply; "
+            f"check bin/idp-executor-status"
+        )
+    try:
+        return json.loads(raw.decode("utf-8").strip())
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ConnectionRefusedError(
+            f"the executor daemon at {path} sent an unreadable reply: {exc}"
+        ) from exc
 
 
 class Executor:
     """The injected runner. One method: start a command detached and return its id.
 
-    In production this is backed by `~/.pi/agent/bin/run` -- the detached runner this estate
-    already built and proved, which returns in milliseconds. In tests it is a stub, so every edge
-    case is graded with no subprocess and no shell.
+    In production this reaches the executor daemon over its UNIX socket, which is the half that
+    actually spawns: the daemon applies the ceiling and starts `platform/executor/run.py`
+    detached, and the job's log/exit land in `<ESTATE_RUNS>/<job_id>.{log,pid,exit}`. This class
+    HOLDS NO JOB STATE of its own for exactly that reason -- a second registry in this process
+    would report a job id the daemon has never heard of.
+
+    In tests it is a stub, so every edge case is graded with no subprocess and no shell. A stub
+    that overrides `submit` keeps working unchanged; only the real one talks to the socket.
     """
 
     def __init__(self) -> None:
@@ -140,23 +204,46 @@ class Executor:
         self._lock = threading.Lock()
 
     def submit(
-        self, command: str, cwd:Optional[str] = None, ceiling_sec: int = CEILING_SEC
+        self, command: str, cwd: str | None = None, ceiling_sec: int = CEILING_SEC
     ) -> Job:
+        """Start the work on the daemon, and return a Job describing what was started.
+
+        Callers that already ARE the daemon use `LocalExecutor` below, not this method, or the
+        daemon opens a connection to the socket it is serving and recurses until it dies.
+        """
+        request: dict = {"verb": "execute", "command": command}
+        if cwd:
+            request["cwd"] = cwd
+        if ceiling_sec:
+            request["ceiling_sec"] = ceiling_sec
+        try:
+            reply = _ask_daemon(request)
+        except ConnectionRefusedError:
+            raise
+        if not reply.get("ok"):
+            raise RuntimeError(
+                f"the executor daemon refused the command: {reply.get('error')}"
+            )
+        job_id = reply.get("job_id")
+        if not job_id:
+            raise RuntimeError(
+                "the executor daemon accepted the command but returned no job id; "
+                "nothing can be tracked, so nothing is reported as started"
+            )
         with self._lock:
-            self._seq += 1
             job = Job(
-                job_id=f"exec-{int(time.time())}-{self._seq}",
+                job_id=job_id,
                 command=command,
-                ceiling_sec=ceiling_sec,
+                ceiling_sec=reply.get("ceiling_sec", ceiling_sec),
                 cwd=cwd,
             )
             self._jobs[job.job_id] = job
         return job
 
-    def get(self, job_id: str) ->Optional[Job]:
+    def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
 
-    def finish(self, job_id: str, exit_code: int, log: str = "") ->Optional[Job]:
+    def finish(self, job_id: str, exit_code: int, log: str = "") -> Job | None:
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
@@ -170,6 +257,35 @@ class Executor:
 _REGISTRY = Executor()
 
 
+class LocalExecutor(Executor):
+    """An Executor that mints jobs in THIS process instead of asking the daemon.
+
+    FOR THE DAEMON'S OWN USE ONLY. The daemon's request handler is already the far side; if it
+    used the socket-backed `submit()`, each request would open a second connection to the socket
+    it is serving, and the two would wait on each other until the caller's timeout expired --
+    measured 2026-09-20, the caller saw `TimeoutError` and the daemon logged the same traceback
+    over and over while still reporting itself healthy.
+
+    It is a SUBCLASS so `isinstance(x, Executor)` stays true and no type annotation changes, and
+    it overrides only `submit`. Injected test stubs are unaffected: they subclass `Executor` too
+    and keep their own `submit`.
+    """
+
+    def submit(
+        self, command: str, cwd: str | None = None, ceiling_sec: int = CEILING_SEC
+    ) -> Job:
+        with self._lock:
+            self._seq += 1
+            job = Job(
+                job_id=f"exec-{int(time.time())}-{self._seq}",
+                command=command,
+                ceiling_sec=ceiling_sec,
+                cwd=cwd,
+            )
+            self._jobs[job.job_id] = job
+        return job
+
+
 def _refusal(reason: str, *, detail: str = "") -> dict:
     out = {"accepted": False, "error": reason}
     if detail:
@@ -180,9 +296,9 @@ def _refusal(reason: str, *, detail: str = "") -> dict:
 def execute_command(
     command: str,
     *,
-    cwd:Optional[str] = None,
+    cwd: str | None = None,
     ceiling_sec: int = CEILING_SEC,
-    executor:Optional[Executor] = None,
+    executor: Executor | None = None,
     mutates_live_worktree: bool = False,
 ) -> dict:
     """The one door. Accept a command, bound it, hand it to the detached executor.
@@ -273,7 +389,24 @@ def execute_command(
             )
         resolved_cwd = cwd
 
-    job = executor.submit(command, cwd=resolved_cwd, ceiling_sec=effective)
+    try:
+        job = executor.submit(command, cwd=resolved_cwd, ceiling_sec=effective)
+    except ConnectionRefusedError as exc:
+        # A DEAD DAEMON IS NOT A LOST JOB. Reporting `accepted` here would put a running node on
+        # the board for work that never started, and the caller would wait on it forever. The
+        # refusal names the fix, because an outage a caller cannot act on is an outage it retries
+        # blindly.
+        return {
+            "accepted": False,
+            "error": (
+                "the executor daemon is not reachable, so nothing was started: " f"{exc}"
+            ),
+            "refused": True,
+            "fatal": True,
+            "reason": "no_daemon",
+        }
+    except RuntimeError as exc:
+        return _refusal(str(exc))
     return {
         "accepted": True,
         "job_id": job.job_id,
@@ -316,7 +449,7 @@ def _sync_from_disk(job: Job, executor: Executor) -> None:
 
 
 def _report_failure(
-    job_id: str, command: str, cwd:Optional[str], exit_code: int, log_text: str
+    job_id: str, command: str, cwd: str | None, exit_code: int, log_text: str
 ) -> None:
     """Feed a failed job to the via-negativa RCA worker (Primitive D, bin/rca_worker/worker.py).
 
@@ -350,9 +483,27 @@ def _report_failure(
         pass
 
 
-def read_job(job_id: str, *, executor:Optional[Executor] = None) -> dict:
-    """Read one job's outcome. Never waits -- a door that waits is the thing this replaces."""
-    executor = executor or _REGISTRY
+def read_job(job_id: str, *, executor: Executor | None = None) -> dict:
+    """Read one job's outcome. Never waits -- a door that waits is the thing this replaces.
+
+    TWO STORES, ONE ANSWER. When a caller injects a stub, the stub owns the outcome (every test
+    in this repository). When it does not, the DAEMON owns it, because the daemon started the
+    work -- a local dict would answer "no job with that id" about a job that exists, which is how
+    a caller learns to distrust the door and reach for a shell instead.
+    """
+    if executor is None:
+        # Ask the daemon first. It holds the id it minted and the process it started.
+        try:
+            reply = _ask_daemon({"verb": "read", "job_id": job_id}, timeout=5.0)
+        except ConnectionRefusedError:
+            reply = None
+        if reply and reply.get("ok"):
+            result = reply.get("result") or {}
+            if result.get("found"):
+                return result
+        # The daemon did not know it either. Fall through to the local registry for the jobs a
+        # caller submitted with an injected stub, so the stub surface and the real one agree.
+        executor = _REGISTRY
     job = executor.get(job_id)
     if job is None:
         return {"found": False, "error": "no job with that id"}
@@ -391,7 +542,7 @@ def register_mcp_tools(
     # `executor=`) stay the ones under test.
     def execute_command_tool(
         command: str,
-        cwd:Optional[str] = None,
+        cwd: str | None = None,
         ceiling_sec: int = CEILING_SEC,
         mutates_live_worktree: bool = False,
     ) -> dict:
@@ -499,7 +650,8 @@ def register_mcp_tools(
         description=(
             "Propose code+manifest+SQL as one ledger spanning all three domains, instead of "
             "three unrelated calls with three unrelated verdicts. Answers a ledger id; call "
-            "verify_mutation with it next."
+            "verify_mutation with it next. Pass `envelope` with an `inverse_spec` (ADR 0024) -- "
+            "verify_mutation refuses a proposal without one."
         ),
     )(propose_mutation)
 
@@ -508,7 +660,9 @@ def register_mcp_tools(
         description=(
             "Run the gauntlet (structural, SQL, symbolic, execution) over every domain in the "
             "ledger. All-or-nothing: if any domain fails, the whole mutation is unverified, and "
-            "per_domain names exactly which domain failed with its own real stage message."
+            "per_domain names exactly which domain failed with its own real stage message. "
+            "Refuses a proposal whose envelope carries no verifiable inverse (ADR 0024), with "
+            "violation_code NO_INVERSE."
         ),
     )(verify_mutation)
 
@@ -523,16 +677,30 @@ def register_mcp_tools(
     mcp.tool(
         name="admit_mutation",
         description=(
-            "Admit an attested bundle onto a new Git branch (never main, never live). Returns "
-            "pr_required True always -- this verb never merges; the founder merges."
+            "Admit an attested bundle onto a new Git branch (never main, never live), then push "
+            "it and open its PR so the Greenlane can land it. Returns pr_required True always -- "
+            "this verb never merges; the founder (or the Greenlane row) merges. Delivery is "
+            "fail-soft: the admission stands even when the push or PR fails, and "
+            "delivery_error says why."
         ),
     )(admit_mutation)
+
+    mcp.tool(
+        name="verify_inverse",
+        description=(
+            "Run a mutation's declared verification probe against the real machine and return "
+            "its exit code -- this is what makes `verification_probe` operational rather than a "
+            "string in an envelope nobody reads. Pass `probe` directly, or a `ledger_id` whose "
+            "admitted envelope carries one. `executed: False` is BLIND (the probe could not "
+            "run), never a pass."
+        ),
+    )(verify_inverse)
 
 
 def simulate_command(
     command: str,
     *,
-    cwd:Optional[str] = None,
+    cwd: str | None = None,
     ceiling_sec: int = CEILING_SEC,
     mutates_live_worktree: bool = False,
 ) -> dict:
@@ -556,7 +724,7 @@ def simulate_command(
 
 def _refusals_for(
     command: str,
-    cwd:Optional[str],
+    cwd: str | None,
     ceiling_sec: int,
     mutates_live_worktree: bool = False,
 ) -> list[dict]:
@@ -763,7 +931,7 @@ def seal_payload(payload_path: str, tests: str = "", claim: str = "") -> dict:
     )
 
 
-def admit_payload(payload_path: str, attestation:Optional[dict] = None) -> dict:
+def admit_payload(payload_path: str, attestation: dict | None = None) -> dict:
     """Admit a sealed payload. A payload without the seal is intercepted, never admitted."""
     return _verifier_call(
         {"verb": "admit", "payload_path": payload_path, "attestation": attestation}
@@ -776,6 +944,7 @@ def propose_mutation(
     sql_migration: str = "",
     tests: str = "",
     claim: str = "",
+    envelope: dict | None = None,
 ) -> dict:
     """Propose code+manifest+SQL as one ledger, never three unrelated calls.
 
@@ -783,6 +952,10 @@ def propose_mutation(
     the three payload fields must be non-empty; the daemon refuses an all-empty call before a
     ledger is opened. Non-blocking, same as propose_patch -- read the verdict later with
     verify_mutation, never a wait_for_verdict verb (this ticket's own "remove the verb" rule).
+
+    `envelope` is the reversibility envelope (ADR 0024): the `inverse_spec` this mutation will
+    be undone by. It may be supplied here or left None and supplied before verification, but
+    `verify_mutation` refuses a proposal that has none -- see `bin/idp-reversibility-gate`.
     """
     return _verifier_call(
         {
@@ -792,6 +965,7 @@ def propose_mutation(
             "sql_migration": sql_migration,
             "tests": tests,
             "claim": claim,
+            "envelope": envelope,
         }
     )
 
@@ -817,15 +991,40 @@ def seal_mutation(ledger_id: str, tests: str = "", claim: str = "") -> dict:
     )
 
 
-def admit_mutation(ledger_id: str, attestation:Optional[dict] = None) -> dict:
-    """Admit an attested bundle onto a new Git branch. Never writes live, never merges.
+def admit_mutation(ledger_id: str, attestation: dict | None = None) -> dict:
+    """Admit an attested bundle, push its branch, and open its PR. Never writes live, never merges.
 
-    ADR 0025: the founder is the sole merger on every Glass-Break change. pr_required is
-    always True here -- there is no Trust Threshold row yet for this class of change.
+    ADR 0025: the agent never touches git -- the gateway (this door) builds the commit, pushes
+    the branch and opens the pull request, then Greenlane Row 3 proves it again before anything
+    lands. pr_required is always True: this verb never merges. Delivery is fail-soft; a failure
+    is reported in `delivery_error` and the admission still stands.
     """
     return _verifier_call(
         {"verb": "admit_mutation", "ledger_id": ledger_id, "attestation": attestation}
     )
+
+
+def verify_inverse(
+    probe: str = "",
+    ledger_id: str = "",
+    cwd: str = "",
+) -> dict:
+    """Run the declared inverse's verification probe against the real machine.
+
+    This is what makes `verification_probe` operational: the daemon executes the command for
+    real and returns its exit code, rather than the envelope being a test nobody takes. Supply
+    the probe directly (finishing a rollback you just performed) or a `ledger_id` whose admitted
+    envelope carries it. `executed: False` is BLIND -- the probe could not run -- and is never a
+    pass (LAW 38).
+    """
+    payload: dict = {"verb": "verify_inverse"}
+    if probe:
+        payload["probe"] = probe
+    if ledger_id:
+        payload["ledger_id"] = ledger_id
+    if cwd:
+        payload["cwd"] = cwd
+    return _verifier_call(payload)
 
 
 if __name__ == "__main__":  # pragma: no cover - a human reading the door

@@ -59,7 +59,11 @@ export ESTATE_DB
 if [ -z "${LITELLM_API_KEY:-}" ]; then
 	echo "fleetview: voice   off (LITELLM_API_KEY unset) -- /voice will answer 503 with the reason"
 else
-	echo "fleetview: voice   on  (router ${LITELLM_HOST:-https://llm.mumchimp.com})"
+	# `${ESTATE_ZONE}` WAS UNGUARDED, and `set -u` is on -- so this line killed the launcher with
+	# "ESTATE_ZONE: unbound variable" on any shell where the zone was not exported. A REPORTING line
+	# brought the whole service down. Every expansion here now has a default, because this block
+	# exists to describe the config and must never be the reason there is none.
+	echo "fleetview: voice   on  (router ${LITELLM_HOST:-https://llm.${ESTATE_ZONE:-mumchimp.com}})"
 fi
 
 # The plugin's module paths. Same two arguments the manual launch used.
@@ -87,5 +91,16 @@ if [ "$CHECK" = 1 ]; then
 	echo "ok      serve-fleetview  --check only; nothing started"
 	exit 0
 fi
+
+# THE REPO ROOT GOES ON THE IMPORT PATH, and its absence broke a whole feature silently.
+#
+# `routes.check_receipts` imports the `sovereign` package to read production traces; without this,
+# the import fails and the endpoint answers 503 "sovereign package not importable here" -- which
+# reads like a missing dependency rather than a missing path. The package is right there in
+# `$IDP/sovereign`; nothing was telling Python to look.
+#
+# PREPENDED, not appended: the checkout's own `sovereign` must win over any same-named package
+# installed elsewhere on this machine, or a receipt check would grade the wrong code.
+export PYTHONPATH="$IDP${PYTHONPATH:+:$PYTHONPATH}"
 
 exec python3 "$SERVE" "$PORT" "$ROUTES"

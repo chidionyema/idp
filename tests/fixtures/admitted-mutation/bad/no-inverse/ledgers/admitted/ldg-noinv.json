@@ -1,0 +1,5 @@
+{
+  "mutation_id": "ldg-noinv",
+  "target": "pvc/postgres-data",
+  "forward": {"action": "delete_pvc", "parameters": {"name": "postgres-data"}}
+}

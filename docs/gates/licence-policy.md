@@ -25,7 +25,7 @@ Exit code `1` (the registry expects non-zero). ✓
 [31mFAIL[0m - policy/fixtures/sell-blocking.json - main - some-elastic-thing@8.0.0 is Elastic-2.0, which cannot be shipped in something we sell. Replace it or remove it.
 [31mFAIL[0m - policy/fixtures/sell-blocking.json - main - some-nc-asset-pack@1.0.0 is CC-BY-NC-4.0, which cannot be shipped in something we sell. Replace it or remove it.
 [31mFAIL[0m - policy/fixtures/sell-blocking.json - main - some-sspl-db@6.0.0 is SSPL-1.0, which cannot be shipped in something we sell. Replace it or remove it.
-[31m31 tests, 25 passed, 0 warnings, 6 failures, 0 exceptions[0m
+[31m33 tests, 27 passed, 0 warnings, 6 failures, 0 exceptions[0m
 ```
 
 ## Permitted
@@ -36,7 +36,7 @@ Exit code `0` (the registry expects zero). ✓
 
 ```
 [33mWARN[0m - policy/fixtures/clean.json - main - 1 of 10 packages declare no licence. Usually a metadata gap, but no licence grants nothing -- check any that ship in the product itself.
-[33m31 tests, 30 passed, 1 warning, 0 failures, 0 exceptions[0m
+[33m33 tests, 32 passed, 1 warning, 0 failures, 0 exceptions[0m
 ```
 
 ## The registry's own lines

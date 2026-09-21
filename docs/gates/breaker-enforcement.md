@@ -26,67 +26,8 @@ Fixture: `tests/test_breaker_extension.py::TestItBlocksProvedRepetition::test_it
 Exit code `0` (the registry expects zero). ✓
 
 ```
-.........................                                                [100%]
-25 passed in <duration>
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:103: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls:
-<class 'PermissionError'>: [Errno 1] Operation not permitted: '/<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls
-<class 'OSError'>: [Errno 66] Directory not empty: '/<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0
-<class 'OSError'>: [Errno 66] Directory not empty: '/<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:103: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0/tool-calls:
-<class 'PermissionError'>: [Errno 1] Operation not permitted: '/<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0/tool-calls'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0/tool-calls
-<class 'OSError'>: [Errno 66] Directory not empty: '/<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0/tool-calls'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0
-<class 'OSError'>: [Errno 66] Directory not empty: '/<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>
-<class 'OSError'>: [Errno 66] Directory not empty: '/<tmpdir>/garbage-<uuid>'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:103: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls:
-<class 'PermissionError'>: [Errno 1] Operation not permitted: '/<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls
-<class 'OSError'>: [Errno 66] Directory not empty: '/<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0
-<class 'OSError'>: [Errno 66] Directory not empty: '/<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:103: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0/tool-calls:
-<class 'PermissionError'>: [Errno 1] Operation not permitted: '/<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0/tool-calls'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0/tool-calls
-<class 'OSError'>: [Errno 66] Directory not empty: '/<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0/tool-calls'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0
-<class 'OSError'>: [Errno 66] Directory not empty: '/<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>
-<class 'OSError'>: [Errno 66] Directory not empty: '/<tmpdir>/garbage-<uuid>'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:103: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls:
-<class 'PermissionError'>: [Errno 1] Operation not permitted: '/<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls
-<class 'OSError'>: [Errno 66] Directory not empty: '/<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0/tool-calls'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0
-<class 'OSError'>: [Errno 66] Directory not empty: '/<tmpdir>/garbage-<uuid>/test_every_tool_call_is_record0'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:103: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0/tool-calls:
-<class 'PermissionError'>: [Errno 1] Operation not permitted: '/<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0/tool-calls'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0/tool-calls
-<class 'OSError'>: [Errno 66] Directory not empty: '/<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0/tool-calls'
-  warnings.warn(
-/usr/local/lib/python3.14/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /<tmpdir>/garbage-<uuid>/test_the_record_is_appendonly0
-… 89 more line(s)
+...s.....................                                                [100%]
+24 passed, 1 skipped in <duration>
 ```
 
 ## The registry's own lines

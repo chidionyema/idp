@@ -23,10 +23,6 @@ if grep -qE '^X-Idp-Signed: ' "$msg_file"; then
 fi
 
 body="$(cat "$msg_file")"
-# LibreSSL/OpenSSL disagree on the dgst output shape: OpenSSL prints "(stdin)= <hash>",
-# LibreSSL (this macOS) prints just the bare hex hash. Take the LAST whitespace-separated
-# field so both forms yield the hash -- `$2` was empty on a bare-hash form and every commit
-# refused with "HMAC computation failed".
 sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$secret" 2>/dev/null | awk '{print $NF}')"
 [ -n "$sig" ] || { echo "REFUSE: HMAC computation failed" >&2; exit 1; }
 

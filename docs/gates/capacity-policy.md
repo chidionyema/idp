@@ -20,7 +20,7 @@ Exit code `1` (the registry expects non-zero). ✓
 
 ```
 [31mFAIL[0m - policy/fixtures/capacity-over-cap.json - main - node pool 8 OCPU / 48 GB is an estimated USD 83.22 a month, over estate-defaults node_pool.budget_monthly_usd 50. That is a paid billing authorisation: FOUNDER ACTION, not STAGED.
-[31m31 tests, 30 passed, 0 warnings, 1 failure, 0 exceptions[0m
+[31m33 tests, 32 passed, 0 warnings, 1 failure, 0 exceptions[0m
 ```
 
 ## Permitted
@@ -30,7 +30,7 @@ Fixture: `policy/fixtures/capacity-under-cap.json`
 Exit code `0` (the registry expects zero). ✓
 
 ```
-[32m31 tests, 31 passed, 0 warnings, 0 failures, 0 exceptions[0m
+[32m33 tests, 33 passed, 0 warnings, 0 failures, 0 exceptions[0m
 ```
 
 ## The registry's own lines

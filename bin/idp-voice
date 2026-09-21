@@ -246,7 +246,9 @@ def _ollama_chat_url() -> str:
 def router_host() -> str:
     """The estate's own model door. LAW 34: ONE router key per identity, and no vendor key ever
     lives on this machine -- the laptop holds LITELLM_API_KEY and the router holds the rest."""
-    return os.environ.get("LITELLM_HOST", "https://llm.mumchimp.com").rstrip("/")
+    return os.path.expandvars(
+        os.environ.get("LITELLM_HOST", "https://llm.${ESTATE_ZONE}")
+    ).rstrip("/")
 
 
 def router_key() -> str:

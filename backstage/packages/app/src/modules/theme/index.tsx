@@ -676,5 +676,28 @@ const darkTheme = ThemeBlueprint.make({
 
 export const themeModule = createFrontendModule({
   pluginId: 'app',
-  extensions: [lightTheme, darkTheme],
+  // REPLACE BACKSTAGE'S OWN THEMES, DO NOT SIT BESIDE THEM.
+  //
+  // `@backstage/plugin-app` registers LightTheme and DarkTheme with ids "light" and "dark", and
+  // the app opens on LIGHT. Registering ours alongside them changed nothing: measured 2026-09-20
+  // from the live page, `body[data-theme-mode]` was `light` and `data-theme-name` was `backstage`
+  // -- the vendor's theme, not ours -- so the page kept a 245,245,245 white body and a pure-white
+  // 224px sidebar around a dark 3-D room. That is the "no white backgrounds" report.
+  //
+  // `replaces` is the mechanism: our two themes take the vendor's slots, so there is no third
+  // theme to be chosen by accident, and `extensions` order decides which opens -- dark first.
+  replaces: [{ id: 'app', input: 'themes' }],
+  // DARK FIRST.
+  //
+  // Backstage defaults to whichever theme is registered first, and light was first -- so every
+  // page opened on a 245,245,245 white background (measured 2026-09-20: `BODY` full-viewport
+  // rgb(245,245,245) plus a pure-white 224px `BackstageSidebar-drawer`). On the Fleet Reactor,
+  // which paints a near-black 3-D room, that produced a white sidebar and white frame around a
+  // dark scene, and the founder's report was exactly "no white backgrounds" and "can't see
+  // anything".
+  //
+  // The estate's product is a dark instrument; the light theme stays registered because a person
+  // may still want it, but it is no longer what the portal opens on. Ordering is the whole fix:
+  // no palette changes, no CSS overrides, no `!important`.
+  extensions: [darkTheme, lightTheme],
 });

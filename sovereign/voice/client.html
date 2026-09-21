@@ -14,8 +14,62 @@
   version at runtime; a floating version would one day fetch weights that no longer match the
   bundle, and the failure would look like a silent microphone.
 -->
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.19/dist/bundle.min.js"></script>
+<!--
+  THESE ARE SERVED FROM THIS PROCESS, NOT A CDN. They were on jsdelivr until 2026-09-19, when the
+  page failed on the founder's own machine with "Cannot read properties of undefined (reading
+  'MicVAD')" while loading perfectly in a headless test. That difference is a browser-side block
+  -- an extension, a DNS policy, a content filter -- and it is invisible to the server, so the
+  page could not tell anyone why the library was missing.
+
+  A voice interface that depends on a third-party CDN being reachable is not a voice interface.
+  Every asset below ships in sovereign/voice/static/ and is mounted at /static/ by server.py, so
+  this page works on a machine with no route to the wider internet at all. Pinned versions still
+  matter for the same reason as before: the VAD fetches weights that must match the bundle.
+-->
+<!--
+  THE VAD BUNDLE IS LOADED BY CODE, NOT BY A TAG.
+
+  Measured 2026-09-19: two classic <script> tags race. `vad.bundle.min.js`'s UMD wrapper reads
+  `self.ort` WHEN IT RUNS, and if `ort.min.js` has not finished, the factory returns without
+  assigning `self.vad` and raises no error. The page then sees `vad=undefined` for ever.
+
+  It is intermittent -- the same page gave `vad=object` on one navigation and `undefined` on the
+  next -- so it passed repeatedly on one machine and failed repeatedly on another. Ordering two
+  tags is not a guarantee, and a `waitForLibs` poll cannot fix a script that NEVER ran.
+
+  So the dependency is explicit: `ort` loads normally, and `vad` is injected by the loader below
+  ONLY AFTER `ort` exists. There is no order to get wrong.
+-->
+<script src="/static/ort.min.js"></script>
+<script>
+  // Load the VAD bundle once `ort` is present, and re-inject it if it fails to attach.
+  // `window.__vadReady` is the promise the page awaits; it never rejects, it reports.
+  window.__vadReady = new Promise(function (resolve) {
+    var attempts = 0;
+    function inject() {
+      attempts += 1;
+      if (typeof self.ort === 'undefined') {
+        if (attempts > 300) return resolve({ ok: false, ort: false, vad: false });
+        return setTimeout(inject, 50);
+      }
+      if (typeof self.vad !== 'undefined' && self.vad.MicVAD) {
+        return resolve({ ok: true });
+      }
+      if (attempts > 40) {
+        return resolve({ ok: false, ort: true, vad: false });
+      }
+      var s = document.createElement('script');
+      s.src = '/static/vad.bundle.min.js?try=' + attempts;
+      s.onload = function () {
+        if (typeof self.vad !== 'undefined' && self.vad.MicVAD) resolve({ ok: true });
+        else setTimeout(inject, 60);
+      };
+      s.onerror = function () { setTimeout(inject, 200); };
+      document.head.appendChild(s);
+    }
+    inject();
+  });
+</script>
 <style>
   :root { --ink:#030508; --line:rgba(255,255,255,.12); --cyan:#00f0ff; --amber:#ffaa00;
           --red:#ff0055; --green:#00ffaa; }
@@ -50,12 +104,62 @@
            width:min(560px,80vw); height:5px; border-radius:3px; overflow:hidden;
            background:rgba(255,255,255,.07); z-index:20; }
   #meterfill { height:100%; width:0%; background:linear-gradient(90deg,var(--cyan),var(--green)); }
+  /* Voice picker */
+  #vpick-toggle { position:fixed; top:24px; right:24px; z-index:25; padding:8px 16px;
+      font:600 11px/1.4 ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase;
+      color:#9fb3c8; cursor:pointer; }
+  #vpick-toggle:hover { color:var(--cyan); border-color:rgba(0,240,255,.45); }
+  #vpick { position:fixed; top:64px; right:24px; z-index:25; width:300px; padding:16px;
+      display:flex; flex-direction:column; gap:12px; }
+  #vpick[hidden] { display:none; }
+  .vrow { display:flex; align-items:center; gap:10px; }
+  .vlabel { font:600 10px ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase;
+      color:#6b7280; width:52px; flex:none; }
+  #vpick select { flex:1; background:rgba(0,0,0,.5); color:#e6edf3; border:1px solid var(--line);
+      border-radius:8px; padding:7px 10px; font:12px ui-monospace,monospace; outline:none; }
+  .vbtn { flex:1; background:rgba(0,0,0,.4); color:#9fb3c8; border:1px solid var(--line);
+      border-radius:8px; padding:8px; font:600 10px ui-monospace,monospace; letter-spacing:.1em;
+      text-transform:uppercase; cursor:pointer; }
+  .vbtn:hover { color:var(--cyan); border-color:rgba(0,240,255,.45); }
+  .vbtn.primary { color:var(--green); border-color:rgba(0,255,170,.35); }
+  .vmeta { font:10px ui-monospace,monospace; color:#6b7280; letter-spacing:.06em; min-height:12px; }
+  /* A CLICKABLE HINT, not a footnote. The kokoro voices were listed as small grey text and the
+     founder did not see them; this makes switching engines an obvious button rather than
+     something to be discovered in a dropdown. */
+  .vhint { font:10px/1.5 ui-monospace,monospace; color:#ffaa00; letter-spacing:.05em;
+      cursor:pointer; border:1px dashed rgba(255,170,0,.35); border-radius:8px; padding:7px 9px; }
+  .vhint:hover { background:rgba(255,170,0,.08); color:#ffd166; }
+  .vhint[hidden] { display:none; }
 </style>
 </head>
 <body>
   <div id="status" class="glass">disconnected</div>
   <div id="log"></div>
   <div id="meter"><div id="meterfill"></div></div>
+
+  <!-- VOICE PICKER. Every voice this host can speak with, chosen by the person listening.
+       It exists because the choice was previously an edit to a Python file and a restart, so
+       a 60-voice machine was presented as a two-voice ultimatum. Click one to hear it. -->
+  <button id="vpick-toggle" class="glass" title="Choose a voice">voice</button>
+  <div id="vpick" class="glass" hidden>
+    <div class="vrow">
+      <span class="vlabel">engine</span>
+      <select id="vengine">
+        <option value="say">macOS — 24 voices, fast</option>
+        <option value="kokoro">Kokoro — 54 voices, richer</option>
+      </select>
+    </div>
+    <div class="vrow">
+      <span class="vlabel">voice</span>
+      <select id="vvoice"></select>
+    </div>
+    <div class="vhint" id="vhint"></div>
+    <div class="vrow">
+      <button id="vhear" class="vbtn">hear it</button>
+      <button id="vuse" class="vbtn primary">use it</button>
+    </div>
+    <div id="vstatus" class="vmeta"></div>
+  </div>
   <div id="bar" class="glass">
     <span class="dot"></span>
     <span id="label" style="font:600 12px ui-monospace,monospace;letter-spacing:.14em;
@@ -69,7 +173,23 @@ const ASR_RATE = 16000;   // Silero/Whisper's own rate. The VAD already resample
 const $ = id => document.getElementById(id);
 const log = $('log');
 
+// `vadLib` HOLDS THE LIBRARY; `vad` HOLDS THE INSTANCE. They were the same name, and that was the bug.
+//
+// `let ws, ctx, vad, meterTimer;` declared `vad` as a LOCAL, which SHADOWS the global `self.vad`
+// that the injected bundle assigns. Two consequences, both silent:
+//
+//   * the guard `typeof self.vad` read the GLOBAL and correctly reported `object`, so every
+//     diagnostic told the reader the library was loaded;
+//   * `vad = await vad.MicVAD.new(...)` read the LOCAL, which was `undefined`, and threw
+//     "Cannot read properties of undefined (reading 'MicVAD')".
+//
+// Measured 2026-09-19 in a real headed Chrome: `vad=object` on load, `undefined` the moment the
+// bar was clicked -- because the click was the first line to touch the local. Every test that
+// checked `typeof self.vad` AFTER load passed, which is exactly why this survived so long.
 let ws, ctx, vad, meterTimer;
+// The library, captured under a name nothing else can shadow. Read once, from the global, at the
+// moment it is needed.
+const vadLib = () => self.vad;
 let nextStart = 0;
 let playing = [];          // sources currently scheduled, so barge-in can silence them at once
 let turns = [];
@@ -89,6 +209,22 @@ function setState(s) {
   $('label').textContent = ({on:'Listening — speak any time',
     hear:'Hearing you…', think:'Thinking…', speak:'Speaking — speak to interrupt',
     off:'Start listening', err:'Problem'})[s] || s;
+  // THE TOP BAR WAS NEVER UPDATED BY ANYTHING.
+  //
+  // `#status` was hard-coded to the literal text "disconnected" in the HTML and no code ever
+  // wrote to it -- so a connected, listening, fully-working session still displayed
+  // "disconnected" across the top, and that one word is what the founder read as the page being
+  // broken while the socket was open and the mic was live. Measured 2026-09-19: the WebSocket
+  // connected and the VAD started on a page whose header said "disconnected" the entire time.
+  //
+  // A status line that cannot change is worse than no status line: it is a permanent false
+  // negative, and it sent this investigation down four wrong paths.
+  const badge = $('status');
+  if (badge) {
+    badge.textContent = ({on:'connected · listening', hear:'connected · hearing you',
+      think:'connected · thinking', speak:'connected · speaking — interrupt any time',
+      off:'disconnected', err:'error'})[s] || s;
+  }
 }
 
 // ---------------------------------------------------------------- audio out
@@ -123,6 +259,52 @@ function silence() {
 }
 
 // ---------------------------------------------------------------- audio in
+//
+// WAIT FOR THE LIBRARIES, DO NOT HOPE THEY LOADED.
+//
+// Measured 2026-09-19: `ort` and `vad` are two classic <script> tags, and the second's UMD
+// wrapper reads `self.ort` at execution time. When it runs before `ort.min.js` has finished
+// evaluating, it gets an incomplete object, the factory returns without ever assigning `vad`,
+// and NO error is raised -- `self.vad` is simply undefined for the life of the page.
+//
+// It is intermittent: the same page loaded `vad = object` on one navigation and `undefined` on
+// the next, which is why it passed every test on my machine and failed on the founder's. A race
+// that only sometimes loses is still a race, and ordering two tags is not a guarantee.
+//
+// So the page waits for what it actually needs, and reports which library is missing by name.
+async function waitForLibs(timeoutMs = 15000) {
+  // THE LOADER ALREADY DID THE WORK (it injects the VAD only after `ort` exists). Awaiting its
+  // promise is what makes this deterministic rather than racy: there is no order left to get
+  // wrong and no poll that can time out while a tag silently never ran.
+  if (window.__vadReady) {
+    const r = await window.__vadReady;
+    return r.ok ? { ok: true } : { ok: false, ort: r.ort, vad: r.vad };
+  }
+  // Fallback for a page served without the loader block (an older client.html in a cache).
+  const started = performance.now();
+  let reinjected = false;
+  for (;;) {
+    const hasOrt = typeof self.ort !== 'undefined';
+    const hasVad = typeof self.vad !== 'undefined' && !!self.vad.MicVAD;
+    if (hasOrt && hasVad) return { ok: true };
+    if (hasOrt && !hasVad && !reinjected) {
+      reinjected = true;
+      await new Promise((res) => {
+        const s = document.createElement('script');
+        s.src = '/static/vad.bundle.min.js?retry=' + Date.now();
+        s.onload = res;
+        s.onerror = res;
+        document.head.appendChild(s);
+      });
+      continue;
+    }
+    if (performance.now() - started > timeoutMs) {
+      return { ok: false, ort: hasOrt, vad: hasVad };
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
 async function start() {
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: TTS_RATE });
@@ -161,8 +343,35 @@ async function start() {
 
   ws.onopen = async () => {
     setState('on');
+
+    // Wait for the libraries BEFORE touching them, and trust what the wait reports rather than
+    // re-deriving it -- `typeof` here would read the same page globals twice and could disagree
+    // with the poll that just succeeded (or failed).
+    const libs = await waitForLibs();
+    if (!libs.ok) {
+      setState('err');
+      line('err', `LIBSCRIPTS ort=${libs.ort} vad=${libs.vad}`);
+      line(
+        'err',
+        libs.ort === false
+          ? '/static/ort.min.js never became available — check the Network tab for it (must be 200).'
+          : 'ort loaded but /static/vad.bundle.min.js did not attach `vad` — reload the page.',
+      );
+      return;
+    }
+
     try {
-      vad = await vad.MicVAD.new({
+      // POINT EVERY ASSET AT THIS ORIGIN. Left unset, `MicVAD` fetches its worklet, its silero
+      // weights and the onnxruntime wasm from their default (CDN) locations -- so a browser that
+      // blocks the CDN fails exactly as ours did, with the scripts present but every model 404ing.
+      // These are the same files the <script> tags above already loaded, served by server.py.
+      ort.env.wasm.wasmPaths = '/static/';
+      // READ THE LIBRARY FROM THE GLOBAL, never from the shadowed local. See the note at the
+      // `vadLib` declaration: `vad.MicVAD` here used to resolve to `undefined` because `let vad`
+      // shadowed the very object the loader had just confirmed was present.
+      vad = await vadLib().MicVAD.new({
+        baseAssetPath: '/static/',
+        onnxWASMBasePath: '/static/',
         // 0.8 rather than the 0.5 default: on a laptop's built-in mic the lower threshold fires on
         // keyboard and fan noise, and every false positive is a wasted transcription.
         positiveSpeechThreshold: 0.8,
@@ -190,8 +399,27 @@ async function start() {
       vad.start();
     } catch (e) {
       setState('err');
-      line('err', 'VAD failed to start: ' + (e.message || e) +
-        ' — this needs a secure origin (https or localhost) and microphone permission.');
+      // SAY WHAT IS ACTUALLY LOADED. The old message guessed at "secure origin and microphone
+      // permission" for EVERY failure in this block, including a missing library -- which is not
+      // a permission problem at all and cannot be fixed by granting one. Measured 2026-09-19:
+      // the founder saw this message three times while the real fault was `vad` never being
+      // defined, because the CDN <script> never ran in his browser.
+      const loaded = `ort=${typeof ort} vad=${typeof vad}` +
+        (typeof ort !== 'undefined' ? ` wasmPaths=${ort.env?.wasm?.wasmPaths}` : '');
+      line('err', `VAD failed to start: ${e.message || e}  [${loaded}]`);
+      // NAME THE REAL CAUSE. The old text guessed "the script did not run" for EVERY failure in
+      // this block -- including `Permission denied by system`, which is the microphone and is
+      // fixed by granting permission, not by reloading. Measured 2026-09-19: the founder read
+      // the script message four times while the actual fault was the microphone.
+      const msg = String(e.message || e);
+      line(
+        'err',
+        /permission|denied|notallowed/i.test(msg)
+          ? 'MICROPHONE BLOCKED. Click the tune icon at the left of the address bar → Microphone → Allow, then reload. Nothing else can work until this is granted.'
+          : typeof self.vad === 'undefined'
+            ? '/static/vad.bundle.min.js did not attach `vad` — check the Network tab returns 200, then reload.'
+            : 'The microphone or the audio worklet failed; mic permission is the usual cause.',
+      );
     }
   };
 
@@ -207,6 +435,116 @@ $('bar').onclick = () => {
   }
 };
 setState('off');
+
+// ---------------------------------------------------------------- the voice picker
+//
+// THE CHOICE BELONGS TO WHOEVER IS LISTENING. Every voice this host has is listed; picking one
+// posts it to /voice/select, which switches the engine at runtime with no restart and no edit.
+// "hear it" speaks a fixed sentence so two voices can be compared on the same words.
+(function () {
+  const toggle = $('vpick-toggle'), panel = $('vpick');
+  const engineSel = $('vengine'), voiceSel = $('vvoice'), vstatus = $('vstatus');
+  let catalogue = { say: [], kokoro: [], current: {} };
+
+  const setStatus = (t) => { vstatus.textContent = t; };
+
+  function fillVoices() {
+    const eng = engineSel.value;
+    const list = catalogue[eng] || [];
+    voiceSel.innerHTML = '';
+    for (const v of list) {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = v;
+      voiceSel.appendChild(o);
+    }
+    // Mark whichever is live for this engine, so opening the panel shows the truth.
+    const cur = (catalogue.current || {})[eng];
+    if (cur && list.includes(cur)) voiceSel.value = cur;
+
+    // SAY WHERE THE OTHER ENGINE'S VOICES ARE, AS A BUTTON YOU CAN PRESS.
+    //
+    // Measured 2026-09-19: the founder opened this panel looking for the kokoro voice he had been
+    // using and reported "dont see any kokoro". The voices were present and the counts were
+    // printed -- as small grey text under a dropdown he did not try. A hint the reader misses is
+    // not a hint, so the switch is now a click target that says how many voices it reveals.
+    const sayN = (catalogue.say || []).length;
+    const kokN = (catalogue.kokoro || []).length;
+    const hint = $('vhint');
+    if (eng === 'say' && kokN) {
+      hint.hidden = false;
+      hint.textContent = `▶ ${kokN} Kokoro voices are here — click to switch (af_heart is the one you had)`;
+    } else if (eng === 'kokoro' && sayN) {
+      hint.hidden = false;
+      hint.textContent = `▶ ${sayN} macOS voices are here — click to switch (much faster)`;
+    } else {
+      hint.hidden = true;
+    }
+
+    const cur0 = (catalogue.current || {})[eng];
+    setStatus(`${list.length} ${eng} voices${cur0 ? ` · live: ${cur0}` : ''}`);
+  }
+
+  async function loadCatalogue() {
+    setStatus('loading…');
+    try {
+      const r = await fetch('/voices');
+      catalogue = await r.json();
+      // OPEN ON THE ENGINE THAT HAS VOICES. Kokoro's list is only populated once its model has
+      // been loaded; before that it is empty, so defaulting to it would show an empty dropdown.
+      const kokoroHas = (catalogue.kokoro || []).length > 0;
+      engineSel.value = kokoroHas && catalogue.current?.engine === 'kokoro' ? 'kokoro' : 'say';
+      fillVoices();
+    } catch (e) { setStatus('could not list voices: ' + e.message); }
+  }
+
+  toggle.onclick = async () => {
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden && !catalogue.say.length && !catalogue.kokoro.length) await loadCatalogue();
+  };
+  engineSel.onchange = fillVoices;
+  // The hint switches engines. One click, and the other 54 voices are in the list.
+  $('vhint').onclick = () => {
+    engineSel.value = engineSel.value === 'say' ? 'kokoro' : 'say';
+    fillVoices();
+  };
+
+  // HEAR IT. Synthesis only -- it does not steal the voice from an ongoing conversation.
+  $('vhear').onclick = async () => {
+    setStatus('synthesising…');
+    try {
+      const r = await fetch('/voice/preview', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engine: engineSel.value, voice: voiceSel.value }),
+      });
+      if (!r.ok) { setStatus('refused: ' + r.status); return; }
+      const buf = await r.arrayBuffer();
+      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: TTS_RATE });
+      if (ctx.state === 'suspended') await ctx.resume();
+      const f32 = new Float32Array(buf);
+      const ab = ctx.createBuffer(1, f32.length, TTS_RATE);
+      ab.copyToChannel(f32, 0);
+      const src = ctx.createBufferSource(); src.buffer = ab; src.connect(ctx.destination);
+      src.start();
+      setStatus(`played ${(f32.length / TTS_RATE).toFixed(2)}s — ok?`);
+    } catch (e) { setStatus('failed: ' + (e.message || e)); }
+  };
+
+  // USE IT. Makes the choice live for every following turn.
+  $('vuse').onclick = async () => {
+    setStatus('applying…');
+    try {
+      const r = await fetch('/voice/select', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engine: engineSel.value, voice: voiceSel.value }),
+      });
+      const j = await r.json();
+      if (!r.ok) { setStatus('refused: ' + (j.error || r.status)); return; }
+      catalogue.current = catalogue.current || {};
+      catalogue.current[engineSel.value] = voiceSel.value;
+      setStatus(`now speaking with ${j.engine}: ${j.voice}`);
+    } catch (e) { setStatus('failed: ' + (e.message || e)); }
+  };
+})();
 </script>
 </body>
 </html>

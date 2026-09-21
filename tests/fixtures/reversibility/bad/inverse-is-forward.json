@@ -1,0 +1,14 @@
+{
+  "mutation_id": "mut-inverse-echo-0003",
+  "target": "deployment/checkout",
+  "forward": {
+    "action": "delete_deployment",
+    "parameters": { "name": "checkout" }
+  },
+  "inverse_spec": {
+    "type": "deterministic_inverse",
+    "action": "delete_deployment",
+    "parameters": { "name": "checkout" },
+    "verification_probe": "kubectl get deployment checkout == NotFound"
+  }
+}
