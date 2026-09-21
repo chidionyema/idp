@@ -136,7 +136,13 @@ PIPER_VOICE = os.environ.get("VOICE_PIPER_VOICE", "en_GB-jenny_dioco-medium")
 # The default is now a real host. `${ESTATE_ZONE}` remains honoured when it IS set, so the same code
 # works in the cluster, but an unset variable can no longer produce an unresolvable name.
 _zone = os.environ.get("ESTATE_ZONE", "").strip()
-_default_host = f"https://llm.{_zone}" if _zone else "https://llm.mumchimp.com"
+if not _zone:
+    raise RuntimeError(
+        "voice: ESTATE_ZONE is not set; the zone is declared once in "
+        "clusters/<cluster>/estate-config.yaml (rule=no_zone_literal_added). "
+        "Set ESTATE_ZONE in the environment or via bin/idp-workstation-bootstrap."
+    )
+_default_host = f"https://llm.{_zone}"
 ROUTER_HOST = os.path.expandvars(os.environ.get("LITELLM_HOST", _default_host)).rstrip("/")
 
 # A HOST THAT STILL CONTAINS `${` NEVER RESOLVED, so say so at import rather than at the first

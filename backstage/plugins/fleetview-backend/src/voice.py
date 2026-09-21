@@ -75,7 +75,13 @@ def router_host() -> str:
     still honoured when present so the cluster keeps working.
     """
     zone = os.environ.get("ESTATE_ZONE", "").strip()
-    default = f"https://llm.{zone}" if zone else "https://llm.mumchimp.com"
+    if not zone:
+        raise RuntimeError(
+            "voice: ESTATE_ZONE is not set; the zone is declared once in "
+            "clusters/<cluster>/estate-config.yaml (rule=no_zone_literal_added). "
+            "Set ESTATE_ZONE in the environment or via bin/idp-workstation-bootstrap."
+        )
+    default = f"https://llm.{zone}"
     return os.path.expandvars(os.environ.get("LITELLM_HOST", default)).rstrip("/")
 
 

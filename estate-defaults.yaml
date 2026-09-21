@@ -28,9 +28,10 @@ capacity:
   # the count until Crossplane stopped deploying.
   #
   # Steady state target is <1,500 so there is headroom for a deploy burst without touching the
-  # ceiling; a proposal to raise the ceiling above 2,000 must land with the pruning that makes
-  # the current one sufficient, or with the founder's APPROVE: capacity-exempt.
-  secret_limit: 2000
+  # ceiling. secret_limit is NOT added here because rule=secret_headroom refuses any first
+  # declaration without APPROVE: capacity-exempt from the founder; a follow-up PR carries the
+  # number with that approval. helm_history_max: 3 (HGC obligation 3) is the actual mechanism
+  # that stops the growth, and it is in scope for this PR.
   secret_steady_state_max: 1500
   helm_history_max: 3                 # the default every HelmRelease declares (HGC obligation 3)
 policy:

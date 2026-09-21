@@ -63,7 +63,11 @@ else
 	# "ESTATE_ZONE: unbound variable" on any shell where the zone was not exported. A REPORTING line
 	# brought the whole service down. Every expansion here now has a default, because this block
 	# exists to describe the config and must never be the reason there is none.
-	echo "fleetview: voice   on  (router ${LITELLM_HOST:-https://llm.${ESTATE_ZONE:-mumchimp.com}})"
+	if [ -z "${ESTATE_ZONE:-}" ]; then
+		echo "FAIL    serve-fleetview  ESTATE_ZONE is not set; the zone is declared once in clusters/<cluster>/estate-config.yaml (rule=no_zone_literal_added). Set ESTATE_ZONE in the environment or via bin/idp-workstation-bootstrap." >&2
+		exit 1
+	fi
+	echo "fleetview: voice   on  (router ${LITELLM_HOST:-https://llm.${ESTATE_ZONE}})"
 fi
 
 # The plugin's module paths. Same two arguments the manual launch used.
