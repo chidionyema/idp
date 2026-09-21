@@ -19,7 +19,7 @@ Fixture: `tests/fixtures/definitions/relative-import.py`
 Exit code `1` (the registry expects non-zero). ✓
 
 ```
-/usr/local/opt/python@3.13/bin/python3.13: No module named dagster
+/Library/Developer/CommandLineTools/usr/bin/python3: No module named dagster
 ```
 
 ## Permitted
@@ -29,7 +29,7 @@ Fixture: `tests/fixtures/definitions/loads-by-path.py`
 Exit code `1` (the registry expects zero). ✗
 
 ```
-/usr/local/opt/python@3.13/bin/python3.13: No module named dagster
+/Library/Developer/CommandLineTools/usr/bin/python3: No module named dagster
 ```
 
 ## The registry's own lines

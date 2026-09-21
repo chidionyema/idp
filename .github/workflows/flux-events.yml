@@ -93,11 +93,29 @@ jobs:
           # hex string reliably, and the open P0 list is tens of rows.
           n=$(gh issue list --state open --label P0 --limit 100 --json number,body \
                 -q "[.[] | select(.body != null and (.body | contains(\"$marker\")))] | .[0].number // empty")
-          if [ -n "$n" ]; then
-            gh issue comment "$n" --body "$(printf 'Same fire, reached %s: %s\n\nrun: %s/%s/actions/runs/%s\n' \
-              "$OBJECT" "$MESSAGE" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")"
+          cerr="${RUNNER_TEMP:-/tmp}/flux-comment.err"
+          gh label create P0 --color B60205 --description "service down for the founder" --force >/dev/null 2>&1 || true
+          # A dedupe thread is BOUNDED, and this one had no bound. GitHub refuses addComment past
+          # 2500 comments on one issue. Measured 2026-09-21: #3290 reached exactly 2500, every
+          # reconcile after it died on "Commenting is disabled on issues with more than 2500
+          # comments", and `-e` painted the run red -- 302 of 381 flux-events runs failed in 3.5
+          # hours out of that single saturated thread, which is most of the red in this repo.
+          # The fire had not changed; the PAGE had run out. So roll the page: close the full thread
+          # (that is not the fire going out) and open a fresh issue carrying the same signature, so
+          # the next event still folds into one row on the board instead of one row per event.
+          if [ -n "$n" ] && gh issue comment "$n" --body "$(printf 'Same fire, reached %s: %s\n\nrun: %s/%s/actions/runs/%s\n' \
+            "$OBJECT" "$MESSAGE" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")" 2>"$cerr"; then
+            :
           else
-            gh label create P0 --color B60205 --description "service down for the founder" --force >/dev/null 2>&1 || true
+            if [ -n "$n" ]; then
+              if grep -q 'Commenting is disabled' "$cerr" 2>/dev/null; then
+                gh issue close "$n" --reason completed >/dev/null
+                echo "thread #$n saturated at the 2500-comment cap; rolled to a fresh issue"
+              else
+                cat "$cerr" >&2
+                exit 1
+              fi
+            fi
             gh issue create --title "$title" --label P0 --body "$body"
           fi
           echo "::error::$OBJECT $MESSAGE"

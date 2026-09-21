@@ -206,16 +206,30 @@ phase3_agent_identity() {
     ;;
   esac
 
+  # No key yet: enroll. ADR 0032. A fresh machine proves the one credential it already has --
+  # the age identity phase1 just checked -- over the tailnet, and the broker hands back a key
+  # that is this device's own. No vendor secret to fetch, no browser, no founder's terminal.
+  # This is the seam that used to BLIND; the old "a device is authorized once, by its owner"
+  # is still true, it is just that the age identity IS the owner's one hand (Level 1), spent
+  # by a signature-less X25519 agreement rather than a shared key typed in by hand.
   if [ ! -e "$HOME/.local/state/idp/agent-key" ] && [ -z "${JIT_AGENT_KEY:-}" ]; then
-    blind "level3 this device holds no agent key, so it cannot become agent-reader.
-         cause  a device is authorized once, by its owner; nothing here can do it for you
-         fix    open the portal's Health page and press 'Authorize this device' on the
-                Device access tile -- one button, no terminal"
-    return 0
+    if [ "$MODE" = "--check" ]; then
+      blind "level3 this device holds no agent key; bin/idp-jit enroll would mint one from the age identity"
+      return 0
+    fi
+    if "$IDP/bin/idp-jit" enroll; then
+      ok "level3 enrolled -- this device holds its own key (from the age identity, no shared secret)"
+    else
+      blind "level3 could not enroll.
+         cause  the broker did not accept the age identity, or is unreachable
+         fix    a machine with no age key restores it first (phase1); a reachable broker
+                answers bin/idp-jit status. Enrollment proves the age identity, never a password"
+      return 0
+    fi
   fi
 
-  # Key present: mint now. This needs no approval, by the broker's own design -- "agent-reader
-  # holds reads and nothing else ... so there is nothing to approve".
+  # Key present (or just enrolled): mint now. This needs no approval, by the broker's own design
+  # -- "agent-reader holds reads and nothing else ... so there is nothing to approve".
   if "$IDP/bin/idp-jit" renew --kubeconfig "$HOME/.local/state/idp/agent.kubeconfig" --quiet 2>/dev/null; then
     ok "level3 agent identity minted (read-only, renews every 10 minutes)"
   else

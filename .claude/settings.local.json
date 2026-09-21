@@ -73,7 +73,8 @@
       "Bash(IDP_CI_FAST=1 python3 bin/idp-ci)",
       "Bash(bash bin/idp-ci)",
       "Bash(bash -n bin/idp-ci)",
-      "Bash(xargs -I {} gh run view {} --log)"
+      "Bash(xargs -I {} gh run view {} --log)",
+      "Bash(bin/idp-exec bash *)"
     ]
   }
 }

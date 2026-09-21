@@ -134,5 +134,36 @@ else
   git config --local core.hooksPath .githooks
   echo "ok    hooks   core.hooksPath set to .githooks (was: ${cur:-unset})"
 fi
+# Per-checkout hook secret. .githooks/commit-msg stamps every commit with an HMAC keyed
+# by this file so CI can refuse commits that bypassed the hooks with --no-verify, and its
+# header has always said "bin/idp-install-hooks provisions the secret" -- but this script
+# had zero references to it (measured 2026-09-21). Whatever once created it is gone, so
+# every fresh clone, and every `git worktree add` tree the rule-guard sends work into, hit
+#   REFUSE: hook secret missing at <gitdir>/idp-hook-secret -- run bin/idp-install-hooks
+# and could not commit at all, pointed at a script that did not do the thing. The secret
+# is generated locally, lives only in the git dir (never on the tree) and is never
+# printed: it is a per-checkout key, not a credential that travels.
+secret_path="$(git rev-parse --git-path idp-hook-secret)"
+if [ -s "$secret_path" ]; then
+  echo "ok    secret  commit-msg HMAC key present"
+elif openssl rand -hex 32 > "$secret_path" 2>/dev/null; then
+  chmod 600 "$secret_path"
+  echo "ok    secret  commit-msg HMAC key provisioned for this checkout"
+else
+  rm -f "$secret_path"
+  echo "WARN  secret  could not provision the commit-msg HMAC key (openssl missing?);"
+  echo "        commits from this checkout will be refused by .githooks/commit-msg"
+fi
+
+# Claude Code session hooks. The git hooks above refuse a bad push; these refuse a bad
+# turn. Without them a Claude Code session on this clone runs with no token-optimisation
+# enforcement at all -- measured on 2026-09-21, settings.json carried zero references to
+# bin/idp-exec while idp/AGENTS.md had mandated it on every command since 2026-09-15.
+# Idempotent, merges into the user's existing hooks, and refuses an unparseable
+# settings.json rather than overwriting it.
+"$IDP/.claude/hooks/install_session_hooks.py" || {
+  echo "WARN  claude  session hooks not wired (see above); git hooks are installed"
+}
+
 echo "        every BLIND row above is a rung that will pass through at push time with a warning;"
 echo "        every OK row is a rung that will run and can refuse the push."

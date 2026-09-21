@@ -47,6 +47,7 @@ import hmac
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 import time
@@ -55,6 +56,11 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import yaml
+from cryptography.hazmat.primitives.asymmetric.x25519 import (
+    X25519PrivateKey,
+    X25519PublicKey,
+)
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 #: Ten minutes is the founder's example and the catalogue's ceiling is thirty. The
 #: TokenRequest API will not mint below its own floor, so a shorter ask is honoured as
@@ -104,6 +110,50 @@ def ttl_seconds(v: str) -> int | None:
 def quantity_bytes(v: str) -> int | None:
     m = _QUANTITY.match(str(v or "").strip())
     return int(float(m.group(1)) * _SCALE[m.group(2)]) if m else None
+
+
+#: The age ecosystem's bech32 alphabet (BIP-173), in index order. Written here rather than
+#: taken from a dependency because it is the only table the broker needs, and one table of
+#: thirty-two characters is not worth a library.
+_BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+
+def _bech32_data(recipient: str) -> bytes | None:
+    """Decode an `age1...` recipient to the 32 bytes of X25519 public key it carries.
+
+    The estate's age identity is the native age form (`~/.config/prospector/age-key.txt`,
+    `# public key: age1...`), not the ssh-ed25519 form, so the recipient is bech32 and its
+    bytes are an X25519 public key -- confirmed against this estate's own key: the recipient
+    decodes byte-for-byte to `X25519PrivateKey.from_private_bytes(secret).public_key()`. That
+    is why the proof below is X25519 agreement and not a signature: a native age key has no
+    signing half to sign with.
+
+    This is the BIP-173 decoding age uses: the last 6 characters are the checksum and carry no
+    data, and the 5-bit groups that remain are the key's 32 bytes re-encoded. A native recipient
+    is exactly 52 data characters before the checksum, which is 260 bits -- 32 bytes plus four
+    leftover bits. Those leftover bits are zero-padding, so anything that decodes to anything
+    other than 32 bytes is refused rather than agreed against the wrong key.
+    """
+    s = str(recipient or "").strip().lower()
+    if not s.startswith("age1") or s.lower() != s:
+        return None
+    try:
+        values = [_BECH32_CHARSET.index(c) for c in s[4:]]
+    except ValueError:
+        return None
+    if len(values) < 6:
+        return None
+    # Drop the checksum; the 260 remaining bits decode to the 32 key bytes and four padding bits.
+    out = bytearray()
+    acc = 0
+    bits = 0
+    for v in values[:-6]:
+        acc = (acc << 5) | v
+        bits += 5
+        while bits >= 8:
+            bits -= 8
+            out.append((acc >> bits) & 0xFF)
+    return bytes(out) if len(out) == 32 else None
 
 
 class Refused(Exception):
@@ -223,6 +273,14 @@ class Broker:
     #: replayed does not.
     AGENT_IDENTITIES_PER_HOUR = 60
 
+    #: Enrollments mint a device its own key, proven by the estate's root trust (ADR 0032). Bounded
+    #: the same way identities are: a handful of machines being imaged is the normal case, a
+    #: replayed nonce is not. A person imaging a fleet of ten in one afternoon is still under it.
+    ENROLLMENTS_PER_HOUR = 10
+    #: A nonce is a challenge, not a session. Long enough for a device to sign and post it, short
+    #: enough that a nonce left in a shell history is worthless by the time anyone finds it.
+    ENROLLMENT_NONCE_TTL_SECONDS = 120
+
     #: Where the cluster publishes its own address and certificate, for exactly this purpose.
     #: kubeadm writes it and OKE keeps it; `system:public-info-viewer` makes it readable by
     #: anyone, authenticated or not, because a client needs it *before* it has a credential.
@@ -241,6 +299,7 @@ class Broker:
         providers: dict[str, Callable[[list[str]], tuple[int, str]]] | None = None,
         agent_key: bytes | None = None,
         ledger_sink=None,
+        age_recipient: str = "",
     ):
         self.catalogue_path = catalogue
         self.key = key
@@ -259,6 +318,26 @@ class Broker:
         # Empty on a broker that has not been given one, which is a broker that cannot
         # identify anybody -- `identity()` refuses rather than defaulting open.
         self.agent_key = agent_key or b""
+        #: The estate's age public key (an `age1...`/ssh-ed25519 recipient), used only to verify a
+        #: first-time device's root trust at /enroll. Empty means enrollment is closed, which is
+        #: the safe default: a broker that cannot check root trust must not hand out keys.
+        self.age_recipient = age_recipient
+        #: Keys this broker has handed to devices. In-memory by design: a restart drops them, and a
+        #: device re-enrolls from the same age identity it already holds. Persisting a device key
+        #: would be a second copy of a credential (WJ.7), which the ledger already refuses to keep.
+        self.device_keys: dict[str, str] = {}
+        #: Issues nonces, one per enrollment attempt, so a captured proof cannot be replayed.
+        self._enrollment_nonces: dict[str, float] = {}
+        #: The ephemeral X25519 private key for each live nonce. Its public half travels with the
+        #: nonce; this half never leaves the process. A nonce is spent and this is popped together,
+        #: so a captured proof cannot be replayed. Not persisted: a restart drops both, and a
+        #: device simply asks for a fresh nonce.
+        self._enrollment_ephemerals: dict[str, X25519PrivateKey] = {}
+        #: Which enrolled device the last authenticate() matched, or "" for the shared key. Set by
+        #: authenticate(), read by whoever writes the ledger line that follows. Not a credential
+        #: and not persisted: it is the fingerprint already in the ledger, kept here only so the
+        #: calling door can name the device without re-deriving it.
+        self._acting_fingerprint = ""
 
     # ---------------------------------------------------------------- the catalogue
 
@@ -456,19 +535,40 @@ class Broker:
         One key covers every agent, so what this proves is "an agent of this estate", not
         which one. `asked_by` stays a label, and the ledger now records that it was attested
         rather than merely asserted. Per-agent keys are WJ.13's problem, not this door's.
+
+        ADR 0032 lays the first stone of WJ.13 here: a device that enrolled at `/enroll` holds
+        its OWN key, and this accepts it alongside the shared one. That is what makes enrollment
+        worth anything -- a device minted its own identity rather than being handed the same
+        secret as every other. The shared key remains accepted while older devices still hold it,
+        and the enrollment ledger records which keys exist and when each was issued.
         """
-        if not self.agent_key:
+        if not self.agent_key and not self.device_keys:
             raise Refused(
                 "this broker holds no agent key, so it cannot identify anyone. "
                 "platform/jit/deployment.yaml is where JIT_AGENT_KEY arrives"
             )
-        if not hmac.compare_digest(presented or "", self.agent_key.decode()):
-            # No ledger line, and for the reason the Telegram path already gives: this door is
-            # reachable from outside the cluster, so a line per refusal is a way for a stranger
-            # to fill the ledger volume. The ledger records what the broker did, and it did
-            # nothing. compare_digest because a byte-at-a-time comparison leaks the key to
-            # whoever can time it.
-            raise Refused("not an agent of this estate")
+        presented = presented or ""
+        # A device key first: it is the narrower credential, and matching it says "this specific
+        # device" rather than "an agent of this estate". The shared key is the fallback while
+        # older devices still present it.
+        for fingerprint, key in self.device_keys.items():
+            if hmac.compare_digest(presented, key):
+                # The fingerprint is the ledger's word for WHICH device, without recording the
+                # key. A reader can now tell two enrolled devices apart, which the shared key
+                # never allowed (broker.py's own note: "One key covers every agent"). The count
+                # itself is appended by identity(), not here, so /ask and /identity do not
+                # double-count one caller.
+                self._acting_fingerprint = fingerprint
+                return
+        self._acting_fingerprint = ""
+        if self.agent_key and hmac.compare_digest(presented, self.agent_key.decode()):
+            return
+        # No ledger line, and for the reason the Telegram path already gives: this door is
+        # reachable from outside the cluster, so a line per refusal is a way for a stranger
+        # to fill the ledger volume. The ledger records what the broker did, and it did
+        # nothing. compare_digest because a byte-at-a-time comparison leaks the key to
+        # whoever can time it.
+        raise Refused("not an agent of this estate")
 
     def identity(self, presented: str) -> dict:
         """Mint the read-only identity an agent runs as, for a caller that proves it is one.
@@ -515,10 +615,13 @@ class Broker:
         self.history.append((self.now(), "identity"))
         # WJ.7: the issuance is on the record, the token is not. A ledger that holds the
         # credential it recorded is a second copy of every credential the broker ever made.
+        # device names the enrolled device by fingerprint when the caller presented its own key
+        # (ADR 0032); empty means the shared key, which proves "an agent", not which one.
         self.ledger.append(
             "identity",
             subject=f"{self.AGENT_NS}:{self.AGENT_SA}",
             ttl=self.AGENT_TTL_SECONDS,
+            device=self._acting_fingerprint,
         )
         return {
             "token": out.strip(),
@@ -526,6 +629,160 @@ class Broker:
             "subject": f"system:serviceaccount:{self.AGENT_NS}:{self.AGENT_SA}",
             **self._cluster_address(),
         }
+
+    def enroll(self, nonce: str, ephemeral: str, mac: str) -> dict:
+        """Hand a first-time device its OWN key, proven by the estate's root trust.
+
+        A fresh machine is the case every previous version of this door failed. `identity()`
+        works only for a caller that already holds `JIT_AGENT_KEY`, and nothing minted that key
+        for a new device: it was written to the vault like a vendor secret, so every machine got
+        it by hand and every machine then held the same one. That is the standing secret ADR
+        0032 names, and it is the reason a newly imaged laptop was never seamless.
+
+        This door closes that. A device with NO broker key proves instead the one credential
+        every workstation already has restored before anyone sits down -- the age identity at
+        Level 1 of bin/idp-workstation-bootstrap -- and receives a fresh key that is its own.
+
+        How the age identity is proven without transmitting it: the device asks for a nonce
+        (`issue_nonce`) and posts back `nonce`, an ephemeral X25519 public key `ephemeral`, and
+        `mac`, an HMAC-SHA256 tag over the nonce keyed by an X25519 agreement between the device's
+        age secret key and `ephemeral`. This regenerates the ephemeral half here, runs the same
+        agreement with the estate's age recipient, and compares the tags with `hmac.compare_digest`.
+        Only a device holding the age secret can produce a matching tag, and the secret never
+        leaves the device. This mirrors age's own recipient unwrap, which is X25519 agreement --
+        a native age key has no signing half, so a signature would have been the wrong primitive.
+
+        The nonce is single-use and short-lived: consumed the moment it is checked, so a captured
+        proof cannot be replayed even against a broker that has not restarted.
+
+        What this deliberately is NOT: it is not a bearer secret on a wire. The device sends an
+        ephemeral public key and a tag, never the age secret; the key it receives is fresh, unique
+        to that call, and recorded in the ledger by a fingerprint, not a value. The ledger is the
+        record of who was given access (WJ.7) and holds no credential.
+        """
+        stopped = self.killswitch()
+        if stopped:
+            raise Refused(f"the broker is stopped: {stopped}")
+        if not self.age_recipient:
+            raise Refused(
+                "this broker holds no estate age recipient, so it cannot verify a device's "
+                "root trust. platform/jit/deployment.yaml is where JIT_AGE_RECIPIENT arrives"
+            )
+        if not self._check_enrollment_rate():
+            raise Refused(
+                "too many enrollments in the last hour; either a fleet is being imaged or "
+                "somebody is replaying nonces"
+            )
+        # Consume the nonce first, unconditionally: a nonce is single-use whether or not the
+        # signature over it turns out valid, so a failed attempt cannot be retried with a
+        # corrected signature against the same nonce.
+        seen = self._enrollment_nonces.pop(nonce, None)
+        if seen is None:
+            raise Refused("unknown or already-used nonce; ask the broker for a fresh one")
+        if self.now() - seen > self.ENROLLMENT_NONCE_TTL_SECONDS:
+            raise Refused("the nonce expired; ask the broker for a fresh one")
+        if not self._age_agreement_valid(nonce, ephemeral, mac):
+            # No ledger line, for the reason authenticate() gives for a bad key: a line per
+            # refusal lets a stranger fill the ledger volume. The ledger records what the broker
+            # did, and a refused enrollment did nothing.
+            raise Refused("not root trust for this estate")
+
+        key = secrets.token_urlsafe(32)
+        fingerprint = hashlib.sha256(key.encode()).hexdigest()[:16]
+        self.device_keys[fingerprint] = key
+        self.history.append((self.now(), "enroll"))
+        self.ledger.append(
+            "enrolled",
+            device_fingerprint=fingerprint,
+            # The method is named so a reader of the ledger can tell an age-rooted enrollment
+            # from any future one. The nonce is not recorded: a nonce that is written down is a
+            # nonce that can be replayed by whoever reads the ledger.
+            proof="age-recipient",
+        )
+        return {
+            "key": key,
+            "fingerprint": fingerprint,
+            "subject": f"system:serviceaccount:{self.AGENT_NS}:{self.AGENT_SA}",
+            "note": "this key is yours; the estate keeps only its fingerprint",
+        }
+
+    def issue_nonce(self) -> dict:
+        """Mint a single-use, short-lived challenge for one enrollment attempt.
+
+        Returns the nonce and the public half of a fresh ephemeral X25519 key. The device agrees
+        its age secret with that public half and returns an HMAC over the nonce; the private half
+        stays here to recompute the same. So the nonce is what makes the proof unforgeable by
+        replay: a proof over a value an attacker chose is worthless, and a proof over a value used
+        once is worthless after that use. Expired nonces (and their ephemeral halves) are swept
+        here rather than by a timer, because a broker with no clock thread has one fewer thing to
+        fail.
+        """
+        cutoff = self.now() - self.ENROLLMENT_NONCE_TTL_SECONDS
+        for n, at in list(self._enrollment_nonces.items()):
+            if at < cutoff:
+                del self._enrollment_nonces[n]
+                self._enrollment_ephemerals.pop(n, None)
+        nonce = secrets.token_urlsafe(32)
+        self._enrollment_nonces[nonce] = self.now()
+        # The ephemeral key for this nonce's agreement. Its public half goes to the device with
+        # the nonce; its private half stays here and is popped when the proof is checked, so a
+        # nonce is spent either way. Zeroed on drop is not meaningful in Python; what matters is
+        # that it is never serialized, never logged and never in the ledger.
+        ephemeral = X25519PrivateKey.generate()
+        self._enrollment_ephemerals[nonce] = ephemeral
+        return {
+            "nonce": nonce,
+            "ephemeral": ephemeral.public_key()
+            .public_bytes(Encoding.Raw, PublicFormat.Raw)
+            .hex(),
+        }
+
+    def _check_enrollment_rate(self) -> bool:
+        """Bound enrollments the same way identities are bounded, and for the same reason.
+
+        A handful of machines being imaged sits far below the cap. A replayed nonce does not.
+        Returns True while under the cap rather than raising, so the caller can answer one
+        refusal message for both a bad signature and a flood -- a stranger learns nothing about
+        which check they failed.
+        """
+        cutoff = self.now() - 3600
+        used = sum(1 for at, what in self.history if what == "enroll" and at > cutoff)
+        return used < self.ENROLLMENTS_PER_HOUR
+
+    def _age_agreement_valid(self, nonce: str, ephemeral: str, mac: str) -> bool:
+        """Check the device holds the age secret, by a Diffie-Hellman agreement it cannot fake.
+
+        The estate's age identity is native age, so the recipient `_bech32_data` decodes is an
+        X25519 public key and the private half is an X25519 scalar. There is no signing half to
+        verify a signature with, so the right primitive is agreement.
+
+        The broker generated, at `issue_nonce`, an ephemeral X25519 key and published only its
+        public half. The device derives `X25519(age_secret, ephemeral_public)`; the broker derives
+        `X25519(ephemeral_secret, recipient)`. These are equal exactly when `recipient` is
+        `X25519(age_secret, basepoint)` -- that is, when the device really holds the estate age
+        secret. The device returns `ephemeral` (its own ephemeral, so the broker can name the
+        agreement in the ledger without the secret) and `mac`, an HMAC-SHA256 over the nonce keyed
+        by the shared secret; the broker recomputes the same and compares with `compare_digest`.
+        The shared secret is never compared directly and never leaves either side.
+
+        An empty or malformed input is never valid, so a malformed request fails closed. Hex for
+        both fields because a device driving this from a shell round-trips hex more easily than
+        base64, and hex has no character an argument parser can eat.
+        """
+        if not nonce or not ephemeral or not mac:
+            return False
+        recipient = _bech32_data(self.age_recipient)
+        if recipient is None:
+            return False
+        secret = self._enrollment_ephemerals.pop(nonce, None)
+        if secret is None:
+            return False
+        try:
+            shared = secret.exchange(X25519PublicKey.from_public_bytes(recipient))
+            want = hmac.new(shared, nonce.encode(), hashlib.sha256).hexdigest()
+            return hmac.compare_digest(want, str(mac))
+        except (ValueError, TypeError):
+            return False
 
     def _cluster_address(self) -> dict:
         """Where the cluster is and the certificate that proves it, read from the cluster.

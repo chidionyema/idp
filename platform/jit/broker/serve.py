@@ -123,6 +123,11 @@ class Handler(BaseHTTPRequestHandler):
     #: key. `/healthz` is a GET the kubelet makes from the node, which holds no key either,
     #: and it answers with the ledger's own verdict on itself and nothing about the estate.
     AGENT_DOORS = ("/ask", "/state", "/grants", "/identity")
+    #: Doors a device with NO key must reach, or a fresh machine can never become an agent
+    #: (ADR 0032). `/enroll/nonce` hands out a challenge; `/enroll` verifies a signature over it
+    #: against the estate's age recipient. Neither accepts an agent key and neither can be used
+    #: to read the cluster: the most a caller gets is one key, once, for proving root trust.
+    OPEN_DOORS = ("/enroll/nonce", "/enroll")
 
     def path_after_prefix(self) -> str:
         """The path with the public door's prefix removed.
@@ -141,6 +146,24 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         try:
             path = self.path_after_prefix()
+            if path == "/enroll":
+                # Deliberately before the agent-key check and deliberately not behind it: the
+                # whole point is that a device reaching this door holds no key yet (ADR 0032).
+                # What it must hold instead is the estate's age identity, proven by the signature
+                # enroll() verifies. A refusal here is a 401 for the same reason the agent doors
+                # are: "I am not who I said", not "what you asked for is not allowed".
+                b = self._body()
+                try:
+                    return self._reply(
+                        200,
+                        self.broker.enroll(
+                            str(b.get("nonce") or ""),
+                            str(b.get("ephemeral") or ""),
+                            str(b.get("mac") or ""),
+                        ),
+                    )
+                except Refused as exc:
+                    return self._reply(401, {"error": str(exc)})
             if path in self.AGENT_DOORS:
                 # 401 before the body is even read, and separately from what the door then
                 # does, so a bad key reads as "I am not who I said" rather than the 400 that
@@ -223,6 +246,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path_after_prefix() == "/healthz":
             ok, why = self.broker.ledger.verify()
             return self._reply(200 if ok else 500, {"ledger": why})
+        if self.path_after_prefix() == "/enroll/nonce":
+            # GET, no key, and it hands out nothing but a challenge that expires in two minutes
+            # and is spent on first use: a nonce plus the public half of an ephemeral X25519 key.
+            # A stranger who collects a thousand of these has a thousand public strings; enrolling
+            # a device still costs the estate's age private key, which never leaves the device.
+            return self._reply(200, self.broker.issue_nonce())
         self._reply(404, {"error": "no such door"})
 
 
@@ -273,6 +302,10 @@ def main() -> None:
             os.environ.get("JIT_KILLSWITCH", "/var/lib/jit/stopped")
         ),
         agent_key=optional_secret("JIT_AGENT_KEY").encode(),
+        # A public recipient, so it is read from the environment like JIT_PUBLIC_PREFIX and not
+        # from the mounted secret files. Empty closes enrollment, which is the safe default: a
+        # broker that cannot check root trust must not hand out keys.
+        age_recipient=os.environ.get("JIT_AGE_RECIPIENT", ""),
     )
     phone = Phone(secret("TELEGRAM_BOT_TOKEN"), secret("TELEGRAM_CHAT_ID"), broker)
     Handler.broker, Handler.phone = broker, phone

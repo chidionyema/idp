@@ -19,17 +19,23 @@ Fixture: `tests/fixtures/plist/bad.plist.tmpl`
 Exit code `1` (the registry expects non-zero). ✓
 
 ```
-FAIL tests/fixtures/plist/bad.plist.tmpl: does not parse: InvalidFileException: Invalid file
+Traceback (most recent call last):
+  File "<checkout>/bin/plist-gate", line 70, in <module>
+    if name__ == "__main__":
+NameError: name 'name__' is not defined
 ```
 
 ## Permitted
 
 Fixture: `tests/fixtures/plist/abandoned-children.plist.tmpl`
 
-Exit code `0` (the registry expects zero). ✓
+Exit code `1` (the registry expects zero). ✗
 
 ```
-ok   tests/fixtures/plist/abandoned-children.plist.tmpl
+Traceback (most recent call last):
+  File "<checkout>/bin/plist-gate", line 70, in <module>
+    if name__ == "__main__":
+NameError: name 'name__' is not defined
 ```
 
 ## The registry's own lines

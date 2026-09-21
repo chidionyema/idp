@@ -248,8 +248,8 @@ def test_the_three_files_agree_on_the_prefix():
     assert all(p.startswith(prefix + "/") for p in paths), paths
 
 
-def _agent_doors() -> set[str]:
-    """The handler's AGENT_DOORS, read out of the source rather than imported.
+def _doors_named(name: str) -> set[str]:
+    """One of the handler's door tuples, read out of the source rather than imported.
 
     serve.py is a module of a package this repository also imports elsewhere, and loading it a
     second time under a name the package already holds builds a second set of class objects --
@@ -258,12 +258,18 @@ def _agent_doors() -> set[str]:
     """
     tree = ast.parse((ROOT / "platform" / "jit" / "broker" / "serve.py").read_text())
     for node in ast.walk(tree):
-        if isinstance(node, ast.AnnAssign | ast.Assign):
+        if isinstance(node, ast.AnnAssign) or isinstance(node, ast.Assign):
             targets = [node.target] if isinstance(node, ast.AnnAssign) else node.targets
             names = [t.id for t in targets if isinstance(t, ast.Name)]
-            if "AGENT_DOORS" in names and node.value is not None:
+            if name in names and node.value is not None:
                 return set(ast.literal_eval(node.value))
-    raise AssertionError("no AGENT_DOORS in serve.py")
+    raise AssertionError(f"no {name} in serve.py")
+
+
+def _agent_doors() -> set[str]:
+    """Every path the public route must carry: the keyed agent doors plus the keyless
+    enrollment doors (ADR 0032), because a fresh machine with no key can reach nothing else."""
+    return _doors_named("AGENT_DOORS") | _doors_named("OPEN_DOORS")
 
 
 def test_the_route_carries_every_door_the_client_can_dial():

@@ -89,6 +89,7 @@ def make(
     now=None,
     providers=None,
     agent_key: bytes = b"",
+    age_recipient: str = "",
 ) -> Broker:
     return Broker(
         catalogue=CATALOGUE,
@@ -99,6 +100,7 @@ def make(
         now=now or time.time,
         providers=providers,
         agent_key=agent_key,
+        age_recipient=age_recipient,
     )
 
 
@@ -1267,3 +1269,334 @@ def test_healthz_answers_on_the_prefix_and_is_not_on_the_public_route(tmp_path):
     finally:
         httpd.shutdown()
     assert code == 200
+
+
+# --- enrollment: how a fresh machine with no key comes to hold one (ADR 0032) -----------
+#
+# Every door above refuses a caller with no key, which is the whole point of them -- and the
+# reason a newly imaged laptop could never become an agent. This door is the other half: a
+# device proves the one credential every workstation already restores before anyone sits down
+# (the age identity at Level 1 of bin/idp-workstation-bootstrap) and receives a key of its own.
+#
+# The proof is an X25519 agreement, not a signature, because a native age key has no signing
+# half. The device agrees its age secret with an ephemeral public key the broker minted, and
+# returns an HMAC over the nonce keyed by the shared secret. The secret never leaves the device;
+# the broker never holds it. These tests drive the real door and a real age key, and check that
+# an impostor who holds no age secret cannot produce a matching tag.
+
+#: A throwaway age identity for the suite, in both forms a device would hold it: the secret is
+#: the scalar, the recipient is the `age1...` its public half encodes to. It is *derived here* from
+#: a fixed label rather than pasted, so no key-shaped literal exists to leak, grep, or mistake for
+#: the estate's. This is NOT the estate's root age key -- the estate's own lives in Prospector's
+#: age-key.txt and must never appear in a repo.
+_AGE_LABEL = b"jit-broker-enrollment-test/x25519/v1"
+
+_CH_B32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+
+def _bech32_age(pub: bytes) -> str:
+    """Encode an X25519 public key as a real `age1...` recipient, checksum included."""
+    acc = bits = 0
+    data = []
+    for byte in pub:
+        acc = (acc << 8) | byte
+        bits += 8
+        while bits >= 5:
+            bits -= 5
+            data.append((acc >> bits) & 0x1F)
+    if bits:
+        data.append((acc << (5 - bits)) & 0x1F)
+
+    def polymod(values):
+        gen = (0x3B6A57B2, 0x26508E6D, 0x1EA119FA, 0x3D4233DD, 0x2A1462B3)
+        chk = 1
+        for v in values:
+            top = chk >> 25
+            chk = (chk & 0x1FFFFFF) << 5 ^ v
+            for i in range(5):
+                chk ^= gen[i] if ((top >> i) & 1) else 0
+        return chk
+
+    hrp = "age"
+    hrp_expand = [ord(c) >> 5 for c in hrp] + [0] + [ord(c) & 31 for c in hrp]
+    pm = polymod(hrp_expand + data + [0, 0, 0, 0, 0, 0]) ^ 1
+    checksum = [(pm >> 5 * (5 - i)) & 31 for i in range(6)]
+    return hrp + "1" + "".join(_CH_B32[d] for d in data + checksum)
+
+
+def _derive_age_key():
+    from hashlib import sha256
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
+    from_bytes = X25519PrivateKey.from_private_bytes
+    priv = from_bytes(sha256(_AGE_LABEL).digest())
+    pub = priv.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+    hexed = priv.private_bytes(
+        serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()
+    ).hex()
+    return hexed, pub
+
+
+AGE_SECRET_HEX, _AGE_PUB = _derive_age_key()
+AGE_RECIPIENT = _bech32_age(_AGE_PUB)
+
+
+def _age_secret():
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
+    return X25519PrivateKey.from_private_bytes(bytes.fromhex(AGE_SECRET_HEX))
+
+
+def _age_secret_bech32() -> str:
+    """The 32-byte secret as the `AGE-SECRET-KEY-1...` bech32 the file on disk uses.
+
+    Matches the estate's exact form so the client decoder is graded against the real shape and
+    not a simplification. The checksum is faked -- the client does not verify it, the broker
+    has no use for it -- but the data characters are real, which is what the bech32->X25519
+    path actually consumes.
+    """
+    ch = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+    raw = bytes.fromhex(AGE_SECRET_HEX)
+    acc = bits = 0
+    out = ""
+    for byte in raw:
+        acc = (acc << 8) | byte
+        bits += 8
+        while bits >= 5:
+            bits -= 5
+            out += ch[(acc >> bits) & 0x1F]
+    if bits:
+        out += ch[(acc << (5 - bits)) & 0x1F]
+    return out + "qqqqqq"
+
+
+def _nonce_over_http(httpd, path="/enroll/nonce"):
+    host, port = httpd.server_address[0], httpd.server_address[1]
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    conn.request("GET", path)
+    res = conn.getresponse()
+    body = json.loads(res.read() or b"{}")
+    code = res.status
+    conn.close()
+    return code, body
+
+
+def _enroll_over_http(httpd, payload, path="/enroll"):
+    host, port = httpd.server_address[0], httpd.server_address[1]
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    conn.request("POST", path, json.dumps(payload), {"Content-Type": "application/json"})
+    res = conn.getresponse()
+    body = json.loads(res.read() or b"{}")
+    code = res.status
+    conn.close()
+    return code, body
+
+
+def _prove(nonce_body, secret):
+    """What a device does with a nonce: agree its age secret with the broker's ephemeral public
+    key and key an HMAC over the nonce with the shared secret."""
+    import hashlib
+    import hmac as _hmac
+
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
+
+    nonce = nonce_body["nonce"]
+    ephemeral = bytes.fromhex(nonce_body["ephemeral"])
+    shared = secret.exchange(X25519PublicKey.from_public_bytes(ephemeral))
+    return {
+        "nonce": nonce,
+        "ephemeral": ephemeral.hex(),
+        "mac": _hmac.new(shared, nonce.encode(), hashlib.sha256).hexdigest(),
+    }
+
+
+def test_a_fresh_device_enrolls_and_gets_a_key_of_its_own(tmp_path):
+    """The seamless case this whole door exists for: a machine holding the estate age identity
+    and no broker key reaches in and walks away with a key that is its own."""
+    broker = make(tmp_path, age_recipient=AGE_RECIPIENT)
+    httpd = _door(broker, SilentPhone(), public_prefix="/jit")
+    try:
+        code, nonce = _nonce_over_http(httpd, path="/jit/enroll/nonce")
+        assert code == 200, nonce
+        code, body = _enroll_over_http(httpd, _prove(nonce, _age_secret()), path="/jit/enroll")
+    finally:
+        httpd.shutdown()
+    assert code == 200, body
+    assert body["key"], "enrollment must hand back the device's own key"
+    assert body["fingerprint"]
+    # And the key it received actually identifies it: present it as a bearer and it is accepted.
+    broker.authenticate(body["key"])
+    assert broker._acting_fingerprint == body["fingerprint"]
+
+
+def test_the_ledger_records_the_enrollment_by_fingerprint_and_not_by_key(tmp_path):
+    """WJ.7: the record of who was given access holds no credential. The device's key must not
+    be on the ledger, and neither the nonce nor the shared secret."""
+    broker = make(tmp_path, age_recipient=AGE_RECIPIENT)
+    httpd = _door(broker, SilentPhone())
+    try:
+        _, nonce = _nonce_over_http(httpd)
+        proof = _prove(nonce, _age_secret())
+        _, body = _enroll_over_http(httpd, proof)
+    finally:
+        httpd.shutdown()
+    raw = (tmp_path / "ledger.jsonl").read_text()
+    line = json.loads(raw.splitlines()[0])
+    assert line["event"] == "enrolled"
+    assert line["device_fingerprint"] == body["fingerprint"]
+    assert line["proof"] == "age-recipient"
+    assert body["key"] not in raw, "the ledger is not a second copy of the key it recorded"
+    assert proof["mac"] not in raw
+    assert nonce["nonce"] not in raw
+
+
+def test_a_nonce_cannot_be_replayed_for_a_second_key(tmp_path):
+    """A captured proof is worthless after its one use, or one enrollment would mint keys
+    forever."""
+    broker = make(tmp_path, age_recipient=AGE_RECIPIENT)
+    httpd = _door(broker, SilentPhone())
+    try:
+        _, nonce = _nonce_over_http(httpd)
+        proof = _prove(nonce, _age_secret())
+        first, _ = _enroll_over_http(httpd, proof)
+        second, _ = _enroll_over_http(httpd, proof)
+    finally:
+        httpd.shutdown()
+    assert first == 200
+    assert second == 401
+
+
+def test_a_wrong_mac_is_refused(tmp_path):
+    """The tag is what proves the secret was held. A device that gets it wrong gets no key."""
+    broker = make(tmp_path, age_recipient=AGE_RECIPIENT)
+    httpd = _door(broker, SilentPhone())
+    try:
+        _, nonce = _nonce_over_http(httpd)
+        proof = _prove(nonce, _age_secret())
+        proof["mac"] = "00" * 32
+        code, _ = _enroll_over_http(httpd, proof)
+    finally:
+        httpd.shutdown()
+    assert code == 401
+
+
+def test_a_caller_that_does_not_hold_the_age_secret_is_refused(tmp_path):
+    """The case that matters. A device with its own key agrees against the broker's ephemeral,
+    produces a tag, and posts a well-formed request -- and is refused, because the broker agrees
+    against the ESTATE recipient and gets a different secret. That is what makes the age identity
+    root trust rather than a password anyone can present."""
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    impostor = X25519PrivateKey.generate()
+    broker = make(tmp_path, age_recipient=AGE_RECIPIENT)
+    httpd = _door(broker, SilentPhone())
+    try:
+        _, nonce = _nonce_over_http(httpd)
+        # Send the impostor's own public key as the ephemeral, keyed as it would be -- honest,
+        # but with the wrong secret. The broker agrees with the estate recipient regardless, so
+        # the tags cannot match.
+        import hashlib
+        import hmac as _hmac
+
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
+
+        ephemeral = bytes.fromhex(nonce["ephemeral"])
+        shared = impostor.exchange(X25519PublicKey.from_public_bytes(ephemeral))
+        payload = {
+            "nonce": nonce["nonce"],
+            "ephemeral": impostor.public_key()
+            .public_bytes(Encoding.Raw, PublicFormat.Raw)
+            .hex(),
+            "mac": _hmac.new(shared, nonce["nonce"].encode(), hashlib.sha256).hexdigest(),
+        }
+        code, _ = _enroll_over_http(httpd, payload)
+    finally:
+        httpd.shutdown()
+    assert code == 401
+
+
+def test_enrollment_is_closed_when_the_broker_holds_no_age_recipient(tmp_path):
+    """A broker that cannot check root trust must not hand out keys -- the same fail-closed shape
+    as a broker with no agent key refusing every ask."""
+    broker = make(tmp_path)  # age_recipient defaults to ""
+    httpd = _door(broker, SilentPhone())
+    try:
+        code, nonce = _nonce_over_http(httpd)
+        # The nonce door still answers (it holds no trust decision), but enroll refuses.
+        enroll, _ = _enroll_over_http(httpd, _prove(nonce, _age_secret()))
+    finally:
+        httpd.shutdown()
+    assert code == 200
+    assert enroll == 401
+
+
+def test_the_client_enrolls_from_the_age_identity_and_writes_its_own_key(tmp_path, monkeypatch):
+    """bin/idp-jit enroll, over a real socket, against a real broker. The device holds the estate
+    age secret and no broker key; it must walk away with a key where _agent_key reads, mode 600."""
+    broker = make(tmp_path, age_recipient=AGE_RECIPIENT)
+    httpd = _door(broker, SilentPhone())
+    host, port = httpd.server_address[0], httpd.server_address[1]
+    # A throwaway age-key.txt in the exact form the estate's is in, so the client's decoder is
+    # graded against the real shape and not a simplification.
+    age_file = tmp_path / "age-key.txt"
+    age_file.write_text(
+        "# created: test\n"
+        '# public key: ' + AGE_RECIPIENT + "\n"
+        "AGE-SECRET-KEY-1" + _age_secret_bech32() + "\n"
+    )
+    state = tmp_path / "state"
+    monkeypatch.setenv("JIT_BROKER_URL", f"http://{host}:{port}")
+    monkeypatch.setenv("SOPS_AGE_KEY_FILE", str(age_file))
+    monkeypatch.setenv("IDP_KUBE_STATE", str(state))
+    monkeypatch.delenv("JIT_AGENT_KEY", raising=False)
+    mod = _idp_jit()
+    try:
+        rc = mod.enroll()
+    finally:
+        httpd.shutdown()
+    assert rc == 0
+    written = (state / "agent-key").read_text().strip()
+    assert written
+    assert oct((state / "agent-key").stat().st_mode & 0o777) == oct(0o600)
+    broker.authenticate(written)  # the broker accepts the key the client wrote
+
+
+def test_the_client_enroll_refuses_cleanly_when_it_holds_no_age_identity(tmp_path, monkeypatch):
+    """No age identity is Level 1 of the bootstrap, and the one failure the person still owns.
+    It must refuse with a reason, not a traceback, and write no key."""
+    broker = make(tmp_path, age_recipient=AGE_RECIPIENT)
+    httpd = _door(broker, SilentPhone())
+    host, port = httpd.server_address[0], httpd.server_address[1]
+    state = tmp_path / "state"
+    monkeypatch.setenv("JIT_BROKER_URL", f"http://{host}:{port}")
+    monkeypatch.setenv("SOPS_AGE_KEY_FILE", str(tmp_path / "nope.txt"))
+    monkeypatch.setenv("IDP_KUBE_STATE", str(state))
+    monkeypatch.delenv("JIT_AGENT_KEY", raising=False)
+    mod = _idp_jit()
+    try:
+        rc = mod.enroll()
+    finally:
+        httpd.shutdown()
+    assert rc == mod.CODES["refused"]
+    assert not (state / "agent-key").exists()
+
+
+def test_an_enrollment_is_recorded_as_an_identity_and_not_a_grant(tmp_path):
+    """Enrollment mints an identity, not access: it never touches the catalogue and never wakes
+    the founder. A key from this door buys exactly what every agent key buys -- nothing until he
+    taps -- so it must not appear on his phone."""
+    broker = make(tmp_path, age_recipient=AGE_RECIPIENT)
+    phone = SilentPhone()
+    httpd = _door(broker, phone)
+    try:
+        _, nonce = _nonce_over_http(httpd)
+        _, body = _enroll_over_http(httpd, _prove(nonce, _age_secret()))
+    finally:
+        httpd.shutdown()
+    assert body["key"]
+    assert phone.sent == [], "enrollment must never reach the founder's phone"
