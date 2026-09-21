@@ -18,7 +18,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11bd71901afe3a98589b0a1d744f7275f4f2aff0  # v4.2.2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.2.2
 
       - uses: actions/setup-python@f677139edd7d37f56ec0f7cb50f3d8b6e29c0f69  # v5.0.0
         with:
