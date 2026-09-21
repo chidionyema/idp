@@ -98,7 +98,7 @@ class Registry:
     def put(self, proposal: dict) -> None:
         self.proposals[proposal["proposal_id"]] = proposal
 
-    def get(self, proposal_id: str) -> dict | None:
+    def get(self, proposal_id: str) ->Optional[dict]:
         return self.proposals.get(proposal_id)
 
     def drop(self, proposal_id: str) -> None:
@@ -130,7 +130,7 @@ def hash_state(resource_versions: dict[str, str]) -> str:
     return h.hexdigest()
 
 
-def _utc(now: dt.datetime | None) -> dt.datetime:
+def _utc(now: dt.Optional[datetime]) -> dt.datetime:
     value = now or dt.datetime.now(dt.timezone.utc)
     if value.tzinfo is None:
         value = value.replace(tzinfo=dt.timezone.utc)
@@ -154,11 +154,11 @@ def simulate_change(
     source: str | dict,
     *,
     graders: dict,
-    registry: Registry | None = None,
-    cfg: dict | None = None,
-    resource_versions: dict[str, str] | None = None,
-    git_sha: str | None = None,
-    now: dt.datetime | None = None,
+    registry:Optional[Registry] = None,
+    cfg:Optional[dict] = None,
+    resource_versions:Optional[dict[str, str]] = None,
+    git_sha:Optional[str] = None,
+    now: dt.Optional[datetime] = None,
 ) -> dict:
     """Run every named grader over `source` and return a bounded proposal.
 
@@ -245,11 +245,11 @@ def simulate_change(
 
 def execute_change(
     proposal_id: str,
-    presented_hash: str | None,
+    presented_hash:Optional[str],
     *,
-    registry: Registry | None = None,
-    cfg: dict | None = None,
-    now: dt.datetime | None = None,
+    registry:Optional[Registry] = None,
+    cfg:Optional[dict] = None,
+    now: dt.Optional[datetime] = None,
 ) -> dict:
     """Execute the world's only door for a graded proposal.
 
@@ -322,7 +322,7 @@ def _make_simulate_change(_simulate, _live_graders, _config):
     tool name unchanged.
 
     `inspect.signature(wrapper)` defaults to following `__wrapped__` (set by `@wraps`) and
-    reports the module-level `_simulate`'s signature -- with its `Registry | None` etc.
+    reports the module-level `_simulate`'s signature -- with its `Optional[Registry]` etc.
     FastMCP then walks the signature to build a JSON schema for the tool's input and breaks
     on custom dataclass types like `Registry`. The fix is to pin the wrapper's `__signature__`
     to its real (local) signature, so introspection stops at `_simulate_change`.
@@ -538,7 +538,7 @@ def _live_graders(source):
             "detail": detail or "shadow observation unreadable",
         }
 
-    def _prefix(proc) -> tuple[str | None, str]:
+    def _prefix(proc) ->Optional[tuple[str], str]:
         """The grader bins print a leading ok/FAIL/BLIND token; the verdict must come from that
         token, never from the exit code -- idp-fits-a-node returns 0 on BLIND too, so an exit-code
         reader would fold a blind read into a pass (the silent failure the estate's rules forbid)."""

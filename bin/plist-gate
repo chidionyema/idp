@@ -12,6 +12,7 @@ there is no launchd/ directory to grade.
 """
 import os, plistlib, re, sys
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(os.environ.get("IDP") or Path(__file__).resolve().parent.parent)
 SUBST = {"TEMPORAL_BIN": "/opt/rendered/temporal",
@@ -21,7 +22,7 @@ SUBST = {"TEMPORAL_BIN": "/opt/rendered/temporal",
 def render(text: str) -> str:
     return re.sub(r"\$\{(IDP|HOME|PATH|TEMPORAL_BIN)\}", lambda m: SUBST[m.group(1)], text)
 
-def grade(path: Path) -> str | None:
+def grade(path: Path) -> Optional[str]:
     raw = path.read_text()
     if len(raw) > 64_000:
         return f"{len(raw)} bytes; a launchd job definition is not that long"
