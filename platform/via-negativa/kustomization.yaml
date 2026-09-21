@@ -22,4 +22,4 @@ images:
   - name: ghcr.io/chidionyema/negative-constraints-proxy
     newTag: main-9887-56f087a6fa28cefe401c9f43778186e28d036618 # {"$imagepolicy": "flux-system:negative-constraints-proxy:tag"}
   - name: ghcr.io/chidionyema/rca_worker
-    newTag: main-9887-56f087a6fa28cefe401c9f43778186e28d036618 # {"$imagepolicy": "flux-system:via-negativa-rca:tag"}
+    newTag: main-11644-adb82e9d58f2e92e89ea3012cc603231df71bb70 # {"$imagepolicy": "flux-system:via-negativa-rca:tag"}
