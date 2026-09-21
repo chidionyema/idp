@@ -150,9 +150,21 @@ spec:
       nodeSelector:
         kubernetes.io/arch: arm64
         node.kubernetes.io/instance-type: VM.Standard.A1.Flex
+      # Trivy KSV-0118 (default security context) and KSV-0014 (writable root filesystem), both
+      # HIGH. No UID is forced here: the image's own user is kept, because pinning one blind is how
+      # a hardening change turns into a CrashLoop at deploy. What is asserted is what the workload
+      # demonstrably does not need -- privilege escalation, any capability, or a writable root.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: gateway
           image: ghcr.io/chidionyema/idp:main-0-placeholder # {"$imagepolicy": "flux-system:acg"}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 8000
           env:
@@ -214,6 +226,10 @@ spec:
               mountPath: /etc/acg
             - name: models
               mountPath: /models
+            # readOnlyRootFilesystem above makes / read-only, so the scratch path every Python
+            # process reaches for has to be a real volume rather than the image's own layer.
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               path: /health
@@ -233,6 +249,8 @@ spec:
         - name: models
           persistentVolumeClaim:
             claimName: models-pvc
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -262,9 +280,18 @@ spec:
         app: redis
         idp.platform/capacity-approved: "true"
     spec:
+      # Same two HIGH findings as the gateway above, same reasoning.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: redis
           image: redis:7-alpine
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           args:
             - "--maxmemory"
             - "4gb"
@@ -274,10 +301,19 @@ spec:
             - "yes"
           ports:
             - containerPort: 6379
+          # `--appendonly yes` writes an AOF to /data, which a read-only root would refuse. This
+          # emptyDir keeps the behaviour exactly as it was: the AOF is ephemeral here either way,
+          # because nothing has ever bound a PVC to this Deployment.
+          volumeMounts:
+            - name: data
+              mountPath: /data
           resources:
             requests:
               cpu: "500m"
               memory: "4Gi"
+      volumes:
+        - name: data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
