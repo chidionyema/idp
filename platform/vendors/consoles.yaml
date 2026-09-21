@@ -1166,8 +1166,8 @@ vendors:
     # not allow any updates to the redirect URI or other attributes"
     # (its "Creating OAuth clients programmatically" page under /iap/docs, read 2026-08-31) -- so it
     # cannot make a client whose redirect URI is the store's. The host is deliberately not spelled
-    # out: this file is the provider-blind layer and the conscience rule no_provider_in_diff refuses
-    # a cloud host named outside platform/oci, platform/secret-store and clusters/ (R36).
+    # out: this file is the provider-blind layer; a cloud host named outside platform/oci,
+    # platform/secret-store and clusters/ is refused (R36).
     # Same shape as BotFather above: the client IS the root, made once at `page` (R52).
     #
     # It is a PAIR, and that is the one thing this registry could not express before. Neither half

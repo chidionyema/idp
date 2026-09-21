@@ -8,7 +8,7 @@ went red for any of them:
     review-gate.yml on 2026-08-29. A required check no workflow produces can never appear, so
     the bot refused every pull request in the repository for ten days and said so only in its
     own run log (docs/incidents, crew).
-  * idp's `founder-word.yml` and `conscience.yml` both call
+  * idp's `founder-word.yml` calls
     `./.github/workflows/operating-model-gate.yml`, which was deleted as collateral in
     7d27292f on 2026-09-04. GitHub fails a run whose `uses:` does not resolve at startup, with
     no job and no log, so the founder's own `APPROVE: <word>` comment has done nothing since.
