@@ -85,12 +85,6 @@ SYSTEMS = {
 # beyond the one default, so "group:default/platform" here is today's honest answer, not a
 # forgotten TODO -- render() below refuses a row with no owner at all, same as no description.
 LAYERS = {
-    "cross-node-drill": (
-        "resilience",
-        "Cross-node network drill",
-        "Two small canaries, one on each worker, that call each other over the network every few seconds and write down what they saw. It answers the two questions a week-long outage in September 2026 could not: do pods on different machines still reach each other, and does the traffic still arrive under the sender's own address rather than the machine's. If either stops being true it is a red row within the hour instead of a month of unexplained timeouts.",
-        "group:default/platform",
-    ),
     "router-events": (
         "model-routing",
         "Router change events and their backup",
@@ -599,12 +593,6 @@ LAYERS = {
         "resilience",
         "Incident enrichment",
         "Adds the why to every alert before a person reads it.",
-        "group:default/platform",
-    ),
-    "chaos-mesh": (
-        "resilience",
-        "Chaos engine",
-        "Breaks things on purpose, on a schedule, to prove the estate survives.",
         "group:default/platform",
     ),
     "chaos": (

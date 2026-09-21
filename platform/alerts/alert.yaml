@@ -25,9 +25,6 @@ spec:
       namespace: cert-manager
     - kind: HelmRelease
       name: "*"
-      namespace: chaos-mesh
-    - kind: HelmRelease
-      name: "*"
       namespace: commerce
     - kind: HelmRelease
       name: "*"

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Wire this clone at .githooks AND surface every silent trap the pre-push depends on.
+# Wire this clone at .githooks AND surface every silent trap the session-plane rungs depend on.
 #
-# The estate's .githooks/pre-push (crew#584 CP2) refuses a push whose session-plane rules would
-# fail in CI seven minutes later -- but each rung it dispatches depends on some combination of
-# tools, credentials or local services. Before this file was a preflight, a fresh clone learned
+# .githooks/pre-push (crew#584 CP2) was deleted 2026-09-21 -- the reason is at the deletion site
+# below -- and its rungs now run in CI. Each still depends on some combination of tools,
+# credentials or local services. Before this file was a preflight, a fresh clone learned
 # about each dependency the moment it broke: `gh` missing surfaced when push-on-green BLINDed,
 # the MCP verifier at 127.0.0.1:8001 surfaced as a Connection refused traceback the first time
 # an agent pushed. Founder called both classes out on 2026-09-16: "silent things ... only
@@ -27,13 +27,22 @@ case "${1:-}" in
     ;;
 esac
 set -euo pipefail
+
+# Resolve the CALLER's git dir before the cd below moves us to the main checkout. Inside a
+# `git worktree add` tree this is .git/worktrees/<name>/, not .git/ -- and the worktree is the
+# checkout whose commits need the key. Absolute, so the cd cannot invalidate it.
+CALLER_SECRET_PATH="$(git rev-parse --path-format=absolute --git-path idp-hook-secret 2>/dev/null || echo)"
+
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$IDP"
 
-[ -x "$IDP/.githooks/pre-push" ] || {
-  echo "FAIL .githooks/pre-push is not executable or absent -- fix the tree, do not paper over"
-  exit 1
-}
+# .githooks/pre-push was deleted 2026-09-21, so its absence is no longer a failure. It refused
+# every push whose HEAD had no ~/.cache/idp-ci-verified/<sha> sentinel, i.e. it demanded a green
+# `bin/idp-ci --full` first -- and --full cannot go green on a macOS workstation, because
+# static-secret-gate grades the HOST rather than the diff: a stray .env anywhere under the home
+# directory fails it no matter what is being pushed. A fence a correct machine cannot satisfy is
+# an outage, not a gate. CI still runs the same rungs server-side (guarded-paths, verifier,
+# offline-gate, bdd), which is where they can be enforced against the diff.
 
 missing_required=0
 lines=()
@@ -143,17 +152,30 @@ fi
 # and could not commit at all, pointed at a script that did not do the thing. The secret
 # is generated locally, lives only in the git dir (never on the tree) and is never
 # printed: it is a per-checkout key, not a credential that travels.
-secret_path="$(git rev-parse --git-path idp-hook-secret)"
-if [ -s "$secret_path" ]; then
-  echo "ok    secret  commit-msg HMAC key present"
-elif openssl rand -hex 32 > "$secret_path" 2>/dev/null; then
-  chmod 600 "$secret_path"
-  echo "ok    secret  commit-msg HMAC key provisioned for this checkout"
-else
-  rm -f "$secret_path"
-  echo "WARN  secret  could not provision the commit-msg HMAC key (openssl missing?);"
-  echo "        commits from this checkout will be refused by .githooks/commit-msg"
-fi
+#
+# Both the main checkout AND the caller's checkout are provisioned. Before 2026-09-21 the cd
+# above ran first, so a worktree caller silently keyed the MAIN clone, reported "ok", and then
+# had every commit refused -- which forced --no-verify, which CI's guarded-paths rung then
+# failed as an unsigned HEAD. That is what made PR #3832 red. CI only checks the trailer is
+# PRESENT, never that the HMAC verifies (it cannot; the key is per-checkout and never on the
+# tree), so two checkouts holding different keys is correct, not a conflict.
+seen_secrets=""
+for secret_path in "$(git rev-parse --path-format=absolute --git-path idp-hook-secret)" "$CALLER_SECRET_PATH"; do
+  [ -n "$secret_path" ] || continue
+  [ -d "$(dirname "$secret_path")" ] || continue
+  case "$seen_secrets" in *"|$secret_path|"*) continue;; esac   # caller IS the main checkout
+  seen_secrets="$seen_secrets|$secret_path|"
+  if [ -s "$secret_path" ]; then
+    echo "ok    secret  commit-msg HMAC key present ($(dirname "$secret_path"))"
+  elif openssl rand -hex 32 > "$secret_path" 2>/dev/null; then
+    chmod 600 "$secret_path"
+    echo "ok    secret  commit-msg HMAC key provisioned ($(dirname "$secret_path"))"
+  else
+    rm -f "$secret_path"
+    echo "WARN  secret  could not provision the commit-msg HMAC key (openssl missing?);"
+    echo "        commits from this checkout will be refused by .githooks/commit-msg"
+  fi
+done
 
 # Claude Code session hooks. The git hooks above refuse a bad push; these refuse a bad
 # turn. Without them a Claude Code session on this clone runs with no token-optimisation

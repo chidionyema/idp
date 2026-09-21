@@ -10,6 +10,11 @@ only), parses it with plistlib, and requires Label and ProgramArguments. Exit 0
 when every template parses, 1 with the file and reason otherwise, 2 BLIND when
 there is no launchd/ directory to grade.
 """
+
+# The system python on a macOS workstation is 3.9 (3.9.6 measured 2026-09-21), where a PEP 604
+# `X | None` annotation is evaluated at def time and raises TypeError. This makes every annotation
+# in this file lazy, so the modern syntax stays and the file runs on 3.9 as well as on CI's 3.12.
+from __future__ import annotations
 import os, plistlib, re, sys
 from pathlib import Path
 from typing import Optional
@@ -67,5 +72,5 @@ if "--self-test" in sys.argv:
     print("ok  plist-gate --self-test")
     raise SystemExit(0)
 
-if name__ == "__main__":
+if __name__ == "__main__":
     sys.exit(main(sys.argv))

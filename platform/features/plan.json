@@ -127,15 +127,6 @@
       "note": ""
     },
     {
-      "name": "chaos-drills",
-      "tier": "enterprise",
-      "cpu": 0.25,
-      "memory_gb": 0.62,
-      "storage_gb": 0.0,
-      "title": "Chaos Mesh experiments + the hourly drill dispatcher",
-      "note": ""
-    },
-    {
       "name": "science",
       "tier": "on",
       "cpu": 0.05,
@@ -212,11 +203,8 @@
     "alerts-secret",
     "backstage",
     "backstage-namespace",
-    "chaos",
-    "chaos-mesh",
     "cluster-state",
     "dns",
-    "drills",
     "edge",
     "estate-catalog",
     "external-secrets",
