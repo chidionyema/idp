@@ -23,7 +23,11 @@ if grep -qE '^X-Idp-Signed: ' "$msg_file"; then
 fi
 
 body="$(cat "$msg_file")"
-sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$secret" 2>/dev/null | awk '{print $2}')"
+# openssl's `dgst` output differs by flavor: GNU prints "SHA256(stdin)= <hex>" (the hex is the
+# second field), LibreSSL -- which macOS ships -- prints just "<hex>" (the first and only field).
+# `$2` therefore reads empty on a stock macbook and the hook refuses every commit with "HMAC
+# computation failed". Take the last whitespace field, which is the hex on both.
+sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$secret" 2>/dev/null | awk '{print $NF}')"
 [ -n "$sig" ] || { echo "REFUSE: HMAC computation failed" >&2; exit 1; }
 
 # Append two blank lines and the trailer if the message doesn't already end in a trailer block.
