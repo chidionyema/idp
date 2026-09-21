@@ -72,6 +72,7 @@ import hashlib
 import json
 import os
 import shutil
+import site
 import sqlite3
 import subprocess
 import sys
@@ -466,7 +467,10 @@ def stage_execution(
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": str(sandbox),
             "PYTHONDONTWRITEBYTECODE": "1",
-            "PYTHONPATH": str(sandbox),
+            # Include the user site-packages so `pip install --user pytest` and similar
+            # work in the sandbox. PYTHONPATH must be appended to, not replaced -- the
+            # sandbox dir stays so its own modules resolve first.
+            "PYTHONPATH": os.pathsep.join(filter(None, [str(sandbox), os.environ.get("PYTHONPATH", ""), site.getusersitepackages() if site.getusersitepackages() else ""])),
         },
         capture_output=True,
         text=True,
