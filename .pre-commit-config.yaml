@@ -48,12 +48,6 @@ repos:
         language: system
         pass_filenames: false
         files: ^(\.github/workflows/|backstage/templates/founder-actions/)
-      - id: agents-md
-        name: the AGENTS.md rule table follows rules.yaml
-        entry: bash -c 'python3 bin/idp-rules render-agents-md && git add -A AGENTS.md'
-        language: system
-        pass_filenames: false
-        files: ^(rules\.yaml|AGENTS\.md)$
       - id: vendor-render
         name: both LiteLLM configs follow the vendor registry
         entry: bash -c 'python3 bin/idp-vendor-render && git add -A llm/config.yaml platform/llm/config.yaml'

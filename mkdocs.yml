@@ -148,7 +148,6 @@ nav:
       - The circuit breaker: tutorials/demo/circuit-breaker.md
       - Breaker enforcement: tutorials/demo/breaker.md
       - A gate only knows the tree it ran in: tutorials/demo/clean-tree.md
-      - Every gate, with its output: tutorials/demo/gate-demo.md
       - Estate compiler: tutorials/demo/intent.md
       - Retention knob: tutorials/demo/signoz-retention.md
       - epistemic: tutorials/demo/epistemic.md
@@ -229,7 +228,6 @@ nav:
       - Build image: tutorials/demo/build-image.md
       - Catalog: tutorials/demo/catalog.md
       - Portal catalogue: tutorials/demo/portal.md
-      - Conformity report: tutorials/demo/conformity.md
       - DB gen: tutorials/demo/db-gen.md
       - Dockerfiles: tutorials/demo/dockerfiles.md
       - Langfuse: tutorials/demo/langfuse.md
@@ -242,7 +240,6 @@ nav:
       - Estate DAG generator: tutorials/demo/estate-dag-gen.md
       - Migration gate: tutorials/demo/migration.md
       - Multiarch gate: tutorials/demo/multiarch.md
-      - Rules registry: tutorials/demo/idp-rules.md
       - Port gate: tutorials/demo/port.md
       - Repo rulesets: tutorials/demo/repo-rulesets.md
       - Telemetry coverage: tutorials/demo/telemetry-coverage.md
@@ -287,7 +284,6 @@ nav:
       - The circuit breaker: how-to/onboarding/circuit-breaker.md
       - Breaker enforcement: how-to/onboarding/breaker.md
       - Grading from a clean tree: how-to/onboarding/clean-tree.md
-      - Every gate, with its output: how-to/onboarding/gate-demo.md
       - Portal: how-to/onboarding/idp.md
       - Estate compiler: how-to/onboarding/intent.md
       - Retention knob: how-to/onboarding/signoz-retention.md
@@ -347,7 +343,6 @@ nav:
       - Build image: how-to/onboarding/build-image.md
       - Catalog: how-to/onboarding/catalog.md
       - Portal catalogue: how-to/onboarding/portal.md
-      - Conformity report: how-to/onboarding/conformity.md
       - DB gen: how-to/onboarding/db-gen.md
       - Dockerfiles: how-to/onboarding/dockerfiles.md
       - LiteLLM: how-to/onboarding/litellm.md
@@ -362,7 +357,6 @@ nav:
       - Estate DAG generator: how-to/onboarding/estate-dag-gen.md
       - Migration gate: how-to/onboarding/migration.md
       - Multiarch gate: how-to/onboarding/multiarch.md
-      - Rules registry: how-to/onboarding/idp-rules.md
       - Port gate: how-to/onboarding/port.md
       - Repo rulesets: how-to/onboarding/repo-rulesets.md
       - Telemetry coverage: how-to/onboarding/telemetry-coverage.md
@@ -385,127 +379,29 @@ nav:
       - Otto homes, grade and deploy: how-to/onboarding/idp-otto-homes.md
       - Estate proof: how-to/onboarding/estate-proof.md
   - Gates:
-      - What these are: gates/index.md
-      - api-version-retired: gates/api-version-retired.md
-      - aevum-evidence: gates/aevum-evidence.md
-      - flux-subst: gates/flux-subst.md
-      - flux-wait-brake: gates/flux-wait-brake.md
-      - probe-host: gates/probe-host.md
-      - agnostic: gates/cloud-agnostic.md
-      - vendor-agnostic: gates/vendor-agnostic.md
-      - zone: gates/estate-zone.md
-      - portlock: gates/port-lock.md
-      - portbind: gates/port-bind.md
-      - security: gates/security-policy.md
-      - root-trust: gates/root-trust.md
-      - ai-act: gates/ai-act.md
-      - law32: gates/law32-demo-onboarding.md
-      - plist: gates/plist-renders.md
-      - migration: gates/migration-idempotent.md
-      - secrets: gates/static-secret.md
-      - owners: gates/owner-account.md
-      - binds: gates/bind-audit.md
-      - sleep-ban: gates/sleep-ban.md
-      - helmrelease-drift: gates/helmrelease-drift-is-detectable.md
-      - breaker-enforcement: gates/breaker-enforcement.md
-      # The estate-twin's three rules. A rule generates docs/gates/<id>.md and
       # tests/test_gate_demo.py refuses one that is not reachable in the nav.
-      - graphview: gates/estate-graph-view.md
-      - twin: gates/estate-twin.md
-      - bdd-proof: gates/bdd-proof.md
-      - describe: gates/job-described.md
-      - vmmount: gates/vm-shared-path.md
-      - fences: gates/ns-fence.md
-      - verdict: gates/main-verdict.md
-      - prose: gates/prose-pin.md
-      - twohats: gates/tenant-split.md
-      - jitgrant: gates/jit-grants.md
-      - fencdrill: gates/fence-enforcement.md
-      - denyflow: gates/calico-denyflow.md
-      - gvisor: gates/gvisor-cell.md
-      - gvrfence: gates/gvisor-cell-fence.md
-      - ha: gates/availability.md
-      - rego: gates/rego-unit-tests.md
-      - licence: gates/licence-policy.md
-      - placement: gates/placement-policy.md
-      - capacity: gates/capacity-policy.md
-      - opmodel: gates/operating-model-policy.md
-      - notoil: gates/no-toil-policy.md
-      - shell: gates/shell-lint.md
-      - hardcode: gates/hardcoded-path.md
-      - codeloc: gates/defs-load-by-path.md
-      - placement: gates/fits-a-node.md
-      - reloader: gates/reloader-operator-owned.md
-      - sched: gates/one-scheduler.md
-      - glass: gates/glass-break.md
-      - proof: gates/convergence-proof.md
-      - shadow: gates/shadow-sync.md
-      - limit: gates/limit-raise-only.md
-      - rollback: gates/rollback-only.md
-      - command: gates/sovereign-command.md
-      - coverage: gates/rule-coverage.md
-      - jitrole: gates/jit-broker-role.md
-      - vendor: gates/vendor-name.md
-      - nodesoftware: gates/nodesoftware-operator.md
-      - pipeverdict: gates/pipeverdict.md
-      - split: gates/split-brain.md
-      - mechanism: gates/mechanism.md
-      - clickhouse-system-log-ttl: gates/clickhouse-system-log-ttl.md
-      - clickhouse-twin-ttl: gates/clickhouse-twin-ttl.md
-      - crd-then-cr: gates/crd-then-cr.md
-      - store-reach: gates/store-reach.md
-      - cat-runtime-svc: gates/catalogue-entity-runtime-service.md
-      - priority-class-exists: gates/priority-class-exists.md
-      - simulategrade: gates/simulate-twin.md
-      - ottodoorkey: gates/otto-door-key.md
-      - grader-exit: gates/grader-exit-gate.md
-      - cost-proof: gates/cost-proof.md
-      - founder-door: gates/founder-door.md
-      - stray: gates/stray-checkout.md
-      - epistemic: gates/epistemic.md
-      - trajectory: gates/trajectory.md
-      - prm: gates/prm.md
-      - budget: gates/budget.md
-      - contract: gates/contract.md
-      - circuit-breaker: gates/circuit-breaker.md
-      - clean-tree: gates/clean-tree.md
-      - secret-blockers: gates/externalsecret-blockers-are-loud.md
-      - drift-blind: gates/drift-reads-blind-not-clean.md
-      - healthcheck-exists: gates/healthcheck-names-a-real-object.md
       # 2026-09-13: these two rules and their pages landed with d0a9deb9 and the
       # pages were never named here, so test_gate_demo's nav case was red --
       # "generated pages not in the nav". bin/idp-gate-demo writes a page per row
       # in rules.yaml; the nav has to name each one or the page is unreachable.
-      - clickhouse-twin-ttl: gates/clickhouse-twin-ttl.md
-      - execution-boundary-holds: gates/execution-boundary-holds.md
       # 2026-09-14: the same mistake a third time, and named this time by CI rather
       # than by a reader. Two rows landed in rules.yaml -- a-script-is-not-built-
       # until-it-runs (label script-compiles) and deterministic-verifier -- each of
-      # which renders docs/gates/<id>.md, and neither page was reachable in this
       # nav. bdd-suites (tests) went red on test_gate_demo's nav case:
       # "generated pages not in the nav: ['a-script-is-not-built-until-it-runs',
       # 'deterministic-verifier']". The renderer still has no rung that reads the
       # generated index against the nav, so this stays a comment rather than a
       # guard; whoever writes the fourth row has to remember what this entry says.
-      - a-script-is-not-built-until-it-runs: gates/a-script-is-not-built-until-it-runs.md
-      - deterministic-verifier: gates/deterministic-verifier.md
-      - catalog-owner: gates/catalog-platform-owner.md
       # 2026-09-15: same mistake a fourth time. dod-v3-verified-not-asserted landed in
       # rules.yaml this session with no nav row, so test_gate_demo's nav case went red
       # again: "generated pages not in the nav: ['dod-v3-verified-not-asserted']".
-      - dod-v3-verified-not-asserted: gates/dod-v3-verified-not-asserted.md
       # 2026-09-16: same mistake a fifth and sixth time. catalog-spec-type and
       # catalog-links-absolute landed in rules.yaml with no nav rows, so
       # test_gate_demo's nav case went red: "generated pages not in the nav:
       # ['catalog-spec-type', 'catalog-links-absolute']".
-      - catalog-spec-type: gates/catalog-spec-type.md
-      - catalog-links-absolute: gates/catalog-links-absolute.md
       # 2026-09-17: main-green-gate and wip-gate added to rules.yaml (Andon cord enforcement);
       # nav entries required or test_gate_demo's nav case fails.
-      - main-green-gate: gates/main-green-gate.md
-      - wip-gate: gates/wip-gate.md
       # 2026-09-17: router-egress-ledger added in battalion (idp#3525 CP3 ROUTE-01)
-      - router-egress-ledger: gates/router-egress-ledger.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
