@@ -10,6 +10,49 @@ model_list:
 
   # @vendor-cluster-lanes@
 
+  # Local, free, and reachable from the cluster: platform/llm/ollama.yaml, on the always-free
+  # Ampere pool, not the founder's Mac. 1.5B, not the 7B llm/config.base.yaml names for the
+  # laptop, because the whole free allowance here is 2 OCPU / 12 GB, already shared with
+  # litellm, redis, postgres, temporal-worker, langfuse and signoz -- no room for a 7B working
+  # set. `cost-based-routing` above prefers this lane automatically once it's healthy: it
+  # carries no input_cost_per_token/output_cost_per_token, so LiteLLM prices it $0.0000, the
+  # same convention the three free vendor pools use.
+  - model_name: ollama
+    litellm_params:
+      model: ollama/qwen2.5-coder:1.5b
+      api_base: http://ollama.llm.svc.cluster.local:11434
+      timeout: 300
+      keep_alive: 24h
+
+  # Claude Code Max subscription, passthrough. NO api_key ON PURPOSE.
+  #
+  # This lane carries no `api_key:` and that is the whole mechanism, not an omission. A normal
+  # lane substitutes the caller's credential for an estate-owned one, which is why pointing
+  # Claude Code at this router used to turn it into whatever non-Anthropic lane the model name
+  # resolved to. This lane instead RELAYS the client's own OAuth token to api.anthropic.com
+  # unchanged (general_settings.forward_client_headers_to_llm_api, below), so each client
+  # authenticates as itself against its own Max subscription and the model is genuinely Claude.
+  #
+  # The 2026-09-04 ruling stands untouched: "the estate will never use Anthropic API keys". An
+  # OAuth token minted by a `claude /login` against a Max subscription is a different credential
+  # on a different billing path from a sk-ant-api03-... key, and nothing here creates or holds
+  # one. There is no Anthropic key in the vault, in external-secret.yaml, or on this line.
+  #
+  # DOCS: https://docs.litellm.ai/docs/tutorials/claude_code_max_subscription (read 2026-09-21).
+  # The client sends TWO credentials: x-litellm-api-key authenticates it to this router, and the
+  # OAuth `Authorization: Bearer` header is forwarded upstream. The client sets NO
+  # ANTHROPIC_API_KEY and NO ANTHROPIC_AUTH_TOKEN, so the subscription remains the active
+  # credential. Verify with `claude /status`: login method must read the claude.ai subscription.
+  #
+  # `max_tokens` is absent deliberately -- Claude Code sends its own. No cost fields either:
+  # with the subscription there is no per-token spend for the router to price, so this lane
+  # would report $0.0000 the way the free pools do. Spend governance for this lane comes from
+  # Anthropic's own Max-plan limits, which the token carries, not from max_budget here.
+  - model_name: claude-opus
+    litellm_params:
+      model: anthropic/claude-opus-4-5
+      timeout: 600
+
 router_settings:
   fallbacks:
     # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
@@ -100,6 +143,27 @@ general_settings:
   max_budget: 5.0
   budget_duration: 1d
   background_health_checks: false
+  # Claude Code Max subscription passthrough. Forwards x-* and anthropic-beta headers.
+  #
+  # PRECISE SCOPE, because this is easy to overstate: this flag is NOT what carries the
+  # subscription token. The OAuth `Authorization` header is forwarded by LiteLLM's
+  # `clean_headers` regardless of this setting (measured 2026-09-21 against the real v1.98.0
+  # code: `clean_headers` returns the OAuth header with the flag False). What this flag
+  # forwards is the x-* family and `anthropic-beta`, which is what keeps ENABLE_TOOL_SEARCH
+  # and beta features working through the router.
+  #
+  # The token discriminator is the PREFIX, not this flag: `is_anthropic_oauth_key` forwards
+  # `Authorization: Bearer sk-ant-oat01-...` (a Max subscription OAuth token) and drops
+  # `sk-ant-api03-...` (an API key). So the estate keeps forwarding the subscription and
+  # still holds no Anthropic key. `forward_llm_provider_auth_headers` is deliberately NOT set:
+  # that is the x-api-key BYOK path, i.e. exactly the API key the 2026-09-04 ruling forbids.
+  #
+  # One client rule this implies: the client must authenticate to this router with
+  # `x-litellm-api-key`, NOT with `Authorization`. If `Authorization` is used for gateway auth
+  # the OAuth token is consumed there and dropped (measured: clean_headers returns {} for
+  # authenticated_with_header="authorization"), and the subscription never reaches Anthropic.
+  # (https://docs.litellm.ai/docs/proxy/forward_client_headers, read 2026-09-21.)
+  forward_client_headers_to_llm_api: true
   # The MiniMax half of the founder's 2026-08-30 ruling. MiniMax's image API is not
   # OpenAI-shaped -- POST https://api.minimax.io/v1/image_generation, body {model, prompt,
   # aspect_ratio, n, response_format}, answer data.image_base64
