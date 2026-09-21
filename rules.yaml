@@ -1062,6 +1062,38 @@ rules:
     - policy/fixtures/opmodel-no-canary.json
   ok: the operating-model policy allows a complete pull request and refuses each incomplete shape
   fail: the operating-model policy did not behave as specified
+- id: secret-headroom
+  label: headroom
+  statement: A HelmRelease declares history-max, and the cluster's secret ceiling is raised only as a deliberate capacity decision
+  law: LAW 44, HGC
+  origin: incident 2026-09-18 (2,650 Secrets against OKE's 2,000 limit, 30 Flux objects NotReady)
+  planes:
+  - ci
+  requires:
+  - conftest
+  run:
+  - conftest
+  - test
+  - --parser
+  - json
+  - -p
+  - policy
+  fixtures:
+    must_fail: policy/fixtures/headroom-unbounded-release.json
+    must_pass: policy/fixtures/headroom-ok.json
+  live_elsewhere: '.github/workflows/oke-check.yml:528 -- conftest runs this rule against the CLUSTER''s own receipt in the oke-check job: secret_count from state/cluster, secret_limit from estate-defaults.yaml, so the ceiling is graded on live data and not only on the fixture pair. It runs under always(), because a red cluster is exactly the state the measurement exists to publish.'
+  cases:
+  - expect: pass
+    args:
+    - policy/fixtures/headroom-ok.json
+  - expect: refuse
+    args:
+    - policy/fixtures/headroom-unbounded-release.json
+  - expect: refuse
+    args:
+    - policy/fixtures/headroom-ceiling-raised.json
+  ok: an unbounded HelmRelease and a raised ceiling are both refused; a bounded release passes
+  fail: the secret-headroom rule did not behave as specified
 - id: no-toil-policy
   label: notoil
   statement: A doc that tells a person to mint a credential by hand is refused; a FOUNDER ACTION line is not
@@ -1229,7 +1261,7 @@ rules:
   fixtures:
     must_fail: tests/fixtures/fits-a-node/bad
     must_pass: tests/fixtures/fits-a-node/good
-  live_elsewhere: .github/workflows/oke-check.yml:520 -- the cluster-state job feeds it the same receipt the state collector wrote, so the placement it grades is the one the scheduler saw (#2444)
+  live_elsewhere: .github/workflows/oke-check.yml:553 -- the cluster-state job feeds it the same receipt the state collector wrote, so the placement it grades is the one the scheduler saw (#2444)
   cases:
   - expect: refuse
     args:
@@ -2858,6 +2890,32 @@ rules:
       line 227 invokes it. A root-cwd run dies on import with IndexError: list index out of range.'
   ok: a patch is admitted only through the three-stage gauntlet, the ledger is the only place an agent can write, and the seal binds the attestation to the bytes that were actually graded (measured 2026-09-13, 9 passed, PYTEST_RC=0)
   fail: a claim of completed work reaches the estate on the word of the agent that made it, with no structural, symbolic or execution grader in front of it, or an attestation whose subject is not the SHA-256 of the graded artifact
+- id: router-egress-ledger
+  label: routeegr
+  statement: A LiteLLM model_list router config may live only in a namespace on the reviewed ledger (bin/idp-router-egress-gate); a second, undeclared router is a rogue direct-provider bypass
+  law: idp#3525 CP3 (ROUTE-01)
+  origin: crew#3525 CP3, founder standing order "no need to stop until fully done"
+  planes:
+  - ci
+  run:
+  - python3
+  - bin/idp-router-egress-gate
+  fixtures:
+    must_fail: tests/fixtures/router-egress/bad.yaml
+    must_pass: tests/fixtures/router-egress/good.yaml
+  cases:
+  - expect: pass
+    args:
+    - tests/fixtures/router-egress/good.yaml
+  - expect: refuse
+    args:
+    - tests/fixtures/router-egress/bad.yaml
+  - expect: pass
+    args:
+    - platform
+  live_elsewhere: 'bin/idp-router-egress-gate:190 -- the gate grades the REAL platform/ tree (bin/idp-router-egress-gate platform), naming every router config the repo carries against the reviewed ledger. It ran only its two fixtures before, so a second router landing in an unreviewed namespace was caught by nothing. The runtime half of ROUTE-01 -- a real Calico deny feed for bypass-attempt alerting -- stays tracked on #2452; that is a different question from whether this rule reads the platform, and this rule now does.'
+  ok: a model_list router config in llm or otto-gateway (the two reviewed namespaces) passes; the same config in any other namespace is refused
+  fail: a second LiteLLM router lands in an unreviewed namespace and nothing catches it before a cluster where NetworkPolicy cannot tell it apart from the router's own traffic
 - id: catalog-spec-type
   fast: true
   label: catalog-type

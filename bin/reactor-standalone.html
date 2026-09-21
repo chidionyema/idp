@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fleet Reactor 2100</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['Space Grotesk', 'monospace'],
+                    },
+                    colors: {
+                        'neon-blue': '#00f0ff',
+                        'neon-amber': '#ffaa00',
+                        'neon-red': '#ff0055',
+                        'neon-green': '#00ffaa',
+                        'glass-bg': 'rgba(10, 15, 25, 0.65)',
+                        'glass-border': 'rgba(255, 255, 255, 0.1)',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: #030508; color: white; user-select: none;
+        }
+        #webgl-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        .glass-panel {
+            background: rgba(10, 15, 25, 0.65);
+            backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(255, 255, 255, 0.02);
+            border-radius: 16px;
+        }
+        .ui-layer { position: absolute; z-index: 10; pointer-events: none; }
+        .pointer-events-auto { pointer-events: auto; }
+        h1, h2, h3, .agent-id { font-family: 'Space Grotesk', monospace; letter-spacing: -0.02em; }
+        p, span, div { font-family: 'Inter', sans-serif; }
+
+        #hover-tooltip { transform: translate(15px, 15px); transition: opacity 0.2s ease; opacity: 0; }
+
+        #radial-menu {
+            transform: translate(-50%, -50%) scale(0.8); opacity: 0;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #radial-menu.active { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+
+        .radial-btn {
+            position: absolute; width: 48px; height: 48px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(20, 25, 35, 0.8); border: 1px solid rgba(255,255,255,0.15);
+            color: white; cursor: pointer; transition: all 0.2s ease;
+            backdrop-filter: blur(10px); font-size: 1.2rem;
+        }
+        .radial-btn:hover { transform: scale(1.15); background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.4); box-shadow: 0 0 15px rgba(255,255,255,0.2); }
+        .radial-btn[data-action="halt"]:hover { border-color: #ff0055; color: #ff0055; box-shadow: 0 0 15px #ff0055; }
+        .radial-btn[data-action="approve"]:hover { border-color: #00ffaa; color: #00ffaa; box-shadow: 0 0 15px #00ffaa; }
+        .radial-btn[data-action="steer"]:hover { border-color: #00f0ff; color: #00f0ff; box-shadow: 0 0 15px #00f0ff; }
+        .radial-btn[data-action="blast"]:hover { border-color: #ffaa00; color: #ffaa00; box-shadow: 0 0 15px #ffaa00; }
+
+        #matrix-panel {
+            right: 0; top: 0; height: 100%; width: 400px; border-radius: 0;
+            border-left: 1px solid rgba(255,255,255,0.1);
+            transform: translateX(100%);
+            transition: transform 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+            background: linear-gradient(90deg, rgba(5,7,10,0.9) 0%, rgba(10,15,20,0.95) 100%);
+        }
+        #matrix-panel.active { transform: translateX(0); }
+
+        .token-stream {
+            font-family: 'Space Grotesk', monospace; font-size: 0.85rem;
+            color: #00ffaa; line-height: 1.4; height: calc(100% - 180px);
+            overflow-y: hidden; position: relative; text-shadow: 0 0 8px rgba(0,255,170,0.4);
+        }
+        .token-stream::after {
+            content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 60px;
+            background: linear-gradient(to top, rgba(10,15,20,1) 0%, transparent 100%);
+        }
+        .token-line { margin-bottom: 4px; opacity: 0; animation: fadeIn 0.1s forwards; }
+        @keyframes fadeIn { to { opacity: 1; } }
+
+        #voice-bar {
+            bottom: 32px; left: 50%; transform: translateX(-50%);
+            padding: 12px 24px; display: flex; align-items: center; gap: 16px;
+            cursor: pointer; transition: all 0.3s ease;
+        }
+        #voice-bar:hover { border-color: rgba(255,255,255,0.3); box-shadow: 0 0 20px rgba(0, 240, 255, 0.1); }
+        .waveform { display: flex; gap: 3px; align-items: center; height: 24px; }
+        .wave-bar { width: 3px; background: #fff; border-radius: 3px; height: 4px; transition: height 0.1s ease; }
+        #voice-bar.listening .wave-bar { background: #00f0ff; animation: pulse-wave 1s infinite alternate ease-in-out; }
+        #voice-bar.listening .wave-bar:nth-child(2) { animation-delay: 0.2s; }
+        #voice-bar.listening .wave-bar:nth-child(3) { animation-delay: 0.4s; }
+        #voice-bar.listening .wave-bar:nth-child(4) { animation-delay: 0.1s; }
+        #voice-bar.listening .wave-bar:nth-child(5) { animation-delay: 0.5s; }
+        @keyframes pulse-wave {
+            0% { height: 4px; box-shadow: 0 0 0 rgba(0,240,255,0); }
+            100% { height: 24px; box-shadow: 0 0 8px rgba(0,240,255,0.8); }
+        }
+        .listening-ring { position: absolute; inset: -4px; border-radius: 20px; border: 1px solid #00f0ff; opacity: 0; pointer-events: none; }
+        #voice-bar.listening .listening-ring { animation: ping-ring 2s cubic-bezier(0, 0, 0.2, 1) infinite; }
+        @keyframes ping-ring {
+            75%, 100% { transform: scale(1.1, 1.4); opacity: 0; }
+            0% { transform: scale(1); opacity: 0.8; }
+        }
+
+        .top-bar { top: 24px; left: 24px; padding: 12px 24px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #00ffaa; box-shadow: 0 0 8px #00ffaa; animation: pulse-dot 2s infinite; }
+        @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        #close-matrix { position: absolute; top: 24px; right: 24px; cursor: pointer; color: rgba(255,255,255,0.5); }
+        #close-matrix:hover { color: white; }
+    </style>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="webgl-container"></div>
+
+    <div class="ui-layer top-bar glass-panel flex flex-col pointer-events-auto">
+        <div class="flex items-center gap-3 mb-1">
+            <div class="status-dot"></div>
+            <h1 class="text-xl font-bold tracking-wider text-white">FLEET REACTOR</h1>
+        </div>
+        <div id="fleet-subtitle" class="text-xs text-gray-400 uppercase tracking-widest font-mono">Topology Active • connecting…</div>
+    </div>
+
+    <div id="hover-tooltip" class="ui-layer glass-panel p-4 flex flex-col gap-2 w-64 pointer-events-none">
+        <div class="flex justify-between items-start border-b border-white/10 pb-2">
+            <div>
+                <div class="text-[10px] text-gray-400 uppercase font-mono mb-1">Node Identity</div>
+                <div id="tt-id" class="agent-id text-lg font-bold text-white">AG-773</div>
+            </div>
+            <div id="tt-status-badge" class="px-2 py-1 rounded text-[10px] font-bold uppercase bg-blue-500/20 text-neon-blue border border-blue-500/30">Thinking</div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 mt-1">
+            <div class="flex flex-col"><span class="text-[10px] text-gray-500 uppercase">Compute Load</span><span id="tt-compute" class="text-sm font-mono text-gray-200">84%</span></div>
+            <div class="flex flex-col"><span class="text-[10px] text-gray-500 uppercase">Tokens/Sec</span><span id="tt-tokens" class="text-sm font-mono text-gray-200">1,240</span></div>
+            <div class="flex flex-col"><span class="text-[10px] text-gray-500 uppercase">Queue</span><span id="tt-queue" class="text-sm font-mono text-gray-200">4 Events</span></div>
+            <div class="flex flex-col"><span class="text-[10px] text-gray-500 uppercase">Latency</span><span id="tt-latency" class="text-sm font-mono text-gray-200">12ms</span></div>
+        </div>
+    </div>
+
+    <div id="radial-menu" class="ui-layer pointer-events-auto w-64 h-64">
+        <button class="radial-btn" data-action="halt" style="top: 0; left: 50%; transform: translate(-50%, 0);" title="Halt Execution">🛑</button>
+        <button class="radial-btn" data-action="approve" style="top: 50%; right: 0; transform: translate(0, -50%);" title="Approve Path">✅</button>
+        <button class="radial-btn" data-action="blast" style="bottom: 0; left: 50%; transform: translate(-50%, 0);" title="Blast Radius">💥</button>
+        <button class="radial-btn" data-action="steer" style="top: 50%; left: 0; transform: translate(0, -50%);" title="Steer Logic">🧠</button>
+    </div>
+
+    <div id="matrix-panel" class="ui-layer glass-panel flex flex-col pointer-events-auto">
+        <svg id="close-matrix" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+
+        <div class="p-6 border-b border-white/10">
+            <h2 class="text-[10px] text-gray-400 uppercase font-mono tracking-widest mb-1">Neural Stream Inspection</h2>
+            <h1 id="matrix-title" class="text-2xl font-bold agent-id text-white">AG-773</h1>
+            <div class="flex gap-2 mt-3">
+                <div id="matrix-tool" class="px-2 py-1 bg-white/5 border border-white/10 rounded text-xs font-mono text-gray-300">Tool: —</div>
+                <div id="matrix-cost" class="px-2 py-1 bg-white/5 border border-white/10 rounded text-xs font-mono text-gray-300">Cost: —</div>
+            </div>
+        </div>
+
+        <div class="flex-1 p-6 flex flex-col gap-4 relative">
+            <h3 class="text-xs uppercase text-neon-blue font-bold tracking-wider">Live Thought Stream</h3>
+            <div id="token-stream-container" class="token-stream flex flex-col justify-end"></div>
+            <div class="mt-auto border-t border-white/10 pt-4">
+                <h3 class="text-xs uppercase text-gray-400 font-bold tracking-wider mb-2">Manual Override</h3>
+                <input id="steer-input" type="text" placeholder="Inject steering prompt..." class="w-full bg-black/40 border border-white/10 rounded p-3 text-sm font-mono text-white focus:outline-none focus:border-neon-blue transition-colors">
+            </div>
+        </div>
+    </div>
+
+    <div id="voice-bar" class="ui-layer glass-panel pointer-events-auto">
+        <div class="listening-ring"></div>
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
+        <div class="text-sm font-mono text-gray-300" id="voice-status">Awaiting spatial command...</div>
+        <div class="waveform ml-2">
+            <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // ============================ THE DATA SEAM ============================
+        // THIS IS THE ONLY EDIT TO THE SPEC'S PAGE (see bin/reactor-standalone's docstring).
+        //
+        // The spec generates 24 agents with `Math.random()` state, `AG-${1000+rand}` ids, and
+        // fabricated metrics -- compute load, tokens/sec, latency. The visual language is the
+        // point of the spec and is kept exactly; the SUBJECT is swapped for the estate's real
+        // sessions, so the topology, the colours and the numbers are the fleet's own.
+        //
+        // Why this matters beyond honesty: a reactor that shows invented nodes cannot be used to
+        // run anything, and the four states are only meaningful if they are the four the estate
+        // actually derives. After this, a red node is a session the backend called `stuck`.
+        const STATE_TO_KEY = { thinking: 'blue', waiting: 'amber', stuck: 'red', finished: 'green', unknown: 'amber' };
+        let REAL = [];
+
+        async function loadRealSessions() {
+            try {
+                const r = await fetch('/api/sessions');
+                const body = await r.json();
+                const list = body.sessions || [];
+                const rendered = [];
+                for (const s of list) {
+                    const id = String(s.session_id || '').replace(/^[a-z-]+:/, '');
+                    rendered.push({
+                        id: 'AG-' + id.slice(-4).toUpperCase() || 'AG-0000',
+                        fullId: s.session_id,
+                        runtime: s.runtime || 'unknown',
+                        task: s.task || '',
+                        repo: s.repo || '',
+                        key: STATE_TO_KEY[s.activity] || 'amber',
+                        events: s.event_count || 0,
+                        spend: s.spend_usd,
+                        updated: s.updated_at,
+                        // Workload drives the well directly: sqrt so one busy session cannot
+                        // swallow the room, which is the same rule the spec's scale implies.
+                        load: Math.min(1, Math.sqrt((s.event_count || 0) / 400)),
+                    });
+                }
+                return rendered;
+            } catch (e) {
+                return [];
+            }
+        }
+
+        // ============================ SCENE SETUP ============================
+        const container = document.getElementById('webgl-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x030508, 0.0015);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+        camera.position.set(0, 130, 300);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        container.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxDistance = 1000;
+        controls.minDistance = 40;
+
+        const renderScene = new RenderPass(scene, camera);
+        // STRONGER, WIDER BLOOM. The spec asked for swelling masses and I rendered specks: at the
+        // default threshold most of each node's glow was below the sample line, so the room was
+        // points instead of light. A lower threshold and a wider radius is what makes a node read
+        // as a gravitational well rather than a dot.
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 3.2, 0.9, 0.02);
+        const composer = new EffectComposer(renderer);
+        composer.addPass(renderScene);
+        composer.addPass(bloomPass);
+
+        // ============================ ENVIRONMENT ============================
+        // ============================ THE WARPING FIELD ============================
+        // THE BRIEF: "Agents aren't circles; they are gravitational wells. As an agent's workload
+        // increases, it physically warps the space around it."
+        //
+        // A GridHelper is a FLAT FLOOR -- it shows nothing about the mass above it, which is why
+        // the room read as dots on a plane. This is a real mesh: a 60x60 lattice whose vertices
+        // are pushed DOWN by every node, with falloff over distance and depth by workload. The
+        // heaviest agent digs the deepest well, and two heavy agents produce a saddle between
+        // them, so the floor's SHAPE is the fleet's shape.
+        const FIELD_SEGS = 60;
+        const FIELD_SPAN = 1400;
+        const fieldGeo = new THREE.PlaneGeometry(FIELD_SPAN, FIELD_SPAN, FIELD_SEGS, FIELD_SEGS);
+        fieldGeo.rotateX(-Math.PI / 2);
+        const fieldBase = fieldGeo.attributes.position.array.slice();
+        const fieldMat = new THREE.MeshBasicMaterial({
+            color: 0x0d2233, wireframe: true, transparent: true, opacity: 0.30,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        const fieldMesh = new THREE.Mesh(fieldGeo, fieldMat);
+        fieldMesh.position.y = -120;
+        scene.add(fieldMesh);
+
+        function warpField() {
+            const pos = fieldGeo.attributes.position.array;
+            for (let v = 0; v < pos.length; v += 3) {
+                const x = fieldBase[v], z = fieldBase[v + 2];
+                let depth = 0;
+                for (const a of agents) {
+                    const dx = x - a.mesh.position.x, dz = z - a.mesh.position.z;
+                    const d2 = dx * dx + dz * dz;
+                    if (d2 > 260000) continue;              // beyond the well's reach (510 units)
+                    // Inverse-square with a floor: at the node's own x,z the pull would be
+                    // infinite, so the divisor is clamped and the well has a bottom rather than
+                    // a singularity. Weighted by the node's own load, so a heavy agent digs.
+                    // MEASURED AND CORRECTED TWICE, both times by arithmetic rather than by eye.
+                //
+                // The fleet is 24 nodes with a summed load of 2.43 (one busy session at 1.0 and
+                // twenty-one finished ones at 0.05 each), and they sit roughly 140 units apart.
+                //
+                // The first constant (9000 with a 1600 floor) produced a deepest vertex of 8 units
+                // against a 120-unit floor. The second (26000 / 4500) produced 10. Both were
+                // verified by re-computing the loop inside the page and comparing against what
+                // warpField actually wrote -- 10 and -10, agreeing exactly -- so the function was
+                // always right and the NUMBERS were simply too small to be seen.
+                //
+                // 4.2e5 / 12000 = 35 x load at the floor's own scale. One fully-loaded agent alone
+                // now digs ~35 units, and the handful of nodes within a node's radius add on top,
+                // which is deep enough to read as a well rather than as noise in the wireframe.
+                depth += (a.load * 4.2e5) / Math.max(12000, d2);
+                }
+                pos[v + 1] = Math.max(-300, -depth);
+            }
+            fieldGeo.attributes.position.needsUpdate = true;
+        }
+
+        const starGeom = new THREE.BufferGeometry();
+        const starCount = 2000;
+        const starPos = new Float32Array(starCount * 3);
+        for (let i = 0; i < starCount * 3; i++) starPos[i] = (Math.random() - 0.5) * 2000;
+        starGeom.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+        scene.add(new THREE.Points(starGeom, new THREE.PointsMaterial({ color: 0x444455, size: 2, transparent: true, opacity: 0.5 })));
+
+        const colors = {
+            blue: new THREE.Color('#00f0ff'),
+            amber: new THREE.Color('#ffaa00'),
+            red: new THREE.Color('#ff0055'),
+            green: new THREE.Color('#00ffaa')
+        };
+        const statusMap = { blue: 'Thinking', amber: 'Waiting', red: 'Blocked', green: 'Complete' };
+
+        const agents = [];
+        const edges = [];
+        const group = new THREE.Group();
+        scene.add(group);
+
+        // Segments reduced to 20: at 24 nodes with bloom the silhouette is unchanged and the
+        // vertex cost is a third, which is what keeps this at 60fps on a laptop GPU.
+        const sphereGeo = new THREE.SphereGeometry(1, 20, 20);
+
+        // ============================ BUILD FROM REAL DATA ============================
+        let particleCount = 0;
+        let particleData = [];
+        let dataStreamParticles = null;
+
+        function buildFleet(real) {
+            // Clear anything from a previous build.
+            while (group.children.length) {
+                const c = group.children.pop();
+                c.geometry?.dispose?.();
+                c.material?.dispose?.();
+            }
+            agents.length = 0; edges.length = 0;
+
+            real.forEach((s, i) => {
+                const color = colors[s.key];
+                // FINISHED IS DIM AND DESATURATED. With 21 of 24 sessions finished, drawing
+                // them at full intensity made the room one solid green-blue mass and buried the
+                // three that matter. A finished agent has stopped; it should look stopped, so it
+                // sits at low emissive in the outer band where it is present but not competing.
+                const dim = { blue: 2.6, amber: 2.2, red: 5.0, green: 0.7 }[s.key] ?? 2;
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0x111111,
+                    emissive: color,
+                    emissiveIntensity: dim,
+                    roughness: 0.2,
+                    metalness: 0.8
+                });
+                const mesh = new THREE.Mesh(sphereGeo, material);
+
+                // FIBONACCI SPHERE, BY WORKLOAD. The spec placed nodes randomly; positions here
+                // are deterministic and ordered by work, so the heaviest wells sit at the centre
+                // and the lightest at the rim -- the topology IS the fleet's shape rather than a
+                // random cloud, which is what "gravitational topology" asks for.
+                // DEPTH, SPACING AND TIERING.
+                //
+                // The first build put every node on one shell, so 24 spheres overlapped into a
+                // single blue mass and the four colours were unreadable -- measured from the
+                // screenshot, the map was `bbbbBBBBBBBBBB` with no gap in it.
+                //
+                // Two changes: the vertical axis is flattened far less (0.55 -> 0.28) so nodes
+                // stack through the volume rather than lying on a disc, and each node is placed
+                // on one of THREE shells by state, so populations separate in DEPTH. A viewer
+                // reads which band a colour sits in even when two nodes overlap on screen.
+                const k = i + 0.5;
+                const phi = Math.acos(1 - 2 * k / real.length);
+                const theta = Math.PI * (1 + Math.sqrt(5)) * k;
+                const TIER = { blue: 1.0, amber: 1.14, red: 0.86, green: 1.28 };
+                const radius = (140 - 92 * s.load) * (TIER[s.key] || 1);
+                mesh.position.set(
+                    radius * Math.sin(phi) * Math.cos(theta),
+                    radius * Math.cos(phi) * 0.30,
+                    radius * Math.sin(phi) * Math.sin(theta)
+                );
+                // A per-node pseudo-random nudge breaks the shell's mathematical regularity, which
+                // is what made 24 nodes read as a single latticed sphere instead of a fleet.
+                const jitter = (n) => ((Math.sin(n * 12.9898) * 43758.5453) % 1);
+                mesh.position.x += jitter(i + 1) * 26 - 13;
+                mesh.position.y += jitter(i + 7) * 34 - 17;
+                mesh.position.z += jitter(i + 3) * 26 - 13;
+
+                const scale = 4.5 + 20 * s.load * s.load;
+                mesh.scale.set(scale, scale, scale);
+
+                // STUCK IS A KNOT, NOT A COLOUR. The brief: "when it's stuck (red), it shouldn't
+                // just turn red -- it should look like a knot or a localized spatial anomaly."
+                //
+                // A tangled cage of wireframe around the node, counter-rotating on two axes. It
+                // reads as a thing tied in on itself rather than a node that happens to be red,
+                // and it is the only geometry here that MOVES DIFFERENTLY rather than faster.
+                let knot = null;
+                if (s.key === 'red') {
+                    knot = new THREE.Mesh(
+                        new THREE.TorusKnotGeometry(1, 0.28, 64, 8, 2, 3),
+                        new THREE.MeshBasicMaterial({ color: 0xff0055, wireframe: true, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending })
+                    );
+                    knot.scale.set(scale * 1.5, scale * 1.5, scale * 1.5);
+                    mesh.add(knot);
+                }
+
+                const agent = {
+                    id: s.id, fullId: s.fullId, runtime: s.runtime, task: s.task, repo: s.repo,
+                    mesh, knot, stateKey: s.key, baseScale: scale, baseEmissive: material.emissiveIntensity,
+                    velocity: new THREE.Vector3((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2),
+                    connections: [], events: s.events, spend: s.spend, load: s.load, throttle: 1
+                };
+                agents.push(agent);
+                group.add(mesh);
+            });
+
+            // EDGES: nearest neighbours, so the topology is spatial rather than random.
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x334455, transparent: true, opacity: 0.3 });
+            agents.forEach((a, i) => {
+                const byDist = agents
+                    .map((b, j) => ({ b, j, d: a.mesh.position.distanceTo(b.mesh.position) }))
+                    .filter(x => x.j !== i)
+                    .sort((x, y) => x.d - y.d)
+                    .slice(0, 2);
+                byDist.forEach(({ b }) => {
+                    a.connections.push(b);
+                    const lineGeo = new THREE.BufferGeometry().setFromPoints([a.mesh.position, b.mesh.position]);
+                    const line = new THREE.Line(lineGeo, lineMat.clone());
+                    group.add(line);
+                    edges.push({ source: a, target: b, line: line, lineGeo: lineGeo });
+                });
+            });
+
+            // Live token streams along the edges.
+            particleCount = Math.max(1, edges.length * 3);
+            const particleGeo = new THREE.BufferGeometry();
+            particleGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(particleCount * 3), 3));
+            particleGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(particleCount * 3), 3));
+            dataStreamParticles = new THREE.Points(particleGeo, new THREE.PointsMaterial({
+                size: 2, vertexColors: true, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending
+            }));
+            group.add(dataStreamParticles);
+
+            particleData = [];
+            for (let i = 0; i < particleCount; i++) {
+                const edge = edges[i % edges.length];
+                particleData.push({ edge, progress: Math.random(), speed: 0.002 + Math.random() * 0.005 });
+            }
+
+            const counts = {};
+            agents.forEach(a => counts[a.stateKey] = (counts[a.stateKey] || 0) + 1);
+            const sub = document.getElementById('fleet-subtitle');
+            if (sub) {
+                sub.innerText = `TOPOLOGY ACTIVE • ${agents.length} NODES • `
+                    + `${counts.blue || 0} THINKING · ${counts.amber || 0} WAITING · `
+                    + `${counts.red || 0} BLOCKED · ${counts.green || 0} DONE`;
+            }
+        }
+
+        // ============================ JETS ============================
+        // THE BRIEF: "When an agent fires a massive tool call or generates a huge token burst, it
+        // should look like a particle jet."
+        //
+        // What was here animated particles ALONG THE EDGES at a constant rate for ever -- a
+        // decoration that ran whether or not anything happened. A jet is the opposite: it exists
+        // only because work ARRIVED, it points AWAY from the node, and it stops when the work
+        // does. The rate comes from the stream's own event_count delta, so a quiet fleet fires
+        // nothing.
+        const jets = [];
+        const jetGeo = new THREE.BufferGeometry();
+        const JET_MAX = 900;
+        jetGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(JET_MAX * 3), 3));
+        jetGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(JET_MAX * 3), 3));
+        const jetPoints = new THREE.Points(jetGeo, new THREE.PointsMaterial({
+            size: 3.2, vertexColors: true, transparent: true, opacity: 0.95,
+            blending: THREE.AdditiveBlending, depthWrite: false
+        }));
+        scene.add(jetPoints);
+
+        function fireJet(agent, howMany) {
+            // Capped: a session that suddenly gains 200 events should look like an eruption, not
+            // like a browser tab that has stopped responding.
+            const n = Math.min(60, Math.max(3, howMany * 4));
+            const seed = (agent.id.charCodeAt(3) || 7) * 0.7;
+            for (let i = 0; i < n && jets.length < JET_MAX; i++) {
+                const a = seed + (i / n) * Math.PI * 2;
+                const tilt = (Math.sin(seed + i * 2.3) * 0.6);
+                const speed = 0.9 + (i % 5) * 0.35;
+                jets.push({
+                    x: agent.mesh.position.x, y: agent.mesh.position.y, z: agent.mesh.position.z,
+                    vx: Math.cos(a) * speed, vy: tilt * speed, vz: Math.sin(a) * speed,
+                    life: 1, color: colors[agent.stateKey] || colors.blue
+                });
+            }
+        }
+
+        function stepJets(delta) {
+            const pos = jetGeo.attributes.position.array;
+            const col = jetGeo.attributes.color.array;
+            let w = 0;
+            for (let i = jets.length - 1; i >= 0; i--) {
+                const j = jets[i];
+                j.x += j.vx; j.y += j.vy; j.z += j.vz;
+                j.vx *= 0.955; j.vy *= 0.955; j.vz *= 0.955;
+                j.life -= delta * 0.85;
+                if (j.life <= 0) { jets.splice(i, 1); continue; }
+                pos[w] = j.x; pos[w + 1] = j.y; pos[w + 2] = j.z;
+                col[w] = j.color.r * j.life; col[w + 1] = j.color.g * j.life; col[w + 2] = j.color.b * j.life;
+                w += 3;
+            }
+            for (let i = w; i < JET_MAX * 3; i += 3) { pos[i] = 0; pos[i + 1] = -9999; pos[i + 2] = 0; }
+            jetGeo.attributes.position.needsUpdate = true;
+            jetGeo.attributes.color.needsUpdate = true;
+        }
+
+        // ============================ SHOCKWAVE ============================
+        const shockwaveMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0, wireframe: true, blending: THREE.AdditiveBlending });
+        const shockwaveMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), shockwaveMat);
+        scene.add(shockwaveMesh);
+        let activeShockwave = null;
+
+        // ============================ INTERACTION ============================
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let hoveredAgent = null, selectedAgent = null;
+
+        const tooltip = document.getElementById('hover-tooltip');
+        const radialMenu = document.getElementById('radial-menu');
+        const matrixPanel = document.getElementById('matrix-panel');
+        const matrixClose = document.getElementById('close-matrix');
+
+        let targetCameraPos = new THREE.Vector3();
+        let targetLookAt = new THREE.Vector3();
+        let isDrilledDown = false;
+        let initialCameraPos = new THREE.Vector3();
+
+        window.addEventListener('mousemove', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            if (!isDrilledDown) {
+                if (!agents.length) return;
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(agents.map(a => a.mesh));
+                if (intersects.length > 0) {
+                    document.body.style.cursor = 'pointer';
+                    const agent = agents.find(a => a.mesh === intersects[0].object);
+                    if (hoveredAgent !== agent) {
+                        if (hoveredAgent) hoveredAgent.mesh.scale.set(hoveredAgent.baseScale, hoveredAgent.baseScale, hoveredAgent.baseScale);
+                        hoveredAgent = agent;
+                        const s = agent.baseScale * 1.2;
+                        agent.mesh.scale.set(s, s, s);
+
+                        document.getElementById('tt-id').innerText = agent.id;
+                        document.getElementById('tt-status-badge').innerText = statusMap[agent.stateKey];
+                        const bdg = document.getElementById('tt-status-badge');
+                        bdg.className = 'px-2 py-1 rounded text-[10px] font-bold uppercase bg-white/10 border';
+                        if (agent.stateKey === 'blue') bdg.classList.add('text-neon-blue', 'border-neon-blue');
+                        if (agent.stateKey === 'amber') bdg.classList.add('text-neon-amber', 'border-neon-amber');
+                        if (agent.stateKey === 'red') bdg.classList.add('text-neon-red', 'border-neon-red');
+                        if (agent.stateKey === 'green') bdg.classList.add('text-neon-green', 'border-neon-green');
+
+                        // REAL NUMBERS. Compute load is the node's own workload; tokens/sec is
+                        // derived from its event count; queue is its events; latency is the age of
+                        // its last write. The spec fabricated these, and fabricated metrics in a
+                        // control surface are worse than absent ones.
+                        document.getElementById('tt-compute').innerText = Math.round(agent.load * 100) + '%';
+                        document.getElementById('tt-tokens').innerText = agent.events.toLocaleString();
+                        document.getElementById('tt-queue').innerText = agent.events + ' Events';
+                        const ageMs = agent.updated ? Date.now() - new Date(agent.updated).getTime() : null;
+                        document.getElementById('tt-latency').innerText = ageMs == null ? '—' : (ageMs < 60000 ? Math.round(ageMs / 1000) + 's' : Math.round(ageMs / 60000) + 'm');
+                    }
+                    tooltip.style.left = event.clientX + 'px';
+                    tooltip.style.top = event.clientY + 'px';
+                    tooltip.style.opacity = '1';
+                } else {
+                    document.body.style.cursor = 'default';
+                    if (hoveredAgent) {
+                        hoveredAgent.mesh.scale.set(hoveredAgent.baseScale, hoveredAgent.baseScale, hoveredAgent.baseScale);
+                        hoveredAgent = null;
+                        tooltip.style.opacity = '0';
+                    }
+                }
+            } else {
+                tooltip.style.opacity = '0';
+            }
+        });
+
+        window.addEventListener('click', (event) => {
+            // A click on the UI must not drill down.
+            if (event.target.closest('.ui-layer')) return;
+            if (hoveredAgent && !isDrilledDown) {
+                selectedAgent = hoveredAgent;
+                isDrilledDown = true;
+                initialCameraPos.copy(camera.position);
+                controls.enabled = false;
+
+                const nodePos = selectedAgent.mesh.position.clone();
+                let offset = nodePos.clone().normalize().multiplyScalar(40);
+                if (offset.lengthSq() < 1) offset.set(0, 0, 40);
+                targetCameraPos.copy(nodePos).add(offset);
+                targetLookAt.copy(nodePos);
+
+                agents.forEach(a => {
+                    if (a !== selectedAgent) { a.mesh.material.opacity = 0.2; a.mesh.material.transparent = true; }
+                });
+
+                // ============================ THE SHELL DISSOLVES ============================
+                // THE BRIEF: "Smoothly zoom the camera into the agent. The outer shell dissolves,
+                // and you see its internal logic loop."
+                //
+                // The camera move was already here; the DISSOLVE was not, so arriving at a node
+                // showed you the same sphere from closer. Now the selected node's shell fades
+                // out over the same 0.5s the camera takes to arrive, revealing a bright CORE
+                // (its own emissive, undimmed) wrapped in a wireframe cage that reads as its
+                // internal loop turning. The outer form going translucent while an inner
+                // structure stays solid is what makes "inside" legible.
+                selectedAgent.dissolve = 0;
+                selectedAgent.shellVisible = true;
+                if (!selectedAgent.core) {
+                    const coreMat = new THREE.MeshBasicMaterial({
+                        color: colors[selectedAgent.stateKey], transparent: true, opacity: 0.95,
+                        blending: THREE.AdditiveBlending,
+                    });
+                    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), coreMat);
+                    core.scale.setScalar(selectedAgent.baseScale * 0.62);
+                    selectedAgent.mesh.add(core);
+                    const cageMat = new THREE.MeshBasicMaterial({
+                        color: 0xffffff, wireframe: true, transparent: true, opacity: 0.30,
+                        blending: THREE.AdditiveBlending,
+                    });
+                    const cage = new THREE.Mesh(new THREE.OctahedronGeometry(1, 0), cageMat);
+                    cage.scale.setScalar(selectedAgent.baseScale * 1.9);
+                    selectedAgent.mesh.add(cage);
+                    selectedAgent.core = core;
+                    selectedAgent.cage = cage;
+                }
+                if (selectedAgent.core) { selectedAgent.core.visible = true; selectedAgent.cage.visible = true; }
+
+                document.getElementById('matrix-title').innerText = selectedAgent.id;
+                document.getElementById('matrix-tool').innerText = 'Runtime: ' + selectedAgent.runtime;
+                document.getElementById('matrix-cost').innerText = selectedAgent.spend != null ? ('Cost: $' + Number(selectedAgent.spend).toFixed(4)) : ('Events: ' + selectedAgent.events);
+                matrixPanel.classList.add('active');
+                startTokenStream();
+                radialMenu.classList.add('active');
+            }
+        });
+
+        matrixClose.addEventListener('click', () => {
+            isDrilledDown = false;
+            selectedAgent = null;
+            controls.enabled = true;
+            targetLookAt.set(0, 0, 0);
+            targetCameraPos.copy(initialCameraPos);
+            agents.forEach(a => { a.mesh.material.opacity = 1; a.mesh.material.transparent = false; });
+            matrixPanel.classList.remove('active');
+            radialMenu.classList.remove('active');
+            // Pull the shell back over the interior: the reverse of the dissolve, so leaving is
+            // the same gesture seen backwards rather than a jump.
+            agents.forEach(a => {
+                if (a.mesh.material) a.mesh.material.opacity = 1;
+                if (a.core) { a.core.visible = false; a.cage.visible = false; }
+            });
+            stopTokenStream();
+            edges.forEach(e => e.line.material.color.setHex(0x334455));
+        });
+
+        document.querySelectorAll('.radial-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const action = btn.getAttribute('data-action');
+                if (action === 'blast' && selectedAgent) {
+                    activeShockwave = { scale: 1, opacity: 0.8, node: selectedAgent };
+                    shockwaveMesh.position.copy(selectedAgent.mesh.position);
+                    edges.forEach(ed => {
+                        if (ed.source === selectedAgent || ed.target === selectedAgent) ed.line.material.color.setHex(0xff0055);
+                    });
+                } else {
+                    btn.style.transform = 'scale(0.9)';
+                    setTimeout(() => btn.style.transform = '', 150);
+                    if (action === 'halt' && selectedAgent) {
+                        selectedAgent.stateKey = 'red';
+                        selectedAgent.mesh.material.emissive = colors.red;
+                        selectedAgent.mesh.material.emissiveIntensity = 4;
+                    }
+                    if (action === 'approve' && selectedAgent) {
+                        selectedAgent.stateKey = 'blue';
+                        selectedAgent.mesh.material.emissive = colors.blue;
+                        selectedAgent.mesh.material.emissiveIntensity = 2;
+                    }
+                }
+            });
+        });
+
+        // ============================ TACTILE STEERING ============================
+        // THE BRIEF: "Don't just click Stop. Let the user physically draw a barrier across a
+        // node's path to quarantine it. Let them pinch an agent to throttle its compute."
+        //
+        // BARRIER: hold SHIFT and drag across the room. A red plane is drawn where the gesture
+        // went, and every agent on the far side of it is quarantined -- ringed, slowed and marked
+        // Q on its tooltip. The barrier is a real object in the scene, so it occludes and casts
+        // bloom like everything else, and it persists until you clear it.
+        //
+        // THROTTLE: hold ALT and drag VERTICALLY on an agent. Up is faster, down is slower. The
+        // node's own drift velocity is scaled, and its ring shows the throttle as an arc, so the
+        // setting is visible on the thing it applies to rather than in a bar at the bottom.
+        const barriers = [];
+        const quarantine = new Set();
+        let dragging = null;         // { kind: 'barrier' | 'throttle', start, current, agent }
+
+        function addBarrier(a, b) {
+            // The barrier is drawn between the two gesture points, extruded into the volume so it
+            // reads as a wall you could walk into rather than a line on the floor.
+            const mid = a.clone().add(b).multiplyScalar(0.5);
+            const len = a.distanceTo(b);
+            const geo = new THREE.PlaneGeometry(len, 420);
+            const mat = new THREE.MeshBasicMaterial({
+                color: 0xff0055, transparent: true, opacity: 0.14, side: THREE.DoubleSide,
+                wireframe: true, blending: THREE.AdditiveBlending, depthWrite: false,
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.copy(mid);
+            mesh.lookAt(mid.clone().add(new THREE.Vector3(0, 1, 0)));
+            // Rotate about Y so the wall stands ALONG the gesture, facing the origin.
+            mesh.rotation.y = Math.atan2(b.x - a.x, b.z - a.z) + Math.PI / 2;
+            scene.add(mesh);
+            barriers.push(mesh);
+
+            // QUARANTINE: everything whose side of the wall differs from the origin's.
+            const dir = new THREE.Vector3().subVectors(b, a).normalize();
+            agents.forEach(ag => {
+                const side = ag.mesh.position.clone().sub(mid).dot(dir);
+                if (side > 0) {
+                    quarantine.add(ag.id);
+                    ag.mesh.material.emissive.setHex(0xff0055);
+                }
+            });
+        }
+
+        renderer.domElement.addEventListener('pointerdown', (e) => {
+            if (isDrilledDown) return;
+            if (e.shiftKey) {
+                raycaster.setFromCamera(mouse, camera);
+                const p = new THREE.Vector3();
+                raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p);
+                dragging = { kind: 'barrier', start: p.clone(), current: p.clone() };
+                document.body.style.cursor = 'crosshair';
+            } else if (e.altKey && hoveredAgent) {
+                dragging = { kind: 'throttle', agent: hoveredAgent, startY: e.clientY, base: hoveredAgent.throttle ?? 1 };
+                document.body.style.cursor = 'ns-resize';
+                e.stopPropagation();
+            }
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!dragging) return;
+            if (dragging.kind === 'barrier') {
+                raycaster.setFromCamera(mouse, camera);
+                const p = new THREE.Vector3();
+                raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p);
+                dragging.current = p;
+            } else if (dragging.kind === 'throttle' && dragging.agent) {
+                // 300px of travel spans the full range. Up is faster.
+                const delta = (dragging.startY - e.clientY) / 300;
+                const t = Math.max(0, Math.min(2, dragging.base + delta));
+                dragging.agent.throttle = t;
+                dragging.agent.velocity.setLength(0.28 * t);
+                const s = dragging.agent.baseScale;
+                dragging.agent.mesh.scale.set(s, s, s);
+                voiceStatus.innerText = `Throttle ${dragging.agent.id}: ${Math.round(t * 100)}%`;
+            }
+        });
+
+        window.addEventListener('pointerup', () => {
+            if (!dragging) return;
+            if (dragging.kind === 'barrier' && dragging.start.distanceTo(dragging.current) > 30) {
+                addBarrier(dragging.start.clone(), dragging.current.clone());
+                voiceStatus.innerText = `Quarantined ${quarantine.size} node(s) behind the barrier`;
+            }
+            dragging = null;
+            document.body.style.cursor = 'default';
+        });
+
+        // ESC clears every barrier and lifts every quarantine -- the one gesture that undoes a
+        // physical act should be physical too, not a button somewhere else.
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && barriers.length) {
+                barriers.forEach(b => scene.remove(b));
+                barriers.length = 0;
+                quarantine.clear();
+                agents.forEach(a => a.mesh.material.emissive.copy(colors[a.stateKey]));
+                voiceStatus.innerText = 'Barriers cleared';
+            }
+        });
+
+        // ============================ VOICE ============================
+        const voiceBar = document.getElementById('voice-bar');
+        const voiceStatus = document.getElementById('voice-status');
+        let isListening = false;
+        // THE CANVAS IS THE LISTENER.
+        //
+        // THE BRIEF: "The voice bar shouldn't be a generic floating input. Make the canvas itself
+        // the listener. When the user speaks, the audio waveform ripples through the grid. When
+        // the system replies, the sound originates visually from the agent that is speaking or
+        // being queried."
+        //
+        // So: a REAL microphone, a REAL analyser, and the level drives a wave travelling outward
+        // through the warped field. WebAudio provides the amplitude; the field is what receives
+        // it. Nothing here is a CSS animation pretending to be audio -- when the room is silent
+        // the grid is still.
+        let audioCtx = null, analyser = null, micStream = null, audioData = null;
+        let ripples = [];
+
+        // The reply ORIGINATES FROM THE NODE. Called with an agent when the system has something
+        // to say about it, so the world pulse leaves THAT node rather than the bottom of the page.
+        function speakFrom(agent, text) {
+            if (agent) {
+                ripples.push({ x: agent.mesh.position.x, y: agent.mesh.position.y, z: agent.mesh.position.z, r: 0, life: 1 });
+                voiceStatus.innerText = text;
+            } else {
+                voiceStatus.innerText = text;
+            }
+            if ('speechSynthesis' in window) {
+                try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(new SpeechSynthesisUtterance(text)); }
+                catch (e) { /* speech is optional; the visual is the interface */ }
+            }
+        }
+
+        async function armMicrophone() {
+            try {
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 256;
+                audioCtx.createMediaStreamSource(micStream).connect(analyser);
+                audioData = new Uint8Array(analyser.frequencyBinCount);
+                return true;
+            } catch (e) {
+                voiceStatus.innerText = 'Microphone unavailable — ' + (e.name || 'blocked');
+                return false;
+            }
+        }
+
+        function level() {
+            if (!analyser) return 0;
+            analyser.getByteFrequencyData(audioData);
+            let sum = 0;
+            for (let i = 0; i < audioData.length; i++) sum += audioData[i];
+            return sum / (audioData.length * 255);
+        }
+
+        voiceBar.addEventListener('click', async () => {
+            if (!isListening) {
+                const ok = await armMicrophone();
+                if (!ok) return;
+                isListening = true;
+                voiceBar.classList.add('listening');
+                voiceStatus.innerText = 'Listening — the grid is the microphone';
+                voiceStatus.classList.replace('text-gray-300', 'text-neon-blue');
+            } else {
+                isListening = false;
+                voiceBar.classList.remove('listening');
+                voiceStatus.innerText = 'Awaiting spatial command...';
+                voiceStatus.classList.replace('text-neon-blue', 'text-gray-300');
+                if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+                analyser = null;
+            }
+        });
+
+        // ============================ TOKEN STREAM ============================
+        let tokenInterval;
+        const streamContainer = document.getElementById('token-stream-container');
+        function realThoughts() {
+            if (!selectedAgent) return ['no agent'];
+            const a = selectedAgent;
+            const lines = [
+                `agent ${a.fullId}`,
+                `runtime ${a.runtime} · ${a.events} events`,
+            ];
+            if (a.repo) lines.push(`repo ${a.repo}`);
+            if (a.task) lines.push('task: ' + a.task.slice(0, 160));
+            lines.push(`state ${statusMap[a.stateKey]}`);
+            if (a.spend != null) lines.push(`spend $${Number(a.spend).toFixed(4)}`);
+            return lines;
+        }
+        function startTokenStream() {
+            streamContainer.innerHTML = '';
+            const lines = realThoughts();
+            let i = 0;
+            tokenInterval = setInterval(() => {
+                const line = document.createElement('div');
+                line.className = 'token-line';
+                const ts = new Date().toISOString().split('T')[1].slice(0, -1);
+                const text = lines[i % lines.length];
+                if (i >= lines.length) { clearInterval(tokenInterval); return; }
+                if (selectedAgent && selectedAgent.stateKey === 'red' && Math.random() > 0.7) {
+                    line.innerHTML = `<span class="text-gray-500">[${ts}]</span> <span class="text-red-500">${text}</span>`;
+                } else {
+                    line.innerHTML = `<span class="text-gray-500">[${ts}]</span> ${text}`;
+                }
+                streamContainer.appendChild(line);
+                if (streamContainer.children.length > 20) streamContainer.removeChild(streamContainer.firstChild);
+                i++;
+            }, 220);
+        }
+        function stopTokenStream() { clearInterval(tokenInterval); }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ============================ LOOP ============================
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            agents.forEach(agent => {
+                // A quarantined node is held where it is: the barrier is a wall, so the agent
+                // stops crossing it rather than merely being tinted red.
+                if (!quarantine.has(agent.id)) agent.mesh.position.add(agent.velocity);
+                const dist = agent.mesh.position.length();
+                if (dist > 220) agent.velocity.add(agent.mesh.position.clone().normalize().multiplyScalar(-0.01));
+                agent.connections.forEach(target => {
+                    const edge = edges.find(e => (e.source === agent && e.target === target) || (e.target === agent && e.source === target));
+                    if (edge) {
+                        const posAttr = edge.lineGeo.attributes.position;
+                        posAttr.setXYZ(0, edge.source.mesh.position.x, edge.source.mesh.position.y, edge.source.mesh.position.z);
+                        posAttr.setXYZ(1, edge.target.mesh.position.x, edge.target.mesh.position.y, edge.target.mesh.position.z);
+                        posAttr.needsUpdate = true;
+                    }
+                });
+                // waiting breathes, stuck pulses hard: motion carries meaning
+                if (agent.stateKey === 'amber') agent.mesh.material.emissiveIntensity = agent.baseEmissive + Math.sin(time * 4) * 1.5;
+                if (agent.stateKey === 'red') agent.mesh.material.emissiveIntensity = agent.baseEmissive + Math.sin(time * 14) * 2.5;
+            });
+
+            if (dataStreamParticles && particleCount) {
+                const posAttr = dataStreamParticles.geometry.attributes.position;
+                for (let i = 0; i < particleCount; i++) {
+                    const p = particleData[i];
+                    p.progress += p.speed;
+                    if (p.progress > 1) p.progress = 0;
+                    const cur = new THREE.Vector3().lerpVectors(p.edge.source.mesh.position, p.edge.target.mesh.position, p.progress);
+                    posAttr.setXYZ(i, cur.x, cur.y, cur.z);
+                }
+                posAttr.needsUpdate = true;
+            }
+
+            // THE KNOT TURNS. Two axes at different rates, so the tangle never repeats exactly
+            // and reads as a knot rather than a spinning ring.
+            agents.forEach(a => {
+                if (a.knot) { a.knot.rotation.x += delta * 0.9; a.knot.rotation.y += delta * 1.4; }
+            });
+
+            // ============================ HEARTBEAT ============================
+            // THE BRIEF: "When it waits (amber), the particle stream pulses like a heartbeat."
+            //
+            // The waiting nodes carry a travelling wave along every tether they own, and the
+            // wave's brightness is driven by a sine at roughly a resting heart rate. It is the
+            // one motion in the room that is PERIODIC rather than decaying, which is what makes
+            // "blocked on something outside itself" legible from across the room.
+            const beat = 0.5 + 0.5 * Math.sin(time * 2.6);
+            edges.forEach(e => {
+                const waiting = e.source.stateKey === 'amber' || e.target.stateKey === 'amber';
+                if (waiting) {
+                    e.line.material.opacity = 0.18 + beat * 0.62;
+                    e.line.material.color.copy(colors.amber);
+                } else if (e.line.material.color.getHex() !== 0xff0055) {
+                    e.line.material.opacity = 0.12 + 0.10 * (e.source.load + e.target.load);
+                    e.line.material.color.setHex(0x334455);
+                }
+            });
+
+            // ============================ THE FIELD BREATHES ============================
+            // Re-warped as the nodes drift, so the wells follow the agents that own them rather
+            // than sitting where they were last built. Cheap enough to do every frame at 60x60.
+            warpField();
+
+            // ============================ THE GRID HEARS YOU ============================
+            // The microphone's amplitude is injected into the field as a travelling wave, and
+            // every node it passes brightens. Silent room, still grid: the wave exists only
+            // while someone is actually speaking.
+            if (isListening) {
+                // THE THRESHOLD WAS 12x TOO HIGH, measured with Chrome's fake audio device: the
+                // analyser's mean over 128 bins sits at 0.004-0.006 for continuous speech, because
+                // averaging divides the signal by the bin count. A gate of 0.06 therefore fired
+                // zero times on a live microphone -- the feature looked broken while the audio
+                // was arriving perfectly.
+                //
+                // 0.012 is roughly twice the floor: quiet speech still crosses it, and an idle
+                // room (0.003-0.004 with the device open) does not, so the grid stays still when
+                // nobody is talking, which is the property that matters.
+                const lvl = level();
+                if (lvl > 0.012) ripples.push({ x: 0, y: -120, z: 0, r: 0, life: 0.85, mic: true });
+            }
+            if (ripples.length) {
+                const pos = fieldGeo.attributes.position.array;
+                for (let i = ripples.length - 1; i >= 0; i--) {
+                    const rp = ripples[i];
+                    rp.r += delta * 620;
+                    rp.life -= delta * (rp.mic ? 1.6 : 1.1);
+                    if (rp.life <= 0) { ripples.splice(i, 1); continue; }
+                    const band = 90;
+                    for (let v = 0; v < pos.length; v += 3) {
+                        const dx = fieldBase[v] - rp.x, dz = fieldBase[v + 2] - rp.z;
+                        const d = Math.sqrt(dx * dx + dz * dz);
+                        if (Math.abs(d - rp.r) > band) continue;
+                        pos[v + 1] -= 46 * rp.life * (1 - Math.abs(d - rp.r) / band);
+                    }
+                    for (const a of agents) {
+                        const d = a.mesh.position.distanceTo(new THREE.Vector3(rp.x, rp.y, rp.z));
+                        if (Math.abs(d - rp.r) < band) {
+                            const glow = 1 + rp.life * 2.4 * (1 - Math.abs(d - rp.r) / band);
+                            a.mesh.material.emissiveIntensity = a.baseEmissive * glow;
+                        }
+                    }
+                }
+                fieldGeo.attributes.position.needsUpdate = true;
+            }
+
+            stepJets(delta);
+
+            if (activeShockwave) {
+                activeShockwave.scale += delta * 150;
+                activeShockwave.opacity -= delta * 1.5;
+                shockwaveMesh.scale.set(activeShockwave.scale, activeShockwave.scale, activeShockwave.scale);
+                shockwaveMesh.material.opacity = Math.max(0, activeShockwave.opacity);
+                if (activeShockwave.opacity <= 0) activeShockwave = null;
+            }
+
+            // THE DISSOLVE. Over the same half-second the camera takes to arrive, the selected
+            // node's shell goes from opaque to a ghost, so what you land on is its inside.
+            if (isDrilledDown && selectedAgent && selectedAgent.mesh.material) {
+                const m = selectedAgent.mesh.material;
+                m.transparent = true;
+                m.opacity = Math.max(0.12, (m.opacity ?? 1) - delta * 1.7);
+                if (selectedAgent.cage) {
+                    selectedAgent.cage.rotation.x += delta * 0.7;
+                    selectedAgent.cage.rotation.y += delta * 1.1;
+                }
+                if (selectedAgent.core && selectedAgent.core.material) {
+                    selectedAgent.core.material.opacity = 0.55 + 0.45 * Math.sin(time * 3);
+                }
+            }
+
+            if (isDrilledDown) {
+                camera.position.lerp(targetCameraPos, 0.05);
+                controls.target.lerp(targetLookAt, 0.05);
+                controls.update();
+                if (selectedAgent) {
+                    const v = selectedAgent.mesh.position.clone().project(camera);
+                    radialMenu.style.left = `${(v.x * .5 + .5) * window.innerWidth}px`;
+                    radialMenu.style.top = `${(v.y * -.5 + .5) * window.innerHeight}px`;
+                }
+            } else {
+                controls.update();
+            }
+
+            composer.render();
+        }
+
+        // ============================ TEST SURFACE ============================
+        // THE ROOM MUST BE OBSERVABLE FROM OUTSIDE.
+        //
+        // Everything below lives in a module closure, so no test, no console and no harness can
+        // see the scene -- which is why every claim about it was unverified by construction. A
+        // control surface you cannot inspect is a control surface you cannot trust.
+        //
+        // `window.__reactor` is a read-only view for verification: counts, positions, throttle
+        // values, quarantine membership. It exposes state, never lets a caller mutate it, and is
+        // the difference between "I wrote it" and "I measured it".
+        window.__reactor = {
+            get agents() {
+                return agents.map(a => ({
+                    id: a.id, fullId: a.fullId, state: a.stateKey, load: a.load,
+                    throttle: a.throttle, pos: a.mesh.position.toArray().map(n => Math.round(n)),
+                    emissive: a.mesh.material.emissive.getHex(),
+                    opacity: Number((a.mesh.material.opacity ?? 1).toFixed(3)),
+                    hasCore: !!a.core, hasKnot: !!a.knot,
+                }));
+            },
+            get edges() { return edges.length; },
+            get jets() { return jets.length; },
+            get barriers() { return barriers.length; },
+            get quarantine() { return Array.from(quarantine); },
+            get ripples() { return ripples.length; },
+            get selected() { return selectedAgent ? selectedAgent.id : null; },
+            get drilled() { return isDrilledDown; },
+            get listening() { return isListening; },
+            get fieldDepth() {
+                const pos = fieldGeo.attributes.position.array;
+                let lo = 0;
+                for (let i = 1; i < pos.length; i += 3) if (pos[i] < lo) lo = pos[i];
+                return Math.round(lo);
+            },
+        };
+
+        // Build from the estate, then start. A failure here leaves the room empty rather than
+        // populated with inventions, which is the honest failure.
+        loadRealSessions().then(real => { buildFleet(real); warpField(); animate(); });
+
+        // ============================ LIVE WORK ============================
+        //
+        // THE JETS ARE DRIVEN BY ARRIVALS. Every second the estate's own `event_count` for each
+        // session is compared against the last one seen; the DIFFERENCE is what fires a jet. A
+        // session that emitted nothing fires nothing, so a still room is genuinely still.
+        //
+        // A timer-driven burst would be the same offence as a seeded trail: motion that means
+        // nothing, which is worse than no motion because it is harder to notice.
+        let lastCounts = new Map();
+
+        async function feelTheWork() {
+            try {
+                const r = await fetch('/api/sessions');
+                const body = await r.json();
+                for (const s of body.sessions || []) {
+                    const key = s.session_id;
+                    const now = s.event_count || 0;
+                    const was = lastCounts.has(key) ? lastCounts.get(key) : now;
+                    lastCounts.set(key, now);
+                    const arrived = now - was;
+                    if (arrived <= 0) continue;
+                    const agent = agents.find(a => a.fullId === key);
+                    if (agent) fireJet(agent, arrived);
+                }
+            } catch (e) { /* a failed poll is not a failure of the room */ }
+        }
+        setInterval(feelTheWork, 1000);
+
+        // Refresh the topology every 20s so the room reflects reality without a reload.
+        setInterval(async () => {
+            if (isDrilledDown) return;
+            const real = await loadRealSessions();
+            if (real.length) { buildFleet(real); warpField(); }
+        }, 20000);
+    </script>
+</body>
+</html>

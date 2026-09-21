@@ -3,10 +3,17 @@
 # Edit those two, never this file; bin/idp-ci fails when this file and a fresh render differ.
 # LiteLLM config for the cluster. Every hosted model here is the same entry as llm/config.yaml
 # (tests/test_llm_row.py diffs them); what is missing is on purpose:
-#   - the ollama* entries: they point at the founder's Mac (host.docker.internal), which the
-#     cluster cannot reach. The free local lane stays on the laptop compose.
-#   - the ollama fallbacks, for the same reason.
+#   - ollama-vision and ollama-llama: llm/config.base.yaml's copies point at the founder's Mac
+#     (host.docker.internal), killed 2026-09-10 ("no i killed ollama because machine is slow",
+#     platform/otto-gateway/three-homes.yaml:28-29) and never reachable from the cluster anyway.
+#     No room for a second or third resident local model on the 2 OCPU / 12 GB free pool
+#     (docs/reference/oci-tenancy.md:18) alongside `ollama` below, litellm, redis, postgres,
+#     temporal-worker, langfuse and signoz.
 # `vision` is an alias so photo intake names a capability, not a vendor (crew#284 CP1).
+#
+# `ollama` below is the one that WAS also missing here for the same host.docker.internal
+# reason -- fixed 2026-09-15 by giving the cluster its own local model instead
+# (platform/llm/ollama.yaml), so this lane no longer depends on any laptop being on.
 
 model_list:
   # This key has been mounted in the router pod for days and served no model row, so the
@@ -557,6 +564,20 @@ model_list:
       timeout: 120
     model_info:
       mode: embedding
+
+  # Local, free, and reachable from the cluster: platform/llm/ollama.yaml, on the always-free
+  # Ampere pool, not the founder's Mac. 1.5B, not the 7B llm/config.base.yaml names for the
+  # laptop, because the whole free allowance here is 2 OCPU / 12 GB, already shared with
+  # litellm, redis, postgres, temporal-worker, langfuse and signoz -- no room for a 7B working
+  # set. `cost-based-routing` above prefers this lane automatically once it's healthy: it
+  # carries no input_cost_per_token/output_cost_per_token, so LiteLLM prices it $0.0000, the
+  # same convention the three free vendor pools use.
+  - model_name: ollama
+    litellm_params:
+      model: ollama/qwen2.5-coder:1.5b
+      api_base: http://ollama.llm.svc.cluster.local:11434
+      timeout: 300
+      keep_alive: 24h
 
 router_settings:
   fallbacks:

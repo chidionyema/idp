@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+# Open an OCI session on this machine WITHOUT reading the vault first.
+#
+# THE CIRCLE THIS BREAKS. `bin/idp-oci-login` renders `~/.oci/config` from
+# `estate-secrets/secrets/dev/OCI_*.yaml` -- and those files do not exist anywhere. Commit
+# `76ba8be` moved the estate's dev secrets into OCI Vault, and reading OCI Vault needs an OCI
+# identity. So the documented road is:
+#
+#     vault files  ->  idp-oci-login  ->  OCI session  ->  idp-cloud  ->  vault
+#                        ^ needs what it produces
+#
+# `idp-oci-bootstrap`, `idp-bootstrap-cloudflare` and `idp-bootstrap-tailscale` all walk into the
+# same wall in the same way: each one runs `sops -d ... OCI_REGION.yaml` before its browser login,
+# so a missing vault file kills the script at the line that was supposed to earn the credential
+# needed to read the vault. Measured 2026-09-18: `idp-oci-bootstrap` exits 100 with no output,
+# and `idp-oci-login` then tells the reader to run it.
+#
+# WHAT THIS DOES INSTEAD. `oci session authenticate` is a BROWSER LOGIN. It needs two
+# IDENTIFIERS -- a region and a tenancy name -- and no secret of any kind. Both are things the
+# owner knows and neither is a credential (the tenancy name is in the OCI console URL; the region
+# is the one the estate already runs in). So this asks for them from the environment, falling back
+# to the vault only if it can actually read it, and then goes straight to the browser.
+#
+# It writes the session token the CLI manages, and nothing else. No secret passes through this
+# script, no value is read from the vault on the path that matters, and no file is created.
+#
+# After this, the road is a line:
+#     bin/idp-oci-session  ->  idp-cloud  ->  idp-mac-secret-deliver  ->  agent key  ->  reads
+#
+# Usage:
+#   bin/idp-oci-session                                  # uses the env or the vault for identifiers
+#   bin/idp-oci-session --region uk-london-1 --tenancy mytenancy
+#   bin/idp-oci-session --check                          # is a session live? changes nothing
+#
+# Config (LAW 46):
+#   OCI_REGION        the region, e.g. uk-london-1
+#   OCI_TENANCY_NAME  the console tenancy name (NOT the ocid)
+#   OCI_PROFILE       the CLI profile to write, default estate-bootstrap
+set -uo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+VAULT="${ESTATE_SECRETS:-$(dirname "$MAIN")/estate-secrets}"
+ENV_NAME="${OCI_ENV:-dev}"
+PROFILE="${OCI_PROFILE:-estate-bootstrap}"
+
+REGION="${OCI_REGION:-}"
+TENANCY_NAME="${OCI_TENANCY_NAME:-}"
+CHECK=0
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--region)
+		REGION="${2:?--region needs a value}"
+		shift 2
+		;;
+	--tenancy)
+		TENANCY_NAME="${2:?--tenancy needs a value}"
+		shift 2
+		;;
+	--profile)
+		PROFILE="${2:?--profile needs a value}"
+		shift 2
+		;;
+	--check)
+		CHECK=1
+		shift
+		;;
+	*) echo "unknown argument: $1" >&2; exit 2 ;;
+	esac
+done
+
+command -v oci >/dev/null || { echo "BLIND oci missing: install the OCI CLI first"; exit 2; }
+[ -d "$HOME/.oci" ] || { mkdir -p "$HOME/.oci"; chmod 700 "$HOME/.oci"; }
+
+# A live session is the ordinary case and needs no browser. `idp-oci-whoami` is the estate's own
+# discovery (crew#66 CP5d) and answers with the profile that is actually live rather than the one
+# that was asked for -- measured 2026-08-26, a login that landed under a different name than the
+# one the reader expected and nothing said so.
+if live="$(OCI_CLI_PROFILE="$PROFILE" "$IDP/bin/idp-oci-whoami" 2>/dev/null)"; then
+	echo "ok      oci     session profile '$live' is live; no browser needed"
+	if [ "$CHECK" = 1 ]; then exit 0; fi
+	echo "        nothing to do. To force a new sign-in, delete ~/.oci/sessions/$live and re-run"
+	exit 0
+fi
+
+if [ "$CHECK" = 1 ]; then
+	echo "BLIND   oci     no live session profile on this machine"
+	exit 2
+fi
+
+# Identifiers from the environment first. These are NOT secrets: a tenancy name is public in
+# every OCI console URL, and a region is a location. Reading them from the vault would be
+# correct if the vault were reachable, and is exactly the ordering that made the circle -- so
+# the vault is the FALLBACK here, never the gate.
+if [ -z "$REGION" ] || [ -z "$TENANCY_NAME" ]; then
+	SV="$VAULT/secrets/$ENV_NAME"
+	if [ -e "$SV/OCI_REGION.yaml" ] && [ -e "$SV/OCI_TENANCY_NAME.yaml" ]; then
+		export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
+		[ -n "$REGION" ] || REGION="$(sops -d --extract '["OCI_REGION"]' "$SV/OCI_REGION.yaml" 2>/dev/null)"
+		[ -n "$TENANCY_NAME" ] || TENANCY_NAME="$(sops -d --extract '["OCI_TENANCY_NAME"]' "$SV/OCI_TENANCY_NAME.yaml" 2>/dev/null)"
+		[ -n "$REGION" ] && [ -n "$TENANCY_NAME" ] && echo "note    oci     identifiers read from the vault at $SV"
+	fi
+fi
+
+if [ -z "$REGION" ] || [ -z "$TENANCY_NAME" ]; then
+	# Say exactly what is missing and exactly what to type. This is the message the whole script
+	# exists to reach: the previous scripts died earlier, on a vault read, and never got here.
+	{
+		echo "BLIND   oci     cannot open a session: no identifiers."
+		echo "        These are NOT secrets and the vault is NOT required to supply them:"
+		echo "          OCI_REGION        e.g. uk-london-1        (the region the estate runs in)"
+		echo "          OCI_TENANCY_NAME  the console tenancy name (in the OCI console URL)"
+		echo
+		echo "        Either export them, or pass them:"
+		echo "          bin/idp-oci-session --region uk-london-1 --tenancy <tenancy-name>"
+		echo
+		echo "        The vault at $VAULT/secrets/$ENV_NAME holds no OCI_REGION.yaml /"
+		echo "        OCI_TENANCY_NAME.yaml since commit 76ba8be moved the dev secrets to OCI"
+		echo "        Vault -- which is why the vault cannot be the gate here (ADR 0017)."
+	} >&2
+	exit 2
+fi
+
+echo "login   oci     browser opens once; sign in as the tenancy owner in $REGION"
+echo "                (the token lives one hour; nothing is typed into this terminal)"
+# The CLI's own output is KEPT and shown. The first version of this script sent it to
+# /dev/null and printed a generic "did not complete", which is the silent-failure defect this
+# whole session has been removing -- it left the reader with no way to tell a wrong tenancy name
+# from a closed browser tab from a missing CLI. Measured 2026-09-18: the founder ran it, it
+# failed, and the script had thrown away the one line that said why.
+signin_out="$(oci session authenticate \
+	--region "$REGION" \
+	--tenancy-name "$TENANCY_NAME" \
+	--profile-name "$PROFILE" 2>&1)"
+signin_rc=$?
+# The CLI writes progress to a TTY and is noisy when captured; show the lines that carry a
+# verdict rather than the whole thing. If nothing looks like a verdict, show the tail -- never
+# nothing.
+if [ "$signin_rc" -ne 0 ]; then
+	shown="$(printf '%s\n' "$signin_out" | grep -iE "error|denied|refus|invalid|not found|not authorized|fail|expired|tenancy" | head -6)"
+	[ -n "$shown" ] || shown="$(printf '%s\n' "$signin_out" | grep -v '^$' | tail -6)"
+	echo "FAIL    oci     session sign-in did not complete (exit $signin_rc)" >&2
+	if [ -n "$shown" ]; then
+		printf '%s\n' "$shown" | sed 's/^/        /' >&2
+	fi
+	{
+		echo "        common causes, in the order they actually happen:"
+		echo "          1. the browser step was not finished, or the terminal was closed while it"
+		echo "             polled -- the approval is then discarded and this must be re-run"
+		echo "          2. the tenancy NAME is wrong (it is not the OCID): expected 'chidionyema'"
+			echo "             per docs/reference/oci-tenancy.md"
+		echo "          3. the account signing in is not the tenancy owner"
+		echo "        To see the CLI's own words in full, run its command directly:"
+		echo "          oci session authenticate --region $REGION --tenancy-name $TENANCY_NAME --profile-name $PROFILE"
+	} >&2
+	exit 1
+fi
+
+if live="$(OCI_CLI_PROFILE="$PROFILE" "$IDP/bin/idp-oci-whoami" 2>/dev/null)"; then
+	echo "ok      oci     session '$live' established (profile $PROFILE)"
+	echo
+	echo "        next, in this order:"
+	echo "          bin/idp-cloud whoami                     # prove the identity"
+	echo "          bin/idp-mac-secret-deliver --entry jit-broker --key JIT_AGENT_KEY \\"
+	echo "            --out ~/.local/state/idp/agent-key --service local"
+	echo "          bin/idp-jit identity --kubeconfig ~/.local/state/idp/agent.kubeconfig"
+	echo
+	echo "        The third line is the agent's own identity, and it is what makes this laptop"
+	echo "        able to read the cluster without the founder's principal (WJ.1)."
+	exit 0
+fi
+
+echo "FAIL    oci     signed in, but no session profile is live; run bin/idp-oci-whoami to see why" >&2
+exit 1

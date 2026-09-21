@@ -24,11 +24,61 @@ The combined return value is the optimised request body LiteLLM sends to the ven
 """
 
 import hashlib
+import json
 import logging
 import os
+import time
 from typing import Any, Optional, Union
 
 log = logging.getLogger("estate.efficiency-gateway")
+
+
+# --------------------------------------------------------------------------- ledger
+#
+# WHY THIS EXISTS (2026-09-18). Every mechanism below already mutated the request and
+# incremented an in-memory counter, and that counter died with the process. Measured on the
+# founder's own machine: `efficiency-latest.txt` read `hit_rate=0.0% (0 cached / 0 fresh)`
+# while ~18M tokens were served at a 99.9% cache-hit rate one process away, so the one
+# file that claimed to report the mechanisms reported nothing at all. "Built and wired" is
+# not evidence; a scientist wants the per-call delta.
+#
+# So each mechanism now records bytes in -> bytes out for EVERY call, and the row carries
+# the raw before/after sizes so the saving is recomputable by a reader rather than trusted.
+# Same ledger shape read_shunt already uses (`est_*` fields, one JSONL line per event), so
+# the estate has one audit format and not two.
+#
+# The ledger may NEVER fail a request (LAW 38): every write is wrapped, and a failure to
+# journal is logged and dropped, never raised into the vendor call.
+_LEDGER_ENV = "ESTATE_EFFICIENCY_LEDGER"
+_LEDGER_DEFAULT = "~/.estate/efficiency-ledger.jsonl"
+
+
+def _ledger_path() -> str:
+    return os.path.expanduser(os.environ.get(_LEDGER_ENV) or _LEDGER_DEFAULT)
+
+
+def _ledger_write(row: dict[str, Any]) -> None:
+    try:
+        p = _ledger_path()
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+    except Exception as exc:  # noqa: BLE001 - the ledger may never fail the request (LAW 38)
+        log.warning("[ledger] not written: %s", exc)
+
+
+def _json_bytes(obj: Any) -> int:
+    """The size of what the vendor would actually be sent, not a character count.
+
+    The mechanisms below mutate nested dicts in place, so measuring the whole messages/
+    tools payload before and after is the only honest way to attribute a delta to the
+    mechanisms as a group. Per-mechanism numbers are recorded alongside it.
+    """
+    try:
+        return len(json.dumps(obj, separators=(",", ":"), default=str).encode())
+    except Exception:  # noqa: BLE001
+        return 0
+
 
 try:
     from litellm.integrations.custom_logger import CustomLogger
@@ -40,6 +90,7 @@ except ModuleNotFoundError:
 
 
 CHARS_PER_TOKEN = 4
+TOKENS_PER_MTOK = 1_000_000
 MAX_TOOL_DESC_CHARS = int(os.environ.get("ESTATE_MAX_TOOL_DESC_CHARS", "400"))
 MAX_HISTORY_MSGS = int(os.environ.get("ESTATE_MAX_HISTORY_MSGS", "60"))
 GIST_AFTER_MSGS = int(os.environ.get("ESTATE_GIST_AFTER_MSGS", "40"))
@@ -55,24 +106,33 @@ class EstateEfficiencyGateway(CustomLogger):
         self._golden_hash: Optional[str] = None
         self._cache_hits = 0
         self._cache_misses = 0
+        self._cache_prompt_bytes = 0  # the stable prefix size a hit preserves
         # [2] TokenKiller
         self._tool_line_compressions = 0
         self._tool_chars_saved = 0
+        self._tool_bytes_saved = 0
         # [3] MCPAdapter
         self._schemas_compressed = 0
         self._schema_chars_saved = 0
+        self._schema_bytes_saved = 0
         # [4] TokenBudgetOrchestrator
         self._calls = 0
         self._cumulative_tokens = 0
+        self._cumulative_bytes = 0
         # [5] SoLPi
         self._obs_handles: dict = {}
         self._obs_hits = 0
+        self._obs_bytes_saved = 0
         # [6] DynamicContextPruning
         self._pruned_duplicates = 0
+        self._pruned_bytes = 0
         # [7] CompactionManager
         self._compactions = 0
+        self._dropped_messages = 0
+        self._compaction_bytes_saved = 0
         # [8] GistingSimulator
         self._gisted = 0
+        self._gist_bytes_saved = 0
 
     # ---------------------------------------------------------------------- [1]
 
@@ -88,8 +148,9 @@ class EstateEfficiencyGateway(CustomLogger):
                 self._golden_hash = h
                 self._cache_hits += 1
                 log.info("[1-CacheGuardian] Golden system prompt captured (%s)", h[:8])
-            elif h == self._golden_hash:
+            if h == self._golden_hash:
                 self._cache_hits += 1
+                self._cache_prompt_bytes += len(content.encode())
             else:
                 self._cache_misses += 1
                 log.warning(
@@ -115,6 +176,7 @@ class EstateEfficiencyGateway(CustomLogger):
                 key = line.strip()
                 if key and key in seen:
                     self._tool_chars_saved += len(line) + 1
+                    self._tool_bytes_saved += len(line.encode()) + 1
                     self._tool_line_compressions += 1
                     continue
                 seen.add(key)
@@ -134,6 +196,9 @@ class EstateEfficiencyGateway(CustomLogger):
             if len(desc) > MAX_TOOL_DESC_CHARS:
                 saved = len(desc) - MAX_TOOL_DESC_CHARS
                 self._schema_chars_saved += saved
+                self._schema_bytes_saved += len(desc.encode()) - len(
+                    (desc[:MAX_TOOL_DESC_CHARS] + "…").encode()
+                )
                 self._schemas_compressed += 1
                 fn["description"] = desc[:MAX_TOOL_DESC_CHARS] + "…"
                 log.debug("[3-MCPAdapter] Truncated description by %d chars", saved)
@@ -172,9 +237,11 @@ class EstateEfficiencyGateway(CustomLogger):
             h = hashlib.sha256(content.encode()).hexdigest()[:16]
             handle = f"#OBS_{h}"
             if h in self._obs_handles:
-                msg["content"] = (
-                    f"[duplicate observation — see earlier result: {handle}]"
+                replacement = f"[duplicate observation — see earlier result: {handle}]"
+                self._obs_bytes_saved += len(content.encode()) - len(
+                    replacement.encode()
                 )
+                msg["content"] = replacement
                 self._obs_hits += 1
                 log.info(
                     "[5-SoLPi] Replaced %d-char observation with handle %s",
@@ -203,6 +270,7 @@ class EstateEfficiencyGateway(CustomLogger):
                 )
                 if key in seen:
                     self._pruned_duplicates += 1
+                    self._pruned_bytes += _json_bytes(msg)
                     log.debug("[6-DynamicPruning] Pruned duplicate tool_result")
                     continue
                 seen[key] = True
@@ -226,8 +294,10 @@ class EstateEfficiencyGateway(CustomLogger):
         keep = MAX_HISTORY_MSGS - len(system)
         if len(rest) > keep:
             dropped = len(rest) - keep
+            self._compaction_bytes_saved += _json_bytes(rest[:dropped])
             rest = rest[dropped:]
             self._compactions += 1
+            self._dropped_messages += dropped
             log.info(
                 "[7-CompactionManager] Dropped %d messages, kept %d (+ %d system)",
                 dropped,
@@ -251,7 +321,9 @@ class EstateEfficiencyGateway(CustomLogger):
                 continue
             if content.startswith("[GISTED:"):
                 continue
-            msg["content"] = f"[GISTED:{len(content)}ch] {content[:120]}…"
+            gisted = f"[GISTED:{len(content)}ch] {content[:120]}…"
+            self._gist_bytes_saved += len(content.encode()) - len(gisted.encode())
+            msg["content"] = gisted
             self._gisted += 1
             log.debug(
                 "[8-GistingSimulator] Gisted assistant message (%d chars)", len(content)
@@ -267,9 +339,23 @@ class EstateEfficiencyGateway(CustomLogger):
         data: dict,
         call_type: Union[Any, str],
     ) -> Optional[dict]:
-        """Run all 8 mechanisms in sequence. Returns the optimised request body."""
+        """Run all 8 mechanisms in sequence, then record what they actually saved.
+
+        The before/after byte counts are taken around the WHOLE chain and written to the
+        ledger alongside each mechanism's own per-mechanism byte delta. A reader can then
+        check two independent things: that the mechanisms changed the payload at all, and
+        which one changed it. `bytes_saved` is the chain total; the per-mechanism numbers
+        are measured inside each step, so they are independent rather than a decomposition
+        of a number that was computed after the fact.
+        """
+        started = time.time()
         msgs = list(data.get("messages") or [])
         tools = list(data.get("tools") or [])
+
+        # Snapshot the payload as the vendor would have received it, before any mechanism
+        # runs. This is the only honest baseline for "what did we save on this call".
+        before_bytes = _json_bytes(msgs) + _json_bytes(tools)
+        before_messages = len(msgs)
 
         msgs = self._cache_guardian(msgs)  # [1]
         msgs = self._sol_pi(msgs)  # [5] dedup before other pruning
@@ -283,6 +369,41 @@ class EstateEfficiencyGateway(CustomLogger):
         data["messages"] = msgs
         if tools:
             data["tools"] = tools
+
+        after_bytes = _json_bytes(msgs) + _json_bytes(tools)
+
+        _ledger_write(
+            {
+                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
+                "call_type": str(call_type),
+                "model": (data.get("model") or ""),
+                "ms": round((time.time() - started) * 1000, 2),
+                # chain total, measured around the whole hook
+                "bytes_before": before_bytes,
+                "bytes_after": after_bytes,
+                "bytes_saved": max(0, before_bytes - after_bytes),
+                "messages_before": before_messages,
+                "messages_after": len(msgs),
+                # per mechanism, measured inside each step (independent numbers)
+                "m1_cache_hits": self._cache_hits,
+                "m1_cache_misses": self._cache_misses,
+                "m1_prefix_bytes_preserved": self._cache_prompt_bytes,
+                "m2_lines_compressed": self._tool_line_compressions,
+                "m2_bytes_saved": self._tool_bytes_saved,
+                "m3_schemas_compressed": self._schemas_compressed,
+                "m3_bytes_saved": self._schema_bytes_saved,
+                "m4_cumulative_tokens": self._cumulative_tokens,
+                "m5_obs_hits": self._obs_hits,
+                "m5_bytes_saved": self._obs_bytes_saved,
+                "m6_pruned": self._pruned_duplicates,
+                "m6_bytes_saved": self._pruned_bytes,
+                "m7_compactions": self._compactions,
+                "m7_dropped_messages": self._dropped_messages,
+                "m7_bytes_saved": self._compaction_bytes_saved,
+                "m8_gisted": self._gisted,
+                "m8_bytes_saved": self._gist_bytes_saved,
+            }
+        )
 
         log.info(
             "[EfficiencyGateway] [1]cache=%d/%d [2]tool_lines_saved=%d [3]schema_chars=%d "

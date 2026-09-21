@@ -1,4 +1,13 @@
 app:
+  # "Bytesync" is DELIBERATE. Founder-facing decision, docs/decisions/portal-defects-crew612.md:
+  # "app.title and organization.name in backstage/app-config.yaml read Mumchimp; the portal is
+  # the estate portal, not the store. Both now read Bytesync." The parent-company name itself
+  # is an open decision on crew#691, and the catalogue's own org entity
+  # (backstage/org/catalog-info.yaml) refuses to guess one until it lands.
+  #
+  # An agent changed this to "Estate" on 2026-09-18 having read "Bytesync" as a stray vendor
+  # default. It was not: it is the brand the estate chose, and the change was reverted. Do not
+  # "fix" it again without crew#691.
   title: Bytesync
   baseUrl: http://localhost:3100
 
@@ -102,6 +111,7 @@ app:
                   - relations: { $contains: { type: consumesApi } }
 
 organization:
+  # See the app.title note above: Bytesync is the chosen brand, not a vendor default.
   name: Bytesync
 
 backend:
@@ -217,7 +227,6 @@ proxy:
     '/fleetview':
       target: 'http://127.0.0.1:18790'
       changeOrigin: true
-      pathRewrite: { '^/fleetview': '' }
       allowedMethods: ['GET', 'POST']
 
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration

@@ -152,11 +152,22 @@ phase3_kube() {
   echo "-- Level 3a: kubeconfig via bin/idp-cloud --"
   [ -x "$IDP/bin/idp-cloud" ] || { blind "level3 bin/idp-cloud absent; kubeconfig not provisioned"; return 0; }
   command -v oci >/dev/null || { blind "level3 oci CLI absent (level0 should have installed it)"; return 0; }
-  # cluster list requires an OCI session token; bin/idp-oci-bootstrap is the one browser step that
-  # buys the estate that session. If a session is not live, refuse BLIND and print the exact fix.
+  # 2026-09-18: this used to say "run bin/idp-oci-bootstrap for a session token". That script now
+  # BLINDs at its first line on a device whose vault holds no OCI key -- which is every device
+  # after commit 76ba8be moved the dev secrets to OCI Vault -- so it sent a fresh workstation to
+  # a command that could not help. The browser login that mints the session is bin/idp-oci-login
+  # (its own header: "provider-adapter: oci -- this file IS the provider door (session sign-in)"),
+  # and the founder's own terminal is the only place it will run.
   local cl name id kubecfg="$HOME/.kube/config"
   cl="$("$IDP/bin/idp-cloud" cluster list 2>/dev/null || true)"
-  [ -n "$cl" ] || { blind "level3 no ACTIVE OCI cluster visible; run bin/idp-oci-bootstrap for a session token, or check tenancy"; return 0; }
+  [ -n "$cl" ] || {
+    blind "level3 no ACTIVE OCI cluster visible.
+         cause  this device has no OCI session
+         fix    bin/idp-oci-login, in the owner's own terminal (it refuses an agent session on purpose).
+                If the vault itself reads empty, the secrets moved to OCI Vault: see
+                docs/reference/agent-identity.md"
+    return 0
+  }
   name="$(printf '%s\n' "$cl" | awk 'NR==1{print $1}')"
   id="$(printf '%s\n' "$cl" | awk 'NR==1{print $2}')"
   [ "$MODE" = "--check" ] && { [ -r "$kubecfg" ] && ok "level3 kubeconfig present at $kubecfg" || blind "level3 kubeconfig absent at $kubecfg"; return 0; }
@@ -168,6 +179,49 @@ phase3_kube() {
   else
     ok "level3 would mint kubeconfig for cluster $name to $kubecfg"
   fi
+}
+
+# Level 3a-alt: the AGENT identity, which needs no OCI session and no founder login at all.
+#
+# WHY THIS EXISTS. phase3_kube above mints a kubeconfig whose user is the founder's own OCI
+# principal. WJ.1's last clause is "bin/idp-kube stops minting the founder's OCI principal", and
+# the door that makes that true is the JIT broker's /identity: a device holding ONE key presents
+# it and is handed a one-hour agent-reader token that can read and nothing else. That path needs
+# no browser, so it is the one a fresh workstation should be told about first, and it is the only
+# one that works when the OCI session is the thing that is missing.
+#
+# It is deliberately BLIND rather than FAIL when the key is absent: a machine that only runs unit
+# tests locally needs no cluster access, and a device that has never been authorized is the
+# ordinary case for a new laptop, not an error to shout about.
+phase3_agent_identity() {
+  echo "-- Level 3a-alt: agent identity via the JIT broker (no OCI session needed) --"
+  [ -x "$IDP/bin/idp-jit" ] || { blind "level3 bin/idp-jit absent; agent identity not provisioned"; return 0; }
+
+  local state
+  state="$(python3 "$IDP/bin/idp-jit" status 2>/dev/null || true)"
+  case "$state" in
+  *'"state": "active"'*|*'"state": "expiring"'*)
+    ok "level3 agent identity is live (read-only, renews itself)"
+    return 0
+    ;;
+  esac
+
+  if [ ! -e "$HOME/.local/state/idp/agent-key" ] && [ -z "${JIT_AGENT_KEY:-}" ]; then
+    blind "level3 this device holds no agent key, so it cannot become agent-reader.
+         cause  a device is authorized once, by its owner; nothing here can do it for you
+         fix    open the portal's Health page and press 'Authorize this device' on the
+                Device access tile -- one button, no terminal"
+    return 0
+  fi
+
+  # Key present: mint now. This needs no approval, by the broker's own design -- "agent-reader
+  # holds reads and nothing else ... so there is nothing to approve".
+  if "$IDP/bin/idp-jit" renew --kubeconfig "$HOME/.local/state/idp/agent.kubeconfig" --quiet 2>/dev/null; then
+    ok "level3 agent identity minted (read-only, renews every 10 minutes)"
+  else
+    blind "level3 agent key present but the broker did not answer; check tailnet or bin/idp-jit status"
+  fi
+  return 0
 }
 
 phase3_gh() {
@@ -204,6 +258,7 @@ phase0
 phase1
 phase2
 phase3_kube
+phase3_agent_identity
 phase3_gh
 verify
 

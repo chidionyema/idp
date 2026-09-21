@@ -78,8 +78,42 @@ def _load_routes(routes_path: Path):
     return module
 
 
+def _load_config_guard(routes_path: Path):
+    """`config_guard.py`, beside routes.py. Path-loaded like every sibling module here.
+
+    Registered in `sys.modules` before `exec_module` because this module uses `@dataclass`,
+    which resolves `cls.__module__` through `sys.modules` at decoration time. The other
+    siblings get away without it because none of them decorate; the executor link uses the
+    same `sys.modules` idiom for a different reason (singleton state).
+    """
+    path = routes_path.parent / "config_guard.py"
+    spec = importlib.util.spec_from_file_location("fleetview_config_guard", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load config guard at {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["fleetview_config_guard"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def build_app(routes_path: Path) -> FastAPI:
     routes = _load_routes(routes_path)
+
+    # FAIL FAST (2026-09-18). Until this call, a process launched with an empty environment
+    # started, bound its port and served traffic, then answered 502/503 per button while never
+    # saying 'I am not configured'. Validated here because a consequence of a key or an object
+    # store is a fact about this object, not a fact about production -- every startup path,
+    # including the tests, goes through build_app, so there is one check rather than two.
+    #
+    # ESTATE_DB is the only required var: without it every read returns nothing and an empty
+    # board is indistinguishable from a fleet with no work. NATS_URL and LANGFUSE_HOST are
+    # deliberately optional -- unset they turn a feature off, and those routes already answer
+    # 'unavailable' with the reason, which is an honest answer and not a startup failure.
+    _config_guard = _load_config_guard(routes_path)
+    config = _config_guard.require_config()
+    # Printed, not logged: this is what a person reads in a terminal or a pod's first lines,
+    # and a degraded start has to be visible without clicking anything.
+    print(_config_guard.startup_banner(config), flush=True)
 
     _nats_adapter_module = routes_path.parent / "nats_adapter.py"
     _claude_code_adapter_module = routes_path.parent / "claude_code_adapter.py"
@@ -125,6 +159,48 @@ def build_app(routes_path: Path) -> FastAPI:
         body, status = routes.sessions_envelope()
         return JSONResponse(content=body, status_code=status)
 
+    @app.get(routes.HISTORY_PATH)
+    def history(session_id: str = "", since: str = "", until: str = ""):
+        payload, status = routes.history_envelope(session_id, since, until)
+        return JSONResponse(content=payload, status_code=status)
+
+    @app.get(routes.QUERY_PATH)
+    def query(directive: str = ""):
+        """GET, because a question is not a mutation and a link to one should be shareable."""
+        payload, status = routes.query_envelope(directive)
+        return JSONResponse(content=payload, status_code=status)
+
+    @app.post(routes.VOICE_STREAM_PATH)
+    async def voice_stream(body: dict):
+        """The same question, streamed as clauses.
+
+        TWO ROUTES, ON PURPOSE. `/voice` returns one JSON answer and stays for any caller that
+        wants a single response; `/voice/stream` sends each clause as it is written. The browser
+        uses the stream, because a person waiting in silence for a finished paragraph is the
+        difference between this feeling instant and feeling broken.
+        """
+        envelope, _status = routes.sessions_envelope()
+        sessions = envelope.get("sessions") or []
+
+        def gen():
+            for chunk in routes.stream_voice(body, sessions):
+                yield chunk
+
+        return StreamingResponse(gen(), media_type="text/event-stream", headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        })
+
+    @app.post(routes.VOICE_PATH)
+    async def voice(body: dict):
+        """Voice in, one or two sentences out. Read-only: it can describe the fleet and cannot
+        change it, and the prompt says so in as many words."""
+        # The SAME envelope /sessions serves. One source, so the spoken answer and the board can
+        # never disagree about what the fleet is.
+        envelope, _status = routes.sessions_envelope()
+        payload, status = routes.ask_voice(body, envelope.get("sessions") or [])
+        return JSONResponse(content=payload, status_code=status)
+
     @app.get(routes.STREAM_PATH)
     async def stream():
         nats_url = os.environ.get("NATS_URL", "")
@@ -156,19 +232,68 @@ def build_app(routes_path: Path) -> FastAPI:
 
             return StreamingResponse(gen_nats(), media_type="text/event-stream")
 
-        async def gen():
-            # Initial frame: one event per current session so the page renders on connect.
+        async def gen_live():
+            """LIVE FRAMES WITHOUT A BUS, measured from the ledger that is always being written.
+
+            THE GAP THIS CLOSES. Without NATS_URL this route sent the initial frames and then
+            nothing but `: heartbeat` for ever. Measured 2026-09-19: the stream authenticated
+            (after a 401 fix), delivered 24 frames on connect, and then a heartbeat every 30s.
+            Every trail, every jet and every "live" claim in the UI was therefore cosmetic -- the
+            page could only ever be as fresh as the last 15-second poll.
+
+            On this machine there IS a live source and it was already on disk: `session_events`
+            gains a row every time a session writes. Tail ing that table costs one indexed query
+            per second and needs no NATS, no cluster and no new dependency. It is the same table
+            the recorder fills and the same one bin/idp-cluster-state reads.
+
+            The poll is not removed; it is what makes a session that has gone QUIET still move to
+            `stuck` on the board, and a row that only changes when it writes could otherwise sit
+            `running` for ever.
+            """
             body, _status = routes.sessions_envelope()
             for record in body.get("sessions") or []:
                 yield routes.stream_frames([record])[0]
-            # Heartbeat: a comment line keeps the connection open across proxies without
-            # the page misreading it as a session change. The session contract is in
-            # schema/session.json -- nothing here invents one.
-            while True:
-                await asyncio.sleep(30)
-                yield ": heartbeat\n\n"
 
-        return StreamingResponse(gen(), media_type="text/event-stream")
+            seen = routes.newest_event_seq()
+            last_full = asyncio.get_event_loop().time()
+            while True:
+                await asyncio.sleep(1.0)
+                now = asyncio.get_event_loop().time()
+                try:
+                    newest = routes.newest_event_seq()
+                except Exception:  # noqa: BLE001 -- a ledger read that fails is not fatal
+                    newest = seen
+                if newest > seen:
+                    # Something wrote. Send every session that moved, so a burst of tool calls
+                    # arrives as a burst rather than one frame per second.
+                    seen = newest
+                    fresh, _st = routes.sessions_envelope()
+                    for record in fresh.get("sessions") or []:
+                        yield routes.stream_frames([record])[0]
+                elif now - last_full >= 15:
+                    # Nothing wrote: still send the board so a session that has gone quiet moves
+                    # to `stuck` on the page without waiting for a client poll.
+                    last_full = now
+                    fresh, _st = routes.sessions_envelope()
+                    for record in fresh.get("sessions") or []:
+                        yield routes.stream_frames([record])[0]
+                if now - last_full >= 30:
+                    yield ": heartbeat\n\n"
+                    last_full = now
+
+        return StreamingResponse(
+            gen_live(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.get(routes.CHANNELS_PATH)
+    def channels_get():
+        # Why this route exists: the radial menu must enable exactly the verbs the backend will
+        # accept, and a second copy of the channel table in the front end is a copy that will
+        # drift. The UI offers what is served here; anything else it shows as unavailable.
+        body, status = routes.channels_envelope()
+        return JSONResponse(body, status_code=status)
 
     @app.get(routes.NOTES_PATH)
     def notes_get(session_id: str):
@@ -187,6 +312,24 @@ def build_app(routes_path: Path) -> FastAPI:
         result, status = routes.add_nudge(body)
         return JSONResponse(content=result, status_code=status)
 
+    @app.post(routes.STOP_PATH)
+    async def stop_post(request: Request):
+        body = await request.json()
+        result, status = routes.add_stop(body)
+        return JSONResponse(content=result, status_code=status)
+
+    @app.post(routes.APPROVE_PATH)
+    async def approve_post(request: Request):
+        body = await request.json()
+        result, status = routes.add_approve(body)
+        return JSONResponse(content=result, status_code=status)
+
+    @app.post(routes.DENY_PATH)
+    async def deny_post(request: Request):
+        body = await request.json()
+        result, status = routes.add_deny(body)
+        return JSONResponse(content=result, status_code=status)
+
     @app.get(routes.SIGNALS_PATH)
     def signals_get(session_id: str):
         body, status = routes.signals_envelope(session_id)
@@ -200,6 +343,19 @@ def build_app(routes_path: Path) -> FastAPI:
     @app.get(routes.LEDGER_PATH)
     def ledger_get(session_id: str):
         body, status = routes.ledger_tail_envelope(session_id)
+        return JSONResponse(content=body, status_code=status)
+
+    @app.get(routes.DEVICE_STATUS_PATH)
+    def device_status_get():
+        body, status = routes.device_status_envelope()
+        return JSONResponse(content=body, status_code=status)
+
+    @app.post(routes.DEVICE_AUTHORIZE_PATH)
+    def device_authorize_post():
+        # POST, not GET: this mints a single-use challenge, and a GET that changed state would
+        # be both wrong and prefetchable. The proxy's allowedMethods for this key already
+        # carries POST (app-config.yaml), so no config change is needed for the route to reach.
+        body, status = routes.device_authorize_envelope()
         return JSONResponse(content=body, status_code=status)
 
     @app.get(routes.BLAST_RADIUS_PATH)

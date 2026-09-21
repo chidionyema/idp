@@ -1,83 +1,591 @@
 #!/usr/bin/env python3
-"""estate-session-recorder — slot 5 of the local ops tier (crew#929).
+"""The session recorder: real agent sessions into estate.db, so the board has something true.
 
-Given a block of claimed work (the tail of a session), emit the durable INVENTORY capsule
-(Built / Verified / Not-proven / Evidence) but ONLY keep claims that carry command-run proof.
-The knowledge-base backstop (R30): a session ends with a record of what it built and how —
-never a claim with no probe (LAW 2).
+THE GAP THIS FILLS (measured 2026-09-18). The board reads `catalog/estate.db`'s
+`sessions`/`session_events` tables (sessions.py `_estate_db_sessions`). Those tables held three
+hand-written demo rows -- `fleet-live-001/002/003` -- and the schema's own comment said it
+plainly:
 
-    bin/estate-session-recorder <work.md>     # grade a claimed-work block in a file
-    ... | bin/estate-session-recorder          # read the block from stdin
+    "Schema only: nothing in this repo writes these tables yet -- the sync daemon that will is
+     a separate, later piece."
 
-Root: by default the repo this script lives in (the idp checkout). Point ESTATE_SESSION_REPO at the
-checkout the claims name (the crew repo, a product repo) before grading its sessions.
+This is that piece. Until it existed, every board complaint traced back here: buttons that
+seemed to do nothing had nothing real to act on, TRACE answered 503 because no session had a
+trace, and STOP returned 500 because there was no live session to stop.
 
-Deterministic doc-work: a "Built X" claim is kept only when X names a path that exists under the
-root; a Verified / Evidence claim is kept only when it names a concrete probe (URL / sha /
-path:line / real binary command). Everything else is reported NOT-PROVEN so a reader sees exactly
-what was not evidenced. No model, no fabrication. Exit 0 after printing; the capsule is the record.
+WHAT IT READS. Agents that already record themselves, unmodified:
+
+  pi           ~/.pi/agent/sessions/**/*.jsonl   -- model, tokens, cost, timestamps, cwd
+  claude-code  ~/.claude/projects/**/*.jsonl     -- the same shape pi records
+  estate       ~/.estate/claims.jsonl            -- the estate's own session claims ledger
+
+No agent is asked to cooperate and no agent is modified. This is a reader, the same posture as
+`bin/estate-twin-runtime`: it observes, it does not decide.
+
+WHAT IT WRITES. One `sessions` row per session (idempotent, upserted) and one `session_events`
+row per new observation (append-only, keyed by `seq`). `updated_at` is derived from the newest
+event, which is what makes liveness and staleness real rather than decorative.
+
+THE HONESTY RULES. Each of these is a measured failure elsewhere in this estate, applied here:
+
+  * a session whose file cannot be parsed is SKIPPED and counted, never written as blank;
+  * a source that cannot be read at all is reported BLIND naming it, never silently empty --
+    'the reader is broken' and 'there are no sessions' must not look the same;
+  * a seeded row is never invented. If a source has no sessions, this writes none, and the
+    board's existing `unreachable` machinery says so;
+  * spend is recorded only when the ledger actually carries a cost. A missing cost is absent,
+    never 0.0, because 0.0 is a claim and None is a fact.
+
+CONFIG (LAW 46):
+  ESTATE_DB        the catalog to write (default <repo>/catalog/estate.db)
+  RECORDER_SOURCES comma-separated subset of pi,claude-code,estate (default: all present)
+  RECORDER_ALLOW_SEED   refuse-by-default escape hatch; see main()
+
+USAGE
+  bin/estate-session-recorder            # one pass, print what it wrote
+  bin/estate-session-recorder --json     # machine-readable
+  bin/estate-session-recorder --install  # a 60s LaunchAgent, so the board stays live
 """
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
 import os
-import re
+import sqlite3
 import sys
+from pathlib import Path
+from typing import Any, Iterable
 
-# python-strict clones ROOT for tests; ESTATE_SESSION_REPO lets another checkout be graded.
-ROOT = os.getenv("ESTATE_SESSION_REPO", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+def _repo_root() -> Path:
+    """The checkout this script lives in, derived from its own path.
 
-
-def _on_disk(root, f):
-    f = f.strip().strip("`").lstrip("./")
-    return bool(f) and not f.startswith(("http", "git ", "kubectl", "gh ", "brew", "curl ")) and (
-        os.path.exists(os.path.join(root, f)) or os.path.exists(os.path.join(root, "docs", f)))
-
-
-def _real_probe(item):
-    words = item.split()
-    for w in words:
-        if re.search(r"^[0-9a-f]{7,40}$|^https?://|\w[\w./-]+:\d+$", w):
-            return True
-        if re.search(r"\w[\w./-]+\.(md|py|sh|yaml|yml|go|ts|tsx)$", w) and os.path.exists(w):
-            return True
-    return len(words) >= 2 and any(t in item for t in ("bin/", "kubectl ", "gh ", "git ", "pytest ", "make "))
+    `__file__` is not guaranteed: a caller that loads this file through `SourceFileLoader`
+    without a filename (the test suite does) gets a module with no `__file__` at all, and the
+    first version raised `NameError: name '__file__' is not defined` on import. Falling back
+    to the current directory is right for the only other case -- running from a checkout root
+    -- and the ESTATE_DB override exists for every case where neither is true.
+    """
+    try:
+        return Path(__file__).resolve().parent.parent
+    except NameError:  # loaded by a loader that provides no filename
+        return Path.cwd()
 
 
-def _claim(line, kind):
-    m = re.search(r"\*?\*?" + kind + r"\*?\*?:\s?(.*)", line)
-    return m
+ROOT = _repo_root()
+_DB_DEFAULT = ROOT / "catalog" / "estate.db"
+
+# A ledger's own size cap. The estate has ~20 pi sessions and dozens of claude-code ones; a
+# reader that will happily open 100k files is a reader that hangs the board on a bad day.
+MAX_FILES_PER_SOURCE = 400
+
+# How far back to look. A session that has not written in a week is history, not the fleet, and
+# the board's own freshness rule would call it `stopped` anyway.
+MAX_AGE_DAYS = 7
 
 
-def main(argv):
-    src = sys.stdin
-    if len(argv) > 1 and argv[1] != "-":
-        src = open(argv[1], encoding="utf-8")
-    built, verified, dropped = [], [], []
-    for raw in src:
-        line = re.sub(r"^\s*[-*+]\s+", "", raw.rstrip("\n"))
-        m = _claim(line, "Built")
-        if m:
-            for name in re.split(r"[;,]\s+", m.group(1)):
-                name = name.strip().strip("*`")
-                if not name:
-                    continue
-                (built if _on_disk(ROOT, name) else dropped).append(("built", name))
+# ------------------------------------------------------------------------------- the schema
+#
+# Owned by bin/estate-twin-runtime (`_ensure_schema`). Re-stated here only as the minimum this
+# writer needs, with IF NOT EXISTS throughout, so the recorder can run before a twin sweep has
+# ever happened on a fresh machine -- and so it can never alter a table the twin owns.
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS sessions (
+    id            TEXT PRIMARY KEY,
+    provider      TEXT NOT NULL,
+    model         TEXT NOT NULL,
+    created_at    TIMESTAMP NOT NULL,
+    metadata_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS session_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id   TEXT NOT NULL,
+    seq          INTEGER NOT NULL,
+    type         TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    ts           TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS session_events_session ON session_events (session_id, seq);
+"""
+
+
+def _db_path() -> Path:
+    return Path(os.environ.get("ESTATE_DB", str(_DB_DEFAULT)))
+
+
+def _connect() -> sqlite3.Connection:
+    con = sqlite3.connect(str(_db_path()))
+    con.row_factory = sqlite3.Row
+    con.executescript(_SCHEMA)
+    return con
+
+
+def _now() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+# ------------------------------------------------------------------------- the row contract
+#
+# One shape, whatever the source. `spend_usd` and friends are Optional and stay absent when
+# unknown: sessions.py's `spendLabel` already renders None as '—' and 0.0 as '$0.00', so
+# inventing a zero here would put a false number in front of a reader.
+
+
+class Observation:
+    """What one pass saw for one session. The unit every source produces."""
+
+    __slots__ = ("session_id", "provider", "model", "created_at", "updated_at", "meta", "seq")
+
+    def __init__(
+        self,
+        *,
+        session_id: str,
+        provider: str,
+        model: str,
+        created_at: str,
+        updated_at: str,
+        meta: dict[str, Any],
+        seq: int = 1,
+    ) -> None:
+        self.session_id = session_id
+        self.provider = provider
+        self.model = model or "unknown"
+        self.created_at = created_at
+        self.updated_at = updated_at
+        self.meta = meta
+        self.seq = seq
+
+
+# ------------------------------------------------------------------------------- the sources
+
+
+def _parse_iso(value: Any) -> str | None:
+    """A timestamp as ISO-8601 UTC, or None. Never guesses a timezone."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        # Milliseconds and seconds both appear in the wild; 1e11 is the boundary that separates
+        # them for any date between 1973 and 5138, which covers every ledger here.
+        secs = value / 1000.0 if value > 1e11 else float(value)
+        try:
+            return dt.datetime.fromtimestamp(secs, dt.timezone.utc).isoformat()
+        except (OverflowError, OSError, ValueError):
+            return None
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        parsed = dt.datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed.astimezone(dt.timezone.utc).isoformat()
+
+
+def _roaming() -> list[Path]:
+    """Every pi/claude-code session directory. Both tools use the same slug convention."""
+    home = Path.home()
+    roots = [
+        home / ".pi" / "agent" / "sessions",
+        home / ".claude" / "projects",
+    ]
+    return [r for r in roots if r.is_dir()]
+
+
+def _recent_jsonl(root: Path) -> list[Path]:
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=MAX_AGE_DAYS)
+    out: list[Path] = []
+    for p in root.rglob("*.jsonl"):
+        try:
+            mtime = dt.datetime.fromtimestamp(p.stat().st_mtime, dt.timezone.utc)
+        except OSError:
             continue
-        m = _claim(line, "Verified")
-        if m:
-            for item in re.split(r"[;,]\s+", m.group(1)):
-                item = item.strip().strip("*`")
-                if not item:
+        if mtime >= cutoff:
+            out.append(p)
+    out.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return out[:MAX_FILES_PER_SOURCE]
+
+
+def _scan_transcript(path: Path, provider: str) -> Observation | None:
+    """One agent transcript -> one Observation, from the `usage` blocks it already carries.
+
+    Reads the same fields `pi-session-cost.mjs` does, so the board's spend figure and the
+    cost tool's figure are the same number from the same source rather than two answers to one
+    question.
+    """
+    model = ""
+    cwd = ""
+    first_ts: str | None = None
+    last_ts: str | None = None
+    tokens = 0
+    cost = 0.0
+    saw_cost = False
+    turns = 0
+
+    try:
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
                     continue
-                (verified if _real_probe(item) else dropped).append(("verified", item))
-            continue
-        m = _claim(line, "Evidence")
-        if m:
-            ev = m.group(1).strip().strip("`*")
-            (verified if _real_probe(ev) else dropped).append(("evidence", ev))
-    print("BUILT:" + ("; ".join(n for _, n in built) if built else " (none proved on disk)"))
-    print("VERIFIED:" + ("; ".join(x for _, x in verified) if verified else " (no concrete probe cited)"))
-    print("NOT-PROVEN:" + ("; ".join(f"{k}:{v}" for k, v in dropped) if dropped else " none — every claim carries a probe"))
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(d, dict):
+                    continue
+                ts = _parse_iso(d.get("timestamp") or d.get("ts") or d.get("time"))
+                if ts:
+                    first_ts = first_ts or ts
+                    last_ts = ts
+                msg = d.get("message") if isinstance(d.get("message"), dict) else d
+                if isinstance(msg, dict):
+                    model = msg.get("model") or model
+                    cwd = d.get("cwd") or msg.get("cwd") or cwd
+                    u = msg.get("usage")
+                    if isinstance(u, dict):
+                        turns += 1
+                        tokens += int(u.get("totalTokens") or 0)
+                        c = u.get("cost")
+                        if isinstance(c, dict) and isinstance(c.get("total"), (int, float)):
+                            cost += float(c["total"])
+                            saw_cost = True
+    except OSError:
+        return None
+
+    if last_ts is None:
+        # No usable timestamp AND no usage block: this file contributed nothing, so it is not a
+        # session. Refusing here rather than falling back to mtime is deliberate -- the first
+        # version used mtime and the suite caught it immediately, because a file of malformed
+        # lines then became a row with a real time, a placeholder model and empty everything
+        # else. That is a fabricated session, which is the class of thing this tool exists to
+        # remove. The mtime fallback below applies only to a file that DID parse but carried no
+        # timestamp, where the content is real and only the clock is missing.
+        if turns == 0:
+            return None
+        try:
+            last_ts = dt.datetime.fromtimestamp(
+                path.stat().st_mtime, dt.timezone.utc
+            ).isoformat()
+        except OSError:
+            return None
+
+    # The session id is the transcript's own stem -- the uuid the tool minted. The board
+    # already renders `<provider>:<id>`, and `_project_from_slug` reads the directory.
+    session_id = path.stem.split("_")[-1] if "_" in path.stem else path.stem
+    slug = path.parent.name
+    meta: dict[str, Any] = {
+        "task": "",  # filled from the first user turn, below, when one exists
+        "repo": _project_from_slug(slug),
+        "source": "recorder",
+        "transcript": str(path),
+        "turns": turns,
+        "total_tokens": tokens,
+    }
+    if saw_cost:
+        # Only when the ledger carried it. A missing cost is absent, never 0.0.
+        meta["spend_usd"] = round(cost, 6)
+    if cwd:
+        meta["cwd"] = cwd
+
+    return Observation(
+        session_id=session_id,
+        provider=provider,
+        model=model or "unknown",
+        created_at=first_ts or last_ts,
+        updated_at=last_ts,
+        meta=meta,
+    )
+
+
+def _project_from_slug(slug: str) -> str | None:
+    """Mirror of sessions.py's own rule, so the two never disagree about a session's repo."""
+    if not slug.startswith("-"):
+        return None
+    parts = [p for p in slug.split("-") if p]
+    while parts and parts[0] in ("Users", "home", "private", "var", "tmp"):
+        parts.pop(0)
+    while parts and parts[-1] in ("wt", "worktrees", "claude", "tmp"):
+        parts.pop()
+    for marker in ("wt", "worktrees"):
+        if marker in parts:
+            parts = parts[: parts.index(marker)]
+    return parts[-1] if parts else None
+
+
+def _first_user_turn(path: Path) -> str:
+    """The session's opening message, truncated -- the board's 'task' column needs something.
+
+    Empty string when there is none, which the UI already renders as 'no task description'
+    rather than as an error.
+    """
+    try:
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(d, dict):
+                    continue
+                m = d.get("message") if isinstance(d.get("message"), dict) else d
+                if isinstance(m, dict) and m.get("role") == "user":
+                    content = m.get("content")
+                    if isinstance(content, str) and content.strip():
+                        return content.strip()[:300]
+                    if isinstance(content, list):
+                        for part in content:
+                            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                                if part["text"].strip():
+                                    return part["text"].strip()[:300]
+    except OSError:
+        return ""
+    return ""
+
+
+def read_transcripts() -> tuple[list[Observation], list[str]]:
+    """Every pi/claude-code session on this machine, newest first. Never raises."""
+    obs: list[Observation] = []
+    blind: list[str] = []
+    roots = _roaming()
+    if not roots:
+        blind.append(
+            "no agent session directory under ~/.pi/agent/sessions or ~/.claude/projects "
+            "-- this machine records no agent sessions"
+        )
+    for root in roots:
+        provider = "claude-code" if ".claude" in str(root) else "pi"
+        files = _recent_jsonl(root)
+        if not files:
+            blind.append(f"{provider}: no transcript written in the last {MAX_AGE_DAYS} days")
+        for path in files:
+            seen = _scan_transcript(path, provider)
+            if seen is None:
+                continue
+            if not seen.meta.get("task"):
+                seen.meta["task"] = _first_user_turn(path)
+            obs.append(seen)
+    return obs, blind
+
+
+def read_estate_claims() -> tuple[list[Observation], list[str]]:
+    """The estate's own session-claims ledger, when it exists.
+
+    Read with the same posture as the twin's sweep: absent is the ordinary case on a machine
+    that has never claimed a session, and it is reported as such rather than as an error.
+    """
+    path = Path.home() / ".estate" / "claims.jsonl"
+    if not path.is_file():
+        return [], ["estate: no ~/.estate/claims.jsonl on this machine"]
+    obs: list[Observation] = []
+    try:
+        for i, line in enumerate(path.read_text().splitlines()):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(row, dict):
+                continue
+            sid = str(row.get("id") or row.get("session") or i)
+            ts = _parse_iso(row.get("at")) or _now()
+            obs.append(
+                Observation(
+                    session_id=sid,
+                    provider="estate",
+                    model="unknown",
+                    created_at=ts,
+                    updated_at=ts,
+                    meta={"task": row.get("branch") or "", "repo": row.get("session")},
+                )
+            )
+    except OSError as exc:
+        return [], [f"estate: claims ledger unreadable: {exc}"]
+    return obs, []
+
+
+_SOURCES = {
+    "pi": read_transcripts,
+    "claude-code": read_transcripts,
+    "estate": read_estate_claims,
+}
+
+
+# ------------------------------------------------------------------------------- the write
+
+
+def write_observations(con: sqlite3.Connection, obs: Iterable[Observation]) -> dict[str, int]:
+    """Upsert each session and append an event only when it is genuinely new.
+
+    Idempotent by construction: the `sessions` row is replaced, and a `session_events` row is
+    appended only when `(session_id, updated_at)` has not been recorded. Running this every 60
+    seconds therefore adds no rows to a quiet session -- which is what makes the event table a
+    record of change rather than of polling.
+    """
+    written = events = 0
+    for o in obs:
+        meta = dict(o.meta, session_id=o.session_id)
+        con.execute(
+            """
+            INSERT INTO sessions (id, provider, model, created_at, metadata_json)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                provider=excluded.provider,
+                model=excluded.model,
+                metadata_json=excluded.metadata_json
+            """,
+            (o.session_id, o.provider, o.model, o.created_at, json.dumps(meta, sort_keys=True)),
+        )
+        written += 1
+
+        seen = con.execute(
+            "SELECT 1 FROM session_events WHERE session_id = ? AND ts = ? LIMIT 1",
+            (o.session_id, o.updated_at),
+        ).fetchone()
+        if seen is None:
+            seq_row = con.execute(
+                "SELECT COALESCE(MAX(seq), 0) + 1 FROM session_events WHERE session_id = ?",
+                (o.session_id,),
+            ).fetchone()
+            con.execute(
+                """
+                INSERT INTO session_events (session_id, seq, type, payload_json, ts)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    o.session_id,
+                    int(seq_row[0]),
+                    "observed",
+                    json.dumps({"model": o.model, "turns": o.meta.get("turns")}),
+                    o.updated_at,
+                ),
+            )
+            events += 1
+    con.commit()
+    return {"sessions": written, "events": events}
+
+
+def install_timer(quiet: bool) -> int:
+    """A 60s LaunchAgent, so the board reflects the fleet without anyone remembering to run this.
+
+    Sixty seconds, not ten: a session's state is a freshness guess with a minutes-scale window,
+    so a tighter interval would add writes without adding truth.
+    """
+    try:
+        script = str(Path(__file__).resolve())
+    except NameError:  # see _repo_root
+        print(
+            "cannot --install: this module was loaded without a filename, so there is no path "
+            "to put in the LaunchAgent. Run bin/estate-session-recorder directly.",
+            file=sys.stderr,
+        )
+        return 1
+    label = "com.estate.session-recorder"
+    dest = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    logdir = Path.home() / "Library" / "Logs"
+    logdir.mkdir(parents=True, exist_ok=True)
+    dest.write_text(
+        f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>{label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{sys.executable}</string>
+    <string>{script}</string>
+    <string>--quiet</string>
+  </array>
+  <key>StartInterval</key><integer>60</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardErrorPath</key><string>{logdir / "estate-session-recorder.log"}</string>
+  <key>StandardOutPath</key><string>{logdir / "estate-session-recorder.log"}</string>
+</dict>
+</plist>
+"""
+    )
+    import subprocess as _sp
+
+    _sp.run(["launchctl", "unload", str(dest)], capture_output=True, check=False)
+    r = _sp.run(["launchctl", "load", str(dest)], capture_output=True, text=True, check=False)
+    if r.returncode != 0:
+        print(f"launchctl load failed: {r.stderr.strip()[:200]}", file=sys.stderr)
+        return 1
+    if not quiet:
+        print(f"installed  {dest}\n           runs every 60s; log ~/Library/Logs/estate-session-recorder.log")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--install", action="store_true", help="a 60s LaunchAgent")
+    ap.add_argument("--sources", default=os.environ.get("RECORDER_SOURCES") or "pi,estate")
+    a = ap.parse_args()
+
+    if a.install:
+        return install_timer(a.quiet)
+
+    wanted = [s.strip() for s in a.sources.split(",") if s.strip()]
+    obs: list[Observation] = []
+    blind: list[str] = []
+
+    # `pi` and `claude-code` share one reader, so run it once and take both rather than twice.
+    if "pi" in wanted or "claude-code" in wanted:
+        got, why = read_transcripts()
+        keep = {s for s in wanted if s in ("pi", "claude-code")}
+        obs += [o for o in got if o.provider in keep]
+        blind += why
+    if "estate" in wanted:
+        got, why = read_estate_claims()
+        obs += got
+        blind += why
+
+    if not obs:
+        # Nothing to write. Say why, and write nothing -- never a placeholder row, which is the
+        # failure this whole tool exists to remove.
+        if a.json:
+            print(json.dumps({"sessions": 0, "events": 0, "blind": blind}, indent=2))
+        else:
+            print("no sessions found; nothing written")
+            for b in blind:
+                print(f"  BLIND {b}")
+        return 0
+
+    con = _connect()
+    counts = write_observations(con, obs)
+    total = con.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+    con.close()
+
+    if a.json:
+        print(
+            json.dumps(
+                {"written": counts, "sessions_in_db": total, "blind": blind}, indent=2
+            )
+        )
+    elif not a.quiet:
+        print(
+            f"ok      session-recorder  {counts['sessions']} session(s), "
+            f"{counts['events']} new event(s) -> {_db_path()}"
+        )
+        print(f"        board now reports {total} session(s)")
+        for b in blind:
+            print(f"  BLIND {b}")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(main())

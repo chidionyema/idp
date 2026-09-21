@@ -1,0 +1,822 @@
+#!/usr/bin/env python3
+"""idp-voice — the conversation loop.
+
+Async duplex: listen() -> think() -> speak() over asyncio.Queue.
+Micro-clause chunking: speak a clause while the model is still generating.
+Barge-in: a line on stdin (or a new file in --watch) cancels speaking.
+
+Modes:
+  --ask "..."      text in, text out (no audio). The testable mode.
+  --file x.wav     transcribe -> think -> speak
+  --text "..."     text in, speak the answer
+  --listen         live: record, transcribe, think, speak, repeat
+  --check          which engines are reachable; exit non-zero if none
+
+Honest degradation (LAW 38): BLIND voice ... on stderr, exit 2.
+Config (LAW 46): OLLAMA_HOST, VOICE_MODEL, WHISPER_CMD, VOICE_SYSTEM, VOICE_MAX_TOKENS.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+import wave
+from pathlib import Path
+
+# --------------------------------------------------------------------------
+# Config (LAW 46)
+# --------------------------------------------------------------------------
+
+DEFAULT_HOST = "http://localhost:11434"
+DEFAULT_MODEL = "deepseek-r1:8b"
+DEFAULT_MAX_TOKENS = 512
+
+SYSTEM_PROMPT = (
+    "You are the estate's fleet operator. You answer questions about sessions, "
+    "state and cost. You answer in one or two sentences, plainly. "
+    "You never claim to have done something you have not done. "
+    "If you do not know, you say so."
+)
+
+HTTP_TIMEOUT = 30.0  # every HTTP call passes a timeout. Never hang.
+
+CLAUSE_BOUNDARIES = ",.?!;"
+
+
+def ollama_host() -> str:
+    return os.environ.get("OLLAMA_HOST", DEFAULT_HOST).rstrip("/")
+
+
+def voice_model() -> str:
+    return os.environ.get("VOICE_MODEL", DEFAULT_MODEL)
+
+
+def voice_system() -> str:
+    return os.environ.get("VOICE_SYSTEM", SYSTEM_PROMPT)
+
+
+def voice_max_tokens() -> int:
+    raw = os.environ.get("VOICE_MAX_TOKENS", str(DEFAULT_MAX_TOKENS))
+    try:
+        return int(raw)
+    except ValueError:
+        return DEFAULT_MAX_TOKENS
+
+
+# --------------------------------------------------------------------------
+# BLIND — honest degradation, loudly (LAW 38)
+# --------------------------------------------------------------------------
+
+
+class Blind(Exception):
+    """Raised when an engine is not reachable. Carries the exit code."""
+
+    def __init__(self, message: str, code: int = 2):
+        super().__init__(message)
+        self.message = message
+        self.code = code
+
+
+def blind(message: str, code: int = 2) -> "Blind":
+    return Blind(message, code)
+
+
+# --------------------------------------------------------------------------
+# HTTP — urllib.request in a thread. Every call has a timeout.
+# --------------------------------------------------------------------------
+
+
+def _post(
+    url: str,
+    payload: dict,
+    timeout: float = HTTP_TIMEOUT,
+    headers: dict | None = None,
+) -> bytes:
+    """POST JSON, return raw body. Raises Blind on connection failure.
+
+    `headers` defaults to Content-Type only (Ollama needs no auth); the router carries a bearer
+    token, so the header set is a parameter rather than a constant.
+    """
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers=headers or {"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as exc:
+        raise blind(f"HTTP {exc.code} from {url}: {exc.reason}")
+    except urllib.error.URLError as exc:
+        raise blind(f"cannot reach {url}: {exc.reason}")
+    except TimeoutError:
+        raise blind(f"timeout after {timeout}s reaching {url}")
+    except OSError as exc:
+        raise blind(f"cannot reach {url}: {exc}")
+
+
+def _get(url: str, timeout: float = HTTP_TIMEOUT, headers: dict | None = None) -> bytes:
+    req = urllib.request.Request(url, method="GET", headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as exc:
+        raise blind(f"HTTP {exc.code} from {url}: {exc.reason}")
+    except urllib.error.URLError as exc:
+        raise blind(f"cannot reach {url}: {exc.reason}")
+    except TimeoutError:
+        raise blind(f"timeout after {timeout}s reaching {url}")
+    except OSError as exc:
+        raise blind(f"cannot reach {url}: {exc}")
+
+
+async def _post_async(url: str, payload: dict, timeout: float = HTTP_TIMEOUT) -> bytes:
+    return await asyncio.to_thread(_post, url, payload, timeout)
+
+
+async def _get_async(url: str, timeout: float = HTTP_TIMEOUT) -> bytes:
+    return await asyncio.to_thread(_get, url, timeout)
+
+
+# --------------------------------------------------------------------------
+# Engines
+# --------------------------------------------------------------------------
+
+
+# The loaded transcriber, kept for the process's life. MEASURED 2026-09-19: constructing
+# WhisperModel costs 4.4s (1.3s import + 3.1s load) and TRANSCRIBING a 3s clip costs 3.4s, so
+# building it per call more than doubled every utterance. The same mistake as an unloaded LLM,
+# in a different engine -- speed here comes from holding the model, not from a faster one.
+_WHISPER_CACHE: dict[str, object] = {}
+
+
+def _whisper_model(model_cls: object, model_size: str) -> object:
+    """The one loaded transcriber for this process, built on first use."""
+    cached = _WHISPER_CACHE.get(model_size)
+    if cached is None:
+        cached = model_cls(model_size, device="cpu", compute_type="int8")  # type: ignore[operator]
+        _WHISPER_CACHE[model_size] = cached
+    return cached
+
+
+def transcribe(path: str) -> str:
+    """Transcribe an audio file.
+
+    Order of preference, and the FIRST that applies wins:
+      1. `faster-whisper` if the package is importable. This is the engine the estate's own spec
+         names (docs/specs/2026-09-18-voice-conversation-pipeline.md: "Faster-Whisper
+         large-v3-turbo, CTranslate2, 80-140ms"), it installs with pip and NO COMPILE -- which
+         matters here because whisper-cpp is unavailable: this is an Intel Mac, Homebrew calls it
+         a Tier 3 configuration and has no bottle.
+         Model size from WHISPER_MODEL, default "tiny": ~75MB, and enough to prove the path. The
+         spec's large-v3-turbo is one variable away.
+      2. WHISPER_CMD -> run it. THE PATH IS ALWAYS APPENDED, and `{path}` may also be used when
+         a command needs it in the middle. Appending unconditionally is what makes a plain
+         `whisper-cli` work without the caller learning this script's template syntax.
+      3. A .txt sibling of the wav exists -> read it (so the loop is testable with no model).
+      4. BLIND, naming what to set.
+    """
+    p = Path(path)
+    if not p.exists():
+        raise blind(f"no such audio file: {p}")
+
+    # faster-whisper first: installed, no compile, and the engine the estate's spec names.
+    try:
+        from faster_whisper import WhisperModel  # noqa: PLC0415 -- optional dependency
+    except ImportError:
+        WhisperModel = None  # type: ignore[assignment]
+    if WhisperModel is not None:
+        model_size = os.environ.get("WHISPER_MODEL", "tiny")
+        try:
+            model = _whisper_model(WhisperModel, model_size)
+            segments, _info = model.transcribe(str(p), beam_size=1, language="en")
+            text = " ".join(seg.text for seg in segments).strip()
+        except Exception as exc:  # noqa: BLE001 -- a failed model is BLIND, never silent
+            raise blind(f"faster-whisper could not transcribe {p.name}: {exc}")
+        if text:
+            return text
+        # An empty transcript is a real answer (silence), and it is not the same as a failure:
+        # the caller decides what to do with nothing said.
+        return ""
+
+    whisper = os.environ.get("WHISPER_CMD")
+    if whisper:
+        # The path is ALWAYS appended, and `{path}` is substituted when present. A transcriber
+        # invoked as `whisper-cli --model base` then receives the file with no template needed;
+        # one written as `whisper --model base {path} --output txt` keeps its own placement.
+        cmd = f"{whisper.replace('{path}', str(p))} {p}".strip()
+        try:
+            proc = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            raise blind(f"transcriber timed out on {p}")
+        except OSError as exc:
+            raise blind(f"transcriber failed: {exc}")
+        if proc.returncode != 0:
+            raise blind(f"transcriber exited {proc.returncode}: {proc.stderr.strip()}")
+        return proc.stdout.strip()
+
+    sibling = p.with_suffix(".txt")
+    if sibling.exists():
+        return sibling.read_text(encoding="utf-8").strip()
+
+    raise blind("no transcriber on this machine: set WHISPER_CMD")
+
+
+def _ollama_chat_url() -> str:
+    return f"{ollama_host()}/api/chat"
+
+
+def router_host() -> str:
+    """The estate's own model door. LAW 34: ONE router key per identity, and no vendor key ever
+    lives on this machine -- the laptop holds LITELLM_API_KEY and the router holds the rest."""
+    return os.environ.get("LITELLM_HOST", "https://llm.mumchimp.com").rstrip("/")
+
+
+def router_key() -> str:
+    return os.environ.get("LITELLM_API_KEY", "").strip()
+
+
+def _engine() -> str:
+    """Which mind answers. Default `router`, and that default is the fix, not a preference.
+
+    MEASURED ON THIS MACHINE, 2026-09-19. This is a 4-logical/2-PHYSICAL-core Intel Mac, and with
+    Chrome (117%) and an agent session (64%) already running, local Ollama generated at ~530ms per
+    token -- 12 tokens took 6.3s and a whole answer took 22s, with a 30s client timeout firing
+    first. Loading was not the problem: `keep_alive: -1` had already taken load from 16s to 0.65s.
+    The wall was the CPU.
+
+    The same question through the estate's router:
+
+        deepseek  1.37s   "Whether the agent is actually making progress but just slowly..."
+        deepseek  0.19s / 0.73s / 0.45s on repeated calls
+
+    So the router is faster by more than an order of magnitude AND it is the architecture the
+    estate already mandates. Local Ollama stays available with VOICE_ENGINE=ollama for a machine
+    with no router key or no network.
+    """
+    return os.environ.get("VOICE_ENGINE", "router").strip().lower()
+
+
+def router_model() -> str:
+    return os.environ.get("VOICE_ROUTER_MODEL", "deepseek")
+
+
+def _router_chat_url() -> str:
+    return f"{router_host()}/v1/chat/completions"
+
+
+def _build_router_payload(prompt: str, stream: bool) -> dict:
+    return {
+        "model": router_model(),
+        "messages": [
+            {"role": "system", "content": voice_system()},
+            {"role": "user", "content": prompt},
+        ],
+        "stream": stream,
+        "max_tokens": voice_max_tokens(),
+    }
+
+
+def _build_router_headers() -> dict:
+    return {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {router_key()}",
+    }
+
+
+def _keep_alive() -> int | str:
+    """How long Ollama keeps the model in memory. Default: forever (-1).
+
+    Typed rather than a plain string because Ollama's own API distinguishes them and the error
+    for getting it wrong is a bare 400 with a Go duration message -- which reads like a malformed
+    request rather than "you sent a number as text".
+    """
+    raw = os.environ.get("OLLAMA_KEEP_ALIVE", "-1").strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return raw
+
+
+def _build_chat_payload(prompt: str, stream: bool) -> dict:
+    """The request body. `keep_alive` is the latency fix and it is not optional.
+
+    Measured 2026-09-19 on this machine:
+
+        without keep_alive   load_ms=16007  eval_ms=1685   wall 30.0s   <- every time
+        with keep_alive=-1   load_ms=  477  eval_ms=1694   wall  2.6s
+
+    Ollama evicts a model after five idle minutes and the next call pays a full
+    load from disk. On an 8GB machine under load that is SIXTEEN SECONDS of dead
+    air before a single token -- which is what "why is everything a long timeout"
+    was. Sixteen seconds is not a slow model, it is a model that is not there.
+
+    `-1` keeps it resident for the life of the Ollama daemon. VOICE_MODEL:3b is
+    2.5GB, so the trade is a permanent 2.5GB for 33x on every call after the
+    first. Overridable with OLLAMA_KEEP_ALIVE for anyone who would rather have
+    the memory back; the default is the one that does not make a person wait.
+    """
+    return {
+        "model": voice_model(),
+        "messages": [
+            {"role": "system", "content": voice_system()},
+            {"role": "user", "content": prompt},
+        ],
+        "stream": stream,
+        "options": {"num_predict": voice_max_tokens()},
+        # A NUMBER, not a string. Measured: Ollama answers
+        #   {"error":"time: missing unit in duration \"-1\""}
+        # to the string "-1" -- it parses a string as a Go duration and only accepts
+        # minutes/hours with a unit, so `-1` as text is a 400. An env override may be either,
+        # so a value that looks like an integer is converted and anything else is passed
+        # through for Ollama to interpret as a duration ("30m", "1h").
+        "keep_alive": _keep_alive(),
+    }
+
+
+def think(prompt: str) -> str:
+    """Blocking, non-streaming think. Used by --ask."""
+    if _engine() == "ollama":
+        body = _post(_ollama_chat_url(), _build_chat_payload(prompt, stream=False))
+        try:
+            doc = json.loads(body.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise blind(f"bad response from ollama: {exc}")
+        msg = doc.get("message") or {}
+        content = msg.get("content")
+        if content is None:
+            raise blind("ollama returned no message content")
+        return content.strip()
+
+    if not router_key():
+        raise blind("no LITELLM_API_KEY: source the estate vault, or set VOICE_ENGINE=ollama")
+    body = _post(
+        _router_chat_url(),
+        _build_router_payload(prompt, stream=False),
+        headers=_build_router_headers(),
+    )
+    try:
+        doc = json.loads(body.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise blind(f"bad response from the router: {exc}")
+    choices = doc.get("choices") or []
+    if not choices:
+        # The router reports a depleted vendor plan as an error envelope, not a 5xx; say what it
+        # said rather than "no content".
+        err = (doc.get("error") or {}).get("message") if isinstance(doc.get("error"), dict) else None
+        raise blind(f"router returned no choices{': ' + err[:160] if err else ''}")
+    content = (choices[0].get("message") or {}).get("content")
+    if content is None:
+        raise blind("the router returned no message content")
+    return content.strip()
+
+
+async def think_stream(prompt: str):
+    """Async generator yielding content deltas from Ollama's streaming /api/chat."""
+    url = _ollama_chat_url()
+    payload = _build_chat_payload(prompt, stream=True)
+    data = json.dumps(payload).encode("utf-8")
+
+    def _open():
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            return urllib.request.urlopen(req, timeout=HTTP_TIMEOUT)
+        except urllib.error.HTTPError as exc:
+            raise blind(f"HTTP {exc.code} from {url}: {exc.reason}")
+        except urllib.error.URLError as exc:
+            raise blind(f"cannot reach {url}: {exc.reason}")
+        except TimeoutError:
+            raise blind(f"timeout after {HTTP_TIMEOUT}s reaching {url}")
+        except OSError as exc:
+            raise blind(f"cannot reach {url}: {exc}")
+
+    resp = await asyncio.to_thread(_open)
+    try:
+        while True:
+            line = await asyncio.to_thread(resp.readline)
+            if not line:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                doc = json.loads(line.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                continue
+            msg = doc.get("message") or {}
+            piece = msg.get("content")
+            if piece:
+                yield piece
+            if doc.get("done"):
+                break
+    finally:
+        try:
+            await asyncio.to_thread(resp.close)
+        except Exception:
+            pass
+
+
+def _say_available() -> bool:
+    return shutil.which("say") is not None
+
+
+def speak(text: str) -> None:
+    """macOS say + afplay. Blocking. Raises Blind if say is missing."""
+    if not text.strip():
+        return
+    if not _say_available():
+        raise blind("no speech synthesis")
+    with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as fh:
+        out = fh.name
+    try:
+        proc = subprocess.run(
+            ["say", "-o", out, text],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if proc.returncode != 0:
+            raise blind(f"say exited {proc.returncode}: {proc.stderr.strip()}")
+        if shutil.which("afplay"):
+            subprocess.run(["afplay", out], capture_output=True, timeout=300)
+    finally:
+        try:
+            os.unlink(out)
+        except OSError:
+            pass
+
+
+# --------------------------------------------------------------------------
+# Micro-clause chunking
+# --------------------------------------------------------------------------
+
+
+def split_clauses(buffer: str) -> tuple[list[str], str]:
+    """Split buffer at clause boundaries.
+
+    Returns (complete_clauses, remainder). A clause boundary is one of
+    , . ? ! ; — the boundary character stays with the clause.
+    """
+    clauses: list[str] = []
+    start = 0
+    for i, ch in enumerate(buffer):
+        if ch in CLAUSE_BOUNDARIES:
+            piece = buffer[start : i + 1].strip()
+            if piece:
+                clauses.append(piece)
+            start = i + 1
+    remainder = buffer[start:]
+    return clauses, remainder
+
+
+# --------------------------------------------------------------------------
+# The loop
+# --------------------------------------------------------------------------
+
+
+class VoiceLoop:
+    def __init__(self, speak_enabled: bool = True):
+        self.speak_enabled = speak_enabled
+        self.speak_task: asyncio.Task | None = None
+        self.barge_in = asyncio.Event()
+        self.spoken: list[str] = []
+
+    async def _speak_clause(self, clause: str) -> None:
+        self.spoken.append(clause)
+        if not self.speak_enabled:
+            return
+        await asyncio.to_thread(speak, clause)
+
+    async def speak_stream(self, clauses: asyncio.Queue) -> None:
+        """Consume clauses and speak them, one at a time, cancellable."""
+        try:
+            while True:
+                clause = await clauses.get()
+                if clause is None:
+                    return
+                await self._speak_clause(clause)
+        except asyncio.CancelledError:
+            raise
+
+    async def think_and_speak(self, prompt: str) -> str:
+        """Stream the model, chunk into clauses, speak while generating."""
+        clauses: asyncio.Queue = asyncio.Queue()
+        speaker = asyncio.create_task(self.speak_stream(clauses))
+        buffer = ""
+        full: list[str] = []
+        try:
+            async for delta in think_stream(prompt):
+                full.append(delta)
+                buffer += delta
+                done, buffer = split_clauses(buffer)
+                for clause in done:
+                    await clauses.put(clause)
+            tail = buffer.strip()
+            if tail:
+                await clauses.put(tail)
+            await clauses.put(None)
+            await speaker
+        except asyncio.CancelledError:
+            speaker.cancel()
+            raise
+        except Blind:
+            speaker.cancel()
+            raise
+        return "".join(full).strip()
+
+    async def barge_in_watcher(self, watch_dir: str | None) -> None:
+        """Watch stdin for a line, and optionally a directory for new files."""
+        loop = asyncio.get_running_loop()
+        seen: set[str] = set()
+        if watch_dir:
+            try:
+                seen = {str(p) for p in Path(watch_dir).glob("*.wav")}
+            except OSError:
+                seen = set()
+
+        async def stdin_reader():
+            while True:
+                line = await loop.run_in_executor(None, sys.stdin.readline)
+                if not line:
+                    return
+                if line.strip():
+                    self.barge_in.set()
+                    return
+
+        stdin_task = asyncio.create_task(stdin_reader())
+        try:
+            while True:
+                if watch_dir:
+                    try:
+                        now = {str(p) for p in Path(watch_dir).glob("*.wav")}
+                    except OSError:
+                        now = set()
+                    if now - seen:
+                        self.barge_in.set()
+                        return
+                if stdin_task.done():
+                    return
+                await asyncio.sleep(0.2)
+        finally:
+            stdin_task.cancel()
+
+
+# --------------------------------------------------------------------------
+# Modes
+# --------------------------------------------------------------------------
+
+
+def mode_ask(prompt: str) -> int:
+    """Text in, text out. No audio. The testable mode."""
+    print(f"USER  {prompt}")
+    try:
+        answer = think(prompt)
+    except Blind as exc:
+        print(f"BLIND voice {exc.message}", file=sys.stderr)
+        return exc.code
+    print(f"AGENT {answer}")
+    return 0
+
+
+def mode_text(prompt: str) -> int:
+    """Text in, speak the answer."""
+    print(f"USER  {prompt}")
+    try:
+        answer = think(prompt)
+    except Blind as exc:
+        print(f"BLIND voice {exc.message}", file=sys.stderr)
+        return exc.code
+    print(f"AGENT {answer}")
+    try:
+        speak(answer)
+    except Blind as exc:
+        print(f"BLIND voice {exc.message}", file=sys.stderr)
+        return exc.code
+    return 0
+
+
+def mode_file(path: str) -> int:
+    """Transcribe -> think -> speak."""
+    try:
+        text = transcribe(path)
+    except Blind as exc:
+        print(f"BLIND voice {exc.message}", file=sys.stderr)
+        return exc.code
+    print(f"USER  {text}")
+    try:
+        answer = think(text)
+    except Blind as exc:
+        print(f"BLIND voice {exc.message}", file=sys.stderr)
+        return exc.code
+    print(f"AGENT {answer}")
+    try:
+        speak(answer)
+    except Blind as exc:
+        print(f"BLIND voice {exc.message}", file=sys.stderr)
+        return exc.code
+    return 0
+
+
+def _record_once(seconds: float = 5.0) -> str:
+    """Record from the default input to a temp wav. macOS: sox or ffmpeg."""
+    out = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+    if shutil.which("sox"):
+        cmd = ["sox", "-d", "-r", "16000", "-c", "1", out, "trim", "0", str(seconds)]
+    elif shutil.which("ffmpeg"):
+        cmd = [
+            "ffmpeg", "-y", "-f", "avfoundation", "-i", ":0",
+            "-t", str(seconds), "-ar", "16000", "-ac", "1", out,
+        ]
+    else:
+        raise blind("no recorder on this machine: install sox or ffmpeg")
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=seconds + 30)
+    if proc.returncode != 0:
+        raise blind(f"recorder exited {proc.returncode}: {proc.stderr.strip()}")
+    return out
+
+
+async def mode_listen(watch_dir: str | None) -> int:
+    """Live loop: record, transcribe, think, speak, repeat. Barge-in cancels speaking."""
+    loop = VoiceLoop(speak_enabled=True)
+    watcher = asyncio.create_task(loop.barge_in_watcher(watch_dir))
+    try:
+        while True:
+            loop.barge_in.clear()
+            try:
+                wav = await asyncio.to_thread(_record_once)
+            except Blind as exc:
+                print(f"BLIND voice {exc.message}", file=sys.stderr)
+                return exc.code
+            try:
+                text = await asyncio.to_thread(transcribe, wav)
+            except Blind as exc:
+                print(f"BLIND voice {exc.message}", file=sys.stderr)
+                return exc.code
+            finally:
+                try:
+                    os.unlink(wav)
+                except OSError:
+                    pass
+            if not text:
+                continue
+            print(f"USER  {text}")
+            speak_task = asyncio.create_task(loop.think_and_speak(text))
+            barge = asyncio.create_task(loop.barge_in.wait())
+            done, pending = await asyncio.wait(
+                {speak_task, barge}, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+            if speak_task in done:
+                try:
+                    answer = speak_task.result()
+                    print(f"AGENT {answer}")
+                except Blind as exc:
+                    print(f"BLIND voice {exc.message}", file=sys.stderr)
+                    return exc.code
+            else:
+                speak_task.cancel()
+                print("BARGE-IN", file=sys.stderr)
+    finally:
+        watcher.cancel()
+
+
+def mode_check() -> int:
+    """Which engines are reachable. Exit non-zero if none."""
+    ok = 0
+    # Report the engine that will ANSWER, first. The first version checked only Ollama, so on the
+    # router configuration it printed an Ollama status that was irrelevant and said nothing about
+    # the door the traffic actually uses.
+    if _engine() == "ollama":
+        host = ollama_host()
+        try:
+            _get(f"{host}/api/tags", timeout=5.0)
+            print(f"OK    engine: ollama at {host}, model {voice_model()}")
+            ok += 1
+        except Blind as exc:
+            print(f"BLIND engine: ollama at {host}: {exc.message}")
+    else:
+        if not router_key():
+            print("BLIND engine: router selected but LITELLM_API_KEY is unset")
+        else:
+            try:
+                _get(f"{router_host()}/v1/models", timeout=10.0, headers=_build_router_headers())
+                print(f"OK    engine: router at {router_host()}, model {router_model()}")
+                ok += 1
+            except Blind as exc:
+                print(f"BLIND engine: router at {router_host()}: {exc.message}")
+
+    # The SAME order transcribe() uses, so --check cannot say BLIND about a machine that can
+    # transcribe. The first version checked only WHISPER_CMD and reported "BLIND transcriber" on
+    # a box where faster-whisper was installed and working -- a status line disagreeing with the
+    # behaviour it describes, which is worse than no status line.
+    # WARM THE MODEL. Without this the first real request pays the load, and a person
+    # experiences the first answer as broken. `keep_alive: -1` makes it stay; this makes it
+    # arrive. It is the difference between 30s and 2.6s on the FIRST thing anyone asks.
+    try:
+        if _engine() == "ollama":
+            _post(_ollama_chat_url(), _build_chat_payload("ready", stream=False), timeout=120.0)
+            print(f"OK    model warmed and resident: {voice_model()}")
+        else:
+            if not router_key():
+                raise blind("no LITELLM_API_KEY: source the estate vault, or set VOICE_ENGINE=ollama")
+            _post(_router_chat_url(), _build_router_payload("ready", stream=False),
+                  timeout=120.0, headers=_build_router_headers())
+            print(f"OK    router warmed: {router_model()} at {router_host()}")
+    except Exception as exc:  # noqa: BLE001 -- a warm-up failure is not a check failure
+        print(f"note  model warm-up did not complete: {str(exc)[:80]}")
+
+    # WARM THE TRANSCRIBER for the same reason. Measured: the first transcribe in a process is
+    # 6.2s and the second is 1.9s, because the model is 4.4s of construction. A person's first
+    # utterance should not pay for it.
+    try:
+        from faster_whisper import WhisperModel as _WM  # noqa: PLC0415
+
+        _whisper_model(_WM, os.environ.get("WHISPER_MODEL", "tiny"))
+        print("OK    transcriber warmed and resident")
+    except ImportError:
+        pass
+    except Exception as exc:  # noqa: BLE001
+        print(f"note  transcriber warm-up did not complete: {str(exc)[:80]}")
+
+    try:
+        import faster_whisper  # noqa: F401, PLC0415 -- availability probe
+
+        print(f"OK    transcriber: faster-whisper, model {os.environ.get('WHISPER_MODEL', 'tiny')}")
+        ok += 1
+    except ImportError:
+        if os.environ.get("WHISPER_CMD"):
+            print(f"OK    transcriber: {os.environ['WHISPER_CMD']}")
+            ok += 1
+        else:
+            print("BLIND transcriber: pip install faster-whisper, or set WHISPER_CMD")
+
+    if _say_available():
+        print("OK    speech synthesis: say")
+        ok += 1
+    else:
+        print("BLIND speech synthesis: say not found")
+
+    return 0 if ok else 2
+
+
+# --------------------------------------------------------------------------
+# CLI
+# --------------------------------------------------------------------------
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="idp-voice", description="the conversation loop")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--ask", metavar="TEXT", help="text in, text out (no audio)")
+    g.add_argument("--file", metavar="WAV", help="transcribe -> think -> speak")
+    g.add_argument("--text", metavar="TEXT", help="text in, speak the answer")
+    g.add_argument("--listen", action="store_true", help="live loop")
+    g.add_argument("--check", action="store_true", help="which engines are reachable")
+    p.add_argument("--watch", metavar="DIR", default=None, help="directory to watch for new wavs")
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    if args.ask is not None:
+        return mode_ask(args.ask)
+    if args.file is not None:
+        return mode_file(args.file)
+    if args.text is not None:
+        return mode_text(args.text)
+    if args.check:
+        return mode_check()
+    if args.listen:
+        try:
+            return asyncio.run(mode_listen(args.watch))
+        except KeyboardInterrupt:
+            return 0
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+

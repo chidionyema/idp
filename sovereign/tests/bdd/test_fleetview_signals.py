@@ -222,3 +222,122 @@ def test_nudge_with_otto_runtime_no_nats_url_records_ok_false(signals, monkeypat
     rows = signals.signals_for("otto:t-789")
     assert len(rows) == 1
     assert rows[0]["ok"] is False
+
+
+# ---------------------------------------------------------------------------------------------
+# 2026-09-18: the buttons that lied. Read from the client's own backend log, which recorded the
+# real outcomes of real presses:
+#
+#     POST /nudge          200   (claude-code: writes a directive file, no cluster needed)
+#     POST /approve        502   <- reported as a failed attempt; nothing was attempted
+#     POST /deny           502   <- same
+#     POST /stop           404, then 500
+#
+# The 502s came from `else: error = f"... not yet wired for {runtime}"`, which RECORDED A FAILED
+# ATTEMPT and returned it through the `ok is None` path, so routes.py turned it into 502 --
+# "the signal was attempted against a real session and failed". That sentence is false: there is
+# no channel, so there is nothing to attempt, and an operator sent to debug a healthy service is
+# the cost of saying it anyway. The correct answer is 422, and `SIGNAL_RUNTIMES` is now the one
+# place that decides.
+
+
+def test_approve_on_a_runtime_with_no_channel_is_422_not_502(routes):
+    """The button that lied on 2026-09-18, graded on the status code it must not return."""
+    body, status = routes.add_approve(
+        {
+            "session_id": "claude-code:fleet-live-001",
+            "runtime": "claude-code",
+            "by": "founder",
+        }
+    )
+    assert status == 422, (
+        f"approve on claude-code returned {status}. 502 means 'attempted and failed', which is "
+        "not what happened -- there is no approve channel for claude-code."
+    )
+    # And the refusal has to be usable: name the signal, the runtime, and what to do instead.
+    assert "approve" in body["error"]
+    assert "claude-code" in body["error"]
+    assert "steer" in body["error"], "the reader is told the verb that does work"
+
+
+def test_deny_on_a_runtime_with_no_channel_is_422_not_502(routes):
+    _body, status = routes.add_deny(
+        {"session_id": "otto:fleet-live-003", "runtime": "otto", "by": "founder"}
+    )
+    assert status == 422
+
+
+def test_stop_on_otto_is_422_and_names_the_runtimes_that_work(routes):
+    body, status = routes.add_stop(
+        {"session_id": "otto:fleet-live-003", "runtime": "otto", "by": "founder"}
+    )
+    assert status == 422
+    assert "sovereign" in body["error"] and "claude-code" in body["error"]
+
+
+def test_a_refused_channel_writes_no_audit_row(signals, tmp_path):
+    """An attempt that never reached a session is not an attempt.
+
+    Same rule notes.py's InvalidNote follows. Before this, the row existed and said ok=False,
+    which is why the audit trail looked like a service failing rather than a request that named
+    an impossible combination.
+    """
+    with pytest.raises(signals.UnsupportedRuntime):
+        signals.approve(
+            session_id="claude-code:fleet-live-001", runtime="claude-code", by="founder"
+        )
+    assert signals.signals_for("claude-code:fleet-live-001") == []
+
+
+def test_steer_still_covers_every_runtime(signals, monkeypatch):
+    """The one verb with a channel everywhere, so the table did not narrow it by accident."""
+    assert signals.SIGNAL_RUNTIMES["steer"] == frozenset(
+        {"sovereign", "claude-code", "otto", "cyrus"}
+    )
+    # And a steer to each runtime is accepted (dispatch stubbed: this grades the channel check,
+    # not the four delivery mechanisms, which the CP8 cases already cover above).
+    for name in (
+        "_dispatch_steer_sovereign",
+        "_dispatch_steer_claude_code",
+        "_dispatch_steer_otto",
+        "_dispatch_steer_cyrus",
+    ):
+        monkeypatch.setattr(signals, name, lambda *a, **k: None)
+    for runtime in ("sovereign", "claude-code", "otto", "cyrus"):
+        record = signals.nudge(
+            session_id=f"{runtime}:fleet-live-001",
+            runtime=runtime,
+            by="founder",
+            text="check the signals",
+        )
+        assert record["ok"] is True, (
+            f"steer to {runtime} was refused: {record.get('error')}"
+        )
+
+
+def test_the_channel_table_names_every_signal_the_module_exposes(signals):
+    """A signal added without a row would KeyError at runtime; this makes it a test failure."""
+    for name in ("steer", "stop", "approve", "deny"):
+        assert name in signals.SIGNAL_RUNTIMES, (
+            f"{name} has no entry in SIGNAL_RUNTIMES"
+        )
+        assert signals.SIGNAL_RUNTIMES[name], f"{name} declares no runtime at all"
+
+
+def test_a_missing_engine_is_reported_as_a_502_with_the_real_reason(routes):
+    """The sovereign path: the channel EXISTS, so 502 is right -- and the message must say why.
+
+    The old `except Exception: error = str(exc)` produced `No module named 'temporalio'`, which
+    reads as a mystery. Naming it as an import failure tells an operator the host is missing a
+    dependency rather than that the far end is broken.
+    """
+    body, status = routes.add_approve(
+        {
+            "session_id": "sovereign:fleet-live-002",
+            "runtime": "sovereign",
+            "by": "founder",
+        }
+    )
+    # 502 when the engine cannot be reached; the reason must be specific.
+    assert status == 502
+    assert "sovereign engine" in body["error"] or "temporalio" in body["error"]

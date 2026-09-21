@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# Start the FleetView backend with the configuration it needs, locally.
+#
+# WHY THIS EXISTS. On 2026-09-18 a FleetView backend was launched by hand with an empty
+# environment. It served traffic for a day while every button that needed the cluster answered
+# 502 or 503, and nothing about the process said "I am not configured". `config_guard.py` now
+# refuses to start in that state -- which is correct, and it means the launch has to supply the
+# values rather than leave them absent.
+#
+# This is the one place those values come from for a laptop run, so a reader has one file to
+# read instead of a shell history. It sets what the process requires, leaves the optional
+# features off on purpose (and says so), and never invents a value to look complete.
+#
+#   bin/serve-fleetview              # start in the foreground
+#   bin/serve-fleetview --check      # print the config it would use; start nothing
+#   bin/serve-fleetview --port 18790
+#
+# CONFIG (LAW 46): every value is read from the environment when set, so a cluster sidecar
+# passes its own and this changes nothing for it. The defaults below are laptop facts -- this
+# checkout's own catalog -- never a hostname or a credential.
+set -euo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+PORT="${PORT:-18790}"
+CHECK=0
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--check) CHECK=1; shift ;;
+	--port)
+		PORT="${2:?--port needs a value}"
+		shift 2
+		;;
+	*) echo "unknown argument: $1" >&2; exit 2 ;;
+	esac
+done
+
+# REQUIRED. The catalog the board reads. Without it every session read returns nothing, and an
+# empty board is indistinguishable from a fleet with no work -- so the guard refuses to start.
+: "${ESTATE_DB:=$IDP/catalog/estate.db}"
+export ESTATE_DB
+
+# OPTIONAL, and deliberately left unset rather than guessed. Setting NATS_URL to a cluster
+# hostname from a laptop would make the process LOOK fully configured while every publish
+# failed, which is the failure this whole change removes. Unset, /stream says so and the routes
+# that need those services answer 'unavailable' with the reason.
+#
+# To turn them on locally, point them at real services:
+#   NATS_URL=nats://127.0.0.1:4222 LANGFUSE_HOST=http://127.0.0.1:3000 bin/serve-fleetview
+: "${NATS_URL:=}"
+
+# VOICE's model door (docs/specs/2026-09-18-voice-conversation-pipeline.md). The estate's router,
+# never a vendor key: LAW 34 says one router key per identity, and the laptop holds
+# LITELLM_API_KEY while the router holds everything else. Unset, /voice answers 503 naming the
+# variable rather than quietly falling back to a local model -- a different engine silently
+# answering the same question is worse than no answer, because the reader cannot tell.
+#
+# Loaded from the vault through scripts/secret-load; this only reports whether it arrived.
+if [ -z "${LITELLM_API_KEY:-}" ]; then
+	echo "fleetview: voice   off (LITELLM_API_KEY unset) -- /voice will answer 503 with the reason"
+else
+	echo "fleetview: voice   on  (router ${LITELLM_HOST:-https://llm.mumchimp.com})"
+fi
+
+# The plugin's module paths. Same two arguments the manual launch used.
+ROUTES="$IDP/backstage/plugins/fleetview-backend/src/routes.py"
+SERVE="$IDP/backstage/plugins/fleetview-backend/src/serve.py"
+
+[ -f "$SERVE" ] || { echo "FAIL    serve.py not at $SERVE" >&2; exit 1; }
+[ -f "$ROUTES" ] || { echo "FAIL    routes.py not at $ROUTES" >&2; exit 1; }
+[ -f "$ESTATE_DB" ] || {
+	# Not fatal: estate-twin-runtime creates the schema on first sweep, and an absent file is
+	# the ordinary state of a fresh checkout. Say so rather than let it look like a config error.
+	echo "note    $ESTATE_DB does not exist yet; the board will report no sessions until a"
+	echo "note    sweep (bin/estate-twin-runtime --once) or the recorder creates it"
+}
+
+echo "fleetview: catalog   $ESTATE_DB"
+if [ -n "$NATS_URL" ]; then
+	echo "fleetview: live bus  $NATS_URL"
+else
+	echo "fleetview: live bus  off (NATS_URL unset) -- /stream will say so, not pretend"
+fi
+echo "fleetview: listening 127.0.0.1:$PORT"
+
+if [ "$CHECK" = 1 ]; then
+	echo "ok      serve-fleetview  --check only; nothing started"
+	exit 0
+fi
+
+exec python3 "$SERVE" "$PORT" "$ROUTES"

@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""reactor-standalone -- serve the Fleet Reactor 2100 exactly as specified, from real sessions.
+
+WHY. The founder handed over a complete, self-contained HTML file -- Three.js, bloom, radial
+menu, matrix drill-down, voice bar -- and asked to SEE it running. What existed in the estate was
+a 2D canvas reimplementation that looked nothing like it. The spec IS the file; this serves the
+file and connects it to reality.
+
+WHAT IT DOES NOT DO. It does not rewrite the spec's visuals. The only edit to the page is the
+data seam: the spec generates 24 named agents with `Math.random()` states and fake metrics. Here
+the same 24 nodes are the REAL sessions from the fleetview plugin, so the topology is the estate's
+own. Everything else -- bloom, particles, shockwave, the radial geometry, the matrix panel -- is
+the spec's own code, untouched.
+
+  bin/reactor-standalone          # http://127.0.0.1:18900
+  bin/reactor-standalone --port N
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+PAGE = HERE / "reactor-standalone.html"
+FLEETVIEW = os.environ.get("FLEETVIEW_URL", "http://127.0.0.1:18790")
+
+
+def sessions() -> dict:
+    """The estate'."s real sessions, in the shape the page consumes.
+
+    Read from the fleetview plugin, which reads estate.db. Nothing here invents a session, a
+    state or a count -- the page's own `getRandomState()` is replaced by what the estate says.
+    """
+    try:
+        with urllib.request.urlopen(f"{FLEETVIEW}/sessions", timeout=4) as r:
+            body = json.load(r)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+        return {"available": False, "error": str(exc), "sessions": []}
+    return body
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *a):  # noqa: D102 -- quiet; the founder does not want a request log
+        pass
+
+    def _send(self, code: int, ctype: str, body: bytes) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        # No caching, so an edit to the page is visible on reload rather than after a hard refresh.
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self) -> None:  # noqa: N802
+        """Write a real session event, so the room's live channels can be tested against reality.
+
+        WHY THIS EXISTS. The jets fire on the DIFFERENCE in `event_count` between polls, and the
+        fleet was idle -- so the code path could never be exercised and "it never fires" was
+        indistinguishable from "there is nothing to fire about". A test that cannot create the
+        condition it is testing is not a test.
+
+        This inserts rows into `session_events` exactly as an agent does. It is a probe, not a
+        feature: the route takes no arguments and is only served on this local page.
+        """
+        import sqlite3
+
+        path = os.environ.get("ESTATE_DB") or str(HERE.parent / "catalog" / "estate.db")
+        try:
+            con = sqlite3.connect(path)
+            sid = con.execute("SELECT id FROM sessions ORDER BY id LIMIT 1").fetchone()[0]
+            seq = con.execute(
+                "SELECT COALESCE(MAX(seq),0)+1 FROM session_events WHERE session_id=?", (sid,)
+            ).fetchone()[0]
+            for i in range(15):
+                con.execute(
+                    "INSERT INTO session_events (session_id, seq, type, payload_json, ts)"
+                    " VALUES (?,?,?,?,datetime('now'))",
+                    (sid, seq + i, "observed", '{"probe":"reactor"}'),
+                )
+            con.commit()
+            n = con.execute(
+                "SELECT count(*) FROM session_events WHERE session_id=?", (sid,)
+            ).fetchone()[0]
+            con.close()
+            self._send(200, "application/json",
+                       json.dumps({"wrote": 15, "session": sid, "total": n}).encode())
+        except Exception as exc:  # noqa: BLE001 -- a probe that fails must say so
+            self._send(500, "application/json", json.dumps({"error": str(exc)}).encode())
+
+    def do_GET(self) -> None:  # noqa: N802
+        path = self.path.split("?")[0]
+        if path in ("/", "/index.html"):
+            if not PAGE.exists():
+                self._send(500, "text/plain", b"reactor page missing")
+                return
+            self._send(200, "text/html; charset=utf-8", PAGE.read_bytes())
+            return
+        if path == "/api/sessions":
+            self._send(200, "application/json", json.dumps(sessions()).encode())
+            return
+        if path == "/healthz":
+            self._send(200, "application/json", b'{"ok":true}')
+            return
+        self._send(404, "text/plain", b"not found")
+
+
+def main() -> int:
+    port = 18900
+    if "--port" in sys.argv:
+        port = int(sys.argv[sys.argv.index("--port") + 1])
+    srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    print(f"reactor: http://127.0.0.1:{port}")
+    print(f"reactor: sessions from {FLEETVIEW}")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

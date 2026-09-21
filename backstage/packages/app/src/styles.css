@@ -248,9 +248,27 @@
   cursor: pointer;
   list-style: none;
   padding: 0.5rem 0;
-  font-size: 1.5rem;
-  font-weight: 700;
+  /* 24px (1.5rem) was the wrong level and it read as the loudest thing on a card. Measured in a
+     browser 2026-09-18 on /fleet: a 379x282 session card carried `History & trace` at 24px weight
+     700 -- larger than the session title at 14px, larger than every label, and larger than the
+     content it hides. A fold is subordinate to the thing it belongs to; it is a control, not a
+     heading. 13px weight 600 sits below the card title (14px) and above the labels (12px), which
+     is where a control belongs.
+
+     This is one value for every fold in the portal, which is the point of it living here. */
+  font-size: 0.8125rem;
+  font-weight: 600;
   line-height: 1.2;
+  /* MEASURED 2026-09-18: this rule had NO colour, so every <summary> in the portal rendered in
+     the browser default -- rgb(0,0,0) -- on a #0b0c0e near-black canvas. Contrast 1.13:1, i.e.
+     invisible. It was found in a browser on /fleet, where 'History & trace' appeared under all
+     23 session cards as a black-on-black heading: 24px, weight 700, unreadable.
+
+     This is the dark-theme text colour the estate already uses for primary text, so the fix is
+     not a new value -- it is the value that should have been here. `color-scheme` is NOT the
+     answer: it changes form controls, not inherited text, and relying on the UA to pick a
+     readable default is how this happened. */
+  color: #f2f4f7;
 }
 
 .estate-fold-summary::-webkit-details-marker {
@@ -377,4 +395,77 @@
  * first move on it; this keeps one, in the same shape as the rest. */
 .estate-page-actions .estate-action-strong {
   border: 1px solid transparent;
+}
+
+/* ---------------------------------------------------------------------- fleet node motion
+ *
+ * The four states, as MOTION. Not decoration: a council of three frontier models, asked to design
+ * the fleet interface, converged on this being the whole value of it -- an agent silent for ten
+ * minutes is four states, and a person watching a fleet reads movement before they read colour.
+ *
+ * NEVER A SPINNER. A spinner means "working" and would collapse these back into one signal, which
+ * is the mistake the board already made with a single amber dot.
+ *
+ * Each keyframe is deliberately at a different FREQUENCY and a different KIND of motion, so they
+ * cannot be confused at a glance:
+ *
+ *   breathe  4s    scale      slow, alive, calm      -- thinking
+ *   drift    6s    translate  slow, directional       -- waiting (it is heading somewhere)
+ *   jitter   125ms steps      fast, chaotic, wrong    -- stuck (caught pre-attentively)
+ *   (still)  none  none       absence of motion       -- finished
+ */
+
+/* thinking: a slow inhale and exhale. The node is producing, so it looks like it is. */
+@keyframes fleet-breathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.18); opacity: 0.82; }
+}
+
+/* waiting: the node DRIFTS toward what it waits on. The drift is the tell -- a static node says
+   nothing, and a drifting node says "I am blocked and here is the direction of the thing
+   blocking me". Kept tiny (2px) so a fleet at rest does not look like it is twitching. */
+@keyframes fleet-drift {
+  0%   { transform: translateX(0); }
+  50%  { transform: translateX(3px); }
+  100% { transform: translateX(0); }
+}
+
+/* stuck: a hard, fast, stepped jitter. `steps(2,end)` rather than a smooth ease, because a smooth
+   wobble reads as gentle and this must read as WRONG. 8Hz is at the edge of comfortable -- felt
+   rather than watched. */
+@keyframes fleet-jitter {
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(-1px, 0); }
+  50%  { transform: translate(1px, 0); }
+  75%  { transform: translate(0, 1px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* A node whose motion the reader has asked to stop -- prefers-reduced-motion is honoured below,
+   and this class is the same stillness for anyone who wants it. */
+.fleet-node-still { animation: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Motion is the signal, so disabling it loses information -- which is precisely why the state
+     WORD is always rendered beside the dot and never replaced by it. With motion off, the word
+     and the ring style are the whole channel, and they are sufficient: dashed = blocked,
+     faded = over. This is the one place where the accessible path is genuinely different and the
+     reason the word is not optional decoration. */
+  .fleet-node, .fleet-node-ring { animation: none !important; }
+}
+
+/* stuck: the node REACHES OUT. An expanding ring that fades as it grows, 1.6s, once per cycle.
+ *
+ * Referenced by FleetCanvas.tsx and, until now, NEVER DEFINED -- a stuck node carried
+ * `animation: fleet-halo 1.6s ease-out infinite` against keyframes that did not exist, so it
+ * rendered as a static circle. That is the class of bug a test cannot see and a person cannot
+ * describe: the UI simply lacks the motion the code claims. Found by grepping the keyframe name
+ * rather than by looking, which is exactly the check the generated code skipped.
+ *
+ * 1 -> 1.6 scale at 50% opacity down to 0: the ring travels outward and dissolves, which reads as
+ * "this one is calling for attention" rather than as a pulse (which would read as "working"). */
+@keyframes fleet-halo {
+  0%   { transform: scale(1);   opacity: 0.55; }
+  70%  { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
 }

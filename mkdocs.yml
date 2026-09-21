@@ -121,6 +121,7 @@ nav:
       - PRM gate (module): tutorials/demo/prm_grader.py.md
       - Budget gate (module): tutorials/demo/budget_governor.py.md
       - Contract gate (module): tutorials/demo/contract_executor.py.md
+      - Founder board (module): tutorials/demo/board_serve.py.md
       - Reasoning Gateway end-to-end: tutorials/demo/reasoning-gateway-end-to-end.md
       - Reasoning gateway Stop hook (module): tutorials/demo/reasoning_gateway_hook.py.md
       - idp-reasoning-gateway-hook: tutorials/demo/idp-reasoning-gateway-hook.md
@@ -237,6 +238,7 @@ nav:
       - PRM gate (module): how-to/onboarding/prm_grader.py.md
       - Budget gate (module): how-to/onboarding/budget_governor.py.md
       - Contract gate (module): how-to/onboarding/contract_executor.py.md
+      - Founder board (module): how-to/onboarding/board_serve.py.md
       - Reasoning gateway Stop hook (module): how-to/onboarding/reasoning_gateway_hook.py.md
       - idp-reasoning-gateway-hook: how-to/onboarding/idp-reasoning-gateway-hook.md
       - Drill evidence: onboarding/drill-evidence.md
@@ -469,6 +471,8 @@ nav:
       # nav entries required or test_gate_demo's nav case fails.
       - main-green-gate: gates/main-green-gate.md
       - wip-gate: gates/wip-gate.md
+      # 2026-09-17: router-egress-ledger added in battalion (idp#3525 CP3 ROUTE-01)
+      - router-egress-ledger: gates/router-egress-ledger.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md

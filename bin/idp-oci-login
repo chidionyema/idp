@@ -44,7 +44,21 @@ else
   fi
   command -v sops >/dev/null || { echo "BLIND sops missing"; exit 2; }
   vget() { sops -d --extract "[\"$1\"]" "$VAULT/secrets/$ENV_NAME/$1.yaml" 2>/dev/null; }
-  [ -e "$VAULT/secrets/$ENV_NAME/OCI_FINGERPRINT.yaml" ] || { echo "BLIND oci     no API key in the vault yet; run bin/idp-oci-bootstrap"; exit 2; }
+  # 2026-09-18: this used to say "run bin/idp-oci-bootstrap", and bootstrap's first two vget
+  # calls now BLIND on the same missing vault files -- so the founder was sent from one script to
+  # the other and back, three times, with neither naming the real state. The cause is not a script
+  # that has not been run: the secrets moved to OCI Vault, and this device has no road to them.
+  if [ ! -e "$VAULT/secrets/$ENV_NAME/OCI_FINGERPRINT.yaml" ]; then
+    {
+      echo "BLIND oci     this device has no OCI API key: $VAULT/secrets/$ENV_NAME/ has no"
+      echo "              OCI_FINGERPRINT.yaml. bin/idp-oci-bootstrap cannot fix this -- it reads"
+      echo "              the same missing files and stops at its first line."
+      echo "      cause   the estate secrets moved to OCI Vault (ADR 0017, commit 76ba8be)"
+      echo "      fix     docs/reference/agent-identity.md -- one browser login, then deliver the"
+      echo "              agent key to this device"
+    } >&2
+    exit 2
+  fi
   D="$HOME/.oci"; mkdir -p "$D"; chmod 700 "$D"
   KEY="$D/estate-tofu.pem"; umask 077
   vget OCI_API_PRIVATE_KEY > "$KEY"; chmod 600 "$KEY"   # no OCI_API_KEY marker: the oci CLI suggests it, the OpenTofu provider rejects the file with it (2026-08-25)
@@ -101,7 +115,13 @@ BK
   done
   echo "ok      state   backend_override.tf rendered for platform/oci and platform/oci/identity (bucket estate-tofu-state)"
 else
-  rm -f "$IDP/platform/oci/backend_override.tf" "$IDP/platform/oci/identity/backend_override.tf"; echo "BLIND   state   no OCI_S3_* in the vault: local state (crew#220 hand step 1; run bin/idp-oci-bootstrap)"
+  rm -f "$IDP/platform/oci/backend_override.tf" "$IDP/platform/oci/identity/backend_override.tf"
+  {
+    echo "BLIND   state   no OCI_S3_* in the vault: local state only (crew#220)"
+    echo "      cause   the remote backend needs OCI_S3_ACCESS_KEY/OCI_S3_SECRET_KEY on this device"
+    echo "      not     bin/idp-oci-bootstrap -- it reads the same missing vault files"
+    echo "      fix     docs/reference/agent-identity.md"
+  } >&2
 fi
 FE_LINE=""; [ -z "${ESTATE_FOUNDER_EMAIL:-}" ] || FE_LINE="founder_email               = \"$ESTATE_FOUNDER_EMAIL\""
 cat > "$IDP/platform/oci/terraform.tfvars" <<TFV

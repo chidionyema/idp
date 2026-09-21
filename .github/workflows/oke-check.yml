@@ -498,6 +498,39 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
         run: bin/idp-cluster-state --json
+      # HGC standard 6, the live case. bin/idp-cluster-state grades the receipt's own rows and
+      # FAILs above the ceiling; this rung asks the POLICY the same question of the SAME real
+      # receipt, so the rule has a case over the estate rather than only over its fixtures.
+      #
+      # Found by bin/idp-rules' `live` check, which refused this rule because every case named a
+      # file under tests/fixtures: it graded its own example and had never seen the platform.
+      # Same shape as bin/idp-oke-rebuild:66, which runs conftest against reports/capacity.json.
+      - name: secret-headroom policy against the real receipt (HGC)
+        if: ${{ always() }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+        run: |
+          set -uo pipefail
+          bin/idp-cloud object get --bucket "${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}" \
+            --name state/cluster 2>/dev/null | tail -n +2 > "$RUNNER_TEMP/receipt.json" || true
+          if [ ! -s "$RUNNER_TEMP/receipt.json" ]; then
+            echo "BLIND secret-headroom-policy: the receipt was not read, so the ceiling was not graded against the live cluster";
+            exit 0
+          fi
+          # The receipt's own fields, shaped into the policy input. `secret_limit` comes from the
+          # repository default so the comparison is against the declared ceiling, not the vendor's.
+          LIMIT=$(sed -n 's/^  secret_limit: *\([0-9]*\).*/\1/p' estate-defaults.yaml | head -1)
+          jq -e --argjson limit "${LIMIT:-0}" '{pr:{added:(if (.secret_count // 0) > $limit then "+  secret_limit: \($limit)\n" else "" end), approvals:[]}}' \
+            "$RUNNER_TEMP/receipt.json" > "$RUNNER_TEMP/headroom-live.json" 2>/dev/null || echo '{"pr":{"added":"","approvals":[]}}' > "$RUNNER_TEMP/headroom-live.json"
+          if conftest test --parser json -p policy "$RUNNER_TEMP/headroom-live.json"; then
+            echo "ok      secret-headroom-policy  the live receipt does not exceed the declared ceiling"
+          else
+            echo "FAIL    secret-headroom-policy  the cluster is over its declared secret ceiling; OKE refuses every new resource until it drops"
+            exit 1
+          fi
       # crew#684 rung 3: the placement question, asked against the receipt this job just read.
       # bin/idp-fits-a-node ran in no CI job and no workflow -- only against its own fixtures --
       # so on 2026-09-07 it graded nothing while ClickHouse sat Unschedulable and the aggregate
@@ -532,7 +565,24 @@ jobs:
       # 0006: one door, no second endpoint). bin/catalog-render carries it forward, because that
       # render force-pushes this branch from origin/main.
       - name: publish the placement measurement for the Ops page
-        if: github.event_name != 'pull_request'
+        # `always()` AND not-a-pull-request. The first version had only the second condition, so
+        # the publish was SKIPPED whenever the gate directly above it failed -- which is every
+        # run since the step was added.
+        #
+        # Measured 2026-09-18, run 35338743209:
+        #
+        #   bin/idp-fits-a-node (placement, from the same receipt)   failure
+        #   publish the placement measurement for the Ops page        skipped
+        #
+        # and `git log origin/state/live-diagram -- docs/placement.json` returns NOTHING: the
+        # document has never once reached the branch. The Ops tile could therefore only ever say
+        # "Placement could not be measured", which reads as a broken instrument and is actually
+        # the instrument correctly reporting a document nobody publishes.
+        #
+        # The consequence was backwards in the worst way: a RED placement gate -- the state worth
+        # showing a person -- was exactly the state that suppressed the publish. `always()` makes
+        # the failing case the one that publishes, which is the point of a measurement.
+        if: ${{ always() && github.event_name != 'pull_request' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

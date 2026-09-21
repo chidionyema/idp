@@ -136,5 +136,23 @@ spec:
                 containers:
                   - (name): "*"
                     env:
-                      - +(name): OTEL_EXPORTER_OTLP_ENDPOINT
-                        value: "http://signoz-otel-collector.observability.svc:4318"
+                      # THE `+` BELONGS ON `value`, NOT ON `name`.
+                      #
+                      # Measured 2026-09-19 against the running cluster and reproduced with
+                      # `kyverno apply` on a two-variable fixture:
+                      #
+                      #     IN:   name: LITELLM_LOG  value: INFO
+                      #     OUT:  name: LITELLM_LOG  value: http://signoz-otel-collector...
+                      #
+                      # `+(name)` anchors a Kyverno MERGE onto the `env` LIST, so the `value:`
+                      # beside it was applied to EVERY existing entry rather than to a new one.
+                      # Every environment variable in every matched container was overwritten with
+                      # the OTEL endpoint -- which is what killed llm/litellm:
+                      #
+                      #     AttributeError: module 'logging' has no attribute
+                      #     'HTTP://SIGNOZ-OTEL-COLLECTOR.OBSERVABILITY.SVC:4318'
+                      #
+                      # because LITELLM_LOG had become a URL. `value` carries the `+` instead, so
+                      # the entry is ADDED and the existing ones are left alone.
+                      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                        +(value): "http://signoz-otel-collector.observability.svc:4318"

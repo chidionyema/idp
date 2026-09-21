@@ -62,6 +62,33 @@ _LINEAR_API = "https://api.linear.app/graphql"
 
 _SUPPORTED_RUNTIMES = frozenset({"sovereign", "claude-code", "otto", "cyrus"})
 
+# Which runtimes each signal actually has a delivery path for. Measured 2026-09-18 from the
+# client's own backend log -- this is the table that was implicit and wrong before:
+#
+#   POST /nudge          200  (claude-code)
+#   POST /approve        502  <-- should have been 422
+#   POST /deny           502  <-- should have been 422
+#   POST /stop           404, then 500  <-- 404 was a stale route; the 500 was sovereign
+#
+# WHY THIS IS A TABLE AND NOT THREE `else` CLAUSES. An `else: error = f"... not yet wired"`
+# recorded a FAILED ATTEMPT and returned it through the `ok is None` path, so routes.py turned
+# it into 502 -- "the signal was attempted against a real session and failed". That is false:
+# nothing was attempted, because there is no channel. 502 tells an operator the far end is sick
+# and sends them to debug a service that is fine; 422 says the request named a combination that
+# does not exist, which is true and actionable.
+#
+# `steer` covers all four (CP8). `stop` covers the two runtimes with a readable pause point.
+# approve/deny cover `sovereign` alone, and that is a statement about the estate, not a TODO:
+# the other three take direction mid-turn through the same channel as steer, so an approve is
+# a steer whose text says approve, and it is already expressible. A separate verb would be a
+# second code path to the same place.
+SIGNAL_RUNTIMES: dict[str, frozenset[str]] = {
+    "steer": frozenset({"sovereign", "claude-code", "otto", "cyrus"}),
+    "stop": frozenset({"sovereign", "claude-code"}),
+    "approve": frozenset({"sovereign"}),
+    "deny": frozenset({"sovereign"}),
+}
+
 
 class InvalidSignal(ValueError):
     """Raised for a request that never touched a real session -- routes.py turns this into 400."""
@@ -89,10 +116,22 @@ def _connect() -> sqlite3.Connection:
             text       TEXT NOT NULL,
             ok         INTEGER NOT NULL,
             error      TEXT,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            -- 2026-09-18: when the session's own hook CONSUMED the directive. NULL means
+            -- written and not yet read, which is a different fact from ok=0 (the write
+            -- failed). bin/idp-directive-consume is the only writer.
+            read_at    TEXT
         )
         """
     )
+    # Additive migration for a table created before `read_at` existed. Guarded by reading the
+    # table's own columns, so this is idempotent and cannot fail on a fresh database.
+    try:
+        cols = {r[1] for r in con.execute("PRAGMA table_info(fleetview_signals)")}
+        if cols and "read_at" not in cols:
+            con.execute("ALTER TABLE fleetview_signals ADD COLUMN read_at TEXT")
+    except sqlite3.Error:
+        pass
     con.execute(
         "CREATE INDEX IF NOT EXISTS fleetview_signals_session "
         "ON fleetview_signals (session_id, runtime, created_at)"
@@ -105,6 +144,24 @@ def _now() -> str:
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    """One audit row as the API returns it.
+
+    `read_at` is the acknowledgement: when the session's own hook consumed the directive. It is
+    delivered alongside `ok` because the two answer DIFFERENT questions and conflating them is
+    what made the board lie. `ok` describes the WRITE (did the channel accept the dispatch),
+    `read_at` describes the READ (did the agent see it). Measured 2026-09-18, before this field:
+
+        id 21  claude-code:...  deny  ok=0  (no read_at column existed)
+        id 18  claude-code:...  steer ok=1  -- the board rendered this as 'steered'
+
+    The `ok=1` row meant "a file was written to ~/.claude/state/directives/", and nothing read
+    that file for a day. `read_at` is what makes "delivered" and "received" tellable apart.
+
+    Read with `.keys()` rather than `row["read_at"]` because this function is also reached by
+    a database created before the column existed, and a missing acknowledgement must read as
+    absent, not raise.
+    """
+    keys = row.keys()
     return {
         "id": row["id"],
         "session_id": row["session_id"],
@@ -115,6 +172,11 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "ok": bool(row["ok"]),
         "error": row["error"],
         "created_at": row["created_at"],
+        "read_at": row["read_at"] if "read_at" in keys else None,
+        # The two-part verdict the board actually renders, so the page does not have to infer
+        # it from two nullable fields and get it wrong. Never a third state: 'sent' and 'read'
+        # are the only things the tables can prove.
+        "acknowledged": bool("read_at" in keys and row["read_at"]),
     }
 
 
@@ -138,6 +200,23 @@ def _record(
             "SELECT * FROM fleetview_signals WHERE id = ?", (cur.lastrowid,)
         ).fetchone()
     return _row_to_dict(row)
+
+
+def _require_channel(signal: str, runtime: str, session_id: str) -> None:
+    """Refuse a signal this runtime has no channel for, as UnsupportedRuntime (-> 422).
+
+    Raised BEFORE any dispatch is attempted and before any audit row is written, for the same
+    reason `notes.py`'s InvalidNote leaves no row: an attempt that never reached a session is
+    not an attempt, and recording it as one is what made these buttons look like failures.
+    """
+    if runtime not in _SUPPORTED_RUNTIMES:
+        raise UnsupportedRuntime(f"{runtime} has no live signal path yet")
+    if runtime not in SIGNAL_RUNTIMES[signal]:
+        supported = ", ".join(sorted(SIGNAL_RUNTIMES[signal]))
+        raise UnsupportedRuntime(
+            f"{signal} has no channel for {runtime} (session {session_id}); "
+            f"it is wired for {supported}. For this runtime, send the instruction as a steer."
+        )
 
 
 def _dispatch_steer_sovereign(session_id: str, by: str, text: str) -> str | None:
@@ -333,13 +412,124 @@ def nudge(session_id: str, runtime: str, by: str, text: str = "") -> dict[str, A
         raise InvalidSignal("by is required")
     if len(text) > MAX_TEXT_LENGTH:
         raise InvalidSignal(f"text exceeds {MAX_TEXT_LENGTH} characters")
-    if runtime not in _SUPPORTED_RUNTIMES:
-        raise UnsupportedRuntime(f"{runtime} has no live signal path yet")
+    # steer has a channel for all four runtimes, so this is equivalent to the old membership
+    # check -- but it goes through the same table, so the four signals cannot drift apart.
+    _require_channel("steer", runtime, session_id)
 
     error = _dispatch_steer(session_id, runtime, by, text)
     return _record(
         session_id, runtime, "steer", by, text, ok=error is None, error=error
     )
+
+
+def stop(session_id: str, runtime: str, by: str) -> dict[str, Any]:
+    session_id = (session_id or "").strip()
+    runtime = (runtime or "").strip()
+    by = (by or "").strip()
+    if not session_id:
+        raise InvalidSignal("session_id is required")
+    if not runtime:
+        raise InvalidSignal("runtime is required")
+    if not by:
+        raise InvalidSignal("by is required")
+    _require_channel("stop", runtime, session_id)
+    if runtime == "sovereign":
+        try:
+            from sovereign.engine import client as ec
+
+            result = asyncio.run(ec.signal(session_id, "stop", by, ""))
+            error = None if result.get("ok") else str(result.get("error") or "rejected")
+        except ImportError as exc:
+            # The engine package is absent on this machine. A 502 here says 'the far end is
+            # sick', which is false -- the channel exists and this host cannot open it.
+            error = f"sovereign engine not importable here: {exc}"
+        except Exception as exc:  # noqa: BLE001 - a dead workflow is a fact to report, not hide
+            error = f"{exc.__class__.__name__}: {exc}"
+    elif runtime == "claude-code":
+        raw = session_id.rsplit(":", 1)[-1]
+        dr = (
+            Path(
+                os.environ.get(
+                    "ESTATE_STATE_PATH_PREFIX",
+                    os.path.expanduser("~/.claude/state/prompt-ledger/"),
+                )
+            ).parent
+            / "directives"
+        )
+        try:
+            os.makedirs(dr, exist_ok=True)
+            (dr / f"{raw}.json").write_text(
+                json.dumps(
+                    {
+                        "session_id": session_id,
+                        "by": by,
+                        "kind": "stop",
+                        "written_at": _now(),
+                    }
+                )
+            )
+            error = None
+        except OSError as exc:
+            error = str(exc)
+    else:  # unreachable: _require_channel already refused anything not named above
+        raise UnsupportedRuntime(f"stop has no channel for {runtime}")
+    return _record(session_id, runtime, "stop", by, "", ok=error is None, error=error)
+
+
+def approve(session_id: str, runtime: str, by: str, text: str = "") -> dict[str, Any]:
+    session_id = (session_id or "").strip()
+    runtime = (runtime or "").strip()
+    by = (by or "").strip()
+    text = (text or "").strip()
+    if not session_id:
+        raise InvalidSignal("session_id is required")
+    if not runtime:
+        raise InvalidSignal("runtime is required")
+    if not by:
+        raise InvalidSignal("by is required")
+    _require_channel("approve", runtime, session_id)
+    if runtime == "sovereign":
+        try:
+            from sovereign.engine import client as ec
+
+            result = asyncio.run(ec.signal(session_id, "approve", by, text))
+            error = None if result.get("ok") else str(result.get("error") or "rejected")
+        except ImportError as exc:
+            error = f"sovereign engine not importable here: {exc}"
+        except Exception as exc:  # noqa: BLE001
+            error = f"{exc.__class__.__name__}: {exc}"
+    else:  # unreachable: _require_channel refused anything else
+        raise UnsupportedRuntime(f"approve has no channel for {runtime}")
+    return _record(
+        session_id, runtime, "approve", by, text, ok=error is None, error=error
+    )
+
+
+def deny(session_id: str, runtime: str, by: str, text: str = "") -> dict[str, Any]:
+    session_id = (session_id or "").strip()
+    runtime = (runtime or "").strip()
+    by = (by or "").strip()
+    text = (text or "").strip()
+    if not session_id:
+        raise InvalidSignal("session_id is required")
+    if not runtime:
+        raise InvalidSignal("runtime is required")
+    if not by:
+        raise InvalidSignal("by is required")
+    _require_channel("deny", runtime, session_id)
+    if runtime == "sovereign":
+        try:
+            from sovereign.engine import client as ec
+
+            result = asyncio.run(ec.signal(session_id, "deny", by, text))
+            error = None if result.get("ok") else str(result.get("error") or "rejected")
+        except ImportError as exc:
+            error = f"sovereign engine not importable here: {exc}"
+        except Exception as exc:  # noqa: BLE001
+            error = f"{exc.__class__.__name__}: {exc}"
+    else:  # unreachable: _require_channel refused anything else
+        raise UnsupportedRuntime(f"deny has no channel for {runtime}")
+    return _record(session_id, runtime, "deny", by, text, ok=error is None, error=error)
 
 
 def signals_for(session_id: str) -> list[dict[str, Any]]:

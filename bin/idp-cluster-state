@@ -41,6 +41,37 @@ def _body_arg(a):
 import json, re, sys
 sys.path.insert(0, _os.environ.get("IDP_LIB", ""))
 from receipt_age import receipt_age  # crew#583 CP2: the store's clock, never this machine's
+
+
+def _yaml_default(section, key):
+    """A declared default from estate-defaults.yaml, or None.
+
+    HGC obligation 1 (docs/reference/policy/enterprise-operating-model.md, standard 6): the
+    ceiling lives in the repo, so a reader never has to open a vendor dashboard to know what
+    the estate is allowed to use. Parsed with a regex rather than a YAML import because this
+    script runs in the receipt reader's minimal environment and must not gain a dependency for
+    one integer.
+
+    Returns None when the file or the value is absent, so the caller decides how to report it --
+    'declared as zero' and 'not declared' are different facts.
+    """
+    root = _os.path.dirname(_os.path.dirname(_os.path.realpath(__file__)))
+    path = _os.path.join(root, "estate-defaults.yaml")
+    try:
+        text = open(path, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return None
+    m = re.search(rf"(?m)^\s+{re.escape(key)}\s*:\s*([0-9]+)\s*$", text)
+    if not m:
+        return None
+    # Guard against a same-named key in another section: confirm it appears under `section`.
+    sec = re.search(rf"(?m)^{re.escape(section)}\s*:\s*$", text)
+    if sec:
+        tail = text[sec.end():]
+        nxt = re.search(r"(?m)^[a-z_]+:\s*$", tail)
+        if nxt and m.start() > sec.end() + nxt.start() + sec.end():
+            return None
+    return int(m.group(1))
 head, body, max_min, flag = sys.argv[1], _body_arg(sys.argv[2]), float(sys.argv[3]), sys.argv[4]
 line1, _, rest = body.partition("\n")
 try:
@@ -131,6 +162,46 @@ print(f"ok      capacity       cpu used {kv2['cpu_used_pct']}% requested {kv2['c
 for r in rows:
     print(f"  node {r['name']}: cpu {r['cpu_used']}/{r['cpu_allocatable']} cores used ({r['cpu_used_pct']}%), requests {r['cpu_requested']} ({r['cpu_requested_pct']}%);"
           f" memory {r['memory_used_gb']}/{r['memory_allocatable_gb']} GB used ({r['memory_used_pct']}%), requests {r['memory_requested_gb']} GB ({r['memory_requested_pct']}%)")
+# HGC (docs/reference/policy/enterprise-operating-model.md, standard 6): the cluster's secret
+# headroom, published BEFORE it blocks a deploy.
+#
+# Incident 2026-09-18: OKE's resource-leak webhook refused every create because the cluster held
+# 2,650 Secrets against a 2,000 limit. Thirty Flux objects went NotReady and the first thing that
+# said so was a failed Helm upgrade. Nothing reported the count.
+#
+# The same three-state rule the capacity row follows (crew#584), because silence is the defect:
+#   absent count  -> the collector predates this row        -> FAIL, never clean
+#   count = 0     -> the collector could not read it        -> FAIL, never clean
+#   over ceiling  -> the platform is about to stop deploying -> FAIL, naming the arithmetic
+# A count that is merely close (above steady-state but under the ceiling) is printed, not failed:
+# it is a warning the platform acts on, not an outage.
+if "secret_count" not in kv2:
+    print(f"FAIL    secret-headroom  receipt carries no secret_count (collector predates standard 6/HGC): {line1[:120]}"); sys.exit(1)
+try:
+    sec_n = int(kv2["secret_count"])
+except (TypeError, ValueError):
+    sec_n = 0
+if sec_n <= 0:
+    print("FAIL    secret-headroom  the collector read 0 or an unreadable count; headroom was NOT graded (0 Secrets in a cluster this size means the read failed, not that none exist)"); sys.exit(1)
+# The ceiling comes from the repo, never from a vendor dashboard at judgement time (HGC
+# obligation 1). A missing default is FAIL: a limit nobody declared cannot be checked against.
+sec_limit = int(
+    (json.loads(rest).get("secret_limit"))
+    or _yaml_default("capacity", "secret_limit")
+    or 0
+)
+steady = int(_yaml_default("capacity", "secret_steady_state_max") or 0)
+if sec_limit <= 0:
+    print("FAIL    secret-headroom  no secret_limit in the receipt or in estate-defaults.yaml capacity.secret_limit; the ceiling is undeclared"); sys.exit(1)
+pct = sec_n * 100 // sec_limit
+if sec_n > sec_limit:
+    print(f"FAIL    secret-headroom  {sec_n:,} Secrets against a {sec_limit:,} limit ({pct}%) -- OKE's resource-leak webhook refuses every new resource, so no Kustomization or HelmRelease can deploy until this drops below the ceiling")
+    print(f"  fix       prune the unbounded growth first: Helm revisions with no spec.maxHistory, then cert-manager's superseded renewals. Standard 6, docs/reference/policy/enterprise-operating-model.md")
+    sys.exit(1)
+if steady and sec_n > steady:
+    print(f"warn    secret-headroom  {sec_n:,} / {sec_limit:,} ({pct}%), above the {steady:,} steady-state target; headroom for a deploy burst is shrinking")
+else:
+    print(f"ok      secret-headroom  {sec_n:,} / {sec_limit:,} ({pct}%), target <{steady:,}")
 # crew#722 CP2 (founder 2026-08-31: "poorly designed enterprise-wide secrets rotation strategy"):
 # a rotated Secret whose running consumers still hold the old value was invisible until a person
 # hit the broken door (crew#506 CP4, crew#684). The collector counts running pods older than a

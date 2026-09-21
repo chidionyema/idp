@@ -226,7 +226,7 @@ KEYS: dict[str, KeySpec] = {
     "ops.fs_commit_tokens": KeySpec(200, "int", "SB_OPS_FS_COMMIT_TOKENS", "R9: tokens charged for one fs_commit (spec 3.1 checkpoint example: added_tokens 200)"),
     "ops.default_tokens": KeySpec(100, "int", "SB_OPS_DEFAULT_TOKENS", "R9: tokens charged for an op with no entry of its own"),
     "ops.nondestructive": KeySpec(["fs_commit", "fs_read", "git_status", "tool_result", "doc_commit", "budget_refill"], "list", "SB_OPS_NONDESTRUCTIVE", "R9: ops that need budget only -- no quorum, no hardware signature (spec 2.3 step 3)"),
-    "ops.destructive": KeySpec(["fs_delete", "git_push_force", "db_drop", "service_destroy", "rewind"], "list", "SB_OPS_DESTRUCTIVE", "R9: ops that need quorum and a hardware signature on top of budget"),
+    "ops.destructive": KeySpec(["fs_delete", "git_push_force", "db_drop", "service_destroy", "rewind", "provision_paid_compute"], "list", "SB_OPS_DESTRUCTIVE", "R9: ops that need quorum and a hardware signature on top of budget"),
 
     "budget.db_filename": KeySpec(str(_estate_home() / "sovereign" / "budget.db"), "path", "SB_BUDGET_DB", "R29: sqlite file holding one versioned budget row per session, the optimistic lock"),
     "budget.max_cas_retries": KeySpec(50, "int", "SB_BUDGET_MAX_CAS_RETRIES", "R29: compare-and-swap attempts before a spend gives up rather than spinning"),
@@ -771,7 +771,7 @@ FLIP_RECEIPT_TEMPLATE: str = _R["flip.receipt_template"].value
 FLIP_ROLLBACK_RECEIPT_TEMPLATE: str = _R["flip.rollback_receipt_template"].value
 FLIP_HASH_CHUNK_BYTES: int = _R["flip.hash_chunk_bytes"].value
 PROJECTION_STORE_PATH: Path = Path(_R["projection.store_path"].value)
-REBUILD_RECEIPT_TEMPLATE: str = _R["rebuild.receipt_template"].value,
+REBUILD_RECEIPT_TEMPLATE: str = _R["rebuild.receipt_template"].value
 CROSS_STACK_GIT_TIMEOUT_S: int = _R["cross_stack.git_timeout_s"].value
 
 TEMPORAL_PID_FILE: Path = ESTATE_HOME / "temporal" / "dev-server.pid"

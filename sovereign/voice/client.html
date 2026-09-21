@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Sovereign Voice</title>
+<!--
+  SILERO VAD IN THE BROWSER, which is the estate's CPU defence. The alternative -- streaming audio
+  to the server and running VAD there -- costs a core per idle caller and makes "listening" an
+  expensive state. Here the microphone is analysed locally and NOTHING is sent until the model
+  says a person actually spoke and then stopped.
+
+  The ONNX runtime and the VAD bundle are pinned to versions because the VAD assets are fetched by
+  version at runtime; a floating version would one day fetch weights that no longer match the
+  bundle, and the failure would look like a silent microphone.
+-->
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.19/dist/bundle.min.js"></script>
+<style>
+  :root { --ink:#030508; --line:rgba(255,255,255,.12); --cyan:#00f0ff; --amber:#ffaa00;
+          --red:#ff0055; --green:#00ffaa; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ink); color:#e6edf3; overflow:hidden;
+         font-family:-apple-system,'Inter',sans-serif; }
+  .glass { background:rgba(10,15,25,.72); backdrop-filter:blur(20px);
+           border:1px solid var(--line); border-radius:14px; }
+  #status { position:fixed; top:24px; left:50%; transform:translateX(-50%);
+            padding:8px 18px; font:600 11px/1.4 ui-monospace,monospace;
+            letter-spacing:.12em; text-transform:uppercase; z-index:20; }
+  #log { position:fixed; inset:90px 24px 150px; overflow-y:auto; padding:20px;
+         font:13px/1.6 ui-monospace,monospace; }
+  .you  { color:var(--cyan); margin:10px 0; }
+  .them { color:#c9d1d9; margin:10px 0; }
+  .meta { color:#6b7280; font-size:10px; letter-spacing:.08em; margin:2px 0 10px; }
+  .err  { color:var(--red); }
+  #bar { position:fixed; bottom:32px; left:50%; transform:translateX(-50%);
+         padding:14px 26px; display:flex; align-items:center; gap:16px; cursor:pointer;
+         z-index:20; }
+  #bar:hover { border-color:rgba(0,240,255,.45); }
+  .dot { width:10px; height:10px; border-radius:50%; background:#4b5563; }
+  body.on .dot { background:var(--green); box-shadow:0 0 12px var(--green); animation:pulse 1.6s infinite; }
+  body.hear .dot { background:var(--cyan); box-shadow:0 0 16px var(--cyan); }
+  body.think .dot { background:var(--amber); box-shadow:0 0 16px var(--amber); }
+  body.speak .dot { background:var(--green); box-shadow:0 0 16px var(--green); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .bars { display:flex; gap:3px; align-items:center; height:22px; }
+  .bars i { width:3px; background:currentColor; border-radius:2px; height:4px;
+            transition:height .08s linear; }
+  #meter { position:fixed; bottom:96px; left:50%; transform:translateX(-50%);
+           width:min(560px,80vw); height:5px; border-radius:3px; overflow:hidden;
+           background:rgba(255,255,255,.07); z-index:20; }
+  #meterfill { height:100%; width:0%; background:linear-gradient(90deg,var(--cyan),var(--green)); }
+</style>
+</head>
+<body>
+  <div id="status" class="glass">disconnected</div>
+  <div id="log"></div>
+  <div id="meter"><div id="meterfill"></div></div>
+  <div id="bar" class="glass">
+    <span class="dot"></span>
+    <span id="label" style="font:600 12px ui-monospace,monospace;letter-spacing:.14em;
+          text-transform:uppercase;color:#9ca3af">Start listening</span>
+    <span class="bars"><i></i><i></i><i></i><i></i><i></i></span>
+  </div>
+
+<script>
+const TTS_RATE = 24000;   // Kokoro's own rate. A mismatch here is the chipmunk bug.
+const ASR_RATE = 16000;   // Silero/Whisper's own rate. The VAD already resamples to this.
+const $ = id => document.getElementById(id);
+const log = $('log');
+
+let ws, ctx, vad, meterTimer;
+let nextStart = 0;
+let playing = [];          // sources currently scheduled, so barge-in can silence them at once
+let turns = [];
+let tFirst = null;         // when the reply's first audio landed, for the conversation timer
+
+function line(cls, text, meta) {
+  const d = document.createElement('div');
+  d.className = cls; d.textContent = text;
+  log.appendChild(d);
+  if (meta) { const m = document.createElement('div'); m.className='meta'; m.textContent = meta;
+              log.appendChild(m); }
+  log.scrollTop = log.scrollHeight;
+}
+
+function setState(s) {
+  document.body.className = s;
+  $('label').textContent = ({on:'Listening — speak any time',
+    hear:'Hearing you…', think:'Thinking…', speak:'Speaking — speak to interrupt',
+    off:'Start listening', err:'Problem'})[s] || s;
+}
+
+// ---------------------------------------------------------------- audio out
+//
+// THE SCHEDULER. Clauses arrive as separate buffers and must sound like one sentence, so each is
+// started at the exact WebAudio time the previous one ends. `currentTime` is the audio hardware
+// clock: scheduling against it is what removes the click between clauses -- a `setTimeout`-based
+// queue drifts by however long the main thread was busy, and the seam becomes audible.
+function play(pcm) {
+  if (!ctx) return;
+  const f32 = new Float32Array(pcm);
+  if (!f32.length) return;
+  const buf = ctx.createBuffer(1, f32.length, TTS_RATE);
+  buf.copyToChannel(f32, 0);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  if (nextStart < ctx.currentTime + 0.02) nextStart = ctx.currentTime + 0.02;
+  src.start(nextStart);
+  nextStart += buf.duration;
+  playing.push(src);
+  src.onended = () => { playing = playing.filter(s => s !== src); };
+  setState('speak');
+}
+
+function silence() {
+  // BARGE-IN, client half. Stopping every scheduled source is what makes the reply stop the
+  // instant the person speaks rather than finishing its sentence over them.
+  playing.forEach(s => { try { s.stop(); } catch (e) {} });
+  playing = [];
+  nextStart = 0;
+}
+
+// ---------------------------------------------------------------- audio in
+async function start() {
+  try {
+    ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: TTS_RATE });
+    if (ctx.state === 'suspended') await ctx.resume();
+  } catch (e) { setState('err'); line('err', 'AudioContext failed: ' + e.message); return; }
+
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/voice/stream`);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onmessage = ev => {
+    // Binary is audio; text is JSON. Kept apart so playback never waits on JSON parsing.
+    if (ev.data instanceof ArrayBuffer) { play(ev.data); return; }
+    let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+    if (m.type === 'transcript') {
+      tFirst = performance.now();
+      line('you', '› ' + m.text, `${m.asr_seconds}s to transcribe ${m.audio_seconds}s of audio`);
+      setState('think');
+    } else if (m.type === 'clause') {
+      line('them', m.text);
+    } else if (m.type === 'interrupted') {
+      setState('hear');
+      line('err', '— interrupted');
+    } else if (m.type === 'done') {
+      const heard = tFirst ? ((performance.now() - tFirst) / 1000).toFixed(2) : '?';
+      line('them', '', `first audio ${m.first_audio}s · whole reply ${m.total}s · ` +
+                       `${m.clauses} clause(s) · played back after ${heard}s`);
+      turns.push(m);
+      setState('on');
+    } else if (m.type === 'error') {
+      setState('err'); line('err', m.error || 'error');
+    } else if (m.type === 'empty') {
+      setState('on');
+    }
+  };
+
+  ws.onopen = async () => {
+    setState('on');
+    try {
+      vad = await vad.MicVAD.new({
+        // 0.8 rather than the 0.5 default: on a laptop's built-in mic the lower threshold fires on
+        // keyboard and fan noise, and every false positive is a wasted transcription.
+        positiveSpeechThreshold: 0.8,
+        negativeSpeechThreshold: 0.5,
+        minSpeechFrames: 3,
+        preSpeechPadFrames: 5,
+        onSpeechStart: () => {
+          // THE BARGE-IN. Both halves, in this order: silence the browser immediately (so the
+          // person hears themselves, not the machine), then tell the server to stop generating.
+          silence();
+          setState('hear');
+          if (ws.readyState === WebSocket.OPEN) ws.send('barge_in');
+        },
+        onFrameProcessed: (probs) => {
+          const p = probs && probs.isSpeech != null ? probs.isSpeech : 0;
+          const bars = document.querySelectorAll('.bars i');
+          bars.forEach((b, i) => { b.style.height = (4 + p * 18 * (0.4 + (i % 3) * 0.3)) + 'px'; });
+          $('meterfill').style.width = Math.min(100, p * 130) + '%';
+        },
+        onSpeechEnd: (audio) => {
+          setState('think');
+          if (ws.readyState === WebSocket.OPEN) ws.send(audio.buffer);
+        },
+      });
+      vad.start();
+    } catch (e) {
+      setState('err');
+      line('err', 'VAD failed to start: ' + (e.message || e) +
+        ' — this needs a secure origin (https or localhost) and microphone permission.');
+    }
+  };
+
+  ws.onerror = () => { setState('err'); line('err', 'WebSocket error'); };
+  ws.onclose = () => { setState('off'); if (vad) try { vad.destroy(); } catch (e) {} };
+}
+
+$('bar').onclick = () => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.close();
+  } else {
+    start();
+  }
+};
+setState('off');
+</script>
+</body>
+</html>

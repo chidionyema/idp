@@ -75,6 +75,8 @@ _MUTATIONS_MODULE = Path(__file__).resolve().parent / "mutations.py"
 _EXECUTOR_LINK_MODULE = Path(__file__).resolve().parent / "executor_link.py"
 _TRACE_MODULE = Path(__file__).resolve().parent / "trace.py"
 _LEDGER_TAIL_MODULE = Path(__file__).resolve().parent / "ledger_tail.py"
+_DEVICE_ACCESS_MODULE = Path(__file__).resolve().parent / "device_access.py"
+_HANDOFF_MODULE = Path(__file__).resolve().parent / "handoff.py"
 
 
 def _load(path: Path, name: str):
@@ -94,6 +96,69 @@ def _sessions():
 
 def _notes():
     return _load(_NOTES_MODULE, "fleetview_notes_impl")
+
+
+def newest_event_seq() -> int:
+    """The highest `session_events.id`, or 0.
+
+    THE LIVE SIGNAL ON A MACHINE WITH NO BUS. `session_events` gains a row every time a session
+    writes; its AUTOINCREMENT id only ever rises, so one indexed `MAX(id)` answers "has anything
+    happened since I last looked". One query per second, no dependency, no cluster -- and it is
+    what makes the stream live rather than a heartbeat.
+    """
+    import sqlite3 as _sqlite3
+
+    path = os.environ.get("ESTATE_DB")
+    if not path:
+        root = Path(__file__).resolve().parents[4]
+        path = str(root / "catalog" / "estate.db")
+    if not Path(path).is_file():
+        return 0
+    try:
+        con = _sqlite3.connect(path)
+        try:
+            row = con.execute("SELECT COALESCE(MAX(id), 0) FROM session_events").fetchone()
+            return int(row[0]) if row else 0
+        finally:
+            con.close()
+    except _sqlite3.Error:
+        return 0
+
+
+def _history():
+    return _load(Path(__file__).resolve().parent / "history.py", "fleetview_history_impl")
+
+
+def history_envelope(session_id: str, since: str = "", until: str = "") -> tuple[dict, int]:
+    """One session's events over time. The raw material a trail is drawn from."""
+    body = _history().history(session_id, since or None, until or None)
+    if body.get("error") and body.get("count", 0) == 0:
+        return body, 400 if "required" in str(body.get("error")) else 503
+    return body, 200
+
+
+def query_envelope(directive: str) -> tuple[dict, int]:
+    """The fleet over time, in four speakable verbs: stuck, slow, cost, history <id>."""
+    body = _history().query(directive)
+    if body.get("kind") == "blind":
+        return body, 503
+    return body, 200
+
+
+def _voice():
+    return _load(Path(__file__).resolve().parent / "voice.py", "fleetview_voice_impl")
+
+
+def ask_voice(body: dict, sessions: list) -> tuple[dict, int]:
+    """Ask the fleet a question in words. The sessions are passed in from the SAME list /sessions
+    serves, so the answer cannot describe a fleet the reader is not looking at."""
+    return _voice().ask(body.get("question", ""), sessions, body.get("history"))
+
+
+def stream_voice(body: dict, sessions: list):
+    """Clause-by-clause server-sent events. The browser speaks each one as it lands, so the first
+    words arrive while the model is still writing the rest."""
+    return _voice().stream_ask(body.get("question", ""), sessions, body.get("history"))
 
 
 def _signals():
@@ -122,6 +187,20 @@ def _trace():
 
 def _ledger_tail():
     return _load(_LEDGER_TAIL_MODULE, "fleetview_ledger_tail_impl")
+
+
+def _device_access():
+    """`device_access.py` -- what this device's read-only identity is, if anything.
+
+    Path-loaded like every other module here rather than imported as a package, because these
+    files are loaded by importlib path and a relative import is unavailable to them.
+    """
+    return _load(_DEVICE_ACCESS_MODULE, "fleetview_device_access_impl")
+
+
+def _handoff():
+    """`handoff.py` -- the challenge the portal mints and the check that it carries no secret."""
+    return _load(_HANDOFF_MODULE, "fleetview_handoff_impl")
 
 
 def _executor_link():
@@ -162,7 +241,20 @@ SESSIONS_PATH = "/sessions"
 STREAM_PATH = "/stream"
 NOTES_PATH = "/notes"
 NUDGE_PATH = "/nudge"
+STOP_PATH = "/stop"
+APPROVE_PATH = "/approve"
+DENY_PATH = "/deny"
 SIGNALS_PATH = "/signals"
+# The channel table the UI must not guess. `SIGNAL_RUNTIMES` in signals.py is the ONLY source of
+# truth for which verb a runtime can actually receive; a front end that hard-codes a second copy
+# will offer a button that the backend refuses, and the person pressing it learns that the board
+# lies. Measured 2026-09-19: the radial menu offered Stop on a `pi` session, which has no stop
+# channel, so the button was enabled for an action that could only ever 422.
+CHANNELS_PATH = "/channels"
+VOICE_PATH = "/voice"
+VOICE_STREAM_PATH = "/voice/stream"
+HISTORY_PATH = "/history"
+QUERY_PATH = "/query"
 BLAST_RADIUS_PATH = "/blast-radius"
 GRAPH_PATH = "/graph"
 CHECK_RECEIPTS_PATH = "/check-receipts"
@@ -171,6 +263,8 @@ MUTATIONS_APPROVE_PATH = "/mutations/approve"
 MUTATIONS_REJECT_PATH = "/mutations/reject"
 TRACE_PATH = "/trace"
 LEDGER_PATH = "/ledger"
+DEVICE_STATUS_PATH = "/device-status"
+DEVICE_AUTHORIZE_PATH = "/device-authorize"
 
 
 def sessions_envelope() -> tuple[dict[str, Any], int]:
@@ -262,6 +356,116 @@ def add_nudge(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     if not record["ok"]:
         return record, 502
     return record, 200
+
+
+def add_stop(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    impl = _signals()
+    try:
+        record = impl.stop(
+            session_id=body.get("session_id", ""),
+            runtime=body.get("runtime", ""),
+            by=body.get("by", ""),
+        )
+    except impl.InvalidSignal as exc:
+        return {"error": str(exc)}, 400
+    except impl.UnsupportedRuntime as exc:
+        return {"error": str(exc)}, 422
+    return record, 502 if not record["ok"] else 200
+
+
+def add_approve(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    impl = _signals()
+    try:
+        record = impl.approve(
+            session_id=body.get("session_id", ""),
+            runtime=body.get("runtime", ""),
+            by=body.get("by", ""),
+            text=body.get("text", ""),
+        )
+    except impl.InvalidSignal as exc:
+        return {"error": str(exc)}, 400
+    except impl.UnsupportedRuntime as exc:
+        return {"error": str(exc)}, 422
+    return record, 502 if not record["ok"] else 200
+
+
+def add_deny(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    impl = _signals()
+    try:
+        record = impl.deny(
+            session_id=body.get("session_id", ""),
+            runtime=body.get("runtime", ""),
+            by=body.get("by", ""),
+            text=body.get("text", ""),
+        )
+    except impl.InvalidSignal as exc:
+        return {"error": str(exc)}, 400
+    except impl.UnsupportedRuntime as exc:
+        return {"error": str(exc)}, 422
+    return record, 502 if not record["ok"] else 200
+
+
+def device_status_envelope() -> tuple[dict[str, Any], int]:
+    """The body and status for `GET /api/fleetview/device-status`.
+
+    A thin passthrough to `device_access.py` so every route in this file has the same shape:
+    the route function owns the HTTP contract, the impl module owns the logic and holds no
+    response codes of its own. `device_access.py` already answers with a `state` field in both
+    the 200 and the 503 case, which is why this does not need to synthesise one.
+    """
+    impl = _device_access()
+    return impl.device_status_envelope()
+
+
+def device_authorize_envelope() -> tuple[dict[str, Any], int]:
+    """The body and status for `POST /api/fleetview/device-authorize`.
+
+    Mints a single-use challenge and returns the LOCAL handoff URL. It deliberately does not
+    deliver anything: per the founder's ruling (2026-09-18), key delivery stays out of the
+    portal, which holds no vault credentials and must never see a key or a token. The browser
+    opens `idp-device://`, the device's own helper performs the delivery, and the only thing
+    that crossed between them is the nonce.
+
+    The payload is built by `handoff.handoff_payload`, which runs `assert_no_secret` before
+    returning it -- so this route cannot emit a credential even if a future edit tries to.
+    """
+    handoff = _handoff()
+    challenge = handoff.new_challenge()
+    try:
+        body = handoff.handoff_payload(challenge, state="awaiting_helper")
+        body["url"] = handoff.handoff_url(challenge)
+        body["scheme"] = "idp-device"
+        # Re-check with the two fields added, so the URL itself is proven clean rather than
+        # assumed to be because its inputs were.
+        handoff.assert_no_secret(body, where="device-authorize")
+    except handoff.SecretLeak as exc:
+        # A leak here is a programming error, and it must fail loudly rather than return a
+        # redacted payload nobody notices is redacted.
+        return {"state": "error", "error": f"refusing to emit: {exc}"}, 500
+    return body, 200
+
+
+def channels_envelope() -> tuple[dict[str, Any], int]:
+    """Which signal each runtime has a live path for, read from signals.py itself.
+
+    Served rather than duplicated so the front end cannot drift from the gate. A runtime absent
+    from a verb's list means the backend will refuse that verb for it -- and the UI should say so
+    before the press, not after.
+    """
+    mod = _signals()
+    table = getattr(mod, "SIGNAL_RUNTIMES", {})
+    return (
+        {
+            "signals": {
+                verb: sorted(runtimes) for verb, runtimes in table.items()
+            },
+            "note": (
+                "A runtime missing from a verb's list has no channel for it; the backend refuses "
+                "that verb for that runtime with 422 and the reason."
+            ),
+        },
+        200,
+    )
 
 
 def signals_envelope(session_id: str) -> tuple[dict[str, Any], int]:

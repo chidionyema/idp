@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Refuse a machine where the steer mailbox has no mailman.
+#
+# THE INCIDENT, measured 2026-09-19. `signals.py` writes a steer to
+# ~/.claude/state/directives/<id>.json and records ok=true, which means THE FILE WAS WRITTEN.
+# `bin/idp-directive-consume` reads that mailbox and stamps the acknowledgement. But nothing ever
+# RAN the consumer: `grep idp-directive-consume ~/.claude/settings.json` returned nothing. So
+# every steer sat in the mailbox for ever while the board said "sent" -- a product promising
+# something it did not do, and nothing anywhere that noticed.
+#
+# A comment in the consumer's own docstring said to wire it, and a docstring is not a gate. This
+# is the gate.
+#
+# It FAILS when a hook file exists and does not run the consumer. It is BLIND when there is no
+# hook file at all, because a machine that has never run Claude Code has no mailbox to service and
+# reporting that as a failure would train a reader to ignore a red row.
+#
+# Usage:  bin/idp-steer-wired-guard          # check this machine
+#         bin/idp-steer-wired-guard --json   # machine-readable
+set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+JSON=0
+[ "${1:-}" = "--json" ] && JSON=1
+
+NEEDLE="idp-directive-consume"
+
+# A host that HAS no hook mechanism is a different fact from a host that has one and does not use
+# it. pi writes ~/.pi/agent/settings.json with no `hooks` key at all (measured 2026-09-19), so a
+# steer to a pi session cannot be delivered by hook and saying "FAIL: not wired" would blame the
+# operator for a missing feature. Reported as a named gap instead. `grep` rather than a JSON parse
+# because the file's shape is pi's business, not this guard's.
+HOSTS_NO_HOOKS=("$HOME/.pi/agent/settings.json")
+FILES=(
+	"$HOME/.claude/settings.json"
+	"$HOME/.config/pi/settings.json"
+	"$HOME/.pi/agent/settings.json"
+)
+
+found=0
+checked=0
+missing=()
+nohooks=()
+for f in "${FILES[@]}"; do
+	[ -f "$f" ] || continue
+	# A file with no hook section cannot run anything: skip it and count it separately.
+	if ! grep -q '"hooks"' "$f" 2>/dev/null; then
+		nohooks+=("$f")
+		continue
+	fi
+	checked=$((checked + 1))
+	if grep -q "$NEEDLE" "$f" 2>/dev/null; then
+		found=$((found + 1))
+	else
+		missing+=("$f")
+	fi
+done
+
+if [ "$checked" -eq 0 ]; then
+	[ "$JSON" = 1 ] && echo '{"state":"blind","reason":"no hook file on this machine"}' || \
+		echo "BLIND   steer   no hook settings file on this machine, so there is no mailbox to service"
+	exit 0
+fi
+
+for f in "${nohooks[@]:-}"; do
+	[ -n "$f" ] || continue
+	echo "GAP     steer   $f has no hooks section, so a steer to that host cannot be delivered"
+	echo "        a hook is this estate's delivery point; that host has none"
+done
+
+if [ "${#missing[@]}" -eq 0 ]; then
+	[ "$JSON" = 1 ] && echo "{\"state\":\"ok\",\"files\":$found}" || \
+		echo "ok      steer   $found hook file(s) run $NEEDLE"
+	exit 0
+fi
+
+# A hook file exists and does not run the consumer: the mailbox has no mailman.
+if [ "$JSON" = 1 ]; then
+	printf '{"state":"fail","missing":[' >&2
+	printf '"%s",' "${missing[@]}" | sed 's/,$//' >&2
+	printf ']}\n' >&2
+else
+	echo "FAIL    steer   the steer mailbox has no mailman" >&2
+	for m in "${missing[@]}"; do
+		echo "        $m does not run $NEEDLE" >&2
+	done
+	echo "        consequence  a steer written by signals.py is never read and never" >&2
+	echo "                     acknowledged; the board reports it as sent for ever" >&2
+	echo "        fix          bin/idp-directive-consume --install   (prints the hook entry)" >&2
+fi
+exit 1

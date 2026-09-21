@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""Bound every HelmRelease's revision history with spec.maxHistory.
+
+WHY. OKE refuses every new resource once a cluster passes its secret ceiling, and this cluster has
+been over since 2026-09-16: measured live, `admission webhook "oke-resource-leak-protection.oke.com"
+denied the request: Cluster has 2650 secrets and the limit is 2000`. Eighteen Flux objects are
+NotReady behind it -- Crossplane, Backstage, commerce, otto-gateway, prospector, via-negativa among
+them -- and nothing can deploy until the count drops.
+
+Helm keeps every release's revision as a Secret (`helm.sh/release.v1`), and the estate declares
+`maxHistory` on ZERO of its HelmReleases. A grep for it across platform/ returns only prose. So
+every release keeps Flux's default:
+
+    maxHistory:
+      description: MaxHistory is the number of revisions saved by Helm for this HelmRelease.
+                   Use '0' for an unlimited number of revisions; defaults to '5'.
+
+  -- clusters/oke/flux-system/gotk-components.yaml, the HelmRelease CRD, read from the vendored
+     components rather than from memory.
+
+Five revisions x every HelmRelease in the estate, accumulating since the cluster was built, with
+nothing pruning, is the mechanism. This sets the bound at the source, which is standard 6's third
+obligation (docs/reference/policy/enterprise-operating-model.md, HGC).
+
+WHY 3 AND NOT 5. A rollback needs the previous revision; three covers a rollback of a rollback.
+Five is Flux's default and is pure accumulation at this fleet size. 0 (unlimited) is what the
+absence of the field already means, so writing 0 would be inert.
+
+WHAT THIS DOES NOT DO. It does not delete a single Secret. Setting the bound stops the growth; the
+existing 2,650 are cleared by Helm itself on the next revision of a release (it prunes to
+maxHistory), and what that does not reach is a separate, measured decision -- never a guess, and
+never a hand-deletion on a running cluster.
+
+  bin/idp-bound-helm-history --check     report every HelmRelease and its bound (changes nothing)
+  bin/idp-bound-helm-history --apply     add spec.maxHistory to every unbounded HelmRelease
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+MAX_HISTORY = 3
+
+# The comment carries the reason with the value, so nobody has to find this script to know why 3
+# is there. Two lines, matching the estate's house style of explaining a non-obvious constant in
+# place rather than in a ticket.
+COMMENT = (
+    "  # Bounded per HGC (docs/reference/policy/enterprise-operating-model.md, standard 6): Helm\n"
+    "  # keeps one Secret per revision and this estate declared the field on no release, which is\n"
+    f"  # how the cluster reached its 2,000-secret ceiling and stalled 18 Flux objects. {MAX_HISTORY}\n"
+    "  # covers a rollback of a rollback; Flux's default of 5 is accumulation at this size.\n"
+)
+
+
+def _helmrelease_spec_lines(text: str) -> list[int]:
+    """Line numbers (0-based) of each `spec:` that belongs to a HelmRelease document.
+
+    YAML documents are separated by `---`, and several files here hold a HelmRepository and a
+    HelmRelease together -- each with its own top-level `spec:`. A blind "insert after the first
+    spec:" would put maxHistory on the HelmRepository, which the CRD refuses, and the whole
+    Kustomization would stop reconciling. So the document is split first and the `kind:` of each
+    one is read.
+    """
+    lines = text.split("\n")
+    # Document boundaries: line 0, every `---`, and one past the end.
+    bounds = [0] + [i + 1 for i, l in enumerate(lines) if l.rstrip() == "---"] + [len(lines)]
+    found: list[int] = []
+    for start, end in zip(bounds, bounds[1:]):
+        doc = lines[start:end]
+        kind = next((l.split(":", 1)[1].strip() for l in doc if l.startswith("kind:")), "")
+        if kind != "HelmRelease":
+            continue
+        for i, l in enumerate(doc):
+            if l == "spec:":
+                found.append(start + i)
+                break
+    return found
+
+
+def _files() -> list[Path]:
+    """Every yaml under platform/ that declares a HelmRelease DOCUMENT.
+
+    The first version looked for the string `kind: HelmRelease` anywhere in the file, which is
+    true of two Flux `Alert` objects too -- they list `kind: HelmRelease` as a selector inside
+    `spec.eventSources[]`:
+
+        - kind: HelmRelease
+          name: "*"
+          namespace: cert-manager
+
+    Those are not releases and must not be edited (the Alerts in platform/alerts/ and
+    platform/alerts-github/ are exactly this). The document splitter below already tells them
+    apart, so the filter uses it rather than a substring: a file qualifies when at least one
+    YAML document has `kind: HelmRelease` at the top level.
+    """
+    out = []
+    for p in sorted((ROOT / "platform").rglob("*.yaml")):
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if _helmrelease_spec_lines(text):
+            out.append(p)
+    return out
+
+
+def report() -> int:
+    bounded = unbounded = 0
+    for p in _files():
+        text = p.read_text(encoding="utf-8")
+        specs = _helmrelease_spec_lines(text)
+        has = re.search(r"(?m)^\s+maxHistory:\s*\d+\s*$", text) is not None
+        rel = p.relative_to(ROOT)
+        if has:
+            bounded += 1
+            print(f"  bounded    {rel}")
+        else:
+            unbounded += 1
+            n = len(specs)
+            print(f"  UNBOUNDED  {rel}  ({n} HelmRelease spec{'s' if n != 1 else ''})")
+    print(f"\n  {bounded} bounded, {unbounded} unbounded, {bounded + unbounded} files")
+    return 0
+
+
+def apply() -> int:
+    changed = skipped = 0
+    for p in _files():
+        text = p.read_text(encoding="utf-8")
+        if re.search(r"(?m)^\s+maxHistory:\s*\d+\s*$", text):
+            skipped += 1
+            continue
+        lines = text.split("\n")
+        # Insert from the BOTTOM up, so an earlier insertion cannot shift a later line number.
+        specs = sorted(_helmrelease_spec_lines(text), reverse=True)
+        if not specs:
+            print(f"  SKIP       {p.relative_to(ROOT)}  no HelmRelease spec found", file=sys.stderr)
+            continue
+        for idx in specs:
+            lines[idx + 1 : idx + 1] = (COMMENT + f"  maxHistory: {MAX_HISTORY}").split("\n")
+        p.write_text("\n".join(lines), encoding="utf-8")
+        changed += 1
+        print(f"  bounded    {p.relative_to(ROOT)}  (maxHistory: {MAX_HISTORY})")
+    print(f"\n  {changed} file(s) changed, {skipped} already bounded")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--check", action="store_true", help="report; change nothing")
+    g.add_argument("--apply", action="store_true", help="add spec.maxHistory")
+    a = ap.parse_args()
+    return report() if a.check else apply()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

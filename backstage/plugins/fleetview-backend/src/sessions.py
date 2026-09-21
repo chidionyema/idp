@@ -60,6 +60,7 @@ import datetime as dt
 import importlib.util
 import json
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +69,86 @@ SESSIONS_ROUTE = "/api/fleetview/sessions"
 STREAM_ROUTE = "/api/fleetview/stream"
 
 DEFAULT_LEDGER_PREFIX = "~/.claude/state/prompt-ledger/"
+
+# Model-agnostic session source: catalog/estate.db sessions + session_events tables.
+_ROOT = Path(__file__).resolve().parents[4]
+_ESTATE_DB_DEFAULT = _ROOT / "catalog" / "estate.db"
+
+
+def _estate_db_path() -> Path:
+    raw = os.environ.get("ESTATE_DB")
+    return Path(raw) if raw else _ESTATE_DB_DEFAULT
+
+
+def _estate_db_sessions(now: dt.datetime | None = None) -> list[dict[str, Any]]:
+    """Read sessions from estate.db's model-agnostic sessions/session_events tables.
+
+    Returns empty list when the DB is missing or tables are empty -- never raises,
+    because empty-DB and unreachable look different to the board.
+    """
+    db_path = _estate_db_path()
+    if not db_path.is_file():
+        return []
+    now = now or dt.datetime.now(dt.timezone.utc)
+    try:
+        con = sqlite3.connect(str(db_path))
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            """
+            SELECT s.id, s.provider, s.model, s.created_at, s.metadata_json,
+                   MAX(e.ts) AS last_event_ts,
+                   -- The four-state derivation needs the RATE and the SHAPE of recent activity,
+                   -- not just the timestamp. `state` alone (running/paused/stopped from
+                   -- freshness) cannot tell thinking from waiting from stuck, which is why the
+                   -- board rendered 22 of 23 agents as one identical amber dot.
+                   COUNT(e.id)  AS event_count,
+                   MIN(e.ts)    AS first_event_ts
+            FROM sessions s
+            LEFT JOIN session_events e ON e.session_id = s.id
+            GROUP BY s.id
+            ORDER BY last_event_ts DESC, s.created_at DESC
+            """
+        ).fetchall()
+        con.close()
+    except sqlite3.Error:
+        return []
+
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        meta: dict[str, Any] = {}
+        try:
+            meta = json.loads(r["metadata_json"] or "{}")
+        except (ValueError, TypeError):
+            pass
+        updated_at = r["last_event_ts"] or r["created_at"]
+        state = _state_from_freshness(updated_at, now)
+        # The four states the interface draws, derived from the same evidence the state above uses
+        # plus the body of work behind the row -- see _activity_from_evidence for why elapsed time
+        # alone cannot tell thinking from waiting from stuck.
+        event_count = int(r["event_count"] or 0)
+        out.append(
+            {
+                "session_id": f"{r['provider']}:{r['id']}",
+                "runtime": r["provider"],
+                "task": meta.get("task") or "",
+                "state": state,
+                "activity": _activity_from_evidence(
+                    updated_at, event_count, r["first_event_ts"], state, now
+                ),
+                "event_count": event_count,
+                "repo": meta.get("repo"),
+                "step": meta.get("step"),
+                "updated_at": updated_at,
+                "trace_url": meta.get("trace_url"),
+                "spend_usd": meta.get("spend_usd"),
+                "pull_requests": meta.get("pull_requests") or [],
+                "ticket": meta.get("ticket"),
+                "capability_class": meta.get("capability_class"),
+                "capabilities": meta.get("capabilities"),
+            }
+        )
+    return out
+
 
 _ESTATE_SESSIONS_MODULE = (
     Path(__file__).resolve().parents[4] / "mcp" / "plugins" / "estate_sessions.py"
@@ -119,13 +200,93 @@ def _fresh_paused_hours() -> float:
     return float(os.environ.get("ESTATE_FRESH_PAUSED_HOURS", "24"))
 
 
+def _activity_from_evidence(
+    last_event_ts: str | None,
+    event_count: int,
+    first_event_ts: str | None,
+    face: str,
+    now: dt.datetime,
+) -> str:
+    """Which of the FOUR states a session is in, from evidence rather than from a guess.
+
+    WHY THIS EXISTS. A council of three independent frontier models, asked to design this
+    interface, converged on one thing: an agent that has not emitted for ten minutes is not one
+    state but four, and the interface's whole value is telling them apart. Measured on this board
+    before this function existed: 22 of 23 agents rendered as one identical amber dot, and an
+    agent stuck in a retry loop was labelled `running` -- the single worst mistake all three
+    models named.
+
+    `state` (running/paused/stopped from freshness) cannot do this: it is one number, elapsed
+    time, and elapsed time is identical for an agent thinking hard and an agent wedged. So this
+    reads what the estate actually records.
+
+    THE FOUR STATES, and the evidence each requires:
+
+      thinking  wrote within the running window. The honest limit: an outside reader cannot see a
+                long inference mid-flight, so a session that wrote recently IS thinking and
+                nothing finer is claimed.
+      waiting   wrote, then stopped, still inside the live window. The silence with no body of
+                work behind it says it is blocked -- on CI, an API, or a person. This is the state
+                the old board did not have, and the most common one in practice.
+      stuck     silent for a long time while its state still says live, WITH enough events behind
+                it to know it had been working. `event_count` is what separates this from
+                `waiting`: many events then silence is not thinking, it is a session that stopped
+                producing. Named from evidence, never from a retry counter nobody records.
+      finished  the live window has passed entirely. It will not write again unless something
+                restarts it.
+
+    `face` is the freshness `state`, kept so a caller can show both. Every branch returns one of
+    the four or `unknown` when there is no timestamp -- never a default of `thinking`, because a
+    node that breathes when nobody knows whether it is alive is the same lie as a green dot.
+    """
+    ts = _parse_ts(last_event_ts)
+    if ts is None:
+        return "unknown"
+    age_s = (now - ts).total_seconds()
+    if age_s < 0:
+        age_s = 0
+
+    if age_s <= _fresh_running_minutes() * 60:
+        return "thinking"
+    if age_s <= _fresh_paused_hours() * 3600:
+        # Silenced inside the live window. A real body of work behind it that went this quiet is
+        # stuck; almost nothing behind it is simply awaiting a first answer. The threshold is
+        # deliberately low, because accusing a healthy session of being stuck is worse than being
+        # slow to say so.
+        return "stuck" if event_count >= _STUCK_MIN_EVENTS else "waiting"
+    return "finished"
+
+
+_STUCK_MIN_EVENTS = int(os.environ.get("ESTATE_STUCK_MIN_EVENTS", "10"))
+
+
 def _parse_ts(value: str | None) -> dt.datetime | None:
+    """A timestamp as an AWARE UTC datetime, or None.
+
+    THE BUG THIS FIXES, measured 2026-09-19. `fromisoformat` returns a NAIVE datetime for a
+    string with no offset, and every caller subtracts it from an aware `now`:
+
+        estate-db: TypeError: can't subtract offset-naive and offset-aware datetimes
+
+    That exception aborted the whole estate.db read, so `list_all_sessions` fell through to the
+    catalogue adapter and the board served ONE row from a file -- `idp:fleet-live-...`, with no
+    event_count and no activity. Twenty-three real sessions were never read at all, which is why
+    every node had a null activity, why the four states never appeared, and why the radial menu
+    showed a number computed from nothing.
+
+    A naive timestamp is not ambiguous here: this estate stores UTC everywhere, and a value with
+    no offset came from a writer that meant UTC. Attaching UTC is the honest reading, and it is
+    done once, in one place, rather than defended at every subtraction.
+    """
     if not isinstance(value, str) or not value:
         return None
     try:
-        return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed
 
 
 def _state_from_freshness(updated_at: str | None, now: dt.datetime) -> str:
@@ -544,15 +705,23 @@ def list_all_sessions(
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Every runtime's sessions on one board.
 
-    This is the function the route serves. Each adapter is independent and one that cannot be
-    reached does not take the board down: the page still shows the runtimes that answered. The
-    unreachable adapter is RECORDED in the returned envelope's `unreachable` list rather than
-    silently dropped -- a dead adapter that looks like a quiet fleet is the failure mode this
-    estate names everywhere else, and a bare `except: pass` here would be exactly that.
+    Prefers the model-agnostic estate.db source when it has rows. Falls back to per-vendor
+    adapters only when the DB is empty or absent. Either way, failed adapters are recorded
+    in `unreachable` rather than silently dropped.
     """
     now = dt.datetime.now(dt.timezone.utc)
-    sessions: list[dict[str, Any]] = []
     unreachable: list[str] = []
+
+    try:
+        db_rows = _estate_db_sessions(now=now)
+    except Exception as exc:  # noqa: BLE001
+        db_rows = []
+        unreachable.append(f"estate-db: {exc.__class__.__name__}: {exc}")
+
+    if db_rows:
+        return db_rows, unreachable
+
+    sessions: list[dict[str, Any]] = []
     for name, fn in (
         ("claude-code", lambda: _claude_code_sessions(now=now)),
         ("other-harnesses", lambda: _other_harness_sessions(catalog, now=now)),
@@ -560,6 +729,6 @@ def list_all_sessions(
     ):
         try:
             sessions.extend(fn())
-        except Exception as exc:  # noqa: BLE001 - an unreachable runtime contributes no rows
+        except Exception as exc:  # noqa: BLE001
             unreachable.append(f"{name}: {exc.__class__.__name__}: {exc}")
     return sessions, unreachable

@@ -672,6 +672,89 @@ def registry_vendors():
     return data.get("vendors") or {}
 
 
+def battalion_config_entities():
+    """OBS-01 (idp#3525 CP8, spec section 6): the Battalion's hosting matrix and its CFG-01
+    config surface are generated catalog entities, the same way every other entity here is
+    -- read directly from their own files rather than from inventory.json, because neither
+    is live infra idp-inventory's planes discover (oci/kubernetes/github/cloudflare/
+    tailscale/mac): they are the estate's own config documents. No bespoke dashboard: this
+    is the one place either becomes a catalog page, and the next catalog-gen run is the
+    only way either entity's rendered fields go stale-free."""
+    import yaml
+
+    docs = []
+
+    hosting_path = os.path.join(IDP_ROOT, "platform", "llm", "hosting-cost-table.yaml")
+    if os.path.isfile(hosting_path):
+        table = yaml.safe_load(open(hosting_path)) or {}
+        rows = table.get("rows") or []
+        grades = sorted({r.get("grade") for r in rows if r.get("grade")})
+        ann = {
+            "tiers": len(rows),
+            "receipt-grades": ",".join(grades),
+            "version": table.get("version"),
+        }
+        docs.append(
+            entity(
+                "Resource",
+                "battalion-hosting-matrix",
+                "Battalion hosting matrix",
+                "hosting-matrix",
+                ann,
+                ["battalion", "cp8", "obs-01"],
+                links=[
+                    (
+                        "Source",
+                        "https://github.com/chidionyema/idp/blob/main/platform/llm/hosting-cost-table.yaml",
+                    )
+                ],
+                description=(
+                    f"Every hosting tier the Battalion spec considered ({len(rows)} rows), "
+                    f"each carrying a receipt grade ({', '.join(grades) or 'none'}) -- idp#3525 OBS-01."
+                ),
+            )
+        )
+
+    matrix_path = os.path.join(IDP_ROOT, "platform", "llm", "routing-matrix.yaml")
+    if os.path.isfile(matrix_path):
+        matrix = yaml.safe_load(open(matrix_path)) or {}
+        axes = matrix.get("axes") or {}
+        toggles = {
+            k: v.get("enabled")
+            for k, v in axes.items()
+            if isinstance(v, dict) and "enabled" in v
+        }
+        ann = {
+            "cells": len(matrix.get("cells") or []),
+            "version": matrix.get("version"),
+        }
+        ann.update({f"toggle-{tag_slug(k)}": toggles[k] for k in sorted(toggles)})
+        state = ", ".join(
+            f"{k}={'on' if v else 'off'}" for k, v in sorted(toggles.items())
+        )
+        docs.append(
+            entity(
+                "Component",
+                "battalion-config-surface",
+                "Battalion configuration surface",
+                "config-document",
+                ann,
+                ["battalion", "cp8", "cfg-01"],
+                links=[
+                    (
+                        "Source",
+                        "https://github.com/chidionyema/idp/blob/main/platform/llm/routing-matrix.yaml",
+                    )
+                ],
+                description=(
+                    f"CFG-01's one config document for every axis the spec names, "
+                    f"{len(matrix.get('cells') or [])} cells, toggle state: {state or 'none'} -- idp#3525 OBS-01."
+                ),
+            )
+        )
+    return docs
+
+
 def cluster_entities():
     import glob as _glob
     import yaml
@@ -752,7 +835,17 @@ def cluster_entities():
     return docs
 
 
+def self_test() -> int:
+    assert callable(fold_families), "fold_families must be callable"
+    assert callable(entity), "entity must be callable"
+    print("ok    catalog-gen --self-test")
+    return 0
+
+
 def main() -> int:
+    import sys as _sys
+    if len(_sys.argv) > 1 and _sys.argv[1] == "--self-test":
+        return self_test()
     if not os.path.exists(INV):
         print(f"catalog-gen: no inventory at {INV} -- run the inventory first", file=sys.stderr)
         return 2
@@ -1241,6 +1334,9 @@ def main() -> int:
     # a second time; they are still read so the `interfaces` card carries their links.
     founder = founder_surface_entities()
     counts["founder-surface (links only, entities via Flux)"] = len(founder)
+    battalion = battalion_config_entities()
+    docs += battalion
+    counts["battalion-config (idp#3525 OBS-01)"] = len(battalion)
     # Founder, 2026-08-27: "i thought i could see all my interface urls in one spot". One
     # entity carries every link the catalogue publishes, so the answer is one card in the
     # portal (Component `interfaces`), never a grep over 362 entities.

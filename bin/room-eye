@@ -1,0 +1,269 @@
+#!/usr/bin/env python3
+"""room-eye -- look at the room through a browser that is already running.
+
+THE PROBLEM THIS SOLVES. Verifying /fleet meant launching Chrome, signing in through the guest
+wall, waiting for 24 agents to render, and taking a screenshot: measured 2026-09-19, about ten
+seconds of wall clock for ONE look, and the founder had to say "i said no command may exceed
+30s" and then "dont force my hand to 100 secs" watching an agent spend the whole budget on a
+cold browser start.
+
+The 30-second ceiling is a CEILING, NOT A BUDGET. A verification step that costs ten seconds is
+a verification step that will be run rarely, which means it will be run when something is
+already broken and never when it is merely doubtful.
+
+So the browser is started ONCE and kept. `room-eye` attaches over the DevTools protocol to that
+long-lived browser, so a look costs the page's own render time -- well under a second -- instead
+of a process launch.
+
+WHAT IT GUARANTEES, in the only sense available here: it reports WHAT THE PAGE SHOWS, read from
+the rendered DOM and the composited pixels. It does not consult the API, the source, or a
+variable -- the three things that have previously let a broken board look healthy.
+
+  bin/room-eye                 # one look: agents, states, canvas, errors
+  bin/room-eye --json          # the same, machine-readable
+  bin/room-eye --shot FILE     # and write a PNG of the canvas
+  bin/room-eye --up            # start the long-lived browser (idempotent)
+
+Exit codes: 0 the room is drawing real agents; 1 it is not; 2 the browser is not up.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+PORTAL = os.environ.get("PORTAL", "http://localhost:3100")
+CDP_PORT = int(os.environ.get("ROOM_EYE_PORT", "9222"))
+ROOT = Path(__file__).resolve().parents[1]
+PROFILE = Path(os.environ.get("ROOM_EYE_PROFILE", "/tmp/room-eye-profile"))
+CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+
+def _cdp_version() -> dict | None:
+    """The browser's own version endpoint -- the only honest test that it is up and listening."""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{CDP_PORT}/json/version", timeout=1.5) as r:
+            return json.load(r)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        return None
+
+
+def up() -> int:
+    """Start the long-lived browser if it is not already listening. Idempotent by design, so a
+    caller can say `--up` before every look without checking first."""
+    if _cdp_version():
+        print(f"room-eye: browser already listening on :{CDP_PORT}")
+        return 0
+    if not Path(CHROME).exists():
+        print(f"room-eye: no Chrome at {CHROME}", file=sys.stderr)
+        return 2
+    PROFILE.mkdir(parents=True, exist_ok=True)
+    # --headless=new keeps it out of the way; a fixed user-data-dir is what makes the guest sign-in
+    # survive between looks, so the wall is pressed once rather than once per check.
+    subprocess.Popen(
+        [
+            CHROME,
+            "--headless=new",
+            f"--remote-debugging-port={CDP_PORT}",
+            f"--user-data-dir={PROFILE}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-gpu",
+            "about:blank",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    for _ in range(20):  # 20 * 0.25s = 5s, which is generous for a browser launch
+        time.sleep(0.25)
+        if _cdp_version():
+            print(f"room-eye: browser up on :{CDP_PORT}")
+            return 0
+    print("room-eye: browser did not come up within 5s", file=sys.stderr)
+    return 2
+
+
+def main() -> int:
+    as_json = "--json" in sys.argv
+    shot = None
+    if "--shot" in sys.argv:
+        i = sys.argv.index("--shot")
+        if i + 1 < len(sys.argv):
+            shot = sys.argv[i + 1]
+
+    if "--up" in sys.argv:
+        return up()
+    if not _cdp_version():
+        print("room-eye: browser not up -- run `bin/room-eye --up` first", file=sys.stderr)
+        return 2
+
+    app = ROOT / "backstage"
+    here = app / "packages" / "app"
+    if not (app / "node_modules" / "playwright-core").exists() and not (
+        here / "node_modules" / "playwright-core"
+    ).exists():
+        print("room-eye: BLIND -- playwright-core not installed under backstage/", file=sys.stderr)
+        return 2
+
+    # A tiny script, written where module resolution works, and driven with a hard budget so this
+    # command cannot become the thing the founder has to wait on.
+    script = here / f".room-eye-{os.getpid()}.mjs"
+    script.write_text(
+        """
+import { chromium } from 'playwright-core';
+const [portal, port, shotPath] = process.argv.slice(2);
+const b = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+const ctx = b.contexts()[0] ?? await b.newContext();
+const p = ctx.pages()[0] ?? await ctx.newPage();
+const errs = [];
+p.on('pageerror', e => errs.push(e.message.slice(0, 160)));
+
+// A REAL VIEWPORT. Headless defaults to 800x600, so the room rendered 484x520 and every layout
+// claim made from a look was a claim about a phone-sized window -- which is exactly the kind of
+// unstated difference that makes a proof worthless. 1440x900 is the size the room is designed for.
+await p.setViewportSize({ width: 1440, height: 900 });
+
+// Reuse the page if it is already on the room: navigating again would pay the render cost that
+// this whole tool exists to avoid.
+if (!p.url().includes('/fleet')) {
+  // `domcontentloaded` IS THE WRONG WAIT HERE. Measured 2026-09-19: curl gets /fleet in 1.7ms
+  // while Chrome waits 6s and times out, because webpack-dev-server serves the HTML instantly and
+  // then compiles the SPA bundle -- so the document is not "loaded" for as long as the build runs.
+  // A wait on the event that never fires on a cold build is 6 wasted seconds every look.
+  //
+  // `commit` returns as soon as the response arrives, and the real readiness signal is the
+  // SELECTOR below: the room exists when the canvas does. Waiting for the thing you need, rather
+  // than for a lifecycle event that proxies it, is the same rule bin/idp-portal follows.
+  await p.goto(`${portal}/fleet`, { waitUntil: 'commit', timeout: 8000 });
+}
+// The guest wall appears once per fresh profile; press it and let the board paint.
+for (let i = 0; i < 3; i++) {
+  const wall = await p.$('button:has-text("Enter")');
+  if (wall) { await wall.click(); break; }
+  await p.waitForTimeout(250);
+}
+// The canvas IS the room's readiness.
+await p.waitForSelector('canvas', { timeout: 6000 }).catch(() => {});
+await p.waitForTimeout(800);
+
+const info = await p.evaluate(async (portal) => {
+  const agents = Array.from(document.querySelectorAll('[data-testid^="agent-"]'));
+  const states = {};
+  for (const a of agents) {
+    const m = (a.textContent || '').match(/thinking|waiting|stuck|finished/i);
+    if (m) states[m[0].toLowerCase()] = (states[m[0].toLowerCase()] || 0) + 1;
+  }
+  const canvas = document.querySelector('canvas');
+  let canvasBox = null;
+  if (canvas) {
+    const r = canvas.getBoundingClientRect();
+    canvasBox = { w: Math.round(r.width), h: Math.round(r.height), y: Math.round(r.y) };
+  }
+  // The channel table is read from the page's own origin, so this is the same request the UI
+  // makes -- not a second opinion from outside it.
+  // THE VERBS ARE READ OFF THE MENU, NOT OFF THE WIRE.
+  //
+  // Two attempts to fetch the channel table from inside the page both failed -- a bare `fetch` is
+  // unauthenticated (the guest Authorization header is added by the SPA's own wrapper, which does
+  // not exist as a page global), and the result was a confident "channels: none served" while the
+  // plugin was serving them happily. A check that reports a false failure is worse than no check:
+  // it sends the next reader hunting a bug that is in the instrument.
+  //
+  // The menu's own buttons ARE the served table, rendered. Reading them is both simpler and
+  // closer to the question anyone actually has: what can I press on this agent?
+  let channels = null;
+  const menu = document.querySelector('[data-testid="radial-menu"]');
+  if (menu) {
+    channels = Array.from(menu.querySelectorAll('button')).map(b => ({
+      verb: b.textContent.trim(),
+      enabled: !b.disabled,
+    }));
+  }
+  return {
+    agents: agents.length,
+    states,
+    first: (agents[0]?.textContent || '').trim().slice(0, 96),
+    canvas: canvasBox,
+    radial: !!document.querySelector('[data-testid="radial-menu"]'),
+    mind: !!document.querySelector('[data-testid="mind-panel"]'),
+    voice: !!document.querySelector('[data-testid="voice-ptt"]'),
+    menu: channels,
+  };
+}, portal);
+
+// The screenshot is the compositor's output, which is what a person sees -- the in-page canvas
+// read-back returns zeros because preserveDrawingBuffer is false.
+if (shotPath && info.canvas) { try { await (await p.$('canvas')).screenshot({ path: shotPath }); } catch {} }
+
+console.log(JSON.stringify({ url: p.url(), ...info, errors: errs }));
+await b.close();
+""",
+        encoding="utf-8",
+    )
+
+    args = [str(script), PORTAL, str(CDP_PORT)]
+    if shot:
+        args.append(shot)
+    try:
+        # 15s is a ceiling with room to spare, not a budget to spend. With the browser already up
+        # and the page already painted this returns in about a second.
+        proc = subprocess.run(
+            ["node", str(script)] + args[1:] if False else ["node", *args],
+            cwd=str(app),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    finally:
+        script.unlink(missing_ok=True)
+
+    if proc.returncode != 0:
+        print("room-eye: BLIND -- the look failed", file=sys.stderr)
+        print((proc.stderr or "")[-400:], file=sys.stderr)
+        return 2
+
+    line = (proc.stdout or "").strip().splitlines()
+    payload = line[-1] if line else "{}"
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        print("room-eye: BLIND -- could not read the result", file=sys.stderr)
+        print(payload[:400], file=sys.stderr)
+        return 2
+
+    if as_json:
+        print(json.dumps(data, indent=1))
+    else:
+        real = data.get("agents", 0)
+        print(f"room-eye  {data.get('url')}")
+        print(f"  agents   {real}")
+        if data.get("states"):
+            print("  states   " + ", ".join(f"{k}={v}" for k, v in sorted(data["states"].items())))
+        print(f"  first    {data.get('first')}")
+        c = data.get("canvas")
+        print(f"  canvas   {c['w']}x{c['h']} at y={c['y']}" if c else "  canvas   ABSENT")
+        m = data.get("menu")
+        if m:
+            print("  menu     " + ", ".join(f"{x['verb']}{'' if x['enabled'] else '(off)'}" for x in m))
+        else:
+            print("  menu     not open (no agent selected)")
+        if data.get("errors"):
+            print("  errors   " + "; ".join(data["errors"][:3]))
+
+    # The one verdict this tool exists to give: is the room showing real agents?
+    if data.get("agents", 0) > 0 and data.get("canvas"):
+        return 0
+    print("room-eye: the room is NOT drawing agents", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
