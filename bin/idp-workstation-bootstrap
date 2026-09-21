@@ -21,7 +21,7 @@
 #                              platform-engineer`, `gh auth login --with-token` from it, and write
 #                              `~/.kube/config` via `bin/idp-cloud cluster kubeconfig`.
 #
-# States (LAW 38): OK = ran and verified; BLIND = tool or vendor absent and the estate does not
+# States: OK = ran and verified; BLIND = tool or vendor absent and the estate does not
 # depend on it (informational, not a refusal); FAIL = a step that must succeed refused.
 #
 # Vendor-neutral (AGENTS.md 2026-09-17): the local container runtime is never installed by this
@@ -147,7 +147,7 @@ phase2() {
 # accessed by an OCI CLI cluster-provider door (bin/idp-cloud), (2) a GitHub installation token
 # minted narrow to the platform-engineer lane. The estate does not require either to be present —
 # a machine that only runs unit tests locally does not need cluster access — so both refuse BLIND
-# (LAW 38), not FAIL, when the vendor side is not reachable.
+#, not FAIL, when the vendor side is not reachable.
 phase3_kube() {
   echo "-- Level 3a: kubeconfig via bin/idp-cloud --"
   [ -x "$IDP/bin/idp-cloud" ] || { blind "level3 bin/idp-cloud absent; kubeconfig not provisioned"; return 0; }

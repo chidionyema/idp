@@ -663,7 +663,7 @@ def test_the_gate_refuses_a_grant_with_no_step_even_when_it_escalates_nothing(tm
 
 def _load_gate():
     """Load bin/idp-jit-grants by path. It has no .py suffix and is not a package, which is
-    how workspace.yaml loads code locations too (LAW 45)."""
+    how workspace.yaml loads code locations too."""
     import importlib.machinery
     import importlib.util
 
@@ -710,7 +710,7 @@ def test_an_approved_vault_write_never_runs_another_grants_step(tmp_path):
 
     Dispatching below-Kubernetes acts by provider meant every OCI grant ran the one OCI step
     that existed. This asserts the vault write builds a vault argv -- and, because the value is
-    the secret, that the record of what happened does not contain it (LAW 21).
+    the secret, that the record of what happened does not contain it.
     """
     import os
 

@@ -87,7 +87,7 @@ def _tailnet_door() -> str | None:
 def _estate_zone() -> str | None:
     """The estate's DNS zone, read from the one place it is written.
 
-    LAW 46: a literal here would name this estate's machine facts in a file, and
+    a literal here would name this estate's machine facts in a file, and
     `bin/estate-zone-gate` refuses exactly that. ESTATE_ZONE first, because an agent on a
     cloud runner has no checkout of this repository and the environment is all it has; then
     clusters/*/estate-config.yaml, which is where the value actually lives.
@@ -441,7 +441,7 @@ def _identity(path: str | None) -> int:
                       "context": {"cluster": "estate", "user": "agent-reader"}}],
     }
     # Written through a private temporary file and renamed, so a reader never sees a
-    # half-written kubeconfig and the token is never briefly world-readable (LAW 21).
+    # half-written kubeconfig and the token is never briefly world-readable.
     tmp = f"{path}.{os.getpid()}"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:

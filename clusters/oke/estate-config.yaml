@@ -70,7 +70,7 @@ data:
   # crew#516 CP5, founder's locked spec (crew#66 5451926212): the founder's Mac, reached by mac-run
   # (platform/hermes-agent/mac-run.tpl) over the Tailscale sidecar's SOCKS5 proxy, and named in
   # platform/tailscale/policy.hujson's ssh rule (bin/idp-tailscale-policy reads FOUNDER_MAC_USER
-  # from here, the same source Flux postBuild substitutes into the manifests). Both are LAW 46: the
+  # from here, the same source Flux postBuild substitutes into the manifests). Both are the
   # one place this estate is allowed to name the Mac's tailnet IP and login user, never a literal
   # in a Deployment, a script or the tailnet policy. Empty until the founder fills them
   # (platform/hermes-agent/README.md, "Founder hand"); mac-run fails closed (ssh has nothing to

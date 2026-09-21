@@ -406,7 +406,7 @@ class Broker:
             if kind == "base64_blob":
                 # The value is the secret, so it is never quoted back -- only its shape is.
                 # Checked here rather than at the provider because a bad-request echo from a
-                # cloud CLI is one of the ways a secret reaches a log (LAW 21).
+                # cloud CLI is one of the ways a secret reaches a log.
                 try:
                     raw = base64.b64decode(str(value), validate=True)
                 except (binascii.Error, ValueError):
@@ -800,7 +800,7 @@ class Broker:
         ConfigMap is for -- kubeadm publishes it, and `system:public-info-viewer` makes it
         world-readable, precisely because a joining client needs the address and the CA
         before it holds any credential at all. So the estate keeps one copy of a machine
-        fact, in the cluster, and no file names it (LAW 46).
+        fact, in the cluster, and no file names it.
         """
         rc, out = self.kube(
             [
@@ -1290,7 +1290,7 @@ def _oci_vault_write(grant: dict, req: "Request", run, provider: str) -> dict:
 
     The value never appears in the record. `contents_b64` is the secret itself, so it is kept
     out of the argv summary, and the provider's own error text is scrubbed of it before it is
-    quoted anywhere -- a bad-request echo is the classic way a secret reaches a log (LAW 21).
+    quoted anywhere -- a bad-request echo is the classic way a secret reaches a log.
     """
     compartment = os.environ.get("JIT_OCI_COMPARTMENT_ID", "").strip()
     vault = os.environ.get("JIT_OCI_VAULT_ID", "").strip()

@@ -230,7 +230,7 @@ class Handler(BaseHTTPRequestHandler):
                 # empirical-proof rule, founder 2026-09-05). Only *accepted* deliveries print:
                 # reaching this line costs the shared secret token, so the volume is Telegram's
                 # traffic and not a stranger's. `handled` is the broker's own verdict word and
-                # carries no chat text, no token and no callback data (LAW 21).
+                # carries no chat text, no token and no callback data.
                 print(f"jit telegram: mirrored delivery handled: {handled}", flush=True)
                 return self._reply(200, {"handled": handled})
             if path == "/grants":
