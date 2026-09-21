@@ -28,7 +28,6 @@ still grades it every run via `bin/idp-rules render-agents-md --check`.
 | Zero static secrets on disk; a key or a .env in the tree is refused | security-policy.md, kini-master-spec 4.1/4.4 | `bin/static-secret-gate` | tests/fixtures/static-secret/bad | tests/fixtures/static-secret/good |
 | Every provider account names a second owner | R54 | `bin/owner-account-gate` | tests/fixtures/owner-accounts/bad.yaml | tests/fixtures/owner-accounts/good.yaml |
 | Only the gateway binds a non-loopback address; everything else is 127.0.0.1 or nothing | R20 | `bin/bind-audit` | tests/fixtures/listeners.bad.txt | tests/fixtures/listeners.good.txt |
-| The founder's ethos is seven measured tenet rows; a row without a command is refused | LAW 44 | `python3 bin/idp-conscience` | a tenet row with no command | bin/idp-conscience |
 | Every scheduled job reaches the Dagster UI with a description of what it does | LAW 28 | `python3 -m` | tests/fixtures/schedule-undescribed.yml | tests/fixtures/schedule-described.yml |
 | A VM mount source outside the shared tree is refused; one inside it is permitted | R19 | `bin/vm-shared-path` | $OUTSIDE | $HOME |
 | No namespace without a both-ways default-deny NetworkPolicy, a ResourceQuota, a LimitRange and a DNS exception | crew#191, crew#839 | `python3 bin/ns-fence-gate` | tests/fixtures/ns-fence/bad.yaml | tests/fixtures/ns-fence/good.yaml |
@@ -48,7 +47,6 @@ still grades it every run via `bin/idp-rules render-agents-md --check`.
 | A pull request carries its identity and grant together, no console step, a canary label on a paid-capacity change, and no estate-zone literal in the lines it adds | LAW 51, ZCP | `conftest test` | policy/fixtures/opmodel-half-provisioned.json | policy/fixtures/opmodel-ok.json |
 | A HelmRelease declares history-max, and the cluster's secret ceiling is raised only as a deliberate capacity decision | LAW 44, HGC | `conftest test` | policy/fixtures/headroom-unbounded-release.json | policy/fixtures/headroom-ok.json |
 | A doc that tells a person to mint a credential by hand is refused; a FOUNDER ACTION line is not | LAW 47, R52 | `conftest test` | policy/fixtures/notoil-doc-manual.json | policy/fixtures/notoil-doc-founder-action.json |
-| The conscience rules judge a pull request both ways | LAW 44 | `conftest test` | policy/fixtures/conscience-bad.json | policy/fixtures/conscience-clean.json |
 | Every bash script in bin/ passes shellcheck at warning level | LAW 45 | `shellcheck` | tests/fixtures/shell-lint/bad.sh | tests/fixtures/shell-lint/good.sh |
 | No file names where the checkout, home directory or machine lives | LAW 46 | `bin/idp-hardcode-scan` | tests/fixtures/hardcoded-path.bad.sh | tests/fixtures/hardcoded-path.good.sh |
 | A code location loads the way workspace.yaml loads it: by file path, not as a package | LAW 45 | `bin/idp-defs-validate` | tests/fixtures/definitions/relative-import.py | tests/fixtures/definitions/loads-by-path.py |
