@@ -70,7 +70,7 @@ data:
   # crew#516 CP5, founder's locked spec (crew#66 5451926212): the founder's Mac, reached by mac-run
   # (platform/hermes-agent/mac-run.tpl) over the Tailscale sidecar's SOCKS5 proxy, and named in
   # platform/tailscale/policy.hujson's ssh rule (bin/idp-tailscale-policy reads FOUNDER_MAC_USER
-  # from here, the same source Flux postBuild substitutes into the manifests). Both are LAW 46: the
+  # from here, the same source Flux postBuild substitutes into the manifests). Both are the
   # one place this estate is allowed to name the Mac's tailnet IP and login user, never a literal
   # in a Deployment, a script or the tailnet policy. Empty until the founder fills them
   # (platform/hermes-agent/README.md, "Founder hand"); mac-run fails closed (ssh has nothing to
@@ -126,4 +126,11 @@ data:
   # his browser (docs/how-to/bitwarden-human-vault.md); while empty, the human-vault Flux row
   # is red on its own and holds nothing else.
   BITWARDEN_ORG_ID: "a9f79fcf-7059-4bad-94ab-b4b900acc259"
+  # ADR 0032: the estate's age PUBLIC recipient, which the JIT broker agrees a key with to check
+  # a fresh device's root trust at /enroll. It is a public key, not a secret -- the matching age
+  # secret lives on the workstations (Level 1 of bin/idp-workstation-bootstrap) and nowhere in
+  # this cluster. One copy, in git, substituted by Flux postBuild into platform/jit/deployment.yaml
+  # (JIT_AGE_RECIPIENT); changing it is a rotation and belongs in a reviewed change, not a vault
+  # write. From ~/.config/prospector/age-key.txt, the "# public key:" line; no secret is mirrored.
+  ESTATE_AGE_RECIPIENT: "age1rgufr0lc4y02wfw5xjwugxpf8hmrzm3sww3nlk4uk8dmph3h7dsqqvrd0j"
   BITWARDEN_PROJECT_ID: "18e57b2f-d5c6-4c0b-9ba9-b4b900e1d792"

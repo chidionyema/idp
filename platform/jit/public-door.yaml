@@ -48,8 +48,15 @@ spec:
     - "otto.${ESTATE_ZONE}"
   rules:
     # An exact list and not a prefix. A prefix would carry any path the broker ever grows,
-    # including one added without this file being reopened; these four are the doors an agent
-    # uses and the set is small enough to write down.
+    # including one added without this file being reopened; these doors are the set an agent
+    # uses and it is small enough to write down.
+    #
+    # The two enrollment doors (ADR 0032) are here deliberately and are not a hole. A fresh
+    # machine holds no agent key, so it cannot use the four above -- enrollment is how it comes
+    # to hold one. Neither door reads or writes the cluster: `/enroll/nonce` hands out a
+    # challenge, `/enroll` returns one key to a caller that proves the estate's age identity by
+    # an X25519 agreement it cannot fake without the age secret. A stranger gets a key that buys
+    # exactly what every agent key buys -- nothing, until the founder taps.
     - matches:
         - path: {type: Exact, value: /jit/ask}
           method: POST
@@ -58,6 +65,10 @@ spec:
         - path: {type: Exact, value: /jit/grants}
           method: POST
         - path: {type: Exact, value: /jit/identity}
+          method: POST
+        - path: {type: Exact, value: /jit/enroll/nonce}
+          method: GET
+        - path: {type: Exact, value: /jit/enroll}
           method: POST
       backendRefs:
         - name: jit-broker
