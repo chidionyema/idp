@@ -74,3 +74,21 @@ ab6c306c3a41406e3212591415f1b6ac6b3eaa01:platform/human-vault-bridge/externalsec
 1e1d9f68986d3a6e1710a6703e77b658e2425b44:tests/test_warden_job.py:generic-api-key:146
 1e1d9f68986d3a6e1710a6703e77b658e2425b44:tests/test_warden_job.py:generic-api-key:157
 1e1d9f68986d3a6e1710a6703e77b658e2425b44:tests/test_warden_job.py:generic-api-key:159
+
+# The handoff test's table of hostile values, which it requires to be REFUSED (2026-09-22).
+#
+# The line gitleaks matches is the loop's input tuple:
+#
+#     for bad in ("https://evil.test/agent.kubeconfig", "file:///etc/passwd",
+#                 "ocid1.vaultsecret.oc1.x"):
+#         with pytest.raises(handoff.SecretLeak):
+#             handoff.assert_no_secret({"kubeconfig": bad}, where="t")
+#
+# The match is `ocid1.vaultsecret.oc1.x` -- an OCID with a literal `x` where the value would be,
+# naming no vault and no secret, and never read from a real store. It is there precisely so the
+# suite proves a secret-shaped kubeconfig field is rejected; a test that a secret cannot travel
+# has to contain something secret-shaped to offer. Removing it would delete the assertion.
+#
+# The fingerprint is pinned to the commit that introduced the line, so this entry stops applying
+# if the line is ever changed to something else -- which is the point.
+04455e7307a2e324354868cfcae7c05d21c839b8:sovereign/tests/bdd/test_fleetview_handoff_never_carries_a_secret.py:generic-api-key:153
