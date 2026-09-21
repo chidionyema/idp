@@ -41,7 +41,7 @@ jobs_on_main() {  # true when the caller workflow, or a ci.yml carrying both job
   gh api "/repos/$OWNER/$1/contents/.github/workflows/ci.yml" -q .content 2>/dev/null | base64 -d 2>/dev/null | grep '^  spec-gate:' >/dev/null
 }
 # crew#586 CP5: under GitHub's "first_time_contributors" policy every pull request opened by
-# github-actions (bot/conscience-page, state/live-diagram, flux/image-updates) sits in
+# github-actions (state/live-diagram, flux/image-updates) sits in
 # action_required until a person approves its runs -- an auto-merge PR nobody approves is a
 # daily hand. platform/github/actions-pr-approval.json pins the policy per repository.
 APPROVAL="$IDP/platform/github/actions-pr-approval.json"
