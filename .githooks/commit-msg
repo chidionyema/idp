@@ -31,5 +31,27 @@ body="$(cat "$msg_file")"
 sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$secret" 2>/dev/null | awk '{print $NF}')"
 [ -n "$sig" ] || { echo "REFUSE: HMAC computation failed" >&2; exit 1; }
 
-# Append two blank lines and the trailer if the message doesn't already end in a trailer block.
-printf '\nX-Idp-Signed: %s\n' "$sig" >> "$msg_file"
+# Place the stamp so that git actually parses it AS a trailer, which is the whole point: the
+# guarded-paths check reads it with `%(trailers:key=X-Idp-Signed)`, and git only recognises a
+# trailer block that is the last paragraph of the message.
+#
+# Two ways the old one-line `printf '\nX-Idp-Signed: ...'` got that wrong (both seen 2026-09-22 on
+# consolidate/fix-everything):
+#
+#   1. `git merge --no-edit` writes .git/MERGE_MSG with NO trailing newline. Appending "\n<stamp>"
+#      then merely terminated the subject line and put the stamp on line 2 with no blank line
+#      between -- so git read a two-line subject and no trailer, and guarded-paths refused HEAD as
+#      "unsigned (--no-verify bypass detected)" on a commit that had in fact run this hook. A hook
+#      whose output the checker cannot see is not a signature.
+#   2. When the message already ended in a trailer block (`Co-Authored-By:`), the unconditional
+#      blank line opened a SECOND block. git reads only the last one, so the stamp was found but
+#      the co-authorship was cut out of the trailers and stopped being attributed.
+#
+# So: guarantee a final newline first, then start a new paragraph only when the message is not
+# already ending in one.
+[ -s "$msg_file" ] && [ -n "$(tail -c1 "$msg_file")" ] && printf '\n' >>"$msg_file"
+if sed -e '/^#/d' -e '/^[[:space:]]*$/d' "$msg_file" | tail -n1 | grep -qE '^[A-Za-z][A-Za-z0-9-]*: '; then
+  printf 'X-Idp-Signed: %s\n' "$sig" >> "$msg_file"   # extend the trailer block that is there
+else
+  printf '\nX-Idp-Signed: %s\n' "$sig" >> "$msg_file" # open one
+fi
