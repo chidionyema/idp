@@ -131,7 +131,7 @@ def hash_state(resource_versions: dict[str, str]) -> str:
     return h.hexdigest()
 
 
-def _utc(now: Optional[datetime]) -> dt.datetime:
+def _utc(now: Optional[dt.datetime]) -> dt.datetime:
     value = now or dt.datetime.now(dt.timezone.utc)
     if value.tzinfo is None:
         value = value.replace(tzinfo=dt.timezone.utc)
@@ -159,7 +159,7 @@ def simulate_change(
     cfg:Optional[dict] = None,
     resource_versions:Optional[dict[str, str]] = None,
     git_sha:Optional[str] = None,
-    now: Optional[datetime] = None,
+    now: Optional[dt.datetime] = None,
 ) -> dict:
     """Run every named grader over `source` and return a bounded proposal.
 
@@ -250,7 +250,7 @@ def execute_change(
     *,
     registry:Optional[Registry] = None,
     cfg:Optional[dict] = None,
-    now: Optional[datetime] = None,
+    now: Optional[dt.datetime] = None,
 ) -> dict:
     """Execute the world's only door for a graded proposal.
 

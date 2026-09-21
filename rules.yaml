@@ -2923,7 +2923,7 @@ rules:
     note: scale-deployment (self-inverse with different parameters) and different-action (a genuinely different verb)
   ok: an envelope with no inverse, an inverse that echoes the forward, or a forged exemption token is refused; a deterministic inverse and a genuinely signed exemption pass; the gate exits 2 (BLIND) when it cannot read its schema or verifier
   fail: an admitted mutation carries no verifiable inverse, or the gate refuses correct work because it could not read its own inputs (LAW 38)
-  live_elsewhere: platform/executor/daemon.py:810 -- _mutation_is_reversible runs this gate on every verify_mutation, so a proposal without an inverse is refused with violation_code NO_INVERSE before the gauntlet runs
+  live_elsewhere: platform/executor/daemon.py:772 -- _mutation_is_reversible runs this gate on every verify_mutation, so a proposal without an inverse is refused with violation_code NO_INVERSE before the gauntlet runs
 - id: redteam-payload-promotion
   fast: true
   label: redteam-promoter

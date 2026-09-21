@@ -69,6 +69,13 @@ platform/oci/identity/*.tfstate*
 
 # CI checks prospector's ClusterPolicies out here so idp-kyverno-render judges all 26 (crew#539).
 
+# Agent session worktrees (crew session planes, .claude/worktrees/<id>) are
+# local nested checkouts of this repo. They are graded on their own branches
+# when those branches are pushed; until then, every root-level tool that
+# walks the tree reads the fixture bytes and refuses the next session's
+# push for the wrong reason.
+/.claude/worktrees/
+
 # Every session works in a git worktree checked out at .wt-<name>/ in this directory; 33 of them
 # were registered on 2026-08-29. They are checkouts of this same repository, graded on their own
 # branches when those branches are pushed. Untracked and unignored, they were scanned by every
