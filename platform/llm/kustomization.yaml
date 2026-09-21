@@ -17,13 +17,17 @@ configMapGenerator:
     files:
       - config.yaml
   # The per-request ceiling, as a module the router imports. It is a ConfigMap and not a copied
-  # directory because the wheel or directory a ConfigMap generates is what the pod actually runs:
-  # a value typed into a laptop's ~/.pi/agent/models.json stops nothing, which is exactly how
+  # The ceiling and the two hook modules, as files the router imports. It is a ConfigMap and not a
+  # copied directory because the wheel or directory a ConfigMap generates is what the pod actually
+  # runs: a value typed into a laptop's ~/.pi/agent/models.json stops nothing, which is exactly how
   # 86,525,924 tokens went through one hour on 2026-09-13 with every existing guard reporting.
+  # `zeroedge_gateway.py` is a flat shim: the ZeroEdge package is not vendored here (a ConfigMap
+  # flattens keys, so a package cannot mount), it calls the ZeroEdge service named by ZEROEDGE_URL.
   - name: litellm-request-ceiling
     files:
       - request_ceiling.py
       - efficiency_gateway.py
+      - zeroedge_gateway.py
 generatorOptions:
   disableNameSuffixHash: false
 
