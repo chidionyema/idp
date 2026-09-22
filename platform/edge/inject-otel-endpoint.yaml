@@ -1,6 +1,6 @@
 # Injects OTEL_EXPORTER_OTLP_ENDPOINT into every estate workload container at admission.
-# This is the platform's single point of OTel wiring — no manifest declares the env var;
-# Kyverno adds it. A workload that already carries the key keeps its own value (add-if-absent).
+# This is the platform's single point of OTel wiring: a manifest need not declare the env var,
+# Kyverno adds it, and the value is always the estate's one collector.
 #
 # WHY MUTATION OVER DECORATION: the require-auto-reload pattern (crew#684 blueprint) proved
 # the model — an annotation the policy injects cannot be forgotten, cannot drift, and is not
@@ -26,8 +26,9 @@ metadata:
     policies.kyverno.io/subject: Deployment, StatefulSet
     policies.kyverno.io/description: >-
       Every container in every estate Deployment and StatefulSet receives
-      OTEL_EXPORTER_OTLP_ENDPOINT at admission. The mutation is add-if-absent:
-      a container that already declares the variable keeps its value.
+      OTEL_EXPORTER_OTLP_ENDPOINT at admission, pointing at the estate's one
+      collector. A container that declares the variable itself has it rewritten
+      to that collector; every other variable it declares is left untouched.
 spec:
   background: false
   rules:
@@ -136,5 +137,38 @@ spec:
                 containers:
                   - (name): "*"
                     env:
-                      - +(name): OTEL_EXPORTER_OTLP_ENDPOINT
+                      # NO ANCHOR HERE. A plain list entry is a strategic merge keyed on
+                      # `name`: it adds this variable and touches nothing else. An anchor on
+                      # either key breaks that, in opposite directions, and both were measured
+                      # with `kyverno apply` on fixtures rather than reasoned about:
+                      #
+                      #   +(name)   -- what this file carried until now. The anchor lands on the
+                      #                `env` LIST, so the `value:` beside it is written onto
+                      #                EVERY existing entry:
+                      #                   IN   LITELLM_LOG=INFO  ZEROEDGE_BUDGET_ENFORCE=0
+                      #                   OUT  both = http://signoz-otel-collector...:4318
+                      #                That is what killed llm/litellm --
+                      #                   AttributeError: module 'logging' has no attribute
+                      #                   'HTTP://SIGNOZ-OTEL-COLLECTOR.OBSERVABILITY.SVC:4318'
+                      #                -- and it is also what produced the dry-run rejections
+                      #                the exclusion list below records: on a `valueFrom` entry
+                      #                it writes a `value:` beside the `valueFrom:`, which is an
+                      #                invalid container the API server refuses.
+                      #
+                      #   +(value)  -- preserves the other variables, but adds nothing: on a
+                      #                container that does not already declare the key, kyverno
+                      #                reports `skipped mutate policy` and the endpoint never
+                      #                arrives. A mutation that cannot mutate is not a fix.
+                      #
+                      #   (none)    -- adds the entry when absent, leaves LITELLM_LOG,
+                      #                ZEROEDGE_BUDGET_ENFORCE and a POD_NAMESPACE `valueFrom`
+                      #                exactly as written. This one.
+                      #
+                      # The cost of no anchor, stated plainly: a container that declares its own
+                      # endpoint has it rewritten to the collector below. That is the intended
+                      # reading of "single point of OTel wiring" -- the estate has one collector,
+                      # and a workload pointing somewhere else is a workload whose traces nobody
+                      # is looking at. It is not add-if-absent, and the description no longer
+                      # claims to be.
+                      - name: OTEL_EXPORTER_OTLP_ENDPOINT
                         value: "http://signoz-otel-collector.observability.svc:4318"
