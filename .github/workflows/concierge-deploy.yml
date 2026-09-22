@@ -27,6 +27,15 @@
 #
 # button: Deploy the concierge runtime
 # founder: Builds the vault sidecar and fetches the voice model, then deploys the concierge's ephemeral runtime to Modal and proves the sidecar is in the path; a dry run stops before deploy.
+#
+# WHAT IT DEPLOYS (updated when the always-on endpoint got its own road). Two Modal apps, both
+# gated on dry_run: `agent.py`, the per-order microVM that touches a shop and a card, and
+# `webapp.py`, the thin FastAPI/Twilio/WhatsApp endpoint that dispatches it. The endpoint was a
+# launchd LaunchAgent on a Mac until 2026-09-15; it is now deployed here and the vault entry the
+# endpoint reads its own public URL from is cut over automatically in the same run (LAW 31), into the
+# entry the ESTATE's registry already declares for it -- `concierge-twilio`, not the `concierge-tunnel`
+# name in mums_concierge.bootstrap, which has never existed and is reconciled separately. The one thing this workflow cannot do for itself is the Twilio console webhook,
+# which is a console step and is tracked as one.
 name: concierge-deploy
 
 on:
@@ -284,8 +293,141 @@ jobs:
           modal deploy code/ephemeral/agent.py
           echo "ok      concierge runtime deployed"
 
+      # THE OTHER HALF: the always-on endpoint. agent.py above is the per-order microVM; this is the
+      # thin FastAPI/Twilio/WhatsApp endpoint it is dispatched BY. Until now only agent.py had a road
+      # to Modal, so the endpoint was still a launchd LaunchAgent on whatever Mac ran the installer --
+      # torn down the moment that laptop slept. Founder 2026-09-15: "a consumer product that assumes
+      # the consumer has expensive hardware is a fail."
+      #
+      # WHY THIS IS IN idp AND NOT mums-concierge: the Modal root is set on THIS repository, for the
+      # reason in this file's header. Same constraint, same answer.
+      #
+      # dry_run GATES IT, like the step above: a dry run must stop before it changes production. The
+      # first version of the plan for this step deployed unconditionally, which would have made
+      # dry_run=true a lie for exactly the artifact that faces the public internet.
+      - name: deploy the always-on endpoint to Modal
+        if: ${{ inputs.dry_run == false }}
+        id: webapp
+        run: |
+          set -euo pipefail
+          # ephemeral/webapp.py does not exist on mums-concierge main until the endpoint PR lands
+          # there. Say that plainly instead of failing on a missing file, because "the code is not on
+          # main yet" and "the deploy broke" are different facts and only one is actionable here.
+          if [ ! -f code/ephemeral/webapp.py ]; then
+            echo "FAIL    concierge-deploy  code/ephemeral/webapp.py is not on mums-concierge main."
+            echo "        The endpoint PR has not merged there yet. Deploy it first, or this step"
+            echo "        will keep finding nothing to deploy. agent.py IS deployed; nothing is lost."
+            exit 1
+          fi
+          # The endpoint declares exactly these three secret names (ephemeral/webapp.py:94-100).
+          # Modal refuses a deploy whose declared secret is absent, so confirm them by CREATING, not by
+          # reading `modal secret list` -- that table truncates names to fit the column
+          # (cloudflare-r2-credentials prints as cloudflare-r2-cred...), which is the defect this
+          # file's mint step already documents at length.
+          #
+          # STOP AND READ BEFORE DEPLOYING THIS. These three names are what the CODE asks for, and two
+          # of them do not match the estate's own registry:
+          #
+          #   code asks for        the estate actually has
+          #   human-twilio    vs   concierge-twilio   (platform/vendors/consoles.yaml:1024)
+          #   concierge-tunnel vs  (no such entry -- bin/idp-cloud:160 records two runs that tried)
+          #
+          # That is a real two-repo mismatch, not a naming preference. mums_concierge.bootstrap's
+          # CLUSTER_SECRETS (bootstrap.py:94-101) is internally consistent with webapp.py, so the
+          # concierge is self-consistent -- and wrong about the estate. The fix is to reconcile the
+          # NAMES in one place and then cut over, which is a product decision about which side moves;
+          # this step does not guess it. It fails closed on the missing entry (below) rather than
+          # creating a secret under a name the estate does not use, because a second secret holding
+          # the same token is exactly the duplication LAW 44 exists to prevent.
+          for s in human-twilio concierge-tunnel cloudflare-r2-credentials; do
+            out=$(modal secret create "$s" PROBE=1 2>&1) && {
+              modal secret delete "$s" --yes >/dev/null 2>&1 || true
+              echo "FAIL    concierge-deploy  the endpoint declares secret '$s' and it does not exist."
+              echo "        Modal will refuse the deploy. Nothing has been deployed."
+              exit 1
+            }
+            printf '%s' "$out" | grep -q "already exists" || {
+              echo "FAIL    concierge-deploy  could not confirm '$s':"
+              printf '%s\n' "$out" | sed 's/^/        /'
+              exit 1
+            }
+            echo "ok      endpoint secret $s exists"
+          done
+          modal deploy code/ephemeral/webapp.py
+          echo "ok      concierge endpoint deployed"
+
+      # THE CUTOVER, AUTOMATED (LAW 31: no step is handed to a person to run).
+      #
+      # The endpoint reads PUBLIC_SERVER_URL / PUBLIC_WSS_URL through mums_concierge.bootstrap's
+      # CLUSTER_SECRETS as the entry `concierge-tunnel` (bootstrap.py:94-101). bootstrap.load() checks
+      # os.environ FIRST, so if those fields arrive as Modal secret env vars the (absent, in a Modal
+      # image) kubectl path never runs.
+      #
+      # BUT THE ESTATE'S REGISTRY PUTS THIS VALUE SOMEWHERE ELSE, and this step follows the estate.
+      # platform/vendors/consoles.yaml:1051 already declares `PUBLIC_SERVER_URL` as a field of the
+      # `concierge-twilio` entry -- one vendor, one ExternalSecret, five fields (LAW 44). There is no
+      # `concierge-tunnel` entry and there never was: bin/idp-cloud:160 records two runs
+      # (35008063886, 35016765336) that tried to read it and found nothing -- "no secret named
+      # concierge-tunnel ever existed in the compartment, checked directly, both times". Writing to a
+      # NEW `concierge-tunnel` entry here would create a third name for the same fact, which is the
+      # duplication LAW 44 forbids. So this writes into `concierge-twilio`, where the estate already
+      # expects it, and the concourse's own bootstrap name is reconciled separately (see the note on
+      # the deploy step above -- it is a two-repo naming decision, not one this step should take).
+      #
+      # PUBLIC_WSS_URL is underived from any registry row and is added here. It belongs in
+      # consoles.yaml as a sixth target; that registry edit is the durable half and is NOT done by
+      # this workflow, so it is called out rather than silently absorbed.
+      #
+      # --merge, deliberately: PUBLIC_SERVER_URL sits beside TWILIO_AUTH_TOKEN, MOM_PHONE_NUMBER,
+      # GUARDIAN_PHONE_NUMBER and TWILIO_WHATSAPP_NUMBER in that entry. An --unset or a fresh write
+      # would drop four fields and take the Twilio door down with them.
+      - name: cut the vault over to the Modal URL
+        if: ${{ inputs.dry_run == false }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+        run: |
+          set -euo pipefail
+          # Read the URL back from the platform that issued it, with the API that actually carries it.
+          #
+          # NOT `modal app history --json`: that output is Version / Time deployed / Client / Deployed
+          # by / Commit / Tag (modal/cli/app.py:627), with NO url field at all. An earlier draft of
+          # this step parsed `a["url"]` out of it, which would have silently matched nothing on every
+          # run and failed the cutover forever while looking like a Modal outage. Read the source.
+          #
+          # get_web_url() is the real door, and it is typed `-> str | None` -- so the None case is a
+          # real state (the app exists but has no web endpoint yet) and is handled, not assumed away.
+          # Kept to one line so it stays inside this block scalar: a heredoc's terminator has to sit at
+          # column 0 and that ends the YAML block, which is how this broke the file once already.
+          URL=$(python -c 'import modal; print(modal.Function.from_name("mums-concierge-web", "web").get_web_url() or "")') || URL=""
+          [ -n "$URL" ] || {
+            echo "FAIL    concierge-deploy  Modal returned no web URL for mums-concierge-web/web."
+            echo "        The app may exist without a web endpoint, or the name changed. The vault"
+            echo "        still holds whatever it held; the endpoint is NOT reachable by URL."
+            exit 1
+          }
+          case "$URL" in https://*) ;; *) echo "FAIL    concierge-deploy  Modal returned a non-HTTPS url: $URL"; exit 1;; esac
+          # wss:// for the /ws/live-call bridge, derived from the https host that Modal actually issued.
+          WSS="wss://${URL#https://}"
+          umask 077; f=$(mktemp)
+          printf 'PUBLIC_SERVER_URL=%s\nPUBLIC_WSS_URL=%s\n' "$URL" "$WSS" > "$f"
+          ESTATE_ENV_FILE="$f" bin/idp-vault-put --merge concierge-twilio PUBLIC_SERVER_URL=PUBLIC_SERVER_URL PUBLIC_WSS_URL=PUBLIC_WSS_URL
+          rm -f "$f"
+          # The entry's other four fields must survive an --merge write; if the Twilio token leaves
+          # this entry the webhook stops verifying HMAC and silently trusts any sender. Names only --
+          # bin/idp-vault-put prints key NAMES and never values (LAW 21).
+          echo "        the entry also holds: TWILIO_AUTH_TOKEN, MOM_PHONE_NUMBER,"
+          echo "        GUARDIAN_PHONE_NUMBER, TWILIO_WHATSAPP_NUMBER -- all preserved by --merge"
+          # Printed because it is a public URL, not a secret -- and because a cutover nobody can read
+          # back in the run's own log is a cutover nobody can audit.
+          echo "ok      vault   concierge-twilio now holds $URL"
+          echo "next    the Twilio console webhook must point here; that is a console step, tracked"
+          echo "        separately, and it is the one thing this workflow cannot do for itself"
+
       - name: dry run -- say plainly what was not done
         if: ${{ inputs.dry_run == true }}
         run: |
           echo "dry run: the sidecar built, the model fetched, the module imports; NOTHING was deployed."
+          echo "         That includes BOTH Modal apps: agent.py (per-order microVM) and webapp.py"
+          echo "         (the always-on endpoint). The vault was not touched and no URL was cut over."
           echo "Re-run with dry_run=false to deploy."
