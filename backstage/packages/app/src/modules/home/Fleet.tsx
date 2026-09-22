@@ -33,7 +33,15 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Chip, EstatePage, Fold, Section, Summary } from '../shell';
-import { attentionReason, summarise } from './fleetBoard';
+import {
+  attentionReason,
+  capabilityLabel,
+  capabilityTitle,
+  spendLabel,
+  stateLabel,
+  summarise,
+  NUDGEABLE_RUNTIMES,
+} from './fleetBoard';
 import type { Board, Note, SessionsEnvelope, Signal } from './fleetBoard';
 // The Backstage Fleet page draws the LIVE fleet, so it uses FleetCanvas (the component
 // built for /fleet). `room/ui/SpatialCanvas.tsx` is the founder's spec version, which
@@ -400,6 +408,26 @@ export function Fleet() {
   // canvas and the voice bar cannot disagree about what is being shown.
   const [voiceActivity, setVoiceActivity] = useState<Activity | null>(null);
   const [voiceSelected, setVoiceSelected] = useState<string | null>(null);
+  // SELECTING AN AGENT IS THE REQUEST FOR ITS DETAIL.
+  //
+  // The five loaders used to be kicked only by the fold's `onToggle`, which fires when a person
+  // clicks the fold's own summary -- a SECOND click, after the one that selected the node. So
+  // selecting an agent opened a deck that said "0 note(s), 0 signal(s)" and "open to load" for a
+  // session whose notes and signals the backend was ready to serve. Still lazy (nothing is
+  // prefetched for the sessions nobody selected) and still once per session: each loader is
+  // guarded on its own cache.
+  useEffect(() => {
+    const id = voiceSelected;
+    if (!id) return;
+    if (!traceBySession[id]) void loadTrace(id);
+    if (!ledgerBySession[id]) void loadLedger(id);
+    if (!receiptsBySession[id]) void loadReceipt(id);
+    if (!notesBySession[id]) void loadNotes(id);
+    if (!signalsBySession[id]) void loadSignals(id);
+    // Only the selection drives this. Adding the caches to the deps would re-run it on every
+    // load it performs, and the guards above would then be doing the work of a dependency array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceSelected]);
   useEffect(() => {
     let live = true;
     fetchApi
@@ -715,7 +743,19 @@ export function Fleet() {
           // verdict, so an outage is visible without reading the sentence.
           <Chip>Unavailable</Chip>
         )}
-        {board.state !== 'unavailable' && (
+        {board.state === 'empty' && (
+          // AN EMPTY ESTATE IS NOT A BLANK CANVAS.
+          //
+          // `summarise` has always distinguished three things -- unavailable, empty, ready --
+          // and the page drew only two of them: anything that was not `unavailable` got the
+          // canvas, so "no sessions are running" rendered as a dark rectangle with nothing in
+          // it. A reader cannot tell that apart from a canvas that failed to draw. The word is
+          // the whole point of having an `empty` state at all.
+          <div data-testid="fleet-empty" style={{ padding: '24px 0', color: T.textSecondary }}>
+            No agent sessions are running.
+          </div>
+        )}
+        {board.state !== 'unavailable' && board.state !== 'empty' && (
           <>
             <style>{`
               @keyframes fleet-mic { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)} 70%{box-shadow:0 0 0 8px rgba(239,68,68,0)} }
@@ -935,6 +975,31 @@ export function Fleet() {
           const notes = notesBySession[id] ?? [];
           const signals = signalsBySession[id] ?? [];
           const draft = draftFor(id);
+          const capability = capabilityLabel(target.capability_class);
+          const nudgeable = NUDGEABLE_RUNTIMES.has(target.runtime);
+          const steerStatus = nudgeStatusBySession[id] ?? '';
+          const steerLabel =
+            steerStatus === '✓ steered'
+              ? '✓ SENT'
+              : steerStatus === 'sending…'
+                ? '…'
+                : steerStatus.startsWith('Failed')
+                  ? '✕ FAIL'
+                  : 'STEER →';
+          // Anything that is neither the success word nor the in-flight word is a reason the
+          // reader needs: 'Add your steer text first', or the channel's own refusal. The button
+          // label alone cannot carry it -- '✕ FAIL' does not say what failed.
+          const steerProblem =
+            steerStatus !== '' && steerStatus !== '✓ steered' && steerStatus !== 'sending…'
+              ? steerStatus
+              : null;
+          // ONE TIMELINE, NOT TWO LISTS. A note and a signal are both "something that happened to
+          // this session"; reading them in two separate blocks means reconstructing the order by
+          // hand. They are merged on `created_at`, which both carry.
+          const timeline = [
+            ...notes.map(n => ({ at: n.created_at, note: n, signal: null as Signal | null })),
+            ...signals.map((s2: Signal) => ({ at: s2.created_at, note: null as Note | null, signal: s2 })),
+          ].sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? '')));
           return (
             <Fold
               testId={`detail-${id}`}
@@ -961,6 +1026,26 @@ export function Fleet() {
                   {' · '}
                   {target.event_count ?? 0} events
                   {target.task ? <div style={{ marginTop: 2 }}>{target.task}</div> : null}
+                </div>
+                {/* THE THREE FACTS THE CARD CARRIED AND THE CANVAS CANNOT.
+                    A node's radius is its event count and its pulse is its activity; neither can
+                    say what the session cost, what it is allowed to do, or which state word the
+                    backend gave it. Those three moved here when the grid was replaced and were
+                    dropped on the way, so the deck showed a trace and a ledger for a session
+                    whose spend it no longer printed. `spendLabel` renders an unmeasured spend as
+                    a dash, never $0.00 -- zero is a measurement, a dash is the absence of one --
+                    and the capability chip is absent, not em-dashed, when the runtime has no
+                    capability class at all. */}
+                <div
+                  data-testid={`detail-facts-${id}`}
+                  style={{ marginBottom: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
+                >
+                  <Chip>{stateLabel(target.state)}</Chip>
+                  {capability ? (
+                    <Chip title={capabilityTitle(target.capabilities)}>{capability}</Chip>
+                  ) : null}
+                  <span>spend</span>
+                  <span style={{ color: '#e6edf3' }}>{spendLabel(target.spend_usd)}</span>
                 </div>
                 <div data-testid="detail-trace">
                   <strong style={{ color: '#e6edf3' }}>Trace</strong>{' '}
@@ -991,14 +1076,63 @@ export function Fleet() {
                 <div data-testid="detail-history" style={{ marginTop: 6 }}>
                   <strong style={{ color: '#e6edf3' }}>History</strong>{' '}
                   {`${notes.length} note(s), ${signals.length} signal(s)`}
+                  {/* The notes were COUNTED here and never shown: the fold fetched them, the
+                      count proved they had arrived, and the text of every one of them was
+                      dropped. A note nobody can read is a note nobody wrote. */}
+                  {timeline.map((row, i) =>
+                    row.note ? (
+                      <div key={`n-${i}`} style={{ paddingLeft: 8 }}>
+                        <span style={{ color: '#e6edf3' }}>{row.note.author}</span>{' '}
+                        <span>{row.note.note}</span>
+                      </div>
+                    ) : (
+                      <div key={`s-${i}`} style={{ paddingLeft: 8 }}>
+                        {`${row.signal!.kind} ${row.signal!.by} sent, ${
+                          row.signal!.acknowledged ? 'read by the session' : 'not yet read'
+                        }`}
+                      </div>
+                    ),
+                  )}
                 </div>
-                {signals.slice(0, 4).map((s2: Signal, i: number) => (
-                  <div key={`s-${i}`} style={{ paddingLeft: 8 }}>
-                    {`${s2.kind} ${s2.by} sent, ${
-                      s2.acknowledged ? 'read by the session' : 'not yet read'
-                    }`}
+                {/* STEER, BACK ON A SURFACE A PERSON CAN TYPE INTO.
+                    `sendNudge` reads `steerTextBySession`, and after the grid was replaced
+                    nothing in this file ever called `setSteerTextBySession` -- so the text was
+                    always empty and the radial menu's Steer could only ever answer "Add your
+                    steer text first". The field is the other half of the verb. Gated on
+                    NUDGEABLE_RUNTIMES because the backend's channel table, not this page,
+                    decides which runtimes can be steered at all. */}
+                {nudgeable && (
+                  <div
+                    style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}
+                  >
+                    <input
+                      aria-label={`steer text for ${id}`}
+                      placeholder="Steer this agent…"
+                      value={steerTextBySession[id] ?? ''}
+                      onChange={e =>
+                        setSteerTextBySession(cur => ({ ...cur, [id]: e.target.value }))
+                      }
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          void sendNudge(id, target.runtime);
+                        }
+                      }}
+                      style={noteInputStyle(220)}
+                    />
+                    <button
+                      type="button"
+                      data-testid={`steer-${id}`}
+                      onClick={() => void sendNudge(id, target.runtime)}
+                      style={cmdStyle}
+                    >
+                      {steerLabel}
+                    </button>
+                    {steerProblem ? (
+                      <span style={{ color: '#ef4444' }}>{steerProblem}</span>
+                    ) : null}
                   </div>
-                ))}
+                )}
                 <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <input
                     aria-label={`note author for ${id}`}

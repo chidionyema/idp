@@ -325,7 +325,11 @@ describe('item #6: steer a stale session', () => {
     await openDeckFor('sb-1');
     fireEvent.click(await screen.findByRole('button', { name: /STEER →/ }));
 
-    expect(await screen.findByText(/Add your steer text/)).toBeInTheDocument();
+    // findAllByText, not findByText: the reason appears on BOTH surfaces a selection opens --
+    // the radial menu's result line on the node, and the steer row in the deck. That is the
+    // page's design (one truth, two surfaces), so the assertion is "the reason is on screen",
+    // not "the reason is on screen exactly once".
+    expect((await screen.findAllByText(/Add your steer text/)).length).toBeGreaterThan(0);
     expect(posted).toEqual([]);
   });
 
@@ -347,7 +351,8 @@ describe('item #6: steer a stale session', () => {
 
     // A refused dispatch is shown as a failure, never as a success -- the same distinction the
     // ack vocabulary makes on the other side of the loop.
-    expect(await screen.findByText(/workflow not found/)).toBeInTheDocument();
+    // Both surfaces again: the radial menu's result and the deck's steer row.
+    expect((await screen.findAllByText(/workflow not found/)).length).toBeGreaterThan(0);
   });
 });
 
@@ -504,10 +509,16 @@ describe('item #9: state vocabulary', () => {
       }),
     );
     await screen.findByTestId('agent-sb-1');
-    // The node's aria-label carries the activity word; the deck carries the state chip. Neither
-    // may claim Running for an Unknown session.
+    // The node's accessible text carries the activity word; the deck carries the state chip.
+    // Neither may claim Running for an Unknown session.
+    //
+    // Asserted on the node's TEXT, not on an `aria-label` attribute: the canvas gives each agent
+    // a real <button> whose content ("sovereign sb-1: Not measured. 1 events. ...") IS its
+    // accessible name, so there is no aria-label to read and `getAttribute` returned null --
+    // which `not.toMatch` cannot judge and jest reports as a TypeError. Same fact, at the door
+    // that exists. (Line 178 above already asserts the runtime this way.)
     const node = screen.getByTestId('agent-sb-1');
-    expect(node.getAttribute('aria-label')).not.toMatch(/running/i);
+    expect(node.textContent).not.toMatch(/running/i);
     await openDeckFor('sb-1');
     expect(screen.queryByText('Running')).not.toBeInTheDocument();
     expect(screen.getByText('Unknown')).toBeInTheDocument();
@@ -595,8 +606,11 @@ describe('item #10: notes', () => {
     await screen.findByTestId('agent-sb-1');
 
     await openDeckFor('sb-1');
-    fireEvent.change(screen.getByPlaceholderText('author'), { target: { value: 'ada' } });
-    fireEvent.change(screen.getByPlaceholderText('note'), { target: { value: 'looks good' } });
+    // The deck's fields say 'your name' and 'leave a note…' where the card said 'author' and
+    // 'note'. The control is the same control and it works; only the words a person reads
+    // changed, so the test follows the words rather than the page being renamed to suit it.
+    fireEvent.change(screen.getByPlaceholderText('your name'), { target: { value: 'ada' } });
+    fireEvent.change(screen.getByPlaceholderText('leave a note…'), { target: { value: 'looks good' } });
     fireEvent.click(screen.getByRole('button', { name: 'Note' }));
 
     // The page owns the transport: the canvas calls the callback Fleet.tsx passes it, and THAT
@@ -630,11 +644,11 @@ describe('item #10: notes', () => {
 
     await openDeckFor('sb-1');
     // Author present, note blank.
-    fireEvent.change(screen.getByPlaceholderText('author'), { target: { value: 'ada' } });
+    fireEvent.change(screen.getByPlaceholderText('your name'), { target: { value: 'ada' } });
     fireEvent.click(screen.getByRole('button', { name: 'Note' }));
     // Note present, author blank.
-    fireEvent.change(screen.getByPlaceholderText('author'), { target: { value: '' } });
-    fireEvent.change(screen.getByPlaceholderText('note'), { target: { value: 'looks good' } });
+    fireEvent.change(screen.getByPlaceholderText('your name'), { target: { value: '' } });
+    fireEvent.change(screen.getByPlaceholderText('leave a note…'), { target: { value: 'looks good' } });
     fireEvent.click(screen.getByRole('button', { name: 'Note' }));
 
     expect(
@@ -679,7 +693,7 @@ describe('item #10: notes', () => {
     await screen.findByTestId('agent-sb-1');
 
     await openDeckFor('sb-1');
-    const history = await screen.findByTestId('deck-history');
+    const history = await screen.findByTestId('detail-history');
     const text = history.textContent ?? '';
     expect(text).toMatch(/early note/);
     expect(text).toMatch(/steer/);
@@ -713,7 +727,7 @@ describe('item #10: notes', () => {
     await screen.findByTestId('agent-sb-1');
 
     await openDeckFor('sb-1');
-    const history = await screen.findByTestId('deck-history');
+    const history = await screen.findByTestId('detail-history');
     expect(history.textContent).toMatch(/not yet read/);
     expect(history.textContent).not.toMatch(/delivered/);
   });

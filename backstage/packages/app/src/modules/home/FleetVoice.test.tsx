@@ -1,72 +1,98 @@
-import {
-  describe,
-  it,
-  expect,
-  jest,
-  afterEach,
-  beforeEach,
-} from '@jest/globals';
+// `jest` IS DELIBERATELY THE GLOBAL HERE, NOT THE @jest/globals IMPORT.
+//
+// backstage-cli transpiles with @swc/jest, and swc's jest pass hoists `jest.mock(...)` above the
+// imports only when it sees the bare global identifier. With `jest` imported from '@jest/globals'
+// the call stays where it is written, which in CommonJS output is AFTER `require('./FleetVoice')`
+// -- the real module is already in the registry and the factory mocks nothing. Measured
+// 2026-09-22 with a one-assertion probe: identical file, imported `jest` fails, global `jest`
+// passes. Everything else still comes from @jest/globals.
+import { describe, it, expect, afterEach, beforeEach } from '@jest/globals';
 import { render, fireEvent, act, screen } from '@testing-library/react';
 import FleetVoice, { parseIntent } from './FleetVoice';
 import type { Session } from './fleetBoard';
 
 // ---------------------------------------------------------------------------
+// The engine, which is the seam now
+// ---------------------------------------------------------------------------
+
+// THE ENGINE OWNS THE MICROPHONE, SO THE ENGINE IS WHAT THESE TESTS DRIVE.
+//
+// `8201aa21c feat(voice,ironcage): land the local-floor work` replaced the browser recogniser
+// inside `startListening` with `void engine.start()`. The transcript now arrives from whisper
+// through useEstateVoice as `engine.heard`, and listening/thinking/speaking are `engine.state`,
+// mapped onto this component's vocabulary by one effect. The tests below went on emitting
+// `SpeechRecognition` results at a component that no longer constructs one, so six of them were
+// asserting a transport that had been deleted -- the click produced no instance and the state
+// word never left IDLE.
+//
+// The real hook cannot run here either: `start()` calls `getUserMedia` and `new AudioContext`,
+// and jsdom has neither, so it would answer every click with state 'error'. So the hook is the
+// mock and the component's own behaviour -- intent parsing, the mutation grace window, the deck,
+// Escape, the state word -- is what is under test, which is the part that is this file's.
+const mockStart = jest.fn();
+const mockStop = jest.fn();
+const mockSpeak = jest.fn();
+const mockSilence = jest.fn();
+/** Set on every render of the mocked hook; `engineReports` pushes through it. */
+let mockPush: ((patch: Record<string, string>) => void) | null = null;
+
+jest.mock('./useEstateVoice', () => {
+  const React = require('react');
+  const useEstateVoice = () => {
+    const [engine, setEngine] = React.useState({
+      state: 'off',
+      heard: '',
+      detail: '',
+    });
+    mockPush = (patch: Record<string, string>) =>
+      setEngine((prev: Record<string, string>) => ({ ...prev, ...patch }));
+    return {
+      ...engine,
+      reply: '',
+      available: true,
+      start: mockStart,
+      stop: mockStop,
+      speak: mockSpeak,
+      silence: mockSilence,
+      catalogue: null,
+      voiceLog: [],
+    };
+  };
+  // FleetVoice imports the NAMED export (`import { useEstateVoice } from './useEstateVoice'`),
+  // so a `default` here mocks nothing and the real hook keeps running.
+  return { __esModule: true, useEstateVoice };
+});
+
+/** What the estate engine reports back, as one act()-wrapped update. */
+function engineReports(patch: {
+  state?: string;
+  heard?: string;
+  detail?: string;
+}) {
+  if (!mockPush) throw new Error('FleetVoice has not been rendered yet');
+  const push = mockPush;
+  act(() => {
+    push(patch as Record<string, string>);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Fakes for jsdom
 // ---------------------------------------------------------------------------
 
+/**
+ * All that is left of the browser recogniser: a capability probe.
+ *
+ * `supported` in FleetVoice is still `recognitionCtor !== null && synthesisAvailable`, so the
+ * constructor has to exist for the button to be enabled even though nothing constructs one any
+ * more. Removing the probe is a product decision (it gates the estate engine on a Chrome API the
+ * estate engine does not use) and not this file's to make, so the stub stays and the "unsupported"
+ * test below still deletes it to prove the disabled path.
+ */
 class FakeSpeechRecognition {
-  static instances: FakeSpeechRecognition[] = [];
-  lang = '';
-  continuous = false;
-  interimResults = false;
-  started = false;
-  stopped = false;
-  aborted = false;
-  onresult: ((event: any) => void) | null = null;
-  onerror: ((event: any) => void) | null = null;
-  onend: (() => void) | null = null;
-
-  /** Cumulative, exactly as the platform exposes it. */
-  results: any[] = [];
-
-  constructor() {
-    FakeSpeechRecognition.instances.push(this);
-  }
-
-  start() {
-    this.started = true;
-  }
-
-  stop() {
-    this.stopped = true;
-    if (this.onend) this.onend();
-  }
-
-  abort() {
-    this.aborted = true;
-  }
-
-  /**
-   * Emit a result the way the REAL API does.
-   *
-   * `SpeechRecognitionEvent.results` is CUMULATIVE: results[0] is the first utterance of the
-   * session and results[n] the latest, and `resultIndex` says which one this event is about. The
-   * first version of this fake sent a one-element array with `resultIndex: 0` for every call, so
-   * a second emit re-reported the first transcript as final and the component -- which correctly
-   * accumulates from `resultIndex` -- produced
-   * "try the other branch steer agent-beta try the other branch".
-   *
-   * The bug was in the fake, not the component. That is worth keeping written down: a fake that
-   * is not the real shape invents product bugs and hides real ones.
-   */
-  emitResult(transcript: string, isFinal: boolean) {
-    this.results.push(Object.assign([{ transcript }], { isFinal }));
-    const event = {
-      resultIndex: this.results.length - 1,
-      results: this.results,
-    };
-    if (this.onresult) this.onresult(event);
-  }
+  start() {}
+  stop() {}
+  abort() {}
 }
 
 interface FakeUtterance {
@@ -142,7 +168,11 @@ const sessions: Session[] = [
 ];
 
 beforeEach(() => {
-  FakeSpeechRecognition.instances = [];
+  mockStart.mockClear();
+  mockStop.mockClear();
+  mockSpeak.mockClear();
+  mockSilence.mockClear();
+  mockPush = null;
   spoken.length = 0;
   cancelCount = 0;
   installRecognition();
@@ -207,20 +237,22 @@ describe('parseIntent', () => {
 // ---------------------------------------------------------------------------
 
 describe('FleetVoice', () => {
-  it('starts recognition on press and shows interim text live', () => {
+  it('starts the estate engine on press and shows what it heard', () => {
     render(<FleetVoice sessions={sessions} />);
     const button = screen.getByTestId('voice-ptt');
 
     fireEvent.click(button);
-    expect(FakeSpeechRecognition.instances.length).toBe(1);
-    expect(FakeSpeechRecognition.instances[0].started).toBe(true);
+    expect(mockStart).toHaveBeenCalledTimes(1);
+
+    // The word follows the ENGINE, not the click: the microphone is open when the engine says
+    // it is, so a start that fails leaves the button honest instead of showing LISTENING at a
+    // dead transport.
+    engineReports({ state: 'listening' });
     expect(screen.getByTestId('voice-state-word').textContent).toBe(
       'LISTENING',
     );
 
-    act(() => {
-      FakeSpeechRecognition.instances[0].emitResult('what is', false);
-    });
+    engineReports({ heard: 'what is' });
     expect(screen.getByTestId('voice-interim').textContent).toContain(
       'what is',
     );
@@ -245,9 +277,7 @@ describe('FleetVoice', () => {
     const button = screen.getByTestId('voice-ptt');
 
     fireEvent.click(button);
-    act(() => {
-      FakeSpeechRecognition.instances[0].emitResult('what is stuck', true);
-    });
+    engineReports({ state: 'listening', heard: 'what is stuck' });
     fireEvent.click(button);
 
     // The filter has already been applied -- no timer was armed, so no advanceTimersByTime.
@@ -271,11 +301,9 @@ describe('FleetVoice', () => {
     const button = screen.getByTestId('voice-ptt');
 
     fireEvent.click(button);
-    act(() => {
-      FakeSpeechRecognition.instances[0].emitResult(
-        'steer agent-beta try the other branch',
-        true,
-      );
+    engineReports({
+      state: 'listening',
+      heard: 'steer agent-beta try the other branch',
     });
     fireEvent.click(button);
 
@@ -292,28 +320,39 @@ describe('FleetVoice', () => {
     expect(screen.getByTestId('voice-deck-text')).toBeTruthy();
   });
 
-  it('cancels synthesis and returns to listening on barge-in', () => {
+  /**
+   * BARGE-IN IS THE ENGINE'S JOB NOW, SO THIS TESTS THE HALF THAT IS STILL THIS COMPONENT'S.
+   *
+   * The old version asserted `window.speechSynthesis.cancel()` was called from the component's
+   * own `onresult` interceptor. That interceptor is dead code after 8201aa21c -- it reads
+   * `recognitionRef.current`, which nothing assigns any more -- and the capability moved into the
+   * engine, whose VAD keeps running through playback and stops the audio itself.
+   *
+   * What remains here, and is worth protecting, is that the component FOLLOWS the engine out of
+   * SPEAKING. Without the mapping effect a person who talks over the answer sees a surface still
+   * claiming to be speaking while the engine is already listening to them.
+   */
+  it('follows the engine back to LISTENING when it hears a barge-in', () => {
     render(<FleetVoice sessions={sessions} />);
     const button = screen.getByTestId('voice-ptt');
 
     fireEvent.click(button);
-    act(() => {
-      FakeSpeechRecognition.instances[0].emitResult('what is stuck', true);
-    });
+    engineReports({ state: 'listening', heard: 'what is stuck' });
     fireEvent.click(button);
 
     act(() => {
       jest.advanceTimersByTime(1500);
     });
+    // The answer is spoken by the estate engine, not by the OS formant voices, and the engine
+    // reports the playback it was asked for.
+    expect(mockSpeak).toHaveBeenCalled();
+    engineReports({ state: 'speaking' });
     expect(screen.getByTestId('voice-state-word').textContent).toBe(
       'SPEAKING',
     );
 
-    const before = cancelCount;
-    act(() => {
-      FakeSpeechRecognition.instances[0].emitResult('stop', false);
-    });
-    expect(cancelCount).toBeGreaterThan(before);
+    // The VAD hears the person over the playback and the engine goes back to listening.
+    engineReports({ state: 'listening' });
     expect(screen.getByTestId('voice-state-word').textContent).toBe(
       'LISTENING',
     );
@@ -350,9 +389,7 @@ describe('FleetVoice', () => {
     const button = screen.getByTestId('voice-ptt');
 
     fireEvent.click(button);
-    act(() => {
-      FakeSpeechRecognition.instances[0].emitResult('stop agent-beta', true);
-    });
+    engineReports({ state: 'listening', heard: 'stop agent-beta' });
     fireEvent.click(button);
 
     // A mutation DOES show a chip: there is something real to take back for 1.5s.
@@ -378,8 +415,10 @@ describe('FleetVoice', () => {
     const word = screen.getByTestId('voice-state-word');
     expect(word.textContent).toBe('IDLE');
 
-    // ONE click. The control toggles, so this is the whole gesture.
+    // ONE click. The control toggles, so this is the whole gesture -- and the word is the
+    // engine's answer to it, which is why the click alone is not enough to show LISTENING.
     fireEvent.click(screen.getByTestId('voice-ptt'));
+    engineReports({ state: 'listening' });
     expect(screen.getByTestId('voice-state-word').textContent).toBe(
       'LISTENING',
     );
