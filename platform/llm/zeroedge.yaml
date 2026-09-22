@@ -62,6 +62,12 @@ spec:
             # whether a model call can be refused by this pod, and a load-bearing default
             # belongs where someone reading the Deployment can see it.
             - { name: ZEROEDGE_BUDGET_ENFORCE, value: "0" }
+            # Not paperwork for require-otel-endpoint: the image installs zeroedge[otel] and
+            # the service emits one span per /optimize (zeroedge#3), carrying the tenant, the
+            # action taken and the model the routing layer chose -- the pre-call work the
+            # router's own span cannot see. Same collector as litellm.yaml and ollama.yaml.
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: OTEL_SERVICE_NAME, value: "zeroedge" }
           # /health is the whole claim this pod makes: the process is up and the provider
           # registry parsed. It answers from the same thread pool as /optimize, so a wedged
           # server fails the probe rather than passing it while the router times out.
@@ -94,7 +100,10 @@ kind: Service
 metadata:
   name: zeroedge
   namespace: llm
-  labels: { app.kubernetes.io/name: zeroedge }
+  # founder-model-router, the same entity litellm, ollama and redis name: this is a layer of
+  # the router, not a second door. require-catalogue-entity refuses a Service that names none
+  # (crew#307: "how was even a surface allowed into the estate without being on Backstage").
+  labels: { app.kubernetes.io/name: zeroedge, backstage.io/kubernetes-id: founder-model-router }
 spec:
   selector: { app.kubernetes.io/name: zeroedge }
   ports:
