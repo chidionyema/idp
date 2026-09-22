@@ -1,6 +1,6 @@
 # Injects OTEL_EXPORTER_OTLP_ENDPOINT into every estate workload container at admission.
-# This is the platform's single point of OTel wiring — no manifest declares the env var;
-# Kyverno adds it. A workload that already carries the key keeps its own value (add-if-absent).
+# This is the platform's single point of OTel wiring. Kyverno adds the env var; the platform
+# endpoint wins over one a workload declares itself (measured 2026-09-22, see the mutate block).
 #
 # WHY MUTATION OVER DECORATION: the require-auto-reload pattern (crew#684 blueprint) proved
 # the model — an annotation the policy injects cannot be forgotten, cannot drift, and is not
@@ -136,5 +136,35 @@ spec:
                 containers:
                   - (name): "*"
                     env:
-                      - +(name): OTEL_EXPORTER_OTLP_ENDPOINT
+                      # NO ANCHOR ON EITHER KEY. Measured with `kyverno apply` against a
+                      # two-variable fixture on 2026-09-22; all three receipts below are from
+                      # that run.
+                      #
+                      #   `+(name):`  -- what this file carried until now. The add-anchor on
+                      #                 `name` anchors a MERGE across the whole `env` LIST, so
+                      #                 the sibling `value:` was written onto EVERY existing
+                      #                 entry:
+                      #                     IN   LITELLM_LOG=INFO   LITELLM_MODE=PRODUCTION
+                      #                     OUT  LITELLM_LOG=http://signoz-...
+                      #                          LITELLM_MODE=http://signoz-...
+                      #                 That is what killed llm/litellm, which reads LITELLM_LOG
+                      #                 at import:
+                      #                     AttributeError: module 'logging' has no attribute
+                      #                     'HTTP://SIGNOZ-OTEL-COLLECTOR.OBSERVABILITY.SVC:4318'
+                      #
+                      #   `+(value):` -- rejected. It stops the damage, but Kyverno then reports
+                      #                 `skipped mutate policy ... skip: 1` and injects NOTHING,
+                      #                 silently disabling the estate-wide OTel wiring this policy
+                      #                 exists to guarantee.
+                      #
+                      #   no anchor   -- what ships. `env` is a strategic-merge list keyed by
+                      #                 `name`, so the entry is added when absent and the other
+                      #                 variables are left alone (`pass: 1`).
+                      #
+                      # HONEST LIMIT: with no anchor the platform endpoint WINS over a value a
+                      # workload declared itself. That is not add-if-absent, and the header above
+                      # has been corrected to say so. It is a no-op today: every manifest that
+                      # sets this key (platform/jit, platform/acg, platform/idp_agent,
+                      # platform/via-negativa) sets the identical collector URL.
+                      - name: OTEL_EXPORTER_OTLP_ENDPOINT
                         value: "http://signoz-otel-collector.observability.svc:4318"
