@@ -1417,13 +1417,15 @@ EOF'
 # formatted into the log. This is the same discipline as show_redacted, applied by not fetching.
 SECRET_CAP=2000
 
-# One listing, reused by both playbooks. Tab-separated: namespace, name, type, helm-owner,
-# helm-status, birth. The two helm columns come from the labels Helm itself writes on every
-# release secret (`owner=helm`, `status=deployed|superseded|failed|pending-*`), which is what makes
-# the reclaim below provable rather than a name-pattern guess.
+# One listing, reused by both playbooks. Columns: namespace, name, type, helm-owner, helm-status,
+# birth, ownerReference kind, ownerReference name. The two helm columns come from the labels Helm
+# itself writes on every release secret (`owner=helm`, `status=deployed|superseded|failed`), and
+# the two ownerReference columns say whether anything in the cluster still claims the Secret --
+# which is what makes a reclaim provable rather than a name-pattern guess. Fields 1-6 are stable;
+# new columns are appended so every awk position above keeps its meaning.
 secret_table() {
   $K get secrets -A --no-headers -o \
-    custom-columns=NS:.metadata.namespace,NAME:.metadata.name,TYPE:.type,OWNER:.metadata.labels.owner,STATUS:.metadata.labels.status,BORN:.metadata.creationTimestamp \
+    custom-columns=NS:.metadata.namespace,NAME:.metadata.name,TYPE:.type,OWNER:.metadata.labels.owner,STATUS:.metadata.labels.status,BORN:.metadata.creationTimestamp,OWNKIND:.metadata.ownerReferences[0].kind,OWNNAME:.metadata.ownerReferences[0].name \
     2>/dev/null | awk 'NF'
 }
 
@@ -1447,6 +1449,22 @@ secret_census_report() {
     | awk '{print $1"/"$2}' | sort | uniq -c | sort -rn | head -30
   echo "--- oldest-20"
   printf '%s\n' "$t" | sort -k6 | head -20 | awk '{print $6"  "$1"/"$2"  "$3}'
+  # The namespace holding the most secrets, broken down far enough to write a selector against.
+  # Run 35682281244 found 2159 of 2480 in trivy-system and could say nothing more about them, so
+  # a second read run was needed before anything could be deleted. This is that read, folded in.
+  local top
+  top=$(printf '%s\n' "$t" | awk '{print $1}' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
+  echo "--- top-namespace-detail ($top)"
+  echo "  by-owner-kind:"
+  printf '%s\n' "$t" | awk -v n="$top" '$1==n{print "    "$7}' | sort | uniq -c | sort -rn | head -10
+  echo "  by-owner-name-shape:"
+  printf '%s\n' "$t" | awk -v n="$top" '$1==n{print $8}' | sed 's/[0-9a-f]\{6,\}/<hash>/g; s/[0-9]\{3,\}/<n>/g' \
+    | sort | uniq -c | sort -rn | head -10
+  echo "  by-name-shape:"
+  printf '%s\n' "$t" | awk -v n="$top" '$1==n{print $2}' | sed 's/[0-9a-f]\{6,\}/<hash>/g; s/[0-9]\{3,\}/<n>/g' \
+    | sort | uniq -c | sort -rn | head -15
+  echo "  oldest/newest:"
+  printf '%s\n' "$t" | awk -v n="$top" '$1==n{print $6}' | sort | sed -n '1p;$p' | sed 's/^/    /'
 }
 
 # The one selector both playbooks trust: table on stdin, "<namespace> <name>" for every Secret
