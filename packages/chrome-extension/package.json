@@ -1,0 +1,22 @@
+{
+  "name": "@fleetview/chrome-extension",
+  "version": "1.0.0",
+  "description": "FleetView Voice Chrome Extension - voice control in 3 minutes",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/background.ts --bundle --outfile=dist/background.js --format=esm --target=chrome120",
+    "build:popup": "esbuild src/popup/popup.ts --bundle --outfile=dist/popup.js --format=esm --target=chrome120",
+    "build:options": "esbuild src/options/options.ts --bundle --outfile=dist/options.js --format=esm --target=chrome120",
+    "build:all": "npm run build && npm run build:popup && npm run build:options",
+    "watch": "npm run build:all -- --watch",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.268",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.0"
+  }
+}

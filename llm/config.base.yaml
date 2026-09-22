@@ -122,7 +122,9 @@ router_settings:
 
 litellm_settings:
   # Traces to the collector that already runs. No second store.
-  callbacks: ["otel"]
+  # The efficiency gateway runs the 9 token-optimisation mechanisms on every call.
+  # See platform/llm/efficiency_gateway.py for what each one does.
+  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance"]
   drop_params: true
   # Never log the prompt or the completion body. Spans carry model, latency, tokens and
   # cost — which is what an audit trail needs — and not the content of a customer's

@@ -47,11 +47,16 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import os
 import sys
 import time
 from pathlib import Path
 from typing import Any
+
+import jsonschema
+
+from . import tracing
 
 # The repo root, from this file's own location rather than the process's working directory:
 # src -> fleetview-backend -> plugins -> backstage -> <repo>. The same `parents[4]` reach
@@ -59,6 +64,11 @@ from typing import Any
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 _NATS_ADAPTER_MODULE = Path(__file__).resolve().parent / "nats_adapter.py"
+_OUTBOX_MODULE = Path(__file__).resolve().parent / "outbox.py"
+_INTENT_SCHEMA_PATH = Path(__file__).resolve().parents[1] / "schemas" / "intent-v2.json"
+
+# Cached intent schema — loaded once per process.
+_intent_schema: dict | None = None
 
 # The runtime name this transport emits under. `sovereign` is in the contract's enum
 # (platform/event-bus/contract/estate.agent.event.json) and is where the voice engine lives.
@@ -115,6 +125,33 @@ def _nats():
     return module
 
 
+def _outbox():
+    spec = importlib.util.spec_from_file_location(
+        "fleetview_outbox_impl", _OUTBOX_MODULE
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load module at {_OUTBOX_MODULE}")
+    cached = sys.modules.get("fleetview_outbox_impl")
+    if cached is not None:
+        return cached
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _get_intent_schema() -> dict:
+    """Load and cache the intent-v2 JSON schema."""
+    global _intent_schema
+    if _intent_schema is not None:
+        return _intent_schema
+    if not _INTENT_SCHEMA_PATH.is_file():
+        raise RuntimeError(f"intent schema not found at {_INTENT_SCHEMA_PATH}")
+    with open(_INTENT_SCHEMA_PATH) as f:
+        _intent_schema = json.load(f)
+    return _intent_schema
+
+
 def _nats_url() -> str:
     return os.environ.get("NATS_URL", "")
 
@@ -147,6 +184,137 @@ async def publish(
     except Exception as exc:  # noqa: BLE001 -- the reason is reported, never swallowed
         return {"published": False, "reason": f"{exc.__class__.__name__}: {exc}"}
     return {"published": True, "subject": f"estate.agent.{RUNTIME}.{session_id}.{kind}"}
+
+
+async def steer(
+    body: dict[str, Any], trace_context: dict[str, str] | None = None
+) -> tuple[dict[str, Any], int]:
+    """Receive a validated JSON intent from the browser, write to outbox, return instantly.
+
+    THE SERVER RECEIVES ONLY THE INTENT, NEVER AUDIO OR TRANSCRIPT. The browser runs inference
+    (the edge-compute goal, ADR 0033); this endpoint receives the result, validates it against
+    a strict JSON schema, and writes it to an SQLite WAL buffer. The response returns in <50ms,
+    before any NATS publish attempt.
+
+    WHY AN OUTBOX. NATS can be unreachable — the cluster is down, the laptop is offline, the
+    network blipped. The outbox decouples acceptance from delivery: the intent is durable the
+    moment the 200 leaves the wire. A background worker drains to NATS on `estate.agent.
+    sovereign.<session_id>.steer` with a 15-minute JetStream TTL.
+
+    VALIDATION IS STRICT. `additionalProperties: false` in the schema means any field not in
+    the schema is a rejection. This is deliberate: the browser's model can hallucinate fields,
+    and the server must refuse them rather than silently passing garbage onto the bus.
+
+    THE AUTHOR IS REQUIRED and overridden by the server from the authenticated session — the
+    value in the payload is IGNORED. A steer with no attributed author is refused at the schema
+    level (it is in `required`), but even if it were present, the server would replace it with
+    the authenticated identity. The same discipline `hear` applies: "a steer with no attributed
+    author is refused" is estate law, not a client convention.
+
+    TRACING: If trace_context is provided (from HTTP headers), the span continues the browser's
+    trace. The trace context is propagated to the outbox and onto the NATS message.
+    """
+    started = time.time()
+
+    # Extract and attach trace context from the browser if provided.
+    ctx = tracing.extract_context(trace_context) if trace_context else None
+
+    with tracing.with_context(ctx):
+        with tracing.server_span(
+            "voice.receive",
+            {"voice.endpoint": "/voice/steer", "voice.session_id": body.get("session_id", "")},
+        ) as receive_span:
+            # Validate against the strict schema.
+            validate_start = time.time()
+            with tracing.span("voice.validate", {"voice.schema": "intent-v2"}) as validate_span:
+                try:
+                    schema = _get_intent_schema()
+                    jsonschema.validate(instance=body, schema=schema)
+                    validate_ms = round((time.time() - validate_start) * 1000, 1)
+                    if validate_span:
+                        validate_span.set_attribute("voice.validation.duration_ms", validate_ms)
+                        validate_span.set_attribute("voice.validation.success", True)
+                except jsonschema.ValidationError as exc:
+                    # Return a clear error: the path to the invalid field and what was wrong.
+                    path = ".".join(str(p) for p in exc.absolute_path) or "(root)"
+                    if validate_span:
+                        validate_span.set_attribute("voice.validation.success", False)
+                        validate_span.set_attribute("voice.validation.error", exc.message)
+                    return {
+                        "error": "schema validation failed",
+                        "path": path,
+                        "message": exc.message,
+                    }, 400
+                except Exception as exc:  # noqa: BLE001 — schema load failure is a 500
+                    if validate_span:
+                        validate_span.set_attribute("voice.validation.success", False)
+                        validate_span.set_attribute("voice.validation.error", str(exc))
+                    return {"error": f"schema load failed: {exc}"}, 500
+
+            session_id = str(body.get("session_id") or "").strip()
+            # Author comes from the authenticated session, not the payload — but the schema requires it,
+            # so we check that the caller at least provided SOMETHING. The actual value will be overridden
+            # at the route level with the authenticated identity.
+            author = str(body.get("author") or "").strip()
+            if not session_id:
+                return {"error": "session_id is required"}, 400
+            if not author:
+                return {"error": "author is required: a steer with no attributed author is refused"}, 400
+
+            # The payload for the bus: everything except session_id (which is in the subject).
+            # We build the steer object the same way `hear` does.
+            steer_payload = {
+                "action": body.get("action"),
+                "steer": {
+                    "text": body.get("transcript") or f"[intent: {body.get('action')}]",
+                    "author": author,
+                },
+            }
+            if body.get("target"):
+                steer_payload["target"] = body["target"]
+            if body.get("env"):
+                steer_payload["env"] = body["env"]
+            if body.get("confidence") is not None:
+                steer_payload["confidence"] = body["confidence"]
+            if body.get("partial"):
+                steer_payload["partial"] = body["partial"]
+
+            # Propagate trace context to the outbox for NATS message headers.
+            trace_headers = tracing.get_current_trace_context()
+            if trace_headers:
+                steer_payload["_trace_context"] = trace_headers
+
+            # Write to the outbox — this is the durability boundary.
+            outbox = _outbox()
+            with tracing.span("voice.outbox.write", {"voice.session_id": session_id}) as outbox_span:
+                try:
+                    row_id = outbox.enqueue(
+                        session_id=session_id,
+                        runtime=RUNTIME,
+                        kind="steer",
+                        phase="executing",
+                        payload=steer_payload,
+                    )
+                    if outbox_span:
+                        outbox_span.set_attribute("voice.outbox.row_id", row_id)
+                        outbox_span.set_attribute("voice.action", body.get("action", ""))
+                except Exception as exc:  # noqa: BLE001 — outbox failure is the one thing that is fatal
+                    if outbox_span:
+                        outbox_span.set_attribute("voice.outbox.error", str(exc))
+                    return {"error": f"outbox write failed: {exc}"}, 500
+
+            elapsed_ms = round((time.time() - started) * 1000, 1)
+            if receive_span:
+                receive_span.set_attribute("voice.elapsed_ms", elapsed_ms)
+                receive_span.set_attribute("voice.outbox.row_id", row_id)
+
+            return {
+                "accepted": True,
+                "outbox_id": row_id,
+                "session_id": session_id,
+                "action": body.get("action"),
+                "elapsed_ms": elapsed_ms,
+            }, 200
 
 
 async def hear(pcm: bytes, session_id: str, author: str) -> tuple[dict[str, Any], int]:

@@ -1,0 +1,86 @@
+================================================================================
+ FleetView Voice has been deployed!
+================================================================================
+
+{{- if .Values.ingress.enabled }}
+Your FleetView Voice instance is available at:
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+Get the application URL by running:
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "fleetview-voice.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.service.type }}
+It may take a few minutes for the LoadBalancer IP to be available.
+Get the application URL by running:
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "fleetview-voice.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.service.port }}
+{{- else if contains "ClusterIP" .Values.service.type }}
+Get the application URL by running:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "fleetview-voice.fullname" . }} 8080:{{ .Values.service.port }}
+  echo "Visit http://127.0.0.1:8080"
+{{- end }}
+
+--------------------------------------------------------------------------------
+ Configuration Summary
+--------------------------------------------------------------------------------
+
+Authentication:
+  Provider: {{ .Values.auth.provider }}
+{{- if .Values.auth.issuerUrl }}
+  Issuer URL: {{ .Values.auth.issuerUrl }}
+{{- end }}
+
+Event Bus:
+  Type: {{ .Values.eventBus.type }}
+{{- if eq .Values.eventBus.type "nats" }}
+  NATS URL: {{ include "fleetview-voice.natsUrl" . }}
+  Stream: {{ .Values.eventBus.nats.streamName }}
+{{- else if eq .Values.eventBus.type "kafka" }}
+  Brokers: {{ include "fleetview-voice.kafkaBrokers" . }}
+  Topic: {{ .Values.eventBus.kafka.topic }}
+{{- end }}
+
+Privacy:
+  Default TTL: {{ .Values.privacy.defaultTtlMinutes }} minutes
+  Durable Retention: {{ .Values.privacy.durableRetentionEnabled }}
+  PII Redaction: {{ .Values.privacy.redaction.enabled }}
+
+Components:
+  API Replicas: {{ .Values.api.replicas }}
+  Worker Replicas: {{ .Values.worker.replicas }}
+  HPA Enabled: {{ .Values.api.autoscaling.enabled }}
+
+{{- if .Values.nats.enabled }}
+
+Bundled NATS:
+  JetStream Enabled: {{ .Values.nats.nats.jetstream.enabled }}
+{{- end }}
+
+{{- if .Values.redis.enabled }}
+
+Bundled Redis:
+  Architecture: {{ .Values.redis.architecture }}
+{{- end }}
+
+--------------------------------------------------------------------------------
+ Health Check
+--------------------------------------------------------------------------------
+
+Verify the deployment is healthy:
+  kubectl --namespace {{ .Release.Namespace }} get pods -l "app.kubernetes.io/instance={{ .Release.Name }}"
+  kubectl --namespace {{ .Release.Namespace }} logs -l "app.kubernetes.io/name={{ include "fleetview-voice.name" . }},app.kubernetes.io/component=api" --tail=50
+
+Test the health endpoint:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "fleetview-voice.fullname" . }} 8080:{{ .Values.service.port }} &
+  curl http://127.0.0.1:8080/health
+
+--------------------------------------------------------------------------------
+ Documentation
+--------------------------------------------------------------------------------
+
+For more information, see: https://github.com/chidionyema/idp/tree/main/deploy/helm/fleetview-voice

@@ -1,0 +1,13 @@
+{{- if .Values.api.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "fleetview-voice.fullname" . }}-api
+  labels:
+    {{- include "fleetview-voice.api.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.api.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "fleetview-voice.api.selectorLabels" . | nindent 6 }}
+{{- end }}

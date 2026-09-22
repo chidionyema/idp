@@ -332,6 +332,7 @@ VOICE_STREAM_PATH = "/voice/stream"
 # anywhere. `voice_media.py`'s docstring has the full account of what moved and why.
 VOICE_HEAR_PATH = "/voice/hear"
 VOICE_SAY_PATH = "/voice/say"
+VOICE_STEER_PATH = "/voice/steer"
 VOICE_DONE_PATH = "/voice/done"
 VOICE_VOICES_PATH = "/voice/voices"
 VOICE_SELECT_PATH = "/voice/select"

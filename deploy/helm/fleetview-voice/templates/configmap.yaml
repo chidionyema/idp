@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fleetview-voice.fullname" . }}-config
+  labels:
+    {{- include "fleetview-voice.labels" . | nindent 4 }}
+data:
+  # Event Bus Type
+  EVENT_BUS_TYPE: {{ .Values.eventBus.type | quote }}
+
+  {{- if eq .Values.eventBus.type "nats" }}
+  # NATS Configuration
+  NATS_URL: {{ include "fleetview-voice.natsUrl" . | quote }}
+  NATS_SUBJECT_PREFIX: {{ .Values.eventBus.nats.subjectPrefix | quote }}
+  NATS_STREAM_NAME: {{ .Values.eventBus.nats.streamName | quote }}
+  NATS_MAX_AGE: {{ .Values.eventBus.nats.maxAge | quote }}
+  {{- end }}
+
+  {{- if eq .Values.eventBus.type "kafka" }}
+  # Kafka Configuration
+  KAFKA_BROKERS: {{ include "fleetview-voice.kafkaBrokers" . | quote }}
+  KAFKA_TOPIC: {{ .Values.eventBus.kafka.topic | quote }}
+  KAFKA_SASL_ENABLED: {{ .Values.eventBus.kafka.sasl.enabled | quote }}
+  {{- if .Values.eventBus.kafka.sasl.enabled }}
+  KAFKA_SASL_MECHANISM: {{ .Values.eventBus.kafka.sasl.mechanism | quote }}
+  KAFKA_SASL_USERNAME: {{ .Values.eventBus.kafka.sasl.username | quote }}
+  {{- end }}
+  KAFKA_TLS_ENABLED: {{ .Values.eventBus.kafka.tls.enabled | quote }}
+  {{- end }}
+
+  # Privacy Settings
+  VOICE_DEFAULT_TTL_MINUTES: {{ .Values.privacy.defaultTtlMinutes | quote }}
+  VOICE_DURABLE_RETENTION_ENABLED: {{ .Values.privacy.durableRetentionEnabled | quote }}
+  VOICE_REDACTION_ENABLED: {{ .Values.privacy.redaction.enabled | quote }}
+
+  # Auth Configuration
+  AUTH_PROVIDER: {{ .Values.auth.provider | quote }}
+  {{- if .Values.auth.issuerUrl }}
+  AUTH_ISSUER_URL: {{ .Values.auth.issuerUrl | quote }}
+  {{- end }}
+  {{- if .Values.auth.clientId }}
+  AUTH_CLIENT_ID: {{ .Values.auth.clientId | quote }}
+  {{- end }}
+  {{- if .Values.auth.saml.metadataUrl }}
+  AUTH_SAML_METADATA_URL: {{ .Values.auth.saml.metadataUrl | quote }}
+  {{- end }}
+  {{- if .Values.auth.saml.entityId }}
+  AUTH_SAML_ENTITY_ID: {{ .Values.auth.saml.entityId | quote }}
+  {{- end }}
+  {{- if .Values.auth.github.org }}
+  AUTH_GITHUB_ORG: {{ .Values.auth.github.org | quote }}
+  {{- end }}
+  {{- if .Values.auth.github.team }}
+  AUTH_GITHUB_TEAM: {{ .Values.auth.github.team | quote }}
+  {{- end }}
+
+  # API Configuration
+  FLEETVIEW_MAX_STREAMS: {{ .Values.api.maxStreamClients | quote }}
+
+  # Worker Configuration
+  OUTBOX_POLL_INTERVAL_S: {{ .Values.worker.pollIntervalSeconds | quote }}
+
+  # Observability
+  {{- if .Values.observability.otel.enabled }}
+  OTEL_ENABLED: "true"
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.observability.otel.endpoint | quote }}
+  OTEL_SERVICE_NAME: {{ .Values.observability.otel.serviceName | quote }}
+  {{- end }}
+
+  {{- if .Values.observability.metrics.enabled }}
+  METRICS_ENABLED: "true"
+  METRICS_PORT: {{ .Values.observability.metrics.port | quote }}
+  {{- end }}

@@ -1,0 +1,10 @@
+/Users/roseonyema/Documents/code/idp/packages/sdk-rust/target/debug/deps/pkcs8-d717b6a07cbf3087.d: /Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/lib.rs /Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/error.rs /Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/private_key_info.rs /Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/traits.rs /Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/version.rs /Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/../README.md
+
+/Users/roseonyema/Documents/code/idp/packages/sdk-rust/target/debug/deps/libpkcs8-d717b6a07cbf3087.rmeta: /Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/lib.rs /Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/error.rs /Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/private_key_info.rs /Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/traits.rs /Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/version.rs /Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/../README.md
+
+/Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/lib.rs:
+/Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/error.rs:
+/Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/private_key_info.rs:
+/Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/traits.rs:
+/Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/version.rs:
+/Users/roseonyema/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/src/../README.md:

@@ -144,6 +144,23 @@ def build_app(routes_path: Path) -> FastAPI:
         spec.loader.exec_module(module)
         return module
 
+    # Load the outbox module for the background worker.
+    _outbox_module = routes_path.parent / "outbox.py"
+
+    def _load_outbox():
+        spec = importlib.util.spec_from_file_location(
+            "fleetview_outbox_impl", _outbox_module
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"cannot load module at {_outbox_module}")
+        cached = sys.modules.get("fleetview_outbox_impl")
+        if cached is not None:
+            return cached
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["fleetview_outbox_impl"] = module
+        spec.loader.exec_module(module)
+        return module
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         nats_url = os.environ.get("NATS_URL", "")
@@ -156,7 +173,19 @@ def build_app(routes_path: Path) -> FastAPI:
                 )
             except Exception:  # noqa: BLE001, S110 — adapter startup failure must not break the app
                 pass
+            # Start the outbox worker — it drains pending intents to NATS in the background.
+            try:
+                outbox = _load_outbox()
+                await outbox.start_worker(nats_url)
+            except Exception:  # noqa: BLE001, S110 — outbox startup failure must not break the app
+                pass
         yield
+        # Stop the outbox worker on shutdown.
+        try:
+            outbox = _load_outbox()
+            await outbox.stop_worker()
+        except Exception:  # noqa: BLE001, S110 — outbox shutdown failure is not fatal
+            pass
 
     app = FastAPI(title="FleetView", version="1.1.0", lifespan=lifespan)
 
@@ -293,6 +322,20 @@ def build_app(routes_path: Path) -> FastAPI:
         if pcm is None:
             return JSONResponse(content={"error": reason}, status_code=502)
         return Response(content=pcm, media_type="application/octet-stream")
+
+    @app.post(routes.VOICE_STEER_PATH)
+    async def voice_steer(body: dict):
+        """Receive a validated JSON intent from the browser, write to outbox, return instantly.
+
+        THE SERVER RECEIVES ONLY THE INTENT, NEVER AUDIO OR TRANSCRIPT. The browser runs inference
+        (the edge-compute goal, ADR 0033); this endpoint validates against a strict JSON schema
+        and writes to an SQLite WAL buffer. Response returns in <50ms.
+
+        A background worker drains to NATS on `estate.agent.sovereign.<session_id>.steer` with a
+        15-minute JetStream TTL. Invalid JSON (including hallucinated fields) is rejected with 400.
+        """
+        payload, status = await routes.voice_media().steer(body)
+        return JSONResponse(content=payload, status_code=status)
 
     @app.post(routes.VOICE_DONE_PATH)
     async def voice_done(body: dict):
