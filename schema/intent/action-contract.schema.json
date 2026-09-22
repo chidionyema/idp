@@ -5,8 +5,11 @@
   "description": "A spoken request, crystallised into a checkable form. The vocabulary contains no estate name -- no zone, no registry, no provider (the same rule schema/intent/*.schema.json follows).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["feature", "given", "when", "then", "agents_required"],
+  "required": ["capability", "feature", "given", "when", "then", "agents_required"],
   "properties": {
+    "capability": {
+      "const": "action-contract"
+    },
     "feature": {
       "type": "string",
       "minLength": 1,
