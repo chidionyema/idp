@@ -23,6 +23,8 @@ scratch/
 .venv/
 node_modules/
 dist-types/
+# Build output of packages/voice (tsup); never committed, only ever built.
+packages/voice/dist/
 .yarn/cache/
 
 # Denied to agent sessions on this machine; nothing load-bearing lives here.

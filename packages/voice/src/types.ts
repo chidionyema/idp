@@ -25,6 +25,8 @@ export interface Intent {
   confidence: number;
   /** Timestamp when intent was recognized */
   timestamp: number;
+  /** True while user is still speaking (speculative intent) */
+  partial?: boolean;
 }
 
 /** Voice activity detection state */
@@ -55,6 +57,9 @@ export interface VoiceClientConfig {
   /** Callback when an intent is recognized */
   onIntent?: (intent: Intent) => void;
 
+  /** Callback when a partial transcript is available (speculative streaming) */
+  onPartialTranscript?: (transcript: string) => void;
+
   /** Callback when speaking state changes */
   onSpeaking?: (speaking: boolean) => void;
 
@@ -75,6 +80,12 @@ export interface VoiceClientConfig {
 
   /** Custom model cache directory (default: indexedDB in browser) */
   modelCacheDir?: string;
+
+  /** Enable speculative streaming (emit partial intents while speaking) */
+  speculativeStreaming?: boolean;
+
+  /** Interval in ms for emitting partial transcripts (default 500) */
+  partialInterval?: number;
 
   /** Enable debug logging */
   debug?: boolean;

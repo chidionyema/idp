@@ -92,6 +92,7 @@ class _Recorder:
         self.published: list[tuple[str, bytes]] = []
         self.drained = False
         self.connect_kwargs: dict = {}
+        self.streams: list[dict] = []
 
     # -- the `nats` module surface ------------------------------------------------------------
     async def connect(self, url: str, **kwargs):
@@ -107,6 +108,14 @@ class _Recorder:
 
     async def publish(self, subject: str, payload: bytes):
         self.published.append((subject, payload))
+
+    async def add_stream(self, **config):
+        # A JetStream server refuses a duplicate stream name with "stream name already in
+        # use" -- the fake raises the same words, so the adapter's idempotence is graded
+        # against the real refusal rather than a happy path that never re-provisions.
+        if any(s["name"] == config["name"] for s in self.streams):
+            raise RuntimeError("stream name already in use")
+        self.streams.append(config)
 
     async def drain(self):
         self.drained = True
@@ -327,6 +336,98 @@ def test_the_page_talks_to_the_backend_through_the_proxy():
     assert code.count("await fetch(") == 0, (
         "a raw fetch would reach the proxy with no credentials"
     )
+
+
+def test_a_steer_reaches_the_durability_boundary_not_just_the_response(
+    voice, monkeypatch, tmp_path
+):
+    """/voice/steer's 200 is a PROMISE: the intent is in SQLite, durable against this process.
+
+    This test exists because the failure mode SHIPPED (2026-09-22): outbox.py imported
+    tracing package-relatively while every loader in the estate loads outbox.py without a
+    package, so the import raised, steer() returned 500 at the durability boundary, and the
+    FastAPI lifespan swallowed the same error around start_worker -- the drain never ran
+    either. No test noticed, because none graded the row the endpoint promises to have
+    written. A green 200 with no row behind it is ghost code; this is the gate.
+    """
+    monkeypatch.setenv("OUTBOX_DB_PATH", str(tmp_path / "outbox.db"))
+    body = {
+        "action": "steer",
+        "confidence": 0.92,
+        "session_id": "steer-durability-1",
+        "author": "founder",
+        "target": "agent #bf061c",
+        "transcript": "stop the harness audit and land the commit",
+    }
+
+    accepted, status = asyncio.run(voice.module.steer(body))
+
+    assert status == 200, accepted
+    assert accepted["accepted"] is True
+    assert accepted["outbox_id"], (
+        "a 200 with no outbox row id is the ghost this test refuses"
+    )
+
+    # THE ROW IS THE CLAIM. What is graded is the durable side effect, not the response shape.
+    outbox = voice.module._outbox()
+    rows = outbox.recent(limit=5)
+    assert rows, (
+        "steer returned 200 but the outbox is empty: the intent was never durable"
+    )
+    row = rows[0]
+    assert row["status"] == "pending", f"a fresh intent is pending, not {row['status']}"
+    assert row["session_id"] == "steer-durability-1"
+    assert row["kind"] == "steer"
+    assert row["phase"] == "executing"
+    assert row["id"] == accepted["outbox_id"]
+
+
+def test_the_first_caller_provisions_the_stream_with_the_outboxs_15_minute_ttl(voice):
+    """The bus has a stream, or nothing published to it can ever be replayed.
+
+    Until 2026-09-22 no code in the estate created the JetStream stream: the chart provisions
+    a capable server, `js.publish` to an uncovered subject is a 503, and the stream that
+    existed on the cluster had been created by hand -- configuration that lived in nobody's
+    checkout. The adapter now provisions it on first publish, and WHAT IS GRADED is the
+    whole provisioning, not just that it happened:
+
+      * the name and subjects, so the board's `estate.agent.>` subscription is covered;
+      * the TTL, so the stream does not faithfully replay intents the outbox deliberately
+        dropped: the number here must equal outbox.py's TTL_S, the drain-side expiry, or the
+        two ends of the pipeline would disagree about what is stale;
+      * idempotence: the second publish meets the server's real "already in use" refusal
+        (the fake raises the same words) and must swallow exactly that and nothing else.
+    """
+    adapter = voice.module._nats()
+
+    async def _publish_once(session: str) -> None:
+        await adapter.publish(
+            "nats://nats.event-bus.svc:4222",
+            session_id=session,
+            runtime="sovereign",
+            kind="steer",
+            phase="executing",
+            steer={"text": "provision the bus", "author": "founder"},
+        )
+
+    asyncio.run(_publish_once("voice-provision-1"))
+    assert len(voice.bus.streams) == 1, "first publish must provision the stream"
+    cfg = voice.bus.streams[0]
+    assert cfg["name"] == "ESTATE_AGENT"
+    assert cfg["subjects"] == ["estate.agent.>"]
+    # The TTL agreement, graded against the drain-side constant rather than a literal twice:
+    outbox = voice.module._outbox()
+    assert cfg["max_age"] == outbox.TTL_S * 1_000_000_000, (
+        f"stream max_age {cfg['max_age']}ns does not match outbox TTL_S {outbox.TTL_S}s: "
+        "the stream would replay intents the outbox expired, or drop ones it kept"
+    )
+
+    # Idempotence: the second publish meets "already in use" and must not raise or re-provision.
+    asyncio.run(_publish_once("voice-provision-2"))
+    assert len(voice.bus.streams) == 1, (
+        "second publish re-provisioned or failed the stream"
+    )
+    assert len(voice.bus.published) == 2, "both publishes must still land on the bus"
 
 
 def test_a_failing_publish_gives_up_in_a_second_not_two_minutes(voice):

@@ -7,7 +7,7 @@
   },
   "created": "2026-09-22T18:15:24Z",
   "last_eval": null,
-  "last_run": "2026-09-22T18:27:08Z",
+  "last_run": "2026-09-22T19:53:43Z",
   "last_sample": null,
   "pending_resummarize": [],
   "runs": [
@@ -94,6 +94,16 @@
       "relations": 6,
       "source": "src_807d937ec251",
       "ts": "2026-09-22T18:27:08Z"
+    },
+    {
+      "entity": "component/estate-agent-jetstream-stream",
+      "kind": "remember",
+      "ts": "2026-09-22T19:53:37Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_2997995f8d69",
+      "ts": "2026-09-22T19:53:43Z"
     }
   ]
 }

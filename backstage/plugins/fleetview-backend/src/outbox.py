@@ -32,7 +32,34 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import tracing
+# WHY TRACING IS LOADED BY FILE LOCATION, not a package-relative import: this module is
+# loaded by three different loaders (serve.py's lifespan, voice_media._outbox, the tests),
+# and every one of them loads it with spec_from_file_location -- which gives it no parent
+# package, so `from . import tracing` raised ImportError in all of them until 2026-09-22.
+# In serve.py that failure was swallowed by the S110 around start_worker, so THE WORKER
+# NEVER STARTED and no drain ever ran; in voice_media.steer it surfaced as a 500 on every
+# intent that reached the durability boundary. The sibling adapters below are loaded the
+# same way, for the same reason.
+_TRACING_MODULE = Path(__file__).resolve().parent / "tracing.py"
+
+
+def _tracing():
+    """Load the tracing module the same way the nats and kafka adapters are loaded."""
+    spec = importlib.util.spec_from_file_location(
+        "fleetview_tracing_impl", _TRACING_MODULE
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load module at {_TRACING_MODULE}")
+    cached = sys.modules.get("fleetview_tracing_impl")
+    if cached is not None:
+        return cached
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+tracing = _tracing()
 
 # Max retries before giving up on a row.
 MAX_RETRIES = 5

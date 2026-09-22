@@ -21,11 +21,13 @@ import type {
 } from './types';
 
 /** Default configuration values */
-const DEFAULTS: Required<Omit<VoiceClientConfig, 'token' | 'onIntent' | 'onSpeaking' | 'onError' | 'onModelProgress'>> = {
+const DEFAULTS: Required<Omit<VoiceClientConfig, 'token' | 'onIntent' | 'onPartialTranscript' | 'onSpeaking' | 'onError' | 'onModelProgress'>> = {
   vadSensitivity: 0.5,
   minSpeechDuration: 300,
   silenceDuration: 500,
   modelCacheDir: '',
+  speculativeStreaming: true,
+  partialInterval: 500,
   debug: false,
 };
 
@@ -66,6 +68,12 @@ export class VoiceClient {
   private speechBuffer: Float32Array[] = [];
   private speechStartTime = 0;
   private silenceStartTime = 0;
+
+  // Speculative streaming state
+  private lastPartialTime = 0;
+  private partialProcessing = false;
+  private lastPartialTranscript = '';
+  private partialSequence = 0;
 
   constructor(config: VoiceClientConfig = {}) {
     this.config = { ...DEFAULTS, ...config };
@@ -260,6 +268,9 @@ export class VoiceClient {
           this.isSpeaking = true;
           this.speechStartTime = now;
           this.speechBuffer = [];
+          this.lastPartialTime = now;
+          this.lastPartialTranscript = '';
+          this.partialSequence = 0;
           this.config.onSpeaking?.(true);
           this.log('Speech started');
         }
@@ -267,6 +278,14 @@ export class VoiceClient {
         // Accumulate audio
         this.speechBuffer.push(new Float32Array(audio));
         this.silenceStartTime = 0;
+
+        // Speculative streaming: emit partial transcripts every partialInterval ms
+        if (this.config.speculativeStreaming && !this.partialProcessing) {
+          const timeSinceLastPartial = now - this.lastPartialTime;
+          if (timeSinceLastPartial >= this.config.partialInterval!) {
+            this.processPartial();
+          }
+        }
 
       } else if (this.isSpeaking) {
         // Silence while in speech
@@ -303,6 +322,88 @@ export class VoiceClient {
     }
   }
 
+  /**
+   * Process partial audio for speculative streaming.
+   * Runs in parallel with speech accumulation.
+   */
+  private async processPartial(): Promise<void> {
+    if (!this.asr || !this.intent || this.speechBuffer.length === 0) {
+      return;
+    }
+
+    // Guard against concurrent partial processing
+    if (this.partialProcessing) {
+      return;
+    }
+
+    this.partialProcessing = true;
+    this.lastPartialTime = Date.now();
+    this.partialSequence++;
+    const currentSequence = this.partialSequence;
+
+    try {
+      // Snapshot the current buffer (don't block accumulation)
+      const bufferSnapshot = [...this.speechBuffer];
+      const totalLength = bufferSnapshot.reduce((sum, buf) => sum + buf.length, 0);
+
+      // Need minimum audio for meaningful transcription (~200ms at 16kHz = 3200 samples)
+      if (totalLength < 3200) {
+        return;
+      }
+
+      const combined = new Float32Array(totalLength);
+      let offset = 0;
+      for (const buf of bufferSnapshot) {
+        combined.set(buf, offset);
+        offset += buf.length;
+      }
+
+      // Transcribe partial audio
+      this.log(`Partial transcription (seq=${currentSequence})...`);
+      const asrResult = await this.asr.transcribe(combined);
+
+      // Skip if speech has ended or a newer partial is being processed
+      if (!this.isSpeaking || currentSequence !== this.partialSequence) {
+        this.log(`Partial ${currentSequence} stale, discarding`);
+        return;
+      }
+
+      const transcript = asrResult.text.trim();
+
+      // Only process if transcript has changed
+      if (transcript && transcript !== this.lastPartialTranscript) {
+        this.lastPartialTranscript = transcript;
+        this.log(`Partial transcript: "${transcript}"`);
+
+        // Notify about partial transcript
+        this.config.onPartialTranscript?.(transcript);
+
+        // Parse speculative intent
+        this.log('Parsing partial intent...');
+        const parsedIntent = await this.intent.parse(transcript);
+
+        // Skip if speech has ended or a newer partial is being processed
+        if (!this.isSpeaking || currentSequence !== this.partialSequence) {
+          this.log(`Partial intent ${currentSequence} stale, discarding`);
+          return;
+        }
+
+        this.log(`Partial intent: ${parsedIntent.category}/${parsedIntent.action}`);
+
+        // Emit partial intent with partial flag
+        this.config.onIntent?.({
+          ...parsedIntent,
+          partial: true,
+        });
+      }
+    } catch (error) {
+      // Log but don't propagate partial processing errors
+      this.log('Partial processing error:', error);
+    } finally {
+      this.partialProcessing = false;
+    }
+  }
+
   private async processUtterance(): Promise<void> {
     if (!this.asr || !this.intent || this.speechBuffer.length === 0) {
       return;
@@ -321,18 +422,21 @@ export class VoiceClient {
       }
 
       // Transcribe
-      this.log('Transcribing...');
+      this.log('Transcribing final...');
       const asrResult = await this.asr.transcribe(combined);
-      this.log(`Transcript: "${asrResult.text}"`);
+      this.log(`Final transcript: "${asrResult.text}"`);
 
       if (asrResult.text.trim()) {
         // Parse intent
-        this.log('Parsing intent...');
+        this.log('Parsing final intent...');
         const parsedIntent = await this.intent.parse(asrResult.text);
-        this.log(`Intent: ${parsedIntent.category}/${parsedIntent.action}`);
+        this.log(`Final intent: ${parsedIntent.category}/${parsedIntent.action}`);
 
-        // Emit intent
-        this.config.onIntent?.(parsedIntent);
+        // Emit final intent with partial: false
+        this.config.onIntent?.({
+          ...parsedIntent,
+          partial: false,
+        });
       }
     } catch (error) {
       this.handleError(error as Error);

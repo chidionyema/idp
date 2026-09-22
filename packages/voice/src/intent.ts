@@ -31,16 +31,28 @@ Respond with JSON only:
 {{"category": "<category>", "action": "<specific_action>", "entities": {{}}, "confidence": <0-1>}}`;
 
 /**
+ * The shape of the ONE pipeline this class creates -- same reason as asr.ts: transformers.js
+ * types `pipeline()`'s return as a union of every pipeline it ships, and the task here is
+ * fixed at creation ('text-generation', in init below). The cast is the runtime fact.
+ */
+type TextGenPipeline = (
+  prompt: string,
+  options: { max_new_tokens: number; temperature: number; do_sample: boolean }
+) => Promise<Array<{ generated_text: string }> | { generated_text: string }>;
+
+/**
  * Intent processor using SmolLM2
  */
 export class IntentProcessor {
-  private generator: Awaited<ReturnType<typeof pipeline>> | null = null;
+  private generator: TextGenPipeline | null = null;
 
   /**
    * Initialize the intent model
    */
   async init(onProgress?: (progress: ModelProgress) => void): Promise<void> {
-    this.generator = await pipeline('text-generation', MODEL_ID, {
+    // pipeline()'s return is narrowed to the one shape this class calls (TextGenPipeline,
+    // above) at the only line that creates it -- the runtime fact, stated as a type.
+    this.generator = (await pipeline('text-generation', MODEL_ID, {
       progress_callback: (data: { status: string; progress?: number; loaded?: number; total?: number }) => {
         if (data.status === 'progress' && onProgress && data.progress !== undefined) {
           onProgress({
@@ -51,7 +63,7 @@ export class IntentProcessor {
           });
         }
       },
-    });
+    })) as unknown as TextGenPipeline;
   }
 
   /**

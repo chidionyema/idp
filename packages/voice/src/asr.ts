@@ -16,17 +16,42 @@ const MODEL_ID = 'Xenova/whisper-tiny.en';
 const SAMPLE_RATE = 16000;
 
 /**
+ * The shape of the ONE pipeline this class creates.
+ *
+ * transformers.js types `pipeline()`'s return as a union of every pipeline the library
+ * ships, which makes any call on it unspeakable (`7348 more ...` unions, measured
+ * 2026-09-22 by the first `tsc --noEmit` this package ever ran). The task is fixed at
+ * creation ('automatic-speech-recognition', in init below), so the union is narrowed to
+ * the shape that task is called with -- a runtime fact stated as a type, at the one
+ * assignment where it is created.
+ */
+type ASRPipeline = (
+  audio: Float32Array,
+  options: {
+    sampling_rate: number;
+    return_timestamps: boolean;
+    chunk_length_s: number;
+    stride_length_s: number;
+  }
+) => Promise<
+  | { text: string; chunks?: Array<{ text: string; timestamp: [number, number] }> }
+  | Array<{ text: string; chunks?: Array<{ text: string; timestamp: [number, number] }> }>
+>;
+
+/**
  * Whisper ASR processor
  */
 export class ASRProcessor {
-  private transcriber: Awaited<ReturnType<typeof pipeline>> | null = null;
+  private transcriber: ASRPipeline | null = null;
 
   /**
    * Initialize the ASR model
    */
   async init(onProgress?: (progress: ModelProgress) => void): Promise<void> {
-    // Use Transformers.js pipeline with progress callback
-    this.transcriber = await pipeline('automatic-speech-recognition', MODEL_ID, {
+    // Use Transformers.js pipeline with progress callback. The pipeline() return type is
+    // narrowed to the one shape this class calls (ASRPipeline, above) at the only line that
+    // creates it -- the runtime fact, stated as a type.
+    this.transcriber = (await pipeline('automatic-speech-recognition', MODEL_ID, {
       progress_callback: (data: { status: string; progress?: number; loaded?: number; total?: number }) => {
         if (data.status === 'progress' && onProgress && data.progress !== undefined) {
           onProgress({
@@ -37,7 +62,7 @@ export class ASRProcessor {
           });
         }
       },
-    });
+    })) as unknown as ASRPipeline;
   }
 
   /**

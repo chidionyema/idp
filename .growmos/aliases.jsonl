@@ -22,6 +22,7 @@
 {"alias": "Compaction Manager", "entity": "component/compaction-manager", "type": "COMPONENT"}
 {"alias": "custom-entity-extensions", "entity": "component/custom-entity-extensions", "type": "COMPONENT"}
 {"alias": "Dynamic Context Pruning", "entity": "component/dynamic-context-pruning", "type": "COMPONENT"}
+{"alias": "ESTATE_AGENT JetStream stream", "entity": "component/estate-agent-jetstream-stream", "type": "COMPONENT"}
 {"alias": "Executor", "entity": "component/executor", "type": "COMPONENT"}
 {"alias": "Flux Drift Gate", "entity": "component/flux-drift-gate", "type": "COMPONENT"}
 {"alias": "Gisting", "entity": "component/gisting", "type": "COMPONENT"}
@@ -46,6 +47,7 @@
 {"alias": "Token Killer", "entity": "component/token-killer", "type": "COMPONENT"}
 {"alias": "TokenBudgetOrchestrator", "entity": "component/tokenbudgetorchestrator", "type": "COMPONENT"}
 {"alias": "Verification Gates", "entity": "component/verification-gates", "type": "COMPONENT"}
+{"alias": "fleetview outbox import fix 2026-09-22", "entity": "concept/fleetview-outbox-import-fix-2026-09-22", "type": "CONCEPT"}
 {"alias": "ParEval", "entity": "concept/pareval", "type": "CONCEPT"}
 {"alias": "Three-Role Model", "entity": "concept/three-role-model", "type": "CONCEPT"}
 {"alias": "ADR 0023", "entity": "decision/adr-0023", "type": "DECISION"}
