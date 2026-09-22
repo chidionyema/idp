@@ -12,6 +12,7 @@ Every outcome is a receipt (cp19's signed chain, kind "model_consensus"),
 including the refusals. A blocked destructive op that leaves no trace is
 the same as no guard at all the next time somebody asks what happened.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,7 +40,9 @@ async def decide_async(
 ) -> dict[str, Any]:
     """Returns {"ok", "reason", "proposal", "votes", "quorum", "policy",
     "destructive"}."""
-    destructive = models_mod.is_destructive(op) if destructive is None else bool(destructive)
+    destructive = (
+        models_mod.is_destructive(op) if destructive is None else bool(destructive)
+    )
     votes = await models_mod.collect(op, destructive, deadline_s)
     quorum = models_mod.tally(votes)
 
@@ -48,7 +51,11 @@ async def decide_async(
         # is no quorum to meet, so `agreed` is not the gate -- the single
         # fresh answer is. Policy still runs: one model's proposal is not
         # a licence either.
-        fresh = [v for v in votes if not v.get("stale") and not v.get("error") and v.get("proposal")]
+        fresh = [
+            v
+            for v in votes
+            if not v.get("stale") and not v.get("error") and v.get("proposal")
+        ]
         proposal = str(fresh[0]["proposal"]) if fresh else ""
     else:
         proposal = str(quorum["proposal"])
@@ -56,8 +63,13 @@ async def decide_async(
     if not proposal:
         reason = REASON_STALE if quorum["stale"] else REASON_QUORUM
         result = {
-            "ok": False, "reason": reason, "proposal": "", "votes": votes,
-            "quorum": quorum, "policy": None, "destructive": destructive,
+            "ok": False,
+            "reason": reason,
+            "proposal": "",
+            "votes": votes,
+            "quorum": quorum,
+            "policy": None,
+            "destructive": destructive,
         }
         if write_receipt:
             _receipt(_as_receipt(op, result))
@@ -95,8 +107,12 @@ def _as_receipt(op: str, result: dict[str, Any]) -> dict[str, Any]:
         # The three votes by name, so the receipt "names the three votes"
         # cp30 asks for rather than just their count.
         "votes": [
-            {"model": v.get("model"), "proposal": v.get("proposal"),
-             "stale": bool(v.get("stale")), "error": v.get("error")}
+            {
+                "model": v.get("model"),
+                "proposal": v.get("proposal"),
+                "stale": bool(v.get("stale")),
+                "error": v.get("error"),
+            }
             for v in result["votes"]
         ],
         "quorum": result["quorum"],

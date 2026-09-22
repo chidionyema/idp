@@ -18,6 +18,7 @@ up to heal_max_rounds. That is the crew#268 playbook's "zombie/drift" branch as 
 Like sovereign/engine/workflow.py this module's workflow imports nothing from sovereign.config:
 the trigger (sovereign.cli `kini finish`, or the board word FINISH: KINI) hands it
 config.kini_workflow_params(). Activities do read config; they run outside the sandbox."""
+
 from __future__ import annotations
 
 import asyncio
@@ -57,22 +58,32 @@ class KiniFinishWorkflow:
                 result = await workflow.execute_activity(
                     RUN_CHECKPOINT,
                     {"cp": cp},
-                    start_to_close_timeout=timedelta(seconds=int(params["cp_timeout_s"])),
-                    heartbeat_timeout=timedelta(seconds=int(params["heartbeat_timeout_s"])),
+                    start_to_close_timeout=timedelta(
+                        seconds=int(params["cp_timeout_s"])
+                    ),
+                    heartbeat_timeout=timedelta(
+                        seconds=int(params["heartbeat_timeout_s"])
+                    ),
                     retry_policy=cp_retry,
                 )
                 result = dict(result)
                 result["heal_rounds"] = rounds
                 if heal is not None:
                     result["heal"] = heal
-                if result["verdict"] != PLATFORM_FAULT or rounds >= int(params["heal_max_rounds"]):
+                if result["verdict"] != PLATFORM_FAULT or rounds >= int(
+                    params["heal_max_rounds"]
+                ):
                     break
                 rounds += 1
                 heal = await workflow.execute_activity(
                     CLUSTER_READY,
                     {"cp": cp, "round": rounds, "detail": result.get("detail")},
-                    start_to_close_timeout=timedelta(seconds=int(params["heal_timeout_s"])),
-                    heartbeat_timeout=timedelta(seconds=int(params["heartbeat_timeout_s"])),
+                    start_to_close_timeout=timedelta(
+                        seconds=int(params["heal_timeout_s"])
+                    ),
+                    heartbeat_timeout=timedelta(
+                        seconds=int(params["heartbeat_timeout_s"])
+                    ),
                     retry_policy=heal_retry,
                 )
                 if not heal.get("ready"):
@@ -91,7 +102,9 @@ class KiniFinishWorkflow:
         return {k: v["verdict"] for k, v in getattr(self, "_results", {}).items()}
 
 
-def classify(returncode: int | None, exit_no_tests: int, timed_out: bool = False) -> str:
+def classify(
+    returncode: int | None, exit_no_tests: int, timed_out: bool = False
+) -> str:
     """Rung 2 material: total over every int, never silent on the unknown branch."""
     if timed_out or returncode is None:
         return PLATFORM_FAULT
@@ -104,10 +117,23 @@ def classify(returncode: int | None, exit_no_tests: int, timed_out: bool = False
     return PLATFORM_FAULT
 
 
-async def _run_pytest(paths: list[str], cwd: Path, args: list[str], timeout_s: int, heartbeat_s: int, tail: int) -> dict[str, Any]:
+async def _run_pytest(
+    paths: list[str],
+    cwd: Path,
+    args: list[str],
+    timeout_s: int,
+    heartbeat_s: int,
+    tail: int,
+) -> dict[str, Any]:
     proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "pytest", *args, *paths,
-        cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        sys.executable,
+        "-m",
+        "pytest",
+        *args,
+        *paths,
+        cwd=str(cwd),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
     )
     out_task = asyncio.ensure_future(proc.stdout.read()) if proc.stdout else None
     waited = 0
@@ -127,7 +153,11 @@ async def _run_pytest(paths: list[str], cwd: Path, args: list[str], timeout_s: i
                 break
     raw = (await out_task) if out_task else b""
     lines = raw.decode(errors="replace").splitlines()
-    return {"returncode": proc.returncode, "timed_out": timed_out, "output": lines[-tail:]}
+    return {
+        "returncode": proc.returncode,
+        "timed_out": timed_out,
+        "output": lines[-tail:],
+    }
 
 
 @activity.defn(name=RUN_CHECKPOINT)
@@ -138,22 +168,44 @@ async def run_checkpoint(inp: dict[str, Any]) -> dict[str, Any]:
 
     cp = int(inp["cp"])
     cwd = Path(inp.get("cwd") or config.KINI_SOVEREIGN_DIR)
-    paths = list(inp.get("tests") if inp.get("tests") is not None else config.KINI_CP_TESTS.get(cp, []))
+    paths = list(
+        inp.get("tests")
+        if inp.get("tests") is not None
+        else config.KINI_CP_TESTS.get(cp, [])
+    )
     if not paths:
-        return {"cp": cp, "verdict": UNBOUND, "detail": "no bdd file bound", "tests": []}
+        return {
+            "cp": cp,
+            "verdict": UNBOUND,
+            "detail": "no bdd file bound",
+            "tests": [],
+        }
     missing = [p for p in paths if not (cwd / p).exists()]
     if missing:
-        return {"cp": cp, "verdict": UNBOUND, "detail": f"bound file missing: {missing}", "tests": paths}
+        return {
+            "cp": cp,
+            "verdict": UNBOUND,
+            "detail": f"bound file missing: {missing}",
+            "tests": paths,
+        }
     run = await _run_pytest(
-        paths, cwd, list(config.KINI_PYTEST_ARGS),
+        paths,
+        cwd,
+        list(config.KINI_PYTEST_ARGS),
         int(inp.get("timeout_s") or config.KINI_CP_TIMEOUT_S),
         int(inp.get("heartbeat_s") or config.KINI_CP_HEARTBEAT_S),
         config.KINI_OUTPUT_TAIL_LINES,
     )
-    verdict = classify(run["returncode"], config.KINI_PYTEST_EXIT_NO_TESTS, run["timed_out"])
+    verdict = classify(
+        run["returncode"], config.KINI_PYTEST_EXIT_NO_TESTS, run["timed_out"]
+    )
     return {
-        "cp": cp, "verdict": verdict, "tests": paths, "returncode": run["returncode"],
-        "timed_out": run["timed_out"], "detail": run["output"][-1] if run["output"] else "",
+        "cp": cp,
+        "verdict": verdict,
+        "tests": paths,
+        "returncode": run["returncode"],
+        "timed_out": run["timed_out"],
+        "detail": run["output"][-1] if run["output"] else "",
         "output": run["output"],
     }
 
@@ -161,7 +213,10 @@ async def run_checkpoint(inp: dict[str, Any]) -> dict[str, Any]:
 def _in_cluster() -> bool:
     from sovereign import config
 
-    return bool(os.environ.get(config.KINI_K8S_HOST_ENV)) and config.KINI_K8S_TOKEN_FILE.exists()
+    return (
+        bool(os.environ.get(config.KINI_K8S_HOST_ENV))
+        and config.KINI_K8S_TOKEN_FILE.exists()
+    )
 
 
 def _nodes_ready() -> dict[str, Any]:
@@ -174,16 +229,27 @@ def _nodes_ready() -> dict[str, Any]:
     token = config.KINI_K8S_TOKEN_FILE.read_text().strip()
     ctx = ssl.create_default_context(cafile=str(config.KINI_K8S_CA_FILE))
     req = urllib.request.Request(
-        f"https://{host}:{port}{config.KINI_K8S_NODES_PATH}", headers={"Authorization": f"Bearer {token}"}
+        f"https://{host}:{port}{config.KINI_K8S_NODES_PATH}",
+        headers={"Authorization": f"Bearer {token}"},
     )
-    with urllib.request.urlopen(req, timeout=config.KINI_K8S_REQUEST_TIMEOUT_S, context=ctx) as resp:
+    with urllib.request.urlopen(
+        req, timeout=config.KINI_K8S_REQUEST_TIMEOUT_S, context=ctx
+    ) as resp:
         body = json.loads(resp.read())
     items = body.get("items", [])
     ready = [
-        n for n in items
-        if any(c.get("type") == "Ready" and c.get("status") == "True" for c in n["status"].get("conditions", []))
+        n
+        for n in items
+        if any(
+            c.get("type") == "Ready" and c.get("status") == "True"
+            for c in n["status"].get("conditions", [])
+        )
     ]
-    return {"nodes": len(items), "ready_nodes": len(ready), "ready": bool(items) and len(ready) == len(items)}
+    return {
+        "nodes": len(items),
+        "ready_nodes": len(ready),
+        "ready": bool(items) and len(ready) == len(items),
+    }
 
 
 @activity.defn(name=CLUSTER_READY)
@@ -195,7 +261,11 @@ async def cluster_ready(inp: dict[str, Any]) -> dict[str, Any]:
     from sovereign import config
 
     if not _in_cluster():
-        return {"ready": None, "blind": True, "reason": "not in a pod, so no Kubernetes API"}
+        return {
+            "ready": None,
+            "blind": True,
+            "reason": "not in a pod, so no Kubernetes API",
+        }
     waited = 0
     while True:
         state = await asyncio.to_thread(_nodes_ready)

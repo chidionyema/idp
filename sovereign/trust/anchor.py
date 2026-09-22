@@ -18,6 +18,7 @@ uses sovereign.trust.config_keys directly (env-or-default, no cycle) or
 imports sovereign.config lazily inside a method body, by which point
 sovereign.config has always finished loading.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -75,12 +76,16 @@ def _ensure_swift_helper_compiled() -> Path | None:
     try:
         result = subprocess.run(
             ["xcrun", "swiftc", str(src), "-o", str(out)],
-            capture_output=True, text=True, timeout=ck.get("trust.compile_timeout_s"),
+            capture_output=True,
+            text=True,
+            timeout=ck.get("trust.compile_timeout_s"),
         )
     except (OSError, subprocess.SubprocessError):
         return None
     if result.returncode != 0 or not out.exists():
-        return out if out.exists() else None  # a stale helper beats no helper; the stamp stays unset
+        return (
+            out if out.exists() else None
+        )  # a stale helper beats no helper; the stamp stays unset
     out.chmod(ck.get("trust.helper_file_mode"))
     stamp.write_text(digest)
     return out
@@ -92,7 +97,13 @@ def _run_helper(args: list[str], timeout: float) -> dict[str, Any] | None:
         return None
     try:
         env = {**os.environ, "SOVEREIGN_ENCLAVE_KEY_FILE": str(_enclave_key_path())}
-        result = subprocess.run([str(helper), *args], capture_output=True, text=True, timeout=timeout, env=env)
+        result = subprocess.run(
+            [str(helper), *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
     except (OSError, subprocess.SubprocessError):
         return None
     try:
@@ -148,11 +159,19 @@ def _detect_backend() -> str:
 
 def _enclave_key_path() -> Path:
     """Where the helper keeps the Secure Enclave key handle; see presence_helper.swift keyFile."""
-    return _estate_home() / ck.get("trust.sovereign_dirname") / ck.get("trust.enclave_key_filename")
+    return (
+        _estate_home()
+        / ck.get("trust.sovereign_dirname")
+        / ck.get("trust.enclave_key_filename")
+    )
 
 
 def _software_key_path() -> Path:
-    return _estate_home() / ck.get("trust.sovereign_dirname") / ck.get("trust.software_key_filename")
+    return (
+        _estate_home()
+        / ck.get("trust.sovereign_dirname")
+        / ck.get("trust.software_key_filename")
+    )
 
 
 def _get_or_create_software_key() -> bytes:
@@ -186,6 +205,7 @@ class HardwareTrustAnchor:
     def _configured_backend() -> str:
         try:
             from sovereign import config  # lazy: see module docstring
+
             return config.get("trust.backend").value
         except Exception:
             return os.environ.get("SB_TRUST_BACKEND", "auto")
@@ -198,7 +218,9 @@ class HardwareTrustAnchor:
         hardware-backed answer checks `.backend != "software_key"` first."""
         reason = reason or ck.get("trust.reason_default")
         if self.backend == "secure_enclave":
-            result = _run_helper(["--verify", reason], ck.get("trust.presence_timeout_s"))
+            result = _run_helper(
+                ["--verify", reason], ck.get("trust.presence_timeout_s")
+            )
             return bool(result and result.get("ok"))
         if self.backend == "windows_hello":
             return self._verify_windows_hello(reason)
@@ -315,7 +337,8 @@ class HardwareTrustAnchor:
             if not pubkey:
                 return False
             result = _run_helper(
-                ["--verify-sig", digest, signature, pubkey], ck.get("trust.presence_timeout_s")
+                ["--verify-sig", digest, signature, pubkey],
+                ck.get("trust.presence_timeout_s"),
             )
             return bool(result and result.get("ok"))
         if backend == "software_key":
@@ -326,7 +349,11 @@ class HardwareTrustAnchor:
 
 
 def _enrolled_pubkey_path() -> Path:
-    return _estate_home() / ck.get("trust.sovereign_dirname") / ck.get("trust.enrolled_pubkey_filename")
+    return (
+        _estate_home()
+        / ck.get("trust.sovereign_dirname")
+        / ck.get("trust.enrolled_pubkey_filename")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -357,7 +384,12 @@ def _signer_key_path(signer_id: str) -> Path:
     if signer_id not in signer_ids():
         raise ValueError(f"not an enrolled signer: {signer_id!r}")
     name = signer_id + str(ck.get("trust.signer_key_suffix"))
-    return _estate_home() / ck.get("trust.sovereign_dirname") / ck.get("trust.signers_dirname") / name
+    return (
+        _estate_home()
+        / ck.get("trust.sovereign_dirname")
+        / ck.get("trust.signers_dirname")
+        / name
+    )
 
 
 def _get_or_create_signer_key(signer_id: str) -> bytes:

@@ -98,6 +98,19 @@ python3 "$IDP/bin/idp-bdd-proof-gate" --live || true
 if [ "$FAST" = 1 ]; then
   if "$MPY" -m ruff --version >/dev/null 2>&1; then RUFF=("$MPY" -m ruff); else RUFF=(ruff); fi
   (cd "$IDP" && "${RUFF[@]}" check --quiet .) && say "ok    ruff     pyproject rule set" || { say "FAIL  ruff"; fail=1; }
+  # 1d.2: tsc --noEmit on the backstage app package. A build failure in CI for an unused
+  # identifier is a 1950-pattern embarrassment; refuse it locally with the same compiler.
+  if [ -x "$IDP/backstage/node_modules/.bin/tsc" ]; then
+    (cd "$IDP/backstage" && ./node_modules/.bin/tsc --noEmit) \
+      && say "ok    tsc      backstage" \
+      || { say "FAIL  tsc      backstage"; fail=1; }
+  else
+    say "skip  tsc      backstage (node_modules missing; CI enforces)"
+  fi
+  # 1d.3: ruff format --check on the whole repo. Same reason as tsc.
+  (cd "$IDP" && "${RUFF[@]}" format --check --quiet .) \
+    && say "ok    ruff-fmt whole repo" \
+    || { say "FAIL  ruff-fmt  whole repo; fix: ruff format <files>"; fail=1; }
   timing_summary
   # 1e. crew#679 CP5: the incident register is generated from tests/test_incident_*.py; a new
   # incident test without its committed row is refused here, so the chaos drills never drift.

@@ -16,6 +16,7 @@ with `http.client` (stdlib), per crew#284's instruction. The only fakes are
 the two true external boundaries: `sovereign.engine.client` (Temporal) and
 the presence state file (the kernel's own write, reproduced by hand here).
 """
+
 from __future__ import annotations
 
 import http.client
@@ -42,10 +43,18 @@ def _fake_engine_module(sessions: list[dict[str, Any]]) -> types.ModuleType:
     async def _show(session_id: str) -> dict[str, Any]:
         raise KeyError(session_id)
 
-    async def _signal(session_id: str, kind: str, by: str, text: str = "") -> dict[str, Any]:
+    async def _signal(
+        session_id: str, kind: str, by: str, text: str = ""
+    ) -> dict[str, Any]:
         return {"ok": True}
 
-    async def _start(task: str, runner: str = "llm", repo: str | None = None, by: str = "cli", budget: int = 0) -> dict[str, Any]:
+    async def _start(
+        task: str,
+        runner: str = "llm",
+        repo: str | None = None,
+        by: str = "cli",
+        budget: int = 0,
+    ) -> dict[str, Any]:
         return {"session_id": "sb-cp37-started"}
 
     mod = types.ModuleType("sovereign.engine.client")
@@ -62,7 +71,9 @@ def sessions() -> list[dict[str, Any]]:
 
 
 @pytest.fixture
-def cockpit(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sessions: list[dict[str, Any]]):
+def cockpit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sessions: list[dict[str, Any]]
+):
     """A real cockpit HTTP server on an ephemeral loopback port. Import
     happens inside the fixture so the module-level route regexes (already
     resolved once per process, cp22) are only ever read, never rebuilt."""
@@ -130,7 +141,9 @@ def _presence_catastrophe(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
 
 
 def _get(cockpit: Any, path: str) -> tuple[int, bytes]:
-    conn = http.client.HTTPConnection(cockpit.server_address[0], cockpit.server_address[1], timeout=5)
+    conn = http.client.HTTPConnection(
+        cockpit.server_address[0], cockpit.server_address[1], timeout=5
+    )
     try:
         conn.request("GET", path)
         res = conn.getresponse()
@@ -160,7 +173,9 @@ def _not_contains(response: dict[str, Any], needle: str) -> None:
 @then(parsers.parse('the response contains "{needle}"'))
 def _contains(response: dict[str, Any], needle: str) -> None:
     assert response["status"] == 200, response
-    assert needle in response["text"], f"expected {needle!r} in the Ghost shell, got none"
+    assert needle in response["text"], (
+        f"expected {needle!r} in the Ghost shell, got none"
+    )
 
 
 @then(parsers.parse('the JSON field "{field}" is "{value}"'))
@@ -178,4 +193,6 @@ def _json_field_one_line_no_question(response: dict[str, Any], field: str) -> No
     line = body.get(field)
     assert line, f"expected a non-empty {field!r}, got {line!r} in {body!r}"
     assert "\n" not in line, f"{field} is not one line: {line!r}"
-    assert "?" not in line, f"a system-authored line never asks a question (cp32): {line!r}"
+    assert "?" not in line, (
+        f"a system-authored line never asks a question (cp32): {line!r}"
+    )

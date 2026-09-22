@@ -10,6 +10,7 @@ model.consensus are already in config.py's own KEYS table; config.py's
 _merge_external_keys is first-writer-wins, so repeating them here would be
 silently ignored and would read as if this file controlled them.
 """
+
 from __future__ import annotations
 
 import os
@@ -26,47 +27,79 @@ CONSENSUS_KEYS: dict[str, tuple[Any, type, str, str]] = {
         # the cheapest lane the estate served was one that could reach zero and stay there --
         # and did. Groq's free tier meters requests per day and resets, which is the property
         # being bought here; the lane is rendered from platform/vendors/consoles.yaml.
-        "groq", str, "SB_CONSENSUS_CHEAP_MODEL",
+        "groq",
+        str,
+        "SB_CONSENSUS_CHEAP_MODEL",
         "Single model used for a non-destructive op: the cheapest entry the estate router "
-        "serves (idp platform/llm/config.yaml; the local ollama lane is laptop-only, crew#313)"),
+        "serves (idp platform/llm/config.yaml; the local ollama lane is laptop-only, crew#313)",
+    ),
     "consensus.request_timeout_s": (
-        30, float, "SB_CONSENSUS_REQUEST_TIMEOUT_S",
-        "Per-model HTTP timeout for one vote through the LiteLLM proxy"),
+        30,
+        float,
+        "SB_CONSENSUS_REQUEST_TIMEOUT_S",
+        "Per-model HTTP timeout for one vote through the LiteLLM proxy",
+    ),
     "consensus.temperature": (
-        0, float, "SB_CONSENSUS_TEMPERATURE",
+        0,
+        float,
+        "SB_CONSENSUS_TEMPERATURE",
         "Sampling temperature for a vote -- 0, because a vote is a proposal to be "
-        "compared, not prose"),
+        "compared, not prose",
+    ),
     "consensus.max_tokens": (
-        256, int, "SB_CONSENSUS_MAX_TOKENS",
-        "Per-vote completion cap; a tool call is short and the budget is $5/day"),
+        256,
+        int,
+        "SB_CONSENSUS_MAX_TOKENS",
+        "Per-vote completion cap; a tool call is short and the budget is $5/day",
+    ),
     "consensus.system_prompt": (
         "Reply with exactly one shell command and nothing else. No explanation, "
-        "no code fences, no prose.", str, "SB_CONSENSUS_SYSTEM_PROMPT",
-        "System message every voting model receives, so votes are comparable"),
+        "no code fences, no prose.",
+        str,
+        "SB_CONSENSUS_SYSTEM_PROMPT",
+        "System message every voting model receives, so votes are comparable",
+    ),
     "consensus.quorum_separator": (
-        "/", str, "SB_CONSENSUS_QUORUM_SEPARATOR",
-        "What splits config key consensus.quorum, e.g. the 2 and the 3 of \"2/3\""),
+        "/",
+        str,
+        "SB_CONSENSUS_QUORUM_SEPARATOR",
+        'What splits config key consensus.quorum, e.g. the 2 and the 3 of "2/3"',
+    ),
     "consensus.policy_dirname": (
-        "policy", str, "SB_CONSENSUS_POLICY_DIRNAME",
-        "Directory of .rego policy under the idp checkout root"),
+        "policy",
+        str,
+        "SB_CONSENSUS_POLICY_DIRNAME",
+        "Directory of .rego policy under the idp checkout root",
+    ),
     "consensus.policy_namespace": (
-        "sovereign.command", str, "SB_CONSENSUS_POLICY_NAMESPACE",
+        "sovereign.command",
+        str,
+        "SB_CONSENSUS_POLICY_NAMESPACE",
         "conftest --namespace for the command allowlist policy; deliberately not "
-        "`main`, so it cannot collide with licences.rego and placement.rego"),
+        "`main`, so it cannot collide with licences.rego and placement.rego",
+    ),
     "consensus.policy_binary": (
-        "conftest", str, "SB_CONSENSUS_POLICY_BINARY",
-        "The policy engine bin/policy-test already uses"),
+        "conftest",
+        str,
+        "SB_CONSENSUS_POLICY_BINARY",
+        "The policy engine bin/policy-test already uses",
+    ),
     "consensus.policy_timeout_s": (
-        30, float, "SB_CONSENSUS_POLICY_TIMEOUT_S",
-        "Timeout for one conftest evaluation"),
+        30,
+        float,
+        "SB_CONSENSUS_POLICY_TIMEOUT_S",
+        "Timeout for one conftest evaluation",
+    ),
     "consensus.destructive_markers": (
         "rm -rf,--force,--hard,drop table,truncate table,delete from,kubectl delete,"
         "terraform destroy,fly apps destroy,git push --force,mkfs,dd if",
-        str, "SB_CONSENSUS_DESTRUCTIVE_MARKERS",
+        str,
+        "SB_CONSENSUS_DESTRUCTIVE_MARKERS",
         "Comma-separated substrings that classify an op as destructive when the "
         "caller does not say. A marker list over-classifies by design: a "
         "non-destructive op wrongly sent to three models costs one Ollama call, a "
-        "destructive one wrongly sent to one model costs the estate"),
+        "destructive one wrongly sent to one model costs the estate",
+    ),
 }
 
 

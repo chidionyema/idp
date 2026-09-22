@@ -9,6 +9,7 @@ resolution order (file < env < flag) imports sovereign.config lazily,
 inside the function body, by which point config.py has always finished
 loading (see sovereign/attach/README.md).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -32,6 +33,7 @@ def _cfg(key: str) -> Any:
     falls back to env-or-default."""
     try:
         from sovereign import config
+
         return config.get(key).value
     except Exception:
         return ck.get(key)
@@ -52,7 +54,9 @@ def _list_tracked_relpaths(root: Path) -> list[str] | None:
     try:
         result = subprocess.run(
             ["git", "-C", str(root), "ls-files"],
-            capture_output=True, text=True, timeout=_cfg("attach.git_ls_files_timeout_s"),
+            capture_output=True,
+            text=True,
+            timeout=_cfg("attach.git_ls_files_timeout_s"),
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -116,7 +120,9 @@ def _estate_home() -> Path:
 def estate_dir_for(root: Path, mode: str | None = None) -> Path:
     mode = mode or _cfg("attach.mode")
     if mode == "global":
-        key = hashlib.sha256(str(root).encode()).hexdigest()[: int(_cfg("attach.path_hash_hex_len"))]
+        key = hashlib.sha256(str(root).encode()).hexdigest()[
+            : int(_cfg("attach.path_hash_hex_len"))
+        ]
         return _estate_home() / _cfg("attach.global_estates_dirname") / key
     return root / _cfg("attach.dirname")
 
@@ -223,19 +229,42 @@ def attach(path: str | Path, write_policy: bool = False) -> dict[str, Any]:
         policy=policy_label, mode=_cfg("attach.policy_mode")
     )
 
-    append_estate_receipt(estate_dir, {
-        "session_id": "-", "kind": "estate_mounted", "by": "sb-attach",
-        "text": mounted_line, "step": 0, "status": "attached", "task": "", "runner": "",
-    })
-    append_estate_receipt(estate_dir, {
-        "session_id": "-", "kind": "policy_inherited", "by": "sb-attach",
-        "text": policy_line, "step": 0, "status": "attached", "task": "", "runner": "",
-    })
+    append_estate_receipt(
+        estate_dir,
+        {
+            "session_id": "-",
+            "kind": "estate_mounted",
+            "by": "sb-attach",
+            "text": mounted_line,
+            "step": 0,
+            "status": "attached",
+            "task": "",
+            "runner": "",
+        },
+    )
+    append_estate_receipt(
+        estate_dir,
+        {
+            "session_id": "-",
+            "kind": "policy_inherited",
+            "by": "sb-attach",
+            "text": policy_line,
+            "step": 0,
+            "status": "attached",
+            "task": "",
+            "runner": "",
+        },
+    )
 
-    _registry_append({
-        "event": "attach", "root": str(root), "estate_dir": str(estate_dir),
-        "mode": mode, "ts": _now_iso(),
-    })
+    _registry_append(
+        {
+            "event": "attach",
+            "root": str(root),
+            "estate_dir": str(estate_dir),
+            "mode": mode,
+            "ts": _now_iso(),
+        }
+    )
 
     return {
         "root": str(root),
@@ -267,13 +296,19 @@ async def status() -> dict[str, Any]:
     for e in estates:
         root = e["root"]
         root_sessions = by_repo.get(root, [])
-        out.append({
-            "root": root,
-            "estate_dir": e.get("estate_dir"),
-            "mode": e.get("mode"),
-            "running": sum(1 for s in root_sessions if s.get("status") in ("running", "waiting")),
-            "sessions": root_sessions[:limit],
-        })
+        out.append(
+            {
+                "root": root,
+                "estate_dir": e.get("estate_dir"),
+                "mode": e.get("mode"),
+                "running": sum(
+                    1
+                    for s in root_sessions
+                    if s.get("status") in ("running", "waiting")
+                ),
+                "sessions": root_sessions[:limit],
+            }
+        )
     return {"estates": out}
 
 
@@ -288,12 +323,23 @@ async def halt_all(by: str, signed: bool = False) -> dict[str, Any]:
         sid = s["session_id"]
         signal_res = await engine_client.signal(sid, "stop", by, "halt --all")
         record = {
-            "session_id": sid, "kind": "halt", "by": by, "text": "halt --all",
-            "step": s.get("step", 0), "status": "stopped",
-            "task": s.get("task", ""), "runner": s.get("runner", ""),
+            "session_id": sid,
+            "kind": "halt",
+            "by": by,
+            "text": "halt --all",
+            "step": s.get("step", 0),
+            "status": "stopped",
+            "task": s.get("task", ""),
+            "runner": s.get("runner", ""),
         }
         if signed:
             record["signed"] = True
         receipt = receipts_mod.append(record)
-        results.append({"session_id": sid, "ok": signal_res.get("ok", False), "receipt_counter": receipt.get("counter")})
+        results.append(
+            {
+                "session_id": sid,
+                "ok": signal_res.get("ok", False),
+                "receipt_counter": receipt.get("counter"),
+            }
+        )
     return {"halted": len(results), "sessions": results}

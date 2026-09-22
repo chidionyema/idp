@@ -48,7 +48,9 @@ def _run_sb(*args: str) -> tuple[bool, object]:
     sb = _idp_root() / "bin" / "sb"
     try:
         proc = subprocess.run(
-            [str(sb), *args, "--json"], capture_output=True, text=True,
+            [str(sb), *args, "--json"],
+            capture_output=True,
+            text=True,
             timeout=ck.get("otto.plugin_sb_timeout_s"),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -59,7 +61,9 @@ def _run_sb(*args: str) -> tuple[bool, object]:
         # The tail, not the head: a Python traceback puts the exception on its last line, and
         # the first 500 chars of one are the import chain (crew#313: the photo refusal read
         # "Traceback (most recent call last): File ..." and never said the router was down).
-        return False, (proc.stderr.strip() or out or f"sb exited {proc.returncode}")[-err_max:]
+        return False, (proc.stderr.strip() or out or f"sb exited {proc.returncode}")[
+            -err_max:
+        ]
     try:
         return True, json.loads(out)
     except (json.JSONDecodeError, ValueError):
@@ -83,7 +87,9 @@ def sb_list(raw_args: str) -> Optional[str]:
     lines = []
     for s in items[:max_lines]:
         sid = str(s.get("session_id", "?"))[:id_chars]
-        lines.append(f"{sid} {s.get('status', '?')} {s.get('repo') or '·'} {str(s.get('task', ''))[:task_max]}")
+        lines.append(
+            f"{sid} {s.get('status', '?')} {s.get('repo') or '·'} {str(s.get('task', ''))[:task_max]}"
+        )
     return "\n".join(lines)
 
 
@@ -148,14 +154,23 @@ def sb_steer(raw_args: str) -> Optional[str]:
 
 # --- crew#284 CP1: every chat reply is a one-line receipt (spec 2.2) -------
 
+
 def _receipt_line(op: str, sid: str) -> str:
     """The newest receipt in the signed chain for `sid`, as the one line
     spec 2.2 draws: mark, OP, hash, budget delta, state. Never prose."""
     ok, data = _run_sb("episodes")
-    rows = data if isinstance(data, list) else (data.get("episodes", []) if isinstance(data, dict) else [])
-    mine = [r for r in rows if isinstance(r, dict) and str(r.get("session_id", "")) == sid]
+    rows = (
+        data
+        if isinstance(data, list)
+        else (data.get("episodes", []) if isinstance(data, dict) else [])
+    )
+    mine = [
+        r for r in rows if isinstance(r, dict) and str(r.get("session_id", "")) == sid
+    ]
     if not mine:
-        return str(ck.get("otto.receipt_fallback_template")).format(op=op.upper(), sid=sid)
+        return str(ck.get("otto.receipt_fallback_template")).format(
+            op=op.upper(), sid=sid
+        )
     row = max(mine, key=lambda r: int(r.get("counter") or 0))
     try:
         receipt_mod = importlib.import_module("sovereign.presence.receipt")
@@ -228,11 +243,32 @@ def on_pre_gateway_dispatch(event=None, **_kw) -> Optional[dict]:
 
 def register(ctx) -> None:
     ctx.register_command("sb-list", sb_list, description="List sovereign-bus sessions")
-    ctx.register_command("sb-show", sb_show, description="Show one session", args_hint="<id>")
-    ctx.register_command("sb-stop", sb_stop, description="Stop a running session", args_hint="<id>")
-    ctx.register_command("sb-approve", sb_approve, description="Approve a waiting session", args_hint="<id>")
-    ctx.register_command("sb-deny", sb_deny, description="Deny a waiting session", args_hint="<id>")
-    ctx.register_command("sb-steer", sb_steer, description="Steer a running session", args_hint="<id> <text>")
-    ctx.register_command("sb-undo", sb_undo, description="Revert the commit a session's receipt names", args_hint="<id> [receipt-hash]")
+    ctx.register_command(
+        "sb-show", sb_show, description="Show one session", args_hint="<id>"
+    )
+    ctx.register_command(
+        "sb-stop", sb_stop, description="Stop a running session", args_hint="<id>"
+    )
+    ctx.register_command(
+        "sb-approve",
+        sb_approve,
+        description="Approve a waiting session",
+        args_hint="<id>",
+    )
+    ctx.register_command(
+        "sb-deny", sb_deny, description="Deny a waiting session", args_hint="<id>"
+    )
+    ctx.register_command(
+        "sb-steer",
+        sb_steer,
+        description="Steer a running session",
+        args_hint="<id> <text>",
+    )
+    ctx.register_command(
+        "sb-undo",
+        sb_undo,
+        description="Revert the commit a session's receipt names",
+        args_hint="<id> [receipt-hash]",
+    )
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("pre_gateway_dispatch", on_pre_gateway_dispatch)

@@ -24,6 +24,7 @@ existing filename (a name is counter+hash, so a collision means either a
 replayed counter or a rewritten history), and `verify()` re-derives every
 file's name from its own contents and checks it against the chain.
 """
+
 from __future__ import annotations
 
 import json
@@ -63,7 +64,9 @@ def mirror(line: dict[str, Any]) -> Path | None:
     d.mkdir(parents=True, exist_ok=True)
     path = d / filename_for(int(line.get("counter", 0)), str(line.get("hash", "")))
     if path.exists():
-        raise NotAppendOnly(f"{path} already exists; an intervention log is never rewritten")
+        raise NotAppendOnly(
+            f"{path} already exists; an intervention log is never rewritten"
+        )
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(line, sort_keys=True))
     os.replace(tmp, path)
@@ -100,7 +103,12 @@ def verify() -> dict[str, Any]:
     the chain itself must verify. Any of the three failing fails closed."""
     chain = receipts_mod.verify()
     if not chain.get("ok"):
-        return {"ok": False, "entries": 0, "reason": chain.get("reason") or "chain", "chain": chain}
+        return {
+            "ok": False,
+            "entries": 0,
+            "reason": chain.get("reason") or "chain",
+            "chain": chain,
+        }
     by_counter = {int(r.get("counter", 0)): r for r in receipts_mod.read_all()}
     entries = 0
     for row in read_all():
@@ -109,12 +117,27 @@ def verify() -> dict[str, Any]:
         expected_name = filename_for(counter, line_hash)
         path = directory() / expected_name
         if not path.exists():
-            return {"ok": False, "entries": entries, "reason": "misnamed", "counter": counter}
+            return {
+                "ok": False,
+                "entries": entries,
+                "reason": "misnamed",
+                "counter": counter,
+            }
         chain_line = by_counter.get(counter)
         if chain_line is None:
-            return {"ok": False, "entries": entries, "reason": "not_in_chain", "counter": counter}
+            return {
+                "ok": False,
+                "entries": entries,
+                "reason": "not_in_chain",
+                "counter": counter,
+            }
         if json.dumps(chain_line, sort_keys=True) != json.dumps(row, sort_keys=True):
-            return {"ok": False, "entries": entries, "reason": "diverged", "counter": counter}
+            return {
+                "ok": False,
+                "entries": entries,
+                "reason": "diverged",
+                "counter": counter,
+            }
         entries += 1
     return {"ok": True, "entries": entries, "reason": None, "chain": chain}
 
@@ -129,7 +152,9 @@ def backfill() -> dict[str, Any]:
     for line in receipts_mod.read_all():
         if not is_intervention(str(line.get("kind", ""))):
             continue
-        path = directory() / filename_for(int(line.get("counter", 0)), str(line.get("hash", "")))
+        path = directory() / filename_for(
+            int(line.get("counter", 0)), str(line.get("hash", ""))
+        )
         if path.exists():
             skipped += 1
             continue

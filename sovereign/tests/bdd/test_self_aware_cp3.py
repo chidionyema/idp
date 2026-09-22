@@ -4,6 +4,7 @@ Rung 4 glue over workload_logs.build_workload_logs and workload_state. Scenario 
 reads the two plugin sources: each registers its own tool and neither imports
 the other, so the MCP tool list carries two names, not one with a verbose flag.
 """
+
 from __future__ import annotations
 
 import json
@@ -30,11 +31,28 @@ def ctx(tmp_path: Path) -> dict[str, Any]:
     cat, db = tmp_path / "catalog-info.yaml", tmp_path / "estate.db"
     plist, log = sa.write_job(tmp_path, "app-x", 80)
     sa.write_estate_db(db, [sa.job_row(ASSET, plist)])
-    sa.write_catalog(cat, [{"kind": "Resource", "name": "app-x", "owner": "group:default/platform",
-                            "repo": "chidionyema/app-x", "asset_path": ASSET}])
-    return {"log": log, "calls": 0,
-            "cfg": {"catalog_path": str(cat), "estate_db_path": str(db),
-                    "max_tail": MAX_TAIL, "byte_ceiling": 8000}}
+    sa.write_catalog(
+        cat,
+        [
+            {
+                "kind": "Resource",
+                "name": "app-x",
+                "owner": "group:default/platform",
+                "repo": "chidionyema/app-x",
+                "asset_path": ASSET,
+            }
+        ],
+    )
+    return {
+        "log": log,
+        "calls": 0,
+        "cfg": {
+            "catalog_path": str(cat),
+            "estate_db_path": str(db),
+            "max_tail": MAX_TAIL,
+            "byte_ceiling": 8000,
+        },
+    }
 
 
 @given('get_workload_state("app-x") returned a summary with no raw logs')
@@ -66,14 +84,18 @@ def _million(ctx):
     ctx["resp"] = wl.build_workload_logs("app-x", tail=1_000_000, cfg=ctx["cfg"])
 
 
-@then("the response contains at most the server's configured maximum tail lines, not 1,000,000 lines")
+@then(
+    "the response contains at most the server's configured maximum tail lines, not 1,000,000 lines"
+)
 def _bounded(ctx):
     assert ctx["resp"]["line_count"] <= MAX_TAIL
 
 
 @then("the response states the maximum it enforced")
 def _states_max(ctx):
-    assert ctx["resp"]["max_tail"] == MAX_TAIL and ctx["resp"]["tail_enforced"] == MAX_TAIL
+    assert (
+        ctx["resp"]["max_tail"] == MAX_TAIL and ctx["resp"]["tail_enforced"] == MAX_TAIL
+    )
 
 
 @given("the MCP tool list exposed by the estate server", target_fixture="tools")
@@ -85,9 +107,14 @@ def _tools() -> dict[str, str]:
     return out
 
 
-@then("get_workload_state and get_workload_logs are registered as two separate tools, not one tool with a hidden verbose flag")
+@then(
+    "get_workload_state and get_workload_logs are registered as two separate tools, not one tool with a hidden verbose flag"
+)
 def _distinct(tools: dict[str, str]):
-    names = {mod: set(re.findall(r"async def (get_workload_\w+)\(", src)) for mod, src in tools.items()}
+    names = {
+        mod: set(re.findall(r"async def (get_workload_\w+)\(", src))
+        for mod, src in tools.items()
+    }
     assert names["workload_state"] == {"get_workload_state"}, names
     assert names["workload_logs"] == {"get_workload_logs"}, names
     assert "import workload_logs" not in tools["workload_state"]

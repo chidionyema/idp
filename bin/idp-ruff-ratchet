@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# crew#620: visible ratchet. Prints the count of files that would still fail the
+# Python standard on HEAD. The number should monotonically shrink; if it grows the
+# pre-commit hook let one through and the operator sees it here, not in two weeks.
+# Exit code is 0 — this is a signal, not a gate. The gate is bin/idp-ruff.
+set -euo pipefail
+
+count=$(python3 -m ruff check --config pyproject.toml --statistics . 2>/dev/null \
+  | grep -cE '^[A-Z][0-9]+' || true)
+echo "ratchet: $count file(s) off-standard on HEAD"

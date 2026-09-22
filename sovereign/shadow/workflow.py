@@ -25,6 +25,7 @@ sovereign/engine/budget.py under the child's session id and spent through
 the same compare-and-swap. When a spend clamps to zero the child writes a
 halt receipt and stops; the other branches keep racing.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -134,7 +135,9 @@ class BranchChildWorkflow:
                 except (ActivityError, CancelledError) as err:
                     # Temporal delivers a workflow cancel to a running
                     # activity as an ActivityError whose cause is CancelledError.
-                    if isinstance(err, CancelledError) or isinstance(err.cause, CancelledError):
+                    if isinstance(err, CancelledError) or isinstance(
+                        err.cause, CancelledError
+                    ):
                         self._stop_requested = True
                     result = None
                 finally:
@@ -245,8 +248,13 @@ class BranchParentWorkflow:
 
         fork = await workflow.execute_activity(
             "branch_fork",
-            {"parent_id": self.parent_id, "repo": params.get("repo"), "branches": branches,
-             "budget": int(params["budget"]), "timestamp": int(workflow.now().timestamp())},
+            {
+                "parent_id": self.parent_id,
+                "repo": params.get("repo"),
+                "branches": branches,
+                "budget": int(params["budget"]),
+                "timestamp": int(workflow.now().timestamp()),
+            },
             start_to_close_timeout=short_timeout,
             retry_policy=retry,
         )
@@ -259,9 +267,20 @@ class BranchParentWorkflow:
         for i, branch in enumerate(branches, start=1):
             child_id = f"{self.parent_id}{sep}{i}"
             child_params = {
-                **{k: params[k] for k in ("task", "runner", "steps", "step_timeout_s", "heartbeat_s",
-                                           "merge_timeout_s", "retry_max_attempts", "halt_reason",
-                                           "halt_receipt_kind")},
+                **{
+                    k: params[k]
+                    for k in (
+                        "task",
+                        "runner",
+                        "steps",
+                        "step_timeout_s",
+                        "heartbeat_s",
+                        "merge_timeout_s",
+                        "retry_max_attempts",
+                        "halt_reason",
+                        "halt_receipt_kind",
+                    )
+                },
                 "repo": params.get("repo"),
                 "child_id": child_id,
                 "parent_id": self.parent_id,
@@ -278,8 +297,15 @@ class BranchParentWorkflow:
 
         results = await asyncio.gather(*self._handles, return_exceptions=True)
         self.children = [
-            r if isinstance(r, dict) else {"session_id": f"{self.parent_id}{sep}{i}", "branch": b,
-                                           "status": "failed", "reason": str(r), "tokens": 0}
+            r
+            if isinstance(r, dict)
+            else {
+                "session_id": f"{self.parent_id}{sep}{i}",
+                "branch": b,
+                "status": "failed",
+                "reason": str(r),
+                "tokens": 0,
+            }
             for i, (b, r) in enumerate(zip(branches, results), start=1)
         ]
 
@@ -305,7 +331,9 @@ class BranchParentWorkflow:
         self.reason = str(merged.get("reason", ""))
         return self._state()
 
-    async def _stopped(self, params: dict[str, Any], timeout: timedelta, retry: RetryPolicy) -> dict[str, Any]:
+    async def _stopped(
+        self, params: dict[str, Any], timeout: timedelta, retry: RetryPolicy
+    ) -> dict[str, Any]:
         self.status = "stopped"
         await workflow.execute_activity(
             "branch_receipt",
@@ -318,7 +346,10 @@ class BranchParentWorkflow:
                 "status": self.status,
                 "parent_hash": self.fork_hash,
                 "fork_commit": self.fork_commit,
-                "children": [{"session_id": c.get("session_id"), "status": c.get("status")} for c in self.children],
+                "children": [
+                    {"session_id": c.get("session_id"), "status": c.get("status")}
+                    for c in self.children
+                ],
             },
             start_to_close_timeout=timeout,
             retry_policy=retry,

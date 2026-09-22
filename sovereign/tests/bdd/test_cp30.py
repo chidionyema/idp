@@ -6,6 +6,7 @@ receipt. The one fake is the LiteLLM proxy, a true external boundary,
 replaced at the HTTP wire by an httpx.MockTransport so a model can answer,
 answer late, or never answer.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +27,10 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from sovereign import config as config_mod
 from sovereign import policy as policy_mod
 from sovereign.consensus import config_keys as ck
-decide_mod = importlib.import_module("sovereign.consensus.decide")  # the package exports a function named decide
+
+decide_mod = importlib.import_module(
+    "sovereign.consensus.decide"
+)  # the package exports a function named decide
 from sovereign.consensus import models as models_mod
 from sovereign.engine import receipts as receipts_mod
 
@@ -95,7 +99,11 @@ def proxy(estate_home, monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeProxy]:
 
 
 def _decide(op: str, destructive: bool) -> dict[str, Any]:
-    return asyncio.run(decide_mod.decide_async(op, destructive=destructive, deadline_s=SCALED_DEADLINE_S))
+    return asyncio.run(
+        decide_mod.decide_async(
+            op, destructive=destructive, deadline_s=SCALED_DEADLINE_S
+        )
+    )
 
 
 def _latest_receipt() -> dict[str, Any]:
@@ -117,21 +125,29 @@ def _destructive_with_three(proxy: FakeProxy, config, context: dict[str, Any]) -
 
 @when("two models propose the same normalized tool call within 30 seconds")
 def _two_agree(proxy: FakeProxy, context: dict[str, Any]) -> None:
-    proxy.answers = {"alpha": ALLOWED_CALL, "beta": ALLOWED_CALL + "  ", "gamma": "git status"}
+    proxy.answers = {
+        "alpha": ALLOWED_CALL,
+        "beta": ALLOWED_CALL + "  ",
+        "gamma": "git status",
+    }
     context["result"] = _decide(context["op"], destructive=True)
 
 
 @when("the call is in the allowlist")
 def _call_allowed(context: dict[str, Any]) -> None:
     result = context["result"]
-    assert result["quorum"]["agreed"] and result["quorum"]["count"] == 2, result["quorum"]
+    assert result["quorum"]["agreed"] and result["quorum"]["count"] == 2, result[
+        "quorum"
+    ]
     assert result["policy"]["allowed"] is True, result["policy"]
 
 
 @then("the op proceeds with a receipt naming the three votes")
 def _proceeds(proxy: FakeProxy, context: dict[str, Any]) -> None:
     result = context["result"]
-    assert result["ok"] is True and result["proposal"] == models_mod.normalize_tool_call(ALLOWED_CALL)
+    assert result["ok"] is True and result[
+        "proposal"
+    ] == models_mod.normalize_tool_call(ALLOWED_CALL)
     receipt = _latest_receipt()
     assert receipt["status"] == "allowed"
     assert [v["model"] for v in receipt["votes"]] == THREE_MODELS
@@ -171,8 +187,13 @@ def _one_answers(proxy: FakeProxy, config, context: dict[str, Any]) -> None:
 @then("the op fails hard and no retry happens without a founder signal")
 def _fails_hard(proxy: FakeProxy, context: dict[str, Any]) -> None:
     result = context["result"]
-    assert result["ok"] is False and result["reason"] in (decide_mod.REASON_STALE, decide_mod.REASON_QUORUM)
-    assert result["proposal"] == "" and result["policy"] is None  # policy never rescues a failed quorum
+    assert result["ok"] is False and result["reason"] in (
+        decide_mod.REASON_STALE,
+        decide_mod.REASON_QUORUM,
+    )
+    assert (
+        result["proposal"] == "" and result["policy"] is None
+    )  # policy never rescues a failed quorum
     assert result["quorum"]["fresh"] == 1 and result["quorum"]["stale"] == 2
     # One request per model and nothing after the verdict: no retry.
     assert sorted(context["calls_after"]) == THREE_MODELS
@@ -211,7 +232,9 @@ def _one_cheap_model(proxy: FakeProxy, context: dict[str, Any]) -> None:
     # rule below -- every hop must itself make images -- and a text chain that reaches into an
     # image lane, or an image chain that reaches out of one, still fails here.
     lanes = yaml.safe_load(litellm_path.read_text())["model_list"]
-    image_lanes = {m["model_name"] for m in lanes if "image" in m["litellm_params"]["model"]}
+    image_lanes = {
+        m["model_name"] for m in lanes if "image" in m["litellm_params"]["model"]
+    }
     # An embedding lane is exempt from the cheap-model floor for exactly the reason an image
     # lane is, and the exemption arrives with the same obligation. "End in the cheapest" is a
     # statement about the cost of answering in TEXT. There is no text cost in an embedding
@@ -226,15 +249,23 @@ def _one_cheap_model(proxy: FakeProxy, context: dict[str, Any]) -> None:
     # The lane the estate declares as an embedding one is the lane litellm treats as one --
     # model_info.mode, not a guess at the model id.
     embed_lanes = {
-        m["model_name"] for m in lanes if (m.get("model_info") or {}).get("mode") == "embedding"
+        m["model_name"]
+        for m in lanes
+        if (m.get("model_info") or {}).get("mode") == "embedding"
     }
     special = image_lanes | embed_lanes
-    graded = [members for head, members in chains if head != cheap and head not in special]
+    graded = [
+        members for head, members in chains if head != cheap and head not in special
+    ]
     assert graded, "every chain is headed by the cheap model; nothing to grade"
     for chain in graded:
         members = [m.strip() for m in chain.split(",")]
-        assert not (set(members) & image_lanes), f"a text chain falls into an image lane: {chain}"
-        assert not (set(members) & embed_lanes), f"a text chain falls into an embedding lane: {chain}"
+        assert not (set(members) & image_lanes), (
+            f"a text chain falls into an image lane: {chain}"
+        )
+        assert not (set(members) & embed_lanes), (
+            f"a text chain falls into an embedding lane: {chain}"
+        )
         assert members[-1] == cheap, chain
     for head, chain in chains:
         if head not in image_lanes:
@@ -245,7 +276,9 @@ def _one_cheap_model(proxy: FakeProxy, context: dict[str, Any]) -> None:
         if head not in embed_lanes:
             continue
         for member in (m.strip() for m in chain.split(",")):
-            assert member in embed_lanes, f"{head} falls back to {member}, which does not embed"
+            assert member in embed_lanes, (
+                f"{head} falls back to {member}, which does not embed"
+            )
     assert config_mod.POLICY.routing["cheap"] == cheap
 
 
@@ -281,12 +314,16 @@ def _served_by_proxy(voters: list[str]) -> None:
 # vote, because `from sovereign.consensus import decide` bound the function,
 # not the module. The command must reach decide() and print its verdict.
 @then('"sb model-consensus --op <op> --destructive" exits 0 with the verdict')
-def _cli_reaches_vote(context: dict[str, Any], capsys: pytest.CaptureFixture[str]) -> None:
+def _cli_reaches_vote(
+    context: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
     import argparse
 
     from sovereign import cli
 
-    args = argparse.Namespace(op=context["op"], destructive=True, non_destructive=False, json=True)
+    args = argparse.Namespace(
+        op=context["op"], destructive=True, non_destructive=False, json=True
+    )
     rc = cli.cmd_model_consensus(args)
     out = json.loads(capsys.readouterr().out)
     assert rc == 0 and out["ok"] is True, out

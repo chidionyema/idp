@@ -6,6 +6,7 @@ The graph is a pure function of the engine's session rows, so the same
 truth the cockpit's /api/sessions serves is what the force layout draws.
 Rendering is the cockpit page's job; this module only shapes the data.
 """
+
 from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
@@ -67,7 +68,11 @@ def graph(sessions: list[dict[str, Any]]) -> dict[str, Any]:
     # engine does not record cross-session calls yet, so the edge list is
     # empty rather than invented; the shape is fixed so the page draws it
     # the day the engine fills it.
-    return {"nodes": nodes, "edges": [], "running": [n["id"] for n in nodes if n["status"] in _RUNNING]}
+    return {
+        "nodes": nodes,
+        "edges": [],
+        "running": [n["id"] for n in nodes if n["status"] in _RUNNING],
+    }
 
 
 Signal = Callable[[str, str, str, str], Awaitable[dict[str, Any]]]

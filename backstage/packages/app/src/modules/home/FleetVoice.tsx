@@ -814,7 +814,7 @@ export default function FleetVoice({
         <TextField
           data-testid="voice-deck-text"
           value={deckText}
-          onChange={(e) => setDeckText(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDeckText(e.target.value)}
           multiline
           fullWidth
           size="small"

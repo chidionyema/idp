@@ -1,5 +1,6 @@
 """Binds features/gates/plist-gate.feature. Steps run bin/plist-gate for real over a rendered
 template pointing at a script that backgrounds a child, then over the live scheduler template."""
+
 import os
 import stat
 import subprocess
@@ -24,8 +25,12 @@ TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def _gate(*files: Path) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, str(IDP / "bin" / "plist-gate"), *map(str, files)],
-                          env={**os.environ, "IDP": str(IDP)}, capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, str(IDP / "bin" / "plist-gate"), *map(str, files)],
+        env={**os.environ, "IDP": str(IDP)},
+        capture_output=True,
+        text=True,
+    )
 
 
 @pytest.fixture
@@ -33,17 +38,24 @@ def state(tmp_path: Path) -> dict:
     return {"dir": tmp_path}
 
 
-@given("a launchd template whose program starts a child with nohup, setsid or disown and then exits")
+@given(
+    "a launchd template whose program starts a child with nohup, setsid or disown and then exits"
+)
 def _template(state: dict) -> None:
     prog = state["dir"] / "up"
     prog.write_text("#!/bin/sh\nnohup sleep 1 >/dev/null 2>&1 &\n")
     prog.chmod(prog.stat().st_mode | stat.S_IXUSR)
     state["prog"] = prog
     # plist-gate requires Label to match the file name, so each variant sits in its own dir.
-    for name, extra in (("bare", ""), ("abandon", "<key>AbandonProcessGroup</key><true/>")):
+    for name, extra in (
+        ("bare", ""),
+        ("abandon", "<key>AbandonProcessGroup</key><true/>"),
+    ):
         d = state["dir"] / name
         d.mkdir()
-        (d / "ai.estate.test.plist.tmpl").write_text(TEMPLATE.format(prog=prog, extra=extra))
+        (d / "ai.estate.test.plist.tmpl").write_text(
+            TEMPLATE.format(prog=prog, extra=extra)
+        )
 
 
 @when("bin/plist-gate grades it")
@@ -63,7 +75,9 @@ def _passes(state: dict) -> None:
     assert r.returncode == 0, r.stdout + r.stderr
 
 
-@then("ai.estate.scheduler carries AbandonProcessGroup, so dagster-daemon outlives scheduler-up")
+@then(
+    "ai.estate.scheduler carries AbandonProcessGroup, so dagster-daemon outlives scheduler-up"
+)
 def _scheduler(state: dict) -> None:
     tmpl = IDP / "launchd" / "ai.estate.scheduler.plist.tmpl"
     assert "AbandonProcessGroup" in tmpl.read_text()

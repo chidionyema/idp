@@ -13,6 +13,7 @@ file path, the commit and the tags.
 What is deliberately not here: the extracted text is never sent to the
 reply callable. The only thing that reaches the thread is the receipt line.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -97,7 +98,9 @@ def render_markdown(ex: Extraction, caption: str, source: str) -> str:
     return f"# {ex.title}\n\n{tags}\n\nsource: {source}\ncaption: {caption}\n\n{ex.markdown.rstrip()}\n"
 
 
-def receipt_line(relative_path: str, commit: str, tags: tuple[str, ...], tokens: int) -> str:
+def receipt_line(
+    relative_path: str, commit: str, tags: tuple[str, ...], tokens: int
+) -> str:
     short = commit[: int(ck.get("intake.hash_short_len"))]
     tag_text = ",".join(f"#{t}" for t in tags)
     return f"[✓] {ck.get('intake.receipt_tag')} | file:{relative_path} | hash:{short} | tags:{tag_text} | budget:-{tokens}"
@@ -125,7 +128,9 @@ def intake(
     if request.budget_remaining is not None:
         decision = ops.check(op_name, request.budget_remaining)
         if not decision.allowed:
-            raise IntakeRefused(f"{op_name} refused, {decision.reason}, remaining {decision.remaining_after}")
+            raise IntakeRefused(
+                f"{op_name} refused, {decision.reason}, remaining {decision.remaining_after}"
+            )
         tokens = decision.tokens
 
     # Step 2: extraction, silent.
@@ -136,7 +141,13 @@ def intake(
     target.write_text(render_markdown(ex, request.caption, request.source))
     rel = target.relative_to(repo).as_posix()
     _git(repo, "add", "--", rel)
-    _git(repo, "commit", "-q", "-m", f"{ck.get('intake.commit_prefix')}: {ex.title} ({rel})")
+    _git(
+        repo,
+        "commit",
+        "-q",
+        "-m",
+        f"{ck.get('intake.commit_prefix')}: {ex.title} ({rel})",
+    )
     commit = _git(repo, "rev-parse", "HEAD")
 
     # Step 4: one receipt line, appended to the signed chain first so the
@@ -181,5 +192,7 @@ def intake(
     )
     converse = str(ck.get("intake.converse_state_name"))
     if after == converse and before != converse:
-        raise PresenceViolation(f"presence moved {before} -> {after} during intake of {rel}")
+        raise PresenceViolation(
+            f"presence moved {before} -> {after} during intake of {rel}"
+        )
     return result

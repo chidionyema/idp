@@ -6,6 +6,7 @@ sovereign.cli's discovery loop (CONTRACT.md:
   menu [--json]    setChatMenuButton so the Telegram chat opens the cockpit
   tunnel           print the cloudflared named-tunnel commands (prints only)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -129,9 +130,13 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     p_cockpit.add_argument("--bind", default=None)
     p_cockpit.set_defaults(func=cmd_cockpit)
 
-    p_menu = subparsers.add_parser("menu", help="set the Telegram chat menu button to the cockpit")
+    p_menu = subparsers.add_parser(
+        "menu", help="set the Telegram chat menu button to the cockpit"
+    )
     p_menu.add_argument("--json", action="store_true")
     p_menu.set_defaults(func=cmd_menu)
 
-    p_tunnel = subparsers.add_parser("tunnel", help="print the cloudflared named-tunnel commands")
+    p_tunnel = subparsers.add_parser(
+        "tunnel", help="print the cloudflared named-tunnel commands"
+    )
     p_tunnel.set_defaults(func=cmd_tunnel)

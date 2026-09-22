@@ -54,10 +54,12 @@ TERMINAL_STATUSES = ("done", "stopped", "denied", "failed")
 # Config resolution (see module docstring)
 # --------------------------------------------------------------------------
 
+
 def _config():
     """Return sovereign.config module if importable, else None."""
     try:
         from sovereign import config  # type: ignore
+
         return config
     except Exception:
         return None
@@ -96,10 +98,15 @@ def _telegram_creds() -> tuple[Optional[str], Optional[str]]:
     chat = os.environ.get("TELEGRAM_HOME_CHANNEL")
     if token and chat:
         return token, chat
-    env_path = Path(os.environ.get(
-        "ESTATE_ENV", str(Path.home() / ck.get("otto.estate_env_relpath"))))
+    env_path = Path(
+        os.environ.get(
+            "ESTATE_ENV", str(Path.home() / ck.get("otto.estate_env_relpath"))
+        )
+    )
     parsed = _parse_env_file(env_path)
-    return token or parsed.get("TELEGRAM_BOT_TOKEN"), chat or parsed.get("TELEGRAM_HOME_CHANNEL")
+    return token or parsed.get("TELEGRAM_BOT_TOKEN"), chat or parsed.get(
+        "TELEGRAM_HOME_CHANNEL"
+    )
 
 
 def _public_url() -> Optional[str]:
@@ -119,6 +126,7 @@ def _otto_path() -> Path:
 # otto.json state
 # --------------------------------------------------------------------------
 
+
 def _load_otto() -> dict:
     path = _otto_path()
     if path.exists():
@@ -126,7 +134,13 @@ def _load_otto() -> dict:
             return json.loads(path.read_text())
         except (OSError, json.JSONDecodeError):
             logger.warning("otto.json unreadable, reinitializing")
-    otto = {"card_message_id": None, "sends": 0, "edits": 0, "lines": {}, "sessions_cache": {}}
+    otto = {
+        "card_message_id": None,
+        "sends": 0,
+        "edits": 0,
+        "lines": {},
+        "sessions_cache": {},
+    }
     adopt = os.environ.get("SB_ADOPT_CARD_ID")
     if adopt:
         try:
@@ -156,6 +170,7 @@ def reset() -> dict:
 # Telegram Bot API (sync httpx)
 # --------------------------------------------------------------------------
 
+
 def _post(method: str, payload: dict) -> dict:
     token, _ = _telegram_creds()
     if not token:
@@ -171,9 +186,12 @@ def _post(method: str, payload: dict) -> dict:
 
 
 def _send(chat_id: str, text: str, keyboard: Optional[list] = None) -> Optional[int]:
-    payload: dict[str, Any] = {"chat_id": chat_id, "text": text,
-                                "parse_mode": ck.get("telegram.parse_mode"),
-                                "disable_web_page_preview": True}
+    payload: dict[str, Any] = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": ck.get("telegram.parse_mode"),
+        "disable_web_page_preview": True,
+    }
     if keyboard:
         payload["reply_markup"] = {"inline_keyboard": keyboard}
     data = _post("sendMessage", payload)
@@ -183,10 +201,16 @@ def _send(chat_id: str, text: str, keyboard: Optional[list] = None) -> Optional[
     return None
 
 
-def _edit(chat_id: str, message_id: int, text: str, keyboard: Optional[list] = None) -> bool:
-    payload: dict[str, Any] = {"chat_id": chat_id, "message_id": message_id, "text": text,
-                                "parse_mode": ck.get("telegram.parse_mode"),
-                                "disable_web_page_preview": True}
+def _edit(
+    chat_id: str, message_id: int, text: str, keyboard: Optional[list] = None
+) -> bool:
+    payload: dict[str, Any] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": ck.get("telegram.parse_mode"),
+        "disable_web_page_preview": True,
+    }
     if keyboard:
         payload["reply_markup"] = {"inline_keyboard": keyboard}
     data = _post("editMessageText", payload)
@@ -201,12 +225,16 @@ def _edit(chat_id: str, message_id: int, text: str, keyboard: Optional[list] = N
 
 def _pin(chat_id: str, message_id: int) -> None:
     _post("unpinAllChatMessages", {"chat_id": chat_id})
-    _post("pinChatMessage", {"chat_id": chat_id, "message_id": message_id, "disable_notification": True})
+    _post(
+        "pinChatMessage",
+        {"chat_id": chat_id, "message_id": message_id, "disable_notification": True},
+    )
 
 
 # --------------------------------------------------------------------------
 # Engine client bridge (async API, called sync)
 # --------------------------------------------------------------------------
+
 
 def _run_async(coro):
     try:
@@ -222,6 +250,7 @@ def _list_sessions(otto: dict) -> list[dict]:
     module is independently testable before sovereign/engine exists."""
     try:
         from sovereign.engine import client as engine_client  # type: ignore
+
         sessions = _run_async(engine_client.list_sessions())
         if sessions is not None:
             return sessions
@@ -234,12 +263,15 @@ def _list_sessions(otto: dict) -> list[dict]:
 # Rendering
 # --------------------------------------------------------------------------
 
+
 def _hhmm(ts: Any) -> str:
     fmt = ck.get("otto.time_format")
     if not ts:
         return datetime.now().strftime(fmt)
     try:
-        return datetime.fromisoformat(str(ts).replace("Z", ck.get("otto.iso_utc_offset"))).strftime(fmt)
+        return datetime.fromisoformat(
+            str(ts).replace("Z", ck.get("otto.iso_utc_offset"))
+        ).strftime(fmt)
     except ValueError:
         return datetime.now().strftime(fmt)
 
@@ -249,7 +281,9 @@ def _is_done_today(ts: Any) -> bool:
     if not ts:
         return False
     try:
-        when = datetime.fromisoformat(str(ts).replace("Z", ck.get("otto.iso_utc_offset"))).replace(tzinfo=None)
+        when = datetime.fromisoformat(
+            str(ts).replace("Z", ck.get("otto.iso_utc_offset"))
+        ).replace(tzinfo=None)
     except ValueError:
         return False
     window = timedelta(hours=ck.get("otto.done_today_window_hours"))
@@ -258,21 +292,31 @@ def _is_done_today(ts: Any) -> bool:
 
 def _line_text(s: dict) -> str:
     repo = s.get("repo") or "·"
-    task = str(s.get("task") or "")[:ck.get("otto.task_max_chars")]
+    task = str(s.get("task") or "")[: ck.get("otto.task_max_chars")]
     status = s.get("status")
     time = _hhmm(s.get("updated_at"))
     if status == "running":
-        return ck.get("otto.line_running_template").format(repo=repo, task=task, step=s.get("step", "?"))
+        return ck.get("otto.line_running_template").format(
+            repo=repo, task=task, step=s.get("step", "?")
+        )
     if status == "waiting":
-        return ck.get("otto.line_waiting_template").format(repo=repo, task=task, asking=s.get("asking") or "?")
+        return ck.get("otto.line_waiting_template").format(
+            repo=repo, task=task, asking=s.get("asking") or "?"
+        )
     if status == "done":
         return ck.get("otto.line_done_template").format(repo=repo, task=task, time=time)
     if status == "stopped":
-        return ck.get("otto.line_stopped_template").format(repo=repo, task=task, time=time)
+        return ck.get("otto.line_stopped_template").format(
+            repo=repo, task=task, time=time
+        )
     if status == "denied":
-        return ck.get("otto.line_denied_template").format(repo=repo, task=task, time=time)
+        return ck.get("otto.line_denied_template").format(
+            repo=repo, task=task, time=time
+        )
     if status == "failed":
-        return ck.get("otto.line_failed_template").format(repo=repo, task=task, time=time)
+        return ck.get("otto.line_failed_template").format(
+            repo=repo, task=task, time=time
+        )
     return ck.get("otto.line_fallback_template").format(repo=repo, task=task)
 
 
@@ -280,13 +324,17 @@ def _render_card(sessions: list[dict]) -> tuple[str, Optional[list]]:
     now = datetime.now().strftime(ck.get("otto.time_format"))
     running = [s for s in sessions if s.get("status") == "running"]
     waiting = [s for s in sessions if s.get("status") == "waiting"]
-    done_today = [s for s in sessions
-                  if s.get("status") in TERMINAL_STATUSES and _is_done_today(s.get("updated_at"))]
+    done_today = [
+        s
+        for s in sessions
+        if s.get("status") in TERMINAL_STATUSES and _is_done_today(s.get("updated_at"))
+    ]
 
     lines = [
         ck.get("otto.card_header_template").format(time=now),
         ck.get("otto.card_counts_template").format(
-            running=len(running), waiting=len(waiting), done=len(done_today)),
+            running=len(running), waiting=len(waiting), done=len(done_today)
+        ),
     ]
     for s in running + waiting:
         lines.append(_line_text(s))
@@ -316,6 +364,7 @@ def _render_card(sessions: list[dict]) -> tuple[str, Optional[list]]:
 # --------------------------------------------------------------------------
 # Public API
 # --------------------------------------------------------------------------
+
 
 def on_change(state: dict) -> dict:
     """Handle one session's state change. Never raises.

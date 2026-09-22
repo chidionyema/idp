@@ -38,6 +38,7 @@ been shown to permit (LAW 38). `scan_heads()` is the sweep: it reports
 every existing head that dangles, so the present is counted and not only
 the future guarded.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -135,7 +136,9 @@ def read_node(node_hash: str, dag_dir: Path | None = None) -> dict[str, Any] | N
         return None
 
 
-def walk(node_hash: str, dag_dir: Path | None = None) -> Iterator[tuple[str, dict[str, Any]]]:
+def walk(
+    node_hash: str, dag_dir: Path | None = None
+) -> Iterator[tuple[str, dict[str, Any]]]:
     """Yields (hash, body) from `node_hash` back toward genesis. Stops at a
     missing node, a hash that does not match its own filename, a cycle, or
     config.DAG_MAX_WALK_NODES -- fails closed, never spins."""
@@ -165,7 +168,9 @@ def verify(node_hash: str, dag_dir: Path | None = None) -> dict[str, Any]:
             parent = str(body.get("parent", GENESIS))
         count += 1
         last_parent = str(body.get("parent", GENESIS))
-    verified = bool(node_hash) and (node_hash == GENESIS or (count > 0 and last_parent == GENESIS))
+    verified = bool(node_hash) and (
+        node_hash == GENESIS or (count > 0 and last_parent == GENESIS)
+    )
     return {"root": node_hash, "parent": parent, "nodes": count, "verified": verified}
 
 
@@ -197,8 +202,12 @@ def _is_inside(child: Path, parent: Path) -> bool:
         return False
 
 
-def write_head(name: str, node_hash: str, dag_dir: Path | None = None,
-               extra: dict[str, Any] | None = None) -> Path:
+def write_head(
+    name: str,
+    node_hash: str,
+    dag_dir: Path | None = None,
+    extra: dict[str, Any] | None = None,
+) -> Path:
     """The only writer of a branch pointer in this estate.
 
     Refuses a dag_dir that is neither the configured DAG root nor under
@@ -236,7 +245,9 @@ def list_heads(d: Path | None = None) -> list[str]:
     d = d or heads_dir()
     if not d.is_dir():
         return []
-    return sorted(p.name for p in d.iterdir() if p.is_file() and not p.name.endswith(".tmp"))
+    return sorted(
+        p.name for p in d.iterdir() if p.is_file() and not p.name.endswith(".tmp")
+    )
 
 
 def scan_dirs() -> list[Path]:

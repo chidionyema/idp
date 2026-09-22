@@ -3,6 +3,7 @@ because the Secure Enclave key handle lived in the login keychain, and every ad 
 helper was a new identity to the keychain ACL, so macOS raised a consent dialog nobody was at the
 screen to click. Rule (rung 4): the key handle is a 0600 file under $ESTATE_HOME/sovereign, named by
 config, and the helper is told where it is on every call, so no keychain and no dialog is involved."""
+
 from pathlib import Path
 
 
@@ -13,7 +14,9 @@ from sovereign.trust import config_keys as ck
 def test_key_handle_path_is_config_named_under_estate_home(monkeypatch, tmp_path):
     monkeypatch.setenv("ESTATE_HOME", str(tmp_path))
     p = anchor._enclave_key_path()
-    assert p == tmp_path / ck.get("trust.sovereign_dirname") / ck.get("trust.enclave_key_filename")
+    assert p == tmp_path / ck.get("trust.sovereign_dirname") / ck.get(
+        "trust.enclave_key_filename"
+    )
     assert p.name == "enclave.key"
 
 
@@ -31,7 +34,9 @@ def test_helper_is_told_the_key_file_on_every_call(monkeypatch, tmp_path):
     assert anchor._run_helper(["--pubkey"], timeout=1) == {"ok": True}
     assert seen["cmd"][0] == str(helper)
     assert seen["env"]["SOVEREIGN_ENCLAVE_KEY_FILE"] == str(anchor._enclave_key_path())
-    assert "PATH" in seen["env"], "the helper keeps the caller's environment, only the key file is added"
+    assert "PATH" in seen["env"], (
+        "the helper keeps the caller's environment, only the key file is added"
+    )
 
 
 def test_helper_source_never_touches_the_keychain():

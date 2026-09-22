@@ -4,6 +4,7 @@ operations are allowed; write and git operations require a receipt
 commit; a destructive pattern (attach.destructive_patterns) requires
 quorum and a hardware signature.
 """
+
 from __future__ import annotations
 
 from typing import Literal
@@ -48,7 +49,7 @@ def classify(command: str) -> Classification:
             return "destructive"
     first_word = stripped.split(" ", 1)[0] if stripped else ""
     if first_word == "git":
-        rest = stripped[len("git"):].strip()
+        rest = stripped[len("git") :].strip()
         verb = rest.split(" ", 1)[0] if rest else ""
         if verb in ck.get("attach.git_write_verbs"):
             return "git_write"

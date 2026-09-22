@@ -6,6 +6,7 @@ command function. The two fakes sit at true external boundaries:
 presence_helper.swift (Touch ID and the Secure Enclave) and the Temporal
 signal the approval would send to a running session.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,12 +36,19 @@ def _fake_enclave(monkeypatch: pytest.MonkeyPatch) -> None:
     def helper(args: list[str], timeout: float) -> dict[str, Any] | None:
         verb = args[0]
         if verb == "--sign":
-            return {"ok": True, "sig": hmac.new(FAKE_ENCLAVE_KEY, args[1].encode(), hashlib.sha256).hexdigest()}
+            return {
+                "ok": True,
+                "sig": hmac.new(
+                    FAKE_ENCLAVE_KEY, args[1].encode(), hashlib.sha256
+                ).hexdigest(),
+            }
         if verb == "--pubkey":
             return {"ok": True, "pubkey": FAKE_PUBKEY}
         if verb == "--verify-sig":
             digest, sig, pubkey = args[1], args[2], args[3]
-            expected = hmac.new(FAKE_ENCLAVE_KEY, digest.encode(), hashlib.sha256).hexdigest()
+            expected = hmac.new(
+                FAKE_ENCLAVE_KEY, digest.encode(), hashlib.sha256
+            ).hexdigest()
             return {"ok": pubkey == FAKE_PUBKEY and hmac.compare_digest(expected, sig)}
         return None
 
@@ -56,15 +64,23 @@ def _fake_enclave(monkeypatch: pytest.MonkeyPatch) -> None:
 def _fake_signal(monkeypatch: pytest.MonkeyPatch, context: dict[str, Any]) -> None:
     """The Temporal signal is the session continuing; record it."""
 
-    async def signal(session_id: str, kind: str, by: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        context.setdefault("signals", []).append({"session_id": session_id, "kind": kind, "by": by, **kwargs})
+    async def signal(
+        session_id: str, kind: str, by: str, *args: Any, **kwargs: Any
+    ) -> dict[str, Any]:
+        context.setdefault("signals", []).append(
+            {"session_id": session_id, "kind": kind, "by": by, **kwargs}
+        )
         return {"session_id": session_id, "signal": kind}
 
     monkeypatch.setattr(cli_mod.engine_client, "signal", signal)
 
 
-def _approve_in_process(session_id: str, sign: bool, signature: str | None = None) -> int:
-    ns = argparse.Namespace(session_id=session_id, by="founder", sign=sign, signature=signature, json=True)
+def _approve_in_process(
+    session_id: str, sign: bool, signature: str | None = None
+) -> int:
+    ns = argparse.Namespace(
+        session_id=session_id, by="founder", sign=sign, signature=signature, json=True
+    )
     return cli_mod.cmd_approve(ns)
 
 
@@ -84,7 +100,11 @@ def _session_asks(config, context: dict[str, Any], command: str) -> None:
     context["interventions_before"] = len(interventions_mod.read_all())
 
 
-@when(parsers.parse('I run "bin/sb approve <session_id> --by founder" without a signature'))
+@when(
+    parsers.parse(
+        'I run "bin/sb approve <session_id> --by founder" without a signature'
+    )
+)
 def _run_unsigned(sb, context: dict[str, Any]) -> None:
     result = sb("approve", context["session_id"], "--by", "founder")
     context["refusal"] = result.stderr.strip()
@@ -99,7 +119,9 @@ def _refused(config, context: dict[str, Any], text: str) -> None:
 
 
 @when("the approval is signed with Touch ID")
-def _signed_with_touch_id(monkeypatch: pytest.MonkeyPatch, context: dict[str, Any]) -> None:
+def _signed_with_touch_id(
+    monkeypatch: pytest.MonkeyPatch, context: dict[str, Any]
+) -> None:
     _fake_enclave(monkeypatch)
     _fake_signal(monkeypatch, context)
     assert anchor_mod.HardwareTrustAnchor().backend == "secure_enclave"
@@ -158,7 +180,9 @@ def _replay_refused(context: dict[str, Any], text: str) -> None:
 
 
 @given("the Secure Enclave is unavailable")
-def _no_enclave(monkeypatch: pytest.MonkeyPatch, config, context: dict[str, Any]) -> None:
+def _no_enclave(
+    monkeypatch: pytest.MonkeyPatch, config, context: dict[str, Any]
+) -> None:
     monkeypatch.setenv("SB_TRUST_BACKEND", "software_key")
     assert anchor_mod.HardwareTrustAnchor().backend != "secure_enclave"
     _fake_signal(monkeypatch, context)

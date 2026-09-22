@@ -15,6 +15,7 @@ from Ghost into Converse. It is held in the types, not in a check:
 Pure data, no disk, no clock. The side effects (write the state file for
 the menu bar dot, emit a haptic pattern) live in router.py and haptic.py.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

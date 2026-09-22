@@ -19,6 +19,7 @@ Two axes, both read from config so neither is a literal (LAW 46):
 `check()` returns a Decision, never a bool. A bool loses the reason, and
 the reason is what a receipt has to carry.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -80,9 +81,13 @@ def check(name: str, budget_remaining: int) -> Decision:
     spec = classify(name)
     remaining = int(budget_remaining)
     if remaining <= 0:
-        return Decision(spec.name, False, REFUSE_BUDGET, spec.tokens, remaining, "budget")
+        return Decision(
+            spec.name, False, REFUSE_BUDGET, spec.tokens, remaining, "budget"
+        )
     if spec.tokens > remaining:
-        return Decision(spec.name, False, REFUSE_BUDGET, spec.tokens, remaining, "budget")
+        return Decision(
+            spec.name, False, REFUSE_BUDGET, spec.tokens, remaining, "budget"
+        )
     return Decision(spec.name, True, ALLOW, spec.tokens, remaining - spec.tokens, "")
 
 

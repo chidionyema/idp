@@ -2,6 +2,7 @@
     ESTATE_HOME=<scratch> PYTHONPATH=<idp> \
       sovereign/.venv/bin/python -m unittest sovereign.trust.test_trust -v
 """
+
 from __future__ import annotations
 
 import unittest
@@ -54,7 +55,9 @@ class HardwareTrustAnchorTest(unittest.TestCase):
     def test_unknown_backend_falls_back_to_software_key(self) -> None:
         self.assertEqual(HardwareTrustAnchor(backend="quantum").backend, "software_key")
 
-    def test_sign_returns_a_nonempty_signature_and_the_backend_that_produced_it(self) -> None:
+    def test_sign_returns_a_nonempty_signature_and_the_backend_that_produced_it(
+        self,
+    ) -> None:
         # Encoding differs by backend (software_key: hex HMAC; secure_enclave:
         # base64 CryptoKit signature) so only non-emptiness and backend
         # membership are asserted here, not a fixed alphabet.

@@ -36,6 +36,7 @@ appends one receipt of kind "sidecar_degraded" recording how many writes
 were queued while the DAG was unwritable, so the gap is itself an
 auditable event rather than a silent hole in the chain.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -83,7 +84,11 @@ def _trigger_ddl(table: str) -> list[str]:
 
 
 def _trigger_names(table: str) -> list[str]:
-    return [f"_sb_sidecar_ins_{table}", f"_sb_sidecar_upd_{table}", f"_sb_sidecar_del_{table}"]
+    return [
+        f"_sb_sidecar_ins_{table}",
+        f"_sb_sidecar_upd_{table}",
+        f"_sb_sidecar_del_{table}",
+    ]
 
 
 class DBSidecar:
@@ -148,7 +153,8 @@ class DBSidecar:
         after the legacy write already committed."""
         with self._lock:
             rows = self._conn.execute(
-                "SELECT seq, op, rid FROM _sb_sidecar_log WHERE tbl = ? ORDER BY seq", (self._table,)
+                "SELECT seq, op, rid FROM _sb_sidecar_log WHERE tbl = ? ORDER BY seq",
+                (self._table,),
             ).fetchall()
             if not rows:
                 return 0
@@ -156,7 +162,9 @@ class DBSidecar:
             try:
                 for seq, op, rid in rows:
                     self._write_node(op, rid)
-                    self._conn.execute("DELETE FROM _sb_sidecar_log WHERE seq = ?", (seq,))
+                    self._conn.execute(
+                        "DELETE FROM _sb_sidecar_log WHERE seq = ?", (seq,)
+                    )
                     self._conn.commit()
                     processed += 1
             except OSError:
@@ -164,7 +172,11 @@ class DBSidecar:
                 return processed
             if self.missed:
                 receipts_mod.append(
-                    {"kind": "sidecar_degraded", "table": self._table, "missed": self.missed},
+                    {
+                        "kind": "sidecar_degraded",
+                        "table": self._table,
+                        "missed": self.missed,
+                    },
                     self._receipts_path,
                     self._receipts_head_path,
                 )
@@ -180,7 +192,9 @@ class DBSidecar:
         return had_missed and self.missed == 0
 
     def _row(self, rowid: int) -> dict[str, Any] | None:
-        cur = self._conn.execute(f"SELECT * FROM {self._table} WHERE rowid = ?", (rowid,))
+        cur = self._conn.execute(
+            f"SELECT * FROM {self._table} WHERE rowid = ?", (rowid,)
+        )
         row = cur.fetchone()
         if row is None:
             return None
@@ -207,10 +221,20 @@ class DBSidecar:
         }
         node_hash = hashlib.sha256(config.canonical_json(body)).hexdigest()
         self._dag_dir.mkdir(parents=True, exist_ok=True)
-        (self._dag_dir / f"{node_hash}.json").write_text(json.dumps(body, sort_keys=True))
-        (self._dag_dir / config.SIDECAR_HEAD_FILENAME).write_text(json.dumps({"hash": node_hash}, sort_keys=True))
+        (self._dag_dir / f"{node_hash}.json").write_text(
+            json.dumps(body, sort_keys=True)
+        )
+        (self._dag_dir / config.SIDECAR_HEAD_FILENAME).write_text(
+            json.dumps({"hash": node_hash}, sort_keys=True)
+        )
         receipts_mod.append(
-            {"kind": "sidecar_write", "table": self._table, "node_hash": node_hash, "op": op, "rowid": rowid},
+            {
+                "kind": "sidecar_write",
+                "table": self._table,
+                "node_hash": node_hash,
+                "op": op,
+                "rowid": rowid,
+            },
             self._receipts_path,
             self._receipts_head_path,
         )
@@ -235,7 +259,12 @@ class DBSidecar:
             # is how the original defect survived, so the refusal is a
             # line in the signed chain.
             receipts_mod.append(
-                {"kind": "head_refused", "table": self._table, "node_hash": node_hash, "text": str(exc)},
+                {
+                    "kind": "head_refused",
+                    "table": self._table,
+                    "node_hash": node_hash,
+                    "text": str(exc),
+                },
                 self._receipts_path,
                 self._receipts_head_path,
             )
@@ -243,7 +272,9 @@ class DBSidecar:
             pass
 
 
-def attach(conn: sqlite3.Connection, table: str, dag_dir: Path | None = None) -> DBSidecar:
+def attach(
+    conn: sqlite3.Connection, table: str, dag_dir: Path | None = None
+) -> DBSidecar:
     """The one entry point: `attach(conn, "episodes")` on an already-open
     legacy connection. Adds a shadow log table and three triggers to the
     database itself (not the connection), so it observes writes from any

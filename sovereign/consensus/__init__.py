@@ -8,6 +8,7 @@ does policy allow it anyway". Same English word, two unrelated questions,
 so they are two modules and two subcommands -- folding them together
 would have made `sb consensus --json` mean two things depending on flags.
 """
+
 from __future__ import annotations
 
 from sovereign.consensus.models import normalize_tool_call

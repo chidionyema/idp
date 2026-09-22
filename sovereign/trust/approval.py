@@ -29,6 +29,7 @@ receipt carries attestation:fallback so the log says which root of trust
 was standing when the act happened. One signer alone is refused exactly
 like no signer at all.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -117,7 +118,9 @@ def challenge(session_id: str, action: str, by: str) -> dict[str, Any]:
     return envelope
 
 
-def sign(envelope: dict[str, Any], trust_anchor: HardwareTrustAnchor | None = None) -> dict[str, Any]:
+def sign(
+    envelope: dict[str, Any], trust_anchor: HardwareTrustAnchor | None = None
+) -> dict[str, Any]:
     """Sign a challenge with the hardware root of trust. On macOS with an
     enclave this prompts for Touch ID inside presence_helper.swift and the
     private key never leaves it. Returns the envelope with `sig`,
@@ -133,16 +136,21 @@ def sign(envelope: dict[str, Any], trust_anchor: HardwareTrustAnchor | None = No
     # asked for. software_key is a 0600 file, not hardware, and a receipt
     # that called it hardware would be the one lie the whole chain exists
     # to prevent.
-    out["attestation"] = str(ck.get(
-        "trust.attestation_hardware_label" if backend_used != "software_key"
-        else "trust.attestation_fallback_label"
-    ))
+    out["attestation"] = str(
+        ck.get(
+            "trust.attestation_hardware_label"
+            if backend_used != "software_key"
+            else "trust.attestation_fallback_label"
+        )
+    )
     if backend_used == "secure_enclave":
         trust_anchor.enroll()
     return out
 
 
-def sign_fallback(envelope: dict[str, Any], signer_ids: list[str] | None = None) -> dict[str, Any]:
+def sign_fallback(
+    envelope: dict[str, Any], signer_ids: list[str] | None = None
+) -> dict[str, Any]:
     """cp29 scenario 3: the enclave is unavailable, so the configured
     multi-signature set signs instead. Returns the envelope with a
     `signers` map and attestation:fallback."""
@@ -173,7 +181,11 @@ def _fallback_quorum(envelope: dict[str, Any], digest: str) -> tuple[int, list[s
     signers = envelope.get("signers") or {}
     if not isinstance(signers, dict):
         return 0, []
-    good = [sid for sid, sig in signers.items() if anchor_mod.verify_signer(str(sid), digest, str(sig))]
+    good = [
+        sid
+        for sid, sig in signers.items()
+        if anchor_mod.verify_signer(str(sid), digest, str(sig))
+    ]
     return len(good), sorted(good)
 
 
@@ -224,10 +236,13 @@ def verify(
         return {
             "ok": True,
             "reason": None,
-            "attestation": str(ck.get(
-                "trust.attestation_hardware_label" if backend != "software_key"
-                else "trust.attestation_fallback_label"
-            )),
+            "attestation": str(
+                ck.get(
+                    "trust.attestation_hardware_label"
+                    if backend != "software_key"
+                    else "trust.attestation_fallback_label"
+                )
+            ),
             "counter": counter,
             "signers": [],
         }

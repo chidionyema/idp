@@ -22,6 +22,7 @@ command) and one cron schedule. What the plists could not do lives here:
 Nothing here names a machine: paths in schedule.yml use ~ and are expanded at
 run time (LAW 46).
 """
+
 from __future__ import annotations
 
 import json
@@ -74,8 +75,12 @@ TIMEZONE = os.environ.get("ESTATE_TZ", "Europe/London")
 # still gets no job, and on the Mac every `runs_on: mac` row is built exactly as before.
 # The platform decides the default so an instance needs no configuration to know where it is;
 # ESTATE_RUNNER overrides it for a test or a second Linux runner.
-RUNNER = os.environ.get("ESTATE_RUNNER") or ("mac" if sys.platform == "darwin" else "cluster")
-SCHEDULE_FILE = Path(os.environ.get("ESTATE_SCHEDULE", IDP / "scheduler" / "schedule.yml"))
+RUNNER = os.environ.get("ESTATE_RUNNER") or (
+    "mac" if sys.platform == "darwin" else "cluster"
+)
+SCHEDULE_FILE = Path(
+    os.environ.get("ESTATE_SCHEDULE", IDP / "scheduler" / "schedule.yml")
+)
 FAILURE_LOG = IDP / "run" / "scheduler-failures.jsonl"
 BREAKER_TRIP = 3
 
@@ -132,14 +137,18 @@ def load1() -> float:
     return os.getloadavg()[0]
 
 
-def load_gate(label: str, spec: dict, current: float, cores: int = CORES) -> SkipReason | None:
+def load_gate(
+    label: str, spec: dict, current: float, cores: int = CORES
+) -> SkipReason | None:
     why = load_verdict(label, spec, current, cores)
     return SkipReason(why) if why else None
 
 
 def on_battery() -> bool:
     try:
-        out = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True, timeout=5).stdout
+        out = subprocess.run(
+            ["pmset", "-g", "batt"], capture_output=True, text=True, timeout=5
+        ).stdout
     except Exception:  # noqa: BLE001 - pmset missing means not a Mac on battery
         return False
     return "discharging" in out
@@ -153,13 +162,19 @@ def spec_hash(spec: dict) -> str:
     version of the row it executed."""
     import hashlib
 
-    return hashlib.sha256(json.dumps(spec, sort_keys=True, default=str).encode()).hexdigest()[:12]
+    return hashlib.sha256(
+        json.dumps(spec, sort_keys=True, default=str).encode()
+    ).hexdigest()[:12]
 
 
-def _recent_statuses(instance, job_name: str, n: int, tags: dict | None = None) -> list[DagsterRunStatus]:
+def _recent_statuses(
+    instance, job_name: str, n: int, tags: dict | None = None
+) -> list[DagsterRunStatus]:
     from dagster import RunsFilter
 
-    records = instance.get_run_records(RunsFilter(job_name=job_name, tags=tags or None), limit=n)
+    records = instance.get_run_records(
+        RunsFilter(job_name=job_name, tags=tags or None), limit=n
+    )
     return [r.dagster_run.status for r in records]
 
 
@@ -175,7 +190,9 @@ def circuit_open(instance, job_name: str, current_hash: str | None = None) -> bo
     """
     tags = {SPEC_HASH_TAG: current_hash} if current_hash else None
     recent = _recent_statuses(instance, job_name, BREAKER_TRIP, tags)
-    return len(recent) == BREAKER_TRIP and all(s == DagsterRunStatus.FAILURE for s in recent)
+    return len(recent) == BREAKER_TRIP and all(
+        s == DagsterRunStatus.FAILURE for s in recent
+    )
 
 
 def exit_is_ok(spec: dict, returncode: int) -> bool:
@@ -203,10 +220,17 @@ def make_op(label: str, spec: dict):
         t0 = time.time()
         try:
             proc = subprocess.run(
-                cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=int(spec.get("timeout_s", 1800))
+                cmd,
+                cwd=cwd,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=int(spec.get("timeout_s", 1800)),
             )
         except subprocess.TimeoutExpired as e:
-            raise Failure(f"{label}: timed out after {spec.get('timeout_s', 1800)}s") from e
+            raise Failure(
+                f"{label}: timed out after {spec.get('timeout_s', 1800)}s"
+            ) from e
         took = round(time.time() - t0, 1)
         if proc.stdout:
             context.log.info(proc.stdout[-20000:])
@@ -297,7 +321,9 @@ def make_job(label: str, spec: dict):
 
     tags = {
         "estate/label": label,
-        "estate/owner": label.split(".")[1] if label.count(".") >= 2 else label.split(".")[0],
+        "estate/owner": label.split(".")[1]
+        if label.count(".") >= 2
+        else label.split(".")[0],
         "dagster/max_runtime": str(int(spec.get("timeout_s", 1800)) + 60),
         "dagster/priority": str(int(spec.get("priority", 0))),
         SPEC_HASH_TAG: spec_hash(spec),
@@ -329,8 +355,9 @@ def make_schedule(label: str, spec: dict, the_job):
         cron_schedule=spec["cron"],
         job=the_job,
         name=f"{_job_name(label)}_schedule",
-        description=(f"{spec['cron']} in {TIMEZONE}. {text} "
-                     f"Skipped when {_skip_note(spec)}."),
+        description=(
+            f"{spec['cron']} in {TIMEZONE}. {text} Skipped when {_skip_note(spec)}."
+        ),
         execution_timezone=TIMEZONE,
         default_status=DefaultScheduleStatus.RUNNING,
     )
@@ -341,7 +368,9 @@ def make_schedule(label: str, spec: dict, the_job):
         if battery and on_battery():
             return SkipReason(f"{label}: on battery")
         if circuit_open(context.instance, the_job.name, spec_hash(spec)):
-            return SkipReason(f"{label}: circuit open after {BREAKER_TRIP} failures of this row; edit the row or run it by hand to reset")
+            return SkipReason(
+                f"{label}: circuit open after {BREAKER_TRIP} failures of this row; edit the row or run it by hand to reset"
+            )
         return RunRequest(run_key=None)
 
     return _sched
@@ -363,7 +392,9 @@ def make_dependency_sensor(label: str, spec: dict, the_job, upstream_job):
     return _after
 
 
-@run_failure_sensor(name="estate_failure_log", default_status=DefaultSensorStatus.RUNNING)
+@run_failure_sensor(
+    name="estate_failure_log", default_status=DefaultSensorStatus.RUNNING
+)
 def estate_failure_log(context):
     FAILURE_LOG.parent.mkdir(parents=True, exist_ok=True)
     rec = {
@@ -408,7 +439,9 @@ def build() -> Definitions:
                         f"{RUNNER!r}. A dependency cannot cross runners -- move one of them, "
                         f"or give {label} a cron of its own."
                     )
-                raise ValueError(f"{label}: after={up!r} is not a job in {SCHEDULE_FILE}")
+                raise ValueError(
+                    f"{label}: after={up!r} is not a job in {SCHEDULE_FILE}"
+                )
             sensors.append(make_dependency_sensor(label, s, jobs[label], jobs[up]))
     # holmes_investigation and gitops_drift_job are not schedule.yml rows: they run
     # no command and are started by their sensors, never by a clock.

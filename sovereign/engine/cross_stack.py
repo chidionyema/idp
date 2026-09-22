@@ -21,6 +21,7 @@ second copy invented for this checkpoint:
   check requires -- the policy governing what the AI may sign for
   itself versus what needs the founder physically present.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -43,7 +44,9 @@ def code_root(repo_dir: Path | None = None) -> str | None:
         proc = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=str(repo_dir) if repo_dir else None,
-            capture_output=True, text=True, timeout=config.CROSS_STACK_GIT_TIMEOUT_S,
+            capture_output=True,
+            text=True,
+            timeout=config.CROSS_STACK_GIT_TIMEOUT_S,
         )
     except (OSError, subprocess.SubprocessError):
         return None

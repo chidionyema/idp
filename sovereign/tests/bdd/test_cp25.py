@@ -5,6 +5,7 @@ it is the one thing stubbed here, through the `vision=` seam the pipeline
 exposes. The git repository, the receipt chain and the presence gate run
 for real against the temporary estate.
 """
+
 from __future__ import annotations
 
 import json
@@ -46,12 +47,14 @@ def vision_stub(context: dict[str, Any]):
     def _call(model: str, messages: list[dict[str, Any]]) -> str:
         context["vision_model_used"] = model
         context["vision_messages"] = messages
-        return json.dumps({
-            "markdown": f"## Core arguments\n\n{_EXTRACTED_TEXT}",
-            "slug": "Governance Before Autonomy",
-            "tags": ["ml", "governance", "agents"],
-            "title": "Governance before autonomy",
-        })
+        return json.dumps(
+            {
+                "markdown": f"## Core arguments\n\n{_EXTRACTED_TEXT}",
+                "slug": "Governance Before Autonomy",
+                "tags": ["ml", "governance", "agents"],
+                "title": "Governance before autonomy",
+            }
+        )
 
     return _call
 
@@ -63,7 +66,9 @@ def _photo(caption: str, context: dict[str, Any]) -> None:
     context["chat_id"] = "telegram-thread-1"
 
 
-@when("hermes routes it to the vision model through LiteLLM with the strict JSON prompt")
+@when(
+    "hermes routes it to the vision model through LiteLLM with the strict JSON prompt"
+)
 def _route(
     context: dict[str, Any],
     scratch_repo: Path,
@@ -76,8 +81,13 @@ def _route(
     monkeypatch.setenv("SB_VISION_MODEL", "estate-vision-alias")
     presence = GhostPresence("converse")  # the request came from a Converse thread
     result = from_phone(
-        context["image"], context["caption"], scratch_repo, context["chat_id"],
-        reply=messages.send, presence=presence, vision=vision_stub,
+        context["image"],
+        context["caption"],
+        scratch_repo,
+        context["chat_id"],
+        reply=messages.send,
+        presence=presence,
+        vision=vision_stub,
     )
     context["result"] = result
     context["presence"] = presence
@@ -89,21 +99,41 @@ def _route(
 @then("a file docs/<slug>.md is committed in the knowledge repo")
 def _committed(context: dict[str, Any], scratch_repo: Path) -> None:
     result = context["result"]
-    assert result.relative_path.startswith("docs/") and result.relative_path.endswith(".md")
+    assert result.relative_path.startswith("docs/") and result.relative_path.endswith(
+        ".md"
+    )
     assert result.path.exists()
     assert _EXTRACTED_TEXT in result.path.read_text()
-    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=scratch_repo, capture_output=True, text=True, check=True)
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=scratch_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     assert head.stdout.strip() == result.commit
     shown = subprocess.run(
-        ["git", "show", "--stat", "--format=%s", "HEAD"], cwd=scratch_repo, capture_output=True, text=True, check=True
+        ["git", "show", "--stat", "--format=%s", "HEAD"],
+        cwd=scratch_repo,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     assert result.relative_path in shown
-    clean = subprocess.run(["git", "status", "--porcelain"], cwd=scratch_repo, capture_output=True, text=True, check=True)
+    clean = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=scratch_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     assert clean.stdout == "", f"working tree not clean after intake: {clean.stdout!r}"
 
 
 @then("the reply in the thread is exactly one receipt line")
-def _one_line(context: dict[str, Any], messages: MessageSink, receipts_path: Path) -> None:
+def _one_line(
+    context: dict[str, Any], messages: MessageSink, receipts_path: Path
+) -> None:
     from sovereign.engine import receipts
 
     msg = messages.assert_exactly_one()
@@ -120,7 +150,9 @@ def _one_line(context: dict[str, Any], messages: MessageSink, receipts_path: Pat
     assert rows[0]["kind"] == "doc_commit" and rows[0]["commit"] == result.commit
     assert receipts.verify(receipts_path)["ok"] is True
     # R4: intake left presence where it found it and did not move it to Converse itself.
-    assert result.presence_before == result.presence_after == context["presence"].current()
+    assert (
+        result.presence_before == result.presence_after == context["presence"].current()
+    )
 
 
 @then("no extracted text is echoed to the chat")
@@ -141,7 +173,10 @@ def _run(command: str, context: dict[str, Any]) -> None:
     outputs = []
     for target in (argv[-1], "sovereign/intake", "sovereign/cli.py"):
         proc = subprocess.run(
-            ["grep", "-rnI", "--exclude-dir=__pycache__", pattern, target], cwd=REPO_ROOT, capture_output=True, text=True
+            ["grep", "-rnI", "--exclude-dir=__pycache__", pattern, target],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
         )
         outputs.append(proc.stdout)
     context["grep_output"] = "".join(outputs)

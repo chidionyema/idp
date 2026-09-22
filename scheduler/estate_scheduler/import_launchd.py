@@ -3,6 +3,7 @@
 Daemons (KeepAlive) and vendor jobs stay on launchd: launchd is the substrate's
 supervisor, Dagster is the estate's scheduler (architecture/workspace.dsl).
 """
+
 from __future__ import annotations
 
 import glob
@@ -49,7 +50,12 @@ def main() -> int:
             continue
         with open(path, "rb") as f:
             pl = plistlib.load(f)
-        if pl.get("KeepAlive") or pl.get("RunAtLoad") and "StartInterval" not in pl and "StartCalendarInterval" not in pl:
+        if (
+            pl.get("KeepAlive")
+            or pl.get("RunAtLoad")
+            and "StartInterval" not in pl
+            and "StartCalendarInterval" not in pl
+        ):
             continue
         cron = cron_for(pl)
         if not cron:
@@ -63,7 +69,11 @@ def main() -> int:
         }
         if pl.get("WorkingDirectory"):
             job["cwd"] = tilde(pl["WorkingDirectory"])
-        env = {k: tilde(v) for k, v in (pl.get("EnvironmentVariables") or {}).items() if k != "PATH"}
+        env = {
+            k: tilde(v)
+            for k, v in (pl.get("EnvironmentVariables") or {}).items()
+            if k != "PATH"
+        }
         if env:
             job["env"] = env
         jobs[label] = job

@@ -36,9 +36,11 @@ longer code path -- and not a silent default. Every backend bin/idp-cloud speaks
 including the file backend, so an absent `date` means something is wrong with the read, and an
 instrument that cannot measure says so (LAW 45 step 5).
 """
+
 from __future__ import annotations
 
 import sys
+
 # `datetime` is referenced only from the string annotation on served_now, and that is a use
 # ruff resolves: dropping it is F821, not F401 (idp#683, run 33225725402). `timezone` is
 # gone for the reason this module exists — no local clock enters the subtraction (crew#583).
@@ -73,15 +75,23 @@ def served_now(run=None) -> "datetime | None":
     page that cannot be built at all exits rather than rewriting yesterday's.
     """
     import subprocess  # local: this module is imported by scripts that never shell out
+
     run = run or subprocess.run
     try:
-        p = run(["gh", "api", "-i", "rate_limit"], capture_output=True, text=True, timeout=30)
+        p = run(
+            ["gh", "api", "-i", "rate_limit"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
     except Exception:  # noqa: BLE001 - gh missing, no network, or a hang is all the same answer
         return None
     if p.returncode != 0:
         return None
     for line in (p.stdout or "").splitlines():
-        if not line.strip():  # end of the header block; the body is JSON and holds no clock
+        if (
+            not line.strip()
+        ):  # end of the header block; the body is JSON and holds no clock
             break
         if line.lower().startswith("date:"):
             try:
@@ -103,6 +113,7 @@ def receipt_age(head: dict, per_unit: float, row: str) -> float:
     untrustworthy is untrustworthy for every row the caller was about to print: naming one stale
     drill sends somebody to look at a healthy drill while the actual fault goes unnamed (LAW 28).
     """
+
     def blind(why: str) -> None:
         print("BLIND   %s  %s" % (row, why))
         sys.exit(2)
@@ -115,21 +126,29 @@ def receipt_age(head: dict, per_unit: float, row: str) -> float:
     stamped_raw = h.get("last-modified")
     served_raw = h.get("date")
     if not stamped_raw:
-        blind("object head carried no last-modified -- cannot say when the receipt was written")
+        blind(
+            "object head carried no last-modified -- cannot say when the receipt was written"
+        )
     if not served_raw:
-        blind("object head carried no date header -- the only clock that could measure this "
-              "receipt is the one that stamped it, and this response did not bring it. Refusing to "
-              "substitute this machine's clock (crew#583)")
+        blind(
+            "object head carried no date header -- the only clock that could measure this "
+            "receipt is the one that stamped it, and this response did not bring it. Refusing to "
+            "substitute this machine's clock (crew#583)"
+        )
     try:
         stamped = parsedate_to_datetime(stamped_raw)
         served = parsedate_to_datetime(served_raw)
     except Exception as e:  # a malformed date is not a fresh receipt
-        blind("object head carried an unreadable timestamp (%s): last-modified=%r date=%r"
-              % (e, stamped_raw, served_raw))
+        blind(
+            "object head carried an unreadable timestamp (%s): last-modified=%r date=%r"
+            % (e, stamped_raw, served_raw)
+        )
 
     delta = served - stamped
     if delta < -FUTURE_GRACE:
-        blind("the receipt is stamped %s but the store answered at %s -- it claims to have been "
-              "written after the read that found it, which is the store disagreeing with itself, "
-              "not a fresh drill" % (stamped_raw, served_raw))
+        blind(
+            "the receipt is stamped %s but the store answered at %s -- it claims to have been "
+            "written after the read that found it, which is the store disagreeing with itself, "
+            "not a fresh drill" % (stamped_raw, served_raw)
+        )
     return delta.total_seconds() / per_unit

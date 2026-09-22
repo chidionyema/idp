@@ -9,6 +9,7 @@ Two rules, one test file, RUNG 4 of the ladder in `~/AGENTS.md`:
    refusal on crew#284 CP1 read "Traceback (most recent call last): File ..." for 500
    chars and never reached the line saying the router was unreachable.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -31,7 +32,11 @@ def test_every_default_model_alias_is_served_by_the_estate_router() -> None:
     from sovereign.consensus import config_keys as cck
 
     served = _router_aliases()
-    defaults = {config._R["model.default"].value, config._R["model.vision"].value, cck.CONSENSUS_KEYS["consensus.cheap_model"][0]}
+    defaults = {
+        config._R["model.default"].value,
+        config._R["model.vision"].value,
+        cck.CONSENSUS_KEYS["consensus.cheap_model"][0],
+    }
     consensus = list(config._R["model.consensus"].value)
     assert defaults <= served, defaults - served
     assert set(consensus) <= served, set(consensus) - served
@@ -44,7 +49,11 @@ def test_sb_error_surfaced_to_chat_keeps_the_exception_line(monkeypatch) -> None
     spec.loader.exec_module(mod)
     err_max = mod.ck.get("otto.plugin_error_max_chars")
     last = "httpx.ConnectError: [Errno 61] Connection refused (router at http://localhost:4000)"
-    stderr = "Traceback (most recent call last):\n" + ("  File \"/x/y.py\", line 1, in <module>\n    import z\n" * 60) + last
+    stderr = (
+        "Traceback (most recent call last):\n"
+        + ('  File "/x/y.py", line 1, in <module>\n    import z\n' * 60)
+        + last
+    )
     assert len(stderr) > err_max
 
     def fake_run(*_a, **_k):

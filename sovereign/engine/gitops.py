@@ -11,6 +11,7 @@ Every function returns None or False on a repository that is missing or
 not a git checkout rather than raising: a step in a scratch directory
 with no .git is a normal case, not an error.
 """
+
 from __future__ import annotations
 
 import subprocess

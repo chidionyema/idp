@@ -3,6 +3,7 @@
 
 Run:  sovereign/.venv/bin/python -m unittest sovereign.cockpit.test_auth -v
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -20,8 +21,14 @@ DUMMY_TOKEN = "123456:AA_dummy_test_token_never_real"
 ALLOWED_ID = "555111"
 
 
-def build_init_data(token: str, user: dict, *, auth_date: int | None = None,
-                     extra: dict | None = None, bad_hash: bool = False) -> str:
+def build_init_data(
+    token: str,
+    user: dict,
+    *,
+    auth_date: int | None = None,
+    extra: dict | None = None,
+    bad_hash: bool = False,
+) -> str:
     """Build a syntactically valid Telegram Mini App initData string signed
     with `token`, per https://core.telegram.org/bots/webapps#validating-data-
     received-via-the-mini-app -- mirrors what auth.verify_init_data checks."""
@@ -50,12 +57,16 @@ class VerifyInitDataTests(unittest.TestCase):
         os.environ.pop("TELEGRAM_ALLOWED_USERS", None)
 
     def test_valid_init_data_allow_listed_user_passes(self):
-        init_data = build_init_data(DUMMY_TOKEN, {"id": int(ALLOWED_ID), "first_name": "Founder"})
+        init_data = build_init_data(
+            DUMMY_TOKEN, {"id": int(ALLOWED_ID), "first_name": "Founder"}
+        )
         user = auth.verify_init_data(init_data, bot_token=DUMMY_TOKEN)
         self.assertEqual(user["id"], int(ALLOWED_ID))
 
     def test_valid_init_data_not_allow_listed_rejected(self):
-        init_data = build_init_data(DUMMY_TOKEN, {"id": 999999, "first_name": "Stranger"})
+        init_data = build_init_data(
+            DUMMY_TOKEN, {"id": 999999, "first_name": "Stranger"}
+        )
         with self.assertRaises(auth.AuthError):
             auth.verify_init_data(init_data, bot_token=DUMMY_TOKEN)
 
@@ -75,12 +86,16 @@ class VerifyInitDataTests(unittest.TestCase):
 
     def test_stale_auth_date_rejected(self):
         stale = int(time.time()) - 999999999  # far older than any reasonable max_age
-        init_data = build_init_data(DUMMY_TOKEN, {"id": int(ALLOWED_ID)}, auth_date=stale)
+        init_data = build_init_data(
+            DUMMY_TOKEN, {"id": int(ALLOWED_ID)}, auth_date=stale
+        )
         with self.assertRaises(auth.AuthError):
             auth.verify_init_data(init_data, bot_token=DUMMY_TOKEN)
 
     def test_fresh_auth_date_accepted(self):
-        init_data = build_init_data(DUMMY_TOKEN, {"id": int(ALLOWED_ID)}, auth_date=int(time.time()))
+        init_data = build_init_data(
+            DUMMY_TOKEN, {"id": int(ALLOWED_ID)}, auth_date=int(time.time())
+        )
         user = auth.verify_init_data(init_data, bot_token=DUMMY_TOKEN)
         self.assertEqual(user["id"], int(ALLOWED_ID))
 

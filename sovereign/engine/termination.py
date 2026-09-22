@@ -23,6 +23,7 @@ ACTIONS is ordered by severity, and `evaluate` returns the most severe
 action any condition asks for -- not the first one it happens to check.
 Two conditions firing at once must never produce the milder answer.
 """
+
 from __future__ import annotations
 
 import json
@@ -83,12 +84,21 @@ def evaluate(signals: Signals) -> dict[str, Any]:
             action = candidate
 
     if signals.low_confidence_streak >= min_confidence_steps:
-        fire("soft_halt", REASON_CONFIDENCE, signals.low_confidence_streak, min_confidence_steps)
+        fire(
+            "soft_halt",
+            REASON_CONFIDENCE,
+            signals.low_confidence_streak,
+            min_confidence_steps,
+        )
 
     if signals.last_latency_s > latency_max_s:
         # Retry once via the fallback chain, then halt -- the retry is
         # spent before the halt, never instead of it.
-        candidate = "retry_fallback" if signals.latency_retries_used < latency_retries else "halt"
+        candidate = (
+            "retry_fallback"
+            if signals.latency_retries_used < latency_retries
+            else "halt"
+        )
         fire(candidate, REASON_LATENCY, signals.last_latency_s, latency_max_s)
 
     if signals.langfuse_blind_s > blind_halt_s:
@@ -189,7 +199,9 @@ def enforce(verdict: dict[str, Any], *, by: str = "kernel") -> dict[str, Any]:
                 if row.get("critical"):
                     kept.append(row["session_id"])
                     continue
-                await engine_client.signal(row["session_id"], "stop", by, f"self-termination:{reason}")
+                await engine_client.signal(
+                    row["session_id"], "stop", by, f"self-termination:{reason}"
+                )
                 stopped.append(row["session_id"])
             return stopped, kept
 

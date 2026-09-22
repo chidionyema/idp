@@ -8,6 +8,7 @@ keyed by name -- only a fresh interpreter would pick up the real one.
 
 Run:  sovereign/.venv/bin/python -m unittest sovereign.cockpit.test_server -v
 """
+
 from __future__ import annotations
 
 import http.client
@@ -114,7 +115,9 @@ class CockpitServerTests(unittest.TestCase):
             '{"source": "healthchecks", "text": "prospector down"}\n'
             '{"source": "estate_alert", "text": "disk 91%"}\n'
         )
-        cls._inbox_patch = mock.patch.object(server, "_inbox_path", lambda: cls.inbox_path)
+        cls._inbox_patch = mock.patch.object(
+            server, "_inbox_path", lambda: cls.inbox_path
+        )
         cls._inbox_patch.start()
 
         cls.httpd = server.build_server(port=0, bind="127.0.0.1")
@@ -182,7 +185,11 @@ class CockpitServerTests(unittest.TestCase):
         """Gate 1 of the Definition of Done: the founder starts a session from the
         cockpit, never from a terminal. The runner is config, not the browser's choice."""
         conn = self._conn()
-        conn.request("POST", "/api/sessions", body=json.dumps({"task": "count bin/", "runner": "burn", "budget": 7}))
+        conn.request(
+            "POST",
+            "/api/sessions",
+            body=json.dumps({"task": "count bin/", "runner": "burn", "budget": 7}),
+        )
         resp = conn.getresponse()
         self.assertEqual(resp.status, 201)
         self.assertEqual(json.loads(resp.read())["session_id"], "sb-started01")
@@ -227,7 +234,8 @@ class CockpitServerTests(unittest.TestCase):
     def test_bad_init_data_from_loopback_is_401(self):
         conn = self._conn()
         conn.request(
-            "GET", "/api/sessions",
+            "GET",
+            "/api/sessions",
             headers={"X-Telegram-Init-Data": "user=x&hash=not-a-real-signature"},
         )
         resp = conn.getresponse()
