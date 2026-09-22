@@ -222,6 +222,16 @@ bespoke capture, not the hourly login drill.
   fetched; `ok`/`FAIL`/`BLIND` is printed on every run's summary.
 - **CP6**: `founder-otto-door`, `founder-mcp-gateway`, `founder-otto`, `founder-cursor` each show
   a live status pill from their own health endpoint through a proxy, replacing a manifest link.
+  **Built 2026-09-22 (three of four)**: three `/otto-door` (`otto-golden.otto-golden:8080/healthz`,
+  `platform/otto-golden/config.yaml`), `/mcp-gateway` (`mcp-agentgateway.mcp:3000/healthz`,
+  `platform/mcp/agentgateway-deploy.yaml`) and `/otto` (`hermes-agent-gateway.hermes-agent:9900/
+  .well-known/agent-card.json`, `platform/hermes-agent/gateway.yaml`) read-only GET proxies are
+  declared in `app-config.yaml` (in-cluster Service names, no host typed — LAW 46), and
+  `modules/home/doorHealth.ts` + `useDoorHealth.ts` + `modules/estateDetail/DoorHealthFact.tsx`
+  render the same "Is it up?" pill CP3 uses on exactly those three entities. `founder-cursor` is
+  the honest fourth: it has no in-cluster Service (it is a vendor harness, `platform/vendors/`), so
+  it wears the CP3 vendor card rather than a fabricated process read. `doorHealthOf`/
+  `doorSentence` are graded in `modules/home/doorHealth.test.ts` (17 proxy-logic assertions).
 - **CP7**: `founder-drills` and `founder-crew-board` read their own live counts (last verdict per
   drill; open/P1 issue counts) instead of listing bare links. (`founder-drills` itself outlived
   the drills it named: the `login-drill`/`cross-node`/`portability`/`storefront`/`models`/

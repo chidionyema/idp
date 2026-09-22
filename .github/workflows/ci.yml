@@ -53,7 +53,7 @@ jobs:
   # So it runs on the pull request, where it can still refuse, and on the push to main, where the
   # empty IDP_CI_BASE grades every directory rather than only the diff. Both, not either.
   offline-gate:
-    needs: fast-gate
+    needs: [fast-gate, verifier]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -118,14 +118,14 @@ jobs:
   # founder machine; this job only installs its tools. Pinned by checksum, the
   # way conftest above is pinned by version (bin/actions-pinned covers uses:).
   security-scan:
-    needs: fast-gate
+    needs: [fast-gate, verifier]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/security-scan   # the steps every active estate repo runs
 
   bdd-suites:
-    needs: fast-gate
+    needs: [fast-gate, verifier]
     runs-on: ubuntu-latest
     # crew#584, 2026-08-28: run 33203670180 measured this job at 2m13s, of which the acceptance
     # suite was 54 s and the root pytest suite 57 s -- back to back on one runner. GitHub's own
@@ -265,7 +265,7 @@ jobs:
   # runner-second; the matrix underneath can change shape -- a third suite, a rename -- without
   # anyone touching the repository ruleset, which is the coupling that caused the stall.
   messaging-demo:
-    needs: fast-gate
+    needs: [fast-gate, verifier]
     runs-on: ubuntu-latest
     # crew#639 CP9, founder 2026-08-30: the messaging demos run on every push, both of them, against
     # an embedded nats-server (the chart's version) and an embedded Postgres. No cluster, no Docker:
@@ -296,7 +296,7 @@ jobs:
   # carries is a scoped one-hour token rather than the root. Only on changes under
   # bin/idp/migrate-domain/, because nothing else in the repository can move them.
   migrate-domain:
-    needs: fast-gate
+    needs: [fast-gate, verifier]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -329,7 +329,7 @@ jobs:
   # that runs it. Only on changes under backstage/: the install is the slow part and nothing else
   # in the repository can move these tests.
   portal-app:
-    needs: fast-gate
+    needs: [fast-gate, verifier]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -452,7 +452,6 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           [ "$rc" -eq 0 ] || echo "note: bin/idp-features plan exited $rc; see the check summary"
-
 
   executes-gate:
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'

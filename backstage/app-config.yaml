@@ -267,6 +267,42 @@ proxy:
       changeOrigin: true
       allowedMethods: ['GET']
 
+    # CP6 (docs/specs/backstage-as-a-product.md): the founder doors backed by a real running
+    # process -- Otto's golden door, the MCP gateway, and Otto itself -- carried only a GitHub
+    # link, so a click could not answer "is it up?". Each gets ONE read-only door to the
+    # process's own health endpoint, drawn by our own component (DoorHealthFact.tsx); no vendor
+    # UI is framed. All three run in-cluster, so the browser cannot reach them and must not: the
+    # backend's proxy plugin is the door. Declared only here, not in app-config.container.yaml,
+    # because the two files' `proxy.endpoints` maps merge (LAW 46: the target is an in-cluster
+    # Service name, never a typed host).
+    #
+    # Otto (golden), the new Otto's own pod ahead of production (platform/otto-golden/config.yaml:
+    # health_path /healthz, Service otto-golden on port 8080).
+    '/otto-door':
+      target: 'http://otto-golden.otto-golden.svc.cluster.local:8080'
+      changeOrigin: true
+      allowedMethods: ['GET']
+
+    # The MCP gateway, the one guarded door every agent session gets its tools through
+    # (platform/mcp/agentgateway-deploy.yaml: Service port http 3000). Path rewrite so the
+    # browser's /mcp-gateway/healthz reaches the gateway's own /healthz.
+    '/mcp-gateway':
+      target: 'http://mcp-agentgateway.mcp.svc.cluster.local:3000'
+      changeOrigin: true
+      allowedMethods: ['GET']
+      pathRewrite:
+        '^/api/proxy/mcp-gateway': ''
+
+    # Otto, the Architect agent (platform/hermes-agent/gateway.yaml: Service hermes-agent-gateway
+    # on port a2a 9900; /.well-known/agent-card.json is the a2a adapter's own health surface, the
+    # same path its readiness probe reads).
+    '/otto':
+      target: 'http://hermes-agent-gateway.hermes-agent.svc.cluster.local:9900'
+      changeOrigin: true
+      allowedMethods: ['GET']
+      pathRewrite:
+        '^/api/proxy/otto/agent-card': '/.well-known/agent-card.json'
+
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
 # Note: After experimenting with basic setup, use CI/CD to generate docs
 # and an external cloud storage when deploying TechDocs for production use-case.

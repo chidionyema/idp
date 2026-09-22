@@ -638,6 +638,15 @@ else
   say "FAIL  local-evidence .aevum/local.jsonl is empty or chain is broken — no agent action has been recorded"; fail=1
 fi
 
+# ADR 0030: Jev scope guard — no direct TypeSafeClient calls outside mcp/plugins/jev.py.
+# This is the forcing function that ensures every Jev call goes through the MCP plugin,
+# so every decision lands in estate.db and the API key lives in one place.
+if python3 "$IDP/bin/idp-jev-scope-guard" >/dev/null 2>&1; then
+  say "ok    jev-scope no direct TypeSafeClient calls outside mcp/plugins/jev.py"
+else
+  say "FAIL  jev-scope direct TypeSafeClient usage found; route through mcp/plugins/jev.py"; fail=1
+fi
+
 timing_summary
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 # --full: write sentinel on success so the pre-push hook proceeds without re-running.

@@ -222,8 +222,36 @@ default_confidence_floor = 0.7
 timeout_ms = 2000
 escalate_on_timeout = true
 model = "jev-1.13.0"
+force_on_decisions = true   # when true, the Stop-hook blocks turns that skip Jev for bounded decisions
 ```
 
+## Jev first: bounded decisions go through the layer (ADR 0030)
+
+Before any bounded decision, call `jev_choice`, `jev_score`, or `jev_noul` via the MCP plugin.
+
+**What counts as a bounded decision:**
+- Tool selection when multiple tools could apply
+- Retry vs. escalate vs. abandon
+- Risk assessment (safe / warn / block)
+- Pass/fail judgment on a test or gate
+- Confidence thresholds (proceed / pause / ask)
+
+**Exempt (not bounded):**
+- Text generation (summaries, code, prose)
+- File reads and searches
+- Pure retrieval with no judgment attached
+
+**Enforcement:** The Stop-hook `jev_decision_gate.py` blocks turns that skip Jev for expensive
+operations (tool calls over the cost threshold, destructive ops, consensus triggers). The hook
+checks the turn's tool-call log; if a bounded decision was made without a preceding `jev_*` call,
+the turn is refused.
+
+**Rationale:** 193x faster, 444x cheaper than frontier-model deliberation, and every decision
+lands in the `jev_decisions` table with confidence, latency, and the input hash — an audit trail
+that survives the context window.
+
+References: ADR `docs/decisions/0030-jevlayer-unified-confidence-and-decision-service.md`,
+MCP plugin `mcp/plugins/jev.py`, policy config `[jev]` section above.
 
 THE EMPIRICAL PROOF RULE binds here too, verbatim, inherited from `~/AGENTS.md` — not repeated
 below to avoid loading the same block twice in one context (measured duplicate, 2026-09-14).
