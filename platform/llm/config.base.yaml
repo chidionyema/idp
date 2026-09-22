@@ -53,6 +53,33 @@ model_list:
       model: anthropic/claude-opus-4-5
       timeout: 600
 
+  # EVERY Claude model, not only opus (founder, 2026-09-22: "not just opus but all claude
+  # models"). The named rows below exist so a lane can be granted, budgeted and read back by
+  # name -- `/v1/models` enumerates them, which is how bin/idp-router-key puts a lane on a
+  # consumer's key. The wildcard row after them is what makes the passthrough complete.
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5
+      timeout: 600
+
+  - model_name: claude-haiku
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      timeout: 600
+
+  # The catch-all, and the row that actually carries Claude Code. A client does not send the
+  # tidy alias above -- it sends the exact dated id it was built against
+  # (claude-haiku-4-5-20251001, and whatever ships next), and a named row can only ever hold
+  # the ids that existed the day it was written. LiteLLM's pattern routing substitutes what
+  # `*` matched into the upstream model, so `claude-sonnet-4-5-20250929` leaves here as
+  # `anthropic/claude-sonnet-4-5-20250929`: the client's own model name, relayed unchanged to
+  # Anthropic under the client's own OAuth token, exactly as the passthrough comment above
+  # describes. No api_key here either, for the same reason and by the same mechanism.
+  - model_name: "claude-*"
+    litellm_params:
+      model: "anthropic/claude-*"
+      timeout: 600
+
 router_settings:
   fallbacks:
     # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat

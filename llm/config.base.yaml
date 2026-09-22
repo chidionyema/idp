@@ -60,6 +60,27 @@ model_list:
       model: anthropic/claude-opus-4-5
       timeout: 600
 
+  # Every Claude model, not only opus (founder, 2026-09-22). Same rows as the cluster router
+  # carries, because tests/test_llm_row.py diffs the two files model for model and a hosted
+  # lane that exists on one side only is the drift that check is there to catch. The named
+  # rows are what `/v1/models` enumerates and therefore what a key can be granted; the
+  # wildcard is what carries a real client, which sends the exact dated id it was built
+  # against rather than the alias.
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5
+      timeout: 600
+
+  - model_name: claude-haiku
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      timeout: 600
+
+  - model_name: "claude-*"
+    litellm_params:
+      model: "anthropic/claude-*"
+      timeout: 600
+
 router_settings:
   # The chain prospector's `noncritical_operator:` already declares, expressed once here
   # instead of in FallbackOperator. `minimax -> minimax_m27` is the documented failover;
