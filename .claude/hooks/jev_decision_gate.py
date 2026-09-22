@@ -37,62 +37,70 @@ import sys
 from typing import Any
 
 # Tools that count as a Jev pre-check (must appear BEFORE expensive calls)
-JEV_TOOLS = frozenset({
-    "jev_choice",
-    "jev_score",
-    "jev_noul",
-    "mcp__estate__jev_choice",
-    "mcp__estate__jev_score",
-    "mcp__estate__jev_noul",
-    # Also accept direct MCP tool names with the jev namespace
-    "mcp__jev__choice",
-    "mcp__jev__score",
-    "mcp__jev__noul",
-})
+JEV_TOOLS = frozenset(
+    {
+        "jev_choice",
+        "jev_score",
+        "jev_noul",
+        "mcp__estate__jev_choice",
+        "mcp__estate__jev_score",
+        "mcp__estate__jev_noul",
+        # Also accept direct MCP tool names with the jev namespace
+        "mcp__jev__choice",
+        "mcp__jev__score",
+        "mcp__jev__noul",
+    }
+)
 
 # Shell commands that indicate an expensive decision being made
 # (tool selection, risk assessment, pass/fail judgments)
-EXPENSIVE_SHELL_PATTERNS = frozenset({
-    "consensus",
-    "verifier",
-    "verify",
-    "judge",
-    "verdict",
-    "z3",
-    "solver",
-    "evaluate",
-    "assess",
-    "grade",
-    "score",
-    "classify",
-})
+EXPENSIVE_SHELL_PATTERNS = frozenset(
+    {
+        "consensus",
+        "verifier",
+        "verify",
+        "judge",
+        "verdict",
+        "z3",
+        "solver",
+        "evaluate",
+        "assess",
+        "grade",
+        "score",
+        "classify",
+    }
+)
 
 # MCP tools that represent expensive operations that should be Jev-gated
-EXPENSIVE_MCP_PATTERNS = frozenset({
-    "mcp__estate__propose_",
-    "mcp__estate__consensus_",
-    "mcp__estate__verify_",
-    "mcp__verdict__",
-    "mcp__judge__",
-})
+EXPENSIVE_MCP_PATTERNS = frozenset(
+    {
+        "mcp__estate__propose_",
+        "mcp__estate__consensus_",
+        "mcp__estate__verify_",
+        "mcp__verdict__",
+        "mcp__judge__",
+    }
+)
 
 # Tools that only read (exempt from this gate)
-READ_ONLY_TOOLS = frozenset({
-    "Read",
-    "Glob",
-    "Grep",
-    "WebSearch",
-    "WebFetch",
-    "Search",
-    "LS",
-    "ListDirectory",
-    "mcp__estate__get_estate_state",
-    "mcp__estate__get_workload_state",
-    "mcp__estate__get_workload_logs",
-    "mcp__estate__recall",
-    "mcp__estate__ask_holmes",
-    "mcp__estate__get_catalog_drift",
-})
+READ_ONLY_TOOLS = frozenset(
+    {
+        "Read",
+        "Glob",
+        "Grep",
+        "WebSearch",
+        "WebFetch",
+        "Search",
+        "LS",
+        "ListDirectory",
+        "mcp__estate__get_estate_state",
+        "mcp__estate__get_workload_state",
+        "mcp__estate__get_workload_logs",
+        "mcp__estate__recall",
+        "mcp__estate__ask_holmes",
+        "mcp__estate__get_catalog_drift",
+    }
+)
 
 
 def _blocks(entry: dict[str, Any]) -> list[dict[str, Any]]:
@@ -154,7 +162,7 @@ def _extract_tool_sequence(transcript_path: str) -> list[tuple[str, str]]:
                 continue
             try:
                 entry = json.loads(line)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001,S112
                 continue
 
             if not isinstance(entry, dict):
@@ -176,7 +184,9 @@ def _extract_tool_sequence(transcript_path: str) -> list[tuple[str, str]]:
                 inp = block.get("input", {})
                 if isinstance(inp, dict):
                     # For Bash, extract the command
-                    summary = inp.get("command", "") if name == "Bash" else str(inp)[:200]
+                    summary = (
+                        inp.get("command", "") if name == "Bash" else str(inp)[:200]
+                    )
                 else:
                     summary = str(inp)[:200]
                 tools.append((name, summary))
@@ -198,7 +208,6 @@ def _check_jev_compliance(tool_sequence: list[tuple[str, str]]) -> tuple[str, st
     saw_jev = False
     saw_expensive = False
     first_expensive_tool = ""
-    first_expensive_detail = ""
     all_read_only = True
 
     for name, summary in tool_sequence:
@@ -216,15 +225,17 @@ def _check_jev_compliance(tool_sequence: list[tuple[str, str]]) -> tuple[str, st
             if not saw_jev:
                 # Expensive call without prior Jev — violation
                 saw_expensive = True
-                first_expensive_tool = f"Bash ({summary[:50]}...)" if len(summary) > 50 else f"Bash ({summary})"
-                first_expensive_detail = summary
+                first_expensive_tool = (
+                    f"Bash ({summary[:50]}...)"
+                    if len(summary) > 50
+                    else f"Bash ({summary})"
+                )
 
         # Check for expensive MCP calls
         if _is_expensive_mcp_tool(name):
             if not saw_jev:
                 saw_expensive = True
                 first_expensive_tool = name
-                first_expensive_detail = summary
 
     # Verdict logic
     if all_read_only:
@@ -233,7 +244,7 @@ def _check_jev_compliance(tool_sequence: list[tuple[str, str]]) -> tuple[str, st
     if saw_expensive:
         return (
             "BLOCK",
-            f"expensive decision '{first_expensive_tool}' made without calling a Jev tool first"
+            f"expensive decision '{first_expensive_tool}' made without calling a Jev tool first",
         )
 
     return ("PASS", "no expensive decisions or Jev-gated properly")
@@ -252,7 +263,7 @@ def _refusal_message(expensive_tool: str, expensive_detail: str) -> str:
         "    - jev_noul    (~230ms, $0.00002) for true/false with confidence",
         "",
         "  Instead of:",
-        f"    <expensive call>  # 5-20s, thousands of tokens",
+        "    <expensive call>  # 5-20s, thousands of tokens",
         "",
         "  Do:",
         "    jev_choice/jev_score/jev_noul  # 230ms gate",
@@ -274,7 +285,6 @@ def run(payload: dict[str, Any]) -> int:
         sys.stderr.write("[jev-gate] RELEASED by IDP_JEV_GATE=0\n")
         return 0
 
-    session_id = payload.get("session_id", "unknown")
     transcript_path = payload.get("transcript_path", "")
 
     # Extract the tool sequence from the most recent turn

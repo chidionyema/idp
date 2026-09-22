@@ -12,11 +12,11 @@ This test builds a real remote carrying the exact mine that did it: an `archive/
 already on the remote at a different sha. It fails if a refusal is ever again allowed to
 cost more than its own branch.
 """
+
 from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
-import os
 import subprocess
 from pathlib import Path
 
@@ -120,7 +120,9 @@ def test_the_fence_never_pushes_atomically():
     """--atomic would restore the all-or-nothing failure this file exists to end."""
     source = (ROOT / "bin" / "idp-branch-archive").read_text()
     call = source.split("def push(", 1)[1].split("def ", 1)[0]
-    assert '"--atomic"' not in call, "--atomic makes one refused ref fail the whole batch"
+    assert '"--atomic"' not in call, (
+        "--atomic makes one refused ref fail the whole batch"
+    )
     assert '"--porcelain"' in call, "a refusal must come back as data"
     assert "check=True" not in call, "a rejected ref is a skip, not a death"
 

@@ -15,8 +15,9 @@ select = ["E9", "F63", "F7", "F82"]
 # not a production input-validation smell -- bandit's own docs recommend this exact
 # exemption for test code. S311 (random not for crypto) fires on tests/pareval's use of
 # random.uniform() to generate statistical test noise, never a credential or token.
-"tests/**/*.py" = ["S101", "S311"]
-"**/tests/**/*.py" = ["S101", "S311"]
+# S603/S607: subprocess with partial path/untrusted input — tests run git, not user strings.
+"tests/**/*.py" = ["S101", "S311", "S603", "S607"]
+"**/tests/**/*.py" = ["S101", "S311", "S603", "S607"]
 
 [tool.pyright]
 include = ["tests"]
