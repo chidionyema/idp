@@ -1,0 +1,78 @@
+{"alias": "after_agent_turn hook", "entity": "artifact/after-agent-turn-hook", "type": "ARTIFACT"}
+{"alias": "AGENTS.md", "entity": "artifact/agents-md", "type": "ARTIFACT"}
+{"alias": "cell-gvisor-admission", "entity": "artifact/cell-gvisor-admission", "type": "ARTIFACT"}
+{"alias": "chidionyema/claude-guards PR #250", "entity": "artifact/chidionyema-claude-guards-pr-250", "type": "ARTIFACT"}
+{"alias": "deepseek-work-order", "entity": "artifact/deepseek-work-order", "type": "ARTIFACT"}
+{"alias": "Drift Report", "entity": "artifact/drift-report", "type": "ARTIFACT"}
+{"alias": "drift-report.json", "entity": "artifact/drift-report-json", "type": "ARTIFACT"}
+{"alias": "FLUX-ONLY lockdown", "entity": "artifact/flux-only-lockdown", "type": "ARTIFACT"}
+{"alias": "gVisor RuntimeClass", "entity": "artifact/gvisor-runtimeclass", "type": "ARTIFACT"}
+{"alias": "idp", "entity": "artifact/idp", "type": "ARTIFACT"}
+{"alias": "Intent DAG", "entity": "artifact/intent-dag", "type": "ARTIFACT"}
+{"alias": "intent.dag.dot", "entity": "artifact/intent-dag-dot", "type": "ARTIFACT"}
+{"alias": "intent.dag.json", "entity": "artifact/intent-dag-json", "type": "ARTIFACT"}
+{"alias": "safety tags", "entity": "artifact/safety-tags", "type": "ARTIFACT"}
+{"alias": "zero-trust-boundary.md", "entity": "artifact/zero-trust-boundary-md", "type": "ARTIFACT"}
+{"alias": "9-Layer Parallel Agent Architecture", "entity": "component/9-layer-parallel-agent-architecture", "type": "COMPONENT"}
+{"alias": "Backstage Plugin", "entity": "component/backstage-plugin", "type": "COMPONENT"}
+{"alias": "Budget Orchestrator", "entity": "component/budget-orchestrator", "type": "COMPONENT"}
+{"alias": "Cache Guardian", "entity": "component/cache-guardian", "type": "COMPONENT"}
+{"alias": "Cilium Alerts", "entity": "component/cilium-alerts", "type": "COMPONENT"}
+{"alias": "Cilium Drift Alerts", "entity": "component/cilium-drift-alerts", "type": "COMPONENT"}
+{"alias": "Compaction Manager", "entity": "component/compaction-manager", "type": "COMPONENT"}
+{"alias": "custom-entity-extensions", "entity": "component/custom-entity-extensions", "type": "COMPONENT"}
+{"alias": "Dynamic Context Pruning", "entity": "component/dynamic-context-pruning", "type": "COMPONENT"}
+{"alias": "Executor", "entity": "component/executor", "type": "COMPONENT"}
+{"alias": "Flux Drift Gate", "entity": "component/flux-drift-gate", "type": "COMPONENT"}
+{"alias": "Gisting", "entity": "component/gisting", "type": "COMPONENT"}
+{"alias": "Governor", "entity": "component/governor", "type": "COMPONENT"}
+{"alias": "home module", "entity": "component/home-module", "type": "COMPONENT"}
+{"alias": "MCP Adapter", "entity": "component/mcp-adapter", "type": "COMPONENT"}
+{"alias": "ns-fences", "entity": "component/ns-fences", "type": "COMPONENT"}
+{"alias": "Optimizer", "entity": "component/optimizer", "type": "COMPONENT"}
+{"alias": "Parallel Agent Stack", "entity": "component/parallel-agent-stack", "type": "COMPONENT"}
+{"alias": "ParallelExecutionStack", "entity": "component/parallelexecutionstack", "type": "COMPONENT"}
+{"alias": "pi-cache-guardian", "entity": "component/pi-cache-guardian", "type": "COMPONENT"}
+{"alias": "pi-compaction-manager", "entity": "component/pi-compaction-manager", "type": "COMPONENT"}
+{"alias": "pi-dynamic-context-pruning", "entity": "component/pi-dynamic-context-pruning", "type": "COMPONENT"}
+{"alias": "pi-mcp-adapter", "entity": "component/pi-mcp-adapter", "type": "COMPONENT"}
+{"alias": "pi-token-killer", "entity": "component/pi-token-killer", "type": "COMPONENT"}
+{"alias": "Red Team Layer", "entity": "component/red-team-layer", "type": "COMPONENT"}
+{"alias": "Snapshotter", "entity": "component/snapshotter", "type": "COMPONENT"}
+{"alias": "SoL-Pi", "entity": "component/sol-pi", "type": "COMPONENT"}
+{"alias": "sovereign-topology", "entity": "component/sovereign-topology", "type": "COMPONENT"}
+{"alias": "Span Retention", "entity": "component/span-retention", "type": "COMPONENT"}
+{"alias": "Token Efficiency Layer", "entity": "component/token-efficiency-layer", "type": "COMPONENT"}
+{"alias": "Token Killer", "entity": "component/token-killer", "type": "COMPONENT"}
+{"alias": "TokenBudgetOrchestrator", "entity": "component/tokenbudgetorchestrator", "type": "COMPONENT"}
+{"alias": "Verification Gates", "entity": "component/verification-gates", "type": "COMPONENT"}
+{"alias": "ParEval", "entity": "concept/pareval", "type": "CONCEPT"}
+{"alias": "Three-Role Model", "entity": "concept/three-role-model", "type": "CONCEPT"}
+{"alias": "ADR 0023", "entity": "decision/adr-0023", "type": "DECISION"}
+{"alias": "built-to-be-sold law", "entity": "decision/built-to-be-sold-law", "type": "DECISION"}
+{"alias": "no-agent-works-in-the-main-checkout", "entity": "decision/no-agent-works-in-the-main-checkout", "type": "DECISION"}
+{"alias": "no-hardcoding law", "entity": "decision/no-hardcoding-law", "type": "DECISION"}
+{"alias": "salvage event 2026-09-07", "entity": "event/salvage-event-2026-09-07", "type": "EVENT"}
+{"alias": "Action Fusion", "entity": "feature/action-fusion", "type": "FEATURE"}
+{"alias": "crew#892 CP4", "entity": "feature/crew-892-cp4", "type": "FEATURE"}
+{"alias": "Evidence Preservation", "entity": "feature/evidence-preservation", "type": "FEATURE"}
+{"alias": "Observation Pack", "entity": "feature/observation-pack", "type": "FEATURE"}
+{"alias": "Online Context Compact", "entity": "feature/online-context-compact", "type": "FEATURE"}
+{"alias": "Pi Agent Token Efficiency", "entity": "feature/pi-agent-token-efficiency", "type": "FEATURE"}
+{"alias": "Dagster", "entity": "service/dagster", "type": "SERVICE"}
+{"alias": "estate MCP server", "entity": "service/estate-mcp-server", "type": "SERVICE"}
+{"alias": "External Secrets Operator", "entity": "service/external-secrets-operator", "type": "SERVICE"}
+{"alias": "LiteLLM", "entity": "service/litellm", "type": "SERVICE"}
+{"alias": "Sovereign Bus", "entity": "service/sovereign-bus", "type": "SERVICE"}
+{"alias": "SPIRE", "entity": "service/spire", "type": "SERVICE"}
+{"alias": "Telegram Bot", "entity": "service/telegram-bot", "type": "SERVICE"}
+{"alias": "Traefik", "entity": "service/traefik", "type": "SERVICE"}
+{"alias": "Backstage", "entity": "tool/backstage", "type": "TOOL"}
+{"alias": "bin/idp-ci", "entity": "tool/bin-idp-ci", "type": "TOOL"}
+{"alias": "bin/idp-status", "entity": "tool/bin-idp-status", "type": "TOOL"}
+{"alias": "bin/idp-verify", "entity": "tool/bin-idp-verify", "type": "TOOL"}
+{"alias": "Flux", "entity": "tool/flux", "type": "TOOL"}
+{"alias": "Kyverno", "entity": "tool/kyverno", "type": "TOOL"}
+{"alias": "Langfuse", "entity": "tool/langfuse", "type": "TOOL"}
+{"alias": "rule-guard.py", "entity": "tool/rule-guard-py", "type": "TOOL"}
+{"alias": "spec-gate", "entity": "tool/spec-gate", "type": "TOOL"}
