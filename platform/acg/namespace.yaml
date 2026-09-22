@@ -1,0 +1,44 @@
+# The acg namespace is the ACG inference gateway's home. It is welded to its fence in the same
+# apply: bin/ns-fence-gate refuses a namespace declared in git without a ResourceQuota, a
+# LimitRange, a both-ways default deny and a DNS exception, and bin/idp-ns-fence-gen only fences a
+# namespace that is already on the cluster -- so a namespace that arrives with its own fences is the
+# only shape that is never briefly open (the same reason platform/concierge ships namespace.yaml and
+# ns-fence.yaml together).
+#
+# Sized for the Always Free A1 budget, not for the aspirational 5-layer cascade: the gateway is
+# one small FastAPI process and a redis cache. Local CPU llama.cpp is NOT enabled here (the image
+# ships no llama-server), so nothing on this box needs 20Gi. The ceiling leaves room for a rollout
+# and for a models PVC later without an outage.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: acg
+  annotations:
+    # Never garbage-collected by Flux: a namespace moved between Kustomization rows or dropped from
+    # git stays, with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    app.kubernetes.io/part-of: idp
+    pod-security.kubernetes.io/enforce: restricted
+    idp.estate/edge-attach: "true"   # the shared Gateway (prospector-edge) selects route namespaces by this label
+---
+# The provider keys, mounted as files, never as env values (platform/edge/kyverno-secrets-policy.yaml,
+# crew#341). The gateway reads `<NAME>_FILE` (gateway/secrets.py). All fields are optional on the
+# same principle as hermes-agent's sidecar key: the gateway must start and serve /health before the
+# first vault entry is seeded, and a pool with no key for a provider simply omits that provider --
+# free_apis.build_pool returns None for any provider whose key is absent, which is a smaller cascade,
+# not a crash. The vault entry `acg-secrets` is seeded by bin/idp-estate-seed.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: acg-secrets
+  namespace: acg
+spec:
+  refreshInterval: 1h
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target: { name: acg-secrets, creationPolicy: Owner }
+  dataFrom:
+    # Optional on the read side: an entry that has not been seeded yet leaves the Secret empty
+    # rather than failing the whole reconcile.
+    - extract:
+        key: acg-secrets

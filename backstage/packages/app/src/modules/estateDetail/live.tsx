@@ -17,6 +17,7 @@ import {
   LAYER_ANNOTATION,
   LayerState,
   Live,
+  heldSinceAgo,
   layerName,
   layerState,
 } from '../home/estate';
@@ -135,14 +136,24 @@ export function layerSentence(s: LayerState): string {
 }
 
 /** The rendered card. Names itself in plain English and is never silent-green. */
-export function LayerOnCluster({ entity }: { entity: Entity }) {
+export function LayerOnCluster({ entity, now }: { entity: Entity; now?: number }) {
   const read = useLayerLive(entity);
-  const sentence = layerSentence(layerStateLine(read));
+  const resolved = layerStateLine(read);
+  const sentence = layerSentence(resolved);
+  // How long this verdict has held: the object's own Flux last-transition when it records one,
+  // else the door's last-checked time, else nothing (rule 13: never invent an age). The card's
+  // third fact beside Ready-state and pod count, so a click sees WHEN, not just WHAT.
+  const since = heldSinceAgo(entity, resolved, now ?? Date.now());
   return (
     <Card variant="outlined" data-testid="layer-on-cluster">
       <CardContent>
         <Typography variant="overline">On the cluster</Typography>
         <Typography variant="body2">{sentence}</Typography>
+        {since && (
+          <Typography variant="caption" color="textSecondary" display="block">
+            {since}
+          </Typography>
+        )}
       </CardContent>
     </Card>
   );

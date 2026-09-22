@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pathlib
 import re
 import time
 from dataclasses import dataclass, field
@@ -137,12 +138,45 @@ PIPER_VOICE = os.environ.get("VOICE_PIPER_VOICE", "en_GB-jenny_dioco-medium")
 #
 # The default is now a real host. `${ESTATE_ZONE}` remains honoured when it IS set, so the same code
 # works in the cluster, but an unset variable can no longer produce an unresolvable name.
-_zone = os.environ.get("ESTATE_ZONE", "").strip()
+#
+# AND IT REFUSED OVER A VALUE IT WAS STANDING ON. Measured 2026-09-22: importing this module on
+# this laptop raised "voice: ESTATE_ZONE is not set", naming
+# clusters/<cluster>/estate-config.yaml -- a file in the checkout the process is running out of,
+# which declares the zone. So the voice service could not start, the Fleet board reported "voice
+# service not reachable on 8899", and the fix an error message asked for was a person exporting a
+# value the repository already holds. An error that names its own answer should read it.
+#
+# The environment still wins, so a cluster sidecar or a different zone is unaffected; the file is
+# the fallback, and the refusal survives for the one case it was written for -- no zone declared
+# anywhere. This is the same defect bin/serve-fleetview carried (fixed the same day): a service
+# stopping over a value it could resolve itself.
+def _declared_zone() -> str:
+    """Read ESTATE_ZONE from the cluster config this checkout declares it in.
+
+    A three-line YAML read rather than a PyYAML import: this module is on the import path of the
+    voice socket, and the zone is one scalar on one line.
+    """
+    root = pathlib.Path(__file__).resolve().parents[2]
+    for cfg in sorted(root.glob("clusters/*/estate-config.yaml")):
+        try:
+            text = cfg.read_text()
+        except OSError:
+            continue
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("ESTATE_ZONE:"):
+                value = stripped.split(":", 1)[1].strip().strip("\"'")
+                if value:
+                    return value
+    return ""
+
+
+_zone = os.environ.get("ESTATE_ZONE", "").strip() or _declared_zone()
 if not _zone:
     raise RuntimeError(
-        "voice: ESTATE_ZONE is not set; the zone is declared once in "
-        "clusters/<cluster>/estate-config.yaml (rule=no_zone_literal_added). "
-        "Set ESTATE_ZONE in the environment or via bin/idp-workstation-bootstrap."
+        "voice: ESTATE_ZONE is not set and no clusters/*/estate-config.yaml in this checkout "
+        "declares it (rule=no_zone_literal_added). Set ESTATE_ZONE in the environment or run "
+        "bin/idp-workstation-bootstrap."
     )
 _default_host = f"https://llm.{_zone}"
 ROUTER_HOST = os.path.expandvars(os.environ.get("LITELLM_HOST", _default_host)).rstrip(

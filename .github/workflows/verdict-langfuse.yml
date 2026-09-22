@@ -1,7 +1,8 @@
 # button: Check Langfuse and sign the result
 # founder: Checks that Langfuse answers, answers its key, refuses a caller without one, and that a signed-in person reaches it; signs the result.
 # crew#631 CP1: the prover for Langfuse. Runs on the estate's machine identity (the same GitHub
-# OIDC -> OCI session token exchange as login-drill.yml), so the API key, the drill password, the
+# OIDC -> OCI session token exchange login-drill.yml once used, until it was deleted 2026-09-21),
+# so the API key, the drill password, the
 # cluster read and the signing key are all reachable here and nowhere an agent runs. The output is
 # one signed verdict file, kept as the run's artifact, and a check-run `verify/langfuse` on the
 # commit under test, whose conclusion is the verdict's outcome. An agent token cannot create a

@@ -1,0 +1,374 @@
+# The ACG gateway and its L0 cache.
+#
+# Sized for the Always Free A1 budget. The aspirational manifest in the acg repo asked for
+# 3.5 CPU / 20Gi and pinned a VM.Standard.A1.Flex node with 4 OCPUs; on a cluster whose whole ARM
+# pool is the Always Free 4-OCPU / 24Gi allowance that pod could never schedule beside anything
+# else, and its own ns-ceiling (500m / 1Gi) would have refused it a second time. What runs here is
+# the part that fits and that the image actually contains: the FastAPI gateway, its redis cache,
+# the 5-layer cascade's L0/L1/L5 paths, and the model registry. Local CPU llama.cpp (L2) is off
+# because acg.Dockerfile installs no llama-server -- LLAMA_BIN points at a path that does not
+# exist, so a local_cpu request falls through the cascade to L5 the way it would if the model were
+# absent, which is the honest behaviour and not a lie about a capability.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: matrix
+  namespace: acg
+data:
+  models.yaml: |
+    version: 1
+    defaults:
+      quant: Q4_K_M
+      backend: llama.cpp
+    models:
+      - id: smollm3-3b
+        params: 3.0e9
+        active: 3.0e9
+        license: apache-2.0
+        ram_q4_gb: 2.0
+        vram_q4_gb: 2.2
+        cpu_tps_ampere: 18
+        gpu_tps_3090: 140
+        intents: [code, chat, general]
+        quality: 0.72
+        beats: [sonnet-4]
+        benchmarks: {agent_code: 93.3, sonnet4_agent_code: 85.0}
+        providers: [local_cpu, local_gpu, free_api]
+        hf: HuggingFaceTB/SmolLM3-3B
+      - id: nanbeige-3b
+        params: 3.0e9
+        active: 3.0e9
+        license: apache-2.0
+        ram_q4_gb: 2.0
+        vram_q4_gb: 2.2
+        cpu_tps_ampere: 17
+        gpu_tps_3090: 130
+        intents: [general, chat, code]
+        quality: 0.74
+        beats: [30b-class]
+        benchmarks: {}
+        providers: [local_cpu, local_gpu]
+        hf: Nanbeige/Nanbeige4.1-3B
+      - id: zaya1-8b
+        params: 8.0e9
+        active: 7.6e8
+        license: apache-2.0
+        ram_q4_gb: 5.0
+        vram_q4_gb: 5.5
+        cpu_tps_ampere: 22
+        gpu_tps_3090: 180
+        intents: [math, reasoning]
+        quality: 0.81
+        beats: [sonnet-4.5]
+        benchmarks: {hmmt_2025: 89.6, sonnet45_hmmt: 88.3}
+        providers: [local_cpu, local_gpu, free_api]
+        hf: Zyphra/ZAYA1-8B
+      - id: falcon-h1r-7b
+        params: 7.0e9
+        active: 7.0e9
+        license: apache-2.0
+        ram_q4_gb: 4.0
+        vram_q4_gb: 4.5
+        cpu_tps_ampere: 10
+        gpu_tps_3090: 110
+        intents: [math]
+        quality: 0.78
+        beats: [15b, 32b]
+        benchmarks: {aime_2025: 83.1}
+        providers: [local_cpu, local_gpu]
+        hf: tiiuae/Falcon-H1R-7B
+      - id: ornith-1.5-9b
+        params: 9.0e9
+        active: 9.0e9
+        license: apache-2.0
+        ram_q4_gb: 1.5
+        vram_q4_gb: 5.5
+        cpu_tps_ampere: 7
+        gpu_tps_3090: 95
+        intents: [general, edge]
+        quality: 0.76
+        beats: [gemma-4-31b]
+        benchmarks: {}
+        providers: [local_cpu, local_gpu, edge]
+        hf: Ornith/Ornith-1.5-9B
+      - id: qwen3-coder-next
+        params: 80.0e9
+        active: 3.0e9
+        license: apache-2.0
+        ram_q4_gb: 32.0
+        vram_q4_gb: 32.0
+        cpu_tps_ampere: 3
+        gpu_tps_3090: 55
+        intents: [code]
+        quality: 0.88
+        beats: [dense-32b]
+        benchmarks: {}
+        providers: [local_gpu, spot]
+        hf: Qwen/Qwen3-Coder-Next
+      - id: qwen3.6-27b
+        params: 27.0e9
+        active: 27.0e9
+        license: apache-2.0
+        ram_q4_gb: 18.0
+        vram_q4_gb: 18.0
+        cpu_tps_ampere: 2
+        gpu_tps_3090: 60
+        intents: [general, code, reasoning]
+        quality: 0.90
+        beats: [sonnet-4.6]
+        benchmarks: {terminal_bench: 59.3, sonnet46_terminal_bench: 59.1}
+        providers: [local_gpu, spot]
+        hf: Qwen/Qwen3.6-27B
+      - id: gpt-oss-120b
+        params: 116.83e9
+        active: 5.13e9
+        license: apache-2.0
+        ram_q4_gb: 80.0
+        vram_q4_gb: 80.0
+        cpu_tps_ampere: 0.4
+        gpu_tps_3090: 0
+        gpu_tps_a100: 45
+        intents: [general, reasoning, code]
+        quality: 0.93
+        beats: [o4-mini]
+        benchmarks: {}
+        providers: [free_api, spot_80]
+        hf: openai/gpt-oss-120b
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: acg
+  labels:
+    app: gateway
+    app.kubernetes.io/part-of: acg
+  annotations:
+    # Reloader rolls the pod when the acg-secrets Secret changes through ESO. `auto` discovers
+    # every Secret/ConfigMap this pod consumes, so a new provider key reaches the pool without a
+    # list to maintain (founder blueprint 2026-08-30, idp#955).
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # the redis volume and the single tenant meter are not shareable across a surge
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: ghcr.io/chidionyema/acg:main-0-placeholder # {"$imagepolicy": "flux-system:acg"}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            # Non-secret configuration. Anything credential-shaped is a file under
+            # /run/secrets/acg-secrets/<NAME>, read through <NAME>_FILE (gateway/secrets.py);
+            # Kyverno's secrets-not-from-env-vars (crew#341) refuses the env form.
+            - name: REDIS_URL
+              value: "redis://redis:6379/0"
+            - name: MATRIX_PATH
+              value: /etc/acg/models.yaml
+            - name: LANGCHAIN_PROJECT
+              value: "acg"
+            - name: LANGCHAIN_TRACING_V2
+              value: "true"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            # The provider keys, by file. Each is optional: a missing file leaves that provider
+            # out of the pool rather than failing the pod.
+            - { name: GROQ_API_KEY_FILE,       value: /run/secrets/acg-secrets/GROQ_API_KEY }
+            - { name: CEREBRAS_API_KEY_FILE,   value: /run/secrets/acg-secrets/CEREBRAS_API_KEY }
+            - { name: OPENROUTER_API_KEY_FILE, value: /run/secrets/acg-secrets/OPENROUTER_API_KEY }
+            - { name: GOOGLE_API_KEY_FILE,     value: /run/secrets/acg-secrets/GOOGLE_API_KEY }
+            - { name: ANTHROPIC_API_KEY_FILE,  value: /run/secrets/acg-secrets/ANTHROPIC_API_KEY }
+            - { name: VAST_API_KEY_FILE,       value: /run/secrets/acg-secrets/VAST_API_KEY }
+            - { name: LANGSMITH_API_KEY_FILE,  value: /run/secrets/acg-secrets/LANGSMITH_API_KEY }
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: matrix
+              mountPath: /etc/acg
+              readOnly: true
+            - name: secrets
+              mountPath: /run/secrets/acg-secrets
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: matrix
+          configMap: { name: matrix }
+        - name: secrets
+          # Optional throughout: acg-secrets is seeded by bin/idp-estate-seed after this row first
+          # applies, so the gateway must start with an empty directory and a smaller cascade.
+          secret: { secretName: acg-secrets, optional: true, defaultMode: 0440 }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: acg
+  labels:
+    app: redis
+    app.kubernetes.io/part-of: acg
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args:
+            - "--maxmemory"
+            - "256mb"
+            - "--maxmemory-policy"
+            - "allkeys-lru"
+            - "--appendonly"
+            - "no"   # a cache: losing it costs a cache miss, not state; no volume to own
+          ports:
+            - name: redis
+              containerPort: 6379
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 320Mi
+          readinessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            periodSeconds: 10
+          livenessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: acg
+  labels:
+    app: gateway
+    app.kubernetes.io/part-of: acg
+spec:
+  # ClusterIP, not LoadBalancer: the estate reaches every product through the shared Gateway
+  # (prospector-edge) and the ns-ceiling above sets services.loadbalancers: "0" (AGENTS.md:
+  # one routing layer).
+  selector:
+    app: gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: acg
+  labels:
+    app: redis
+    app.kubernetes.io/part-of: acg
+spec:
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+# acg.<zone> -> the gateway, through the shared Gateway. Not behind oauth2-proxy: the callers are
+# programs holding an `acg_<tier>_<tenant>_<secret>` bearer key, and the gateway refuses any
+# request without one (gateway/main.py tenant_from_key). external-dns writes the record from this
+# hostname (platform/dns).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: acg
+  namespace: acg
+  labels:
+    app.kubernetes.io/part-of: acg
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-acg
+  hostnames:
+    - "acg.${ESTATE_ZONE}"
+  rules:
+    - backendRefs:
+        - name: gateway
+          port: 80
