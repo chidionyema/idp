@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from idp_concurrency.crdt_doc import ORSet
 

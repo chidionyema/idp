@@ -84,7 +84,6 @@ class _DequeQueue(Generic[T]):
         self._q.append(item)
 
     def pop(self) -> Optional[T]:
-        from collections import deque as _dq
 
         try:
             return self._q.popleft()

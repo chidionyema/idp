@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from idp_concurrency.ttcs.shadow_memory import ShadowMemory, Triplet
+from idp_concurrency.ttcs.shadow_memory import ShadowMemory
 
 
 def test_add_and_retrieve():

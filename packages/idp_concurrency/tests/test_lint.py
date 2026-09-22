@@ -5,7 +5,6 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-import pytest
 
 from idp_concurrency.lint.no_locks import check_file as check_locks
 from idp_concurrency.lint.no_unbounded import check_file as check_unbounded

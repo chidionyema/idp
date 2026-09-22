@@ -7,7 +7,7 @@ whose acyclicity is proven before a single CPU cycle runs.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from graphlib import CycleError, TopologicalSorter
+from graphlib import TopologicalSorter
 from typing import Any, Callable, Iterable
 
 

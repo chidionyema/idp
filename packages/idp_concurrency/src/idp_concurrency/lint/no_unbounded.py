@@ -85,7 +85,7 @@ class NoUnboundedVisitor(ast.NodeVisitor):
             return
         name = _call_name(node)
         if name and name in BANNED_CALLS:
-            tree = ast.Module(body=list(ast.walk(ast.parse(""))), type_ignores=[])
+            ast.Module(body=list(ast.walk(ast.parse(""))), type_ignores=[])
             # Find the enclosing module by walking parents via the visitor's
             # already-visited tree. We piggyback on the AST passed to check_file.
             if not _has_enclosing_task_group(node, self._tree):

@@ -13,10 +13,7 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional
-from dataclasses import dataclass
-from typing import Any, Mapping, Optional
 
-from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
