@@ -1203,5 +1203,29 @@ vendors:
     targets:
       - { entry: prospector-store-api-env, ns: prospector, field: Authentication__Google__ClientId, secret: SEED_GOOGLE_OAUTH_CLIENT_ID, shape: "[0-9]+-[a-z0-9]+\\.apps\\.googleusercontent\\.com", bw: GOOGLE_OAUTH_CLIENT_ID }
       - { entry: prospector-store-api-env, ns: prospector, field: Authentication__Google__ClientSecret, secret: SEED_GOOGLE_OAUTH_CLIENT_SECRET, shape: "GOCSPX-[A-Za-z0-9_-]{20,}", bw: GOOGLE_OAUTH_CLIENT_SECRET }
+
+  # -------------------------------------------------------------------------------------------
+  # ADR 0030: TypeSafe Jev — the estate's unified confidence-and-decision service.
+  # Every agent decision point calls mcp/plugins/jev.py, which reads this key. The key is set
+  # once by the founder in Bitwarden Secrets Manager under TYPESAFE_API_KEY; the bridge carries it.
+  # TypeSafe publishes a /v1/models endpoint that answers 2xx only with a live key.
+  # -------------------------------------------------------------------------------------------
+  typesafe:
+    kind: secret
+    secret: SEED_TYPESAFE_API_KEY
+    page: https://typesafe.ai/dashboard/api-keys
+    # TypeSafe keys start with "ts-" followed by alphanumeric characters (measured 2026-09-21)
+    shape: "ts-[A-Za-z0-9_-]{20,}"
+    verify: { method: GET, url: https://api.typesafe.ai/v1/models, headers: { Authorization: "Bearer {key}" } }
+    rotation: assisted  # TypeSafe publishes no create-key API reachable without a console session
+    store_default: human-vault
+    targets:
+      # The MCP server reads TYPESAFE_API_KEY from its environment. The estate holds the only copy
+      # (LAW 46, ADR 0030); no other repo holds it. The MCP pod mounts /run/secrets/human/typesafe
+      # and exports by basename.
+      - { entry: mcp-gateway, ns: mcp, field: TYPESAFE_API_KEY, bw: TYPESAFE_API_KEY }
+      # The warden's copy for re-proving the key (crew#832 CP3, same pattern as every vendor above)
+      - { ns: dagster, field: TYPESAFE_API_KEY, bw: TYPESAFE_API_KEY }
+
 # Not here yet (crew#579 stays open for it): Mailjet, a key AND a secret pair, two
 # prospector-store-api-env fields. `pair: true` above is the road it will take.

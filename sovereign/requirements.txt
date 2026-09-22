@@ -73,5 +73,5 @@ uvicorn>=0.30.6
 # since fastapi does not declare it as a hard dependency (it's a test-time need only).
 httpx2
 # mcp/plugins/jev.py -- JevLayer unified confidence service (ADR 0030).
-# JEV_API_KEY is loaded from estate-secrets; the key lives in the estate, not here.
+# TYPESAFE_API_KEY is loaded from estate-secrets; the key lives in the estate, not here.
 typesafe-sdk>=0.7.0
