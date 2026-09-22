@@ -165,4 +165,24 @@ describe('LayerOnCluster (rendered behind kubernetesApiRef)', () => {
     );
     expect(await screen.findByText(/since 2h ago/i)).toBeInTheDocument();
   });
+
+  it('draws a status pill that carries the state word, so it is never colour alone', async () => {
+    // A ready layer's card must show the estate's own word for the state ("Good"), not just a
+    // green tint a person who cannot see colour would miss (DESIGN-RULES 24).
+    const { container } = await renderInTestApp(
+      <TestApiProvider apis={[[kubernetesApiRef, fakeCluster('alerts', true) as never]]}>
+        <LayerOnCluster entity={layer('alerts', 'alerts')} />
+      </TestApiProvider>,
+    );
+    const pill = await screen.findByText('Good');
+    expect(pill.closest('.estate-state-pill')).toHaveAttribute('data-state', 'good');
+    // A failing layer shows its own word too, never a silent green.
+    container.remove();
+    await renderInTestApp(
+      <TestApiProvider apis={[[kubernetesApiRef, fakeCluster('alerts', false) as never]]}>
+        <LayerOnCluster entity={layer('alerts', 'alerts')} />
+      </TestApiProvider>,
+    );
+    expect(await screen.findByText('Red')).toBeInTheDocument();
+  });
 });

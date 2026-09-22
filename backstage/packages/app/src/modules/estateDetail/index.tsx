@@ -21,6 +21,10 @@ import { HEALTH_LABEL, checkedAgo, healthOf } from '../home/estate';
 // The live cluster card: reuse it for any Estate subject that genuinely sits on the cluster as
 // a Flux kustomization (every platform layer), so a click sees it Alive rather than a GitHub link.
 import { LayerOnCluster, isOnCluster } from './live';
+// CP3: the "Is it up?" card for the three vendor surfaces (Traces/Langfuse, Telemetry/SigNoz,
+// Dashboards/Superset), which otherwise carry only a link to the vendor's own login.
+import { VendorFact } from './VendorFact';
+import { vendorOf } from '../home/vendor';
 import Box from '@material-ui/core/Box';
 import Card from '@material-ui/core/Card';
 import CardContent from '@material-ui/core/CardContent';
@@ -203,10 +207,18 @@ export const EstateOverview = ({ now }: { now?: number }) => {
             <LayerOnCluster entity={entity} />
           </Grid>
         )}
+        {/* CP3: a vendor surface (Traces/Telemetry/Dashboards) gets one live fact from the
+            vendor's own health endpoint; every other entity renders nothing here. The grid cell
+            is emitted only for a recognised vendor, so a non-vendor page has no empty gap. */}
+        {vendorOf(md.name) && (
+          <Grid item xs={12}>
+            <VendorFact entity={entity} />
+          </Grid>
+        )}
         <Grid item xs={12} md={7}>
           <Card variant="outlined">
             <CardContent>
-              <Typography component="h2" gutterBottom>
+              <Typography component="h2" className="estate-detail-title" gutterBottom>
                 {md.title ?? md.name}
               </Typography>
               {typeof spec.type === 'string' && spec.type && (
@@ -235,16 +247,14 @@ export const EstateOverview = ({ now }: { now?: number }) => {
                 </Box>
               )}
               {factKeys.length > 0 && (
-                <Grid container spacing={1} style={{ marginTop: 6 }}>
+                <div className="estate-fact-grid">
                   {factKeys.map(k => (
-                    <Grid item xs={6} sm={4} key={k}>
-                      <Typography variant="caption" color="textSecondary" display="block">
-                        {displayLabel(k)}
-                      </Typography>
-                      <Typography variant="body2">{ann[k]}</Typography>
-                    </Grid>
+                    <div className="estate-fact-cell" key={k}>
+                      <span className="estate-fact-cell-label">{displayLabel(k)}</span>
+                      <span className="estate-fact-cell-value">{ann[k]}</span>
+                    </div>
                   ))}
-                </Grid>
+                </div>
               )}
             </CardContent>
           </Card>

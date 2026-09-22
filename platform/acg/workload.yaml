@@ -188,6 +188,10 @@ spec:
               value: "true"
             - name: PYTHONUNBUFFERED
               value: "1"
+            # LAW 50: every container names the collector, so the estate can see the model calls
+            # this gateway makes (require-otel-endpoint, platform/edge/require-otel-endpoint.yaml).
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://signoz-otel-collector.observability.svc:4318"
             # The provider keys, by file. Each is optional: a missing file leaves that provider
             # out of the pool rather than failing the pod.
             - { name: GROQ_API_KEY_FILE,       value: /run/secrets/acg-secrets/GROQ_API_KEY }
@@ -271,7 +275,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: redis
-          image: redis:7-alpine
+          image: docker.io/library/redis:7-alpine
           args:
             - "--maxmemory"
             - "256mb"
@@ -282,6 +286,10 @@ spec:
           ports:
             - name: redis
               containerPort: 6379
+          env:
+            # LAW 50: every container names the collector (require-otel-endpoint).
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://signoz-otel-collector.observability.svc:4318"
           resources:
             requests:
               cpu: 25m
@@ -323,6 +331,8 @@ metadata:
   labels:
     app: gateway
     app.kubernetes.io/part-of: acg
+    # Names the catalogue entity a founder opens (require-catalogue-entity, crew#846).
+    backstage.io/kubernetes-id: layer-acg
 spec:
   # ClusterIP, not LoadBalancer: the estate reaches every product through the shared Gateway
   # (prospector-edge) and the ns-ceiling above sets services.loadbalancers: "0" (AGENTS.md:
@@ -342,6 +352,7 @@ metadata:
   labels:
     app: redis
     app.kubernetes.io/part-of: acg
+    backstage.io/kubernetes-id: layer-acg
 spec:
   selector:
     app: redis
@@ -361,6 +372,7 @@ metadata:
   namespace: acg
   labels:
     app.kubernetes.io/part-of: acg
+    backstage.io/kubernetes-id: layer-acg
 spec:
   parentRefs:
     - name: prospector-edge

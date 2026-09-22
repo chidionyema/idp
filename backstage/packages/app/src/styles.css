@@ -174,6 +174,100 @@
   color: var(--bui-fg-secondary);
 }
 
+/* The estate's state pill: a dot or icon, the state's own word, and a tinted edge. Used on the
+   entity overview so a click speaks the same six words the home page draws. Both the icon and
+   the word are present, so the state never depends on colour alone (DESIGN-RULES 24). Each
+   state maps onto the BUI semantic family whose meaning matches; `blind` and `stale` have no
+   semantic family of their own, so they stay neutral grey, which is honest: unknown is not a
+   colour. */
+.estate-state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0.2rem 0.6rem 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--bui-border-2);
+  background: var(--bui-bg-neutral-2);
+  color: var(--bui-fg-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.estate-state-pill[data-state='good'] {
+  border-color: var(--bui-border-success);
+  background: var(--bui-bg-success);
+  color: var(--bui-fg-success);
+}
+
+.estate-state-pill[data-state='needs'] {
+  border-color: var(--bui-border-warning);
+  background: var(--bui-bg-warning);
+  color: var(--bui-fg-warning);
+}
+
+.estate-state-pill[data-state='red'] {
+  border-color: var(--bui-border-danger);
+  background: var(--bui-bg-danger);
+  color: var(--bui-fg-danger);
+}
+
+.estate-state-pill[data-state='running'] {
+  border-color: var(--bui-border-info);
+  background: var(--bui-bg-info);
+  color: var(--bui-fg-info);
+}
+
+.estate-state-pill[data-state='stale'],
+.estate-state-pill[data-state='blind'] {
+  border-color: var(--bui-border-2);
+  background: var(--bui-bg-neutral-3);
+  color: var(--bui-fg-secondary);
+}
+
+.estate-state-pill-word {
+  letter-spacing: 0.01em;
+}
+
+/* The estate entity overview's title and fact grid. The vendor entity page leaves the title at
+   body size; here it takes the estate's section scale (h2 24/700) and the facts sit on the
+   estate type ladder -- label 12 muted, value 15 bold -- so a click-through reads like the rest
+   of the portal rather than a stock Backstage stub. */
+.estate-detail-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.estate-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(9rem, 100%), 1fr));
+  gap: 0.75rem 1rem;
+  margin-top: 0.5rem;
+}
+
+.estate-fact-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.estate-fact-cell-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--bui-fg-secondary);
+}
+
+.estate-fact-cell-value {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--bui-fg-primary);
+  overflow-wrap: anywhere;
+}
+
 .estate-unread {
   color: var(--bui-fg-negative);
 }

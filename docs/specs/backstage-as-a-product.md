@@ -182,15 +182,44 @@ bespoke capture, not the hourly login drill.
 - **CP2**: The buyer sandbox gets a launch button on `/showcase` (a new scaffolder template
   dispatching a new `demo-sandbox-launch.yml`, running the exact command
   `docs/runbooks/demo-sandbox.md` already documents) and a live countdown to its
-  `cleanup.kyverno.io/ttl` expiry, read through the Kubernetes proxy.
+  `cleanup.kyverno.io/ttl` expiry, read through the Kubernetes proxy. **The countdown half is
+  built 2026-09-22**: the launch button and the launch template already existed; this pass added
+  the drawn hold the spec asked for (line 111, "a shrinking bar with a plain-English 'N minutes
+  left, then it is gone' line") — `CountdownBar` in `modules/home/visuals.tsx`, wired into the
+  sandbox section of `modules/home/Showcase.tsx` from the numbers `useSandbox` already returns
+  (no new read; LAW 51). The bar's fill is the remaining fraction of the hold, tinted good →
+  needs → red as it drains, and it always carries the state icon, the state word and the
+  countdown sentence, so the hold is never told by colour alone (DESIGN-RULES 20/24).
 - **CP3**: A Langfuse proxy, a SigNoz proxy and a Superset proxy exist (`app-config.yaml`
   `proxy.endpoints`), and `founder-traces`, `founder-telemetry`, `founder-dashboards` each show
-  one live counted fact on the card instead of only a link.
+  one live counted fact on the card instead of only a link. **Built 2026-09-22**: the three
+  `/langfuse`, `/signoz`, `/superset` read-only GET proxies are declared in `app-config.yaml`
+  (in-cluster Services, no host typed — LAW 46), and `modules/home/vendor.ts` + `useVendor.ts` +
+  `modules/estateDetail/VendorFact.tsx` render an "Is it up?" sentence from each vendor's own
+  health endpoint on exactly those three entities. Proxies merge from `app-config.yaml` into the
+  container run (the same way `/estate-state` and `/fleetview` already do).
 - **CP4**: A shared "layer card" component (Flux Ready state, pod count, last-deploy time) is
   built once and rendered on every `type: platform-layer` entity page (64 layers, one change).
+  **Built 2026-09-22**: `modules/estateDetail/live.tsx` (`LayerOnCluster`) already rendered
+  Ready state + pod count on all 83 layers; this pass added the third fact — how long the
+  verdict has held (`heldSinceAgo`, the Flux `lastTransitionTime`) — and `EstateOverview` mounts
+  it on every entity carrying `estate/flux-kustomization`.
 - **CP5**: The 20 "GitHub manifest link only" founder-surface entities gain
   `backstage.io/kubernetes-label-selector` and the CP4 layer card, so no founder-surface entity
-  in the catalogue ships with zero live content.
+  in the catalogue ships with zero live content. **Built 2026-09-22**: 18 of the 20 now carry both
+  `estate/flux-kustomization` and `backstage.io/kubernetes-label-selector:
+  kustomize.toolkit.fluxcd.io/name=<kustomization>` — the exact label Flux stamps on what it
+  renders, derived from each entity's own `idp/updated-by` manifest path and the Kustomization
+  `spec.path` in `clusters/oke/*.yaml`, never typed from memory. The CP4 card then draws Flux
+  Ready/pods/since on those pages with no new component. The 2 exceptions are honest: `founder-chaos`
+  has no manifest directory and `founder-network-map` points at Cilium *values* while the CNI
+  actually applied is `calico`, and `founder-gitops`/`founder-cluster-plumbing` name the whole
+  platform rather than one workload — a per-workload K8s tab is the wrong shape for them, so they
+  stay link-only rather than ship a selector that resolves to nothing. Proof that the 18 resolve
+  lives in the estate's own pipeline, not a laptop: `bin/idp-surface-liveness` reads the cluster's
+  state receipt (written from inside the cluster) and fails any stamped surface whose kustomization
+  the cluster does not hold, wired into `.github/workflows/estate-state.yml` after the receipt is
+  fetched; `ok`/`FAIL`/`BLIND` is printed on every run's summary.
 - **CP6**: `founder-otto-door`, `founder-mcp-gateway`, `founder-otto`, `founder-cursor` each show
   a live status pill from their own health endpoint through a proxy, replacing a manifest link.
 - **CP7**: `founder-drills` and `founder-crew-board` read their own live counts (last verdict per

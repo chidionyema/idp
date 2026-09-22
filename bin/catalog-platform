@@ -349,6 +349,12 @@ LAYERS = {
         "The product that finds and qualifies prospects.",
         "group:default/platform",
     ),
+    "acg": (
+        "products",
+        "ACG inference gateway",
+        "One door to every free inference lane the estate can reach: a caller presents a bearer key and the gateway picks the provider, so a product never holds a vendor key of its own.",
+        "group:default/platform",
+    ),
     "identity": (
         "identity",
         "Single sign-on",

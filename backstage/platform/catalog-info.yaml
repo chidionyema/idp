@@ -115,6 +115,46 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-acg
+  title: 'ACG inference gateway'
+  description: 'One door to every free inference lane the estate can reach: a caller presents a bearer key and the gateway picks the provider, so a product never holds a vendor key of its own.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=acg'
+    estate/flux-kustomization: 'acg'
+    estate/path: './platform/acg'
+    estate/cluster: 'oke'
+  tags: [platform, products]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: products
+  providesApis:
+    - api:default/acg-api
+  dependsOn:
+    - component:default/layer-edge
+    - component:default/layer-external-secrets
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: acg-api
+  description: 'ACG inference gateway: the HTTP interface, answering at acg.${ESTATE_ZONE}.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/products
+  definition: |
+    # Not published. acg answers at acg.${ESTATE_ZONE}; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-agent-workforce
   title: 'Infrastructure crew'
   description: 'The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.'

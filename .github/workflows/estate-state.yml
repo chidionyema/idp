@@ -70,6 +70,17 @@ jobs:
           bin/idp-cloud object get --bucket estate-drill-receipts --name state/cluster > "$RUNNER_TEMP/cluster.txt" \
             || { echo "BLIND cluster receipt not read (exit $?)"; : > "$RUNNER_TEMP/cluster.txt"; }
           head -c 160 "$RUNNER_TEMP/cluster.txt"; echo
+      # CP5 (docs/specs/backstage-as-a-product.md): the founder-surface entities now carry a
+      # `kustomize.toolkit.fluxcd.io/name=<kustomization>` selector, and the page only draws live
+      # state if that kustomization is really in the cluster. Grade each stamped surface against
+      # the receipt's own flux table from a runner -- never a laptop, never a guess. BLIND (exit
+      # 2) is not a pass: it prints and the run continues, because a receipt that was not read is
+      # not evidence the selectors are wrong.
+      - name: prove the CP5 founder-surface selectors resolve (bin/idp-surface-liveness)
+        run: |
+          set -uo pipefail
+          bin/idp-surface-liveness --catalog backstage/founder/catalog-info.yaml --receipt "$RUNNER_TEMP/cluster.txt" \
+            | tee -a "$GITHUB_STEP_SUMMARY" || echo "surface-liveness: NOT all stamped surfaces resolved (see row above)"
       - name: feed from the state branch, fall back to bucket (crew#786)
         env:
           RCLONE_S3_PROVIDER: Cloudflare

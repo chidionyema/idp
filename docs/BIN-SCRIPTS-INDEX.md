@@ -176,6 +176,7 @@ Core platform functionality, administration, and operational commands.
 | `idp-shadow-sync` | Sync shadow state |
 | `idp-shadow-verify` | Verify shadow mode |
 | `idp-shop-backup` | Backup shop database (crew#713 CP3) |
+| `idp-surface-liveness` | Prove CP5 founder-surface selectors resolve (cluster receipt) |
 | `idp-signoz-key` | Manage SignOz API key |
 | `idp-sleep-ban` | Ban sleep operations |
 | `idp-slow-tests` | Identify slow tests |

@@ -11,6 +11,7 @@ import { Entity } from '@backstage/catalog-model';
 import { useApi } from '@backstage/frontend-plugin-api';
 import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
 import { Card, CardContent, Typography } from '@material-ui/core';
+import { StateIcon } from '../home/visuals';
 import {
   DeploymentObject,
   FluxObject,
@@ -21,6 +22,7 @@ import {
   layerName,
   layerState,
 } from '../home/estate';
+import { STATE_WORD } from '../theme/tokens';
 
 const FLUX_KINDS = '/apis/kustomize.toolkit.fluxcd.io/v1/kustomizations';
 const DEPLOYMENTS = '/apis/apps/v1/deployments';
@@ -148,6 +150,14 @@ export function LayerOnCluster({ entity, now }: { entity: Entity; now?: number }
     <Card variant="outlined" data-testid="layer-on-cluster">
       <CardContent>
         <Typography variant="overline">On the cluster</Typography>
+        {/* The same dot + word the home page draws for this state, so a click speaks the
+            estate's six words rather than a bare colour (DESIGN-RULES 24: never colour alone). */}
+        <div className="estate-state-pill" data-state={resolved.state}>
+          <StateIcon state={resolved.state} />
+          <span className="estate-state-pill-word">
+            {STATE_WORD[resolved.state]}
+          </span>
+        </div>
         <Typography variant="body2">{sentence}</Typography>
         {since && (
           <Typography variant="caption" color="textSecondary" display="block">

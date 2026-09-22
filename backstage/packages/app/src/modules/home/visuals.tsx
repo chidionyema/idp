@@ -43,6 +43,7 @@ import {
   reducedMotion,
   monoFamily,
 } from '../theme/tokens';
+import { formatRemaining } from './showcaseDocs';
 
 // ---------------------------------------------------------------- state icons
 
@@ -278,6 +279,36 @@ const useStyles = makeStyles(theme => ({
     minWidth: 28,
     textAlign: 'right',
   },
+  // The buyer sandbox hold (CP2): a track that empties as the time runs out. The word beside
+  // the bar is the fact; the fill only repeats it, so a person who cannot see the colour still
+  // reads "18 minutes left". Rule 24: never colour alone.
+  countdown: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1),
+    maxWidth: 560,
+  },
+  countdownTop: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+  },
+  countdownWord: {
+    fontSize: 15,
+    fontWeight: 600,
+    color: theme.palette.text.primary,
+  },
+  countdownTrack: {
+    height: 14,
+    borderRadius: 7,
+    overflow: 'hidden',
+    background: theme.palette.divider,
+  },
+  countdownFill: {
+    height: '100%',
+    transition: `width 300ms ${ease}`,
+    [reducedMotion]: { transition: 'none' },
+  },
 }));
 
 // --------------------------------------------------------------------- donut
@@ -461,4 +492,74 @@ export function SystemBars(props: { rows: SystemRow[] }) {
       })}
     </div>
   );
+}
+
+// --------------------------------------------------------------- countdown bar
+
+/** How much of the hold is left, 0..1, guarded against a zero or nonsensical TTL. */
+export const countdownFraction = (remainingMs: number, ttlMs: number): number => {
+  if (!(ttlMs > 0)) return 0;
+  return Math.min(1, Math.max(0, remainingMs / ttlMs));
+};
+
+/** Which state the sandbox is in by how much hold is left: plenty, running low, nearly gone. */
+export const countdownState = (remainingMs: number, ttlMs: number): State => {
+  const f = countdownFraction(remainingMs, ttlMs);
+  if (remainingMs <= 0) return 'red';
+  if (f <= 0.15) return 'red';
+  if (f <= 0.4) return 'needs';
+  return 'good';
+};
+
+/**
+ * The buyer sandbox's hold, drawn (docs/specs/backstage-as-a-product.md CP2; spec line 111: "a
+ * shrinking bar with a plain-English 'N minutes left, then it is gone' line"). `remainingMs` and
+ * `ttlMs` come from useSandbox, which already recomputes the remaining time every second against
+ * one cluster read per refresh (LAW 51). A bar alone is colour alone, so the state icon, the
+ * state word and the countdown line are always present; the bar only repeats the number.
+ */
+export function CountdownBar(props: {
+  remainingMs: number;
+  ttlMs: number;
+  /** The sentence's leading word, e.g. "Sandbox". Kept a prop so the visual stays reusable. */
+  word?: string;
+}) {
+  const { remainingMs, ttlMs, word = 'Sandbox' } = props;
+  const classes = useStyles();
+  const tints = useTints();
+  const state = countdownState(remainingMs, ttlMs);
+  const fraction = countdownFraction(remainingMs, ttlMs);
+  const remaining = formatRemaining(remainingMs);
+  const stateWord =
+    { red: 'nearly gone', needs: 'running low' }[state as string] ?? 'held';
+  const sentence = `${word}: ${remaining}, then it is gone.`;
+  return (
+    <div
+      className={classes.countdown}
+      role="img"
+      aria-label={sentence}
+      data-testid="sandbox-countdown"
+      data-state={state}
+    >
+      <div className={classes.countdownTop}>
+        <StateIcon state={state} />
+        <span className={classes.countdownWord}>
+          {word} {stateWord}
+        </span>
+      </div>
+      <div className={classes.countdownTrack} aria-hidden>
+        <div
+          className={classes.countdownFill}
+          data-fill={state}
+          style={{ width: `${fraction * 100}%`, background: tints[state].ink }}
+        />
+      </div>
+      <TextLike>{sentence}</TextLike>
+    </div>
+  );
+}
+
+/** A plain 14px line matching the estate body, without importing a shell component into visuals. */
+function TextLike({ children }: { children: React.ReactNode }) {
+  return <span style={{ fontSize: 14, lineHeight: 1.5 }}>{children}</span>;
 }
