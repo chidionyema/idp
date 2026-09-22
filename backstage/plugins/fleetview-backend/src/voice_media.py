@@ -66,7 +66,9 @@ RUNTIME = "sovereign"
 
 # One fixed sentence for a voice audition, long enough to hear a voice's rhythm and not just its
 # timbre.
-PREVIEW_TEXT = "Four agents are stuck, all paused. Two on the harness audit, two on the commit."
+PREVIEW_TEXT = (
+    "Four agents are stuck, all paused. Two on the harness audit, two on the commit."
+)
 
 # The first half of every refusal from an engine that cannot run where it was asked to. The second
 # half is the exception itself, because "no module named numpy" tells a reader what is missing and
@@ -117,7 +119,9 @@ def _nats_url() -> str:
     return os.environ.get("NATS_URL", "")
 
 
-async def publish(session_id: str, kind: str, phase: str, **fields: Any) -> dict[str, Any]:
+async def publish(
+    session_id: str, kind: str, phase: str, **fields: Any
+) -> dict[str, Any]:
     """Put one row on the estate bus, and report honestly whether it landed.
 
     NEVER RAISES. A voice turn is a conversation with a person; losing the bus must not lose the
@@ -164,7 +168,9 @@ async def hear(pcm: bytes, session_id: str, author: str) -> tuple[dict[str, Any]
     if not session_id:
         return {"error": "session_id is required"}, 400
     if not author:
-        return {"error": "author is required: a steer with no attributed author is refused"}, 400
+        return {
+            "error": "author is required: a steer with no attributed author is refused"
+        }, 400
     if not pcm:
         return {"error": "no audio in the request body"}, 400
 
@@ -173,7 +179,9 @@ async def hear(pcm: bytes, session_id: str, author: str) -> tuple[dict[str, Any]
     # In a thread: transcription is CPU-bound and blocks. On the event loop it would stall every
     # other request in this process for the length of the utterance, including the board's SSE.
     try:
-        transcript, asr_seconds = await loop.run_in_executor(None, engine.transcribe, pcm)
+        transcript, asr_seconds = await loop.run_in_executor(
+            None, engine.transcribe, pcm
+        )
     except Exception as exc:  # noqa: BLE001 - see `say`: the reason is the product here
         return {"error": f"{_ENGINE_ABSENT}: {type(exc).__name__}: {exc}"}, 502
     audio_seconds = round(len(pcm) / 4 / engine.ASR_SAMPLE_RATE, 2)
@@ -292,7 +300,9 @@ async def answered(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     return {"recorded": True, "bus": bus}, 200
 
 
-async def preview(want_engine: str, want_voice: str, text: str) -> tuple[bytes | None, str | None]:
+async def preview(
+    want_engine: str, want_voice: str, text: str
+) -> tuple[bytes | None, str | None]:
     """Audition a voice without making it live. See `catalogue.preview`."""
     _engine, _turnlog, catalogue = _voice_package()
     loop = asyncio.get_running_loop()

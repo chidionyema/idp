@@ -63,8 +63,8 @@ def kokoro_voices() -> list[str]:
     if m.tts is not None:
         try:
             return sorted(m.tts.get_voices())
-        except Exception:  # noqa: BLE001 -- a model that cannot list voices still speaks
-            pass
+        except Exception:  # noqa: BLE001, S110 -- a model that cannot list voices still speaks
+            pass  # deliberate: fall through to the file listing below, which is the real answer
     try:
         with zipfile.ZipFile(engine.KOKORO_VOICES) as z:
             return sorted(n[:-4] for n in z.namelist() if n.endswith(".npy"))
@@ -169,7 +169,9 @@ def select(want_engine: str, want_voice: str) -> tuple[dict, int]:
     return {"engine": "kokoro", "voice": want_voice}, 200
 
 
-def preview(want_engine: str, want_voice: str, text: str) -> tuple[bytes | None, str | None]:
+def preview(
+    want_engine: str, want_voice: str, text: str
+) -> tuple[bytes | None, str | None]:
     """Speak one sentence in a candidate voice WITHOUT making it live.
 
     Returns (pcm, None) or (None, reason). Auditioning a voice should not change the voice

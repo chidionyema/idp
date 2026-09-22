@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import time
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -127,7 +126,10 @@ async def preview_voice(payload: dict):
         sample,
     )
     if pcm is None:
-        return JSONResponse(content={"error": reason}, status_code=502 if "synthesis" in (reason or "") else 400)
+        return JSONResponse(
+            content={"error": reason},
+            status_code=502 if "synthesis" in (reason or "") else 400,
+        )
     # Raw PCM, not JSON: the browser decodes it straight into an AudioBuffer, the same as a turn.
     return Response(content=pcm, media_type="application/octet-stream")
 

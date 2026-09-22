@@ -37,7 +37,16 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "backstage" / "plugins" / "fleetview-backend" / "src"
-HOOK = ROOT / "backstage" / "packages" / "app" / "src" / "modules" / "home" / "useEstateVoice.ts"
+HOOK = (
+    ROOT
+    / "backstage"
+    / "packages"
+    / "app"
+    / "src"
+    / "modules"
+    / "home"
+    / "useEstateVoice.ts"
+)
 
 
 def _load(path: Path, name: str):
@@ -52,7 +61,9 @@ def _load(path: Path, name: str):
 # The contract validator, borrowed rather than rewritten: one schema, graded one way. It prefers
 # the `jsonschema` library and falls back to the `check-jsonschema` CLI, and raises rather than
 # passing when neither is present -- a validator that cannot validate must not report green.
-_contract = _load(ROOT / "tests" / "test_estate_agent_event_contract.py", "estate_event_contract")
+_contract = _load(
+    ROOT / "tests" / "test_estate_agent_event_contract.py", "estate_event_contract"
+)
 validate = _contract.validate
 
 
@@ -80,7 +91,9 @@ class _Recorder:
 
     # -- what the test reads ------------------------------------------------------------------
     def one(self) -> tuple[str, dict]:
-        assert len(self.published) == 1, f"expected one row on the bus, got {len(self.published)}"
+        assert len(self.published) == 1, (
+            f"expected one row on the bus, got {len(self.published)}"
+        )
         subject, payload = self.published[0]
         return subject, json.loads(payload.decode())
 
@@ -117,7 +130,9 @@ def voice(monkeypatch):
     # the same object this test inspects.
     monkeypatch.setenv("NATS_URL", "nats://nats.event-bus.svc:4222")
 
-    engine = types.SimpleNamespace(ASR_SAMPLE_RATE=16_000, transcribe=lambda pcm: ("", 0.0))
+    engine = types.SimpleNamespace(
+        ASR_SAMPLE_RATE=16_000, transcribe=lambda pcm: ("", 0.0)
+    )
     turnlog = _Turnlog()
     catalogue = types.SimpleNamespace()
     monkeypatch.setattr(module, "_voice_package", lambda: (engine, turnlog, catalogue))
@@ -129,7 +144,10 @@ def voice(monkeypatch):
 
 def test_an_utterance_becomes_a_steer_the_contract_accepts(voice):
     """What the founder SAID goes on the bus, in the estate's one schema, attributed."""
-    voice.engine.transcribe = lambda pcm: ("stop the harness audit and land the commit", 0.41)
+    voice.engine.transcribe = lambda pcm: (
+        "stop the harness audit and land the commit",
+        0.41,
+    )
 
     body, status = asyncio.run(
         voice.module.hear(b"\0" * 64_000, session_id="voice-abc123", author="founder")
@@ -185,7 +203,9 @@ def test_the_end_of_a_turn_is_a_done_row_the_contract_accepts(voice):
     subject, event = voice.bus.one()
     assert subject == "estate.agent.sovereign.voice-abc123.done"
     ok, why = validate(event)
-    assert ok, f"the end of a turn is not a row the estate contract accepts: {why}\n{event}"
+    assert ok, (
+        f"the end of a turn is not a row the estate contract accepts: {why}\n{event}"
+    )
     assert event["kind"] == "done"
     assert event["phase"] == "done"
     # THE ANSWER'S TEXT IS NOT ON THE BUS. The contract's one free-text target field names "a
@@ -217,7 +237,9 @@ def test_an_empty_transcript_is_counted_not_published(voice):
 
     assert status == 200
     assert body["empty"] is True
-    assert voice.bus.published == [], "an utterance nobody could make out was published as a steer"
+    assert voice.bus.published == [], (
+        "an utterance nobody could make out was published as a steer"
+    )
     assert voice.turnlog.recorded[0].fields["outcome"] == "empty"
 
 
@@ -250,11 +272,17 @@ def _code_without_comments(source: str) -> str:
 @pytest.mark.parametrize(
     ("needle", "why"),
     [
-        ("8899", "the voice port -- a port that exists on one laptop and nowhere in the cluster"),
+        (
+            "8899",
+            "the voice port -- a port that exists on one laptop and nowhere in the cluster",
+        ),
         ("new WebSocket", "an upgrade the Backstage proxy cannot carry"),
         ("127.0.0.1", "a host that is the browser's own machine, not the estate's"),
         ("localhost", "the same host by its other name"),
-        ("EventSource", "an SSE client that cannot send the proxy's Authorization header"),
+        (
+            "EventSource",
+            "an SSE client that cannot send the proxy's Authorization header",
+        ),
     ],
 )
 def test_the_page_does_not_dial_anything(needle, why):
@@ -269,4 +297,6 @@ def test_the_page_talks_to_the_backend_through_the_proxy():
     # `fetchApi.fetch` is what attaches the token; a bare `fetch` would arrive unauthenticated and
     # the proxy answers 401 -- measured 2026-09-22 against a running backend.
     assert "fetchApi.fetch" in code
-    assert code.count("await fetch(") == 0, "a raw fetch would reach the proxy with no credentials"
+    assert code.count("await fetch(") == 0, (
+        "a raw fetch would reach the proxy with no credentials"
+    )
