@@ -276,7 +276,7 @@ class EstateEfficiencyGateway(CustomLogger):
         if len(messages) <= STALE_THRESHOLD:
             return messages
 
-        # Track content hashes we've seen, keyed by (tool_call_id, content_hash)
+        # Track content hashes we've seen
         seen_content: dict = {}
         result = []
 
@@ -301,7 +301,8 @@ class EstateEfficiencyGateway(CustomLogger):
                         "[6-DynamicPruning] Replaced duplicate tool_result content (saved %d bytes)",
                         original_bytes - new_bytes,
                     )
-                else:
+                # Always record the hash so we can detect future duplicates
+                if key not in seen_content:
                     seen_content[key] = True
 
             result.append(msg)

@@ -169,11 +169,15 @@ def test_sol_pi_replaces_duplicate_large_observation(monkeypatch, tmp_path):
 # ------------------------------------------------------------- [6] DynamicContextPruning
 
 
-def test_dynamic_pruning_replaces_duplicate_tool_content(monkeypatch, tmp_path):
-    """DynamicPruning replaces duplicate tool content with a reference, not drops the message.
+def test_dedup_mechanisms_preserve_tool_messages(monkeypatch, tmp_path):
+    """Dedup mechanisms replace content but don't drop tool messages.
 
     INVARIANT (2026-10-13): dropping a tool message without its assistant tool_calls entry
-    orphans the pair. So we replace content instead — the message stays, the pairing survives.
+    orphans the pair. SoLPi [5] and DynamicPruning [6] replace content instead — the message
+    stays, the pairing survives.
+
+    Note: SoLPi runs first and handles duplicates >= MIN_OBS_CHARS, so it gets the hits here.
+    DynamicPruning would only fire on duplicates SoLPi missed.
     """
     _mod, gw = _gw(monkeypatch, tmp_path)
     # Need content >= MIN_OBS_CHARS (500) for dedup to trigger
@@ -196,9 +200,11 @@ def test_dynamic_pruning_replaces_duplicate_tool_content(monkeypatch, tmp_path):
     assert len(tool_msgs) == 12, (
         "tool messages should not be dropped, only content replaced"
     )
-    # 11 duplicates should have been replaced
-    assert gw._pruned_duplicates == 11
-    assert gw._pruned_bytes > 0
+    # SoLPi should have replaced 11 duplicates (first one is kept as the original)
+    assert gw._obs_hits == 11, f"SoLPi should have 11 hits, got {gw._obs_hits}"
+    assert gw._obs_bytes_saved > 0
+    # No orphans should have been created
+    assert gw._orphaned_tool_messages_dropped == 0
 
 
 # ---------------------------------------------------------------- [7] CompactionManager
