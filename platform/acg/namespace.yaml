@@ -27,7 +27,9 @@ metadata:
 # same principle as hermes-agent's sidecar key: the gateway must start and serve /health before the
 # first vault entry is seeded, and a pool with no key for a provider simply omits that provider --
 # free_apis.build_pool returns None for any provider whose key is absent, which is a smaller cascade,
-# not a crash. The vault entry `acg-secrets` is seeded by bin/idp-estate-seed.
+# not a crash. The vault entry `acg-secrets` is NOT yet seeded by bin/idp-estate-seed: its PLAN does
+# not list it, so the keys stay absent until the entry is composed from the vendor rows the estate
+# already holds. Registered MISS in docs/reference/policy/root-trust.md.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:

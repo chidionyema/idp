@@ -78,7 +78,6 @@ absent here is red. Audit of 2026-08-28 (crew#66, session a0d64ea4): re-graded b
 | `oauth2-proxy-client-id`, `oauth2-proxy-client-secret` | platform/identity/external-secret.yaml | OCI Identity Domains | Operator | `oci_identity_domains_app.front_door` + `oci_vault_secret` (platform/oci/identity/main.tf) | MEETS | `bin/idp-identity-apply` |
 | `langfuse-init-public-key`, `langfuse-init-secret-key`, `langfuse-init-user-password`, `langfuse-init-user-email`, `clickhouse-admin-password` | platform/observability/langfuse.yaml, platform/llm/external-secret.yaml | estate (Terraform random) | Operator | `random_password` + `oci_vault_secret` (platform/oci/langfuse.tf) | MEETS | `bin/idp-identity-apply` |
 | `hermes-agent-a2a` | platform/hermes-agent/gateway.yaml | estate (in-cluster) | Operator | ESO `Password` generator | MEETS | ESO generator |
-| `acg-secrets` | platform/acg/namespace.yaml | free provider APIs (pool) | Operator | `bin/idp-estate-seed` writes the entry; every field is optional on both sides -- the gateway mounts `<NAME>_FILE` and `free_apis.build_pool` returns None for a provider whose key is absent, so an unseeded entry costs that provider, never the service | MEETS | `bin/idp-estate-seed` |
 | `temporal-db` | platform/temporal/external-secret.yaml | estate Postgres | Operator | `openssl rand` in-process → vault, kept when well-formed | MEETS | `bin/idp-estate-seed` |
 | `otto-gateway-db` (`password`) | platform/otto-gateway/external-secret.yaml | estate Postgres | Operator | `openssl rand` in-process → vault, kept when well-formed | MEETS | `bin/idp-estate-seed` |
 | `sunshine-auth` | platform/backstage/overlays/oke/sunshine-egress.yaml | estate (CI runner) | Operator | `/dev/urandom` in-process → vault, kept when complete; the Mac adopts it over the tailnet (`--adopt` via `mac-run`, crew#562 path 1) | MEETS | `bin/idp-bootstrap-sunshine` |
@@ -142,6 +141,8 @@ absent here is red. Audit of 2026-08-28 (crew#66, session a0d64ea4): re-graded b
 <!-- compiled-intent-rows: written by bin/intent-compile from intents/*.json. Do not edit these rows; edit the intent and re-run. -->
 | `agent-foundry-hf` | platform/compiled/agent-foundry-hf/external-secret.yaml | vendor | Supplier | issued by the vendor, written once into the vault by the estate's vendor bootstrapper; rotation 90d | MEETS | `bin/idp-bootstrap-vendors` |
 <!-- /compiled-intent-rows -->
+
+| `acg-secrets` | platform/acg/namespace.yaml | estate (gateway pool) | Operator | The asymmetric compute grid's provider keys, read as files (`<NAME>_FILE`, never env values) by `gateway/secrets.py`. They are the estate's existing vendor entries -- `groq`, `cerebras`, `openrouter`, `google` on the human road -- not new credentials, but nothing yet derives `acg-secrets` from them: `bin/idp-estate-seed`'s PLAN does not list it, so the manifest's comment claiming seed coverage is aspirational. Until a seed step composes the entry from the vendor rows it already holds, this is a MISS. | MISS | [the API key lifecycle ticket](https://github.com/chidionyema/crew/issues/832) |
 
 ## Security policy
 
