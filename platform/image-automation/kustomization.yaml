@@ -17,3 +17,4 @@ resources:
   - epistemic-ingest.yaml
   - via-negativa.yaml
   - fleetview-backend.yaml
+  - zeroedge.yaml

@@ -104,6 +104,11 @@ spec:
             # request with a ModuleNotFoundError -- a broken router is worse than an unbounded
             # one, which is why the path and the callback ship in the same pull request.
             - { name: PYTHONPATH, value: "/etc/litellm/ceilings" }
+            # ZeroEdge (platform/llm/zeroedge.yaml). The shim module is OFF unless this is
+            # set, and it fails open: a call whose optimization pass errors or exceeds the
+            # 2s timeout proceeds unoptimized rather than failing. In-namespace, so the
+            # llm fence carries it on allow-same-namespace and no new hop is declared.
+            - { name: ZEROEDGE_URL, value: "http://zeroedge.llm.svc.cluster.local:8757" }
             - { name: GENERIC_USER_ID_ATTRIBUTE, value: email }
             - { name: GENERIC_USER_EMAIL_ATTRIBUTE, value: email }
             - { name: PROXY_BASE_URL, value: "https://llm.${ESTATE_ZONE}" }
