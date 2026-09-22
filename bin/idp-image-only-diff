@@ -26,8 +26,19 @@ import re
 import subprocess
 import sys
 
+# Two keys, because image-automation-controller writes the marker onto whichever key the
+# manifest author put it on. `newTag:` is the kustomize `images:` form; `tag:` is the Helm
+# values form (platform/dagster/dagster.yaml carries three of them, for the estate-scheduler
+# policy). Until 2026-09-22 this pattern knew only the first, so the moment a `tag:` marker
+# entered the estate EVERY deploy pull request was refused -- measured on #3839, which is
+# twelve controller-written tag lines and was sent to the founder as "not a plain image bump".
+#
+# What proves the controller owns a line is the `$imagepolicy` marker comment, not the key it
+# sits on: the marker is placed by a human in the manifest and the controller rewrites only the
+# value beside it. So widening the key does not widen the trust -- a line still cannot pass
+# without the marker, and the policy set still has to be identical either side of the diff.
 TAG_LINE = re.compile(
-    r'^\s*newTag:\s*(?P<tag>\S+)\s*#\s*\{"\$imagepolicy":\s*"(?P<policy>[^"]+)"\s*\}\s*$'
+    r'^\s*(?:newTag|tag):\s*(?P<tag>\S+)\s*#\s*\{"\$imagepolicy":\s*"(?P<policy>[^"]+)"\s*\}\s*$'
 )
 # File headers and hunk headers carry + and - but are not content.
 HEADER = ("+++", "---")
