@@ -127,24 +127,28 @@ vendors:
       # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
       # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
       - { ns: dagster, field: DEEPSEEK_API_KEY, bw: DEEPSEEK_API_KEY }
-      # No litellm-upstream field: the router's DeepSeek key is console-owned (see below), so the
-      # vault entry the router mounts carries no DeepSeek key at all. prospector holds its own.
+      # Git-owned lane now (model agnosticism fix), so the router needs the key in its vault entry.
+      - { entry: litellm-upstream, ns: llm, field: DEEPSEEK_API_KEY, bw: DEEPSEEK_API_KEY }
       - { entry: prospector-engine-env, ns: prospector, field: DEEPSEEK_API_KEY, bw: DEEPSEEK_API_KEY }
     router:
-      # Console-owned, founder 2026-09-04: "i can change the keys nyself, i eed to be ble to delete
-      # the esting keys set in config", then "delete the current deepseeky key, ill add a new one".
-      # A model row declared in the rendered config is read-only in the LiteLLM admin console --
-      # it refuses to attach, change or delete a key for a model that is "defined in config" -- so
-      # a git-owned row takes the credential out of his hands. The DeepSeek lane therefore renders
-      # no model_list row and holds no key in git or in the router's vault entry; he adds the key
-      # in the console's LLM Credentials tab and it lives encrypted in litellm-db, the same shape
-      # the Kimi lane has carried since 2026-09-03 (R75).
-      #
-      # `console_lanes` names a model group that exists at runtime but is rendered by nobody, so
-      # the renderer's own check (every fallback names a lane something serves) still passes and
-      # the chains below stay in git. The lane rejoins every chain the moment he adds the key --
-      # no pull request, no session, no wait.
-      console_lanes: [deepseek]
+      # Git-owned lane, same as MiniMax. The original console-owned design (founder 2026-09-04)
+      # broke model agnosticism: the deepseek chain rendered to both configs but only the cluster
+      # had a console to add the key, so laptop hit 401 on every deepseek-headed turn. A git-owned
+      # lane with `api_key: os.environ/DEEPSEEK_API_KEY` works everywhere the key is set (cluster
+      # via vault, laptop via .env or shell). The founder rotates keys by updating the vault entry
+      # or Bitwarden, same as MiniMax -- no console needed.
+      lanes: |
+        - model_name: deepseek
+          litellm_params:
+            model: deepseek/deepseek-chat
+            api_key: os.environ/DEEPSEEK_API_KEY
+            timeout: 300
+            max_tokens: 8192
+            # DeepSeek V3 pricing: $0.14/M input, $0.28/M output (platform.deepseek.com, 2026-09)
+            input_cost_per_token: 0.00000014
+            output_cost_per_token: 0.00000028
+          model_info:
+            max_input_tokens: 65536
       fallbacks: |
         # DeepSeek answered 401 from inside the router pod on 2026-09-04 21:5xZ (the key is revoked
         # at the vendor; prospector's byte-identical copy fails the same way), which is why Gemini

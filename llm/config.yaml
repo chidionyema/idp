@@ -39,6 +39,18 @@ model_list:
     model_info:
       max_input_tokens: 131072
 
+  - model_name: deepseek
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+      timeout: 300
+      max_tokens: 8192
+      # DeepSeek V3 pricing: $0.14/M input, $0.28/M output (platform.deepseek.com, 2026-09)
+      input_cost_per_token: 0.00000014
+      output_cost_per_token: 0.00000028
+    model_info:
+      max_input_tokens: 65536
+
   # --- the moat's cheap primary --------------------------------------------------------
   # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
   # with an explicit api_base rather than a provider prefix.
@@ -622,7 +634,9 @@ router_settings:
 
 litellm_settings:
   # Traces to the collector that already runs. No second store.
-  callbacks: ["otel"]
+  # The efficiency gateway runs the 9 token-optimisation mechanisms on every call.
+  # See platform/llm/efficiency_gateway.py for what each one does.
+  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance"]
   drop_params: true
   # Never log the prompt or the completion body. Spans carry model, latency, tokens and
   # cost — which is what an audit trail needs — and not the content of a customer's
