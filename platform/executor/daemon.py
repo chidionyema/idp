@@ -125,7 +125,7 @@ _TTCS = os.path.join(
     "src",
 )
 sys.path.insert(0, os.path.abspath(_TTCS))
-from idp_concurrency.ttcs.shadow_memory import ShadowMemory, Triplet  # noqa: E402
+from idp_concurrency.ttcs.shadow_memory import ShadowMemory  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sandbox import (
@@ -447,8 +447,6 @@ def _verifier_loop() -> None:
 
 def _propose_patch_sync(payload: dict) -> dict:
     """Call _propose_patch without going through the socket. Module-level helper."""
-    import difflib as _difflib
-
     handler = Handler.__new__(Handler)
     return handler._propose_patch(payload)
 
@@ -709,7 +707,7 @@ def take_tuple(tuple_type: str, role: str) -> dict:
         }
     with _TUPLES_LOCK:
         bucket = _TUPLES.get(tuple_type, [])
-        for i, t in enumerate(bucket):
+        for i, _t in enumerate(bucket):
             matched = bucket.pop(i)
             return {"ok": True, "tuple": matched, "queue_depth": len(bucket)}
     return {"ok": True, "tuple": None, "queue_depth": 0}
@@ -1471,13 +1469,13 @@ class Handler(socketserver.StreamRequestHandler):
             return {"ok": False, "error": "put_triplet needs a result"}
 
         try:
-            _persist_triplet(replica_id, action, result_text, takeaway, symbol)
             sm = _get_or_load_replica(replica_id)
             with _REPLICAS_LOCK:
                 sm.add(
                     action=action, result=result_text, takeaway=takeaway, symbol=symbol
                 )
                 count = len(sm)
+            _persist_triplet(replica_id, action, result_text, takeaway, symbol)
         except OSError as exc:
             result = {"ok": False, "error": f"persistence failed: {exc}"}
             _trace_event("put_triplet", request, result, replica_id=replica_id)
