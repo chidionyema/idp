@@ -656,7 +656,6 @@ if [ -z "${IDP_CI_BASE:-}" ]; then
 else
   say "skip  local-evidence developer-local; CI cannot have an agent session"
 fi
-fi
 
 # ADR 0030: Jev scope guard — no direct TypeSafeClient calls outside mcp/plugins/jev.py.
 # This is the forcing function that ensures every Jev call goes through the MCP plugin,
