@@ -16,4 +16,4 @@ images:
   # overwrites this line with the real main-<run>-<sha> the first time CI pushes the image,
   # the same way it already does for router-events and every other row here.
   - name: ghcr.io/chidionyema/epistemic-ingest
-    newTag: main-9684-d67d13935993278da1dfb4efd27de615ec00db20 # {"$imagepolicy": "flux-system:epistemic-ingest:tag"}
+    newTag: main-11644-adb82e9d58f2e92e89ea3012cc603231df71bb70 # {"$imagepolicy": "flux-system:epistemic-ingest:tag"}
