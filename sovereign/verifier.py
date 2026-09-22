@@ -452,6 +452,19 @@ def stage_execution(
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(proposed.content)
     (sandbox / "test_supplied.py").write_text(tests)
+    # HOME is scrubbed to the sandbox just below, and on a machine whose pytest lives in the
+    # per-user site directory (`pip install --user`, which is what a Mac without Homebrew
+    # gets) that scrub takes pytest with it: the interpreter derives its user site from HOME,
+    # so the sandbox run answered "No module named pytest" and the execution stage failed on
+    # every diff. Measured 2026-09-22 on the founder's Mac -- sys.executable
+    # /Library/Developer/CommandLineTools/usr/bin/python3, pytest at
+    # ~/Library/Python/3.9/lib/python/site-packages -- where it refused every push from a
+    # worktree while the same test passed when run by hand. Never seen in CI, where pytest is
+    # in the interpreter's own site-packages and HOME is irrelevant.
+    #
+    # Resolved below in the parent, while HOME is still the real one, and handed to the child
+    # on PYTHONPATH. The scrub keeps its point: the child still cannot read or write the real
+    # home, and it gains nothing the parent interpreter did not already import from.
     completed = subprocess.run(  # noqa: S603 - argv is a literal, not a shell string
         [
             sys.executable,
@@ -467,18 +480,16 @@ def stage_execution(
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": str(sandbox),
             "PYTHONDONTWRITEBYTECODE": "1",
-            # Include the user site-packages so `pip install --user pytest` and similar
-            # work in the sandbox. PYTHONPATH must be appended to, not replaced -- the
-            # sandbox dir stays so its own modules resolve first.
+            # The sandbox dir stays first so its own modules resolve ahead of anything
+            # inherited; the user site-packages come last so `pip install --user pytest`
+            # is still importable once HOME has been scrubbed.
             "PYTHONPATH": os.pathsep.join(
                 filter(
                     None,
                     [
                         str(sandbox),
                         os.environ.get("PYTHONPATH", ""),
-                        site.getusersitepackages()
-                        if site.getusersitepackages()
-                        else "",
+                        site.getusersitepackages(),
                     ],
                 )
             ),
