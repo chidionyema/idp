@@ -383,8 +383,6 @@ export function useSpeculativeVoice(): SpeculativeVoice {
       return { action: 'unknown', confidence: 0, partial };
     }
 
-    const startTime = performance.now();
-
     try {
       const prompt = `${INTENT_SYSTEM_PROMPT}\n\nTranscript: "${text}"\nJSON:`;
 

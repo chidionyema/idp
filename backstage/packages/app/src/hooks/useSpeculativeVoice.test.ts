@@ -5,7 +5,7 @@
  * which would be too slow for unit tests. Integration tests should cover
  * the full pipeline.
  */
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import { useSpeculativeVoice, type VoiceIntent } from './useSpeculativeVoice';
 
 // Mock the dynamic imports
