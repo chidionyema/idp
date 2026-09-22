@@ -18,6 +18,7 @@ These tests hold the widened pattern to the same trust boundary as before: the
 
 from __future__ import annotations
 
+import importlib.machinery
 import importlib.util
 import sys
 from pathlib import Path
