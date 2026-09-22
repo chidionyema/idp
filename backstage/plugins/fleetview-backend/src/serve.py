@@ -188,10 +188,10 @@ def build_app(routes_path: Path) -> FastAPI:
         allow_headers=["Content-Type"],
     )
 
-    # THE VAD AND ONNXRUNTIME BUNDLES, from the one copy in sovereign/voice/static.
+    # THE VAD AND ONNXRUNTIME BUNDLES, from the one copy in backstage/packages/app/public/voice.
     #
-    # The Backstage app serves these at its OWN origin (backstage/packages/app/public/voice is a
-    # symlink to that same directory), because a `<script src>` and an AudioWorklet cannot carry
+    # The Backstage app serves these at its OWN origin (sovereign/voice/static is a symlink to
+    # that same directory), because a `<script src>` and an AudioWorklet cannot carry
     # the proxy's Authorization header and the proxy answers 401 without it -- measured
     # 2026-09-22: GET /api/proxy/fleetview/sessions with no credentials is 401. This mount is for
     # every OTHER caller of this service, so a checkout that is not served by Backstage still has

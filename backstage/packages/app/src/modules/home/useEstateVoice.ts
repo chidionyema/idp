@@ -60,9 +60,15 @@ import { fetchApiRef, useApi } from '@backstage/core-plugin-api';
 /**
  * The VAD and onnxruntime bundles, served by THIS APP at its own origin.
  *
- * `backstage/packages/app/public/voice` is a symlink to `sovereign/voice/static`, so there is one
- * copy of the 33MB on disk and the app serves it with the right MIME types -- measured 2026-09-22
- * on the running dev server: `/voice/ort.min.js` is `application/javascript` (443678 bytes) and
+ * The 33MB lives in `backstage/packages/app/public/voice`, and `sovereign/voice/static` is a
+ * symlink to it -- still one copy on disk, pointing the other way round. It was the other way
+ * round until 2026-09-22, and that broke every portal image build: the backstage image's build
+ * context is `backstage/`, so a symlink out of it dangles inside the container and `yarn
+ * build:all` died on `ENOENT: stat '/app/packages/app/public/voice'` (run 35683095989). The bytes
+ * have to be inside the context of the image that serves them.
+ *
+ * The app serves them with the right MIME types -- measured 2026-09-22 on the running dev server:
+ * `/voice/ort.min.js` is `application/javascript` (443678 bytes) and
  * `/voice/ort-wasm-simd-threaded.jsep.wasm` is `application/wasm`.
  *
  * WHY NOT THROUGH THE PROXY like everything else here: a `<script src>` tag and an AudioWorklet

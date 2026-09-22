@@ -340,8 +340,9 @@ VOICE_LOG_PATH = "/voice/log"
 VOICE_LOG_SUMMARY_PATH = "/voice/log/summary"
 # The VAD and onnxruntime bundles the browser needs before it can hear anything. Served from this
 # process as a fallback for a caller that is not the Backstage app; the app itself serves them at
-# its own origin (backstage/packages/app/public/voice -> sovereign/voice/static), because a
-# `<script src>` and an AudioWorklet cannot carry the proxy's Authorization header.
+# its own origin (the bytes live in backstage/packages/app/public/voice, and sovereign/voice/static
+# is a symlink to them), because a `<script src>` and an AudioWorklet cannot carry the proxy's
+# Authorization header.
 VOICE_STATIC_PATH = "/voice/static"
 HISTORY_PATH = "/history"
 QUERY_PATH = "/query"
