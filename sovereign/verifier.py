@@ -70,9 +70,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import importlib.util
 import os
 import shutil
-import site
 import sqlite3
 import subprocess
 import sys
@@ -452,19 +452,23 @@ def stage_execution(
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(proposed.content)
     (sandbox / "test_supplied.py").write_text(tests)
-    # HOME is scrubbed to the sandbox just below, and on a machine whose pytest lives in the
-    # per-user site directory (`pip install --user`, which is what a Mac without Homebrew
-    # gets) that scrub takes pytest with it: the interpreter derives its user site from HOME,
-    # so the sandbox run answered "No module named pytest" and the execution stage failed on
-    # every diff. Measured 2026-09-22 on the founder's Mac -- sys.executable
-    # /Library/Developer/CommandLineTools/usr/bin/python3, pytest at
-    # ~/Library/Python/3.9/lib/python/site-packages -- where it refused every push from a
-    # worktree while the same test passed when run by hand. Never seen in CI, where pytest is
-    # in the interpreter's own site-packages and HOME is irrelevant.
+    # HOME points at the sandbox so the run cannot read this machine's caches or
+    # config -- which also hides a --user install of pytest from the interpreter,
+    # because user site-packages are resolved from HOME. On a machine whose pytest
+    # lives there (macOS, where the system interpreter's own site-packages are not
+    # writable) the stage reported "No module named pytest" as a FAILED proof.
     #
-    # Resolved below in the parent, while HOME is still the real one, and handed to the child
-    # on PYTHONPATH. The scrub keeps its point: the child still cannot read or write the real
-    # home, and it gains nothing the parent interpreter did not already import from.
+    # A missing tool is not a failed verification. The parent process already knows
+    # where pytest is; hand that one directory to the child rather than loosening
+    # HOME. Hermeticity is unchanged -- nothing else on this machine becomes
+    # importable, and a machine with no pytest at all still fails, loudly and for
+    # the real reason.
+    pythonpath = [str(sandbox)]
+    pytest_spec = importlib.util.find_spec("pytest")
+    if pytest_spec is not None and pytest_spec.origin:
+        site_dir = str(Path(pytest_spec.origin).parent.parent)
+        if site_dir not in pythonpath:
+            pythonpath.append(site_dir)
     completed = subprocess.run(  # noqa: S603 - argv is a literal, not a shell string
         [
             sys.executable,
@@ -480,19 +484,7 @@ def stage_execution(
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": str(sandbox),
             "PYTHONDONTWRITEBYTECODE": "1",
-            # The sandbox dir stays first so its own modules resolve ahead of anything
-            # inherited; the user site-packages come last so `pip install --user pytest`
-            # is still importable once HOME has been scrubbed.
-            "PYTHONPATH": os.pathsep.join(
-                filter(
-                    None,
-                    [
-                        str(sandbox),
-                        os.environ.get("PYTHONPATH", ""),
-                        site.getusersitepackages(),
-                    ],
-                )
-            ),
+            "PYTHONPATH": os.pathsep.join(pythonpath),
         },
         capture_output=True,
         text=True,
