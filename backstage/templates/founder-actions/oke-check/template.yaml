@@ -27,7 +27,7 @@ spec:
         default: check
       playbook:
         title: 'Break-glass only: runs the one named recovery playbook while the runner is admitted to
-          the cluster; diagnose and architect-doctor are read-only'
+          the cluster; diagnose, architect-doctor and secret-census are read-only'
         type: string
         enum:
         - diagnose
@@ -53,6 +53,8 @@ spec:
         - router-spend
         - registries-conf
         - ns-fences
+        - secret-census
+        - secret-reclaim
         default: diagnose
   steps:
   - id: dispatch
