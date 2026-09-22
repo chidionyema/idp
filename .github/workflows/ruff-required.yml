@@ -26,20 +26,22 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          files=$(git diff --name-only "${BASE}...HEAD" -- '*.py' | grep -v '\.git/' || true)
+          # origin/main...HEAD lists every path the PR touched, including deletions; filter
+          # to files that still exist on disk so xargs doesn't pass stale paths to ruff.
+          files=$(git diff --name-only "${BASE}...HEAD" -- '*.py' | grep -v '\.git/' | while read -r f; do [ -f "$f" ] && echo "$f"; done || true)
           if [ -z "$files" ]; then
             echo "no python files changed in this PR"
             exit 0
           fi
           echo "checking:"
-          printf '  %s\n' $files
+          printf '  %s\n' "$files"
           echo "$files" | xargs python3 -m ruff format --check
       - name: ruff check on the PR diff
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          files=$(git diff --name-only "${BASE}...HEAD" -- '*.py' | grep -v '\.git/' || true)
+          files=$(git diff --name-only "${BASE}...HEAD" -- '*.py' | grep -v '\.git/' | while read -r f; do [ -f "$f" ] && echo "$f"; done || true)
           [ -z "$files" ] && exit 0
           echo "$files" | xargs python3 -m ruff check
       - name: emit ratchet count
