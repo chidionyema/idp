@@ -3,7 +3,7 @@
 Scenarios:
   available path      -- Jev returns confidence 0.9 -> escalated false, row in jev_decisions
   low confidence     -- Jev returns confidence 0.4 < floor -> escalated true
-  unavailable path   -- typesafe-sdk absent or JEV_API_KEY empty -> escalated true, _fallback set
+  unavailable path   -- typesafe-sdk absent or TYPESAFE_API_KEY empty -> escalated true, _fallback set
   timeout path      -- API times out -> escalated true, _fallback timeout
   escalation routing -- guard with escalated=true -> routes to human review
   no secret leakage -- context with password key -> stripped, password_redacted flag set
@@ -131,9 +131,9 @@ class TestJevLayerPureFunctions:
         assert result["escalated"] is True  # confidence 0.5 < floor 0.7
 
     def test_call_jev_unavailable_no_key(self, monkeypatch):
-        """When JEV_API_KEY is empty, returns escalated + fallback."""
-        monkeypatch.delenv("JEV_API_KEY", raising=False)
-        monkeypatch.setattr(jev_module, "JEV_API_KEY", "")
+        """When TYPESAFE_API_KEY is empty, returns escalated + fallback."""
+        monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+        monkeypatch.setattr(jev_module, "TYPESAFE_API_KEY", "")
         monkeypatch.setattr(jev_module, "_JEVD_INSTALLED", False)
 
         state = jev_module.JevState(
@@ -235,7 +235,7 @@ class TestJevToolsNoServer:
 
     def test_jev_choice_returns_expected_shape(self, monkeypatch: pytest.MonkeyPatch):
         """jev_choice returns dict with the required keys."""
-        monkeypatch.setattr(jev_module, "JEV_API_KEY", "")
+        monkeypatch.setattr(jev_module, "TYPESAFE_API_KEY", "")
         monkeypatch.setattr(jev_module, "_JEVD_INSTALLED", False)
         with tempfile.TemporaryDirectory() as td:
             db = str(Path(td) / "test.db")
@@ -261,7 +261,7 @@ class TestJevToolsNoServer:
         {escalated: True, _fallback: 'jev_unavailable', confidence: None, latency_ms: None}.
         A DB row is still written (with null confidence).
         """
-        monkeypatch.setattr(jev_module, "JEV_API_KEY", "")
+        monkeypatch.setattr(jev_module, "TYPESAFE_API_KEY", "")
         monkeypatch.setattr(jev_module, "_JEVD_INSTALLED", False)
         with tempfile.TemporaryDirectory() as td:
             db = str(Path(td) / "test.db")
@@ -281,7 +281,7 @@ class TestJevToolsNoServer:
 
     def test_jev_score_returns_expected_shape(self, monkeypatch: pytest.MonkeyPatch):
         """jev_score returns dict with the required keys."""
-        monkeypatch.setattr(jev_module, "JEV_API_KEY", "")
+        monkeypatch.setattr(jev_module, "TYPESAFE_API_KEY", "")
         monkeypatch.setattr(jev_module, "_JEVD_INSTALLED", False)
         with tempfile.TemporaryDirectory() as td:
             db = str(Path(td) / "test.db")

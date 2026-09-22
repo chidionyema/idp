@@ -7,7 +7,7 @@ This is NOT a second server (ADR 0006: "extend `mcp/`; never add a second server
 ARCHITECTURE (docs/decisions/0030-jevlayer-unified-confidence-and-decision-service.md):
   Every decision point (guard, agent, hook, consensus, verifier) calls these tools instead of
   making best-guess decisions locally or calling TypeSafeClient directly. The estate holds
-  JEV_API_KEY; no other repository holds it.
+  TYPESAFE_API_KEY; no other repository holds it.
 
   State envelope per call:
     repo         -- "sovereign" | "hermes" | "estate" | ...
@@ -19,7 +19,7 @@ ARCHITECTURE (docs/decisions/0030-jevlayer-unified-confidence-and-decision-servi
   The estate twin reads jev_decisions for the jev_decisions domain state row.
 
 CONFIG (LAW 46 -- no path or key is a literal in code):
-  JEV_API_KEY                -- TypeSafe API key (from estate-secrets, estate holds the only copy)
+  TYPESAFE_API_KEY           -- TypeSafe API key (from estate-secrets, estate holds the only copy)
   ESTATE_DB_PATH             -- estate.db path (default /data/estate.db)
   JEV_MODEL                  -- model name (default jev-1.13.0)
   JEV_DEFAULT_CONFIDENCE_FLOOR  -- minimum confidence to consider a decision resolved (default 0.7)
@@ -47,7 +47,7 @@ except ImportError:  # pragma: no cover - datasette-less CI venv
         return fn
 
 
-JEV_API_KEY = os.environ.get("JEV_API_KEY", "")
+TYPESAFE_API_KEY = os.environ.get("TYPESAFE_API_KEY", "")
 ESTATE_DB_PATH = os.environ.get("ESTATE_DB_PATH", "/data/estate.db")
 JEVD = os.environ.get("JEV_MODEL", "jev-1.13.0")
 DEFAULT_FLOOR = float(os.environ.get("JEV_DEFAULT_CONFIDENCE_FLOOR", "0.7"))
@@ -222,7 +222,7 @@ def _call_jev(
     Returns dict with keys: choice|decision|score (type-specific), confidence,
     probabilities, escalated, latency_ms, _fallback (if unavailable).
     """
-    if not _JEVD_INSTALLED or not JEV_API_KEY:
+    if not _JEVD_INSTALLED or not TYPESAFE_API_KEY:
         return {
             "escalated": True,
             "_fallback": "jev_unavailable",
@@ -235,7 +235,7 @@ def _call_jev(
         import httpx
 
         headers = {
-            "Authorization": f"Bearer {JEV_API_KEY}",
+            "Authorization": f"Bearer {TYPESAFE_API_KEY}",
             "Content-Type": "application/json",
         }
         payload: dict[str, Any] = {
