@@ -1399,8 +1399,100 @@ EOF'
   show_redacted switch-log $K logs "$d" -n "$ns" -c otto-brain --tail=40
 }
 
+# secret-census / secret-reclaim: OKE ships an admission webhook,
+# `oke-resource-leak-protection.oke.com`, that refuses to CREATE a Secret once the cluster holds
+# 2000 of them. On 2026-09-20 it refused crossplane's HelmRelease with
+#
+#     admission webhook "oke-resource-leak-protection.oke.com" denied the request:
+#     Cluster has 2650 secrets and the limit is 2000
+#
+# and that verdict has been quoted in three agent sessions since without one secret being
+# reclaimed, because no door in this estate could say WHERE the 2650 are. `bin/idp-kube` is a
+# read door but `bin/idp-oci-login` refuses agents on purpose (it wants a TTY -- founder, not
+# agents, crew#227 CP2 / LAW 54), so the census has to run where the runner already holds an
+# OIDC-exchanged OCI session: here.
+#
+# Neither playbook ever prints a secret VALUE, and neither asks the API for one it does not need:
+# `-o custom-columns` over namespace/name/type/labels/creationTimestamp only, so `.data` is never
+# formatted into the log. This is the same discipline as show_redacted, applied by not fetching.
+SECRET_CAP=2000
+
+# One listing, reused by both playbooks. Tab-separated: namespace, name, type, helm-owner,
+# helm-status, birth. The two helm columns come from the labels Helm itself writes on every
+# release secret (`owner=helm`, `status=deployed|superseded|failed|pending-*`), which is what makes
+# the reclaim below provable rather than a name-pattern guess.
+secret_table() {
+  $K get secrets -A --no-headers -o \
+    custom-columns=NS:.metadata.namespace,NAME:.metadata.name,TYPE:.type,OWNER:.metadata.labels.owner,STATUS:.metadata.labels.status,BORN:.metadata.creationTimestamp \
+    2>/dev/null | awk 'NF'
+}
+
+pb_secret_census() {
+  local t total
+  t=$(secret_table) || { echo "FAIL  secret-census  could not list secrets"; FAILED="$FAILED secret-census"; return 1; }
+  total=$(printf '%s\n' "$t" | wc -l | tr -d ' ')
+  echo "--- headroom"
+  echo "secrets=$total  cap=$SECRET_CAP  over-by=$((total - SECRET_CAP))"
+  echo "--- by-type"
+  printf '%s\n' "$t" | awk '{print $3}' | sort | uniq -c | sort -rn | head -20
+  echo "--- by-namespace-top-30"
+  printf '%s\n' "$t" | awk '{print $1}' | sort | uniq -c | sort -rn | head -30
+  # The reclaimable classes, counted separately so the reclaim below can be judged before it runs.
+  echo "--- helm-release-history-by-status"
+  printf '%s\n' "$t" | awk '$4=="helm"{print $5}' | sort | uniq -c | sort -rn
+  echo "--- helm-superseded-by-release (the reclaim target)"
+  printf '%s\n' "$t" | awk '$4=="helm" && $5=="superseded"{print $1"/"$2}' \
+    | sed 's#\.v[0-9][0-9]*$##' | sort | uniq -c | sort -rn | head -30
+  # A Secret whose type is a service-account token but whose ServiceAccount is gone is dead weight;
+  # 1.24+ does not auto-create these, so any that exist were made by hand or left by a deleted SA.
+  echo "--- orphaned-service-account-tokens"
+  local ns name sa live=0 dead=0
+  while read -r ns name _rest; do
+    sa=$($K get secret "$name" -n "$ns" -o jsonpath='{.metadata.annotations.kubernetes\.io/service-account\.name}' 2>/dev/null)
+    if [ -n "$sa" ] && ! $K get sa "$sa" -n "$ns" >/dev/null 2>&1; then
+      echo "orphan $ns/$name (serviceaccount $sa is gone)"; dead=$((dead+1))
+    else live=$((live+1)); fi
+  done <<EOF
+$(printf '%s\n' "$t" | awk '$3=="kubernetes.io/service-account-token"{print $1" "$2}')
+EOF
+  echo "service-account-token secrets: attached=$live orphaned=$dead"
+  echo "--- oldest-20"
+  printf '%s\n' "$t" | sort -k6 | head -20 | awk '{print $6"  "$1"/"$2"  "$3}'
+}
+
+# secret-reclaim deletes exactly one class: Helm release history Helm itself has labelled
+# `status=superseded`. A superseded revision is rollback history and nothing else -- the live
+# release is the one labelled `deployed`, and 30 of this estate's 32 HelmReleases already set
+# `maxHistory: 3`, so anything superseded beyond that is history Flux has already decided it does
+# not want. Nothing else is touched: no Opaque, no TLS, no dockerconfigjson, no ExternalSecret
+# target, and no orphaned service-account token (the census names those; deleting one is a
+# judgement about a workload, not about history, so it stays a human call).
+#
+# It refuses when there is nothing to reclaim, so a green run always means secrets were freed.
+pb_secret_reclaim() {
+  local t before targets n
+  t=$(secret_table) || { echo "FAIL  secret-reclaim  could not list secrets"; FAILED="$FAILED secret-reclaim"; return 1; }
+  before=$(printf '%s\n' "$t" | wc -l | tr -d ' ')
+  targets=$(printf '%s\n' "$t" | awk '$4=="helm" && $5=="superseded"{print $1" "$2}')
+  n=$(printf '%s\n' "$targets" | awk 'NF' | wc -l | tr -d ' ')
+  echo "--- before"
+  echo "secrets=$before  cap=$SECRET_CAP  superseded-helm-history=$n"
+  [ "$n" -gt 0 ] || { echo "FAIL  secret-reclaim: no superseded Helm history to reclaim; the $before secrets are elsewhere -- run secret-census"; FAILED="$FAILED secret-reclaim"; return 1; }
+  local ns name
+  while read -r ns name; do
+    [ -n "$name" ] || continue
+    step "rm-$ns/$name" $K delete secret "$name" -n "$ns" --wait=false
+  done <<EOF
+$targets
+EOF
+  local after; after=$(secret_table | wc -l | tr -d ' ')
+  echo "--- after"
+  echo "secrets=$after  cap=$SECRET_CAP  reclaimed=$((before - after))  headroom=$((SECRET_CAP - after))"
+  [ "$after" -lt "$before" ] || { echo "FAIL  secret-reclaim: count did not fall"; FAILED="$FAILED secret-reclaim"; return 1; }
+}
+
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-homes otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-homes otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences secret-census secret-reclaim"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-homes) pb_otto_homes ;;
@@ -1425,6 +1517,8 @@ case "${1:-}" in
   ghcr-pull-restore) pb_ghcr_pull_restore ;;
   registries-conf) pb_registries_conf ;;
   ns-fences) pb_ns_fences ;;
+  secret-census) pb_secret_census ;;
+  secret-reclaim) pb_secret_reclaim ;;
   tigera-reset) pb_tigera_reset ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac

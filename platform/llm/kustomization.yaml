@@ -10,7 +10,10 @@ resources:
   - httproute.yaml
   - edge-manners.yaml
   - spend-breaker-digest.yaml
-  - pull-secret.yaml
+  # There is deliberately no pull-secret.yaml here. Every image this namespace runs is public
+  # (berriai/litellm-database, library/redis, ollama, ghcr.io/chidionyema/zeroedge), so `llm` mints
+  # no registry credential and the router's path to live crosses no Secret it does not already
+  # need for its own config. Re-adding one costs a Secret the cluster is 650 over its cap to give.
   - zeroedge.yaml
 images:
   # chidionyema/zeroedge build-image.yml pushes ghcr.io/chidionyema/zeroedge:main-<run>-<sha> on
