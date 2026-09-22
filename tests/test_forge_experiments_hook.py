@@ -66,5 +66,7 @@ def test_hook_is_wired_and_its_output_ignored():
     # exists -- test_hook_copies_every_experiment_and_indexes_it proves it is written.
     # What is worth pinning is that nobody re-introduces a hand-written nav, which is
     # what made the index reachable only if a human remembered to list it.
-    assert "nav" not in cfg, "a hand-written nav is back; the forge index is reachable only by construction"
+    assert "nav" not in cfg, (
+        "a hand-written nav is back; the forge index is reachable only by construction"
+    )
     assert "docs/reference/forge/" in (ROOT / ".gitignore").read_text().splitlines()
