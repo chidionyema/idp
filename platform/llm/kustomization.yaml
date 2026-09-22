@@ -4,10 +4,6 @@ namespace: llm
 resources:
   - namespace.yaml
   - external-secret.yaml
-  # ghcr-pull mirrored into this namespace. It sits above zeroedge.yaml because that is the one
-  # workload here pulling a private image, and an ExternalSecret that lands after the Deployment
-  # is an ImagePullBackOff that clears itself -- noisy, and indistinguishable from a broken pull.
-  - pull-secret.yaml
   - redis.yaml
   - litellm.yaml
   - zeroedge.yaml
@@ -16,8 +12,10 @@ resources:
   - httproute.yaml
   - edge-manners.yaml
   - spend-breaker-digest.yaml
-  - pull-secret.yaml
-  - zeroedge.yaml
+  # There is deliberately no pull-secret.yaml here. Every image this namespace runs is public
+  # (berriai/litellm-database, library/redis, ollama, ghcr.io/chidionyema/zeroedge), so `llm` mints
+  # no registry credential and the router's path to live crosses no Secret it does not already
+  # need for its own config. Re-adding one costs a Secret the cluster is 650 over its cap to give.
 images:
   # chidionyema/zeroedge build-image.yml pushes ghcr.io/chidionyema/zeroedge:main-<run>-<sha> on
   # a multiarch manifest list, Trivy-scanned before the push and cosign-signed after it. The tag
