@@ -4,8 +4,13 @@ namespace: llm
 resources:
   - namespace.yaml
   - external-secret.yaml
+  # ghcr-pull mirrored into this namespace. It sits above zeroedge.yaml because that is the one
+  # workload here pulling a private image, and an ExternalSecret that lands after the Deployment
+  # is an ImagePullBackOff that clears itself -- noisy, and indistinguishable from a broken pull.
+  - pull-secret.yaml
   - redis.yaml
   - litellm.yaml
+  - zeroedge.yaml
   - ollama.yaml
   - availability.yaml
   - httproute.yaml
@@ -31,6 +36,12 @@ configMapGenerator:
       - zeroedge_gateway.py
 generatorOptions:
   disableNameSuffixHash: false
+images:
+  # Set by Flux image automation from platform/image-automation/zeroedge.yaml, exactly as jit,
+  # backstage, lago and the rest are. The one ImageUpdateAutomation (backstage.yaml) writes this
+  # marker, so the tag below is a starting point and never something to keep current by hand.
+  - name: ghcr.io/chidionyema/zeroedge
+    newTag: main-5-8fc1d21bb1c94e288bb51d44b877e86626d164e4 # {"$imagepolicy": "flux-system:zeroedge:tag"}
 
 # WAVE 1 OF THE ROLL ONTO THE ENFORCING CNI.
 #

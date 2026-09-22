@@ -1,0 +1,102 @@
+# The ZeroEdge cost-optimization gateway, as a pod the router can actually reach.
+#
+# `platform/llm/zeroedge_gateway.py` has been mounted into the router and registered in
+# `config.base.yaml`'s callbacks since it was written, and it has never changed a single call:
+# the shim is off unless `ZEROEDGE_URL` is set, and `ZEROEDGE_URL` was set nowhere in this
+# repository. A registered callback with no service behind it is a callback that costs a
+# dictionary lookup per request and saves nothing. This file is the other half.
+#
+# The service is `chidionyema/zeroedge` (its own repository, its own build-image.yml, its own
+# multi-arch + cosign chain writing `main-<run>-<sha>` exactly as this estate's images do). It
+# is not vendored here: a ConfigMap flattens keys, so a Python package cannot mount, which is
+# why the idp side is one flat HTTP client and the package runs as its own process.
+#
+# Budget enforcement is deliberately NOT turned on. `zeroedge.service.gateway_from_env` defaults
+# `ZEROEDGE_BUDGET_ENFORCE` to "0" and says why in its own docstring: the HTTP surface has no
+# /reconcile route, so reservations would be taken and never released and the gateway would
+# start answering every call with `reject` / 402 once the accumulated reservations crossed the
+# limit. The shim renders a `reject` as a raise. Enforcement here would therefore be a router
+# outage on a timer. The other four layers -- cache, compression, routing, output enforcement --
+# run either way, and they are the ones that save money.
+apiVersion: v1
+kind: Service
+metadata:
+  name: zeroedge
+  namespace: llm
+  labels: { app.kubernetes.io/name: zeroedge, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: founder-model-router }
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: zeroedge }
+  ports:
+    - { name: http, port: 8757, targetPort: http }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zeroedge
+  namespace: llm
+  labels: { app.kubernetes.io/name: zeroedge, app.kubernetes.io/part-of: idp }
+spec:
+  replicas: 1
+  # The router treats an unreachable ZeroEdge as a no-op and keeps answering (the shim fails
+  # open by construction), so a rolling replace costs nothing and needs no surge headroom.
+  # maxUnavailable is 1 on purpose: `maxUnavailable: 0` is what kept a crash-looping litellm
+  # ReplicaSet from ever displacing the old one on 2026-09-19, and an optimizer that cannot be
+  # rolled forward is worse than one that is briefly absent.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 1, maxSurge: 1 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: zeroedge }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: zeroedge, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      # The package is private under ghcr.io/chidionyema, and until now every image in this
+      # namespace was public (berriai/litellm-database, library/redis, ollama), so `llm` had no
+      # pull secret at all. pull-secret.yaml mirrors one in.
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001   # the `zeroedge` user deploy/gateway/Dockerfile creates
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: zeroedge
+          image: ghcr.io/chidionyema/zeroedge:main-5-8fc1d21bb1c94e288bb51d44b877e86626d164e4
+          ports:
+            - { containerPort: 8757, name: http }
+          env:
+            # The Dockerfile already sets both; they are repeated here because the listener
+            # address is the one setting that turns this pod from reachable into invisible, and
+            # a value that load-bearing should be readable in the manifest, not only in a
+            # layer. 0.0.0.0 because service.py defaults to 127.0.0.1 -- correct when the caller
+            # is beside it, useless when the caller is another pod.
+            - { name: ZEROEDGE_HOST, value: "0.0.0.0" }
+            - { name: ZEROEDGE_PORT, value: "8757" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          # /health is a GET the handler answers before any gateway work, so it proves the
+          # listener is up and nothing more -- which is exactly what a probe should claim.
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 30
+            failureThreshold: 3
+          # One ThreadingHTTPServer reading one YAML registry and holding a cache. Sized under
+          # the router's own request so this can never be the thing that loses a scheduling
+          # race on the always-free tier (4 Ampere A1, 24GB total).
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
