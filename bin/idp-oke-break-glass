@@ -1471,6 +1471,40 @@ secret_census_report() {
 # Helm has labelled superseded, and nothing else. secret-reclaim deletes exactly these.
 secret_reclaim_targets() { awk '$4=="helm" && $5=="superseded"{print $1" "$2}'; }
 
+# The second class, and the one that is actually the cap. Census run 35683137643 broke trivy-system
+# down far enough to write this against -- 2162 of the cluster's 2483 secrets, and:
+#
+#     by-owner-kind:   2162  <none>
+#     by-name-shape:   2157  scan-vulnerabilityreport-<hash>-regcred
+#                         1  trivy-operator-trivy-config
+#                         1  trivy-operator
+#                         1  sh.helm.release.v1.trivy-operator.v2
+#                         1  sh.helm.release.v1.trivy-operator.v1
+#                         1  sbom-k8s-cluster
+#     oldest/newest:   2026-09-05T10:19:08Z / 2026-09-22T03:28:23Z
+#
+# A trivy scan job copies the scanned image's pull secret into a per-job `-regcred` Secret and is
+# supposed to collect it afterwards; `scanSecretTTL` is the knob that does the collecting and it
+# shipped disabled (platform/trivy/trivy.yaml now sets it). Every one of the 2157 belongs to a scan
+# that finished days or weeks ago -- and NOT ONE has an ownerReference, which is why nothing in the
+# cluster has ever garbage-collected them.
+#
+# Four conditions, all required, so this cannot reach a Secret that matters:
+#   1. namespace is trivy-system            -- the scanner's own fenced namespace
+#   2. name is scan-vulnerabilityreport-<hex>-regcred  -- not the 5 real secrets listed above
+#   3. no ownerReference                    -- nothing in the cluster claims it
+#   4. born before $cutoff                  -- an in-flight scan's credential is never touched
+# Condition 4 is the one that makes this safe to run while the scanner is running:
+# scanJobsConcurrentLimit is 2, so at most two are live at any moment, and the cutoff below is
+# hours old. Timestamps are RFC3339 Zulu and fixed width, so a string compare is a time compare.
+secret_scanjob_targets() {
+  awk -v cutoff="$1" \
+    '$1=="trivy-system" \
+     && $2 ~ /^scan-vulnerabilityreport-[0-9a-f]+-regcred$/ \
+     && ($7=="" || $7=="<none>") \
+     && $6 < cutoff {print $1" "$2}'
+}
+
 pb_secret_census() {
   local t
   t=$(secret_table) || { echo "FAIL  secret-census  could not list secrets"; FAILED="$FAILED secret-census"; return 1; }
@@ -1491,35 +1525,55 @@ EOF
   echo "service-account-token secrets: attached=$live orphaned=$dead"
 }
 
-# secret-reclaim deletes exactly one class: Helm release history Helm itself has labelled
-# `status=superseded`. A superseded revision is rollback history and nothing else -- the live
-# release is the one labelled `deployed`, and 30 of this estate's 32 HelmReleases already set
-# `maxHistory: 3`, so anything superseded beyond that is history Flux has already decided it does
-# not want. Nothing else is touched: no Opaque, no TLS, no dockerconfigjson, no ExternalSecret
-# target, and no orphaned service-account token (the census names those; deleting one is a
-# judgement about a workload, not about history, so it stays a human call).
+# secret-reclaim deletes exactly two classes, each defined by a selector above:
+#
+#   1. Helm release history Helm itself has labelled `status=superseded`. A superseded revision is
+#      rollback history and nothing else -- the live release is the one labelled `deployed`, and 30
+#      of this estate's 32 HelmReleases already set `maxHistory: 3`, so anything superseded beyond
+#      that is history Flux has already decided it does not want. 70 objects, measured.
+#   2. Finished trivy scan-job `-regcred` credentials with no owner, born before the cutoff. 2157
+#      objects, measured -- 87% of every Secret in the cluster, and the whole reason the cap bites.
+#
+# Nothing else is touched: no Opaque outside that one name shape, no TLS, no dockerconfigjson that
+# a workload pulls with, no ExternalSecret target, and no orphaned service-account token (the census
+# names those; deleting one is a judgement about a workload, not about history, so it stays a human
+# call). Class 2's regcreds are copies -- the ExternalSecret that holds the original is untouched,
+# so a scan that needs one again simply gets a fresh copy.
 #
 # It refuses when there is nothing to reclaim, so a green run always means secrets were freed.
 pb_secret_reclaim() {
-  local t before targets n
+  local t before helm scan targets n nh ns_ cutoff
   t=$(secret_table) || { echo "FAIL  secret-reclaim  could not list secrets"; FAILED="$FAILED secret-reclaim"; return 1; }
   before=$(printf '%s\n' "$t" | awk 'NF' | wc -l | tr -d ' ')
-  targets=$(printf '%s\n' "$t" | secret_reclaim_targets)
-  n=$(printf '%s\n' "$targets" | awk 'NF' | wc -l | tr -d ' ')
+  # Two hours, twice the scanJobTTL platform/trivy/trivy.yaml now sets, so a credential is only
+  # reclaimed long after the job that made it was itself due to be collected. GNU and BSD date
+  # spell relative time differently and this runs on both, so it is computed the portable way.
+  cutoff=$(TZ=UTC awk 'BEGIN{print strftime("%Y-%m-%dT%H:%M:%SZ", systime()-7200)}')
+  helm=$(printf '%s\n' "$t" | secret_reclaim_targets)
+  scan=$(printf '%s\n' "$t" | secret_scanjob_targets "$cutoff")
+  nh=$(printf '%s\n' "$helm" | awk 'NF' | wc -l | tr -d ' ')
+  ns_=$(printf '%s\n' "$scan" | awk 'NF' | wc -l | tr -d ' ')
+  targets=$(printf '%s\n%s\n' "$helm" "$scan" | awk 'NF')
+  n=$((nh + ns_))
   echo "--- before"
-  echo "secrets=$before  cap=$SECRET_CAP  superseded-helm-history=$n"
-  [ "$n" -gt 0 ] || { echo "FAIL  secret-reclaim: no superseded Helm history to reclaim; the $before secrets are elsewhere -- run secret-census"; FAILED="$FAILED secret-reclaim"; return 1; }
-  local ns name
-  while read -r ns name; do
-    [ -n "$name" ] || continue
-    step "rm-$ns/$name" $K delete secret "$name" -n "$ns" --wait=false
-  done <<EOF
-$targets
-EOF
+  echo "secrets=$before  cap=$SECRET_CAP  over-by=$((before - SECRET_CAP))"
+  echo "superseded-helm-history=$nh  finished-scanjob-regcred=$ns_  (cutoff $cutoff)  total=$n"
+  [ "$n" -gt 0 ] || { echo "FAIL  secret-reclaim: nothing matched either selector; the $before secrets are elsewhere -- run secret-census"; FAILED="$FAILED secret-reclaim"; return 1; }
+  # Batched by namespace, 100 names to a call: 2157 one-object deletes would be 2157 API round
+  # trips and 2157 log lines, and the log is the evidence someone has to read afterwards.
+  local batch_ns
+  for batch_ns in $(printf '%s\n' "$targets" | awk '{print $1}' | sort -u); do
+    printf '%s\n' "$targets" | awk -v n="$batch_ns" '$1==n{print $2}' | xargs -n 100 \
+      $K delete secret -n "$batch_ns" --wait=false --ignore-not-found >/dev/null \
+      || echo "WARN  secret-reclaim  some deletes in $batch_ns returned non-zero (see count below)"
+  done
   local after; after=$(secret_table | wc -l | tr -d ' ')
   echo "--- after"
   echo "secrets=$after  cap=$SECRET_CAP  reclaimed=$((before - after))  headroom=$((SECRET_CAP - after))"
   [ "$after" -lt "$before" ] || { echo "FAIL  secret-reclaim: count did not fall"; FAILED="$FAILED secret-reclaim"; return 1; }
+  [ "$after" -lt "$SECRET_CAP" ] \
+    && echo "ok    secret-reclaim  the cluster can create Secrets again ($after < $SECRET_CAP)" \
+    || echo "WARN  secret-reclaim  still over the cap at $after; run secret-census for where the rest are"
 }
 
 # --self-test: the offline path this file has, and until now did not prove it had. script-compiles
@@ -1530,15 +1584,21 @@ EOF
 # DELETES is proved both ways: the superseded revision is chosen and the deployed one is not.
 # A test that only asserted "something was selected" would pass a selector that selects everything.
 self_test() {
-  local fixture out targets rc=0
-  fixture='kube-system sh.helm.release.v1.cilium.v1 helm.sh/release.v1 helm superseded 2026-01-01T00:00:00Z
-kube-system sh.helm.release.v1.cilium.v2 helm.sh/release.v1 helm superseded 2026-02-01T00:00:00Z
-kube-system sh.helm.release.v1.cilium.v3 helm.sh/release.v1 helm deployed 2026-03-01T00:00:00Z
-llm ghcr-pull kubernetes.io/dockerconfigjson <none> <none> 2026-04-01T00:00:00Z
-edge tls-wildcard kubernetes.io/tls <none> <none> 2026-05-01T00:00:00Z'
+  local fixture out targets scan rc=0
+  fixture='kube-system sh.helm.release.v1.cilium.v1 helm.sh/release.v1 helm superseded 2026-01-01T00:00:00Z <none> <none>
+kube-system sh.helm.release.v1.cilium.v2 helm.sh/release.v1 helm superseded 2026-02-01T00:00:00Z <none> <none>
+kube-system sh.helm.release.v1.cilium.v3 helm.sh/release.v1 helm deployed 2026-03-01T00:00:00Z <none> <none>
+llm ghcr-pull kubernetes.io/dockerconfigjson <none> <none> 2026-04-01T00:00:00Z <none> <none>
+edge tls-wildcard kubernetes.io/tls <none> <none> 2026-05-01T00:00:00Z <none> <none>
+trivy-system scan-vulnerabilityreport-6d9f4c2a1b8e-regcred Opaque <none> <none> 2026-09-05T10:19:08Z <none> <none>
+trivy-system scan-vulnerabilityreport-ff01aa22bb33-regcred Opaque <none> <none> 2026-09-22T09:00:00Z <none> <none>
+trivy-system scan-vulnerabilityreport-cc44dd55ee66-regcred Opaque <none> <none> 2026-09-05T10:19:08Z Job scan-vulnerabilityreport-cc44dd55ee66
+trivy-system scan-vulnerabilityreport-99887766aabb-trivytoken Opaque <none> <none> 2026-09-05T10:19:08Z <none> <none>
+trivy-system trivy-operator-trivy-config Opaque <none> <none> 2026-09-05T10:00:00Z <none> <none>
+trivy-system sbom-k8s-cluster Opaque <none> <none> 2026-09-05T10:00:00Z <none> <none>'
 
   out=$(printf '%s\n' "$fixture" | secret_census_report)
-  printf '%s\n' "$out" | grep -q 'secrets=5  cap=2000  over-by=-1995' \
+  printf '%s\n' "$out" | grep -q 'secrets=11  cap=2000  over-by=-1989' \
     || { echo "FAIL  self-test  headroom line wrong: $(printf '%s\n' "$out" | sed -n 2p)"; rc=1; }
   printf '%s\n' "$out" | grep -q '2 superseded' \
     || { echo "FAIL  self-test  helm status tally did not find 2 superseded"; rc=1; }
@@ -1553,6 +1613,24 @@ edge tls-wildcard kubernetes.io/tls <none> <none> 2026-05-01T00:00:00Z'
     && { echo "FAIL  self-test  the DEPLOYED revision v3 was selected for deletion"; rc=1; }
   printf '%s\n' "$targets" | grep -qE 'ghcr-pull|tls-wildcard' \
     && { echo "FAIL  self-test  a non-helm Secret was selected for deletion"; rc=1; }
+
+  # the scan-job selector, both ways. The cutoff sits between the two 2026-09-05 rows and the
+  # 2026-09-22 one, so exactly one of the four trivy-system rows may be chosen: the old, unowned,
+  # correctly-shaped one. The other three each fail a different condition -- too young, owned by a
+  # live Job, wrong name -- and a selector that dropped any one condition would take one of them.
+  scan=$(printf '%s\n' "$fixture" | secret_scanjob_targets 2026-09-10T00:00:00Z)
+  [ "$(printf '%s\n' "$scan" | awk 'NF' | wc -l | tr -d ' ')" = 1 ] \
+    || { echo "FAIL  self-test  expected 1 scan-job target, got: $scan"; rc=1; }
+  printf '%s\n' "$scan" | grep -q '6d9f4c2a1b8e' \
+    || { echo "FAIL  self-test  the finished, unowned scan credential was not selected"; rc=1; }
+  printf '%s\n' "$scan" | grep -q 'ff01aa22bb33' \
+    && { echo "FAIL  self-test  an IN-FLIGHT scan credential (newer than the cutoff) was selected"; rc=1; }
+  printf '%s\n' "$scan" | grep -q 'cc44dd55ee66' \
+    && { echo "FAIL  self-test  a scan credential still OWNED by a Job was selected"; rc=1; }
+  printf '%s\n' "$scan" | grep -qE 'trivy-operator-trivy-config|sbom-k8s-cluster' \
+    && { echo "FAIL  self-test  a real trivy Secret was selected for deletion"; rc=1; }
+  printf '%s\n' "$scan" | grep -q 'trivytoken' \
+    && { echo "FAIL  self-test  a scan Secret that is not a -regcred was selected"; rc=1; }
 
   # every playbook the dispatch table advertises is a function that exists
   local pb miss=0
