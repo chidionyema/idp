@@ -112,6 +112,25 @@ jobs:
           if [ -n "$n" ]; then
             if bin/idp-image-only-diff --pr "$n"; then
               try_land "$n"
+            elif [ "$(gh pr view "$n" --json mergeStateStatus -q .mergeStateStatus)" = BEHIND ]; then
+              # A STALE MERGE-BASE CAN MAKE A PLAIN BUMP LOOK LIKE A CONTENT CHANGE, and the
+              # classifier is right either way -- it grades what it is handed. `gh pr diff` returns
+              # the THREE-DOT diff, merge-base...head, so a line that main has changed since the
+              # branch was cut still shows as a hunk even once head and main agree about it. That
+              # base is frozen until the branch is refreshed, so no merge to main can ever clear it.
+              #
+              # Measured 2026-09-22 on #3839: image-automation-controller round-trips
+              # platform/llm/kustomization.yaml and drops a blank line. Merge-base d879408 carries
+              # that blank line, the branch does not, so `gh pr diff` shows the deletion, the
+              # classifier refuses, and the refresh that would clear it lives inside try_land --
+              # which only runs after the classifier passes. The branch had stacked 14 commits on a
+              # base it never rebased onto, and nothing in the loop could break the tie.
+              #
+              # Refreshing first is strictly safer than grading a stale base: it advances the base
+              # to current main, so the next tick grades the bump against what is actually deployed.
+              # Nothing merges here -- the classifier is still the only thing that reaches try_land.
+              gh api --method PUT "repos/$GH_REPO/pulls/$n/update-branch" --input /dev/null \
+                && echo "ok      deploy-when-green  refreshed #$n onto main; it grades again next tick"
             else
               echo "ok      deploy-when-green  #$n is not a plain image bump; it waits for the founder"
             fi
