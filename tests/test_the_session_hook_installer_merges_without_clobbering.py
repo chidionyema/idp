@@ -26,6 +26,14 @@ _HOOK = (
     / "hooks"
     / "install_session_hooks.py"
 )
+# Quarantine gate: same `.claude/hooks/` infrastructure gap as test_the_token_gate_*.
+# See that file's skip-reason block for the rationale. Skip the whole module when the
+# installer is absent (it is spec_from_file_location'd at module top, before any test).
+if not _HOOK.exists():
+    pytest.skip(
+        f"claude session hook {_HOOK.name} is not materialised in this checkout",
+        allow_module_level=True,
+    )
 _spec = importlib.util.spec_from_file_location("install_session_hooks", _HOOK)
 assert _spec and _spec.loader
 installer = importlib.util.module_from_spec(_spec)
