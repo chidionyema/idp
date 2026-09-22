@@ -20,7 +20,7 @@ images:
   # image-automation-controller rewrites the newTag line from ImagePolicy flux-system/zeroedge
   # (platform/image-automation/zeroedge.yaml); the marker is how it finds the line.
   - name: ghcr.io/chidionyema/zeroedge
-    newTag: main-2-7a6da5a49d6ff75053ff03107667ec91737d906c # {"$imagepolicy": "flux-system:zeroedge:tag"}
+    newTag: main-5-8fc1d21bb1c94e288bb51d44b877e86626d164e4 # {"$imagepolicy": "flux-system:zeroedge:tag"}
 configMapGenerator:
   # The router config is the file, not a copy of it. tests/test_llm_row.py holds
   # platform/llm/config.yaml to llm/config.yaml model for model.
@@ -37,7 +37,6 @@ configMapGenerator:
       - efficiency_gateway.py
 generatorOptions:
   disableNameSuffixHash: false
-
 # WAVE 1 OF THE ROLL ONTO THE ENFORCING CNI.
 #
 # 10-calico.conflist sorts before 10-flannel.conflist in /etc/cni/net.d, so Calico wins the CNI
