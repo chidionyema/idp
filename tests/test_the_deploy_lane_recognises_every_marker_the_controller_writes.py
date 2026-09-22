@@ -27,6 +27,9 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -34,6 +37,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "bin/idp-image-only-diff"
+BASH = shutil.which("bash") or "/bin/bash"
 
 
 def _load():
@@ -165,35 +169,99 @@ def test_an_empty_diff_is_blind_rather_than_a_pass():
 # ------------------------------- and the source of the blank line is actually removed
 
 
-def test_the_llm_kustomization_no_longer_carries_the_line_the_controller_strips():
+def _controller_write_of_the_llm_kustomization() -> str:
+    """The diff image-automation-controller's next write to that file would produce.
+
+    Built from the file as it stands, not from a fixture: a tag bump, plus -- if the
+    blank line after `disableNameSuffixHash: false` is still there -- the deletion its
+    YAML round-trip makes of that line. Re-add the blank line and this diff grows the
+    hunk that shut the lane, so the classifier below refuses it.
+    """
+    lines = (REPO / "platform/llm/kustomization.yaml").read_text().splitlines()
+    i = next(i for i, ln in enumerate(lines) if "disableNameSuffixHash" in ln)
+    d = diff(
+        "platform/llm/kustomization.yaml",
+        (f"    newTag: {OLD} {MARK}", f"    newTag: {NEW} {MARK}"),
+    )
+    if not lines[i + 1].strip():
+        d += (
+            "diff --git a/platform/llm/kustomization.yaml "
+            "b/platform/llm/kustomization.yaml\n"
+            f"@@ -{i + 2} +{i + 1} @@\n-\n"
+        )
+    return d
+
+
+def test_the_controllers_next_write_to_the_llm_kustomization_is_landable(tmp_path):
     """Proving the classifier alone would leave the lane shut: #3839 also carries the
     blank-line deletion above. Removing it at the source is what makes the controller's
-    next write a tag-only diff."""
-    text = (REPO / "platform/llm/kustomization.yaml").read_text()
-    assert "disableNameSuffixHash: false\n\n" not in text, (
-        "the blank line after generatorOptions is back; image-automation-controller "
-        "strips it on every write, which makes every deploy PR non-landable"
+    next write a tag-only diff -- and this runs the real script over that write."""
+    p = tmp_path / "write.diff"
+    p.write_text(_controller_write_of_the_llm_kustomization())
+    r = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        [sys.executable, str(SCRIPT), "--diff", str(p)],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, (
+        "the controller's next write to platform/llm/kustomization.yaml is not landable: "
+        f"{r.stdout.strip()} -- the blank line after generatorOptions is back, and its "
+        "round-trip strips it on every write"
     )
 
 
 # ------------------- and the loop can reach a diff the classifier is able to pass at all
 
 
-def _row_one() -> str:
-    """The `land` job's shell, from the classifier call to the end of row 1.
+GH_STUB = """#!{bash}
+# Enough of `gh` for the land job, and it records what it was asked to do.
+case "$*" in
+  *"pr list"*--head*)            echo 3839 ;;
+  *"pr list"*--label*)           ;;
+  *"pr view"*isDraft*)           echo '{{}}' ;;
+  *"pr view"*mergeStateStatus*)  echo "{state}" ;;
+  *api*update-branch*)           echo "STUB-UPDATE-BRANCH" ;;
+  *"pr merge"*)                  echo "STUB-MERGE" ;;
+esac
+"""
 
-    Read out of the workflow rather than hardcoded, so the test tracks the file.
+
+def _run_the_land_job(tmp_path, *, classifier_exit: int, state: str):
+    """Run the workflow's OWN shell, with `gh` and the two bin/ scripts stubbed.
+
+    The script is read out of deploy-when-green.yml rather than restated here, so the
+    test grades the file that actually runs in CI.
     """
     import yaml
 
     d = yaml.safe_load((REPO / ".github/workflows/deploy-when-green.yml").read_text())
     shell = "\n".join(s["run"] for s in d["jobs"]["land"]["steps"] if "run" in s)
-    start = shell.index("bin/idp-image-only-diff --pr")
-    end = shell.index("# Row 2", start)
-    return shell[start:end]
+
+    stub = tmp_path / "stub"
+    stub.mkdir()
+    (stub / "gh").write_text(GH_STUB.format(bash=BASH, state=state))
+    bind = tmp_path / "bin"
+    bind.mkdir()
+    (bind / "idp-image-only-diff").write_text(f"#!{BASH}\nexit {classifier_exit}\n")
+    (bind / "idp-pr-landable").write_text(f'#!{BASH}\necho "MERGE ready"\n')
+    for f in (stub / "gh", bind / "idp-image-only-diff", bind / "idp-pr-landable"):
+        f.chmod(0o755)
+
+    return subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        [BASH, "-c", shell],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env={
+            "PATH": f"{stub}:{os.environ['PATH']}",
+            "GH_REPO": "chidionyema/idp",
+            "BRANCH": "flux/image-updates",
+            "HOME": str(tmp_path),
+        },
+    )
 
 
-def test_a_behind_pull_request_is_refreshed_rather_than_parked():
+def test_a_behind_pull_request_is_refreshed_rather_than_parked(tmp_path):
     """The deadlock that kept the lane shut even with the classifier fixed.
 
     `gh pr diff` is the THREE-DOT diff, so a hunk against a frozen merge-base survives
@@ -202,31 +270,39 @@ def test_a_behind_pull_request_is_refreshed_rather_than_parked():
     is refreshing the branch, and that lived inside try_land, behind the classifier that
     the stale hunk was failing. Row 1 must break that tie itself.
     """
-    row = _row_one()
-    assert "update-branch" in row, (
-        "row 1 parks a refused bump without ever refreshing it; a stale merge-base then "
-        "keeps the lane shut permanently, because no merge to main can move that base"
-    )
-    assert row.index("update-branch") < row.index("waits for the founder"), (
-        "the founder is handed the bump before the refresh is tried"
+    r = _run_the_land_job(tmp_path, classifier_exit=1, state="BEHIND")
+    assert r.returncode == 0, r.stderr
+    assert "STUB-UPDATE-BRANCH" in r.stdout, (
+        f"a refused bump that is BEHIND was never refreshed: {r.stdout.strip()} -- a stale "
+        "merge-base then keeps the lane shut for good, because no merge to main moves it"
     )
 
 
-def test_the_refresh_is_conditioned_on_behind_and_not_on_the_classifier_failing():
-    row = _row_one()
-    assert "BEHIND" in row, (
-        "the refresh must fire only for a branch that is actually behind"
-    )
+def test_a_refused_bump_that_is_not_behind_still_waits_for_the_founder(tmp_path):
+    """The refresh must not become a way to retry every refusal. Only a stale base is
+    the estate's own fault; anything else is a real content change and his call."""
+    r = _run_the_land_job(tmp_path, classifier_exit=1, state="CLEAN")
+    assert r.returncode == 0, r.stderr
+    assert "STUB-UPDATE-BRANCH" not in r.stdout, r.stdout
+    assert "waits for the founder" in r.stdout, r.stdout
 
 
-def test_refreshing_never_merges():
+def test_refreshing_never_merges(tmp_path):
     """The classifier stays the only thing that can reach a merge. If a refresh could
     merge, a stale base would become a way INTO main rather than a reason to re-grade."""
-    row = _row_one()
-    refresh = row[row.index("update-branch") :]
-    assert "gh pr merge" not in refresh, (
-        "the refresh path can merge; only try_land, downstream of a passing classifier, may"
+    r = _run_the_land_job(tmp_path, classifier_exit=1, state="BEHIND")
+    assert r.returncode == 0, r.stderr
+    assert "STUB-MERGE" not in r.stdout, (
+        f"the refresh path merged: {r.stdout.strip()} -- only try_land, downstream of a "
+        "passing classifier, may reach a merge"
     )
+
+
+def test_a_clean_image_only_bump_still_reaches_the_merge(tmp_path):
+    """The other direction: when the classifier passes, the bump lands as it always did."""
+    r = _run_the_land_job(tmp_path, classifier_exit=0, state="CLEAN")
+    assert r.returncode == 0, r.stderr
+    assert "STUB-MERGE" in r.stdout, r.stdout
 
 
 if __name__ == "__main__":  # pragma: no cover
