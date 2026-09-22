@@ -227,7 +227,6 @@ async def speculate(
         ) as span:
             partial = str(body.get("partial") or "").strip()
             session_id = str(body.get("session_id") or "").strip()
-            author = str(body.get("author") or "").strip()
             if not partial:
                 return {
                     "error": "partial is required (the browser has nothing to compile)"
@@ -284,7 +283,7 @@ async def speculate(
                 }
             ).encode("utf-8")
 
-            req = urllib.request.Request(
+            req = urllib.request.Request(  # noqa: S310 -- router host is estate-controlled, not caller-supplied
                 f"{router_host}/v1/chat/completions",
                 data=req_body,
                 headers={

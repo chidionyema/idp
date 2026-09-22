@@ -40,7 +40,6 @@ import sys
 import types
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
@@ -111,7 +110,7 @@ class _RouterRecorder:
             import urllib.error
 
             err = urllib.error.HTTPError(
-                req.full_url, self.code, "err", {}, io_bytes(io_bytes_str := "{}")
+                req.full_url, self.code, "err", {}, io_bytes("{}")
             )
             err.read = lambda: json.dumps(self.reply).encode("utf-8")
             raise err
