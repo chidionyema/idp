@@ -18,24 +18,52 @@ that way would serve one vendor's credential under every other vendor's name and
 healthy while doing it.
 
 `data[].remoteRef.key: <name>` resolves exactly and fails closed when the name is absent -- which
-is the behaviour a credential path must have, and is what the generator emits. This test grades the
-generator's output, so a future edit that reaches for `find` because it tolerates missing keys
-fails here rather than in production.
+is the behaviour a credential path must have, and is what the chart emits. This test grades the
+objects the cluster will actually receive -- `helm template platform/vendors`, the same render
+Flux's helm-controller performs -- so a future edit that reaches for `find` because it tolerates
+missing keys fails here rather than in production.
+
+It renders rather than reading a committed file because as of 2026-09-22 there is no committed
+file: the bridge is rendered in the cluster from platform/vendors/consoles.yaml, and a file that
+is never committed cannot be stale. helm is not optional here and its absence is a failure, not
+a skip -- a test that executes nothing is not a test (~AGENTS.md).
 """
 
+import functools
 import pathlib
+import shutil
 import subprocess
 
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-BRIDGE = ROOT / "platform/human-vault-bridge/externalsecrets.yaml"
-SEED = ROOT / "platform" / "human-vault-bridge" / "pushsecrets.yaml"
+CHART = ROOT / "platform" / "vendors"
 REGISTRY = ROOT / "platform/vendors/consoles.yaml"
 
 
+@functools.lru_cache(maxsize=1)
+def _docs():
+    """`helm template` over the chart, exactly the render Flux's helm-controller performs."""
+    helm = shutil.which("helm")
+    assert helm, (
+        "helm is not on PATH; this test grades the chart's rendered objects and cannot grade "
+        "them without rendering. .github/actions/estate-tools installs it."
+    )
+    out = subprocess.run(
+        [helm, "template", "vendor-bridge", str(CHART)], capture_output=True, text=True
+    )
+    assert out.returncode == 0, f"helm template {CHART} failed:\n{out.stderr[-2000:]}"
+    docs = tuple(d for d in yaml.safe_load_all(out.stdout) if d)
+    assert docs, "the chart rendered nothing; the registry or the templates are broken"
+    return docs
+
+
 def bridge_docs():
-    return [d for d in yaml.safe_load_all(BRIDGE.read_text()) if d]
+    return [d for d in _docs() if d["kind"] == "ExternalSecret"]
+
+
+def seed_docs():
+    return [d for d in _docs() if d["kind"] == "PushSecret"]
 
 
 def test_no_bridge_external_secret_resolves_a_key_by_search():
@@ -98,7 +126,7 @@ def test_the_seed_never_overwrites_a_key_the_founder_has_set():
     """A PushSecret defaults to Replace, which would rewrite his rotated key from the estate's
     stale copy on the next refresh -- silently undoing every rotation. IfNotExists fills an
     empty slot and touches nothing else."""
-    docs = [d for d in yaml.safe_load_all(SEED.read_text()) if d]
+    docs = seed_docs()
     assert docs
     for d in docs:
         assert d["spec"]["updatePolicy"] == "IfNotExists", d["metadata"]["name"]
@@ -109,7 +137,7 @@ def test_one_key_the_estate_lacks_cannot_stop_the_others_being_seeded():
     """Measured 2026-09-07: one absent key fails the whole object it sits in and seeds none of
     its siblings. MOONSHOT_API_KEY is in the registry and in no Secret, so grouping would have
     cost GEMINI and OPENROUTER their seed."""
-    docs = [d for d in yaml.safe_load_all(SEED.read_text()) if d]
+    docs = seed_docs()
     for d in docs:
         assert len(d["spec"]["data"]) == 1, d["metadata"]["name"]
 
@@ -130,7 +158,7 @@ def test_the_seed_reads_the_secret_the_registry_says_holds_the_key():
         if t.get("bw") and t.get("ns") and t.get("entry") and not t.get("derived")
     }
     got = {}
-    for d in yaml.safe_load_all(SEED.read_text()):
+    for d in seed_docs():
         if not d:
             continue
         m = d["spec"]["data"][0]["match"]

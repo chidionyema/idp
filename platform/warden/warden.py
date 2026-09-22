@@ -11,7 +11,7 @@ per key, not one result for the pool.
 The key is never read from an environment variable: Kyverno's secrets-not-from-env-vars
 policy (platform/edge/kyverno-secrets-policy.yaml) exists because an env var secret ends up
 in log output and forwarding tools. Instead, each field is read from a mounted file at
-WARDEN_SECRETS_DIR/<vendor>/<field> -- platform/human-vault-bridge/externalsecrets.yaml
+WARDEN_SECRETS_DIR/<vendor>/<field> -- the vendor-bridge chart (platform/vendors/templates)
 generates a human-<vendor> Secret with exactly those files, from consoles.yaml's own
 `targets: [{ns: dagster, field, bw}]` rows, and scheduler/estate_scheduler/definitions.py
 mounts it into the launched run for this one job only.

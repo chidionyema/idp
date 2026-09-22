@@ -1,0 +1,13 @@
+# The vendor registry IS the chart (2026-09-22). consoles.yaml sits at this chart's root and
+# templates/ reads it with `.Files.Get "consoles.yaml" | fromYaml`, so the ExternalSecrets and
+# PushSecrets that carry a founder-held key into a namespace are rendered from the registry at
+# apply time by Flux's helm-controller. There is no rendered copy in git, so no rendered copy
+# can be stale -- the property the deleted `generated` CI job was paid to check.
+#
+# Nothing here holds a value. Each object says "the secret called <NAME> in Bitwarden Secrets
+# Manager belongs in namespace <ns> as key <field>", and External Secrets does the rest.
+apiVersion: v2
+name: vendor-bridge
+description: The human door, rendered from platform/vendors/consoles.yaml in the cluster.
+type: application
+version: 0.1.0
