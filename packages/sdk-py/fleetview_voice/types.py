@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
-
 VoiceEventType = Literal["steer", "done", "speak"]
 
 
