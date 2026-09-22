@@ -637,18 +637,25 @@ else say "FAIL  links    catalog-links-check passed a linkless Component or refu
 # banner, not a refusal (a fence a correct machine cannot satisfy is an outage, LAW 38): the
 # founder always sees whether his clone will actually refuse a bad push.
 _hp="$(git -C "$IDP" config --local core.hooksPath 2>/dev/null || true)"
-if [ "$_hp" != ".githooks" ]; then
+if [ "$_hp" != ".githooks" ] && [ -z "${IDP_CI_BASE:-}" ]; then
   echo ""
   echo "  WARN  hooks   core.hooksPath is ${_hp:-unset} -- .githooks/pre-push will NOT run on push"
   echo "                run: bin/idp-install-hooks (idempotent) to close the gap"
   echo ""
 fi
 
-# Local evidence chain: fail-closed on empty, chain must verify.
-if python3 "$IDP/bin/idp-local-evidence-gate" "$IDP/.aevum/local.jsonl" >/dev/null 2>&1; then
-  say "ok    local-evidence chain present and intact"
+# Local evidence chain: developer-local, only meaningful outside CI. Skip when IDP_CI_BASE
+# is set (the runner has no agent session; the file would be whatever a developer's local wrote,
+# and rebases routinely break the chain -- measured on 2026-09-22, offline-gate on run 35751378908).
+if [ -z "${IDP_CI_BASE:-}" ]; then
+  if python3 "$IDP/bin/idp-local-evidence-gate" "$IDP/.aevum/local.jsonl" >/dev/null 2>&1; then
+    say "ok    local-evidence chain present and intact"
+  else
+    say "FAIL  local-evidence .aevum/local.jsonl is empty or chain is broken — no agent action has been recorded"; fail=1
+  fi
 else
-  say "FAIL  local-evidence .aevum/local.jsonl is empty or chain is broken — no agent action has been recorded"; fail=1
+  say "skip  local-evidence developer-local; CI cannot have an agent session"
+fi
 fi
 
 # ADR 0030: Jev scope guard — no direct TypeSafeClient calls outside mcp/plugins/jev.py.

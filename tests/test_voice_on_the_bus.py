@@ -58,6 +58,24 @@ def _load(path: Path, name: str):
     return module
 
 
+def _load_pkg_member(path: Path, name: str, pkg_name: str):
+    """Same as _load but registers the module as a member of `pkg_name` so relative
+    imports inside it (e.g. `from . import tracing`) resolve. Used for files inside
+    backstage/plugins/fleetview-backend/src/ whose imports are relative to src/."""
+    import types as _types
+
+    if pkg_name not in sys.modules:
+        sys.modules[pkg_name] = _types.ModuleType(pkg_name)
+    full = f"{pkg_name}.{name}"
+    spec = importlib.util.spec_from_file_location(full, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    module.__package__ = pkg_name
+    sys.modules[full] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 # The contract validator, borrowed rather than rewritten: one schema, graded one way. It prefers
 # the `jsonschema` library and falls back to the `check-jsonschema` CLI, and raises rather than
 # passing when neither is present -- a validator that cannot validate must not report green.
@@ -129,7 +147,9 @@ def voice(monkeypatch):
     recorder = _Recorder()
     monkeypatch.setitem(sys.modules, "nats", recorder)
 
-    module = _load(SRC / "voice_media.py", "voice_media_under_test")
+    module = _load_pkg_member(
+        SRC / "voice_media.py", "voice_media", "fleetview_backend_src_under_test"
+    )
     # The adapter is loaded through `voice_media`'s own loader, so the module under test reaches
     # the same object this test inspects.
     monkeypatch.setenv("NATS_URL", "nats://nats.event-bus.svc:4222")
