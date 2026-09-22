@@ -174,6 +174,23 @@ if cmp -s "$a/catalog-info.yaml" "$b/catalog-info.yaml"; then
   say "ok    idempot  catalog-gen twice over one inventory: identical ($(wc -c < "$a/catalog-info.yaml" | tr -d ' ') bytes)"
 else say "FAIL  idempot  catalog-gen is not deterministic:"; diff "$a/catalog-info.yaml" "$b/catalog-info.yaml" | head -10 | sed 's/^/      /'; fail=1; fi
 
+# 4e. The AST-derived projection proves five invariants on every PR.
+#     Unlike catalog-gen (which reads an inventory JSON), the projection
+#     is a pure function over Python source: ast.parse every .py file,
+#     emit one Component per module, one dependsOn edge per import.
+#     The five invariants are proved in bin/test-catalog-projection and
+#     are the mathematical guarantees the 2100-era catalogue relies on:
+#       TOT  totality        every parseable .py -> one entity; every import -> one edge or logged drop
+#       DET  determinism     SHA256(output) is a function of SHA256(source)
+#       IDP  idempotency     project(G) is its own fixed point
+#       REF  reference       every dependsOn target is in the same projection (closure)
+#       SCH  schema          every entity matches the Backstage Component schema subset
+#     These are independent of catalog-gen: a regression here means the
+#     code-derived catalogue has lost a guarantee the portal relies on.
+if python3 "$IDP/bin/test-catalog-projection" >/dev/null 2>&1; then
+  say "ok    projection projection invariants TOT/DET/IDP/REF/SCH all hold"
+else say "FAIL  projection projection invariants failed:"; python3 "$IDP/bin/test-catalog-projection" | sed 's/^/      /'; fail=1; fi
+
 # The staleness class is gone (2026-09-22). Four rungs here -- render, plan, darkmatter,
 # layers -- and the `generated` job in ci.yml each re-ran a generator and refused when the
 # committed output differed. They graded a copy, not the thing. The generator is

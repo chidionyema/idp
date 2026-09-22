@@ -1,0 +1,44 @@
+[
+  {
+    "apiVersion": "backstage.io/v1alpha1",
+    "kind": "Component",
+    "metadata": {
+      "name": "alpha",
+      "title": "alpha",
+      "description": "alpha: depends on beta and gamma; references an external (os).",
+      "annotations": {
+        "estate/source-path": "alpha.py",
+        "estate/module": "alpha"
+      },
+      "tags": ["python-module", "code"],
+      "links": []
+    },
+    "spec": {
+      "type": "python-module",
+      "owner": "group:default/platform",
+      "lifecycle": "experimental",
+      "dependsOn": ["component:default/beta", "component:default/gamma"]
+    }
+  },
+  {
+    "apiVersion": "backstage.io/v1alpha1",
+    "kind": "Component",
+    "metadata": {
+      "name": "gamma",
+      "title": "gamma",
+      "description": "gamma: leaf, no project-internal deps.",
+      "annotations": {
+        "estate/source-path": "gamma.py",
+        "estate/module": "gamma"
+      },
+      "tags": ["python-module", "code"],
+      "links": []
+    },
+    "spec": {
+      "type": "python-module",
+      "owner": "group:default/platform",
+      "lifecycle": "experimental",
+      "dependsOn": []
+    }
+  }
+]

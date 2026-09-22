@@ -56,6 +56,14 @@ backend.add(
   import('catalog-backend-module-dagster-entity-provider'),
 );
 
+// Every .py module in the estate becomes a catalogue entity by running
+// `bin/catalog-projection --json` on a schedule; the projection is a pure
+// deterministic function over source, so the catalogue cannot drift from the
+// code (crew#740 CP6). No hand-written entity for projection work.
+backend.add(
+  import('catalog-backend-module-estate-projection'),
+);
+
 // permission plugin
 backend.add(import('@backstage/plugin-permission-backend'));
 // Gates scaffolder templates tagged founder-action to group:default/platform; every other

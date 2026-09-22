@@ -8,6 +8,9 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 staged_py=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' || true)
+# ruff format cannot parse intentionally-invalid Python (tests/fixtures/projection/broken.py
+# is the SyntaxError test case for bin/catalog-projection). Exclude it from formatting.
+staged_py=$(echo "$staged_py" | grep -v 'tests/fixtures/projection/broken.py' || true)
 staged_ts=$(git diff --cached --name-only --diff-filter=ACM -- '*.ts' '*.tsx' || true)
 
 # 1. ruff format --check on staged .py
