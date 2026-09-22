@@ -337,6 +337,26 @@ def build_app(routes_path: Path) -> FastAPI:
         payload, status = await routes.voice_media().steer(body)
         return JSONResponse(content=payload, status_code=status)
 
+    @app.post(routes.VOICE_SPECULATE_PATH)
+    async def voice_speculate(body: dict):
+        """Server-side speculative intent compiler for partial transcripts (the 2100 fallback).
+
+        THE PRIMARY PATH IS THE BROWSER: SmolLM2-135M on WebGPU emits partial intents from the
+        first 200ms of speech, no network, no router. This endpoint is the fallback for clients
+        that cannot run WebGPU (Safari iOS, older handsets, CLI speakers) -- it sends the partial
+        transcript to the router's `intent-speculative` alias, which routes to `groq` on consumer
+        deployments or `ollama` on enterprise air-gapped ones. Same schema, same latency class.
+
+        THE RESPONSE IS NEVER WRITTEN TO THE BUS. `compiled` is a candidate the browser keeps,
+        replaces, or discards as more partials arrive; only `/voice/steer` lands on the bus.
+
+        CLARIFICATION. If the router's confidence is below 0.90, `clarification_needed: true` is
+        set so the browser fires `onClarificationNeeded` and the agent mesh asks one question
+        rather than guessing.
+        """
+        payload, status = await routes.voice_media().speculate(body)
+        return JSONResponse(content=payload, status_code=status)
+
     @app.post(routes.VOICE_DONE_PATH)
     async def voice_done(body: dict):
         """The turn ended: record it in the friction log and close it on the bus."""

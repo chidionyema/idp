@@ -1,3 +1,4 @@
+{"alias": "Adversarial QA audit 2026-09-22", "entity": "artifact/adversarial-qa-audit-2026-09-22", "type": "ARTIFACT"}
 {"alias": "after_agent_turn hook", "entity": "artifact/after-agent-turn-hook", "type": "ARTIFACT"}
 {"alias": "AGENTS.md", "entity": "artifact/agents-md", "type": "ARTIFACT"}
 {"alias": "cell-gvisor-admission", "entity": "artifact/cell-gvisor-admission", "type": "ARTIFACT"}
@@ -50,17 +51,23 @@
 {"alias": "fleetview outbox import fix 2026-09-22", "entity": "concept/fleetview-outbox-import-fix-2026-09-22", "type": "CONCEPT"}
 {"alias": "ParEval", "entity": "concept/pareval", "type": "CONCEPT"}
 {"alias": "Three-Role Model", "entity": "concept/three-role-model", "type": "CONCEPT"}
+{"alias": "voice-2100-architecture", "entity": "concept/voice-2100-architecture", "type": "CONCEPT"}
+{"alias": "voice-clarify-handshake", "entity": "concept/voice-clarify-handshake", "type": "CONCEPT"}
+{"alias": "voice-speculate-endpoint", "entity": "concept/voice-speculate-endpoint", "type": "CONCEPT"}
 {"alias": "ADR 0023", "entity": "decision/adr-0023", "type": "DECISION"}
 {"alias": "built-to-be-sold law", "entity": "decision/built-to-be-sold-law", "type": "DECISION"}
 {"alias": "no-agent-works-in-the-main-checkout", "entity": "decision/no-agent-works-in-the-main-checkout", "type": "DECISION"}
 {"alias": "no-hardcoding law", "entity": "decision/no-hardcoding-law", "type": "DECISION"}
 {"alias": "salvage event 2026-09-07", "entity": "event/salvage-event-2026-09-07", "type": "EVENT"}
 {"alias": "Action Fusion", "entity": "feature/action-fusion", "type": "FEATURE"}
+{"alias": "Code mutation gate gap", "entity": "feature/code-mutation-gate-gap", "type": "FEATURE"}
 {"alias": "crew#892 CP4", "entity": "feature/crew-892-cp4", "type": "FEATURE"}
 {"alias": "Evidence Preservation", "entity": "feature/evidence-preservation", "type": "FEATURE"}
 {"alias": "Observation Pack", "entity": "feature/observation-pack", "type": "FEATURE"}
 {"alias": "Online Context Compact", "entity": "feature/online-context-compact", "type": "FEATURE"}
 {"alias": "Pi Agent Token Efficiency", "entity": "feature/pi-agent-token-efficiency", "type": "FEATURE"}
+{"alias": "voice_clarify_handshake", "entity": "feature/voice-clarify-handshake", "type": "FEATURE"}
+{"alias": "voice_speculate_endpoint", "entity": "feature/voice-speculate-endpoint", "type": "FEATURE"}
 {"alias": "Dagster", "entity": "service/dagster", "type": "SERVICE"}
 {"alias": "estate MCP server", "entity": "service/estate-mcp-server", "type": "SERVICE"}
 {"alias": "External Secrets Operator", "entity": "service/external-secrets-operator", "type": "SERVICE"}
@@ -69,6 +76,7 @@
 {"alias": "SPIRE", "entity": "service/spire", "type": "SERVICE"}
 {"alias": "Telegram Bot", "entity": "service/telegram-bot", "type": "SERVICE"}
 {"alias": "Traefik", "entity": "service/traefik", "type": "SERVICE"}
+{"alias": "voice_2100_architecture", "entity": "spec/voice-2100-architecture", "type": "SPEC"}
 {"alias": "Backstage", "entity": "tool/backstage", "type": "TOOL"}
 {"alias": "bin/idp-ci", "entity": "tool/bin-idp-ci", "type": "TOOL"}
 {"alias": "bin/idp-status", "entity": "tool/bin-idp-status", "type": "TOOL"}

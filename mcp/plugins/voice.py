@@ -256,6 +256,87 @@ def do_voice_last_intent(limit: int = 10, cfg: dict | None = None) -> list[dict]
     return _read_history(limit, cfg)
 
 
+async def do_voice_clarify(
+    session_id: str,
+    question: str,
+    candidate_action: str,
+    candidate_target: str = "",
+    cfg: dict | None = None,
+) -> dict[str, Any]:
+    """Publish a clarification request on the bus -- an agent is asking the user one question.
+
+    THE 2100 CLARIFICATION HANDSHAKE. When a voice intent comes back with confidence below
+    the 0.90 floor (either from the browser's client-side SmolLM2-135M or from the server's
+    /voice/speculate fallback), the agent mesh MUST ask one targeted question rather than
+    guessing. This tool is the standardized way to publish that request on the bus; the
+    browser's `onClarificationNeeded` consumer surfaces it as TTS ("did you mean X?") or as
+    a UI card, then feeds the answer back into the next utterance.
+
+    THE ROW IS THE SAME SHAPE AS A STEER EVENT, with `kind=clarify` and the candidate
+    the agent mesh is asking about. Downstream subscribers on `estate.agent.sovereign.*.steer`
+    also see clarify rows -- they share the contract.
+
+    NEVER RAISES. The bus may be unavailable (laptop offline, cluster down); the reason is
+    returned in the envelope rather than raising, so the agent can degrade gracefully.
+    """
+    cfg = cfg or config()
+    question = (question or "").strip()
+    candidate_action = (candidate_action or "").strip()
+    session_id = (session_id or "").strip()
+    if not session_id:
+        return {
+            "clarified": False,
+            "error": "session_id is required: a clarify without a session is not a clarify",
+        }
+    if not question:
+        return {"clarified": False, "error": "question is required"}
+    if not candidate_action:
+        return {"clarified": False, "error": "candidate_action is required"}
+
+    if not cfg["nats_url"]:
+        return {
+            "clarified": False,
+            "error": "NATS_URL is unset: clarify cannot reach the bus",
+        }
+
+    _require_nats()
+
+    subject = f"estate.agent.{RUNTIME}.{session_id}.steer"
+    event = {
+        "session_id": session_id,
+        "runtime": RUNTIME,
+        "kind": "clarify",
+        "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "clarify": {
+            "question": question,
+            "candidate": {
+                "action": candidate_action,
+                "target": candidate_target,
+            },
+        },
+    }
+    payload = json.dumps(event).encode()
+
+    try:
+        nc = await _connect(cfg["nats_url"])
+        try:
+            js = nc.jetstream()
+            ack = await js.publish(subject, payload)
+            return {
+                "clarified": True,
+                "subject": subject,
+                "session_id": session_id,
+                "question": question,
+                "candidate_action": candidate_action,
+                "candidate_target": candidate_target,
+                "stream_seq": ack.seq if hasattr(ack, "seq") else None,
+            }
+        finally:
+            await nc.drain()
+    except Exception as exc:  # noqa: BLE001
+        return {"clarified": False, "error": f"{exc.__class__.__name__}: {exc}"}
+
+
 @hookimpl
 def register_mcp_tools(datasette, mcp):
     @mcp.tool()
@@ -293,3 +374,28 @@ def register_mcp_tools(datasette, mcp):
         subscribing to the live stream. `limit` is clamped to [1, 100].
         """
         return do_voice_last_intent(limit)
+
+    @mcp.tool()
+    async def voice_clarify(
+        session_id: str,
+        question: str,
+        candidate_action: str,
+        candidate_target: str = "",
+    ) -> dict:
+        """Publish a clarification request when an intent's confidence is below the 0.90 floor.
+
+        The 2100 handshake: when a voice intent is ambiguous, the agent mesh asks one
+        targeted question instead of guessing. The browser's `onClarificationNeeded`
+        consumer surfaces this as TTS or UI, then feeds the user's answer back as the
+        next utterance.
+
+        Publishes to `estate.agent.sovereign.<session_id>.steer` with `kind=clarify`,
+        `candidate_action` (the guess), `candidate_target` (optional), and `question`
+        (what to ask the user).
+
+        Returns `{clarified: true, ...}` on success or `{clarified: false, error: ...}`
+        when the bus is unavailable.
+        """
+        return await do_voice_clarify(
+            session_id, question, candidate_action, candidate_target
+        )

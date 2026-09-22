@@ -60,6 +60,14 @@ export interface VoiceClientConfig {
   /** Callback when a partial transcript is available (speculative streaming) */
   onPartialTranscript?: (transcript: string) => void;
 
+  /**
+   * Callback when a FINAL intent's confidence is below the clarification floor (0.90).
+   * The consumer is expected to ask the user one targeted question (via TTS or UI) and
+   * feed the answer back into the next utterance. Fires on the FINAL intent only --
+   * speculative partials are not clarification-worthy, by definition.
+   */
+  onClarificationNeeded?: (intent: Intent) => void;
+
   /** Callback when speaking state changes */
   onSpeaking?: (speaking: boolean) => void;
 

@@ -21,7 +21,7 @@ import type {
 } from './types';
 
 /** Default configuration values */
-const DEFAULTS: Required<Omit<VoiceClientConfig, 'token' | 'onIntent' | 'onPartialTranscript' | 'onSpeaking' | 'onError' | 'onModelProgress'>> = {
+const DEFAULTS: Required<Omit<VoiceClientConfig, 'token' | 'onIntent' | 'onPartialTranscript' | 'onClarificationNeeded' | 'onSpeaking' | 'onError' | 'onModelProgress'>> = {
   vadSensitivity: 0.5,
   minSpeechDuration: 300,
   silenceDuration: 500,
@@ -432,11 +432,26 @@ export class VoiceClient {
         const parsedIntent = await this.intent.parse(asrResult.text);
         this.log(`Final intent: ${parsedIntent.category}/${parsedIntent.action}`);
 
-        // Emit final intent with partial: false
-        this.config.onIntent?.({
+        const finalIntent = {
           ...parsedIntent,
           partial: false,
-        });
+        };
+
+        // Emit final intent
+        this.config.onIntent?.(finalIntent);
+
+        // The 2100 clarification handshake: a final intent whose confidence is below the
+        // floor (0.90) is not shipped to the bus -- the consumer is expected to ask the user
+        // one targeted question and feed the answer back as the next utterance. This is the
+        // floor the spec calls out: "If confidence < 90%, the agent mesh triggers a
+        // clarification flow instead of executing."
+        //
+        // Partials never trigger this -- a partial by definition has not finished, and the
+        // next partial is the actual answer.
+        if (this.config.onClarificationNeeded && finalIntent.confidence < 0.90) {
+          this.log(`Clarification needed (confidence=${finalIntent.confidence.toFixed(2)})`);
+          this.config.onClarificationNeeded(finalIntent);
+        }
       }
     } catch (error) {
       this.handleError(error as Error);
