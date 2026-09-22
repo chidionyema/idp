@@ -148,6 +148,9 @@ def voice(monkeypatch):
     monkeypatch.setitem(sys.modules, "nats", recorder)
 
     module = _load_pkg_member(
+        SRC / "tracing.py", "tracing", "fleetview_backend_src_under_test"
+    )
+    module = _load_pkg_member(
         SRC / "voice_media.py", "voice_media", "fleetview_backend_src_under_test"
     )
     # The adapter is loaded through `voice_media`'s own loader, so the module under test reaches
