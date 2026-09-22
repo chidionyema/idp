@@ -44,7 +44,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 _EXECUTOR_LINK_MODULE = Path(__file__).resolve().parent / "executor_link.py"
 
@@ -188,6 +188,26 @@ def build_app(routes_path: Path) -> FastAPI:
         allow_headers=["Content-Type"],
     )
 
+    # THE VAD AND ONNXRUNTIME BUNDLES, from the one copy in sovereign/voice/static.
+    #
+    # The Backstage app serves these at its OWN origin (backstage/packages/app/public/voice is a
+    # symlink to that same directory), because a `<script src>` and an AudioWorklet cannot carry
+    # the proxy's Authorization header and the proxy answers 401 without it -- measured
+    # 2026-09-22: GET /api/proxy/fleetview/sessions with no credentials is 401. This mount is for
+    # every OTHER caller of this service, so a checkout that is not served by Backstage still has
+    # one place to fetch them from, and there is still only one copy of the 33MB on disk.
+    #
+    # Optional: a checkout without the directory serves everything else exactly as before.
+    _voice_static = routes.voice_static_dir()
+    if _voice_static.is_dir():
+        from fastapi.staticfiles import StaticFiles  # noqa: PLC0415
+
+        app.mount(
+            routes.VOICE_STATIC_PATH,
+            StaticFiles(directory=str(_voice_static)),
+            name="voice-static",
+        )
+
     @app.get(routes.SESSIONS_PATH)
     def sessions():
         body, status = routes.sessions_envelope()
@@ -240,6 +260,81 @@ def build_app(routes_path: Path) -> FastAPI:
         envelope, _status = routes.sessions_envelope()
         payload, status = routes.ask_voice(body, envelope.get("sessions") or [])
         return JSONResponse(content=payload, status_code=status)
+
+    # THE VOICE MEDIA LEG. These eight routes are what the browser used to reach by opening a
+    # WebSocket to 127.0.0.1:8899 -- a second transport that could not exist in the cluster. They
+    # are plain HTTP, so the Backstage proxy carries them exactly as it carries /sessions, and the
+    # turn's meaning goes onto the estate bus rather than down a private socket.
+    # `voice_media.py`'s docstring is the full account.
+
+    @app.post(routes.VOICE_HEAR_PATH)
+    async def voice_hear(request: Request, session_id: str = "", author: str = ""):
+        """One utterance of 16kHz float32 PCM in the raw request body; what was heard out.
+
+        THE AUDIO IS THE BODY, not a JSON field. Base64 in JSON would add a third of the bytes and
+        an encode/decode to the latency of the one request a person is actually waiting on, and
+        `application/octet-stream` is what the browser already has in hand from the VAD.
+        `session_id` and `author` are query parameters for the same reason: they must not force
+        the body into a multipart envelope.
+        """
+        pcm = await request.body()
+        payload, status = await routes.voice_media().hear(pcm, session_id, author)
+        return JSONResponse(content=payload, status_code=status)
+
+    @app.post(routes.VOICE_SAY_PATH)
+    async def voice_say(body: dict):
+        """One clause of text in, 24kHz float32 PCM out, in the voice that is currently live.
+
+        Raw PCM rather than JSON, for the same reason the old socket sent audio as its own frame:
+        the browser schedules it on the AudioContext clock the instant it lands, and putting a
+        JSON parse in the playback path is what makes clause seams audible.
+        """
+        pcm, reason = await routes.voice_media().say(str(body.get("text") or ""))
+        if pcm is None:
+            return JSONResponse(content={"error": reason}, status_code=502)
+        return Response(content=pcm, media_type="application/octet-stream")
+
+    @app.post(routes.VOICE_DONE_PATH)
+    async def voice_done(body: dict):
+        """The turn ended: record it in the friction log and close it on the bus."""
+        payload, status = await routes.voice_media().answered(body)
+        return JSONResponse(content=payload, status_code=status)
+
+    @app.get(routes.VOICE_VOICES_PATH)
+    async def voice_voices():
+        """The catalogue, so the person listening chooses the voice rather than being given one."""
+        return JSONResponse(content=await routes.voice_media().voices())
+
+    @app.post(routes.VOICE_SELECT_PATH)
+    async def voice_select(body: dict):
+        """Switch the live voice at runtime. No restart, no edit, no deploy."""
+        payload, status = await routes.voice_media().select(
+            str(body.get("engine") or ""), str(body.get("voice") or "")
+        )
+        return JSONResponse(content=payload, status_code=status)
+
+    @app.post(routes.VOICE_PREVIEW_PATH)
+    async def voice_preview(body: dict):
+        """Audition a candidate voice WITHOUT making it live, through the same playback path."""
+        pcm, reason = await routes.voice_media().preview(
+            str(body.get("engine") or ""),
+            str(body.get("voice") or ""),
+            str(body.get("text") or ""),
+        )
+        if pcm is None:
+            return JSONResponse(content={"error": reason}, status_code=502)
+        return Response(content=pcm, media_type="application/octet-stream")
+
+    @app.get(routes.VOICE_LOG_PATH)
+    def voice_log(limit: int = 50):
+        """Every voice turn, newest first -- the instrument for latency and friction."""
+        return JSONResponse(content=routes.voice_media().log(limit))
+
+    @app.get(routes.VOICE_LOG_SUMMARY_PATH)
+    def voice_log_summary(limit: int = 200):
+        """Empty rate, median first-clause latency, per-voice speed: the numbers behind
+        "I had to say it again" and "it is slow"."""
+        return JSONResponse(content=routes.voice_media().log_summary(limit))
 
     @app.get(routes.STREAM_PATH)
     async def stream(request: Request):

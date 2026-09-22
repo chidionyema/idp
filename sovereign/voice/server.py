@@ -34,7 +34,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import engine, turnlog
+from . import catalogue, engine, turnlog
 
 app = FastAPI(title="sovereign voice")
 
@@ -99,223 +99,52 @@ def voice_log_summary(limit: int = 200):
 
 @app.get("/voices")
 def voices():
-    """Every voice this host can speak with, so the choice belongs to the person listening.
+    """Every voice this host can speak with. ONE catalogue, shared with the FleetView backend.
 
-    WHY THIS ROUTE EXISTS. Choosing a voice was an edit to engine.py and a restart -- so the
-    founder was told to pick between two voices somebody else had already narrowed to, and said,
-    correctly, "why do i have to take my pick". Both engines ship 60+ voices between them; there
-    was never a reason to offer two.
-
-    KOKORO'S LIST IS POPULATED EVEN WHEN IT IS NOT LIVE.
-    Measured 2026-09-19: the founder opened the picker looking for the kokoro voice he had been
-    using and it was not there -- because the list was read from `m.tts`, which is None until the
-    model loads, and the model only loads when kokoro is selected. So the way to find a kokoro
-    voice was to already be using one. The catalogue is now read from the model's own voice file,
-    which needs no inference session, so all 54 names are listed on a fresh process.
+    The list, the filtering and the .pt-archive trick that names Kokoro's voices without loading
+    the model all live in `catalogue.py` now. They were written here, and when the board's voice
+    transport moved onto the FleetView backend (2026-09-22) this file stopped being the only
+    surface that needed them -- so they moved down to the package both surfaces import, rather
+    than being copied into the second one.
     """
-    import subprocess  # noqa: PLC0415
-
-    m = engine.models()
-    kokoro: list[str] = []
-
-    # From the loaded model when there is one...
-    if m.tts is not None:
-        try:
-            kokoro = sorted(m.tts.get_voices())
-        except Exception:  # noqa: BLE001 -- a model that cannot list voices still speaks
-            kokoro = []
-
-    # ...otherwise from the voices FILE, which is a torch .pt -- and a .pt is a ZIP ARCHIVE, so
-    # its voice names are just its member filenames. Reading the directory listing gives all 54
-    # names with no onnxruntime session and no 350MB model load, and without installing torch
-    # (a 2GB dependency) purely to list strings.
-    if not kokoro:
-        try:
-            import zipfile  # noqa: PLC0415
-
-            with zipfile.ZipFile(engine.KOKORO_VOICES) as z:
-                kokoro = sorted(n[:-4] for n in z.namelist() if n.endswith(".npy"))
-        except Exception:  # noqa: BLE001 -- an unreadable file is not fatal; the list is empty
-            kokoro = []
-
-    # macOS voices. The novelty entries are filtered by name: they are real installed voices that
-    # say "Doo da doo da dum" and are not candidates for reading a fleet report aloud.
-    NOVELTY = {
-        "Albert",
-        "Bad News",
-        "Bahh",
-        "Bells",
-        "Boing",
-        "Bubbles",
-        "Cellos",
-        "Fred",
-        "Good News",
-        "Jester",
-        "Junior",
-        "Organ",
-        "Superstar",
-        "Trinoids",
-        "Whisper",
-        "Wobble",
-        "Zarvox",
-    }
-    macos: list[str] = []
-    if os.path.exists("/usr/bin/say"):
-        try:
-            out = subprocess.run(
-                ["/usr/bin/say", "-v", "?"], capture_output=True, text=True, timeout=10
-            ).stdout
-            for line in out.splitlines():
-                # `Name (English (UK))   en_GB   # example`
-                head = line.split("#")[0].strip()
-                if not head:
-                    continue
-                parts = head.split()
-                if len(parts) < 2:
-                    continue
-                locale = parts[-1]
-                name = " ".join(parts[:-1]).strip()
-                if not locale.startswith("en_") or name in NOVELTY:
-                    continue
-                macos.append(name)
-        except Exception:  # noqa: BLE001
-            macos = []
-
-    return {
-        "engine": m.tts_engine,
-        "current": {
-            "engine": m.tts_engine,
-            "kokoro": engine.KOKORO_VOICE,
-            "say": engine.SAY_VOICE,
-            "piper": engine.PIPER_VOICE,
-        },
-        "kokoro": kokoro,
-        "say": sorted(set(macos)),
-        # Piper voices present on this host. Listed from DISK, so the picker is complete whether or
-        # not a voice has been used yet -- the same fault that hid the Kokoro voices until one was
-        # already selected, and which the piper branch of /voice/select would otherwise repeat.
-        "piper": engine.piper_voices(),
-    }
+    return catalogue.catalogue()
 
 
 @app.post("/voice/preview")
 async def preview_voice(payload: dict):
-    """Speak one fixed sentence in a candidate voice, WITHOUT making it live.
-
-    WHY A PREVIEW SEPARATE FROM /voice/select. Auditioning a voice should not change the voice
-    mid-conversation, and it should not require applying first and undoing after. This renders one
-    sentence and returns raw Float32 24kHz PCM -- the same format the socket sends -- so the
-    browser plays it through the same code path it uses for a real answer. What you hear in the
-    preview is exactly what you will hear on a turn.
-    """
-    m = engine.models()
-    want_engine = str(payload.get("engine") or "").strip().lower()
-    want_voice = str(payload.get("voice") or "").strip()
-    if want_engine not in ("say", "kokoro", "piper") or not want_voice:
-        return JSONResponse(
-            content={"error": "engine ('say'|'kokoro') and voice are required"},
-            status_code=400,
-        )
-
+    """Speak one fixed sentence in a candidate voice, WITHOUT making it live."""
     sample = str(payload.get("text") or "").strip() or (
         "Four agents are stuck, all paused. Two on the harness audit, two on the commit."
     )
     loop = asyncio.get_running_loop()
-
-    if want_engine == "say":
-        if not os.path.exists("/usr/bin/say"):
-            return JSONResponse(
-                content={"error": "no /usr/bin/say here"}, status_code=400
-            )
-        pcm = await loop.run_in_executor(
-            None, engine.synthesise_say_with, want_voice, sample
-        )
-    elif want_engine == "piper":
-        pcm = await loop.run_in_executor(
-            None, engine.synthesise_piper_with, want_voice, sample
-        )
-    else:
-        # LOAD KOKORO ON DEMAND FOR A PREVIEW TOO.
-        #
-        # It returned 503 here when the model was not loaded, which made the picker show 54
-        # kokoro voices that could not be auditioned until one had already been applied -- the
-        # same "you must already be using it to choose it" fault that hid af_heart in the first
-        # place. The first kokoro preview pays the model load (~7s); every later one does not.
-        if m.tts is None:
-            await loop.run_in_executor(None, engine.ensure_kokoro)
-        if m.tts is None:
-            return JSONResponse(
-                content={"error": "kokoro model is unavailable on this host"},
-                status_code=503,
-            )
-        pcm = await loop.run_in_executor(
-            None, engine.synthesise_kokoro_with, want_voice, sample
-        )
-
-    if not pcm:
-        return JSONResponse(content={"error": "synthesis failed"}, status_code=502)
+    # In a thread: a first Kokoro preview pays the model load, and on the event loop that would
+    # stall every other socket in this process while a voice is auditioned.
+    pcm, reason = await loop.run_in_executor(
+        None,
+        catalogue.preview,
+        str(payload.get("engine") or ""),
+        str(payload.get("voice") or ""),
+        sample,
+    )
+    if pcm is None:
+        return JSONResponse(content={"error": reason}, status_code=502 if "synthesis" in (reason or "") else 400)
     # Raw PCM, not JSON: the browser decodes it straight into an AudioBuffer, the same as a turn.
     return Response(content=pcm, media_type="application/octet-stream")
 
 
 @app.post("/voice/select")
 async def select_voice(payload: dict):
-    """Switch the speaking voice at runtime. No restart, no edit, no deploy.
-
-    THE POINT IS THAT THE PERSON LISTENING CHOOSES. Picking a voice was an edit to engine.py plus
-    a process restart, which turned a 60-option choice into a two-option ultimatum. This route
-    takes {engine: "say"|"kokoro", voice: "..."} and returns the state now live.
-
-    Kokoro's model is loaded lazily on first use here, because a host that prefers a macOS voice
-    should never pay the 350MB model load to be told it can also use Kokoro.
-    """
-    m = engine.models()
-    want_engine = str(payload.get("engine") or "").strip().lower()
-    want_voice = str(payload.get("voice") or "").strip()
-    if want_engine not in ("say", "kokoro", "piper"):
-        return JSONResponse(
-            content={"error": "engine must be 'say' or 'kokoro'"}, status_code=400
-        )
-    if not want_voice:
-        return JSONResponse(content={"error": "voice is required"}, status_code=400)
-
-    if want_engine == "piper":
-        if not engine.piper_voices():
-            return JSONResponse(
-                content={"error": f"no Piper voices in {engine.PIPER_DIR}"},
-                status_code=400,
-            )
-        engine.PIPER_VOICE = want_voice
-        m.tts_engine = "piper"
-        m.tts_model = f"piper:{want_voice}"
-        return {"engine": "piper", "voice": want_voice}
-
-    if want_engine == "say":
-        if not os.path.exists("/usr/bin/say"):
-            return JSONResponse(
-                content={"error": "no /usr/bin/say on this host"}, status_code=400
-            )
-        engine.SAY_VOICE = want_voice
-        m.tts_engine = "say"
-        m.tts_model = f"say:{want_voice}"
-        return {"engine": "say", "voice": want_voice}
-
-    # kokoro: load the model on first request for this engine.
-    if m.tts is None:
-        # In a thread: the load is tens of seconds on this class of CPU and must not block the
-        # event loop, or every other socket in the process stalls while a voice is chosen.
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, engine.ensure_kokoro)
-
-    if m.tts is None:
-        return JSONResponse(
-            content={"error": "kokoro model is not available on this host"},
-            status_code=503,
-        )
-    engine.KOKORO_VOICE = want_voice
-    m.tts_engine = "kokoro"
-    m.tts_model = os.path.basename(engine.KOKORO_MODEL)
-    return {"engine": "kokoro", "voice": want_voice}
+    """Switch the speaking voice at runtime. No restart, no edit, no deploy."""
+    loop = asyncio.get_running_loop()
+    body, status = await loop.run_in_executor(
+        None,
+        catalogue.select,
+        str(payload.get("engine") or ""),
+        str(payload.get("voice") or ""),
+    )
+    if status != 200:
+        return JSONResponse(content=body, status_code=status)
+    return body
 
 
 @app.get("/healthz")

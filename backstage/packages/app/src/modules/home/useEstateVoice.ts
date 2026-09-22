@@ -9,39 +9,87 @@
 //                         2026-09-19 on the founder's machine: it did exactly that.
 //   speechSynthesis    -> the OS's formant voices, audibly worse than the estate's own engine.
 //
-// Meanwhile `sovereign/voice/server.py` runs the estate's own models -- faster-whisper for
-// hearing, Kokoro for speaking -- supports barge-in, streams clauses, and offers 78 voices. The
-// app was using none of it.
+// The estate runs its own models -- faster-whisper for hearing, Kokoro/Piper for speaking -- with
+// barge-in, clause streaming and 78 voices. Putting that in ONE hook is the point: a fifth voice
+// surface added later gets the real engine by mounting this, rather than by remembering to avoid
+// two browser APIs.
 //
-// Putting that in ONE hook is the point: a fifth voice surface added later gets the real engine by
-// mounting this, rather than by remembering to avoid two browser APIs.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// THE TRANSPORT MOVED ONTO THE BUS (2026-09-22). This is the change that matters here.
 //
-// WHAT IT OWNS:
-//   * the WebSocket to the voice service (NOT proxied -- Backstage's proxy is HTTP-only and
-//     cannot carry an upgrade, so this dials port 8899 directly; the server allows the localhost
-//     origins by CORS);
+// This hook used to open `new WebSocket('ws://127.0.0.1:8899/voice/stream')` and push microphone
+// PCM straight down it, with a comment justifying the hard-coded origin: "Backstage's proxy is
+// HTTP-only and cannot carry an upgrade". The first half is true. The conclusion was not: the
+// board's own live feed crosses that same proxy as Server-Sent Events, so the proxy was never the
+// obstacle -- the WebSocket was a choice, and it bought a second transport.
+//
+// What that choice cost: `localhost:8899` DOES NOT EXIST IN THE CLUSTER. A portal served from
+// anywhere but this one laptop had no such port, so voice could only ever work here, with a
+// process someone had started by hand -- and when it was not running the board said "voice
+// service not reachable on 8899", which is a sentence no deployed product can contain.
+//
+// So the transport splits along the seam it should always have had:
+//
+//   MEANING -> the estate bus. Every utterance is published as an `estate.agent.event` with
+//              kind=steer (text + attributed author, which is exactly what the contract calls a
+//              human correcting a session mid-flight); the finished answer is a kind=done row.
+//              The board's existing `/stream` SSE carries them to the page, so what the founder
+//              SAID is on the same bus, in the same schema, as what every agent is doing.
+//   MEDIA   -> plain HTTP through the Backstage proxy. `POST /voice/hear` with one utterance of
+//              PCM returns what was heard; `POST /voice/say` with one clause returns its audio.
+//              Neither needs an upgrade, so both proxy, so both work in the cluster.
+//   BRAIN   -> `POST /voice/stream`, the clause-by-clause SSE route that was ALREADY here and
+//              already prompted with the same fleet state `/sessions` serves. Asking a second
+//              question-answering path would have been another duplicate.
+//
+// Every call below therefore goes through `fetchApi.fetch('plugin://proxy/fleetview/…')` — the
+// discovery middleware rewrites `proxy` to `${backend.baseUrl}/api/proxy` AND attaches the token.
+// A bare `/api/proxy/…` would hit this SPA's own history fallback and get index.html with a 200;
+// an `EventSource` would arrive with no credentials and get a 401 (measured 2026-09-22:
+// `GET /api/proxy/fleetview/sessions` with no token is 401). Both traps are already documented in
+// Fleet.tsx, which reads its stream the same way this does.
+//
+// WHAT IT STILL OWNS:
 //   * Silero VAD in the browser, so silence costs no CPU anywhere -- nothing is sent until the
 //     person actually spoke and then stopped;
 //   * playback scheduled on the WebAudio clock, so clause seams are inaudible;
-//   * barge-in: speaking while it talks stops playback AND tells the server to stop generating.
-import { useCallback, useEffect, useRef, useState } from 'react';
+//   * barge-in: speaking while it talks stops playback AND aborts the in-flight turn.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { fetchApiRef, useApi } from '@backstage/core-plugin-api';
 
-/** Where the voice service lives. A constant, because a WebSocket cannot go through the proxy. */
-export const VOICE_ORIGIN = 'http://127.0.0.1:8899';
+/**
+ * The VAD and onnxruntime bundles, served by THIS APP at its own origin.
+ *
+ * `backstage/packages/app/public/voice` is a symlink to `sovereign/voice/static`, so there is one
+ * copy of the 33MB on disk and the app serves it with the right MIME types -- measured 2026-09-22
+ * on the running dev server: `/voice/ort.min.js` is `application/javascript` (443678 bytes) and
+ * `/voice/ort-wasm-simd-threaded.jsep.wasm` is `application/wasm`.
+ *
+ * WHY NOT THROUGH THE PROXY like everything else here: a `<script src>` tag and an AudioWorklet
+ * cannot carry an Authorization header, and the proxy answers 401 without one. Static ML runtime
+ * bundles are the app's own assets, so they belong at the app's own origin.
+ *
+ * WHY NOT FROM A CDN: they were, until 2026-09-19, when the page failed on the founder's machine
+ * with "Cannot read properties of undefined (reading 'MicVAD')" while loading perfectly in a
+ * headless test -- a browser-side block the server cannot see and therefore cannot explain. A
+ * voice interface that needs jsdelivr to be reachable is not a voice interface.
+ */
+export const VOICE_ASSETS = '/voice/';
+
+/** The FleetView backend, through the Backstage proxy. See the header: never a bare path. */
+const FLEETVIEW = 'plugin://proxy/fleetview';
+
 const TTS_RATE = 24000;
 
 /**
- * Load the VAD and onnxruntime bundles FROM THE VOICE SERVICE, not from this app's origin.
- *
- * WHY. Measured 2026-09-20 in the Fleet page: the voice bar failed with "voice libraries not
- * loaded", because Backstage serves its SPA for any unknown path -- so a request to
- * /static/ort.min.js on port 3100 returns **index.html with content-type text/html**, a 200 that
- * is not the library. A `<script src="/static/...">` in this app therefore loads a page as
- * JavaScript and defines nothing.
- *
- * The files exist, correctly typed, on the voice service, which already serves them for its own
- * client page. Loading them from there means ONE copy of a 450KB and a 16KB bundle, one place to
- * version them, and no second static mount inside Backstage.
+ * Who is speaking. The event contract's `steer` object REQUIRES an author, because "the estate
+ * never runs a steer with no attributed author" -- and `/voice/hear` refuses a request without
+ * one rather than inventing a default. The same name Fleet.tsx sends with a nudge or a stop.
+ */
+const AUTHOR = 'founder';
+
+/**
+ * Load the VAD and onnxruntime bundles.
  *
  * Idempotent and awaited: a second call while the first is in flight returns the same promise, and
  * a failure is reported rather than thrown so the caller can name it.
@@ -64,17 +112,12 @@ export function ensureVoiceLibs(): Promise<{ ok: boolean; missing: string[] }> {
     const missing: string[] = [];
     const w = window as any;
     if (typeof w.ort === 'undefined') {
-      if (!(await loadScript(`${VOICE_ORIGIN}/static/ort.min.js`))) missing.push('ort');
+      if (!(await loadScript(`${VOICE_ASSETS}ort.min.js`))) missing.push('ort');
     }
     // The VAD bundle reads `self.ort` as it executes, so it must load AFTER ort exists -- and it
-    // silently assigns nothing when it runs too early, which is the race documented in the voice
-    // service's own client page. Waiting on ort here removes that ordering hazard entirely.
+    // must not be attempted at all if ort failed, or the error names the wrong library.
     if (missing.length === 0 && (typeof w.vad === 'undefined' || !w.vad.MicVAD)) {
-      if (!(await loadScript(`${VOICE_ORIGIN}/static/vad.bundle.min.js`))) missing.push('vad');
-    }
-    // Re-inject once if it loaded but did not attach, for the same reason.
-    if (missing.length === 0 && (typeof w.vad === 'undefined' || !w.vad.MicVAD)) {
-      await loadScript(`${VOICE_ORIGIN}/static/vad.bundle.min.js?retry=${Date.now()}`);
+      await loadScript(`${VOICE_ASSETS}vad.bundle.min.js?retry=${Date.now()}`);
     }
     if (typeof w.ort === 'undefined') missing.push('ort');
     if (typeof w.vad === 'undefined' || !w.vad.MicVAD) missing.push('vad');
@@ -82,10 +125,9 @@ export function ensureVoiceLibs(): Promise<{ ok: boolean; missing: string[] }> {
     // A FAILED LOAD IS NOT CACHED FOR EVER.
     //
     // `libsPromise` was assigned once and never reset, so a single transient failure to fetch the
-    // two bundles -- the voice service starting a second late, a blocked request, a flaky network
-    // -- left voice PERMANENTLY broken for the life of the page, with the same "is it on 8899?"
-    // message on every click and no way back. Retrying is cheap and the alternative is a feature
-    // that one bad moment disables until a full reload.
+    // two bundles left voice PERMANENTLY broken for the life of the page, with the same message
+    // on every click and no way back. Retrying is cheap and the alternative is a feature that one
+    // bad moment disables until a full reload.
     if (!ok) libsPromise = null;
     return { ok, missing };
   })();
@@ -122,14 +164,16 @@ export interface EstateVoice {
 }
 
 interface Ctx {
-  ws: WebSocket;
   audio: AudioContext;
   vad: any;
   nextStart: number;
   playing: AudioBufferSourceNode[];
+  /** Aborts the turn in flight: the SSE read and any clause still being synthesised. */
+  turn: AbortController | null;
 }
 
 export function useEstateVoice(): EstateVoice {
+  const fetchApi = useApi(fetchApiRef);
   const [state, setState] = useState<EstateVoiceState>('off');
   const [heard, setHeard] = useState('');
   const [reply, setReply] = useState('');
@@ -155,6 +199,22 @@ export function useEstateVoice(): EstateVoice {
   const speakCtxRef = useRef<AudioContext | null>(null);
   // True when `ctxRef` is a borrow of `speakCtxRef` rather than a real conversation.
   const borrowedRef = useRef(false);
+  // The last few exchanges, so a follow-up question ("and the other one?") has something to refer
+  // to. Held in a ref rather than state: the answer loop reads it mid-turn and a re-render on
+  // every clause would be a re-render per word.
+  const historyRef = useRef<{ role: string; content: string }[]>([]);
+
+  /**
+   * THIS CONVERSATION'S SESSION ID, minted once per mounted hook.
+   *
+   * It is what the bus rows are keyed by (`estate.agent.sovereign.<this>.steer`), so a voice
+   * conversation appears on the board as a session in its own right -- which is the honest
+   * description: it IS a session, with a person on one end.
+   */
+  const sessionId = useMemo(
+    () => `voice-${Math.random().toString(16).slice(2, 10)}`,
+    [],
+  );
 
   /** Stop everything sounding, now. Called on barge-in and on teardown. */
   const silence = useCallback(() => {
@@ -207,10 +267,13 @@ export function useEstateVoice(): EstateVoice {
       } catch {
         /* already gone */
       }
+      // The turn in flight is aborted rather than left to finish into a closed context: without
+      // this, stopping the mic during an answer leaves requests running and clauses arriving for
+      // an AudioContext that is about to be closed.
       try {
-        c.ws.close();
+        c.turn?.abort();
       } catch {
-        /* already closed */
+        /* nothing in flight */
       }
       // THE AUDIO CONTEXT IS CLOSED, and it was not.
       //
@@ -240,19 +303,24 @@ export function useEstateVoice(): EstateVoice {
     borrowedRef.current = false;
     ctxRef.current = null;
     setState('off');
-    setHeard('');
-    setReply('');
-    setDetail('');
   }, [silence]);
 
-  /**
-   * Speak a sentence outside a conversation.
-   *
-   * This is what replaces `speechSynthesis` at every call site that only needed a reply read
-   * aloud. It uses the SAME engine and the chosen voice, so a spoken reply and a spoken answer
-   * sound like the same product -- which they did not when one came from Kokoro and the other
-   * from the operating system.
-   */
+  /** One clause of text to audio, in the voice that is currently live, and play it. */
+  const sayClause = useCallback(
+    async (text: string, signal?: AbortSignal) => {
+      const res = await fetchApi.fetch(`${FLEETVIEW}/voice/say`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+        signal,
+      });
+      if (!res.ok) return false;
+      play(await res.arrayBuffer());
+      return true;
+    },
+    [fetchApi, play],
+  );
+
   const speak = useCallback(
     (text: string) => {
       // A SPEAK-ONLY CONTEXT IS TRACKED SEPARATELY FROM A CONVERSATION.
@@ -278,49 +346,213 @@ export function useEstateVoice(): EstateVoice {
         // Borrow it for the duration of this call, so `play()` -- which reads ctxRef -- has a
         // context with a destination. `stop()` closes whichever ones exist.
         ctxRef.current = {
-          ws: null as unknown as WebSocket,
           audio: speakCtxRef.current,
           vad: null,
           nextStart: 0,
           playing: [],
+          turn: null,
         };
         borrowedRef.current = true;
       }
-      fetch(`${VOICE_ORIGIN}/voice/preview`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ engine: current.engine, voice: current.voice, text }),
-      })
-        .then((r) => (r.ok ? r.arrayBuffer() : null))
-        .then((buf) => {
-          if (!buf) {
-            setDetail('could not speak that — voice service refused');
-            return;
-          }
-          play(buf);
-        })
-        .catch((e) => setDetail(`could not speak: ${e.message || e}`));
+      void sayClause(text).then((ok) => {
+        if (!ok) setDetail('could not speak that — the voice service refused it');
+      }).catch((e: any) => setDetail(`could not speak: ${e.message || e}`));
     },
-    [current.engine, current.voice, play],
+    [sayClause],
+  );
+
+  /**
+   * ONE TURN, END TO END: hear it, put it on the bus, ask, speak the answer, close the turn.
+   *
+   * This is the whole of what the WebSocket used to do, as four ordinary requests. Each one is
+   * short, so a dropped connection costs one clause rather than the conversation, and every one
+   * of them proxies -- which is the point of the change.
+   */
+  const runTurn = useCallback(
+    async (pcm: ArrayBuffer) => {
+      const c = ctxRef.current;
+      if (!c) return;
+      // BARGE-IN, SERVER SIDE: whatever was still being said for the last utterance is abandoned
+      // before this one starts. The socket sent a "barge_in" frame for this; an AbortController
+      // does it without a channel, because each request is its own.
+      c.turn?.abort();
+      const turn = new AbortController();
+      c.turn = turn;
+      const startedAt = performance.now();
+
+      let hearBody: any;
+      try {
+        const res = await fetchApi.fetch(
+          `${FLEETVIEW}/voice/hear?session_id=${encodeURIComponent(
+            sessionId,
+          )}&author=${encodeURIComponent(AUTHOR)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: pcm,
+            signal: turn.signal,
+          },
+        );
+        hearBody = await res.json();
+        if (!res.ok) {
+          setState('error');
+          setDetail(hearBody?.error || `could not hear that (${res.status})`);
+          return;
+        }
+      } catch (e: any) {
+        if (turn.signal.aborted) return;
+        setState('error');
+        setDetail(`could not reach the voice service: ${e.message || e}`);
+        return;
+      }
+
+      // AN EMPTY TRANSCRIPT IS NOT AN ERROR. The person spoke and nothing came back -- the thing
+      // behind "I had to say it three times". The server has already counted it; the page simply
+      // goes back to listening rather than showing a fault.
+      if (hearBody.empty) {
+        setState('listening');
+        setDetail('did not catch that — say it again');
+        return;
+      }
+
+      const question: string = hearBody.text;
+      setHeard(question);
+      setReply('');
+      setState('thinking');
+      setDetail(`heard in ${hearBody.asr_seconds}s`);
+
+      let firstClauseAt: number | null = null;
+      let ttsSeconds = 0;
+      let clauses = 0;
+      const spoken: string[] = [];
+
+      try {
+        const res = await fetchApi.fetch(`${FLEETVIEW}/voice/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+          body: JSON.stringify({ question, history: historyRef.current }),
+          signal: turn.signal,
+        });
+        if (!res.ok || !res.body) {
+          setState('error');
+          setDetail(`the fleet did not answer (${res.status})`);
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          // SSE frames are separated by a blank line; a partial frame stays in the buffer until
+          // its terminator arrives, because a chunk boundary is not a message boundary.
+          const frames = buffer.split('\n\n');
+          buffer = frames.pop() ?? '';
+          for (const frame of frames) {
+            const event = /^event:\s*(.*)$/m.exec(frame)?.[1]?.trim();
+            const dataLine = /^data:\s*(.*)$/m.exec(frame)?.[1];
+            if (!event || !dataLine) continue;
+            let payload: any;
+            try {
+              payload = JSON.parse(dataLine);
+            } catch {
+              continue;
+            }
+            if (event === 'error') {
+              setState('error');
+              setDetail(payload.error || 'the fleet refused the question');
+              return;
+            }
+            if (event === 'delta' && payload.text) {
+              if (firstClauseAt === null) firstClauseAt = performance.now();
+              setReply((p) => (p ? `${p} ${payload.text}` : payload.text));
+              spoken.push(payload.text);
+              clauses += 1;
+              // SPEAK EACH CLAUSE AS IT LANDS, and await it so the audio is scheduled in the
+              // order it was written. Synthesis is the slow half; a clause whose audio fails is
+              // still on screen, which is why a missing clause degrades to silence, not to a
+              // broken turn.
+              const ttsStarted = performance.now();
+              try {
+                await sayClause(payload.text, turn.signal);
+              } catch {
+                /* one clause that could not be spoken must not end the conversation */
+              }
+              ttsSeconds += (performance.now() - ttsStarted) / 1000;
+            }
+          }
+        }
+      } catch (e: any) {
+        if (turn.signal.aborted) {
+          setDetail('— interrupted');
+          setState('listening');
+          return;
+        }
+        setState('error');
+        setDetail(`the answer stopped: ${e.message || e}`);
+        return;
+      }
+
+      const totalSeconds = (performance.now() - startedAt) / 1000;
+      const firstClauseSeconds =
+        firstClauseAt === null ? null : (firstClauseAt - startedAt) / 1000;
+
+      historyRef.current = [
+        ...historyRef.current,
+        { role: 'user', content: question },
+        { role: 'assistant', content: spoken.join(' ') },
+      ].slice(-8);
+
+      setState('listening');
+      setDetail(
+        firstClauseSeconds === null
+          ? `answered in ${totalSeconds.toFixed(1)}s`
+          : `first words ${firstClauseSeconds.toFixed(1)}s · reply ${totalSeconds.toFixed(1)}s`,
+      );
+
+      // CLOSE THE TURN: the friction log gets the numbers measured HERE, at the speaker, which is
+      // where the person experiences them; the bus gets a kind=done row so a reader of
+      // `estate.agent.sovereign.>` can tell a turn that finished from one that was abandoned.
+      try {
+        await fetchApi.fetch(`${FLEETVIEW}/voice/done`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: sessionId,
+            asr_seconds: hearBody.asr_seconds,
+            first_clause_seconds: firstClauseSeconds,
+            total_seconds: totalSeconds,
+            tts_seconds: ttsSeconds,
+            words: question.split(/\s+/).filter(Boolean).length,
+            clauses,
+            engine: current.engine,
+            voice: current.voice,
+            outcome: 'ok',
+          }),
+        });
+      } catch {
+        /* the log is an instrument; its absence must not break the conversation */
+      }
+    },
+    [current.engine, current.voice, fetchApi, sayClause, sessionId],
   );
 
   const start = useCallback(async () => {
     setDetail('loading voice libraries…');
-    // FETCH THEM FROM THE VOICE SERVICE FIRST. Backstage answers /static/* with its own SPA, so
-    // the libraries have to come from the origin that actually has them; see ensureVoiceLibs.
     const libs = await ensureVoiceLibs();
     if (!libs.ok) {
       setState('error');
       setDetail(
-        `voice libraries missing (${libs.missing.join(', ')}) — is the voice service on 8899?`,
+        `voice libraries missing (${libs.missing.join(', ')}) — ${VOICE_ASSETS} is not serving them`,
       );
       return;
     }
     if (typeof (window as any).ort !== 'undefined') {
-      // Tell onnxruntime where ITS wasm files are: the voice service, for the same reason as the
-      // VAD assets below. Left unset it resolves them against this origin, where Backstage
-      // answers with HTML.
-      (window as any).ort.env.wasm.wasmPaths = `${VOICE_ORIGIN}/static/`;
+      // Tell onnxruntime where ITS wasm files are. Left unset it resolves them against the page's
+      // path rather than the app root, and a route like /fleet/room would look for them there.
+      (window as any).ort.env.wasm.wasmPaths = VOICE_ASSETS;
     }
     let audio: AudioContext;
     try {
@@ -334,94 +566,49 @@ export function useEstateVoice(): EstateVoice {
       return;
     }
 
-    const ws = new WebSocket(`${VOICE_ORIGIN.replace(/^http/, 'ws')}/voice/stream`);
-    ws.binaryType = 'arraybuffer';
-    const ctx: Ctx = { ws, audio, vad: null, nextStart: 0, playing: [] };
+    const ctx: Ctx = { audio, vad: null, nextStart: 0, playing: [], turn: null };
     ctxRef.current = ctx;
 
-    ws.onmessage = (ev) => {
-      if (ev.data instanceof ArrayBuffer) {
-        play(ev.data);
-        return;
-      }
-      let m: any;
-      try {
-        m = JSON.parse(ev.data as string);
-      } catch {
-        return;
-      }
-      if (m.type === 'transcript') {
-        setHeard(m.text);
-        setReply('');
-        setDetail(`heard in ${m.asr_seconds}s`);
-        setState('thinking');
-      } else if (m.type === 'clause') {
-        setReply((p) => (p ? `${p} ${m.text}` : m.text));
-      } else if (m.type === 'interrupted') {
-        setDetail('— interrupted');
-        setState('listening');
-      } else if (m.type === 'done') {
-        setDetail(`first audio ${m.first_audio}s · reply ${m.total}s`);
-        setState('listening');
-      } else if (m.type === 'error') {
-        setState('error');
-        setDetail(m.error || 'error');
-      } else if (m.type === 'empty') {
-        setState('listening');
-      }
-    };
-    ws.onerror = () => {
+    try {
+      const vad = await (window as any).vad.MicVAD.new({
+        // 0.8 rather than the 0.5 default: on a laptop microphone the lower threshold fires on
+        // keyboard and fan noise, and every false positive is a wasted transcription.
+        positiveSpeechThreshold: 0.8,
+        negativeSpeechThreshold: 0.5,
+        minSpeechFrames: 3,
+        preSpeechPadFrames: 5,
+        baseAssetPath: VOICE_ASSETS,
+        onnxWASMBasePath: VOICE_ASSETS,
+        onSpeechStart: () => {
+          // BARGE-IN, both halves and in this order: silence the browser immediately so the
+          // person hears themselves rather than the machine, then abandon the turn in flight so
+          // the rest of the reply is never fetched. Without the second half the answer talks over
+          // the interruption, which is the most robotic thing a voice interface can do.
+          silence();
+          setState('listening');
+          ctx.turn?.abort();
+        },
+        onSpeechEnd: (buf: Float32Array) => {
+          setState('thinking');
+          void runTurn(buf.buffer as ArrayBuffer);
+        },
+      });
+      ctx.vad = vad;
+      vad.start();
+      setState('listening');
+      setDetail('listening — speak any time');
+    } catch (e: any) {
       setState('error');
-      setDetail('voice service unreachable — is it running on 8899?');
-    };
-    ws.onclose = () => setState((s) => (s === 'error' ? s : 'off'));
-
-    ws.onopen = async () => {
-      try {
-        const vad = await (window as any).vad.MicVAD.new({
-          // 0.8 rather than the 0.5 default: on a laptop microphone the lower threshold fires on
-          // keyboard and fan noise, and every false positive is a wasted transcription.
-          positiveSpeechThreshold: 0.8,
-          negativeSpeechThreshold: 0.5,
-          minSpeechFrames: 3,
-          preSpeechPadFrames: 5,
-          // THE VAD'S OWN ASSETS LIVE ON THE VOICE SERVICE, not here. Its worklet and the silero
-          // weights are fetched relative to these paths, and Backstage answers any unknown path
-          // with its SPA -- so `/static/` here would resolve to an HTML page and the worklet
-          // would fail to load with a MIME error rather than a 404.
-          baseAssetPath: `${VOICE_ORIGIN}/static/`,
-          onnxWASMBasePath: `${VOICE_ORIGIN}/static/`,
-          onSpeechStart: () => {
-            // BARGE-IN, both halves and in this order: silence the browser immediately so the
-            // person hears themselves rather than the machine, then tell the server to stop
-            // generating. Without the second half the reply talks over the interruption, which is
-            // the most robotic thing a voice interface can do.
-            silence();
-            setState('listening');
-            if (ws.readyState === WebSocket.OPEN) ws.send('barge_in');
-          },
-          onSpeechEnd: (buf: Float32Array) => {
-            setState('thinking');
-            if (ws.readyState === WebSocket.OPEN) ws.send(buf.buffer);
-          },
-        });
-        ctx.vad = vad;
-        vad.start();
-        setState('listening');
-        setDetail('listening — speak any time');
-      } catch (e: any) {
-        setState('error');
-        const msg = String(e?.message || e);
-        // NAME THE REAL CAUSE. A microphone the browser declined is the common one here and is
-        // fixed by granting permission, not by reloading or by editing code.
-        setDetail(
-          /permission|denied|notallowed/i.test(msg)
-            ? 'microphone blocked — allow it for this site, then try again'
-            : `microphone failed: ${msg}`,
-        );
-      }
-    };
-  }, [play, silence]);
+      const msg = String(e?.message || e);
+      // NAME THE REAL CAUSE. A microphone the browser declined is the common one here and is
+      // fixed by granting permission, not by reloading or by editing code.
+      setDetail(
+        /permission|denied|notallowed/i.test(msg)
+          ? 'microphone blocked — allow it for this site, then try again'
+          : `microphone failed: ${msg}`,
+      );
+    }
+  }, [runTurn, silence]);
 
   // The log, on a 10s cadence -- fast enough to see a problem appear, slow enough not to add to
   // the load the log exists to measure.
@@ -430,24 +617,36 @@ export function useEstateVoice(): EstateVoice {
     const pull = async () => {
       try {
         const [l, s2] = await Promise.all([
-          fetch(`${VOICE_ORIGIN}/log?limit=40`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-          fetch(`${VOICE_ORIGIN}/log/summary`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetchApi
+            .fetch(`${FLEETVIEW}/voice/log?limit=40`)
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null),
+          fetchApi
+            .fetch(`${FLEETVIEW}/voice/log/summary`)
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null),
         ]);
         if (cancelled) return;
         if (l) setVoiceLog(l.turns || []);
         if (s2) setVoiceStats(s2);
-      } catch { /* the log is an instrument; its absence must not break the engine */ }
+      } catch {
+        /* the log is an instrument; its absence must not break the engine */
+      }
     };
     const t = setInterval(pull, 10000);
     pull();
-    return () => { cancelled = true; clearInterval(t); };
-  }, []);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [fetchApi]);
 
   // Load the catalogue once so a picker is populated before it opens, and mark availability from
   // what the service reports rather than from what the browser claims to support.
   useEffect(() => {
     let cancelled = false;
-    fetch(`${VOICE_ORIGIN}/voices`)
+    fetchApi
+      .fetch(`${FLEETVIEW}/voice/voices`)
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;
@@ -461,29 +660,35 @@ export function useEstateVoice(): EstateVoice {
       .catch(() => {
         if (!cancelled) {
           setAvailable(false);
-          setDetail('voice service not reachable on 8899');
+          // NAMES THE SERVICE, NOT A PORT. The old text was "voice service not reachable on 8899",
+          // which was only ever true on one laptop and told a cluster user to look for something
+          // that does not exist there.
+          setDetail('the FleetView backend is not answering for voice');
         }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fetchApi]);
 
-  const selectVoice = useCallback(async (engine: string, voice: string) => {
-    try {
-      const r = await fetch(`${VOICE_ORIGIN}/voice/select`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ engine, voice }),
-      });
-      const j = await r.json();
-      if (!r.ok) return `refused: ${j.error || r.status}`;
-      setCurrent({ engine: j.engine, voice: j.voice });
-      return `now speaking with ${j.voice}`;
-    } catch (e: any) {
-      return `failed: ${e.message || e}`;
-    }
-  }, []);
+  const selectVoice = useCallback(
+    async (engine: string, voice: string) => {
+      try {
+        const r = await fetchApi.fetch(`${FLEETVIEW}/voice/select`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ engine, voice }),
+        });
+        const j = await r.json();
+        if (!r.ok) return `refused: ${j.error || r.status}`;
+        setCurrent({ engine: j.engine, voice: j.voice });
+        return `now speaking with ${j.voice}`;
+      } catch (e: any) {
+        return `failed: ${e.message || e}`;
+      }
+    },
+    [fetchApi],
+  );
 
   // Leave nothing running when the surface unmounts.
   useEffect(() => () => stop(), [stop]);

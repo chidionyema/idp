@@ -71,9 +71,9 @@ _SIGNALS_MODULE = Path(__file__).resolve().parent / "signals.py"
 # The Observer lives in platform/intent/, NOT beside this file: it is a producer of contracts that
 # the backend merely reads, and the voice service is its peer, not its parent. Resolved from the
 # module's own location so it does not depend on the process's working directory.
-_OBSERVER_MODULE = (
-    Path(__file__).resolve().parents[4] / "platform" / "intent" / "observer.py"
-)
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_OBSERVER_MODULE = _REPO_ROOT / "platform" / "intent" / "observer.py"
+_VOICE_MEDIA_MODULE = Path(__file__).resolve().parent / "voice_media.py"
 _BLAST_MODULE = Path(__file__).resolve().parent / "blast.py"
 _GRAPH_MODULE = Path(__file__).resolve().parent / "graph.py"
 _EVALS_MODULE = Path(__file__).resolve().parent / "evals.py"
@@ -177,6 +177,39 @@ def stream_voice(body: dict, sessions: list):
     """Clause-by-clause server-sent events. The browser speaks each one as it lands, so the first
     words arrive while the model is still writing the rest."""
     return _voice().stream_ask(body.get("question", ""), sessions, body.get("history"))
+
+
+def voice_media():
+    """`voice_media.py` -- hearing, speaking, and the bus rows a voice turn puts on it.
+
+    CACHED IN `sys.modules`, unlike its `_load`-by-path neighbours, for the same reason
+    `_executor_link` is: this module holds process-wide state. It imports `sovereign.voice.engine`,
+    whose loaded ASR model and currently-selected voice live in module globals -- a second copy
+    would mean a 90-second model load per request and a voice chosen on one route that another
+    route does not speak with.
+
+    Returned as a module rather than wrapped in envelope functions like the routes above, because
+    every entry point on it is `async` (transcription and synthesis run in a thread pool, and the
+    bus publish awaits NATS). A sync wrapper here could only re-enter the event loop.
+    """
+    import sys
+
+    name = "fleetview_voice_media_impl"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(name, _VOICE_MEDIA_MODULE)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load module at {_VOICE_MEDIA_MODULE}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def voice_static_dir() -> Path:
+    """Where the VAD and onnxruntime bundles live: one copy, in the package that owns them."""
+    return _REPO_ROOT / "sovereign" / "voice" / "static"
 
 
 def _signals():
@@ -292,6 +325,24 @@ KILL_PATH = "/kill"
 CHANNELS_PATH = "/channels"
 VOICE_PATH = "/voice"
 VOICE_STREAM_PATH = "/voice/stream"
+
+# THE VOICE MEDIA LEG, which used to be a WebSocket to 127.0.0.1:8899 and therefore could not
+# exist in the cluster. These are plain HTTP, so the Backstage proxy carries them exactly as it
+# carries /sessions, and the microphone reaches the estate's own models from a portal served
+# anywhere. `voice_media.py`'s docstring has the full account of what moved and why.
+VOICE_HEAR_PATH = "/voice/hear"
+VOICE_SAY_PATH = "/voice/say"
+VOICE_DONE_PATH = "/voice/done"
+VOICE_VOICES_PATH = "/voice/voices"
+VOICE_SELECT_PATH = "/voice/select"
+VOICE_PREVIEW_PATH = "/voice/preview"
+VOICE_LOG_PATH = "/voice/log"
+VOICE_LOG_SUMMARY_PATH = "/voice/log/summary"
+# The VAD and onnxruntime bundles the browser needs before it can hear anything. Served from this
+# process as a fallback for a caller that is not the Backstage app; the app itself serves them at
+# its own origin (backstage/packages/app/public/voice -> sovereign/voice/static), because a
+# `<script src>` and an AudioWorklet cannot carry the proxy's Authorization header.
+VOICE_STATIC_PATH = "/voice/static"
 HISTORY_PATH = "/history"
 QUERY_PATH = "/query"
 BLAST_RADIUS_PATH = "/blast-radius"
