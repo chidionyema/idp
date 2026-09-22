@@ -67,15 +67,16 @@ repos:
         pass_filenames: false
         files: ^(clusters/|platform/|backstage/platform/catalog-info\.yaml$)
       # The catalogue's other half: what is BUILT and not running -- unmerged branches that add
-      # files absent from main, and deployments scaled to zero. It has an exact-match --check in
-      # bin/idp-ci, so without this row a stale file is only ever noticed by a red check on
-      # another machine (tests/test_generated_files_regenerate_at_commit.py).
+      # files absent from main, and deployments scaled to zero. The 3,539-line Backstage file
+      # this used to also stage was deleted 2026-09-22: no catalog location pointed at it, so
+      # Backstage never ingested it and its only reader was its own --check. What remains is
+      # the counts file bin/estate-twin-runtime reads.
       - id: catalog-dark-matter
-        name: the dark-matter catalogue follows git and the cluster (estate-twin, 2026-09-12)
-        entry: bash -c 'python3 bin/catalog-dark-matter --check >/dev/null || python3 bin/catalog-dark-matter; git add -A backstage/platform/dark-matter.yaml backstage/platform/dark-matter.json'
+        name: the dark-matter counts follow git and the cluster (estate-twin, 2026-09-12)
+        entry: bash -c 'python3 bin/catalog-dark-matter --check >/dev/null || python3 bin/catalog-dark-matter; git add -A backstage/platform/dark-matter.json'
         language: system
         pass_filenames: false
-        files: ^(backstage/platform/dark-matter\.yaml$|backstage/platform/dark-matter\.json$)
+        files: ^backstage/platform/dark-matter\.json$
       - id: catalog-validator
         name: catalog data is valid before merge (Layer 1 prevention)
         entry: python3 bin/idp-catalog-validator --strict backstage/platform/catalog-info.yaml

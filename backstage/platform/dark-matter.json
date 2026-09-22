@@ -1,19 +1,9 @@
 {
-  "at": "2026-09-13",
+  "at": "2026-09-22",
   "base": "origin/main",
-  "branches_carried_in_portal_file": 200,
-  "dead_deployments": 7,
-  "dead_names": [
-    "edge-runtime/edge-runtime",
-    "edge-runtime/resident-brain",
-    "hindsight/hindsight-api",
-    "observability/superset",
-    "observability/superset-worker",
-    "robusta/robusta-runner",
-    "staging/canary"
-  ],
-  "files_absent_from_base": 855,
-  "files_added_across_branches": 94199,
-  "portal_file_cap": 200,
-  "stranded_branches": 657
+  "dead_deployments": 0,
+  "dead_names": [],
+  "files_absent_from_base": 344,
+  "files_added_across_branches": 4151,
+  "stranded_branches": 77
 }
