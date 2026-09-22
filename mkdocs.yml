@@ -370,30 +370,15 @@ nav:
       - Otto's three homes: how-to/onboarding/otto-three-homes.md
       - Otto homes, grade and deploy: how-to/onboarding/idp-otto-homes.md
       - Estate proof: how-to/onboarding/estate-proof.md
-  - Gates:
-      # tests/test_gate_demo.py refuses one that is not reachable in the nav.
-      # 2026-09-13: these two rules and their pages landed with d0a9deb9 and the
-      # pages were never named here, so test_gate_demo's nav case was red --
-      # "generated pages not in the nav". bin/idp-gate-demo writes a page per row
-      # in rules.yaml; the nav has to name each one or the page is unreachable.
-      # 2026-09-14: the same mistake a third time, and named this time by CI rather
-      # than by a reader. Two rows landed in rules.yaml -- a-script-is-not-built-
-      # until-it-runs (label script-compiles) and deterministic-verifier -- each of
-      # nav. bdd-suites (tests) went red on test_gate_demo's nav case:
-      # "generated pages not in the nav: ['a-script-is-not-built-until-it-runs',
-      # 'deterministic-verifier']". The renderer still has no rung that reads the
-      # generated index against the nav, so this stays a comment rather than a
-      # guard; whoever writes the fourth row has to remember what this entry says.
-      # 2026-09-15: same mistake a fourth time. dod-v3-verified-not-asserted landed in
-      # rules.yaml this session with no nav row, so test_gate_demo's nav case went red
-      # again: "generated pages not in the nav: ['dod-v3-verified-not-asserted']".
-      # 2026-09-16: same mistake a fifth and sixth time. catalog-spec-type and
-      # catalog-links-absolute landed in rules.yaml with no nav rows, so
-      # test_gate_demo's nav case went red: "generated pages not in the nav:
-      # ['catalog-spec-type', 'catalog-links-absolute']".
-      # 2026-09-17: main-green-gate and wip-gate added to rules.yaml (Andon cord enforcement);
-      # nav entries required or test_gate_demo's nav case fails.
-      # 2026-09-17: router-egress-ledger added in battalion (idp#3525 CP3 ROUTE-01)
+  # No Gates section. bin/idp-gate-demo wrote one page per row of rules.yaml, and
+  # each page had to be named here or it was unreachable -- the mistake this entry
+  # recorded six times between 2026-09-13 and 2026-09-17. The registry and its
+  # engine were deleted (via-negativa, 2026-09-20, AGENTS.md) and 7ddecdbae deleted
+  # the pages, but the section header stayed behind holding only those comments.
+  # A YAML key with nothing under it is None, not an empty list, so mkdocs --strict
+  # aborted on every build since:
+  #     Config value 'nav': Expected nav to be a list, got None
+  # (mkdocs 1.6.1 config_options.py:882; reproduced and fixed locally 2026-09-22).
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
