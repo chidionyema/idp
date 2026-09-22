@@ -119,12 +119,17 @@ def test_the_ci_backstop_reads_its_rows_from_the_same_registry():
     )
 
 
-def test_the_hook_runs_the_registry_rather_than_a_list_of_its_own():
-    hook = (ROOT / ".githooks/pre-commit").read_text()
-    assert ".pre-commit-config.yaml" in hook, "the hook does not read the registry"
-    assert not re.search(r"^regen [a-z-]+ ", hook, re.M), (
-        "the hook carries hand-written generator rows again; they belong in the registry"
-    )
+# test_the_hook_runs_the_registry_rather_than_a_list_of_its_own was here until 2026-09-22. It
+# read `.githooks/pre-commit` and required it to consult `.pre-commit-config.yaml` rather than
+# carry its own `regen <name>` rows. The commit-time plane it graded no longer exists: the
+# founder ordered the pre-commit hooks gutted, `.githooks/pre-push` went in f82413c3e, and
+# `.githooks/pre-commit` went with it on this branch -- `.githooks/` now holds only commit-msg.
+#
+# The registry itself is NOT gone and is still graded: `_rows()` above reads
+# `.pre-commit-config.yaml`, and test_the_ci_backstop_reads_its_rows_from_the_same_registry
+# proves ci.yml's `generated` job reads that same file. So the thing this test protected against
+# -- a second, hand-written list of generators drifting from the registry -- is still refused,
+# on the plane that still exists. Only the assertion about the deleted hook is gone.
 
 
 def test_the_registry_and_the_hook_agree_on_the_repository_as_it_stands():
