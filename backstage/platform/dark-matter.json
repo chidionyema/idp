@@ -1,9 +1,0 @@
-{
-  "at": "2026-09-22",
-  "base": "origin/main",
-  "dead_deployments": 0,
-  "dead_names": [],
-  "files_absent_from_base": 344,
-  "files_added_across_branches": 4151,
-  "stranded_branches": 77
-}
