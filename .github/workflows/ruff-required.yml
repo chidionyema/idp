@@ -1,0 +1,48 @@
+# crew#620: the server-side enforcement of the Python standard. The local hook
+# (bin/idp-ruff + .githooks/pre-commit) gives fast feedback; this workflow is the
+# boundary that refuses a merge if any .py file added by this PR violates pyproject.toml
+# [tool.ruff]. Required status check on main makes the refusal server-side, not
+# developer-memory. Without this PR the loop is advisory; with it, the next regression
+# is refused automatically.
+name: ruff-required
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+jobs:
+  ruff-required:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: "3.12" }
+      - run: pip install -q ruff==0.15.18
+      - name: ruff format --check on the PR diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          files=$(git diff --name-only "${BASE}...HEAD" -- '*.py' | grep -v '\.git/' || true)
+          if [ -z "$files" ]; then
+            echo "no python files changed in this PR"
+            exit 0
+          fi
+          echo "checking:"
+          printf '  %s\n' $files
+          echo "$files" | xargs python3 -m ruff format --check
+      - name: ruff check on the PR diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          files=$(git diff --name-only "${BASE}...HEAD" -- '*.py' | grep -v '\.git/' || true)
+          [ -z "$files" ] && exit 0
+          echo "$files" | xargs python3 -m ruff check
+      - name: emit ratchet count
+        run: |
+          echo "ratchet: files off-standard on HEAD"
+          python3 -m ruff check --statistics . 2>/dev/null | tail -n 20 || true
