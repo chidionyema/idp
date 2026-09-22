@@ -506,7 +506,15 @@ def test_do_voice_clarify_reports_a_failing_publish_rather_than_swallowing_it():
 
 
 def asyncio_run(coro):
-    """Run a coroutine in a fresh event loop. Same shape as test_voice_on_the_bus uses."""
+    """Run a coroutine in a fresh event loop. asyncio.run() creates a loop, runs the
+    coroutine to completion, and closes the loop -- the standard idiom since 3.7.
+
+    The previous version used `asyncio.get_event_loop().run_until_complete(coro)`,
+    which raises `RuntimeError: There is no current event loop in thread 'MainThread'`
+    on Python 3.10+ when called outside an async context. CI runs Python 3.12; this
+    caught every test in this file as a collection error on first CI push.
+    asyncio.run() works on every supported version.
+    """
     import asyncio
 
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
