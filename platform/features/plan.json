@@ -75,8 +75,8 @@
     {
       "name": "model-routing",
       "tier": "enterprise",
-      "cpu": 0.14,
-      "memory_gb": 0.64,
+      "cpu": 0.15,
+      "memory_gb": 0.7,
       "storage_gb": 0.0,
       "title": "LiteLLM proxy with per-key budgets, fallbacks, spend in Langfuse",
       "note": ""
@@ -200,8 +200,8 @@
     }
   ],
   "total": {
-    "cpu": 5.88,
-    "memory_gb": 24.15,
+    "cpu": 5.89,
+    "memory_gb": 24.21,
     "storage_gb": 16.0
   },
   "depend_failures": [],
