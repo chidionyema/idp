@@ -14,6 +14,13 @@ every bump to the founder, including the eleven files that were in the old shape
 
 These tests hold the widened pattern to the same trust boundary as before: the
 `$imagepolicy` marker, not the key name, is what proves the controller owns a line.
+
+Widening it is necessary and not sufficient. Two more things kept the lane shut, and
+both are covered below: the controller's YAML round-trip drops a blank line in
+platform/llm/kustomization.yaml, and -- because `gh pr diff` is the THREE-DOT diff --
+that hunk is measured against a merge-base no merge to main can ever move. The loop
+could not clear it, because the refresh that would lived behind the classifier the
+stale hunk was failing.
 """
 
 from __future__ import annotations
@@ -166,6 +173,59 @@ def test_the_llm_kustomization_no_longer_carries_the_line_the_controller_strips(
     assert "disableNameSuffixHash: false\n\n" not in text, (
         "the blank line after generatorOptions is back; image-automation-controller "
         "strips it on every write, which makes every deploy PR non-landable"
+    )
+
+
+# ------------------- and the loop can reach a diff the classifier is able to pass at all
+
+
+def _row_one() -> str:
+    """The `land` job's shell, from the classifier call to the end of row 1.
+
+    Read out of the workflow rather than hardcoded, so the test tracks the file.
+    """
+    import yaml
+
+    d = yaml.safe_load((REPO / ".github/workflows/deploy-when-green.yml").read_text())
+    shell = "\n".join(s["run"] for s in d["jobs"]["land"]["steps"] if "run" in s)
+    start = shell.index("bin/idp-image-only-diff --pr")
+    end = shell.index("# Row 2", start)
+    return shell[start:end]
+
+
+def test_a_behind_pull_request_is_refreshed_rather_than_parked():
+    """The deadlock that kept the lane shut even with the classifier fixed.
+
+    `gh pr diff` is the THREE-DOT diff, so a hunk against a frozen merge-base survives
+    every merge to main -- measured on #3839, whose base d879408 still carries the blank
+    line the controller had already dropped from the branch. The only thing that clears it
+    is refreshing the branch, and that lived inside try_land, behind the classifier that
+    the stale hunk was failing. Row 1 must break that tie itself.
+    """
+    row = _row_one()
+    assert "update-branch" in row, (
+        "row 1 parks a refused bump without ever refreshing it; a stale merge-base then "
+        "keeps the lane shut permanently, because no merge to main can move that base"
+    )
+    assert row.index("update-branch") < row.index("waits for the founder"), (
+        "the founder is handed the bump before the refresh is tried"
+    )
+
+
+def test_the_refresh_is_conditioned_on_behind_and_not_on_the_classifier_failing():
+    row = _row_one()
+    assert "BEHIND" in row, (
+        "the refresh must fire only for a branch that is actually behind"
+    )
+
+
+def test_refreshing_never_merges():
+    """The classifier stays the only thing that can reach a merge. If a refresh could
+    merge, a stale base would become a way INTO main rather than a reason to re-grade."""
+    row = _row_one()
+    refresh = row[row.index("update-branch") :]
+    assert "gh pr merge" not in refresh, (
+        "the refresh path can merge; only try_land, downstream of a passing classifier, may"
     )
 
 
