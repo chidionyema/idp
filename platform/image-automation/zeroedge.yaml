@@ -1,0 +1,35 @@
+# The ZeroEdge gateway's image (platform/llm/zeroedge.yaml). Unlike every other row in this
+# directory the image is not built by this repository: the source lives in chidionyema/zeroedge
+# and its own build-image.yml pushes the same tag shape build-multiarch.yml pushes here,
+# `main-<run>-<sha>` on a multiarch manifest list, signed with cosign. This row is what moves
+# platform/llm/kustomization.yaml onto each new one.
+#
+# The tag pattern is not decoration. platform/image-automation/aevum.yaml and jit.yaml both
+# record the same incident in the same words -- a deployment that asked for a version-string tag
+# this estate does not produce and sat in ImagePullBackOff -- so the tag a build writes and the
+# tag a policy selects are one agreement, stated here and in the producing workflow.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: zeroedge
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/zeroedge
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: zeroedge
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: zeroedge
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

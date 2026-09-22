@@ -70,6 +70,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import importlib.util
 import os
 import shutil
 import sqlite3
@@ -451,6 +452,23 @@ def stage_execution(
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(proposed.content)
     (sandbox / "test_supplied.py").write_text(tests)
+    # HOME points at the sandbox so the run cannot read this machine's caches or
+    # config -- which also hides a --user install of pytest from the interpreter,
+    # because user site-packages are resolved from HOME. On a machine whose pytest
+    # lives there (macOS, where the system interpreter's own site-packages are not
+    # writable) the stage reported "No module named pytest" as a FAILED proof.
+    #
+    # A missing tool is not a failed verification. The parent process already knows
+    # where pytest is; hand that one directory to the child rather than loosening
+    # HOME. Hermeticity is unchanged -- nothing else on this machine becomes
+    # importable, and a machine with no pytest at all still fails, loudly and for
+    # the real reason.
+    pythonpath = [str(sandbox)]
+    pytest_spec = importlib.util.find_spec("pytest")
+    if pytest_spec is not None and pytest_spec.origin:
+        site_dir = str(Path(pytest_spec.origin).parent.parent)
+        if site_dir not in pythonpath:
+            pythonpath.append(site_dir)
     completed = subprocess.run(  # noqa: S603 - argv is a literal, not a shell string
         [
             sys.executable,
@@ -466,7 +484,7 @@ def stage_execution(
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": str(sandbox),
             "PYTHONDONTWRITEBYTECODE": "1",
-            "PYTHONPATH": str(sandbox),
+            "PYTHONPATH": os.pathsep.join(pythonpath),
         },
         capture_output=True,
         text=True,

@@ -13,3 +13,19 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: litellm
+---
+# The gateway sits in front of the router, so it inherits the same requirement the incident
+# above wrote for litellm: losing one node must not take the surface with it. Two replicas
+# spread across nodes (topologySpreadConstraints in zeroedge.yaml), and the same maxUnavailable 1
+# for the same reason -- a floor equal to the replica count is a budget that refuses every drain
+# for ever, which is how the clickhouse PDB blocked the 2026-08-28 drain.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: zeroedge
+  namespace: llm
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: zeroedge

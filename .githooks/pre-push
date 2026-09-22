@@ -172,12 +172,20 @@ try:
     if not files:
         print("ok    verifier  no Python files in diff")
         sys.exit(0)
-    # For modified Python files, the diff only contains changed lines — partial
-    # content fails py_compile. Replace with full file content when the file exists
-    # in the working tree so structural checking is meaningful.
+    # The diff carries only the changed lines, so a modification arrives as a partial
+    # hunk that no parser can read standalone. Replace it with the full file when the
+    # file exists in the working tree, so stage_structural grades the real artefact.
+    #
+    # This used to cover .py alone, and manifests were left on the partial path.
+    # stage_structural has no partial escape hatch for the k8s_manifest domain the way
+    # it does for code, so a YAML edit touching two separate places in one file was
+    # refused for "expected '<document start>'" while the file on disk parsed clean and
+    # rendered clean — a guard refusing correct work, which the estate treats as an
+    # outage (LAW 38). Grading the whole file is strictly stronger than grading a hunk.
     idp_path = pathlib.Path(idp)
+    FULL_FILE_DOMAINS = (".py", ".yaml", ".yml", ".sql")
     for pf in files:
-        if pf.path.endswith(".py"):
+        if pf.path.endswith(FULL_FILE_DOMAINS):
             full = idp_path / pf.path
             if full.exists():
                 pf.lines = list(full.read_text().splitlines(keepends=True))

@@ -1,0 +1,110 @@
+# ZeroEdge: the router's cost-optimization pass, as its own process in this namespace.
+#
+# The gateway is a package, and this namespace's router mounts flat single-file ConfigMaps onto
+# PYTHONPATH (litellm.yaml: PYTHONPATH=/etc/litellm/ceilings, litellm-request-ceiling), so the
+# package cannot be vendored into the router pod -- a ConfigMap mounts files, not a package tree.
+# It runs here instead, and the router carries one flat shim module that speaks to this Service
+# over HTTP. Two routes: GET /health, POST /optimize.
+#
+# WHAT IT DOES AND DOES NOT DO. Cache observation, compression, model routing and output
+# enforcement run on every call. The budget layer does NOT: the image runs with
+# ZEROEDGE_BUDGET_ENFORCE unset, which is advisory. That is deliberate twice over -- this estate
+# already has exactly one budget authority in this namespace (request_ceiling.py, the per-request
+# ceiling this Deployment does not replace), and the service's HTTP surface has no reconcile
+# route, so an enforcing budget here would take reservations it can never release and count down
+# to rejecting every call. Measured on the package installed as the image installs it: a bare
+# gateway answers every /optimize with 402 budget_exceeded / no_budget_configured.
+#
+# The shim fails open and times out at 2s, so this Deployment being unavailable costs latency on
+# the failing calls, never a refused call.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zeroedge
+  namespace: llm
+  labels: { app.kubernetes.io/name: zeroedge, app.kubernetes.io/part-of: idp }
+spec:
+  # Two, for the same reason litellm has two: this sits in the request path of every model call,
+  # and a single replica restarting makes every call in that window pay the shim's 2s timeout.
+  # DoNotSchedule rather than ScheduleAnyway -- a best-effort spread collapses onto one node
+  # exactly when the cluster is tight, which is the moment the spread was for.
+  replicas: 2
+  selector:
+    matchLabels: { app.kubernetes.io/name: zeroedge }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: zeroedge, app.kubernetes.io/part-of: idp }
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: zeroedge }
+      # ghcr packages under this account are private (platform/image-automation/pull-secret.yaml),
+      # so the pull needs the mirrored Secret; pull-secret.yaml in this directory creates it.
+      imagePullSecrets:
+        - name: ghcr-pull
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001        # the uid deploy/gateway/Dockerfile creates and runs as
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: zeroedge
+          # The tag is rewritten in kustomization.yaml by Flux image-automation, not here.
+          image: ghcr.io/chidionyema/zeroedge:main-2-7a6da5a49d6ff75053ff03107667ec91737d906c
+          ports:
+            - { name: http, containerPort: 8757 }
+          env:
+            # Stated rather than inherited from the image: this is the property that decides
+            # whether a model call can be refused by this pod, and a load-bearing default
+            # belongs where someone reading the Deployment can see it.
+            - { name: ZEROEDGE_BUDGET_ENFORCE, value: "0" }
+            # Not paperwork for require-otel-endpoint: the image installs zeroedge[otel] and
+            # the service emits one span per /optimize (zeroedge#3), carrying the tenant, the
+            # action taken and the model the routing layer chose -- the pre-call work the
+            # router's own span cannot see. Same collector as litellm.yaml and ollama.yaml.
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: OTEL_SERVICE_NAME, value: "zeroedge" }
+          # /health is the whole claim this pod makes: the process is up and the provider
+          # registry parsed. It answers from the same thread pool as /optimize, so a wedged
+          # server fails the probe rather than passing it while the router times out.
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 16Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zeroedge
+  namespace: llm
+  # founder-model-router, the same entity litellm, ollama and redis name: this is a layer of
+  # the router, not a second door. require-catalogue-entity refuses a Service that names none
+  # (crew#307: "how was even a surface allowed into the estate without being on Backstage").
+  labels: { app.kubernetes.io/name: zeroedge, backstage.io/kubernetes-id: founder-model-router }
+spec:
+  selector: { app.kubernetes.io/name: zeroedge }
+  ports:
+    - { name: http, port: 8757, targetPort: http }
