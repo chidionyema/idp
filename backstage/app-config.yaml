@@ -373,6 +373,22 @@ catalog:
       schedule:
         frequency: { minutes: 30 }
         timeout: { minutes: 10 }
+    # Every .py module in the estate becomes a catalogue entity by running
+    # `bin/catalog-projection --json` on a schedule (crew#740 CP6). The
+    # projection is a pure deterministic function over Python source: the
+    # catalogue cannot drift from the code, and every PR proves the TOT/DET/
+    # IDP/REF/SCH invariants in bin/test-catalog-projection. No hand-written
+    # entity for projection work.
+    #
+    # `command` is a shell string; the projection must emit a JSON array to
+    # stdout. Defaults to the local checkout. A Backstage with no
+    # `catalog.projection` block starts without error; it simply carries no
+    # projection entities.
+    projection:
+      command: "python3 bin/catalog-projection --json ."
+      schedule:
+        frequency: { minutes: 1 }
+        timeout: { minutes: 2 }
   locations:
     # The org. bin/catalog-gen stamps `group:default/platform` on every entity it emits; until
     # this file existed that owner reference resolved to nothing. Hand-written, in git.
