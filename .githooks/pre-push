@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Idempotent protection against fast-gate / python-strict failures reaching the OKE CI.
+# Refuses the push if `bin/idp-ci` (fast mode) reports red. This is the 29% class: ruff
+# E9/F/B/S, hardcode scan, shellcheck. They have hit the remote CI 33 times in the last
+# 3 months across both `ci` and `build-multiarch` workflows and added nothing actionable;
+# all of them are caught locally by the same script on the same files before commit.
+
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+# Read-only force pushes and the WIP-gate override are out of scope for this rung --
+# the andon-cord pre-push has its own override (IDP_WIP_GATE=0) and that is not ours.
+# This rung only refuses the fast-gate class; everything else still flows.
+
+if [ "${IDP_FAST_GATE:-1}" = "0" ]; then
+  echo "idp-fast-gate: skipped (IDP_FAST_GATE=0)"
+  exit 0
+fi
+
+if [ ! -x "$repo_root/bin/idp-ci" ]; then
+  # No local CI script on this checkout (e.g. a partial clone). The remote is the
+  # only enforcement; nothing to refuse here.
+  echo "idp-fast-gate: bin/idp-ci not present, skipping"
+  exit 0
+fi
+
+echo "🛡️  idp-fast-gate: running IDP_CI_FAST=1 bin/idp-ci ..."
+if ! IDP_CI_FAST=1 "$repo_root/bin/idp-ci"; then
+  cat <<'EOF' >&2
+
+❌ pre-push REFUSED: idp-fast-gate caught errors.
+
+   The remote CI cannot run faster than your laptop, and the failure class this
+   gate catches (29% of all OKE failures in the last 3 months) has never produced
+   actionable signal in CI -- only noise.
+
+   Fix:
+     1) bin/idp-ci            # see the failures in full
+     2) re-run IDP_CI_FAST=1 bin/idp-ci until green
+     3) git push
+
+   To bypass (NOT recommended -- CI will still fail on these):
+     IDP_FAST_GATE=0 git push
+
+EOF
+  exit 1
+fi
+
+echo "✅ idp-fast-gate: green"
+exit 0
