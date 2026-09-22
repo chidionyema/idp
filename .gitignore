@@ -104,6 +104,15 @@ docs/reference/forge/
 # Vale downloads the Microsoft style on `vale sync`; only the estate boundary (styles/Estate, styles/config) is ours
 styles/Microsoft/
 
+# `.estate-hooks` is checked out fresh from chidionyema/estate by every fast-gate run
+# (.github/workflows/fast-gate.yml line 20 -- `actions/checkout` with `repository:` +
+# `path: .estate-hooks`); committing a stale copy here causes the security-scan
+# `git submodule foreach` post-step to fail with "No url found for submodule path
+# '.estate-hooks' in .gitmodules" (measured 2026-09-22, run 35788935288). It is
+# runtime state populated by `actions/checkout`, not repository content.
+.estate-hooks/
+!.estate-hooks/.gitkeep
+
 # migrate-domain keeps a resumable state file here, per run (crew#838 CP1).
 .migration/
 
