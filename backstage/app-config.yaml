@@ -229,6 +229,44 @@ proxy:
       changeOrigin: true
       allowedMethods: ['GET', 'POST']
 
+    # CP3 (docs/specs/backstage-as-a-product.md): the three vendor surfaces -- founder-traces,
+    # founder-telemetry and founder-dashboards -- carried nothing but a link to the vendor's own
+    # login. Each now has an in-portal door that returns ONE counted fact, drawn by our own
+    # component; the vendor's full UI is never framed (LAW 21, spec Non-goals: CSP and cookie
+    # scoping make an iframe a security regression). The three services run in the observability
+    # namespace (clusters/oke/platform.yaml, platform/observability/), so the browser cannot reach
+    # them and must not: the backend's proxy plugin is the door. Declared only here, not in
+    # app-config.container.yaml: the two files' `proxy.endpoints` maps merge (the container file
+    # relies on this same file for /estate-state, /holmes, /dagster and /fleetview, and the
+    # in-cluster sidecar comment at platform/backstage/overlays/oke/kustomization.yaml treats
+    # /fleetview here as the live declaration). No credential is typed here (LAW 46) -- the target
+    # is an in-cluster Service name, not a host.
+    #
+    # Langfuse: /api/public/health answers 200 with a small JSON body ({"status":"OK",...}); the
+    # page reads whether the trace store is up. langfuse-web is the Service the HTTPRoute already
+    # points at (platform/observability/httproute.yaml, port 3000).
+    '/langfuse':
+      target: 'http://langfuse-web.observability.svc.cluster.local:3000'
+      changeOrigin: true
+      allowedMethods: ['GET']
+
+    # SigNoz: the web service on port 8080 (platform/observability/httproute.yaml's signoz route).
+    # /api/v1/health is SigNoz's own liveness endpoint; the page reads one up/down fact, not the
+    # dashboard.
+    '/signoz':
+      target: 'http://signoz.observability.svc.cluster.local:8080'
+      changeOrigin: true
+      allowedMethods: ['GET']
+
+    # Superset: the boardroom dashboards, Service on port 8088
+    # (platform/observability/superset-httproute.yaml backendRef). /health is Superset's own
+    # endpoint; the page reads whether it answers, not the charts (the charts are level 3, drawn
+    # by our own component from one counted fact, never framed).
+    '/superset':
+      target: 'http://superset.observability.svc.cluster.local:8088'
+      changeOrigin: true
+      allowedMethods: ['GET']
+
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
 # Note: After experimenting with basic setup, use CI/CD to generate docs
 # and an external cloud storage when deploying TechDocs for production use-case.

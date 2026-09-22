@@ -10,8 +10,10 @@ it, and it would need a live `claude` subprocess call per production session wit
 guardrail -- the same class of risk `sovereign/policy.py`'s `[budget]` block exists to bound.
 
 What ships instead: the same question receipt-auditor asks -- "does every claim in this session
-have a receipt?" -- answered mechanically, the way `bin/idp-rules` grades every other law in this
-estate. `sovereign/engine/tracing.py` writes one Langfuse trace per session, with `id=session_id`
+have a receipt?" -- answered mechanically, the way a rung in `bin/idp-ci` grades a law: a check,
+not a model judging a model. (`bin/idp-rules` and its rules.yaml registry existed when this was
+written and were deleted on 2026-09-20; a rule is a rung in `bin/idp-ci`, not a row in a table.)
+`sovereign/engine/tracing.py` writes one Langfuse trace per session, with `id=session_id`
 and a `status:<status>` tag (see `trace_session()`). A trace tagged `status:done` or
 `status:success` with zero recorded observations is exactly the failure receipt-auditor exists to
 catch -- a claimed success with no evidence behind it -- caught here without a model call.

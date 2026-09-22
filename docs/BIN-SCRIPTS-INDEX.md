@@ -1,6 +1,6 @@
 # Complete Scripts Index
 
-**Total scripts: 310** | **Last updated:** 2026-09-15
+**Total scripts: 300** | **Last updated:** 2026-09-22 (removed the ten deleted drill scripts)
 
 ## Hooks (Active)
 
@@ -34,7 +34,6 @@ Core platform functionality, administration, and operational commands.
 | `idp-calico-deny-log` | Manage Calico deny logs |
 | `idp-catalog-push` | Publish catalog/catalog-info.yaml to cluster as OCI artifact |
 | `idp-catalogue-drift` | Detect catalogue drift |
-| `idp-chaos-drill` | Grade weekly Chaos Mesh experiment (crew#292 CP4) |
 | `idp-checkout-drift` | Detect checkout drift |
 | `idp-ci` | Offline gate - runs with no secrets or DK dependencies |
 | `idp-circuit-breaker` | Circuit breaker logic |
@@ -50,7 +49,6 @@ Core platform functionality, administration, and operational commands.
 | `idp-convergence-proof` | Prove system convergence |
 | `idp-cost-proof` | Prove cost compliance |
 | `idp-crd-then-cr` | Custom Resource Definition then Custom Resource ordering |
-| `idp-cross-node-drill` | Cross-node capability test |
 | `idp-defs-validate` | Validate definitions |
 | `idp-deploy-lag` | Measure deployment lag |
 | `idp-dev` | Run laptop process inside staging namespace (crew#584 CP-H) |
@@ -58,9 +56,6 @@ Core platform functionality, administration, and operational commands.
 | `idp-door-heartbeat` | Front door pulse check |
 | `idp-down` | Stop catalogue and unpublish ports |
 | `idp-drift-blind` | Blind drift detection |
-| `idp-drill-heartbeat` | Drill liveness check |
-| `idp-drill-wait` | Wait for portability drill (crew#584 CP-A) |
-| `idp-drills-row` | Generate drills status row |
 | `idp-epistemic` | Epistemic fabric control |
 | `idp-escrow` | Full copy of every repository the estate manages |
 | `idp-estate-audit` | Audit estate against OpenTofu state (read-only) |
@@ -119,7 +114,6 @@ Core platform functionality, administration, and operational commands.
 | `idp-laws-guards-report` | Report on law compliance and guards |
 | `idp-limit-raise-only-diff` | Show only limit-raise differences |
 | `idp-linear-dispatch` | Dispatch work linearly |
-| `idp-login-drill` | Drive front door like a person would (crew#292) |
 | `idp-loop-meter` | Measure PR time to merge |
 | `idp-mac-adopt-otto` | Grant Otto access to founder's Mac |
 | `idp-mac-secret-deliver` | Deliver vault secret to Mac-hosted service |
@@ -142,7 +136,6 @@ Core platform functionality, administration, and operational commands.
 | `idp-otto-homes` | Manage Otto home directories |
 | `idp-phone-kubeconfig` | Put cluster on founder's phone |
 | `idp-pipeverdict` | Conditional verdict pipeline for grep |
-| `idp-portability-drill` | Portability test drill |
 | `idp-portal-buttons` | Generate portal buttons |
 | `idp-pr-age` | Measure PR age |
 | `idp-pr-arm` | Arm robot-opened PR for merge |
@@ -191,7 +184,6 @@ Core platform functionality, administration, and operational commands.
 | `idp-state-guard` | Refuse local OpenTofu state overwrite |
 | `idp-status` | What is serving right now |
 | `idp-store-can-reach-its-vault` | Verify datastore reaches its vault |
-| `idp-storefront-drill` | Storefront capability test |
 | `idp-stray-checkout` | Find stray checkouts |
 | `idp-tailscale-policy` | Manage Tailscale policy (crew#516 CP5) |
 | `idp-telemetry-coverage` | Measure telemetry coverage (crew#320) |
@@ -199,7 +191,6 @@ Core platform functionality, administration, and operational commands.
 | `idp-tests-for` | Print test files for changed code |
 | `idp-ticket-facts` | Extract ticket facts |
 | `idp-ticket-verify` | Verify ticket status |
-| `idp-trace-drill` | Test estate router trace |
 | `idp-trajectory` | Trajectory planning |
 | `idp-truthteller-demo` | Demo truthteller capability |
 | `idp-up` | Start catalogue and publish ports |
@@ -214,7 +205,6 @@ Core platform functionality, administration, and operational commands.
 | `idp-verifier-oath` | Verifier OATH token |
 | `idp-verify` | Verify published matches inventory |
 | `idp-verify-claims` | Verify claimed facts |
-| `idp-verify-drill` | Live verification drill |
 | `idp-wake-blocked` | Wake blocked operations |
 
 ---

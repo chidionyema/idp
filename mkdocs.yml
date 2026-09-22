@@ -121,7 +121,6 @@ nav:
       - Buyer sandbox (one hour): demo/demo-sandbox.md
       - Merge queue (hands-free landing): demo/merge-queue.md
       - Catalogue links: demo/catalog-links.md
-      - Drill evidence: demo/drill-evidence.md
       - Estate compiler recording: demo/intent-compiler.md
       - The Tools page: demo/tools.md
       - Estate clock recording: demo/dagster.md
@@ -195,9 +194,6 @@ nav:
       - DoD live claim gate: tutorials/demo/dod-live-claim-gate.md
       - Actions pinned: tutorials/demo/actions-pinned.md
       - Scheduling immunity: tutorials/demo/scheduling-immunity.md
-      - Front-door login drill: tutorials/demo/idp-login-drill.md
-      - Portability drill: tutorials/demo/idp-portability-drill.md
-      - Cross-node drill: tutorials/demo/idp-cross-node-drill.md
       - Probe host: tutorials/demo/idp-probe-host.md
       - Free-tier allowance row: tutorials/demo/idp-free-tier.md
       - PR report (operating-model gate): tutorials/demo/pr-report.md
@@ -274,7 +270,6 @@ nav:
       - Founder board (module): how-to/onboarding/board_serve.py.md
       - Reasoning gateway Stop hook (module): how-to/onboarding/reasoning_gateway_hook.py.md
       - idp-reasoning-gateway-hook: how-to/onboarding/idp-reasoning-gateway-hook.md
-      - Drill evidence: onboarding/drill-evidence.md
       - Estate compiler recording: onboarding/intent-compiler.md
       - Estate clock recording: onboarding/dagster.md
       - Dashboards recording: onboarding/superset.md
@@ -322,9 +317,6 @@ nav:
       - Branch archive: how-to/onboarding/branch-archive.md
       - DoD live claim gate: how-to/onboarding/dod-live-claim-gate.md
       - Actions pinned: how-to/onboarding/actions-pinned.md
-      - Front-door login drill: how-to/onboarding/idp-login-drill.md
-      - Portability drill: how-to/onboarding/idp-portability-drill.md
-      - Cross-node drill: how-to/onboarding/idp-cross-node-drill.md
       - Probe host: how-to/onboarding/idp-probe-host.md
       - Free-tier allowance row: how-to/onboarding/idp-free-tier.md
       - PR report (operating-model gate): how-to/onboarding/pr-report.md

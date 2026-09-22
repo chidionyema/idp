@@ -1,8 +1,9 @@
 # crew#584 CP-C, founder playbook 2026-08-29 Phase 2: "Fail Fast, Pass Slow". One job, under
-# 60 s: shell lint, hardcode scan, pipeverdict scan, ruff (IDP_CI_FAST=1 bin/idp-ci). ci.yml,
-# build-multiarch.yml and portability-drill.yml each call it as their first job and every heavy
-# job `needs:` it, so a lint red never boots k3s or builds four images. Measured before: a lint
-# error surfaced after 5 min (offline-gate) while 11 min of drills ran for nothing (idp#659).
+# 60 s: shell lint, hardcode scan, pipeverdict scan, ruff (IDP_CI_FAST=1 bin/idp-ci). ci.yml and
+# build-multiarch.yml each call it as their first job and every heavy job `needs:` it, so a lint
+# red never boots k3s or builds four images. Measured before: a lint error surfaced after 5 min
+# (offline-gate) while 11 min of drills ran for nothing (idp#659; the drills were deleted
+# 2026-09-21, so the wasted-time case they named can no longer recur).
 name: fast-gate
 on:
   workflow_call:

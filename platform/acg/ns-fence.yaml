@@ -1,0 +1,34 @@
+# The fence for the acg namespace, shipped IN the namespace row rather than after it.
+# Copied from the generated shape (platform/ns-fences/observability-agent.yaml). bin/idp-ns-fence-gen
+# only fences namespaces that EXIST -- it holds a namespace declared in git and not yet applied as
+# `pending` and fences it on a later run. That leaves a window where a new namespace is created
+# unfenced, which is the state bin/ns-fence-gate refuses. Shipping the fence with the namespace
+# closes the window: the objects land in the same apply.
+#
+# The quota is deliberately above what the gateway requests (100m/256Mi) and below the A1 node's
+# total, so a rollout surge fits and a runaway pod cannot take the node. requests.storage is not
+# set: the models PVC is not part of this row yet, and a quota that refuses the volume when it is
+# added would be a fence refusing correct work (LAW 38).
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: ns-defaults
+  namespace: acg
+spec:
+  limits:
+  - type: Container
+    defaultRequest:
+      cpu: 25m
+      memory: 64Mi
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ns-ceiling
+  namespace: acg
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 2Gi
+    pods: "10"
+    services.loadbalancers: "0"   # reached through the shared Gateway or not at all

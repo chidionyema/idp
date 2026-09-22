@@ -166,16 +166,13 @@ goes straight to the vendor's own login. Also missing: a signed-verdict reader f
 ```sh
 yarn --cwd backstage backstage-cli repo test        # portal unit suite, green
 yarn --cwd backstage backstage-cli repo lint --since origin/main
-gh workflow run login-drill.yml -f evidence_paths="/showcase,/tools,/ops"   # screenshot evidence, green run
-gh run list --workflow=login-drill.yml --limit 1 --json conclusion -q '.[0].conclusion'   # "success"
 ```
 
-The screenshot-evidence gate is not a new workflow: `login-drill.yml` already accepts
-`evidence_paths` and `bin/idp-login-drill` already screenshots every path it is given
-(`page.screenshot(...)`, `shot_dir`). CP8 changes the default `evidence_paths` so every login
-drill run — hourly, not only on demand — captures `/showcase`, `/tools` and `/ops`, and wires
-that run's artifact into `docs/reference/policy/definition-of-done.md` Gate 2's "Demo" row as
-the standing evidence for this spec, rather than a bespoke script.
+The screenshot-evidence gate this spec originally leaned on (`login-drill.yml` accepting
+`evidence_paths` and `bin/idp-login-drill` screenshotting each path) was deleted on 2026-09-21
+with the rest of the drills. CP8 below is therefore **superseded**: the evidence for a demo
+surface is now whatever `bin/idp-room-prove` (the browser-driven room proof) captures, or a
+bespoke capture, not the hourly login drill.
 
 ## Checkpoints, ordered by buyer impact
 
@@ -197,7 +194,10 @@ the standing evidence for this spec, rather than a bespoke script.
 - **CP6**: `founder-otto-door`, `founder-mcp-gateway`, `founder-otto`, `founder-cursor` each show
   a live status pill from their own health endpoint through a proxy, replacing a manifest link.
 - **CP7**: `founder-drills` and `founder-crew-board` read their own live counts (last verdict per
-  drill; open/P1 issue counts) instead of listing bare links.
-- **CP8**: `login-drill.yml`'s default `evidence_paths` covers `/showcase`, `/tools`, `/ops`
-  on every hourly run, and that run's screenshot is the standing Demo-gate evidence in
-  `docs/reference/policy/definition-of-done.md`.
+  drill; open/P1 issue counts) instead of listing bare links. (`founder-drills` itself outlived
+  the drills it named: the `login-drill`/`cross-node`/`portability`/`storefront`/`models`/
+  `messaging`/`chaos` workflows were deleted 2026-09-21, so this checkpoint now reads whatever
+  verdict surfaces remain — the `verdict-*` workflows — not the deleted drills.)
+- **CP8**: ~~`login-drill.yml`'s default `evidence_paths` covers `/showcase`, `/tools`, `/ops`
+  on every hourly run~~ **superseded** — the login drill was deleted 2026-09-21; use
+  `bin/idp-room-prove` or a bespoke capture as the standing Demo-gate evidence.
