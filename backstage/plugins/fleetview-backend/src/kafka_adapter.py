@@ -30,10 +30,16 @@ _RETRY_BACKOFF_MS = int(os.environ.get("KAFKA_RETRY_BACKOFF_MS", "100"))
 _RETRIES = int(os.environ.get("KAFKA_RETRIES", "1"))
 
 # Configuration (LAW 46: env, never hardcode).
-KAFKA_BROKERS = os.environ.get("KAFKA_BROKERS", "").split(",") if os.environ.get("KAFKA_BROKERS") else []
+KAFKA_BROKERS = (
+    os.environ.get("KAFKA_BROKERS", "").split(",")
+    if os.environ.get("KAFKA_BROKERS")
+    else []
+)
 KAFKA_TOPIC = os.environ.get("KAFKA_TOPIC", "fleetview.voice.events")
 KAFKA_SCHEMA_REGISTRY_URL = os.environ.get("KAFKA_SCHEMA_REGISTRY_URL", "")
-KAFKA_ENABLE_IDEMPOTENCE = os.environ.get("KAFKA_ENABLE_IDEMPOTENCE", "true").lower() == "true"
+KAFKA_ENABLE_IDEMPOTENCE = (
+    os.environ.get("KAFKA_ENABLE_IDEMPOTENCE", "true").lower() == "true"
+)
 
 # Optional SASL auth for Confluent Cloud / AWS MSK.
 KAFKA_SASL_USERNAME = os.environ.get("KAFKA_SASL_USERNAME", "")
@@ -72,7 +78,7 @@ async def _get_producer(brokers: list[str]):
     if _producer is not None:
         try:
             await _producer.stop()
-        except Exception:  # noqa: BLE001 — best effort cleanup
+        except Exception:  # noqa: BLE001, S110 — best effort cleanup
             pass
 
     # Build producer config.
@@ -103,7 +109,7 @@ async def close_producer() -> None:
     if _producer is not None:
         try:
             await _producer.stop()
-        except Exception:  # noqa: BLE001 — best effort
+        except Exception:  # noqa: BLE001, S110 — best effort
             pass
         _producer = None
         _producer_brokers = []
@@ -194,13 +200,15 @@ async def publish_batch(
         key = event.get("session_id", "").encode("utf-8")
         value = json.dumps(event).encode("utf-8")
         result = await producer.send_and_wait(topic, value=value, key=key)
-        results.append({
-            "topic": result.topic,
-            "partition": result.partition,
-            "offset": result.offset,
-            "timestamp": result.timestamp,
-            "published": True,
-        })
+        results.append(
+            {
+                "topic": result.topic,
+                "partition": result.partition,
+                "offset": result.offset,
+                "timestamp": result.timestamp,
+                "published": True,
+            }
+        )
 
     return results
 

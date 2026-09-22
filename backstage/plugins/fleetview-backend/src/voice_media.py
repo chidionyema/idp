@@ -222,24 +222,33 @@ async def steer(
     with tracing.with_context(ctx):
         with tracing.server_span(
             "voice.receive",
-            {"voice.endpoint": "/voice/steer", "voice.session_id": body.get("session_id", "")},
+            {
+                "voice.endpoint": "/voice/steer",
+                "voice.session_id": body.get("session_id", ""),
+            },
         ) as receive_span:
             # Validate against the strict schema.
             validate_start = time.time()
-            with tracing.span("voice.validate", {"voice.schema": "intent-v2"}) as validate_span:
+            with tracing.span(
+                "voice.validate", {"voice.schema": "intent-v2"}
+            ) as validate_span:
                 try:
                     schema = _get_intent_schema()
                     jsonschema.validate(instance=body, schema=schema)
                     validate_ms = round((time.time() - validate_start) * 1000, 1)
                     if validate_span:
-                        validate_span.set_attribute("voice.validation.duration_ms", validate_ms)
+                        validate_span.set_attribute(
+                            "voice.validation.duration_ms", validate_ms
+                        )
                         validate_span.set_attribute("voice.validation.success", True)
                 except jsonschema.ValidationError as exc:
                     # Return a clear error: the path to the invalid field and what was wrong.
                     path = ".".join(str(p) for p in exc.absolute_path) or "(root)"
                     if validate_span:
                         validate_span.set_attribute("voice.validation.success", False)
-                        validate_span.set_attribute("voice.validation.error", exc.message)
+                        validate_span.set_attribute(
+                            "voice.validation.error", exc.message
+                        )
                     return {
                         "error": "schema validation failed",
                         "path": path,
@@ -259,7 +268,9 @@ async def steer(
             if not session_id:
                 return {"error": "session_id is required"}, 400
             if not author:
-                return {"error": "author is required: a steer with no attributed author is refused"}, 400
+                return {
+                    "error": "author is required: a steer with no attributed author is refused"
+                }, 400
 
             # The payload for the bus: everything except session_id (which is in the subject).
             # We build the steer object the same way `hear` does.
@@ -286,7 +297,9 @@ async def steer(
 
             # Write to the outbox — this is the durability boundary.
             outbox = _outbox()
-            with tracing.span("voice.outbox.write", {"voice.session_id": session_id}) as outbox_span:
+            with tracing.span(
+                "voice.outbox.write", {"voice.session_id": session_id}
+            ) as outbox_span:
                 try:
                     row_id = outbox.enqueue(
                         session_id=session_id,
@@ -297,7 +310,9 @@ async def steer(
                     )
                     if outbox_span:
                         outbox_span.set_attribute("voice.outbox.row_id", row_id)
-                        outbox_span.set_attribute("voice.action", body.get("action", ""))
+                        outbox_span.set_attribute(
+                            "voice.action", body.get("action", "")
+                        )
                 except Exception as exc:  # noqa: BLE001 — outbox failure is the one thing that is fatal
                     if outbox_span:
                         outbox_span.set_attribute("voice.outbox.error", str(exc))

@@ -90,9 +90,7 @@ class VoiceEventClient:
         """Return True if connected to NATS."""
         return self._connected and self._nc is not None and self._nc.is_connected
 
-    def on(
-        self, event_type: VoiceEventType
-    ) -> Callable[[EventHandler], EventHandler]:
+    def on(self, event_type: VoiceEventType) -> Callable[[EventHandler], EventHandler]:
         """Decorator to register an event handler.
 
         Args:
@@ -210,9 +208,7 @@ class VoiceEventClient:
             self._subscriptions.append(sub)
             logger.debug("Subscribed to %s", subject)
 
-    def _make_message_handler(
-        self, event_type: VoiceEventType
-    ) -> Callable[[Msg], Awaitable[None]]:
+    def _make_message_handler(self, event_type: VoiceEventType) -> Callable[[Msg], Awaitable[None]]:
         """Create a message handler for a specific event type."""
 
         async def handler(msg: Msg) -> None:

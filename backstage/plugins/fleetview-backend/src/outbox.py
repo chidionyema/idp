@@ -161,7 +161,7 @@ def enqueue(
 def _calculate_backoff(retries: int) -> float:
     """Exponential backoff with jitter. Returns seconds until next attempt."""
     delay = min(BASE_BACKOFF_S * (2**retries), MAX_BACKOFF_S)
-    jitter = delay * random.uniform(0, 0.25)
+    jitter = delay * random.uniform(0, 0.25)  # noqa: S311 — non-crypto jitter for backoff
     return delay + jitter
 
 
@@ -198,7 +198,9 @@ async def _publish_row(row: sqlite3.Row, nats_url: str) -> tuple[bool, str]:
                     # Use Kafka adapter.
                     kafka_adapter = _kafka()
                     kafka_brokers = os.environ.get("KAFKA_BROKERS", "").split(",")
-                    kafka_topic = os.environ.get("KAFKA_TOPIC", "fleetview.voice.events")
+                    kafka_topic = os.environ.get(
+                        "KAFKA_TOPIC", "fleetview.voice.events"
+                    )
 
                     # Inject trace context into message headers for downstream consumers.
                     message_headers = tracing.get_current_trace_context()
@@ -349,7 +351,7 @@ class OutboxWorker:
             if self._nats_url:
                 try:
                     await drain_once(self._nats_url)
-                except Exception:  # noqa: BLE001 — loop must not die on transient errors
+                except Exception:  # noqa: BLE001, S110 — loop must not die on transient errors
                     pass
             await asyncio.sleep(self._poll_interval)
 

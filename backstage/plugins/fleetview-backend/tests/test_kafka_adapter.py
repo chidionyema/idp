@@ -16,7 +16,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-KAFKA_MODULE = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "kafka_adapter.py"
+KAFKA_MODULE = (
+    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "kafka_adapter.py"
+)
 
 
 def _load(path: Path, name: str):
@@ -73,7 +75,11 @@ def test_no_aiokafka_raises_runtime_error(monkeypatch):
     mod = _load(KAFKA_MODULE, "kafka_adapter_no_aiokafka")
 
     # Patch import to fail.
-    original_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
+    original_import = (
+        __builtins__["__import__"]
+        if isinstance(__builtins__, dict)
+        else __builtins__.__import__
+    )
 
     def mock_import(name, *args, **kwargs):
         if name == "aiokafka":
@@ -272,8 +278,18 @@ def test_publish_batch_sends_multiple_events(kafka_module, monkeypatch):
     kafka_module._producer_brokers = []
 
     events = [
-        {"session_id": "sess-1", "runtime": "voice", "kind": "phase", "phase": "hearing"},
-        {"session_id": "sess-2", "runtime": "voice", "kind": "done", "phase": "complete"},
+        {
+            "session_id": "sess-1",
+            "runtime": "voice",
+            "kind": "phase",
+            "phase": "hearing",
+        },
+        {
+            "session_id": "sess-2",
+            "runtime": "voice",
+            "kind": "done",
+            "phase": "complete",
+        },
     ]
 
     async def run_test():
@@ -362,4 +378,4 @@ def test_sasl_auth_config_passed_to_producer(monkeypatch):
     assert call_kwargs["security_protocol"] == "SASL_SSL"
     assert call_kwargs["sasl_mechanism"] == "PLAIN"
     assert call_kwargs["sasl_plain_username"] == "admin"
-    assert call_kwargs["sasl_plain_password"] == "secret123"
+    assert call_kwargs["sasl_plain_password"] == "secret123"  # noqa: S105 — test fixture literal

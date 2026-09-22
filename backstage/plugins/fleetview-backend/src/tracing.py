@@ -54,7 +54,11 @@ if TYPE_CHECKING:
 OTEL_EXPORTER_OTLP_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 OTEL_SERVICE_NAME = os.environ.get("OTEL_SERVICE_NAME", "fleetview-voice")
 OTEL_TRACE_SAMPLE_RATE = float(os.environ.get("OTEL_TRACE_SAMPLE_RATE", "1.0"))
-OTEL_ENABLED = os.environ.get("OTEL_ENABLED", "true").lower() not in ("false", "0", "no")
+OTEL_ENABLED = os.environ.get("OTEL_ENABLED", "true").lower() not in (
+    "false",
+    "0",
+    "no",
+)
 
 # ---------------------------------------------------------------------------
 # Lazy initialization — tracer is created once on first use
@@ -68,6 +72,7 @@ def _is_otel_available() -> bool:
     """Check if OpenTelemetry SDK is installed."""
     try:
         from opentelemetry import trace  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -100,7 +105,9 @@ def _initialize_tracer() -> "Tracer | None":
 
     try:
         from opentelemetry import trace
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+            OTLPSpanExporter,
+        )
         from opentelemetry.sdk.resources import Resource
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -145,7 +152,9 @@ def get_tracer() -> "Tracer | None":
 
 
 @contextmanager
-def span(name: str, attributes: dict[str, Any] | None = None) -> Generator["Span | None", None, None]:
+def span(
+    name: str, attributes: dict[str, Any] | None = None
+) -> Generator["Span | None", None, None]:
     """Create a span for the given operation.
 
     Usage:
@@ -171,7 +180,9 @@ def span(name: str, attributes: dict[str, Any] | None = None) -> Generator["Span
 
 
 @contextmanager
-def server_span(name: str, attributes: dict[str, Any] | None = None) -> Generator["Span | None", None, None]:
+def server_span(
+    name: str, attributes: dict[str, Any] | None = None
+) -> Generator["Span | None", None, None]:
     """Create a SERVER span — for incoming requests."""
     tracer = get_tracer()
     if tracer is None:
@@ -188,7 +199,9 @@ def server_span(name: str, attributes: dict[str, Any] | None = None) -> Generato
 
 
 @contextmanager
-def producer_span(name: str, attributes: dict[str, Any] | None = None) -> Generator["Span | None", None, None]:
+def producer_span(
+    name: str, attributes: dict[str, Any] | None = None
+) -> Generator["Span | None", None, None]:
     """Create a PRODUCER span — for publishing to message bus."""
     tracer = get_tracer()
     if tracer is None:
@@ -220,6 +233,7 @@ def extract_context(headers: dict[str, str]) -> Any:
 
     try:
         from opentelemetry.propagate import extract
+
         return extract(headers)
     except Exception:
         return None
@@ -236,8 +250,9 @@ def inject_context(headers: dict[str, str]) -> dict[str, str]:
 
     try:
         from opentelemetry.propagate import inject
+
         inject(headers)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 — tracing must never fail the call path
         pass
 
     return headers
@@ -269,6 +284,7 @@ def with_context(context: Any) -> Generator[None, None, None]:
 
     try:
         from opentelemetry import context as otel_context
+
         token = otel_context.attach(context)
         try:
             yield
@@ -283,7 +299,9 @@ def with_context(context: Any) -> Generator[None, None, None]:
 # ---------------------------------------------------------------------------
 
 
-def record_validation(duration_ms: float, success: bool, error: str | None = None) -> None:
+def record_validation(
+    duration_ms: float, success: bool, error: str | None = None
+) -> None:
     """Record schema validation metrics on the current span."""
     tracer = get_tracer()
     if tracer is None:
@@ -291,16 +309,19 @@ def record_validation(duration_ms: float, success: bool, error: str | None = Non
 
     try:
         from opentelemetry import trace
+
         current_span = trace.get_current_span()
         current_span.set_attribute("voice.validation.duration_ms", duration_ms)
         current_span.set_attribute("voice.validation.success", success)
         if error:
             current_span.set_attribute("voice.validation.error", error)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 — tracing must never fail the call path
         pass
 
 
-def record_outbox_write(row_id: int, session_id: str, action: str | None = None) -> None:
+def record_outbox_write(
+    row_id: int, session_id: str, action: str | None = None
+) -> None:
     """Record outbox write metrics on the current span."""
     tracer = get_tracer()
     if tracer is None:
@@ -308,12 +329,13 @@ def record_outbox_write(row_id: int, session_id: str, action: str | None = None)
 
     try:
         from opentelemetry import trace
+
         current_span = trace.get_current_span()
         current_span.set_attribute("voice.outbox.row_id", row_id)
         current_span.set_attribute("voice.session_id", session_id)
         if action:
             current_span.set_attribute("voice.action", action)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 — tracing must never fail the call path
         pass
 
 
@@ -325,12 +347,13 @@ def record_publish(subject: str, success: bool, error: str | None = None) -> Non
 
     try:
         from opentelemetry import trace
+
         current_span = trace.get_current_span()
         current_span.set_attribute("voice.publish.subject", subject)
         current_span.set_attribute("voice.publish.success", success)
         if error:
             current_span.set_attribute("voice.publish.error", error)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 — tracing must never fail the call path
         pass
 
 
@@ -352,6 +375,7 @@ def get_trace_middleware():
 
     try:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
         return FastAPIInstrumentor
     except ImportError:
         return None
@@ -373,6 +397,7 @@ def instrument_fastapi(app: Any) -> None:
 
     try:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
         FastAPIInstrumentor.instrument_app(app)
     except ImportError:
         # Instrumentation package not installed — not fatal
