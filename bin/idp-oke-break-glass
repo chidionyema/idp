@@ -1427,10 +1427,12 @@ secret_table() {
     2>/dev/null | awk 'NF'
 }
 
-pb_secret_census() {
+# The aggregation, split from the listing so --self-test can drive it from a fixture without a
+# cluster: table on stdin, report on stdout, no kubectl anywhere inside it.
+secret_census_report() {
   local t total
-  t=$(secret_table) || { echo "FAIL  secret-census  could not list secrets"; FAILED="$FAILED secret-census"; return 1; }
-  total=$(printf '%s\n' "$t" | wc -l | tr -d ' ')
+  t=$(awk 'NF')
+  total=$(printf '%s\n' "$t" | awk 'NF' | wc -l | tr -d ' ')
   echo "--- headroom"
   echo "secrets=$total  cap=$SECRET_CAP  over-by=$((total - SECRET_CAP))"
   echo "--- by-type"
@@ -1441,10 +1443,23 @@ pb_secret_census() {
   echo "--- helm-release-history-by-status"
   printf '%s\n' "$t" | awk '$4=="helm"{print $5}' | sort | uniq -c | sort -rn
   echo "--- helm-superseded-by-release (the reclaim target)"
-  printf '%s\n' "$t" | awk '$4=="helm" && $5=="superseded"{print $1"/"$2}' \
-    | sed 's#\.v[0-9][0-9]*$##' | sort | uniq -c | sort -rn | head -30
+  printf '%s\n' "$t" | secret_reclaim_targets | sed 's#\.v[0-9][0-9]*$##' \
+    | awk '{print $1"/"$2}' | sort | uniq -c | sort -rn | head -30
+  echo "--- oldest-20"
+  printf '%s\n' "$t" | sort -k6 | head -20 | awk '{print $6"  "$1"/"$2"  "$3}'
+}
+
+# The one selector both playbooks trust: table on stdin, "<namespace> <name>" for every Secret
+# Helm has labelled superseded, and nothing else. secret-reclaim deletes exactly these.
+secret_reclaim_targets() { awk '$4=="helm" && $5=="superseded"{print $1" "$2}'; }
+
+pb_secret_census() {
+  local t
+  t=$(secret_table) || { echo "FAIL  secret-census  could not list secrets"; FAILED="$FAILED secret-census"; return 1; }
+  printf '%s\n' "$t" | secret_census_report
   # A Secret whose type is a service-account token but whose ServiceAccount is gone is dead weight;
   # 1.24+ does not auto-create these, so any that exist were made by hand or left by a deleted SA.
+  # This is the one section that needs the API again, so it lives here and not in the report.
   echo "--- orphaned-service-account-tokens"
   local ns name sa live=0 dead=0
   while read -r ns name _rest; do
@@ -1456,8 +1471,6 @@ pb_secret_census() {
 $(printf '%s\n' "$t" | awk '$3=="kubernetes.io/service-account-token"{print $1" "$2}')
 EOF
   echo "service-account-token secrets: attached=$live orphaned=$dead"
-  echo "--- oldest-20"
-  printf '%s\n' "$t" | sort -k6 | head -20 | awk '{print $6"  "$1"/"$2"  "$3}'
 }
 
 # secret-reclaim deletes exactly one class: Helm release history Helm itself has labelled
@@ -1472,8 +1485,8 @@ EOF
 pb_secret_reclaim() {
   local t before targets n
   t=$(secret_table) || { echo "FAIL  secret-reclaim  could not list secrets"; FAILED="$FAILED secret-reclaim"; return 1; }
-  before=$(printf '%s\n' "$t" | wc -l | tr -d ' ')
-  targets=$(printf '%s\n' "$t" | awk '$4=="helm" && $5=="superseded"{print $1" "$2}')
+  before=$(printf '%s\n' "$t" | awk 'NF' | wc -l | tr -d ' ')
+  targets=$(printf '%s\n' "$t" | secret_reclaim_targets)
   n=$(printf '%s\n' "$targets" | awk 'NF' | wc -l | tr -d ' ')
   echo "--- before"
   echo "secrets=$before  cap=$SECRET_CAP  superseded-helm-history=$n"
@@ -1491,7 +1504,53 @@ EOF
   [ "$after" -lt "$before" ] || { echo "FAIL  secret-reclaim: count did not fall"; FAILED="$FAILED secret-reclaim"; return 1; }
 }
 
+# --self-test: the offline path this file has, and until now did not prove it had. script-compiles
+# refused the push that added secret-census because nothing here had ever been executed, and the
+# usage case exited 64 on every argv including --help -- so a load failure would have reached a
+# session as a surprise (LAW 43/45). The census aggregation is pure text over a listing, so it can
+# be driven from a fixture with no cluster, and the one selector that decides what secret-reclaim
+# DELETES is proved both ways: the superseded revision is chosen and the deployed one is not.
+# A test that only asserted "something was selected" would pass a selector that selects everything.
+self_test() {
+  local fixture out targets rc=0
+  fixture='kube-system sh.helm.release.v1.cilium.v1 helm.sh/release.v1 helm superseded 2026-01-01T00:00:00Z
+kube-system sh.helm.release.v1.cilium.v2 helm.sh/release.v1 helm superseded 2026-02-01T00:00:00Z
+kube-system sh.helm.release.v1.cilium.v3 helm.sh/release.v1 helm deployed 2026-03-01T00:00:00Z
+llm ghcr-pull kubernetes.io/dockerconfigjson <none> <none> 2026-04-01T00:00:00Z
+edge tls-wildcard kubernetes.io/tls <none> <none> 2026-05-01T00:00:00Z'
+
+  out=$(printf '%s\n' "$fixture" | secret_census_report)
+  printf '%s\n' "$out" | grep -q 'secrets=5  cap=2000  over-by=-1995' \
+    || { echo "FAIL  self-test  headroom line wrong: $(printf '%s\n' "$out" | sed -n 2p)"; rc=1; }
+  printf '%s\n' "$out" | grep -q '2 superseded' \
+    || { echo "FAIL  self-test  helm status tally did not find 2 superseded"; rc=1; }
+
+  # the selector, both ways
+  targets=$(printf '%s\n' "$fixture" | secret_reclaim_targets)
+  [ "$(printf '%s\n' "$targets" | wc -l | tr -d ' ')" = 2 ] \
+    || { echo "FAIL  self-test  expected 2 reclaim targets, got: $targets"; rc=1; }
+  printf '%s\n' "$targets" | grep -q 'sh.helm.release.v1.cilium.v1' \
+    || { echo "FAIL  self-test  superseded revision v1 was not selected"; rc=1; }
+  printf '%s\n' "$targets" | grep -q 'sh.helm.release.v1.cilium.v3' \
+    && { echo "FAIL  self-test  the DEPLOYED revision v3 was selected for deletion"; rc=1; }
+  printf '%s\n' "$targets" | grep -qE 'ghcr-pull|tls-wildcard' \
+    && { echo "FAIL  self-test  a non-helm Secret was selected for deletion"; rc=1; }
+
+  # every playbook the dispatch table advertises is a function that exists
+  local pb miss=0
+  for pb in $("$0" --list); do
+    declare -f "pb_$(printf %s "$pb" | tr - _)" >/dev/null || { echo "FAIL  self-test  --list advertises $pb with no pb_ function"; miss=1; }
+  done
+  [ "$miss" = 0 ] || rc=1
+
+  local n; n=$("$0" --list | wc -w | tr -d ' ')
+  [ "$rc" = 0 ] && echo "ok  bin/idp-oke-break-glass --self-test  (census aggregation, reclaim selector proved both ways, $n playbooks dispatchable)"
+  return "$rc"
+}
+
 case "${1:-}" in
+  --self-test) self_test; exit $? ;;
+  -h|--help) sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/usage: idp-oke-break-glass <playbook>\nplaybooks: \1/p' "$0"; exit 0 ;;
   --list) echo "diagnose architect-doctor otto-homes otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences secret-census secret-reclaim"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
