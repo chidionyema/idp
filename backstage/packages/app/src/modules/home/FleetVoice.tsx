@@ -221,7 +221,9 @@ const GRACE_MS = 1500;
  * than the browser's own finalisation. Measured against the alternative: 1500ms felt like the
  * room was thinking; 600ms cut people off mid-sentence.
  */
-const AUTO_SEND_MS = 900;
+// The constant itself is gone with restartAutoSend below: the engine's VAD decides end-of-speech
+// now, so there is no countdown left to tune. The measurement above is kept because it is the
+// reason a timer is the wrong instrument here, not a number waiting to be reused.
 
 export default function FleetVoice({
   sessions = [],
@@ -464,18 +466,12 @@ export default function FleetVoice({
     void engine.start();
   }, [clearGrace, engine]);
 
-  /** Start (or restart) the "they have stopped talking" countdown. */
-  const restartAutoSend = useCallback(() => {
-    if (autoSendTimerRef.current !== null) clearTimeout(autoSendTimerRef.current);
-    autoSendTimerRef.current = setTimeout(() => {
-      autoSendTimerRef.current = null;
-      // Only send if we are still listening and have words. A timer that fires after the person
-      // already clicked Stop must not send twice.
-      if (stateRef.current !== 'listening') return;
-      if (!finalTranscriptRef.current && !interimTailRef.current) return;
-      stopListeningRef.current?.();
-    }, AUTO_SEND_MS);
-  }, []);
+  // restartAutoSend -- the "they have stopped talking" countdown -- was declared here and never
+  // called, which is why tsc refused the build (TS6133). It belonged to the browser recogniser
+  // this component no longer drives: the estate engine does voice-activity detection itself and
+  // streams the finished utterance, so end-of-speech is the transport's answer, not a timer's
+  // guess (see the comment above `void engine.start()`). clearAutoSend below stays, because the
+  // ref it clears is still written elsewhere and a stale timer would send twice.
 
   const clearAutoSend = useCallback(() => {
     if (autoSendTimerRef.current !== null) {

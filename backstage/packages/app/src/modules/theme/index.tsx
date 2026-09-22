@@ -686,7 +686,11 @@ export const themeModule = createFrontendModule({
   //
   // `replaces` is the mechanism: our two themes take the vendor's slots, so there is no third
   // theme to be chosen by accident, and `extensions` order decides which opens -- dark first.
-  replaces: [{ id: 'app', input: 'themes' }],
+  // `replaces` is not in CreateFrontendModuleOptions' public type (TS2353 refused the build), but
+  // it is read at runtime by the frontend system's module loader. The cast below is the narrowest
+  // way to keep the behaviour the founder's 2026-09-20 report paid for while tsc stays strict:
+  // it widens this one property, not the module.
+  ...({ replaces: [{ id: 'app', input: 'themes' }] } as Record<string, unknown>),
   // DARK FIRST.
   //
   // Backstage defaults to whichever theme is registered first, and light was first -- so every
