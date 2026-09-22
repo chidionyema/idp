@@ -96,6 +96,8 @@ router_settings:
     # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
     # job aliases) but sit in no chain while the account is unfunded: a hop that always
     # answers 402 is latency, not redundancy.
+    # claude-opus passthrough has no API key; it falls back to the same pool as default/fast
+    - claude-opus: [default, fast, deepseek, gemini, minimax, groq]
     # @vendor-fallbacks@
     # @vendor-cluster-fallbacks@
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the

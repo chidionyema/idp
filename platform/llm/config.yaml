@@ -656,6 +656,8 @@ router_settings:
     # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
     # job aliases) but sit in no chain while the account is unfunded: a hop that always
     # answers 402 is latency, not redundancy.
+    # claude-opus passthrough has no API key; it falls back to the same pool as default/fast
+    - claude-opus: [default, fast, deepseek, gemini, minimax, groq]
     # DeepSeek answered 401 from inside the router pod on 2026-09-04 21:5xZ (the key is revoked
     # at the vendor; prospector's byte-identical copy fails the same way), which is why Gemini
     # sits in this chain: a hop that always refuses is latency, not redundancy. That sentence
