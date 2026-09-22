@@ -43,6 +43,28 @@ spec:
       # cores at once, on top of everything else running. The estate scans opportunistically, not
       # on a deadline, so a lower ceiling costs time, never correctness.
       scanJobsConcurrentLimit: 2
+      # THE 2000-SECRET CAP WAS THIS ROW. Measured 2026-09-22, break-glass run 35682281244,
+      # playbook secret-census:
+      #
+      #     secrets=2480  cap=2000  over-by=480
+      #     by-type       2316 Opaque, 117 helm.sh/release.v1
+      #     by-namespace  2159 trivy-system, then 34 observability, 22 estate-db
+      #
+      # 87% of every Secret in this cluster was a trivy scan-job secret nobody ever collected, and
+      # that is why `oke-resource-leak-protection.oke.com` refuses to create a Secret anywhere:
+      # crossplane's HelmRelease and llm's ghcr-pull were both denied by a scanner's litter.
+      #
+      # Both keys are the chart's own, and both ship disabled (deploy/helm/values.yaml v0.36.0):
+      #     # -- scanJobTTL the set automatic cleanup time after the job is completed
+      #     scanJobTTL: ""
+      #     # -- scanSecretTTL set an automatic cleanup for scan job secrets
+      #     scanSecretTTL: ""
+      # `scanSecretTTL` exists precisely for this leak; "" means the feature is off, so every scan
+      # this estate has ever run left its secret behind. An hour is far longer than a scan takes
+      # (scanJobsConcurrentLimit is 2, so the queue drains slowly and nothing is cut short) and far
+      # shorter than the months it took to reach 2159.
+      scanJobTTL: "1h"
+      scanSecretTTL: "1h"
       # The chart's own default for the ephemeral scan-job container, typed here (not left to the
       # chart) so `bin/idp-features plan` can see it: it only sums what a switch's manifests hold
       # in git, never a chart's internal default it never rendered.
