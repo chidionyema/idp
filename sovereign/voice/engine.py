@@ -119,6 +119,7 @@ PIPER_DIR = os.environ.get("VOICE_PIPER_DIR") or str(
 )
 PIPER_VOICE = os.environ.get("VOICE_PIPER_VOICE", "en_GB-jenny_dioco-medium")
 
+
 # THE ROUTER IS THE ESTATE'S OWN (LAW 34: one router key per identity, no vendor keys on the Mac).
 #
 # THE DEFAULT WAS A LITERAL THAT CANNOT RESOLVE, and it broke every voice answer on this machine.
