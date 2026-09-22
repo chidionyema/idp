@@ -23,7 +23,12 @@ if grep -qE '^X-Idp-Signed: ' "$msg_file"; then
 fi
 
 body="$(cat "$msg_file")"
-sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$secret" 2>/dev/null | awk '{print $2}')"
+# $NF, not $2. `openssl dgst` prints "HMAC-SHA256(stdin)= <hex>" on some builds and the bare hex
+# on others -- LibreSSL 3.3.x, which is what macOS ships, prints one field. $2 was then empty,
+# every commit on that machine died on "HMAC computation failed", and the only way to commit was
+# --no-verify, which is exactly what this hook exists to make impossible. A guard that cannot run
+# is not a guard. The last field is the digest under both formats.
+sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$secret" 2>/dev/null | awk '{print $NF}')"
 [ -n "$sig" ] || { echo "REFUSE: HMAC computation failed" >&2; exit 1; }
 
 # Append two blank lines and the trailer if the message doesn't already end in a trailer block.
