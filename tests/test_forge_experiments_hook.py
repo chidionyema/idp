@@ -61,6 +61,10 @@ def test_hook_is_wired_and_its_output_ignored():
 
     cfg = yaml.safe_load((ROOT / "mkdocs.yml").read_text())
     assert "bin/mkdocs_hooks/forge_experiments.py" in cfg["hooks"]
-    nav = yaml.safe_dump(cfg["nav"])
-    assert "reference/forge/index.md" in nav
+    # No nav assertion. mkdocs.yml carries no nav (2026-09-22), so MkDocs builds one
+    # from the docs/ tree and the index this hook writes is reachable because it
+    # exists -- test_hook_copies_every_experiment_and_indexes_it proves it is written.
+    # What is worth pinning is that nobody re-introduces a hand-written nav, which is
+    # what made the index reachable only if a human remembered to list it.
+    assert "nav" not in cfg, "a hand-written nav is back; the forge index is reachable only by construction"
     assert "docs/reference/forge/" in (ROOT / ".gitignore").read_text().splitlines()
