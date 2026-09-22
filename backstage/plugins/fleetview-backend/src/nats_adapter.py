@@ -21,6 +21,30 @@ if TYPE_CHECKING:
 
 _DEFAULT_NATS_URL = "nats://nats.event-bus.svc:4222"
 
+# HOW LONG A PUBLISH MAY SPEND FAILING. nats-py's connect() defaults are built for a long-lived
+# service connection -- max_reconnect_attempts=60, reconnect_time_wait=2 -- and those two
+# multiply into a 120-second budget before it admits the server is unreachable. `publish` opens
+# a connection, sends one event and drains, so it never needs a single retry, and on 2026-09-22
+# those defaults cost 123 seconds on EVERY /voice/hear request: a spoken turn measured 127.00s
+# with an unreachable NATS_URL against 4.10s with it unset -- same audio, same machine,
+# transcript identical both times.
+#
+# EVERY NUMBER HERE WAS MEASURED, because two plausible diagnoses were wrong first:
+#   * Not DNS. NATS_URL pointed at an IP literal with nothing listening -- no name to resolve,
+#     TCP refused in microseconds -- still took 131.98s. The cost was never resolution.
+#   * Not allow_reconnect. Setting it False left the turn at 122.47s: that flag governs
+#     reconnection AFTER a connection is established, not the initial server-selection loop.
+# max_reconnect_attempts is the knob that bounds the initial loop, and the total is
+# attempts x reconnect_time_wait, which is why 60 x 2s came to exactly the 120s observed.
+#
+# One attempt and a tenth of a second between tries: a refused port now raises NoServersError in
+# 0.39s and an unresolvable name in 0.17s (measured). voice_media.publish turns that into
+# {"published": false, "reason": "NoServersError: ..."} -- the same honest refusal, 300x sooner.
+# When the bus IS reachable the first attempt succeeds and neither value is ever consulted.
+_CONNECT_TIMEOUT_S = float(os.environ.get("NATS_CONNECT_TIMEOUT_S", "2"))
+_CONNECT_ATTEMPTS = int(os.environ.get("NATS_CONNECT_ATTEMPTS", "1"))
+_RETRY_WAIT_S = float(os.environ.get("NATS_RETRY_WAIT_S", "0.1"))
+
 
 def _nats_url(nats_url: str | None = None) -> str:
     return nats_url or os.environ.get("NATS_URL", _DEFAULT_NATS_URL)
@@ -63,7 +87,12 @@ async def publish(
     subject = f"estate.agent.{runtime}.{session_id}.{kind}"
     payload = json.dumps(event).encode()
 
-    nc = await nats.connect(url)
+    nc = await nats.connect(
+        url,
+        connect_timeout=_CONNECT_TIMEOUT_S,
+        max_reconnect_attempts=_CONNECT_ATTEMPTS,
+        reconnect_time_wait=_RETRY_WAIT_S,
+    )
     try:
         js = nc.jetstream()
         await js.publish(subject, payload)

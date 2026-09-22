@@ -73,10 +73,14 @@ class _Recorder:
     def __init__(self) -> None:
         self.published: list[tuple[str, bytes]] = []
         self.drained = False
+        self.connect_kwargs: dict = {}
 
     # -- the `nats` module surface ------------------------------------------------------------
-    async def connect(self, url: str):
+    async def connect(self, url: str, **kwargs):
+        # The kwargs are recorded, not ignored: the retry budget the adapter asks for is the
+        # difference between a 1.6-second voice turn and a 127-second one, so it is graded.
         self.url = url
+        self.connect_kwargs = kwargs
         return self
 
     # -- the connection surface ---------------------------------------------------------------
@@ -300,3 +304,52 @@ def test_the_page_talks_to_the_backend_through_the_proxy():
     assert code.count("await fetch(") == 0, (
         "a raw fetch would reach the proxy with no credentials"
     )
+
+
+def test_a_failing_publish_gives_up_in_a_second_not_two_minutes(voice):
+    """The bus may be down; a person waiting to be heard may not pay for that.
+
+    THIS TEST EXISTS BECAUSE THE DEFECT SHIPPED. nats-py's connect() defaults are tuned for a
+    long-lived service connection -- max_reconnect_attempts=60 with reconnect_time_wait=2 -- and
+    `publish` opens a connection for one event and drains it, so it inherited a 120-second retry
+    budget it can never use. Measured 2026-09-22 on one /voice/hear request with 2.36s of speech:
+
+        NATS_URL unreachable, stock defaults .... 127.00s   (asr 6.4s, the rest waiting)
+        NATS_URL unset ..........................   4.10s
+        NATS_URL unreachable, bounded budget ....   1.60s
+
+    The transcript was byte-identical in all three. The turn was never broken -- it was correct
+    and 79x too slow, which is the failure mode that does not announce itself.
+
+    WHAT IS GRADED is the budget the adapter ASKS FOR, because that is the defect: the product of
+    attempts and the wait between them is the worst case a caller can be made to wait, and the
+    stock values multiply to 120s. A ceiling of 5s is far above the 0.39s a refused port and the
+    0.17s an unresolvable name actually measured, and far below the two minutes that shipped.
+    Delete the options and this fails at 120s, which is the point -- a gate that cannot fail is
+    not a gate.
+    """
+    adapter = voice.module._nats()
+    asyncio.run(
+        adapter.publish(
+            "nats://nats.event-bus.svc:4222",
+            session_id="voice-budget",
+            runtime="sovereign",
+            kind="steer",
+            phase="executing",
+            steer={"text": "how long will you make me wait", "author": "founder"},
+        )
+    )
+
+    asked = voice.bus.connect_kwargs
+    assert asked, "publish called connect() with no options: that is the 120s default"
+
+    attempts = asked["max_reconnect_attempts"]
+    wait = asked["reconnect_time_wait"]
+    worst_case = attempts * wait
+    assert worst_case <= 5.0, (
+        f"a failing publish may wait {worst_case}s "
+        f"({attempts} attempts x {wait}s); the ceiling is 5s"
+    )
+    # connect_timeout bounds a single attempt that hangs rather than refusing -- a black-holed
+    # address, which neither measurement above covers, so it is required but not timed here.
+    assert asked["connect_timeout"] <= 5.0
