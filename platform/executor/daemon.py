@@ -349,6 +349,10 @@ class Handler(socketserver.StreamRequestHandler):
             self._reply(self._seal_mutation(request))
         elif verb == "admit_mutation":
             self._reply(self._admit_mutation(request))
+        elif verb == "fs_read":
+            self._reply(self._fs_read(request))
+        elif verb == "fs_commit":
+            self._reply(self._fs_commit(request))
         elif verb == "verify_inverse":
             self._reply(self._verify_inverse(request))
         elif verb == "health":
@@ -628,6 +632,127 @@ class Handler(socketserver.StreamRequestHandler):
             "validated": True,
             "admitted_path": admitted_path,
             "subject_digest": subject,
+        }
+
+    def _fs_read(self, request: dict) -> dict:
+        """Universal Write Boundary (read half).
+
+        Path is constrained to the live worktree. Reads are not gated by the
+        attestation gauntlet -- the gauntlet is for writes -- but they ARE
+        constrained so an agent cannot read files outside the estate.
+        """
+        path = request.get("path", "")
+        if not isinstance(path, str) or not path:
+            return {"ok": False, "error": "fs_read needs a path"}
+        abs_path = os.path.abspath(path)
+        tree = os.path.abspath(live_worktree())
+        if abs_path != tree and not abs_path.startswith(tree + os.sep):
+            return {"ok": False, "error": f"path must be within {tree}"}
+        try:
+            with open(abs_path, "r") as f:
+                return {"ok": True, "result": f.read()}
+        except FileNotFoundError:
+            return {"ok": False, "error": f"no file at {path}", "code": "NOT_FOUND"}
+        except OSError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _fs_commit(self, request: dict) -> dict:
+        """Universal Write Boundary (write half).
+
+        Routes every agent write through the existing gauntlet: build a unified
+        diff, _propose_patch -> _verify -> _seal -> _admit, then `git apply` the
+        sealed patch to the live worktree. No file bypasses the attestation
+        gate (LAW 21, R33, R34).
+        """
+        import difflib
+        import subprocess
+
+        path = request.get("path", "")
+        content = request.get("content", "")
+        tests = request.get("tests", "")
+        claim = request.get("claim", "fs_commit via gateway-emit")
+
+        if not isinstance(path, str) or not path:
+            return {"ok": False, "error": "fs_commit needs a path"}
+        abs_path = os.path.abspath(path)
+        tree = os.path.abspath(live_worktree())
+        if abs_path != tree and not abs_path.startswith(tree + os.sep):
+            return {"ok": False, "error": f"path must be within {tree}"}
+
+        existing = ""
+        if os.path.exists(abs_path):
+            with open(abs_path, "r") as f:
+                existing = f.read()
+
+        diff = "".join(
+            difflib.unified_diff(
+                existing.splitlines(keepends=True),
+                content.splitlines(keepends=True),
+                fromfile=path,
+                tofile=path,
+            )
+        )
+        if not diff.strip():
+            return {"ok": True, "note": "no change", "path": abs_path}
+
+        propose_resp = self._propose_patch(
+            {"patch": diff, "tests": tests, "claim": claim}
+        )
+        if not propose_resp.get("ok"):
+            return propose_resp
+        ledger_id = propose_resp["ledger_id"]
+
+        verify_resp = self._verify({"ledger_id": ledger_id})
+        if not verify_resp.get("ok"):
+            return verify_resp
+        if not verify_resp.get("admissible"):
+            return {
+                "ok": False,
+                "error": "verifier refused the patch",
+                "verdict": verify_resp,
+            }
+
+        staged_path = os.path.join(ledger_root(), "staged", f"{ledger_id}.patch")
+        if not os.path.exists(staged_path):
+            return {
+                "ok": False,
+                "error": (
+                    f"expected staged patch at {staged_path}; "
+                    "verifier did not produce one"
+                ),
+            }
+
+        seal_resp = self._seal({"payload_path": staged_path})
+        if not seal_resp.get("ok"):
+            return seal_resp
+
+        admit_resp = self._admit(
+            {"payload_path": staged_path, "attestation": seal_resp["attestation"]}
+        )
+        if not admit_resp.get("ok"):
+            return admit_resp
+
+        try:
+            subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
+                ["git", "apply", "--whitespace=fix", staged_path],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
+                cwd=tree,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            return {
+                "ok": False,
+                "error": f"git apply failed: {exc.stderr}",
+                "admitted_path": admit_resp.get("admitted_path"),
+            }
+
+        return {
+            "ok": True,
+            "admitted_path": admit_resp.get("admitted_path"),
+            "applied_to": abs_path,
+            "subject_digest": seal_resp.get("subject_digest"),
+            "ledger_id": ledger_id,
         }
 
     def _mutation_files(self, proposal: dict) -> list[ProposedFile]:
