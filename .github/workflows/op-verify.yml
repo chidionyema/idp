@@ -155,15 +155,84 @@ jobs:
           # SigNoz
           check "signoz-otel-collector"      "observability" "deploy" "signoz-otel-collector" ""
 
+          # LLM: the router, and the gateway that now sits in front of it (#3834). This
+          # namespace had NO row here until 2026-09-22 -- the only read-only door an agent
+          # has could not say whether the dependency under every model call in the estate
+          # was up, which is how zeroedge sat merged-and-applied for an hour with nobody
+          # able to tell whether it was serving.
+          check "litellm"                   "llm" "deploy" "litellm" ""
+          check "zeroedge"                  "llm" "deploy" "zeroedge" ""
+
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: ExternalSecret sync state
         if: always()
         run: |
           set +e
-          echo "## ExternalSecret sync state (top 30)" >> "$GITHUB_STEP_SUMMARY"
+          # `head -35` used to cut this table. kubectl sorts by namespace, the estate has
+          # more rows than that, and the cut landed at `edge-runtime` -- so llm, observability,
+          # temporal and everything after them were invisible, and on 2026-09-22 that made it
+          # impossible to tell whether llm/ghcr-pull had synced or had been refused by the
+          # cluster's secret cap. A door that truncates its answer alphabetically answers the
+          # wrong question. Bound the output by PROBLEMS instead: every row that is not
+          # SecretSynced, always, plus the full table underneath it.
+          t="${RUNNER_TEMP:-/tmp}/externalsecrets.txt"
+          kubectl get externalsecret -A -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,STORE:.spec.secretStoreRef.name,STATUS:.status.conditions[0].reason > "$t" 2>&1
+          echo "## ExternalSecrets not synced" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          kubectl get externalsecret -A -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,STORE:.spec.secretStoreRef.name,STATUS:.status.conditions[0].reason 2>&1 | head -35 | tee -a "$GITHUB_STEP_SUMMARY"
+          # Captured, not piped: `... | tee -a "$SUMMARY" | grep -q .` sends the rows to the
+          # summary and to grep, and NOTHING to the run log -- which is the half an agent reads.
+          nots=$(grep -vE '^NS|SecretSynced$' "$t")
+          if [ -n "$nots" ]; then
+            printf '%s\n' "$nots" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "(none -- every ExternalSecret in the estate reports SecretSynced)" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "## ExternalSecret sync state (all $(( $(wc -l < "$t") - 1 )))" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat "$t" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Proof of operation (a real log line, not a pod phase)
+        if: always()
+        run: |
+          set +e
+          # Estate law: never declare something WORKING from a synthetic probe, a green CI
+          # gate or an HTTP 200 -- prove it with a real production log line, and say whether
+          # you mean "built" or "operating". Until now this door printed READY and POD PHASE
+          # and nothing else, so no agent could reach that bar through it: the only evidence
+          # available was exactly the kind the law refuses.
+          #
+          # WHY THIS IS NOT `kubectl logs`. chidionyema/idp is a PUBLIC repository and this
+          # run log is world-readable. A raw tail would publish whatever a pod happens to
+          # print, which is how a credential leaves a cluster. So every row names an ANCHORED
+          # pattern and ONLY lines matching it are printed. The patterns below are near-literal
+          # -- a secret cannot match `"GET /health HTTP/1.1" 200`. Adding a row here means
+          # choosing a pattern with that property; a loose pattern is a leak, not a proof.
+          #
+          # WHAT A MATCH PROVES, exactly: the process is in the cluster and served a request
+          # in the last 20 minutes. It does not prove the surface routes correctly -- that is
+          # a different line, and it should get its own row when there is one to match.
+          echo "## Proof of operation" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          proof() {
+            local ns="$1" deploy="$2" pattern="$3" line
+            line=$(kubectl -n "$ns" logs "deploy/$deploy" --tail=400 --since=20m 2>/dev/null \
+                     | grep -E "$pattern" | tail -1)
+            if [ -n "$line" ]; then
+              printf '%-10s %-12s OPERATING  %s\n' "$ns" "$deploy" "$line" | tee -a "$GITHUB_STEP_SUMMARY"
+            else
+              printf '%-10s %-12s NO LINE    built, not operating: nothing matched /%s/ in 20m\n' \
+                "$ns" "$deploy" "$pattern" | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+          # zeroedge serves on http.server's BaseHTTPRequestHandler, whose log_message writes
+          # one line per request to stderr (src/zeroedge/service.py). The readiness probe hits
+          # /health every 10s, so a serving pod always has a fresh one; the path is fixed, so
+          # the line carries a client IP, a timestamp, a method, a path and a status and
+          # nothing else.
+          proof "llm" "zeroedge" '"GET /health HTTP/1\.[01]" [0-9]{3}'
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: All CronJobs (drills + verifiers)
