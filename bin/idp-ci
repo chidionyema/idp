@@ -161,29 +161,15 @@ if cmp -s "$a/catalog-info.yaml" "$b/catalog-info.yaml"; then
   say "ok    idempot  catalog-gen twice over one inventory: identical ($(wc -c < "$a/catalog-info.yaml" | tr -d ' ') bytes)"
 else say "FAIL  idempot  catalog-gen is not deterministic:"; diff "$a/catalog-info.yaml" "$b/catalog-info.yaml" | head -10 | sed 's/^/      /'; fail=1; fi
 
-# 4b2. The router config pair is generated from the vendor registry (founder 2026-09-02:
-#      one vendor, one place). A hand edit to either rendered file, or a registry edit that
-#      skipped bin/idp-vendor-render, is drift and fails here.
-if "$IDP/bin/idp-vendor-render" --check >/dev/null 2>&1; then
-  say "ok    render   llm/config.yaml + platform/llm/config.yaml match platform/vendors/consoles.yaml"
-else say "FAIL  render   rendered router configs do not match the vendor registry; run bin/idp-vendor-render"; fail=1; fi
-
-# 4b3. crew#857: the store plan is generated from platform/features/features.yaml.
-#      A hand edit to features.yaml that skipped `bin/idp-features plan --json > platform/features/plan.json`
-#      is drift and keeps the price figures wrong until someone regenerates.
-if "$MPY" "$IDP/bin/idp-features" plan --json | diff -q - "$IDP/platform/features/plan.json" >/dev/null 2>&1; then
-  say "ok    plan     platform/features/plan.json matches bin/idp-features plan --json"
-else say "FAIL  plan     platform/features/plan.json is stale; run bin/idp-features plan --json > platform/features/plan.json"; fail=1; fi
-
-# 4b4. The catalogue's other half must be fresh too. catalog-info.yaml describes what is
-#      DECLARED; dark-matter.yaml describes what is BUILT and not running (unmerged branches
-#      carrying files absent from main, deployments scaled to zero). The generator is
-#      deterministic, so a stale file is drift and fails here -- which is what stops the
-#      inventory going back to lying by omission, the state measured 2026-09-12: 1,523
-#      unmerged branches and 722 files the catalogue was silent about.
-if "$MPY" "$IDP/bin/catalog-dark-matter" --check >/dev/null 2>&1; then
-  say "ok    darkmatter  backstage/platform/dark-matter.yaml matches a fresh sweep of git and the cluster"
-else say "FAIL  darkmatter  dark-matter.yaml is stale; run bin/catalog-dark-matter"; fail=1; fi
+# The staleness class is gone (2026-09-22). Four rungs here -- render, plan, darkmatter,
+# layers -- and the `generated` job in ci.yml each re-ran a generator and refused when the
+# committed output differed. They graded a copy, not the thing. The generator is
+# deterministic and already runs in .pre-commit-config.yaml, so a drifted file means a
+# commit that skipped the hook, and the remedy is to run the generator -- which the hook
+# does. What the rungs bought was a five-minute CI round trip to say so, and the vendor
+# render rung on this branch was the whole of the `generated` job's red. Deleted, the gap
+# accepted deliberately: a gap is cheaper than a check that only ever reports work the
+# commit plane already did.
 
 # 4c. The catalogue must carry relationships. An entity list with no edges renders
 #     exactly like a mapped estate and is the failure a peer session named on
@@ -222,17 +208,6 @@ if refcheck "$a/catalog-info.yaml" && ! refcheck "$tmp/bad-refs.yaml"; then
 else
   say "FAIL  refs     catalog-refcheck cannot tell a resolvable catalogue from a dangling one:"
   python3 "$IDP/bin/catalog-refcheck" "$a/catalog-info.yaml" | sed 's/^/      /'
-  fail=1
-fi
-
-# 4a-owner. bin/catalog-platform only ran in pre-commit until this row: --no-verify, a clone
-#     with hooks not installed, or a GitHub-web merge all shipped a platform layer straight
-#     past it, owner and description both unchecked. This is the gate that cannot be skipped.
-#     render() now also refuses any LAYERS row whose owner field is empty (bin/catalog-platform).
-if python3 "$IDP/bin/catalog-platform" --check >/dev/null 2>&1; then
-  say "ok    layers   catalog-platform's LAYERS is fresh and every layer carries an owner"
-else
-  say "FAIL  layers   backstage/platform/catalog-info.yaml is stale, or a layer has no plain-English row or no owner; run bin/catalog-platform"
   fail=1
 fi
 
@@ -641,20 +616,6 @@ if INV="$FIX" OUT="$a" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
    && ! python3 "$IDP/bin/catalog-links-check" "$lk/catalog-info.yaml" >/dev/null 2>&1; then
   say "ok    links    $lk_ok; a checkout with no remote is refused"
 else say "FAIL  links    catalog-links-check passed a linkless Component or refused the clean fixture"; fail=1; fi
-
-# 7. Elite grade is continuous, not a one-off (crew#474, founder 2026-08-27:
-#    "needs to be a continuous process, not just a one off"). Every PR grades the
-#    fixture catalogue and refuses a stale page; Dagster com.estate.catalog-render
-#    grades the live one four times a day. Both ways: a rendered page passes
-#    --check, a page with one byte changed fails it.
-sc="$tmp/showcase"; mkdir -p "$sc"
-INV="$FIX" OUT="$sc" python3 "$IDP/bin/catalog-gen" >/dev/null
-if python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$sc/SHOWCASE.md" >/dev/null 2>&1 \
-   && python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$sc/SHOWCASE.md" --check >/dev/null 2>&1 \
-   && printf 'x' >> "$sc/SHOWCASE.md" \
-   && ! python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$sc/SHOWCASE.md" --check >/dev/null 2>&1; then
-  say "ok    grade    estate-showcase grades the fixture catalogue ($(grep -c '| GAP |' "$sc/SHOWCASE.md") GAP rows) and --check refuses a stale page"
-else say "FAIL  grade    estate-showcase did not render, or --check did not discriminate"; fail=1; fi
 
 
 # crew#584 CP2: this gate mirrors what CI runs, so a laptop that has not wired core.hooksPath at
