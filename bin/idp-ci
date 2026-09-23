@@ -111,6 +111,21 @@ if [ "$FAST" = 1 ]; then
   (cd "$IDP" && "${RUFF[@]}" format --check --quiet .) \
     && say "ok    ruff-fmt whole repo" \
     || { say "FAIL  ruff-fmt  whole repo; fix: ruff format <files>"; fail=1; }
+  # 1d.4: python-strict (estate standard, one copy) on the range base...HEAD, the same rung
+  # fast-gate.yml runs in CI. Mirrors .github/workflows/fast-gate.yml lines 41-45 verbatim so a
+  # format-dirty or B/S-class Python file can never reach the remote CI round trip. Vendored copy
+  # of chidionyema/estate/guards/hooks/python-strict-default; the "one copy" rule (LAW 43) is
+  # honored by keeping this rung pointed at the vendored file, not by forking its checks.
+  # bin/idp-python-strict calls `ruff` directly; if it's only on PATH as `python3 -m ruff`,
+  # shim a binary on a tmpdir so shutil.which("ruff") inside the hook finds it.
+  if ! command -v ruff >/dev/null 2>&1 && "$MPY" -m ruff --version >/dev/null 2>&1; then
+    _ruff_shim=$(mktemp -d); printf '#!/usr/bin/env bash\nexec %s -m ruff "$@"\n' "$MPY" > "$_ruff_shim/ruff"
+    chmod +x "$_ruff_shim/ruff"; export PATH="$_ruff_shim:$PATH"; trap 'rm -rf "$_ruff_shim"' EXIT
+  fi
+  base_local=$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1)
+  PYTHON_STRICT_RANGE="${base_local}...HEAD" "$IDP/bin/idp-python-strict" \
+    && say "ok    py-strict  diff base..HEAD" \
+    || { say "FAIL  py-strict  diff base..HEAD; ruff check --select E9,F,B,S --fix; ruff format"; fail=1; }
   timing_summary
   # 1e. crew#679 CP5: the incident register is generated from tests/test_incident_*.py; a new
   # incident test without its committed row is refused here, so the chaos drills never drift.
@@ -417,6 +432,55 @@ if "$MPY" -c "import dagster" 2>/dev/null; then
   if out=$(PATH="$(dirname "$MPY"):$PATH" "$IDP/bin/migration-gate" "$IDP/bin/scheduler-migrate" 2>&1); then say "$out"
   else say "$out"; fail=1; fi
 else say "BLIND migration dagster not importable; gate not run"; fail=1; fi
+
+# 4z. mac-provision (per docs/reference/security-architecture.md §3 + §6).
+#     The Brewfile + LaunchDaemons + idp-mac-provision are the founder Mac install
+#     surface under SPIFFE primary. Linux cannot run `brew bundle`, but it
+#     CAN validate that the Brewfile parses and the plists are well-formed XML;
+#     the actual `brew bundle install` is the macos-14 GH Actions job.
+if [ -f "$IDP/infra/macos/Brewfile" ] && [ -d "$IDP/infra/macos/LaunchDaemons" ]; then
+  say "ok    mac-provision source tree present (infra/macos/)"
+  # Brewfile: every line that starts with `brew "NAME"` or `cask "NAME"` parses
+  # as Ruby in a strict subset. We use ruby --check (parses but does not run).
+  if command -v ruby >/dev/null 2>&1; then
+    if ruby -c "$IDP/infra/macos/Brewfile" >/dev/null 2>&1; then
+      say "ok    mac-provision Brewfile parses (ruby -c)"
+    else
+      say "FAIL  mac-provision Brewfile is not valid Ruby"; fail=1
+    fi
+  else
+    say "BLIND mac-provision Brewfile ruby parser not on this runner; CI rung on macos-14 covers parse + bundle install"
+  fi
+  # Plists: each must be well-formed XML. xmllint is universal; plutil is Mac-only.
+  bad_plist=0
+  for plist in "$IDP"/infra/macos/LaunchDaemons/*.plist; do
+    [ -f "$plist" ] || continue
+    if command -v xmllint >/dev/null 2>&1; then
+      xmllint --noout --nonet "$plist" 2>/dev/null \
+        || { say "FAIL  mac-provision plist malformed: $plist"; bad_plist=1; }
+    elif command -v plutil >/dev/null 2>&1; then
+      plutil -lint "$plist" >/dev/null 2>&1 \
+        || { say "FAIL  mac-provision plist malformed: $plist"; bad_plist=1; }
+    fi
+  done
+  if [ "$bad_plist" = 0 ]; then
+    [ -f "$IDP"/infra/macos/LaunchDaemons/com.idp.spire-agent.plist ] && \
+    [ -f "$IDP"/infra/macos/LaunchDaemons/com.idp.executor.plist ] && \
+    [ -f "$IDP"/infra/macos/LaunchDaemons/com.estate.jit-device-renew.plist ] \
+      && say "ok    mac-provision all three LaunchDaemons/*.plist present + XML well-formed" \
+      || { say "FAIL  mac-provision missing one of the three required LaunchDaemon plists"; fail=1; }
+  else
+    fail=1
+  fi
+  # Script must parse
+  if bash -n "$IDP/bin/idp-mac-provision" 2>/dev/null; then
+    say "ok    mac-provision bin/idp-mac-provision parses"
+  else
+    say "FAIL  mac-provision bin/idp-mac-provision has a syntax error"; fail=1
+  fi
+else
+  say "BLIND mac-provision infra/macos/ not present (expected; the macos-14 GH Actions job owns it)"
+fi
 
 # 5. Every generated entity validates against the published Backstage schema.
 python3 - "$tmp/catalog-info.yaml" "$tmp/docs" <<'PY'

@@ -1,0 +1,73 @@
+# infra/macos/spire-agent.conf.template
+#
+# This is the SPIRE agent configuration template that `bin/idp-mac-provision
+# install` renders into /etc/spire/agent.conf on every founder Mac. The
+# template uses ${VAR} substitution; the rendered file MUST be readable
+# only by the agent's user uid because the trust bundle URL + join token are
+# the only secrets in it.
+#
+# The rendered config is owned by `_idp_executor` only when the launchd
+# daemon form is used (root LaunchDaemon). On the founder's Mac the agent
+# runs under the founder's uid, so the rendered file is owned by the
+# founder and chmod 600'd by `idp-mac-provision install`.
+#
+# Why a template and not a checked-in agent.conf:
+#
+#   The join token must NOT be checked into the repo (it is per-machine
+#   and per-trust-domain-federation; rotating it would invalidate every
+#   enrolled agent simultaneously). The trust bundle URL is environment-
+#   specific (Estate Zone). The cert URI is per-trust-domain. Templating
+#   is the only sane way to ship a checked-in config that doesn't leak
+#   secrets or bind the wrong environment.
+
+agent {
+    trust_domain = "${SPIRE_TRUST_DOMAIN}"            # estate.internal
+    server_address = "${SPIRE_SERVER_ADDRESS}"        # tailnet host: spire-server.jit.svc.cluster.local
+    server_port = "${SPIRE_SERVER_PORT}"              # 8443 over tailnet
+    socket_path = "/tmp/spire-agent/public/api.sock"   # the Workload API socket (default per spire-agent config reference)
+    admin_socket_path = "/tmp/spire-agent/private/admin.sock"
+    data_dir = "${SPIRE_DATA_DIR}"                    # ~/.spire/agent.data on the founder Mac
+    log_level = "INFO"
+    log_format = "text"
+    trust_bundle_path = "${SPIRE_TRUST_BUNDLE_PATH}"  # ~/.spire/initial-bundle.crt, written by idp-mac-provision
+    # SVID cache settings sized for one founder laptop — the defaults are
+    # tuned for cluster nodes carrying thousands of workload identities.
+    x509_svid_cache_max_size = 16
+    jwt_svid_cache_max_size = 32
+    # Health endpoint so the gateway (or any external monitor) can probe
+    # the agent without going through the Workload API.
+    health_checks {
+        listener_enabled = true
+        bind_address = "127.0.0.1"
+        bind_port = "8080"
+        live_path = "/live"
+        ready_path = "/ready"
+    }
+}
+
+plugins {
+    # NodeAttestor: a Tailscale node-key attestor reads the node's tailscaled
+    # state file (/var/lib/tailscale/node-key or its macOS equivalent) and
+    # proves the node to the cluster SPIRE server without a human-supplied
+    # join token. The custom plugin lives in its own repo; the binary the
+    # Brewfile installs is named `spire-tailscale-nodeattestor` and lands
+    # in /opt/homebrew/bin.
+    NodeAttestor "tailscale" {
+        plugin_cmd = "/opt/homebrew/bin/spire-tailscale-nodeattestor"
+        plugin_data {
+            tailscaled_socket = "/var/run/tailscale/tailscaled.sock"
+        }
+    }
+    # WorkloadAttestor: unix selectors. The Workload API authenticates
+    # callers by OS-level socket peer credentials (UID, PID, GID); every
+    # SPIFFE-issued SVID carries the unix:uid and unix:gid selectors that
+    # match the calling process. There is no human in this loop.
+    WorkloadAttestor "unix" {
+        plugin_data {}
+    }
+    KeyManager "disk" {
+        plugin_data {
+            directory = "${SPIRE_DATA_DIR}"
+        }
+    }
+}
