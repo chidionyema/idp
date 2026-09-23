@@ -1,0 +1,3 @@
+#!/bin/bash
+# Launch the A2M REST server
+exec "$(dirname "$0")/../.memory/.venv/bin/python" "$(dirname "$0")/../.memory/a2m_server.py" "$@"

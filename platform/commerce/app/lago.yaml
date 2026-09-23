@@ -38,11 +38,6 @@ metadata:
   name: lago
   namespace: commerce
 spec:
-  # Bounded per HGC (docs/reference/policy/enterprise-operating-model.md, standard 6): Helm
-  # keeps one Secret per revision and this estate declared the field on no release, which is
-  # how the cluster reached its 2,000-secret ceiling and stalled 18 Flux objects. 3
-  # covers a rollback of a rollback; Flux's default of 5 is accumulation at this size.
-  maxHistory: 3
   interval: 10m
   # 20m, not the chart-typical 15m: the migrate hook (~100-150s measured 2026-09-14) plus the
   # 600s startupProbe window below (the widest single component's own budget) already sums to
@@ -200,10 +195,10 @@ spec:
         images:
           - name: getlago/api
             newName: ghcr.io/chidionyema/lago-api
-            newTag: main-11525-b63ca9fd4b6bcddf9156cb30e4ec3ddac003225f # {"$imagepolicy": "flux-system:lago-api:tag"}
+            newTag: main-11907-ca82fdedeb9fa6fbcaa0ebb6e6f5c8f0be352938 # {"$imagepolicy": "flux-system:lago-api:tag"}
           - name: getlago/front
             newName: ghcr.io/chidionyema/lago-front
-            newTag: main-11525-b63ca9fd4b6bcddf9156cb30e4ec3ddac003225f # {"$imagepolicy": "flux-system:lago-front:tag"}
+            newTag: main-11907-ca82fdedeb9fa6fbcaa0ebb6e6f5c8f0be352938 # {"$imagepolicy": "flux-system:lago-front:tag"}
           - name: getlago/lago-events-processor
             newName: docker.io/getlago/lago-events-processor
           - name: getlago/lago-gotenberg

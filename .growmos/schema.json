@@ -1,0 +1,46 @@
+{
+  "entity_types": [
+    "PERSON",
+    "ORGANIZATION",
+    "LOCATION",
+    "EVENT",
+    "ARTIFACT",
+    "COMPONENT",
+    "SERVICE",
+    "DECISION",
+    "CONCEPT",
+    "TOOL",
+    "DEPENDENCY",
+    "ISSUE",
+    "FEATURE",
+    "SPEC"
+  ],
+  "history": [
+    {
+      "note": "init with preset 'software'",
+      "ts": "2026-09-22T18:15:24Z",
+      "version": 1
+    },
+    {
+      "note": "added type SPEC via remember",
+      "ts": "2026-09-22T21:01:11Z",
+      "version": 2
+    }
+  ],
+  "predicate_hints": [
+    "depends on",
+    "calls",
+    "implements",
+    "owned by",
+    "decided",
+    "replaces",
+    "deployed to",
+    "configured by",
+    "tested by",
+    "documented in",
+    "part of",
+    "introduced in",
+    "fixes"
+  ],
+  "version": 2
+}

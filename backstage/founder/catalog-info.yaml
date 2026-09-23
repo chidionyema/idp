@@ -295,6 +295,8 @@ metadata:
     github.com/project-slug: chidionyema/idp
     backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/platform/mcp/"
     idp/updated-by: "Flux from platform/mcp/ on every main merge; the gateway key and GitHub token by the vault-seed workflow, entry mcp-gateway"
+    estate/flux-kustomization: "mcp"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=mcp"
   tags: [founder]
   links:
     - title: "GitHub MCP endpoint"
@@ -530,6 +532,8 @@ metadata:
     github.com/project-slug: "chidionyema/idp"
     backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/platform/hermes-agent/"
     idp/updated-by: "Flux from platform/hermes-agent on every main merge; image automation moves the tag"
+    estate/flux-kustomization: "hermes-agent"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=hermes-agent"
   # Telegram (founder-telegram) and Traces (founder-traces) are not repeated as links here: the
   # crew#401 catalogue gate refuses a duplicate link URL anywhere in this file, and both surfaces
   # already carry their own canonical link -- described in prose above instead (LAW 43: reuse the
@@ -907,6 +911,8 @@ metadata:
     estate/group: "Money"
     estate/tier: "daily"
     idp/updated-by: "Flux from platform/commerce"
+    estate/flux-kustomization: "commerce"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=commerce"
   tags: [founder]
   links:
     - title: "Manifest (suspended, no public address yet)"
@@ -928,6 +934,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Build and ship"
     idp/updated-by: "Flux from platform/temporal"
+    estate/flux-kustomization: "temporal"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=temporal"
   tags: [founder, screen, no-address, kubernetes]
   links:
     - title: "Manifest (no public address yet)"
@@ -949,6 +957,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "See what is running"
     idp/updated-by: "Flux from platform/monitoring; alerts arrive on Telegram"
+    estate/flux-kustomization: "monitoring"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=monitoring"
   tags: [founder, screen, no-address, kubernetes]
   links:
     - title: "Alert rules (no public address yet)"
@@ -973,6 +983,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "See what is running"
     idp/updated-by: "Flux from platform/edge"
+    estate/flux-kustomization: "edge"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=edge"
   tags: [founder, screen, no-address]
   links:
     - title: "Manifest (no public address yet)"
@@ -994,6 +1006,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Fix something"
     idp/updated-by: "Flux from platform/hindsight"
+    estate/flux-kustomization: "hindsight"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=hindsight"
   tags: [founder, screen, no-address]
   links:
     - title: "Manifest (no public address yet)"
@@ -1078,6 +1092,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "See what is running"
     idp/updated-by: "Flux from platform/monitoring"
+    estate/flux-kustomization: "monitoring"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=monitoring"
   tags: [founder, kubernetes, screen, no-address]
   links:
     - title: "Manifest (screen switched off)"
@@ -1099,6 +1115,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Under the hood"
     idp/updated-by: "Flux from platform/edge"
+    estate/flux-kustomization: "edge"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=edge"
   tags: [founder, kubernetes, screen, no-address]
   links:
     - title: "Manifest (dashboard switched off)"
@@ -1120,6 +1138,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Under the hood"
     idp/updated-by: "Flux from platform/kyverno"
+    estate/flux-kustomization: "kyverno"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=kyverno"
   tags: [founder, kubernetes, no-screen]
   links:
     - title: "Policies"
@@ -1141,6 +1161,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Fix something"
     idp/updated-by: "Flux from platform/healing"
+    estate/flux-kustomization: "healing"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=healing"
   tags: [founder, kubernetes, no-screen]
   links:
     - title: "Manifests"
@@ -1162,6 +1184,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Under the hood"
     idp/updated-by: "Flux from platform/keda"
+    estate/flux-kustomization: "keda"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=keda"
   tags: [founder, kubernetes, no-screen]
   links:
     - title: "Manifest"
@@ -1183,6 +1207,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Under the hood"
     idp/updated-by: "Flux from platform/secrets"
+    estate/flux-kustomization: "external-secrets"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=external-secrets"
   tags: [founder, kubernetes, no-screen]
   links:
     - title: "Manifest"
@@ -1204,6 +1230,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Under the hood"
     idp/updated-by: "Flux from platform/edge"
+    estate/flux-kustomization: "edge"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=edge"
   tags: [founder, kubernetes, no-screen]
   links:
     - title: "Manifest"
@@ -1225,6 +1253,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Under the hood"
     idp/updated-by: "Flux from platform/dns"
+    estate/flux-kustomization: "dns"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=dns"
   tags: [founder, kubernetes, no-screen]
   links:
     - title: "Manifest"
@@ -1246,6 +1276,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Under the hood"
     idp/updated-by: "Flux from platform/spire"
+    estate/flux-kustomization: "spire"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=spire"
   tags: [founder, kubernetes, no-screen]
   links:
     - title: "Manifest"
@@ -1267,6 +1299,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Under the hood"
     idp/updated-by: "Flux from platform/tailscale"
+    estate/flux-kustomization: "tailscale"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=tailscale"
   tags: [founder, kubernetes, screen, no-address]
   links:
     - title: "Operator manifest (no door of ours yet)"
@@ -1288,6 +1322,8 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Under the hood"
     idp/updated-by: "Flux from platform/observability-collector"
+    estate/flux-kustomization: "observability-collector"
+    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=observability-collector"
   tags: [founder, kubernetes, no-screen]
   links:
     - title: "Manifest"

@@ -20,7 +20,18 @@
 # R24: this Dockerfile is discovered by bin/dockerfiles (a root `<name>.Dockerfile`, named by
 # its stem) and built for both architectures by .github/workflows/build-multiarch.yml.
 FROM docker.io/library/python:3.13-alpine
-RUN pip install --no-cache-dir fastapi==0.115.6 uvicorn==0.34.0
+# nats-py is the third of these, and without it NATS_URL is decoration. `nats_adapter.py` raises
+# RuntimeError("nats-py not installed") on both publish and subscribe, and `voice_media.publish`
+# turns that into `{"published": false, "reason": "RuntimeError: nats-py not installed"}` -- a
+# refusal this image would have returned on every event, honestly and for ever. Pinned like its
+# neighbours; pure Python, no wheel to pick per architecture, so the multi-arch build is unaffected.
+#
+# NOT the speech models. `sovereign/voice` is deliberately absent from this image: the microphone
+# is on the founder's Mac, so faster-whisper and the TTS engines belong next to it, and this
+# container has 250m CPU / 256Mi with a read-only root filesystem -- it could not load them if it
+# tried. What crosses to the cluster is the MEANING of an utterance (a kind=steer row), never its
+# audio, which is the whole shape of the 2026-09-22 transport change.
+RUN pip install --no-cache-dir fastapi==0.115.6 uvicorn==0.34.0 nats-py==2.16.0
 COPY backstage/plugins/fleetview-backend/src /app/backstage/plugins/fleetview-backend/src
 COPY bin/estate-twin-runtime /app/bin/estate-twin-runtime
 USER 10001

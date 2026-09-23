@@ -10,7 +10,7 @@ spec:
   # each rate-limit window, around the clock). The DM is for conversation and founder actions
   # (~/.claude/scripts/estate/estate_alert.py, 2026-08-25); automated alerts go to an alerts
   # group. Suspended until flux-telegram.channel is that group; the GitHub path
-  # (platform/alerts-github) and the conscience page keep carrying the reds.
+  # (platform/alerts-github) keeps carrying the reds.
   suspend: true
   providerRef: { name: telegram }
   eventSeverity: error
@@ -23,9 +23,6 @@ spec:
     - kind: HelmRelease
       name: "*"
       namespace: cert-manager
-    - kind: HelmRelease
-      name: "*"
-      namespace: chaos-mesh
     - kind: HelmRelease
       name: "*"
       namespace: commerce

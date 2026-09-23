@@ -476,6 +476,10 @@ def front_door_entities():
         zones.update(ZONE_KEY.findall(open(f).read()))
     routes = []
     for f in sorted(_glob.glob(os.path.join(IDP_ROOT, "platform", "**", "*.yaml"), recursive=True)):
+        # Skip Helm template directories: their files start with `{{-` and PyYAML parses
+        # them as malformed flow mappings (the externalsecrets incident 2026-09-22).
+        if "/templates/" in os.path.relpath(f, IDP_ROOT):
+            continue
         for d in yaml.safe_load_all(open(f)):
             if d and d.get("kind") == "HTTPRoute":
                 rel = os.path.relpath(f, IDP_ROOT)
@@ -763,6 +767,9 @@ def cluster_entities():
     files = sorted(_glob.glob(os.path.join(IDP_ROOT, "clusters", "*", "*.yaml"))) + \
         sorted(_glob.glob(os.path.join(IDP_ROOT, "platform", "**", "*.yaml"), recursive=True))
     for f in files:
+        # Helm templates are not catalog entities; their `{{-` opener makes PyYAML error.
+        if "/templates/" in os.path.relpath(f, IDP_ROOT):
+            continue
         rel = os.path.relpath(f, IDP_ROOT)
         try:
             loaded = list(yaml.safe_load_all(open(f)))

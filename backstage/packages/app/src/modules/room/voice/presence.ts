@@ -3,7 +3,6 @@
 // what is not addressed to it. It uses a VAD (voice activity detector) and
 // an address gate to decide what reaches the cloud.
 
-import { ok, err, type Result } from '../core/result';
 import type { EventBus, RoomEvents } from '../core/events';
 import type { Utterance, UtteranceId, UserId } from '../core/types';
 import { asUtteranceId } from '../core/types';

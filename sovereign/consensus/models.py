@@ -216,7 +216,7 @@ async def collect(
         for task in pending:
             task.cancel()
         votes = [t.result() for t in tasks if t in done]
-        for task, model, index in zip(tasks, models, range(len(models))):
+        for task, model, index in zip(tasks, models, range(len(models)), strict=False):  # noqa: B905 — internal-only
             if task in pending:
                 votes.append(
                     {

@@ -32,7 +32,10 @@ export interface RoomRuntime {
   readonly cost: CostMeter;
 }
 
-export function createRoomRuntime(userId: UserId): RoomRuntime {
+// The user is part of the runtime's signature because a room belongs to someone -- every caller
+// already has the id and passing it keeps the many-rooms-one-process promise above honest. None of
+// the parts assembled below reads it yet, so it is underscored rather than dropped.
+export function createRoomRuntime(_userId: UserId): RoomRuntime {
   const events = new EventBus<RoomEvents>();
   const registry = new ModelRegistry();
   const health = new LiveHealthMap();

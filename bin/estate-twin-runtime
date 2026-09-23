@@ -1077,63 +1077,19 @@ def blast_radius(
 def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
     """Phase 2: the code domain. What is built and not merged.
 
-    This is the half a founder could not see at all: 1,523 unmerged branches and 722 files
-    that exist on no commit of main. `bin/catalog-dark-matter` sweeps the same git state for
-    the portal; the BDD suite asserts the two counts are EQUAL, because two surfaces telling
-    a founder two different numbers is the failure this system exists to end.
+    This is the half a founder could not see at all. One node per branch that ADDS a file
+    main does not have; a branch that only edits existing files is work in flight, not a
+    stranded capability, and is not listed.
 
-    One node per branch that ADDS a file main does not have. A branch that only edits
-    existing files is work in flight, not a stranded capability, and is not listed.
+    This scan is the ONLY one. Until 2026-09-22 `bin/catalog-dark-matter` ran a second
+    implementation over the same git state into a committed `dark-matter.json`, this
+    function preferred that file, and three separate graders -- the generator's --check, a
+    BDD scenario, and rule 1 of tests/test_estate_twin_rule.py -- existed to assert the two
+    agreed. They agreed by luck or went red; on this laptop the committed file said 648 and
+    the fresh scan said 77. Two implementations of one measurement is the second copy the
+    estate deletes, and the graders went with it. It takes 12.7s over 954 refs.
     """
     ensure_schema(con)
-    # Read the counts the catalogue generator already computed, when they exist. One git
-    # scan serves both surfaces, so the portal and the graph cannot report different numbers.
-    counts_file = ROOT / "backstage" / "platform" / "dark-matter.json"
-    if counts_file.exists():
-        try:
-            counts = json.loads(counts_file.read_text())
-            stranded = int(counts.get("stranded_branches") or 0)
-            con.execute(
-                "INSERT INTO nodes (id, domain, type, status, metadata, last_seen) "
-                "VALUES ('git:summary:stranded', 'code', 'summary', 'stranded', ?, ?) "
-                "ON CONFLICT(id) DO UPDATE SET metadata = excluded.metadata, "
-                "last_seen = excluded.last_seen",
-                (
-                    json.dumps(counts, sort_keys=True),
-                    datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-                ),
-            )
-            # Every per-branch row this file knows about is stranded: it adds a file main
-            # does not have. Rows left `active` here are stale state from an earlier run's
-            # rule, which is the exact failure this system exists to catch -- a graph
-            # reporting yesterday's logic as today's truth (measured 2026-09-12: 534 of 648
-            # branches carried `active` while adding 94,093 files main does not have).
-            con.execute(
-                "update nodes set status = 'stranded' "
-                "where domain = 'code' and type = 'branch' "
-                "and json_extract(metadata, '$.unmerged_files') > 0 "
-                "and status != 'stranded'"
-            )
-            con.execute(
-                "INSERT INTO freshness (domain, fresh_s, updated_at) VALUES ('code', ?, ?) "
-                "ON CONFLICT(domain) DO UPDATE SET fresh_s = excluded.fresh_s, "
-                "updated_at = excluded.updated_at",
-                (
-                    int(_env("ESTATE_TWIN_FRESH_S", "180")),
-                    datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-                ),
-            )
-            con.commit()
-            return {
-                "branches": stranded,
-                "files_absent": counts.get("files_absent_from_base"),
-                "source": "dark-matter.json",
-            }
-        except (OSError, ValueError, TypeError):
-            # The counts file is an optimisation: if it is unreadable or malformed, fall
-            # through to a real git scan rather than reporting nothing.
-            pass
-
     names = [
         b
         for b in _git(
@@ -1152,6 +1108,12 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
     # `staleness_days` and is the reader's business, not the status.
     seen: set[str] = set()
     stranded = 0
+    # DISTINCT files, not a sum of per-branch counts. One shared file on 400 branches read as
+    # 400 files and the estate once reported 94,093 files absent from main when the distinct
+    # number was 9,594 (measured 2026-09-13). Both numbers are kept, under names that say
+    # which is which.
+    absent: set[str] = set()
+    added_across_branches = 0
 
     for b in names:
         added = [
@@ -1196,7 +1158,39 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
         )
         seen.add(node_id)
         stranded += 1
+        absent.update(added)
+        added_across_branches += len(added)
 
+    # The summary a reader asks for by name. `mcp__estate__get_estate_state` and
+    # bin/estate-twin-runtime --state read this node; nothing reads a file any more.
+    con.execute(
+        "INSERT INTO nodes (id, domain, type, status, metadata, last_seen) "
+        "VALUES ('git:summary:stranded', 'code', 'summary', 'stranded', ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET metadata = excluded.metadata, "
+        "last_seen = excluded.last_seen",
+        (
+            json.dumps(
+                {
+                    "base": base,
+                    "stranded_branches": stranded,
+                    "files_absent_from_base": len(absent),
+                    "files_added_across_branches": added_across_branches,
+                    "branches_scanned": len(names),
+                },
+                sort_keys=True,
+            ),
+            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        ),
+    )
+    # Rows left `active` are stale state from an earlier run's rule -- a graph reporting
+    # yesterday's logic as today's truth (measured 2026-09-12: 534 of 648 branches carried
+    # `active` while adding 94,093 files main does not have).
+    con.execute(
+        "update nodes set status = 'stranded' "
+        "where domain = 'code' and type = 'branch' "
+        "and json_extract(metadata, '$.unmerged_files') > 0 "
+        "and status != 'stranded'"
+    )
     con.execute(
         "INSERT INTO freshness (domain, fresh_s, updated_at) VALUES ('code', ?, ?) "
         "ON CONFLICT(domain) DO UPDATE SET fresh_s = excluded.fresh_s, "
@@ -1207,7 +1201,12 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
         ),
     )
     con.commit()
-    return {"branches": stranded, "unmerged_total": len(names)}
+    return {
+        "branches": stranded,
+        "files_absent": len(absent),
+        "unmerged_total": len(names),
+        "source": "git",
+    }
 
 
 def _git(args: list[str]) -> str:

@@ -108,7 +108,7 @@ def _vault_get(key: str) -> str | None:
     if not loader.is_file():
         return None
     try:
-        run = subprocess.run(
+        run = subprocess.run(  # noqa: S603 — args are internal, not user input
             [str(loader), _vault_env_name(), key, key],
             capture_output=True,
             text=True,

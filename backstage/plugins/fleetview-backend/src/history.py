@@ -130,7 +130,9 @@ def history(
             payload = json.loads(r["payload_json"] or "{}")
         except ValueError:
             payload = {}
-        out.append({"seq": r["seq"], "type": r["type"], "ts": r["ts"], "payload": payload})
+        out.append(
+            {"seq": r["seq"], "type": r["type"], "ts": r["ts"], "payload": payload}
+        )
 
     return {
         "session_id": session_id,
@@ -182,7 +184,9 @@ def _rhythm(con: sqlite3.Connection) -> dict[str, dict[str, Any]]:
 def _session_meta(con: sqlite3.Connection) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     try:
-        rows = con.execute("SELECT id, provider, model, metadata_json FROM sessions").fetchall()
+        rows = con.execute(
+            "SELECT id, provider, model, metadata_json FROM sessions"
+        ).fetchall()
     except sqlite3.Error:
         return out
     for r in rows:
@@ -223,7 +227,11 @@ def query(directive: str, now: dt.datetime | None = None) -> dict[str, Any]:
     try:
         con = _connect()
     except sqlite3.Error as exc:
-        return {"kind": "blind", "answer": f"The catalog is unreadable: {exc}", "rows": []}
+        return {
+            "kind": "blind",
+            "answer": f"The catalog is unreadable: {exc}",
+            "rows": [],
+        }
 
     try:
         if head == "stuck":
@@ -270,7 +278,10 @@ def _q_stuck(con: sqlite3.Connection, now: dt.datetime) -> dict[str, Any]:
                 "quiet_minutes": round(quiet_s / 60),
                 "events": r["count"],
                 "since": r["last"],
-                **{k: meta.get(sid, {}).get(k) for k in ("provider", "model", "task", "spend_usd")},
+                **{
+                    k: meta.get(sid, {}).get(k)
+                    for k in ("provider", "model", "task", "spend_usd")
+                },
             }
         )
     rows.sort(key=lambda x: -x["quiet_minutes"])
@@ -333,11 +344,18 @@ def _q_cost(con: sqlite3.Connection, now: dt.datetime) -> dict[str, Any]:
     """What has cost the most, and the rate over the events we actually have."""
     meta = _session_meta(con)
     total = sum(
-        (m.get("spend_usd") or 0) for m in meta.values() if isinstance(m.get("spend_usd"), (int, float))
+        (m.get("spend_usd") or 0)
+        for m in meta.values()
+        if isinstance(m.get("spend_usd"), (int, float))
     )
     ranked = sorted(
         (
-            {"session_id": sid, "spend_usd": m.get("spend_usd"), "events": None, "task": m.get("task")}
+            {
+                "session_id": sid,
+                "spend_usd": m.get("spend_usd"),
+                "events": None,
+                "task": m.get("task"),
+            }
             for sid, m in meta.items()
             if isinstance(m.get("spend_usd"), (int, float))
         ),
@@ -356,12 +374,19 @@ def _q_cost(con: sqlite3.Connection, now: dt.datetime) -> dict[str, Any]:
 
     rate = (total / (span_s / 3600)) if span_s > 60 else 0.0
     if not ranked:
-        return {"kind": "cost", "answer": "No session has a recorded cost yet.", "rows": [], "total_usd": 0}
+        return {
+            "kind": "cost",
+            "answer": "No session has a recorded cost yet.",
+            "rows": [],
+            "total_usd": 0,
+        }
     worst = ranked[0]
     sentence = f"${total:.2f} across {len(ranked)} sessions."
     if rate > 0:
         sentence += f" ${rate:.2f} an hour over the last {span_s / 3600:.1f} hours."
-    sentence += f" The most is {worst['session_id']} at ${(worst['spend_usd'] or 0):.2f}."
+    sentence += (
+        f" The most is {worst['session_id']} at ${(worst['spend_usd'] or 0):.2f}."
+    )
     return {
         "kind": "cost",
         "answer": sentence,

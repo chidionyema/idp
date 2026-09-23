@@ -18,6 +18,12 @@ MECHANISMS:
   [6] DynamicContextPruning — prunes duplicate tool_result entries from history
   [7] CompactionManager    — bounds conversation history to MAX_HISTORY_MSGS
   [8] GistingSimulator     — gists old assistant turns beyond GIST_AFTER_MSGS
+  [9] ToolPairValidator    — drops orphaned tool messages (final safety net)
+
+INVARIANT (2026-10-13): A role="tool" message is valid only when the immediately
+preceding assistant message contains a tool_calls entry with a matching id. Every
+mechanism that touches tool messages MUST preserve this invariant. Mechanism [9]
+runs last as a safety net to catch any orphans before dispatch.
 
 Each mechanism modifies data["messages"] or data["tools"] in place and logs a metric.
 The combined return value is the optimised request body LiteLLM sends to the vendor.
@@ -133,6 +139,9 @@ class EstateEfficiencyGateway(CustomLogger):
         # [8] GistingSimulator
         self._gisted = 0
         self._gist_bytes_saved = 0
+        # [9] ToolPairValidator
+        self._orphaned_tool_messages_dropped = 0
+        self._orphaned_bytes_saved = 0
 
     # ---------------------------------------------------------------------- [1]
 
@@ -255,32 +264,59 @@ class EstateEfficiencyGateway(CustomLogger):
     # ---------------------------------------------------------------------- [6]
 
     def _dynamic_pruning(self, messages: list) -> list:
-        """Remove duplicate tool_result entries (same tool_call_id + content)."""
+        """Remove duplicate tool_result entries (same tool_call_id + content).
+
+        INVARIANT: We can only prune a tool message if we also remove the
+        corresponding tool_calls entry from its assistant message. Since that
+        would break the assistant's other tool calls, we DON'T prune duplicates
+        — we just replace their content with a short reference (same as SoLPi).
+
+        This preserves the pairing while still saving tokens.
+        """
         if len(messages) <= STALE_THRESHOLD:
             return messages
-        seen: dict = {}
+
+        # Track content hashes we've seen
+        seen_content: dict = {}
         result = []
+
         for msg in messages:
             if not isinstance(msg, dict):
                 result.append(msg)
                 continue
+
             if msg.get("role") == "tool":
-                key = (
-                    str(msg.get("tool_call_id", "")) + str(msg.get("content", ""))[:80]
-                )
-                if key in seen:
+                content = str(msg.get("content", ""))
+                content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+                key = content_hash
+
+                if key in seen_content and len(content) >= MIN_OBS_CHARS:
+                    # Duplicate content — replace with reference, DON'T drop the message
+                    original_bytes = _json_bytes(msg)
+                    msg["content"] = f"[duplicate of earlier tool result: #{key[:8]}]"
+                    new_bytes = _json_bytes(msg)
                     self._pruned_duplicates += 1
-                    self._pruned_bytes += _json_bytes(msg)
-                    log.debug("[6-DynamicPruning] Pruned duplicate tool_result")
-                    continue
-                seen[key] = True
+                    self._pruned_bytes += original_bytes - new_bytes
+                    log.debug(
+                        "[6-DynamicPruning] Replaced duplicate tool_result content (saved %d bytes)",
+                        original_bytes - new_bytes,
+                    )
+                # Always record the hash so we can detect future duplicates
+                if key not in seen_content:
+                    seen_content[key] = True
+
             result.append(msg)
         return result
 
     # ---------------------------------------------------------------------- [7]
 
     def _compaction_manager(self, messages: list) -> list:
-        """Bound conversation history: drop oldest non-system messages beyond MAX_HISTORY_MSGS."""
+        """Bound conversation history: drop oldest non-system messages beyond MAX_HISTORY_MSGS.
+
+        INVARIANT: Never drop an assistant message with tool_calls without also
+        dropping the corresponding tool messages, and vice versa. We find a safe
+        cut point that doesn't orphan any tool messages.
+        """
         if len(messages) <= MAX_HISTORY_MSGS:
             return messages
         system = [
@@ -292,15 +328,65 @@ class EstateEfficiencyGateway(CustomLogger):
             if not (isinstance(m, dict) and m.get("role") == "system")
         ]
         keep = MAX_HISTORY_MSGS - len(system)
-        if len(rest) > keep:
-            dropped = len(rest) - keep
-            self._compaction_bytes_saved += _json_bytes(rest[:dropped])
-            rest = rest[dropped:]
+        if len(rest) <= keep:
+            return system + rest
+
+        # Find a safe cut point that doesn't orphan tool messages.
+        # We can only cut BEFORE an assistant message (not in the middle of a
+        # tool_calls/tool sequence). Walk forward to find the first safe index.
+        target_drop = len(rest) - keep
+        cut_idx = 0
+        i = 0
+        while i < len(rest) and cut_idx < target_drop:
+            msg = rest[i]
+            if not isinstance(msg, dict):
+                cut_idx = i + 1
+                i += 1
+                continue
+
+            role = msg.get("role")
+            if role == "assistant":
+                tool_calls = msg.get("tool_calls") or []
+                if tool_calls:
+                    # This assistant has tool_calls — we must skip past all
+                    # corresponding tool messages to find the next safe cut point.
+                    expected_ids = {
+                        tc.get("id") for tc in tool_calls if isinstance(tc, dict)
+                    }
+                    i += 1
+                    while i < len(rest) and expected_ids:
+                        next_msg = rest[i]
+                        if (
+                            isinstance(next_msg, dict)
+                            and next_msg.get("role") == "tool"
+                        ):
+                            expected_ids.discard(next_msg.get("tool_call_id"))
+                        i += 1
+                    # Now i is past the tool sequence — safe to cut here
+                    if cut_idx + (i - cut_idx) <= target_drop:
+                        cut_idx = i
+                else:
+                    # Assistant without tool_calls — safe to cut after it
+                    cut_idx = i + 1
+                    i += 1
+            elif role == "user":
+                # User messages are always safe cut points
+                cut_idx = i + 1
+                i += 1
+            else:
+                # Tool message without preceding assistant — already orphaned,
+                # include in cut
+                cut_idx = i + 1
+                i += 1
+
+        if cut_idx > 0:
+            self._compaction_bytes_saved += _json_bytes(rest[:cut_idx])
+            rest = rest[cut_idx:]
             self._compactions += 1
-            self._dropped_messages += dropped
+            self._dropped_messages += cut_idx
             log.info(
-                "[7-CompactionManager] Dropped %d messages, kept %d (+ %d system)",
-                dropped,
+                "[7-CompactionManager] Dropped %d messages (safe cut), kept %d (+ %d system)",
+                cut_idx,
                 len(rest),
                 len(system),
             )
@@ -329,6 +415,51 @@ class EstateEfficiencyGateway(CustomLogger):
                 "[8-GistingSimulator] Gisted assistant message (%d chars)", len(content)
             )
         return messages
+
+    # ---------------------------------------------------------------------- [9]
+
+    def _tool_pair_validator(self, messages: list) -> list:
+        """Drop orphaned tool messages whose assistant tool_calls entry is missing.
+
+        INVARIANT: A role="tool" message is valid only when the most recent
+        assistant message contains a tool_calls entry with a matching id.
+
+        This runs LAST as a safety net. If it drops anything, that is a bug in
+        an earlier mechanism — log loudly so we can fix the root cause.
+        """
+        cleaned: list = []
+        open_calls: set = set()
+
+        for msg in messages:
+            if not isinstance(msg, dict):
+                cleaned.append(msg)
+                continue
+
+            role = msg.get("role")
+            if role == "assistant":
+                # Each assistant message resets the set of valid tool_call_ids
+                tool_calls = msg.get("tool_calls") or []
+                open_calls = {tc.get("id") for tc in tool_calls if isinstance(tc, dict)}
+                cleaned.append(msg)
+            elif role == "tool":
+                tool_call_id = msg.get("tool_call_id")
+                if tool_call_id not in open_calls:
+                    # Orphan — drop it, but log loudly so we fix the root cause
+                    self._orphaned_tool_messages_dropped += 1
+                    self._orphaned_bytes_saved += _json_bytes(msg)
+                    log.warning(
+                        "[9-ToolPairValidator] DROPPING orphaned tool message — "
+                        "tool_call_id=%s has no matching assistant tool_calls entry. "
+                        "This is a bug in an earlier mechanism.",
+                        tool_call_id,
+                    )
+                    continue
+                open_calls.discard(tool_call_id)
+                cleaned.append(msg)
+            else:
+                cleaned.append(msg)
+
+        return cleaned
 
     # ---------------------------------------------------------------------- hook
 
@@ -363,8 +494,11 @@ class EstateEfficiencyGateway(CustomLogger):
         msgs = self._compaction_manager(msgs)  # [7]
         msgs = self._gisting(msgs)  # [8]
         msgs = self._token_killer(msgs)  # [2]
+        msgs = self._tool_pair_validator(
+            msgs
+        )  # [9] MUST be last — safety net for orphans
         tools = self._mcp_adapter(tools)  # [3]
-        data = self._budget_orchestrator(data)  # [4] — always last (reads final state)
+        data = self._budget_orchestrator(data)  # [4] — always after messages are final
 
         data["messages"] = msgs
         if tools:
@@ -402,12 +536,14 @@ class EstateEfficiencyGateway(CustomLogger):
                 "m7_bytes_saved": self._compaction_bytes_saved,
                 "m8_gisted": self._gisted,
                 "m8_bytes_saved": self._gist_bytes_saved,
+                "m9_orphans_dropped": self._orphaned_tool_messages_dropped,
+                "m9_bytes_saved": self._orphaned_bytes_saved,
             }
         )
 
         log.info(
             "[EfficiencyGateway] [1]cache=%d/%d [2]tool_lines_saved=%d [3]schema_chars=%d "
-            "[4]cumulative_tokens=%d [5]obs_hits=%d [6]pruned=%d [7]compactions=%d [8]gisted=%d",
+            "[4]cumulative_tokens=%d [5]obs_hits=%d [6]pruned=%d [7]compactions=%d [8]gisted=%d [9]orphans=%d",
             self._cache_hits,
             self._cache_hits + self._cache_misses,
             self._tool_line_compressions,
@@ -417,6 +553,7 @@ class EstateEfficiencyGateway(CustomLogger):
             self._pruned_duplicates,
             self._compactions,
             self._gisted,
+            self._orphaned_tool_messages_dropped,
         )
         return data
 

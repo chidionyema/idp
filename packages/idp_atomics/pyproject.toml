@@ -1,0 +1,12 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "idp_atomics"
+version = "0.1.0"
+description = "Hardware-backed lock-free MPMC queue via crossbeam + pyo3"
+requires-python = ">=3.9"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]

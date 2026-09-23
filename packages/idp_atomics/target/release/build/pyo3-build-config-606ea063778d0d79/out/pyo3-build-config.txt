@@ -1,0 +1,10 @@
+implementation=CPython
+version=3.14
+shared=true
+abi3=true
+lib_name=python3.14t
+lib_dir=/Users/roseonyema/.local/share/uv/python/cpython-3.14.3+freethreaded-macos-x86_64-none/lib
+executable=/Users/roseonyema/Documents/code/idp/.venv-314t/bin/python
+pointer_width=64
+build_flags=Py_GIL_DISABLED
+suppress_build_script_link_lines=false

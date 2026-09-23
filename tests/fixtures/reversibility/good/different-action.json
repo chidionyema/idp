@@ -1,0 +1,14 @@
+{
+  "mutation_id": "mut-destructive-replica-0005",
+  "target": "statefulset/estate-db",
+  "forward": {
+    "action": "set_replicas",
+    "parameters": { "name": "estate-db", "replicas": 3 }
+  },
+  "inverse_spec": {
+    "type": "deterministic_inverse",
+    "action": "set_replicas",
+    "parameters": { "name": "estate-db", "replicas": 1 },
+    "verification_probe": "kubectl get statefulset estate-db -o jsonpath='{.status.readyReplicas}' == 1"
+  }
+}

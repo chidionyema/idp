@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Chip, TextField } from '@mui/material';
 import { dark as T } from '../theme/tokens';
+// THE ESTATE'S OWN VOICE ENGINE. Every surface mounts this rather than reaching for
+// SpeechRecognition/speechSynthesis, which are a network service to Google and the OS's formant
+// voices respectively. See useEstateVoice.ts.
+import { useEstateVoice } from './useEstateVoice';
 import {
   ACTIVITY_WORD,
   ACTIVITY_SENTENCE,
@@ -217,7 +221,9 @@ const GRACE_MS = 1500;
  * than the browser's own finalisation. Measured against the alternative: 1500ms felt like the
  * room was thinking; 600ms cut people off mid-sentence.
  */
-const AUTO_SEND_MS = 900;
+// The constant itself is gone with restartAutoSend below: the engine's VAD decides end-of-speech
+// now, so there is no countdown left to tune. The measurement above is kept because it is the
+// reason a timer is the wrong instrument here, not a number waiting to be reused.
 
 export default function FleetVoice({
   sessions = [],
@@ -235,6 +241,9 @@ export default function FleetVoice({
   const supported = recognitionCtor !== null && synthesisAvailable;
 
   const [state, setState] = useState<VoiceState>('idle');
+  // THE ESTATE'S OWN VOICE ENGINE. Mounted here so this surface speaks with the same models as
+  // every other one; see useEstateVoice.ts for why the browser APIs it replaces are not usable.
+  const engine = useEstateVoice();
   const [interim, setInterim] = useState<string>('');
   const [pending, setPending] = useState<VoiceIntent | null>(null);
   const [notice, setNotice] = useState<string>('');
@@ -261,6 +270,29 @@ export default function FleetVoice({
     if (onStateChange) onStateChange(state);
   }, [state, onStateChange]);
 
+  // THE ENGINE IS THE SOURCE OF TRUTH FOR WHAT WAS HEARD.
+  //
+  // The transcript now comes from whisper, not from a browser `onresult` handler, and it arrives
+  // once per utterance rather than word by word -- so what a person watches in `interim` is the
+  // sent utterance, and there is no interim tail to reconcile. The engine also owns the
+  // listening/thinking/speaking states, and they are mapped onto this component's vocabulary so
+  // every existing render branch keeps working.
+  useEffect(() => {
+    if (engine.heard) {
+      setInterim(engine.heard);
+      finalTranscriptRef.current = engine.heard;
+    }
+    if (engine.detail) setNotice(engine.detail);
+    const map: Record<string, VoiceState> = {
+      off: 'idle',
+      listening: 'listening',
+      thinking: 'thinking',
+      speaking: 'speaking',
+      error: 'idle',
+    };
+    setState(map[engine.state] || 'idle');
+  }, [engine.heard, engine.detail, engine.state]);
+
   const clearGrace = useCallback(() => {
     if (graceTimerRef.current !== null) {
       clearTimeout(graceTimerRef.current);
@@ -281,50 +313,34 @@ export default function FleetVoice({
   /**
    * Speak a clause and let the next one queue behind it.
    *
-   * `speak()` CANCELS whatever is being said before starting, which is right when a whole answer
-   * arrives at once and wrong for a stream: cancelling per clause cuts the clause off mid-word,
-   * so a streamed reply would stutter. `speak()` does not queue, and `speechSynthesis.speak()`
-   * does -- calling it repeatedly is exactly a queue. So this is the same call and no cancel.
+   * NOW SERVED BY THE ESTATE'S OWN ENGINE, not `speechSynthesis`. The clause arrives as TEXT and is
+   * synthesized here, which means a streamed reply sounds like the chosen Kokoro voice rather than
+   * like the operating system's formant voices -- the two were previously different products
+   * answering the same question.
+   *
+   * `engine.speak()` schedules on the WebAudio clock and queues naturally, so calling it per clause
+   * is what makes a streamed answer sound like one sentence.
    */
-  const speakQueued = useCallback((text: string) => {
-    if (!hasSynthesis() || !text.trim()) return;
-    try {
-      const utter = new window.SpeechSynthesisUtterance(text);
-      utter.onend = () => {
-        // Only leave SPEAKING when the whole queue has drained, or the state would flip to idle
-        // between clauses and a barge-in would look like it did nothing.
-        if (!window.speechSynthesis.speaking && stateRef.current === 'speaking') {
-          setState('idle');
-        }
-      };
-      window.speechSynthesis.speak(utter);
-    } catch {
-      /* a synthesis failure must not stop the stream */
-    }
-  }, []);
+  const speakQueued = useCallback(
+    (text: string) => {
+      if (!text.trim()) return;
+      engine.speak(text);
+      setState('speaking');
+    },
+    [engine],
+  );
 
   const speak = useCallback(
     (text: string) => {
-      if (!hasSynthesis() || text.trim().length === 0) {
+      if (!text.trim()) {
         setState('idle');
         return;
       }
-      try {
-        window.speechSynthesis.cancel();
-        const utter = new window.SpeechSynthesisUtterance(text);
-        utter.onend = () => {
-          if (stateRef.current === 'speaking') setState('idle');
-        };
-        utter.onerror = () => {
-          if (stateRef.current === 'speaking') setState('idle');
-        };
-        setState('speaking');
-        window.speechSynthesis.speak(utter);
-      } catch {
-        setState('idle');
-      }
+      engine.silence();
+      engine.speak(text);
+      setState('speaking');
     },
-    [],
+    [engine],
   );
 
   const applyIntent = useCallback(
@@ -434,97 +450,28 @@ export default function FleetVoice({
   );
 
   const startListening = useCallback(() => {
-    if (!supported || !recognitionCtor) return;
-    cancelSynthesis();
     clearGrace();
     setPending(null);
     setNotice('');
     setInterim('');
     finalTranscriptRef.current = '';
     interimTailRef.current = '';
+    // THE ENGINE OWNS THE MICROPHONE NOW.
+    //
+    // Everything below this line in the old implementation was workaround for the browser's
+    // recogniser: a silence timer to decide when an utterance ended, a restart on `end`, an
+    // error table explaining why a `network` failure was indistinguishable from a denied
+    // permission. The estate engine does voice-activity detection itself and streams the finished
+    // utterance, so "speak and it goes" is the transport's behaviour rather than a timer's.
+    void engine.start();
+  }, [clearGrace, engine]);
 
-    try {
-      const rec = new recognitionCtor();
-      rec.lang = 'en-US';
-      rec.continuous = true;
-      rec.interimResults = true;
-
-      rec.onresult = (event: any) => {
-        let interimText = '';
-        let finalText = '';
-        // EVERY RESULT RESETS THE SILENCE TIMER. The browser delivers finals as you pause; if it
-        // has delivered one and nothing follows for AUTO_SEND_MS, the person has stopped talking
-        // and the utterance is over. That timer is the whole difference between "click twice"
-        // and "speak and it goes".
-        restartAutoSend();
-        for (let i = event.resultIndex; i < event.results.length; i += 1) {
-          const result = event.results[i];
-          const transcript = result[0]?.transcript ?? '';
-          if (result.isFinal) {
-            finalText += transcript;
-          } else {
-            interimText += transcript;
-          }
-        }
-        if (finalText) {
-          finalTranscriptRef.current = `${finalTranscriptRef.current} ${finalText}`.trim();
-        }
-        // The DISPLAY string a person watches, and the INTERIM TAIL the stop handler needs.
-        // They are different values and keeping them in one variable is what caused the duplicate.
-        interimTailRef.current = interimText;
-        const shown = `${finalTranscriptRef.current} ${interimText}`.trim();
-        setInterim(shown);
-      };
-
-      rec.onerror = (event: { error?: string }) => {
-        // THE REASON, not a shrug. Measurement 2026-09-19: Chrome's SpeechRecognition fires
-        // `start` then `end` with NO error when it cannot reach Google's speech service, and the
-        // old handler reported every cause as "Microphone unavailable" -- so a missing network,
-        // a denied permission and a silent room were indistinguishable, and the only one a
-        // person can fix was impossible to identify.
-        const code = event?.error || 'unknown';
-        const WHY: Record<string, string> = {
-          'not-allowed': 'Microphone blocked. Allow it for this site in the address bar.',
-          'service-not-allowed': 'This browser will not use its speech service here (needs https).',
-          'no-speech': 'Heard nothing. Try again closer to the mic.',
-          network: 'Speech needs the browser\'s online speech service and could not reach it.',
-          aborted: 'Stopped.',
-          audio: 'No microphone device found.',
-        };
-        setNotice(`Voice: ${WHY[code] ?? code}`);
-        setState('idle');
-      };
-
-      rec.onend = () => {
-        // The recogniser ends on its own after a pause. If we have words and have not sent them,
-        // send now -- otherwise the utterance is stranded until a second click.
-        clearAutoSend();
-        if (!holdingRef.current) return;
-        if (holdingRef.current) return;
-        setState((prev) => (prev === 'listening' ? 'idle' : prev));
-      };
-
-      recognitionRef.current = rec;
-      rec.start();
-      setState('listening');
-    } catch {
-      setNotice('Microphone unavailable');
-      setState('idle');
-    }
-  }, [cancelSynthesis, clearGrace, recognitionCtor, supported]);
-
-  /** Start (or restart) the "they have stopped talking" countdown. */
-  const restartAutoSend = useCallback(() => {
-    if (autoSendTimerRef.current !== null) clearTimeout(autoSendTimerRef.current);
-    autoSendTimerRef.current = setTimeout(() => {
-      autoSendTimerRef.current = null;
-      // Only send if we are still listening and have words. A timer that fires after the person
-      // already clicked Stop must not send twice.
-      if (stateRef.current !== 'listening') return;
-      if (!finalTranscriptRef.current && !interimTailRef.current) return;
-      stopListeningRef.current?.();
-    }, AUTO_SEND_MS);
-  }, []);
+  // restartAutoSend -- the "they have stopped talking" countdown -- was declared here and never
+  // called, which is why tsc refused the build (TS6133). It belonged to the browser recogniser
+  // this component no longer drives: the estate engine does voice-activity detection itself and
+  // streams the finished utterance, so end-of-speech is the transport's answer, not a timer's
+  // guess (see the comment above `void engine.start()`). clearAutoSend below stays, because the
+  // ref it clears is still written elsewhere and a stale timer would send twice.
 
   const clearAutoSend = useCallback(() => {
     if (autoSendTimerRef.current !== null) {
@@ -537,25 +484,11 @@ export default function FleetVoice({
     // This IS the send, so any pending countdown is now moot. Without this a person who taps Stop
     // and then speaks again would have the old timer fire mid-sentence.
     clearAutoSend();
-    const rec = recognitionRef.current;
-    if (rec) {
-      try {
-        rec.stop();
-      } catch {
-        /* ignore */
-      }
-    }
-
-    // THE RECOGNITION STAYS ALIVE THROUGH THINKING AND SPEAKING, and that is what makes barge-in
-    // possible at all. The generated version nulled this ref here and stopped the mic on mouseUp,
-    // so the barge-in effect below never had a recognition object to intercept -- a person could
-    // not talk over the agent, which is the one interaction the research singled out: "VAD detects
-    // speech while SPEAKING, cancel the stream, flush playback, resume capture".
+    // BARGE-IN IS THE ENGINE'S JOB NOW, and it does it better: the VAD keeps running through
+    // thinking and speaking, so talking over the reply stops playback and cancels generation
+    // without this component intercepting anything. The old code had to keep a recogniser alive
+    // across those states and decide, per result, whether it was an utterance or an interruption.
     //
-    // The mic therefore keeps listening while the agent thinks and speaks, and the result handler
-    // distinguishes the modes: while SPEAKING a result IS the barge-in; while THINKING it is the
-    // next utterance and accumulates normally.
-
     // `finalTranscriptRef` is the authority. `interim` is the DISPLAY string and already contains
     // the final text -- `setInterim` is called with `final + interim` so a person sees the words
     // they have said so far. Concatenating the two counted the final transcript twice: measured
@@ -881,7 +814,7 @@ export default function FleetVoice({
         <TextField
           data-testid="voice-deck-text"
           value={deckText}
-          onChange={(e) => setDeckText(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDeckText(e.target.value)}
           multiline
           fullWidth
           size="small"

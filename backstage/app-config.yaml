@@ -229,6 +229,80 @@ proxy:
       changeOrigin: true
       allowedMethods: ['GET', 'POST']
 
+    # CP3 (docs/specs/backstage-as-a-product.md): the three vendor surfaces -- founder-traces,
+    # founder-telemetry and founder-dashboards -- carried nothing but a link to the vendor's own
+    # login. Each now has an in-portal door that returns ONE counted fact, drawn by our own
+    # component; the vendor's full UI is never framed (LAW 21, spec Non-goals: CSP and cookie
+    # scoping make an iframe a security regression). The three services run in the observability
+    # namespace (clusters/oke/platform.yaml, platform/observability/), so the browser cannot reach
+    # them and must not: the backend's proxy plugin is the door. Declared only here, not in
+    # app-config.container.yaml: the two files' `proxy.endpoints` maps merge (the container file
+    # relies on this same file for /estate-state, /holmes, /dagster and /fleetview, and the
+    # in-cluster sidecar comment at platform/backstage/overlays/oke/kustomization.yaml treats
+    # /fleetview here as the live declaration). No credential is typed here (LAW 46) -- the target
+    # is an in-cluster Service name, not a host.
+    #
+    # Langfuse: /api/public/health answers 200 with a small JSON body ({"status":"OK",...}); the
+    # page reads whether the trace store is up. langfuse-web is the Service the HTTPRoute already
+    # points at (platform/observability/httproute.yaml, port 3000).
+    '/langfuse':
+      target: 'http://langfuse-web.observability.svc.cluster.local:3000'
+      changeOrigin: true
+      allowedMethods: ['GET']
+
+    # SigNoz: the web service on port 8080 (platform/observability/httproute.yaml's signoz route).
+    # /api/v1/health is SigNoz's own liveness endpoint; the page reads one up/down fact, not the
+    # dashboard.
+    '/signoz':
+      target: 'http://signoz.observability.svc.cluster.local:8080'
+      changeOrigin: true
+      allowedMethods: ['GET']
+
+    # Superset: the boardroom dashboards, Service on port 8088
+    # (platform/observability/superset-httproute.yaml backendRef). /health is Superset's own
+    # endpoint; the page reads whether it answers, not the charts (the charts are level 3, drawn
+    # by our own component from one counted fact, never framed).
+    '/superset':
+      target: 'http://superset.observability.svc.cluster.local:8088'
+      changeOrigin: true
+      allowedMethods: ['GET']
+
+    # CP6 (docs/specs/backstage-as-a-product.md): the founder doors backed by a real running
+    # process -- Otto's golden door, the MCP gateway, and Otto itself -- carried only a GitHub
+    # link, so a click could not answer "is it up?". Each gets ONE read-only door to the
+    # process's own health endpoint, drawn by our own component (DoorHealthFact.tsx); no vendor
+    # UI is framed. All three run in-cluster, so the browser cannot reach them and must not: the
+    # backend's proxy plugin is the door. Declared only here, not in app-config.container.yaml,
+    # because the two files' `proxy.endpoints` maps merge (LAW 46: the target is an in-cluster
+    # Service name, never a typed host).
+    #
+    # Otto (golden), the new Otto's own pod ahead of production (platform/otto-golden/config.yaml:
+    # health_path /healthz, Service otto-golden on port 8080).
+    '/otto-door':
+      target: 'http://otto-golden.otto-golden.svc.cluster.local:8080'
+      changeOrigin: true
+      allowedMethods: ['GET']
+
+    # The MCP gateway, the one guarded door every agent session gets its tools through
+    # (platform/mcp/agentgateway-deploy.yaml: Service port http 3000). Path rewrite so the
+    # browser's /mcp-gateway/healthz reaches the gateway's own /healthz.
+    '/mcp-gateway':
+      target: 'http://mcp-agentgateway.mcp.svc.cluster.local:3000'
+      changeOrigin: true
+      allowedMethods: ['GET']
+      pathRewrite:
+        '^/api/proxy/mcp-gateway': ''
+
+    # Otto, the Architect agent (platform/hermes-agent/gateway.yaml: Service hermes-agent-gateway
+    # on port a2a 9900; /.well-known/agent-card.json is the a2a adapter's own health surface, the
+    # same path its readiness probe reads).
+    '/otto':
+      target: 'http://hermes-agent-gateway.hermes-agent.svc.cluster.local:9900'
+      changeOrigin: true
+      allowedMethods: ['GET']
+      pathRewrite:
+        '^/api/proxy/otto/agent-card': '/.well-known/agent-card.json'
+
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
 # Note: After experimenting with basic setup, use CI/CD to generate docs
 # and an external cloud storage when deploying TechDocs for production use-case.
@@ -299,6 +373,22 @@ catalog:
       schedule:
         frequency: { minutes: 30 }
         timeout: { minutes: 10 }
+    # Every .py module in the estate becomes a catalogue entity by running
+    # `bin/catalog-projection --json` on a schedule (crew#740 CP6). The
+    # projection is a pure deterministic function over Python source: the
+    # catalogue cannot drift from the code, and every PR proves the TOT/DET/
+    # IDP/REF/SCH invariants in bin/test-catalog-projection. No hand-written
+    # entity for projection work.
+    #
+    # `command` is a shell string; the projection must emit a JSON array to
+    # stdout. Defaults to the local checkout. A Backstage with no
+    # `catalog.projection` block starts without error; it simply carries no
+    # projection entities.
+    projection:
+      command: "python3 bin/catalog-projection --json ."
+      schedule:
+        frequency: { minutes: 1 }
+        timeout: { minutes: 2 }
   locations:
     # The org. bin/catalog-gen stamps `group:default/platform` on every entity it emits; until
     # this file existed that owner reference resolved to nothing. Hand-written, in git.

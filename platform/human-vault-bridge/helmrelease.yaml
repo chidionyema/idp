@@ -1,0 +1,51 @@
+# The human door, wired (decision 0017; founder 2026-09-07: "should auto sync once i configure on
+# portal"). Every ExternalSecret and PushSecret in this release is rendered IN THE CLUSTER from
+# platform/vendors/consoles.yaml, which is that chart's own root file -- add a vendor there and
+# its bridge appears, with nothing to re-run and nothing to commit.
+#
+# This replaced two committed files on 2026-09-22 (externalsecrets.yaml, pushsecrets.yaml, both
+# written by bin/idp-vendor-render). They were the registry rendered at commit time, and on
+# 36a0a0e09 they went stale the usual way: a vendor was added to the registry, the pre-commit
+# hook re-rendered all four of the renderer's outputs and staged the two its `git add` line
+# named, and the bridge shipped describing a vendor set one entry short of its own input. The
+# CI job that caught it was a second plane paid to notice what the first plane had already
+# done wrong. Both are gone. A derived file that is never committed cannot be stale, and this
+# is the same shape bin/mkdocs_hooks/incident_register.py found on 2026-08-30 after three red
+# mains in one day.
+#
+# reconcileStrategy: Revision is the whole guarantee. Flux appends the GitRepository's revision
+# to the chart version, so a commit that touches consoles.yaml produces a new chart version and
+# a new render. The registry cannot change without the cluster's objects changing with it,
+# which is a property of the wiring rather than a rule somebody enforces.
+#
+# maxHistory: 3, per the HGC bound (docs/reference/policy/enterprise-operating-model.md,
+# standard 6): Helm keeps one Secret per revision, and an unbounded release is how this cluster
+# reached its 2,000-secret ceiling and stalled 18 Flux objects.
+#
+# Nothing here holds a value. Each object says "the secret called <NAME> in Bitwarden Secrets
+# Manager belongs in namespace <ns> as key <field>", and External Secrets does the rest on a
+# one-minute interval.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: vendor-bridge
+  namespace: flux-system
+spec:
+  interval: 5m
+  maxHistory: 3
+  # The release lives in flux-system; its objects carry their own metadata.namespace and Helm
+  # honours that, which is what puts human-twilio in concierge and human-cerebras in dagster.
+  storageNamespace: flux-system
+  chart:
+    spec:
+      chart: ./platform/vendors
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      interval: 5m
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3 }

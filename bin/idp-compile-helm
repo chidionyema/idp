@@ -195,6 +195,7 @@ def compile_release(release: dict, repos: dict[str, str]) -> dict:
     cs = (spec.get("chart") or {}).get("spec") or {}
     chart, version = cs.get("chart"), cs.get("version")
     source = cs.get("sourceRef") or {}
+    source_kind = source.get("kind", "HelmRepository")
     repo_name = source.get("name")
     repo_url = repos.get(repo_name, "")
 
@@ -215,7 +216,17 @@ def compile_release(release: dict, repos: dict[str, str]) -> dict:
 
     values, sources = _values_for(release, ns)
     record["values_sources"] = sources
-    if not repo_url:
+
+    # GitRepository-sourced charts live in this tree (e.g. `./platform/vendors`). Render them
+    # from the local path directly; no HelmRepository is involved.
+    is_local_chart = source_kind == "GitRepository" and chart.startswith("./")
+    if is_local_chart:
+        local_path = ROOT / chart.lstrip("./")
+        if not local_path.is_dir():
+            record["error"] = f"local chart path {chart!r} does not exist"
+            return record
+        record["repository"] = "(local)"
+    elif not repo_url:
         record["error"] = f"no HelmRepository named {repo_name!r} in this tree"
         return record
 
@@ -226,15 +237,19 @@ def compile_release(release: dict, repos: dict[str, str]) -> dict:
         # `helm template` takes the chart as `<repo-name>/<chart>` once the repo is added, or an
         # absolute URL. Add the repo from this tree first, so the runner needs no prior `helm repo
         # add` -- 11 of 33 releases failed to render without this, and an unrendered chart is
-        # exactly the blind spot this gate exists to close.
-        url = _helm_repo_url(repos, repo_name, chart)
-        if url and repo_name:
-            _ensure_repo(repo_name, url)
-        chart_ref = (
-            f"{repo_name}/{chart}"
-            if (url and repo_name)
-            else f"{repo_url.rstrip('/')}/{chart}"
-        )
+        # exactly the blind spot this gate exists to close. For GitRepository-sourced local charts
+        # the path is used directly.
+        if is_local_chart:
+            chart_ref = str(local_path)
+        else:
+            url = _helm_repo_url(repos, repo_name, chart)
+            if url and repo_name:
+                _ensure_repo(repo_name, url)
+            chart_ref = (
+                f"{repo_name}/{chart}"
+                if (url and repo_name)
+                else f"{repo_url.rstrip('/')}/{chart}"
+            )
         args = ["helm", "template", name, chart_ref]
         if version:
             args += ["--version", str(version)]

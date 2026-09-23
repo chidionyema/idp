@@ -23,6 +23,7 @@ set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 PORT="${PORT:-18790}"
 CHECK=0
+SELFTEST=0
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -31,6 +32,7 @@ while [ $# -gt 0 ]; do
 		PORT="${2:?--port needs a value}"
 		shift 2
 		;;
+	--self-test) SELFTEST=1; shift ;;
 	*) echo "unknown argument: $1" >&2; exit 2 ;;
 	esac
 done
@@ -49,6 +51,23 @@ export ESTATE_DB
 #   NATS_URL=nats://127.0.0.1:4222 LANGFUSE_HOST=http://127.0.0.1:3000 bin/serve-fleetview
 : "${NATS_URL:=}"
 
+# THE ZONE IS READ, NOT DEMANDED. It is declared once in clusters/<cluster>/estate-config.yaml
+# (rule=no_zone_literal_added) -- the same file the old error message pointed the reader at while
+# refusing to start. A launcher standing in the checkout that holds a value must not make a person
+# export it by hand; the environment still wins when a cluster sidecar passes its own.
+#
+# This also moves the zone OUT of the voice branch below. It used to live inside the
+# `if LITELLM_API_KEY is set` arm with an `exit 1` behind it, so a line whose only job was to
+# print which router voice would use could stop the whole service. Reporting never exits.
+if [ -z "${ESTATE_ZONE:-}" ]; then
+	ESTATE_ZONE="$(
+		awk '/^[[:space:]]*ESTATE_ZONE:[[:space:]]*/ {
+			sub(/^[[:space:]]*ESTATE_ZONE:[[:space:]]*/, ""); gsub(/["\047]/, ""); print; exit
+		}' "$IDP"/clusters/*/estate-config.yaml 2>/dev/null || true
+	)"
+fi
+export ESTATE_ZONE="${ESTATE_ZONE:-}"
+
 # VOICE's model door (docs/specs/2026-09-18-voice-conversation-pipeline.md). The estate's router,
 # never a vendor key: LAW 34 says one router key per identity, and the laptop holds
 # LITELLM_API_KEY while the router holds everything else. Unset, /voice answers 503 naming the
@@ -59,7 +78,7 @@ export ESTATE_DB
 if [ -z "${LITELLM_API_KEY:-}" ]; then
 	echo "fleetview: voice   off (LITELLM_API_KEY unset) -- /voice will answer 503 with the reason"
 else
-	echo "fleetview: voice   on  (router ${LITELLM_HOST:-https://llm.mumchimp.com})"
+	echo "fleetview: voice   on  (router ${LITELLM_HOST:-https://llm.$ESTATE_ZONE})"
 fi
 
 # The plugin's module paths. Same two arguments the manual launch used.
@@ -75,6 +94,75 @@ SERVE="$IDP/backstage/plugins/fleetview-backend/src/serve.py"
 	echo "note    sweep (bin/estate-twin-runtime --once) or the recorder creates it"
 }
 
+# THE INTERPRETER IS RESOLVED, NOT ASSUMED, and this is the defect that made the documented local
+# start impossible on the machine this file was written for. The last line used to be
+# `exec python3 ...`. On this Mac `python3` is the system 3.9.6, which cannot evaluate the
+# `str | None` annotations FastAPI's own models use, so pydantic raised
+#
+#   TypeError: Unable to evaluate type annotation 'str | None'
+#
+# before a single route was mounted. The interpreter that can run the board -- the one holding
+# fastapi, uvicorn and pydantic -- was installed all along at
+# /Library/Frameworks/Python.framework/Versions/3.12/bin/python3, and nothing looked for it.
+#
+# So: ask each candidate whether it can import what the service needs, and take the first that
+# can. The question is the real one ("import fastapi"), not a version comparison, because a new
+# enough Python without the packages fails just as completely.
+# WHAT "CAN RUN THE BOARD" MEANS, asked as the real question rather than a version comparison.
+# Measured on this machine 2026-09-22: system Python 3.9.6 imports fastapi, uvicorn and pydantic
+# without complaint, and then cannot mount a single route -- `q: str | None = None` raises
+# "unsupported operand type(s) for |: 'type' and 'NoneType'". An import-only probe would have
+# picked it and failed at startup, which is exactly the failure this block exists to remove.
+# So the probe does what serve.py does: mount a route whose annotation uses the style the
+# plugin's routes use, and see whether the interpreter survives it.
+FV_PROBE='
+import fastapi
+import uvicorn  # noqa: F401
+app = fastapi.FastAPI()
+
+@app.get("/probe")
+def probe(q: str | None = None):
+    return {}
+'
+
+FV_PYTHON="${FV_PYTHON:-}"
+if [ -z "$FV_PYTHON" ]; then
+	for cand in \
+		python3.13 python3.12 python3.11 \
+		/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 \
+		/Library/Frameworks/Python.framework/Versions/3.12/bin/python3 \
+		/opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do
+		cbin="$(command -v "$cand" 2>/dev/null || true)"
+		[ -n "$cbin" ] || continue
+		if "$cbin" -c "$FV_PROBE" >/dev/null 2>&1; then
+			FV_PYTHON="$cbin"
+			break
+		fi
+	done
+fi
+if [ -z "$FV_PYTHON" ]; then
+	echo "FAIL    serve-fleetview  no interpreter on this machine can import fastapi, uvicorn and" >&2
+	echo "                         pydantic, which the board needs to mount a single route." >&2
+	echo "                         tried: python3.13 python3.12 python3.11, the python.org" >&2
+	echo "                         frameworks, homebrew, /usr/local, then python3." >&2
+	echo "                         fix   install them for one of those, or set FV_PYTHON to an" >&2
+	echo "                               interpreter that already has them." >&2
+	exit 1
+fi
+# AN OVERRIDE IS NOT AN EXEMPTION. FV_PYTHON skips the search above, so without this it also
+# skipped the probe -- a person naming an interpreter that cannot mount a route got the same
+# startup crash the search exists to prevent, with no line saying why. Everything that reaches
+# the exec has answered the same question.
+if ! "$FV_PYTHON" -c "$FV_PROBE" >/dev/null 2>&1; then
+	echo "FAIL    serve-fleetview  $FV_PYTHON cannot mount a FastAPI route." >&2
+	echo "                         $("$FV_PYTHON" -V 2>&1), and the failure it gives is:" >&2
+	"$FV_PYTHON" -c "$FV_PROBE" 2>&1 | tail -2 | sed 's/^/                         /' >&2
+	echo "                         fix   unset FV_PYTHON to let the launcher find one, or point" >&2
+	echo "                               it at an interpreter with fastapi on a Python >= 3.10." >&2
+	exit 1
+fi
+echo "fleetview: python    $FV_PYTHON ($("$FV_PYTHON" -V 2>&1))"
+
 echo "fleetview: catalog   $ESTATE_DB"
 if [ -n "$NATS_URL" ]; then
 	echo "fleetview: live bus  $NATS_URL"
@@ -88,4 +176,50 @@ if [ "$CHECK" = 1 ]; then
 	exit 0
 fi
 
-exec python3 "$SERVE" "$PORT" "$ROUTES"
+# --self-test (rule=script-compiles): exercise the real path with --check, then validate the
+# Python imports the plugin's serve.py would do at startup, all in bounded time and exit 0.
+# Nothing about this should start a listener.
+if [ "$SELFTEST" = 1 ]; then
+	export PYTHONPATH="$IDP${PYTHONPATH:+:$PYTHONPATH}"
+	# THIS TEST USED TO EXECUTE NOTHING. It called `spec_from_file_location` three times and
+	# declared "serve.py imports" -- but that function only builds a spec object; it never runs
+	# the module. The self-test therefore passed on a machine where the service could not start
+	# at all, which is the estate's own rule broken inside the file whose job is a reliable
+	# start: a gate that cannot fail is not a gate.
+	#
+	# It now loads each module the way serve.py does, on the interpreter resolved above, so a
+	# missing dependency or a syntax the interpreter cannot parse fails here and not at launch.
+	if ! "$FV_PYTHON" - "$IDP" <<'SELFTEST'; then
+import importlib.util
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+sys.path.insert(0, str(root))
+src = root / "backstage" / "plugins" / "fleetview-backend" / "src"
+for name in ("config_guard", "routes", "serve"):
+    spec = importlib.util.spec_from_file_location(f"fv_selftest_{name}", src / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+SELFTEST
+		echo "FAIL    serve-fleetview  --self-test: serve.py / routes.py / config_guard.py do not import" >&2
+		echo "                         re-run without 2>/dev/null to see which one and why" >&2
+		exit 1
+	fi
+	echo "ok      serve-fleetview  --self-test: all three modules executed, config validated, listener NOT started"
+	exit 0
+fi
+
+# THE REPO ROOT GOES ON THE IMPORT PATH, and its absence broke a whole feature silently.
+#
+# `routes.check_receipts` imports the `sovereign` package to read production traces; without this,
+# the import fails and the endpoint answers 503 "sovereign package not importable here" -- which
+# reads like a missing dependency rather than a missing path. The package is right there in
+# `$IDP/sovereign`; nothing was telling Python to look.
+#
+# PREPENDED, not appended: the checkout's own `sovereign` must win over any same-named package
+# installed elsewhere on this machine, or a receipt check would grade the wrong code.
+export PYTHONPATH="$IDP${PYTHONPATH:+:$PYTHONPATH}"
+
+exec "$FV_PYTHON" "$SERVE" "$PORT" "$ROUTES"

@@ -23,7 +23,7 @@ WHAT THE PROMPT FORBIDS, because a voice that overclaims is worse than a voice t
   * it must answer in speech, which means one or two sentences and no markdown.
 
 CONFIG (LAW 46):
-  LITELLM_HOST        default https://llm.mumchimp.com
+  LITELLM_HOST        default https://llm.${ESTATE_ZONE}
   LITELLM_API_KEY     required; no key means BLIND, never a silent fallback to a local model
   VOICE_ROUTER_MODEL  default deepseek
   VOICE_TIMEOUT_S     default 20
@@ -53,14 +53,36 @@ SYSTEM = (
     "Use ONLY the fleet summary below. Never invent a session, a state or a number. If the summary "
     "does not answer the question, say so plainly.\n"
     "\n"
-    "If there is a RECENT CONVERSATION, it is what you were just asked: use it to resolve \"it\", "
-    "\"that one\" and \"the stuck one\", and answer the follow-up without making the person repeat "
+    'If there is a RECENT CONVERSATION, it is what you were just asked: use it to resolve "it", '
+    '"that one" and "the stuck one", and answer the follow-up without making the person repeat '
     "which agent they meant."
 )
 
 
 def router_host() -> str:
-    return os.environ.get("LITELLM_HOST", "https://llm.mumchimp.com").rstrip("/")
+    """The estate's router. THE SAME MALFORMED DEFAULT WAS HERE AS IN sovereign/voice/engine.py.
+
+    `os.path.expandvars` substitutes a variable when set and leaves the text alone when not -- so
+    with `ESTATE_ZONE` unset this defaulted to the literal `https://llm.${ESTATE_ZONE}`, which
+    cannot resolve, and every voice answer from the board failed with
+
+        <urlopen error [Errno 8] nodename nor servname provided, or not known>
+
+    text-to-speech needs no router, so the microphone still heard, the transcript still appeared,
+    and only the ANSWER failed -- which reads as flakiness rather than as a bad hostname.
+
+    Verified unset in both services with `ps eww`. Fixed to a real default; `${ESTATE_ZONE}` is
+    still honoured when present so the cluster keeps working.
+    """
+    zone = os.environ.get("ESTATE_ZONE", "").strip()
+    if not zone:
+        raise RuntimeError(
+            "voice: ESTATE_ZONE is not set; the zone is declared once in "
+            "clusters/<cluster>/estate-config.yaml (rule=no_zone_literal_added). "
+            "Set ESTATE_ZONE in the environment or via bin/idp-workstation-bootstrap."
+        )
+    default = f"https://llm.{zone}"
+    return os.path.expandvars(os.environ.get("LITELLM_HOST", default)).rstrip("/")
 
 
 def router_key() -> str:
@@ -94,7 +116,9 @@ def fleet_summary(sessions: list[dict[str, Any]], limit: int = 24) -> str:
     stuck = counts.get("stuck", 0)
     lines = [
         f"{len(sessions)} agents total. "
-        + ", ".join(f"{n} {k}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+        + ", ".join(
+            f"{n} {k}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1])
+        )
         + ".",
     ]
     if stuck:
@@ -144,14 +168,18 @@ def history_block(history: list[dict[str, str]] | None, limit: int = 6) -> str:
     tail = [h for h in history if h.get("text")][-limit:]
     if not tail:
         return ""
-    lines = ["RECENT CONVERSATION (newest last; use it to resolve \"it\" and \"that one\")"]
+    lines = ['RECENT CONVERSATION (newest last; use it to resolve "it" and "that one")']
     for h in tail:
         who = "Person" if (h.get("who") or "person") == "person" else "You"
         lines.append(f"{who}: {str(h.get('text'))[:200]}")
     return "\n".join(lines) + "\n\n"
 
 
-def ask(question: str, sessions: list[dict[str, Any]], history: list[dict[str, str]] | None = None) -> tuple[dict[str, Any], int]:
+def ask(
+    question: str,
+    sessions: list[dict[str, Any]],
+    history: list[dict[str, str]] | None = None,
+) -> tuple[dict[str, Any], int]:
     """Ask the fleet. Returns (body, status).
 
     A missing key is 503 with the reason, not a fallback: silently answering from a local model
@@ -183,7 +211,7 @@ def ask(question: str, sessions: list[dict[str, Any]], history: list[dict[str, s
         "max_tokens": 220,
         "temperature": 0.2,
     }
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
         f"{router_host()}/v1/chat/completions",
         data=json.dumps(payload).encode(),
         headers={
@@ -193,7 +221,7 @@ def ask(question: str, sessions: list[dict[str, Any]], history: list[dict[str, s
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=_timeout()) as resp:
+        with urllib.request.urlopen(req, timeout=_timeout()) as resp:  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
             doc = json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         # The router reports a depleted vendor plan as an error envelope with a 4xx; pass its
@@ -201,10 +229,15 @@ def ask(question: str, sessions: list[dict[str, Any]], history: list[dict[str, s
         # place.
         detail = ""
         try:
-            detail = (json.loads(exc.read().decode()).get("error") or {}).get("message", "")
+            detail = (json.loads(exc.read().decode()).get("error") or {}).get(
+                "message", ""
+            )
         except Exception:  # noqa: BLE001
             detail = ""
-        return {"error": f"the router refused the call ({exc.code})", "detail": detail[:300]}, 502
+        return {
+            "error": f"the router refused the call ({exc.code})",
+            "detail": detail[:300],
+        }, 502
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         return {"error": f"cannot reach the router: {exc}"}, 503
     except (ValueError, UnicodeDecodeError) as exc:
@@ -215,7 +248,9 @@ def ask(question: str, sessions: list[dict[str, Any]], history: list[dict[str, s
         err = doc.get("error")
         return {
             "error": "the router returned no answer",
-            "detail": (err.get("message") if isinstance(err, dict) else str(err or ""))[:300],
+            "detail": (err.get("message") if isinstance(err, dict) else str(err or ""))[
+                :300
+            ],
         }, 502
     answer = ((choices[0].get("message") or {}).get("content") or "").strip()
     if not answer:
@@ -248,7 +283,11 @@ def split_clauses(buffer: str) -> tuple[list[str], str]:
     return parts, buffer[start:]
 
 
-def stream_ask(question: str, sessions: list[dict[str, Any]], history: list[dict[str, str]] | None = None):
+def stream_ask(
+    question: str,
+    sessions: list[dict[str, Any]],
+    history: list[dict[str, str]] | None = None,
+):
     """Yield server-sent events: one `delta` per clause, then `done`.
 
     Same prompt, same fleet summary, same read-only rule as `ask` -- the only difference is that
@@ -259,7 +298,10 @@ def stream_ask(question: str, sessions: list[dict[str, Any]], history: list[dict
         yield _sse("error", {"error": "question is required"})
         return
     if not router_key():
-        yield _sse("error", {"error": "no LITELLM_API_KEY on this deployment, so voice has no model"})
+        yield _sse(
+            "error",
+            {"error": "no LITELLM_API_KEY on this deployment, so voice has no model"},
+        )
         return
 
     payload = {
@@ -282,7 +324,7 @@ def stream_ask(question: str, sessions: list[dict[str, Any]], history: list[dict
         # line would be decoration.
         "stream_options": {"include_usage": True},
     }
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
         f"{router_host()}/v1/chat/completions",
         data=json.dumps(payload).encode(),
         headers={
@@ -292,14 +334,22 @@ def stream_ask(question: str, sessions: list[dict[str, Any]], history: list[dict
         method="POST",
     )
     try:
-        resp = urllib.request.urlopen(req, timeout=_timeout())
+        resp = urllib.request.urlopen(req, timeout=_timeout())  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
     except urllib.error.HTTPError as exc:
         detail = ""
         try:
-            detail = (json.loads(exc.read().decode()).get("error") or {}).get("message", "")
+            detail = (json.loads(exc.read().decode()).get("error") or {}).get(
+                "message", ""
+            )
         except Exception:  # noqa: BLE001
             detail = ""
-        yield _sse("error", {"error": f"the router refused the call ({exc.code})", "detail": detail[:300]})
+        yield _sse(
+            "error",
+            {
+                "error": f"the router refused the call ({exc.code})",
+                "detail": detail[:300],
+            },
+        )
         return
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         yield _sse("error", {"error": f"cannot reach the router: {exc}"})
@@ -353,20 +403,26 @@ def stream_ask(question: str, sessions: list[dict[str, Any]], history: list[dict
             # The region of the ROUTER, which is the only residency fact this deployment can
             # state. Naming a provider region it cannot verify would be a fabricated number in the
             # one line whose whole job is honesty.
-            region = _last_choice.get("region") or (router_host().split("//")[-1].split("/")[0])
+            region = (
+                _last_choice.get("region")
+                or (router_host().split("//")[-1].split("/")[0])
+            )
             usd = _last_choice.get("usd") or 0.0
         except Exception:  # noqa: BLE001
             chosen, region, usd = router_model(), "unknown", 0.0
-        yield _sse("done", {
-            "model": chosen,
-            "region": region,
-            "usd": round(usd, 6),
-            "why": _why(chosen, region, usd, len(sessions)),
-        })
+        yield _sse(
+            "done",
+            {
+                "model": chosen,
+                "region": region,
+                "usd": round(usd, 6),
+                "why": _why(chosen, region, usd, len(sessions)),
+            },
+        )
     finally:
         try:
             resp.close()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001,S110
             pass
 
 

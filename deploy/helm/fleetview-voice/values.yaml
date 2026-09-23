@@ -1,0 +1,324 @@
+# FleetView Voice Helm Chart Values
+# Enterprise 10-minute deployment configuration
+
+# ============================================================================
+# Global Settings
+# ============================================================================
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+nameOverride: ""
+fullnameOverride: ""
+
+# ============================================================================
+# Image Configuration
+# ============================================================================
+image:
+  repository: ghcr.io/chidionyema/fleetview-voice
+  pullPolicy: IfNotPresent
+  tag: ""  # Defaults to appVersion from Chart.yaml
+
+imagePullSecrets: []
+
+# ============================================================================
+# Authentication & SSO
+# ============================================================================
+auth:
+  # Provider: oidc, saml, github, none
+  provider: "oidc"
+  # OIDC settings
+  issuerUrl: ""
+  clientId: ""
+  # Reference to existing secret containing clientSecret
+  clientSecretRef:
+    name: ""
+    key: "client-secret"
+  # Inline secret (not recommended for production; use clientSecretRef instead)
+  clientSecret: ""
+  # SAML settings (when provider=saml)
+  saml:
+    metadataUrl: ""
+    entityId: ""
+  # GitHub settings (when provider=github)
+  github:
+    org: ""
+    team: ""
+
+# ============================================================================
+# Event Bus Configuration
+# ============================================================================
+eventBus:
+  # Type: nats, kafka
+  type: "nats"
+
+  # NATS settings (when type=nats)
+  nats:
+    # URL to existing NATS cluster, or leave empty to use bundled NATS
+    url: ""
+    # Subject prefix for voice events
+    subjectPrefix: "fleetview.voice"
+    # JetStream stream name
+    streamName: "FLEETVIEW_VOICE"
+    # JetStream max age (matches the 15-minute privacy TTL)
+    maxAge: "15m"
+
+  # Kafka settings (when type=kafka)
+  kafka:
+    brokers: []
+    topic: "fleetview.voice.events"
+    # SASL authentication
+    sasl:
+      enabled: false
+      mechanism: "SCRAM-SHA-256"
+      username: ""
+      passwordSecretRef:
+        name: ""
+        key: "password"
+    # TLS
+    tls:
+      enabled: false
+      caSecretRef:
+        name: ""
+        key: "ca.crt"
+
+# ============================================================================
+# Privacy Settings
+# ============================================================================
+privacy:
+  # Default TTL for voice data (ISO 8601 duration or minutes)
+  defaultTtlMinutes: 15
+  # Enable durable retention (audit/compliance mode - requires explicit consent)
+  durableRetentionEnabled: false
+  # PII redaction settings
+  redaction:
+    enabled: true
+    patterns: []  # Additional regex patterns to redact
+
+# ============================================================================
+# API Server (FastAPI)
+# ============================================================================
+api:
+  replicas: 2
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+  # Horizontal Pod Autoscaler
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  # Pod disruption budget
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  # Max concurrent stream connections per pod
+  maxStreamClients: 32
+
+  # Additional environment variables
+  extraEnv: []
+
+  # Node selector
+  nodeSelector: {}
+
+  # Tolerations
+  tolerations: []
+
+  # Affinity rules
+  affinity: {}
+
+  # Pod security context
+  podSecurityContext:
+    fsGroup: 1000
+    runAsNonRoot: true
+    runAsUser: 1000
+
+  # Container security context
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+
+# ============================================================================
+# Outbox Worker
+# ============================================================================
+worker:
+  # Single worker is sufficient due to SQLite WAL locking
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  # Poll interval for the outbox drain
+  pollIntervalSeconds: 0.5
+
+  # Storage for the SQLite outbox database
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+    # Existing PVC to use
+    existingClaim: ""
+
+  # Additional environment variables
+  extraEnv: []
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  podSecurityContext:
+    fsGroup: 1000
+    runAsNonRoot: true
+    runAsUser: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    # Worker needs write access to outbox.db
+    readOnlyRootFilesystem: false
+
+# ============================================================================
+# Service
+# ============================================================================
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  # Annotations (e.g., for service mesh)
+  annotations: {}
+
+# ============================================================================
+# Ingress
+# ============================================================================
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: fleetview-voice.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: fleetview-voice-tls
+  #    hosts:
+  #      - fleetview-voice.local
+
+# ============================================================================
+# Service Account
+# ============================================================================
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+  automountServiceAccountToken: false
+
+# ============================================================================
+# Health Checks
+# ============================================================================
+healthChecks:
+  liveness:
+    path: /health
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    path: /ready
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# ============================================================================
+# Bundled NATS (subchart)
+# ============================================================================
+nats:
+  enabled: true
+  # NATS subchart values
+  nats:
+    jetstream:
+      enabled: true
+      memStorage:
+        enabled: true
+        size: 1Gi
+      fileStorage:
+        enabled: true
+        size: 5Gi
+        storageClassName: ""
+  cluster:
+    enabled: false
+    replicas: 3
+
+# ============================================================================
+# Bundled Redis (subchart)
+# ============================================================================
+redis:
+  enabled: false
+  # Redis subchart values
+  architecture: standalone
+  auth:
+    enabled: true
+    password: ""
+    existingSecret: ""
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+
+# ============================================================================
+# Observability
+# ============================================================================
+observability:
+  # OpenTelemetry
+  otel:
+    enabled: false
+    endpoint: ""
+    serviceName: "fleetview-voice"
+
+  # Prometheus metrics
+  metrics:
+    enabled: true
+    port: 9090
+    path: /metrics
+    serviceMonitor:
+      enabled: false
+      interval: 30s
+      namespace: ""
+      labels: {}
+
+# ============================================================================
+# Pod Annotations
+# ============================================================================
+podAnnotations: {}
+
+# ============================================================================
+# Pod Labels
+# ============================================================================
+podLabels: {}

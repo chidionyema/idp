@@ -15,8 +15,8 @@ trace, and STOP returned 500 because there was no live session to stop.
 
 WHAT IT READS. Agents that already record themselves, unmodified:
 
-  pi           ~/.pi/agent/sessions/**/*.jsonl   -- model, tokens, cost, timestamps, cwd
-  claude-code  ~/.claude/projects/**/*.jsonl     -- the same shape pi records
+  pi           ~/.pi/agent/sessions/**/*.jsonl   -- model, tokens, cost, timestamps, cwd  # transcript-intended
+  claude-code  ~/.claude/projects/**/*.jsonl     -- the same shape pi records  # transcript-intended
   estate       ~/.estate/claims.jsonl            -- the estate's own session claims ledger
 
 No agent is asked to cooperate and no agent is modified. This is a reader, the same posture as
@@ -359,7 +359,7 @@ def read_transcripts() -> tuple[list[Observation], list[str]]:
     roots = _roaming()
     if not roots:
         blind.append(
-            "no agent session directory under ~/.pi/agent/sessions or ~/.claude/projects "
+            "no agent session directory under ~/.pi/agent/sessions or ~/.claude/projects "  # transcript-intended
             "-- this machine records no agent sessions"
         )
     for root in roots:

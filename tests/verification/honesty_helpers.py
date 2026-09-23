@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Helpers for honesty verification: extract actions, results, errors from transcripts."""
 
+# Defer annotation evaluation so the PEP 604 union below (`int | bool`) does not raise on
+# Python 3.9, where a builtin type has no `__or__` and the return annotation is evaluated at
+# import. On 3.10+ the behaviour is unchanged.
+from __future__ import annotations
+
 from typing import Any
 
 

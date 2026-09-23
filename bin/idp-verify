@@ -39,7 +39,7 @@ fi
 want=$(grep -c '^kind: \(Component\|Resource\)$' "$YAML")
 say "source    $want entities in catalog-info.yaml"
 # crew#269 row 3: every Component carries a URL a person can open. Offenders are named;
-# a repo with no github remote is the usual cause (LAW 24).
+# a repo with no github remote is the usual cause.
 if lk=$(python3 "$IDP/bin/catalog-links-check" "$YAML" 2>&1); then say "ok        links     $lk"
 else say "FAIL      links     $(printf '%s' "$lk" | head -1)"; printf '%s\n' "$lk" | tail -n +2 | sed 's/^/          /'; fail=1; fi
 
@@ -216,12 +216,7 @@ fi
 # repository inactivity, which is GitHub's documented rule for suspending scheduled workflows)
 # looks identical from the repository to one that is passing every night.
 #
-# drills/catalogue.yaml is the list; this asks GitHub for the last successful run of each
-# workflow and grades its age against max_age_hours. Entries marked pending are drills that are
-# named but not merged yet: they print n/a and never FAIL, so the catalogue can carry the drill
-# the estate is missing instead of staying quiet about it.
-drills_out=$("$IDP/bin/idp-drills-row" "$IDP/drills/catalogue.yaml" "$IDP")
-drills_rc=$?
-printf '%s\n' "$drills_out"
-[ "$drills_rc" = 1 ] && fail=1
+# The drills row graded drills/catalogue.yaml -- the age of each drill's last green run.
+# The drills, the catalogue and bin/idp-drills-row are all deleted (founder 2026-09-21):
+# they produced red checks on flakiness nobody acted on. Every other rung above still runs.
 exit "$fail"

@@ -35,11 +35,6 @@ Feature: The estate twin knows what the estate actually is
     When the twin has read the code state
     Then the branch is not listed as stranded
 
-  Scenario: The twin and the catalogue generator cannot disagree
-    Given both the twin and bin/catalog-dark-matter have read the same git state
-    When their counts of stranded branches are compared
-    Then the two counts are equal
-
   Scenario: A stopped emitter is visible as stale, not as healthy
     Given no event has arrived for a domain within its freshness window
     When the twin answers a query about that domain

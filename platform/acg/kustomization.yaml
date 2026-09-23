@@ -1,6 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - acg.yaml
-  - ingress.yaml
+  - namespace.yaml
+  - ns-fence.yaml
+  - network.yaml
+  - workload.yaml
   - observability.yaml

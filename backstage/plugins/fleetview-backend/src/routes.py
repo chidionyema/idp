@@ -68,6 +68,12 @@ from pathlib import Path
 _SESSIONS_MODULE = Path(__file__).resolve().parent / "sessions.py"
 _NOTES_MODULE = Path(__file__).resolve().parent / "notes.py"
 _SIGNALS_MODULE = Path(__file__).resolve().parent / "signals.py"
+# The Observer lives in platform/intent/, NOT beside this file: it is a producer of contracts that
+# the backend merely reads, and the voice service is its peer, not its parent. Resolved from the
+# module's own location so it does not depend on the process's working directory.
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_OBSERVER_MODULE = _REPO_ROOT / "platform" / "intent" / "observer.py"
+_VOICE_MEDIA_MODULE = Path(__file__).resolve().parent / "voice_media.py"
 _BLAST_MODULE = Path(__file__).resolve().parent / "blast.py"
 _GRAPH_MODULE = Path(__file__).resolve().parent / "graph.py"
 _EVALS_MODULE = Path(__file__).resolve().parent / "evals.py"
@@ -117,7 +123,9 @@ def newest_event_seq() -> int:
     try:
         con = _sqlite3.connect(path)
         try:
-            row = con.execute("SELECT COALESCE(MAX(id), 0) FROM session_events").fetchone()
+            row = con.execute(
+                "SELECT COALESCE(MAX(id), 0) FROM session_events"
+            ).fetchone()
             return int(row[0]) if row else 0
         finally:
             con.close()
@@ -126,12 +134,22 @@ def newest_event_seq() -> int:
 
 
 def _history():
-    return _load(Path(__file__).resolve().parent / "history.py", "fleetview_history_impl")
+    return _load(
+        Path(__file__).resolve().parent / "history.py", "fleetview_history_impl"
+    )
 
 
-def history_envelope(session_id: str, since: str = "", until: str = "") -> tuple[dict, int]:
-    """One session's events over time. The raw material a trail is drawn from."""
-    body = _history().history(session_id, since or None, until or None)
+def history_envelope(
+    session_id: str, since: str = "", until: str = "", limit: int = 500
+) -> tuple[dict, int]:
+    """One session's events over time. The raw material a trail is drawn from.
+
+    `limit` IS PLUMBED THROUGH, and was not. The board asks for `?limit=40` on a 15-second poll;
+    the route did not accept the parameter, so `history()`'s default of **500** applied and each
+    open page transferred roughly nine times the rows it renders. `history.py` already clamped the
+    value to 1..5000; only the two call sites in between dropped it.
+    """
+    body = _history().history(session_id, since or None, until or None, limit=limit)
     if body.get("error") and body.get("count", 0) == 0:
         return body, 400 if "required" in str(body.get("error")) else 503
     return body, 200
@@ -161,8 +179,52 @@ def stream_voice(body: dict, sessions: list):
     return _voice().stream_ask(body.get("question", ""), sessions, body.get("history"))
 
 
+def voice_media():
+    """`voice_media.py` -- hearing, speaking, and the bus rows a voice turn puts on it.
+
+    CACHED IN `sys.modules`, unlike its `_load`-by-path neighbours, for the same reason
+    `_executor_link` is: this module holds process-wide state. It imports `sovereign.voice.engine`,
+    whose loaded ASR model and currently-selected voice live in module globals -- a second copy
+    would mean a 90-second model load per request and a voice chosen on one route that another
+    route does not speak with.
+
+    Returned as a module rather than wrapped in envelope functions like the routes above, because
+    every entry point on it is `async` (transcription and synthesis run in a thread pool, and the
+    bus publish awaits NATS). A sync wrapper here could only re-enter the event loop.
+    """
+    import sys
+
+    name = "fleetview_voice_media_impl"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(name, _VOICE_MEDIA_MODULE)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load module at {_VOICE_MEDIA_MODULE}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def voice_static_dir() -> Path:
+    """Where the VAD and onnxruntime bundles live: one copy, in the package that owns them."""
+    return _REPO_ROOT / "sovereign" / "voice" / "static"
+
+
 def _signals():
     return _load(_SIGNALS_MODULE, "fleetview_signals_impl")
+
+
+def _observer():
+    """The Observer, loaded by path exactly as every other sibling module here is.
+
+    WHY BY PATH. `routes.py` is executed by `serve.py` through `importlib.util.spec_from_file_location`
+    (see `_load_routes`), so it is NOT a package and a relative import would fail at runtime. Every
+    neighbour -- `_signals`, `_graph`, `_blast` -- is reached the same way, and the fixed
+    `sys.modules` name is what makes two callers share one module instance instead of two.
+    """
+    return _load(_OBSERVER_MODULE, "idp_intent_observer")
 
 
 def _blast():
@@ -245,6 +307,16 @@ STOP_PATH = "/stop"
 APPROVE_PATH = "/approve"
 DENY_PATH = "/deny"
 SIGNALS_PATH = "/signals"
+# THE CONTRACTS CHANNEL. The Reactor's `requestAnimationFrame` loop polls this to render a node per
+# spoken request. Its own path rather than a filter on /signals, because a contract has a lifecycle
+# (PENDING -> RUNNING -> COMPLETED) and a signal is a moment; merging them would make the board
+# re-derive "is this still running" from a list of moments, which is the ticket-board shape the
+# founder's spec replaces.
+CONTRACTS_PATH = "/contracts"
+REPLIES_PATH = "/replies"
+WORK_PATH = "/work"
+KILL_PATH = "/kill"
+
 # The channel table the UI must not guess. `SIGNAL_RUNTIMES` in signals.py is the ONLY source of
 # truth for which verb a runtime can actually receive; a front end that hard-codes a second copy
 # will offer a button that the backend refuses, and the person pressing it learns that the board
@@ -253,6 +325,27 @@ SIGNALS_PATH = "/signals"
 CHANNELS_PATH = "/channels"
 VOICE_PATH = "/voice"
 VOICE_STREAM_PATH = "/voice/stream"
+
+# THE VOICE MEDIA LEG, which used to be a WebSocket to 127.0.0.1:8899 and therefore could not
+# exist in the cluster. These are plain HTTP, so the Backstage proxy carries them exactly as it
+# carries /sessions, and the microphone reaches the estate's own models from a portal served
+# anywhere. `voice_media.py`'s docstring has the full account of what moved and why.
+VOICE_HEAR_PATH = "/voice/hear"
+VOICE_SAY_PATH = "/voice/say"
+VOICE_STEER_PATH = "/voice/steer"
+VOICE_SPECULATE_PATH = "/voice/speculate"
+VOICE_DONE_PATH = "/voice/done"
+VOICE_VOICES_PATH = "/voice/voices"
+VOICE_SELECT_PATH = "/voice/select"
+VOICE_PREVIEW_PATH = "/voice/preview"
+VOICE_LOG_PATH = "/voice/log"
+VOICE_LOG_SUMMARY_PATH = "/voice/log/summary"
+# The VAD and onnxruntime bundles the browser needs before it can hear anything. Served from this
+# process as a fallback for a caller that is not the Backstage app; the app itself serves them at
+# its own origin (the bytes live in backstage/packages/app/public/voice, and sovereign/voice/static
+# is a symlink to them), because a `<script src>` and an AudioWorklet cannot carry the proxy's
+# Authorization header.
+VOICE_STATIC_PATH = "/voice/static"
 HISTORY_PATH = "/history"
 QUERY_PATH = "/query"
 BLAST_RADIUS_PATH = "/blast-radius"
@@ -456,9 +549,7 @@ def channels_envelope() -> tuple[dict[str, Any], int]:
     table = getattr(mod, "SIGNAL_RUNTIMES", {})
     return (
         {
-            "signals": {
-                verb: sorted(runtimes) for verb, runtimes in table.items()
-            },
+            "signals": {verb: sorted(runtimes) for verb, runtimes in table.items()},
             "note": (
                 "A runtime missing from a verb's list has no channel for it; the backend refuses "
                 "that verb for that runtime with 422 and the reason."
@@ -477,6 +568,38 @@ def signals_envelope(session_id: str) -> tuple[dict[str, Any], int]:
     """
     impl = _signals()
     return {"signals": impl.signals_for(session_id)}, 200
+
+
+def reply_envelope(session_id: str, limit: int = 20) -> tuple[dict[str, Any], int]:
+    """`GET /api/fleetview/replies?session_id=...` -- what the sessions said back.
+
+    THE READ HALF OF THE REPLY CHANNEL. Empty `session_id` returns the fleet-wide feed, which is
+    what a board shows when the reader is not looking at any one agent; a session id narrows it to
+    that conversation. Always 200 with a possibly-empty list, like `signals_envelope`: an agent
+    that has not spoken yet is not an error.
+    """
+    impl = _signals()
+    return {"replies": impl.replies_for(session_id, limit=limit)}, 200
+
+
+def post_reply(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """`POST /api/fleetview/replies` -- a session (or a person) records what was said.
+
+    A blank session_id or text is 400 (`InvalidSignal`, the same distinction signals draw between
+    'never reached a session' and 'reached it and failed'). Anything else is recorded.
+    """
+    impl = _signals()
+    try:
+        row = impl.reply(
+            session_id=str(body.get("session_id") or ""),
+            runtime=str(body.get("runtime") or "unknown"),
+            text=str(body.get("text") or ""),
+            author=str(body.get("author") or "agent"),
+            in_reply_to=body.get("in_reply_to"),
+        )
+    except impl.InvalidSignal as exc:
+        return {"error": str(exc)}, 400
+    return {"reply": row}, 201
 
 
 def blast_radius_envelope(node_id: str) -> tuple[dict[str, Any], int]:
@@ -647,7 +770,81 @@ def ledger_tail_envelope(session_id: str) -> tuple[dict[str, Any], int]:
         return {"rows": [], "error": str(exc)}, 200
 
 
+def contracts_envelope(limit: int = 10) -> tuple[dict[str, Any], int]:
+    """`GET /api/fleetview/contracts` -- the action contracts a person is currently watching.
+
+    ALWAYS 200 WITH A POSSIBLY-EMPTY LIST, the rule `signals_envelope` and `notes_envelope` follow:
+    nobody having asked for anything yet is not an error, and a board that showed an error there
+    would train its reader to ignore the error.
+
+    THE READ IS SOFT. The Observer commits contracts from its own process, so a database that is
+    mid-migration, or absent because nothing has ever been asked, must not take down the HUD. On
+    any failure the rows are empty AND the reason is carried in the body -- an empty list and an
+    unreadable database look identical to a page, so the reason is the difference between a quiet
+    fleet and a broken one. That distinction is not optional (AGENTS.md section 8).
+    """
+    impl = _observer()
+    try:
+        rows = impl.contracts_for(limit)
+        return {"contracts": rows}, 200
+    except Exception as exc:  # noqa: BLE001 -- soft read; see the docstring
+        return {"contracts": [], "error": str(exc)}, 200
+
+
 def _now() -> str:
     import datetime as dt
 
     return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def work_envelope() -> tuple[dict[str, Any], int]:
+    """`GET /api/fleetview/work` -- what each session is working on: branch and current step.
+
+    Keyed by session id so the board can merge it into rows it already has, rather than a list the
+    reader has to join by hand. Always 200 with a possibly-empty map.
+    """
+    impl = _signals()
+    return {"work": impl.work_for()}, 200
+
+
+def post_work(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """`POST /api/fleetview/work` -- a session reports its branch and step.
+
+    One row per session, upserted: "what is it working on" has one answer at a time, and a log of
+    forty steps would make the reader choose between them.
+    """
+    impl = _signals()
+    try:
+        row = impl.record_work(
+            session_id=str(body.get("session_id") or ""),
+            runtime=str(body.get("runtime") or "unknown"),
+            branch=str(body.get("branch") or ""),
+            step=str(body.get("step") or ""),
+            # The pid is its own field. Encoded as `step = "pid 1234"` it survived exactly until
+            # the agent ran its first tool, which overwrote the step -- a kill that stops working
+            # the moment the agent starts working.
+            pid=body.get("pid") if isinstance(body.get("pid"), int) else None,
+        )
+    except impl.InvalidSignal as exc:
+        return {"error": str(exc)}, 400
+    return {"work": row}, 201
+
+
+def kill_envelope(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """`POST /api/fleetview/kill` -- SIGTERM a session's process.
+
+    Separate from `/stop`, which is a cooperative marker. This is the rogue-agent path: the process
+    itself, addressed by the PID the session volunteered. A session with no reported PID is a 502
+    with that reason, not a silent success -- there was nothing to signal.
+    """
+    impl = _signals()
+    try:
+        row = impl.kill(
+            session_id=str(body.get("session_id") or ""),
+            runtime=str(body.get("runtime") or ""),
+            by=str(body.get("by") or "reactor"),
+            force=bool(body.get("force")),
+        )
+    except impl.InvalidSignal as exc:
+        return {"error": str(exc)}, 400
+    return row, (200 if row.get("ok") else 502)

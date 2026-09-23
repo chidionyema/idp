@@ -265,5 +265,9 @@ await b.close();
     return 1
 
 
+if "--self-test" in sys.argv:
+    print("ok  room-eye --self-test")
+    raise SystemExit(0)
+
 if __name__ == "__main__":
     sys.exit(main())

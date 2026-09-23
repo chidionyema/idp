@@ -23,6 +23,8 @@ scratch/
 .venv/
 node_modules/
 dist-types/
+# Build output of packages/voice (tsup); never committed, only ever built.
+packages/voice/dist/
 .yarn/cache/
 
 # Denied to agent sessions on this machine; nothing load-bearing lives here.
@@ -69,6 +71,13 @@ platform/oci/identity/*.tfstate*
 
 # CI checks prospector's ClusterPolicies out here so idp-kyverno-render judges all 26 (crew#539).
 
+# Agent session worktrees (crew session planes, .claude/worktrees/<id>) are
+# local nested checkouts of this repo. They are graded on their own branches
+# when those branches are pushed; until then, every root-level tool that
+# walks the tree reads the fixture bytes and refuses the next session's
+# push for the wrong reason.
+/.claude/worktrees/
+
 # Every session works in a git worktree checked out at .wt-<name>/ in this directory; 33 of them
 # were registered on 2026-08-29. They are checkouts of this same repository, graded on their own
 # branches when those branches are pushed. Untracked and unignored, they were scanned by every
@@ -95,6 +104,15 @@ docs/reference/forge/
 # Vale downloads the Microsoft style on `vale sync`; only the estate boundary (styles/Estate, styles/config) is ours
 styles/Microsoft/
 
+# `.estate-hooks` is checked out fresh from chidionyema/estate by every fast-gate run
+# (.github/workflows/fast-gate.yml line 20 -- `actions/checkout` with `repository:` +
+# `path: .estate-hooks`); committing a stale copy here causes the security-scan
+# `git submodule foreach` post-step to fail with "No url found for submodule path
+# '.estate-hooks' in .gitmodules" (measured 2026-09-22, run 35788935288). It is
+# runtime state populated by `actions/checkout`, not repository content.
+.estate-hooks/
+!.estate-hooks/.gitkeep
+
 # migrate-domain keeps a resumable state file here, per run (crew#838 CP1).
 .migration/
 
@@ -104,6 +122,10 @@ styles/Microsoft/
 !.crew/graphs/
 !.crew/artifacts/.gitkeep
 !.crew/graphs/.gitkeep
+# SQLite journal/WAL sidecars: transient runtime state, never repository content.
+catalog/*.db-wal
+catalog/*.db-shm
+
 # Delegate-job scratch: cost.json, status.json and log.ndjson are machine-local, carry the
 # absolute path of the checkout that produced them, and tripped bin/idp-hardcode-scan on
 # 2026-09-13 after a `git add -A` swept them in. They are not repository content.

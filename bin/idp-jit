@@ -87,7 +87,7 @@ def _tailnet_door() -> str | None:
 def _estate_zone() -> str | None:
     """The estate's DNS zone, read from the one place it is written.
 
-    LAW 46: a literal here would name this estate's machine facts in a file, and
+    a literal here would name this estate's machine facts in a file, and
     `bin/estate-zone-gate` refuses exactly that. ESTATE_ZONE first, because an agent on a
     cloud runner has no checkout of this repository and the environment is all it has; then
     clusters/*/estate-config.yaml, which is where the value actually lives.
@@ -175,6 +175,127 @@ def _post(path: str, body: dict, headers: dict | None = None) -> tuple[int, dict
         "unreachable": True,
         "reason": "the broker is not answering on " + ", ".join(tried),
     }
+
+
+def _get(path: str) -> tuple[int, dict]:
+    """A keyless GET, for the one door that has no key yet: /enroll/nonce.
+
+    Kept separate from `_post` rather than folding a `key_optional` flag into it, so the ask
+    path -- which MUST carry a key -- cannot accidentally be reached without one by a caller
+    that wanted the nonce door. A device with no key has exactly one thing it may fetch, and
+    this is it.
+    """
+    tried = []
+    for door in _doors():
+        req = urllib.request.Request(door + path)  # noqa: S310 -- an http URL from the environment or the local tailscale daemon
+        try:
+            with urllib.request.urlopen(req, timeout=30) as fh:  # noqa: S310 -- same request object, already constrained
+                return fh.status, json.load(fh)
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read() or b"{}")
+        except OSError as exc:
+            tried.append(f"{door} ({exc})")
+    return 0, {"unreachable": True, "reason": "the broker is not answering on " + ", ".join(tried)}
+
+
+def _age_secret():
+    """The estate age identity as an X25519 private key, from SOPS_AGE_KEY_FILE or the default path.
+
+    The file holds a native age identity (`AGE-SECRET-KEY-1...`), which is bech32 over the
+    32-byte X25519 scalar. This decodes it and hands back the private key object; the secret is
+    never printed and never leaves this process. Raises RuntimeError with a reason a person can
+    act on, because "no age key" at enrollment is the one failure the person still owns (Level 1
+    of bin/idp-workstation-bootstrap).
+    """
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
+    path = os.environ.get("SOPS_AGE_KEY_FILE") or os.path.expanduser("~/.config/prospector/age-key.txt")
+    try:
+        with open(path) as fh:
+            text = fh.read()
+    except OSError as exc:
+        raise RuntimeError(f"no age identity at {path}; restore it before enrolling ({exc})") from None
+
+    chi = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("AGE-SECRET-KEY-1"):
+            continue
+        body = line[len("AGE-SECRET-KEY-1"):].lower()
+        try:
+            values = [chi.index(c) for c in body]
+        except ValueError:
+            break
+        out = bytearray()
+        acc = bits = 0
+        for v in values[:-6]:  # the trailing six groups are the bech32 checksum
+            acc = (acc << 5) | v
+            bits += 5
+            while bits >= 8:
+                bits -= 8
+                out.append((acc >> bits) & 0xFF)
+        if len(out) == 32:
+            return X25519PrivateKey.from_private_bytes(bytes(out))
+        break
+    raise RuntimeError(f"no native age identity in {path}; enrollment reads the AGE-SECRET-KEY-1 line")
+
+
+def enroll() -> int:
+    """Trade this device's age identity for a key of its own, then write it where _agent_key reads.
+
+    This is the door a fresh machine uses, and the only one it can use: every other door takes
+    the key this one mints. The proof is an X25519 agreement, not a signature -- a native age
+    key has no signing half -- and the age secret never leaves the device.
+    """
+    try:
+        secret = _age_secret()
+    except RuntimeError as exc:
+        print(f"BLOCKED  {exc}", file=sys.stderr)
+        return CODES["refused"]
+
+    code, nonce = _get("/enroll/nonce")
+    if nonce.get("unreachable"):
+        print(f"BLOCKED  {nonce['reason']}", file=sys.stderr)
+        return CODES["refused"]
+    if code != 200 or not nonce.get("nonce"):
+        print(f"refused: the broker would not hand out a nonce ({code})", file=sys.stderr)
+        return CODES["refused"]
+
+    import hashlib
+    import hmac as _hmac
+
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
+
+    ephemeral = bytes.fromhex(nonce["ephemeral"])
+    shared = secret.exchange(X25519PublicKey.from_public_bytes(ephemeral))
+    proof = {
+        "nonce": nonce["nonce"],
+        "ephemeral": ephemeral.hex(),
+        "mac": _hmac.new(shared, nonce["nonce"].encode(), hashlib.sha256).hexdigest(),
+    }
+    # No Authorization header: this device holds no key. _post would attach one if it had it,
+    # and sending a stale key here would be harmless but misleading in a log.
+    code, body = _post("/enroll", proof, {"Authorization": ""})
+    if body.get("unreachable"):
+        print(f"BLOCKED  {body['reason']}", file=sys.stderr)
+        return CODES["refused"]
+    if code != 200 or not body.get("key"):
+        print(f"refused: {body.get('error', 'the broker did not accept this device')}",
+              file=sys.stderr)
+        return CODES["refused"]
+
+    state = os.environ.get("IDP_KUBE_STATE") or os.path.join(
+        os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "idp")
+    out = os.path.join(state, "agent-key")
+    os.makedirs(state, mode=0o700, exist_ok=True)
+    fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, (body["key"] + "\n").encode())
+    finally:
+        os.close(fd)
+    print(f"enrolled; this device now holds its own key ({body['fingerprint']}) at {out}",
+          file=sys.stderr)
+    return 0
 
 
 def _agent_key() -> str | None:
@@ -320,7 +441,7 @@ def _identity(path: str | None) -> int:
                       "context": {"cluster": "estate", "user": "agent-reader"}}],
     }
     # Written through a private temporary file and renamed, so a reader never sees a
-    # half-written kubeconfig and the token is never briefly world-readable (LAW 21).
+    # half-written kubeconfig and the token is never briefly world-readable.
     tmp = f"{path}.{os.getpid()}"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:
@@ -347,6 +468,8 @@ def main(argv: list[str] | None = None) -> int:
     i = sub.add_parser("identity", help="become this estate's read-only agent on any device")
     i.add_argument("--kubeconfig", help="write a kubeconfig here instead of printing the token")
 
+    sub.add_parser("enroll", help="prove the age identity and receive this device's own key")
+
     s = sub.add_parser("status", help="what this device's access IS, as JSON, without minting")
     s.add_argument("--json", action="store_true", help="always JSON; kept for symmetry")
 
@@ -365,6 +488,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "identity":
         return _identity(args.kubeconfig)
+
+    if args.cmd == "enroll":
+        return enroll()
 
     if args.cmd == "grants":
         code, body = _post("/grants", {})

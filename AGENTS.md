@@ -84,6 +84,17 @@ rule — the harness it replaces (judge, PRM, Aevum, dod-guard, pareval, shadow-
 break-glass protocol, and the agent-assisted cluster revival exception — is
 `docs/reference/gateway-as-floor.md`.
 
+## Definition of Done — a PR is the beginning, not the end (2026-09-17)
+
+**Mandate: Never announce a pull request to the founder as an achievement. A merged PR is the start of the work.**
+
+A task is only done when all three are true:
+1. It executes on live traffic — a real cron, webhook, or event trigger in production, not a CI fixture
+2. Its output reaches a surface the founder reads: Telegram, crew#102, or mumchimp.com
+3. If it breaks, something reports it within one hour without the founder asking
+
+A PR that writes to GITHUB_STEP_SUMMARY, a JSONL ledger file, a Backstage TechDocs page, or an OrbStack log is not done. It is ghost code. The next step after every merge is always: wire it into the live execution path. If wiring is blocked, say so explicitly and name the blocker — do not move on to the next build task.
+
 ## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
 
 **Mandate: On any fresh checkout, run `bin/idp-install-hooks` before your first commit.**
@@ -216,11 +227,59 @@ pending_owner_required_on = ["main"]
 "blind.halt_after_min" = 5
 "alerts.digest_over_per_hour" = 50
 "spiffe.max_missed_heartbeats" = 3
+
+[jev]
+default_confidence_floor = 0.7
+timeout_ms = 2000
+escalate_on_timeout = true
+model = "jev-1.13.0"
+force_on_decisions = true   # when true, the Stop-hook blocks turns that skip Jev for bounded decisions
 ```
 
+## Jev first: bounded decisions go through the layer (ADR 0030)
+
+Before any bounded decision, call `jev_choice`, `jev_score`, or `jev_noul` via the MCP plugin.
+
+**What counts as a bounded decision:**
+- Tool selection when multiple tools could apply
+- Retry vs. escalate vs. abandon
+- Risk assessment (safe / warn / block)
+- Pass/fail judgment on a test or gate
+- Confidence thresholds (proceed / pause / ask)
+
+**Exempt (not bounded):**
+- Text generation (summaries, code, prose)
+- File reads and searches
+- Pure retrieval with no judgment attached
+
+**Enforcement:** The Stop-hook `jev_decision_gate.py` blocks turns that skip Jev for expensive
+operations (tool calls over the cost threshold, destructive ops, consensus triggers). The hook
+checks the turn's tool-call log; if a bounded decision was made without a preceding `jev_*` call,
+the turn is refused.
+
+**Rationale:** 193x faster, 444x cheaper than frontier-model deliberation, and every decision
+lands in the `jev_decisions` table with confidence, latency, and the input hash — an audit trail
+that survives the context window.
+
+References: ADR `docs/decisions/0030-jevlayer-unified-confidence-and-decision-service.md`,
+MCP plugin `mcp/plugins/jev.py`, policy config `[jev]` section above.
 
 THE EMPIRICAL PROOF RULE binds here too, verbatim, inherited from `~/AGENTS.md` — not repeated
 below to avoid loading the same block twice in one context (measured duplicate, 2026-09-14).
+
+## Three Planes: composition target (2026-09-22)
+
+The estate's 480+ capability surfaces (per `docs/synthesis/2026-09-20-full-capability-map.md` extended 2026-09-22) compose into three independent planes that run as concentric filters, not a linear pipeline:
+
+1. **Generative Swarm** (Inference & Memory) — agents think, route, and collaborate. ZeroEdge (cost/routing optimizer, off unless `ZEROEDGE_URL` set, fails open), LiteLLM (`platform/llm/config.yaml`), TTCS CRDT (`packages/idp_concurrency/src/idp_concurrency/ttcs/`, built unwired), Tuple Space (proposed), Efficiency Gateway's eight mechanisms (CacheGuardian, TokenKiller, MCPAdapter, TokenBudgetOrchestrator, SoLPi, DynamicContextPruning, CompactionManager, ToolPairValidator), growmos, .aevum/local.jsonl, Jev (decision service), the four forcing lints in `packages/idp_concurrency/lint/` (`no_ad_hoc`, `no_locks`, `no_unbounded`, `no_untraced`). Frictionless, stochastic, purely in-memory. Nothing here touches GitHub.
+
+2. **Adversarial Crucible** (Semantic Evaluation) — AI evaluates AI. JudgeWorker (four-dim transcript scoring: `tool_f1` 0.35, `arg_validity` 0.30, `result_utilization` 0.20, `error_recovery` 0.15), JudgeDriftSentinel (JS-divergence vs baseline, threshold 0.15), GoldSetCalibrator (Cohen's kappa bands), ParEvalLayer (paired A/B + bootstrap CI + coverage_score), AgentCircuitBreaker (real-time loop detection on turns 3-4), RedTeamLoop with PayloadGenerator / Mutator / Catalog / Validator / promoter / Go proxy (`bin/negative-constraints-proxy/main.go`), **`bin/idp-reversibility-gate` and `verify_inverse` at `platform/executor/daemon.py:1178` (the reverifier)**, `probes/mutations.py` (graduated probes, UNPROVEN until 1 FAIL + 1 PASS). Runs asynchronously over the Swarm's output. Failures kick back as tuples, not PRs.
+
+3. **Physics Engine** (Isolation & Proof) — cold, mathematical boundary, no LLMs. Kronos rings 0-4 (Firecracker ring0 built in a separate repo, **NOT operating on this machine**; the honest boundary today is `ISOLATION_KIND = "temp-tree-scrubbed-env"` at `sovereign/verifier.py:85`), gVisor/runsc + 12 hermes-agent arenas, `sovereign/verifier.py` four-stage gauntlet (compile / sqlite / Z3 / pytest in temp tree), Sigstore / Ed25519 attestation (fallback when `cosign` absent), Aevum (Ed25519 + ML-DSA-65 dual-signed COSE_Sign1, RFC 3161 timestamps, hash-chained), Flux + Kyverno admission.
+
+**Highest-priority unsealed gap (2026-09-22): the Universal Write Boundary.** The cluster engine writes straight to disk via `open().write()` at `platform/idp_agent/engine.py:311`, bypassing every gate in Plane 3. The laptop executor daemon mediates via the AF_UNIX socket — they meet only at `git push`, which is *after* attestation, not before. Closing this means: the cluster engine emits via the gateway, the daemon mediates via the existing mutation flow (`propose_patch` → `verify` → `seal` → `admit`), and no agent write reaches disk without gauntlet + Sigstore seal. Implementation requires verified premises (actual CI failure breakdown, actual Dockerfile state, actual BDD test names) and **must not** override existing gates (`.githooks/pre-push` Andon cord, `[invariants]` block above, JSON-lines protocol on the daemon socket).
+
+**Pre-condition for any Three Planes wiring:** the Andon Cord rule at the top of this file is non-negotiable. Main must be green by fixing failures, not by quarantining them as `xfail`. Quarantining failing tests as expected-failures to clear the gate is exactly the pattern the Andon Cord exists to prevent — it returns the estate to the pre-Andon state where the gate is theatre. Every BDD failure is a real signal; fixing it is the only path to green.
 
 <!-- growmos:start — managed by `growmos integrate`; edits inside this block will be overwritten -->
 ## growmos — living knowledge graph (shared memory for humans + agents)

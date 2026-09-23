@@ -42,6 +42,28 @@ def graph_snapshot() -> dict[str, Any]:
         )
     con = sqlite3.connect(str(db))
     try:
+        # THE FILE EXISTING IS NOT THE GRAPH EXISTING, and the gap between those two facts was a
+        # 500. Measured on this laptop 2026-09-22: catalog/estate.db is present -- other writers
+        # create it -- but holds only assets/meta/jev_decisions, because `nodes` and `edges` come
+        # from bin/estate-twin-runtime, which needs kubectl and so has never run here. The check
+        # above asks whether the FILE exists, so sqlite raised `no such table: nodes` straight
+        # through the route and the board showed "Internal Server Error".
+        #
+        # That is the exact failure GraphUnavailable was written to prevent: this class's own
+        # docstring says a real gap must not be disguised, and a 500 disguises it as a broken
+        # service. An unswept graph is a known, nameable state -- so name it, and let routes.py
+        # turn it into the 503 it already knows how to send.
+        missing = {"nodes", "edges"} - {
+            row[0]
+            for row in con.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        if missing:
+            raise GraphUnavailable(
+                f"{db} has no {'/'.join(sorted(missing))} table; "
+                "bin/estate-twin-runtime --once has never swept this estate"
+            )
         nodes = [
             {"id": node_id, "domain": domain, "type": typ, "status": status}
             for node_id, domain, typ, status in con.execute(

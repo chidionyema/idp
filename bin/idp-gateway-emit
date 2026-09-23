@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""Gateway emit: route agent writes through the executor daemon's gauntlet.
+
+Universal Write Boundary (Phase A). Every agent file write traverses the same
+_propose_patch -> _verify -> _seal -> _admit flow that human MCP writes use;
+no agent reaches disk via open().write() anymore.
+
+Usage:
+    idp-gateway-emit fs_read <path>
+    idp-gateway-emit fs_commit <path> [content]
+    idp-gateway-emit fs_commit <path> -            # content from stdin
+
+Exit codes:
+    0   ok
+    1   daemon refused (UNATTESTED, verifier failure, path traversal, ...)
+    2   socket/transport error
+"""
+from __future__ import annotations
+
+import json
+import os
+import socket
+import sys
+
+
+def _socket_path() -> str:
+    return os.environ.get(
+        "IDP_EXECUTOR_SOCKET",
+        os.path.expanduser("~/.estate/executor.sock"),
+    )
+
+
+def _request(verb: str, **params: object) -> dict:
+    sock = _socket_path()
+    body = (json.dumps({"verb": verb, **params}) + "\n").encode("utf-8")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.connect(sock)
+        s.sendall(body)
+        resp_line = s.makefile().readline()
+    if not resp_line:
+        sys.exit("daemon returned no response")
+    return json.loads(resp_line)
+
+
+def main() -> int:
+    if len(sys.argv) < 3:
+        sys.exit(
+            "Usage: idp-gateway-emit <fs_read|fs_commit> <path> [content|-]"
+        )
+    verb = sys.argv[1]
+    if verb not in ("fs_read", "fs_commit"):
+        sys.exit(f"unknown verb: {verb}")
+    path = sys.argv[2]
+
+    content: str | None = None
+    if verb == "fs_commit":
+        if len(sys.argv) > 3 and sys.argv[3] == "-":
+            content = sys.stdin.read()
+        elif len(sys.argv) > 3:
+            content = sys.argv[3]
+        elif not sys.stdin.isatty():
+            content = sys.stdin.read()
+        else:
+            sys.exit("fs_commit needs content (arg or stdin)")
+
+    params: dict[str, object] = {"path": path}
+    if content is not None:
+        params["content"] = content
+    params["tests"] = ""
+    params["claim"] = "fs_commit via gateway-emit"
+
+    resp = _request(verb, **params)
+    if not resp.get("ok"):
+        print(json.dumps(resp, indent=2), file=sys.stderr)
+        return 1
+    if verb == "fs_read":
+        sys.stdout.write(resp.get("result", ""))
+    else:
+        out = {k: v for k, v in resp.items() if k != "ok"}
+        print(json.dumps(out, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except FileNotFoundError as exc:
+        sys.exit(f"FATAL: {exc} (is the executor daemon running?)")
+    except (ConnectionRefusedError, socket.error) as exc:
+        sys.exit(f"FATAL: cannot reach daemon socket: {exc}")

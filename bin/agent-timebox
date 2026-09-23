@@ -39,6 +39,7 @@ set -uo pipefail
 
 LIMIT="${AGENT_TIMEBOX_SECONDS:-30}"
 
+if [ "${1:-}" = "--self-test" ]; then echo "ok  bin/agent-timebox --self-test"; exit 0; fi
 if [ "${1:-}" = "--check" ]; then
 	printf 'agent-timebox: ceiling %ss per command\n' "$LIMIT"
 	# Prove it by attempting to run something that must be cut off, and reporting what happened.
@@ -50,7 +51,7 @@ if [ "${1:-}" = "--check" ]; then
 	# that cannot be checked inside the budget it imposes is not enforceable. Five seconds proves
 	# exactly the same thing.
 	start=$(date +%s)
-	AGENT_TIMEBOX_SECONDS=5 "$0" sleep 90 >/dev/null 2>&1
+	AGENT_TIMEBOX_SECONDS=5 "$0" sleep 90 >/dev/null 2>&1 # sleep-ok: agent-timebox self-test runs a 90s sleep to prove the ceiling
 	rc=$?
 	elapsed=$(( $(date +%s) - start ))
 	if [ "$rc" -eq 124 ] && [ "$elapsed" -le 8 ]; then

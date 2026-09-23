@@ -1,0 +1,11 @@
+{
+  "mutation_id": "ldg-abc123",
+  "target": "deployment/mutdoor",
+  "forward": {"action": "apply_bundle", "parameters": {"code": true}},
+  "inverse_spec": {
+    "type": "deterministic_inverse",
+    "action": "delete_bundle",
+    "parameters": {"code": true},
+    "verification_probe": "test ! -e mutdoor_code.py"
+  }
+}

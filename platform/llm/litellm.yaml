@@ -104,9 +104,25 @@ spec:
             # request with a ModuleNotFoundError -- a broken router is worse than an unbounded
             # one, which is why the path and the callback ship in the same pull request.
             - { name: PYTHONPATH, value: "/etc/litellm/ceilings" }
+            # ZeroEdge (platform/llm/zeroedge.yaml). The shim module is OFF unless this is
+            # set, and it fails open: a call whose optimization pass errors or exceeds the
+            # 2s timeout proceeds unoptimized rather than failing. In-namespace, so the
+            # llm fence carries it on allow-same-namespace and no new hop is declared.
+            - { name: ZEROEDGE_URL, value: "http://zeroedge.llm.svc.cluster.local:8757" }
             - { name: GENERIC_USER_ID_ATTRIBUTE, value: email }
             - { name: GENERIC_USER_EMAIL_ATTRIBUTE, value: email }
             - { name: PROXY_BASE_URL, value: "https://llm.${ESTATE_ZONE}" }
+            # What turns zeroedge_gateway.py from a registered no-op into the optimizer it was
+            # written to be. The shim has been in `litellm_settings.callbacks` since it landed
+            # and, with this unset, returned every request byte-identical -- so the five-layer
+            # gateway shipped and changed nothing. In-cluster ClusterIP: the call never leaves
+            # the namespace, and `allow-same-namespace` in platform/ns-fences/network/llm.yaml
+            # already permits it, so no fence change rides with this.
+            #
+            # Unreachable is safe. The shim fails open on connect error, timeout and unparseable
+            # reply; the only thing it raises on is an explicit `reject`, and budget enforcement
+            # is off (see platform/llm/zeroedge.yaml).
+            - { name: ZEROEDGE_URL, value: "http://zeroedge.llm.svc:8757" }
           volumeMounts:
             - { name: config, mountPath: /etc/litellm, readOnly: true }
             # The ceiling module, on the path the router imports from. PYTHONPATH above names

@@ -1,0 +1,339 @@
+#!/usr/bin/env python3
+"""Render a synthesis markdown file to a single self-contained HTML page.
+
+House style lifted from docs/tooling-foundations.html so this page sits beside the
+existing generated reports rather than introducing a second look.
+
+    python3 bin/idp-synthesis-render DOC.md [--out FILE]
+
+Deliberately dependency-free (no markdown lib): the subset used by the synthesis docs is
+headings, paragraphs, fenced code, pipe tables, blockquotes, and lists -- and a converter
+that handles exactly that is auditable in a way a general markdown pipeline is not.
+"""
+
+from __future__ import annotations
+
+import argparse
+import html
+import pathlib
+import re
+import sys
+
+CSS = """
+:root{
+  --ground:#F5F7F5; --surface:#FFFFFF; --surface-2:#EDF1EE;
+  --ink:#15201B; --ink-soft:#525E58; --ink-faint:#7C8880;
+  --line:#DCE2DD; --line-strong:#C3CDC6;
+  --accent:#17624F; --accent-soft:#DCEDE6;
+  --warn:#9A5713; --warn-soft:#F6E9D8;
+  --stop:#8C2E2E; --stop-soft:#F4DEDE;
+  --shadow:0 1px 2px rgba(21,32,27,.05),0 8px 24px -12px rgba(21,32,27,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+    --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+    --line:#26312B; --line-strong:#374339;
+    --accent:#5CBEA1; --accent-soft:#17302A;
+    --warn:#D3934A; --warn-soft:#33261A;
+    --stop:#D57272; --stop-soft:#331E1E;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+  --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+  --line:#26312B; --line-strong:#374339;
+  --accent:#5CBEA1; --accent-soft:#17302A;
+  --warn:#D3934A; --warn-soft:#33261A;
+  --stop:#D57272; --stop-soft:#331E1E;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:17px; line-height:1.62; margin:0; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px 96px}
+main{display:flex;flex-direction:column;gap:44px}
+section{display:flex;flex-direction:column;gap:16px}
+p{margin:0;max-width:70ch}
+h1,h2,h3{hargin:0;margin:0;text-wrap:balance;font-family:Spectral,Georgia,"Times New Roman",serif;font-weight:600;letter-spacing:-.01em}
+h1{font-size:clamp(2.1rem,6vw,3.1rem);line-height:1.08;font-weight:700}
+h2{font-size:clamp(1.4rem,3.4vw,1.8rem);line-height:1.2;padding-top:8px}
+h3{font-size:1.08rem;line-height:1.3}
+h4{font-family:"Public Sans",sans-serif;font-size:.98rem;font-weight:700;margin:0}
+a{color:var(--accent);text-underline-offset:3px;text-decoration-thickness:1px}
+code{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;
+  background:var(--surface-2);border-radius:4px;padding:.1em .35em}
+pre{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;
+  padding:16px 18px;overflow-x:auto;margin:0}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.55;white-space:pre}
+strong{font-weight:700}
+header{padding:56px 0 0;display:flex;flex-direction:column;gap:20px}
+.eyebrow{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--ink-faint)}
+.standfirst{font-family:Spectral,Georgia,serif;font-size:clamp(1.05rem,2.4vw,1.28rem);line-height:1.5;color:var(--ink-soft);max-width:62ch}
+.rule{height:1px;background:var(--line-strong);border:0;margin:0}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:520px}
+th,td{text-align:left;padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+thead th{background:var(--surface-2);font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-soft);font-weight:700;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+blockquote{margin:0;background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--accent);border-radius:10px;padding:16px 20px;
+  display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+blockquote p{font-size:.96rem;color:var(--ink-soft)}
+blockquote p:first-of-type{color:var(--ink)}
+ul,ol{margin:0;padding-left:1.35em;max-width:70ch;display:flex;flex-direction:column;gap:7px}
+li{line-height:1.55}
+.toc{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:18px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+.toc h4{font-size:.72rem;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint)}
+.toc ol{font-size:.92rem;padding-left:1.2em}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-faint);font-size:.85rem;
+  display:flex;flex-wrap:wrap;gap:8px 20px}
+@media print{
+  :root{--ground:#fff;--surface:#fff;--surface-2:#f4f4f4;--shadow:none}
+  .toc{break-inside:avoid}
+  h2{break-after:avoid}
+  pre,table,blockquote{break-inside:avoid}
+}
+"""
+
+
+def slug(text: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return s or "section"
+
+
+def inline(text: str) -> str:
+    """Escape, then apply the inline subset: code, bold, italic, links."""
+    out = html.escape(text, quote=False)
+    # code first, so ** inside a code span is never treated as bold
+    spans: list[str] = []
+
+    def stash(m: re.Match[str]) -> str:
+        spans.append(f"<code>{m.group(1)}</code>")
+        return f"\x00{len(spans) - 1}\x00"
+
+    out = re.sub(r"`([^`]+)`", stash, out)
+    out = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", out)
+    out = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<em>\1</em>", out)
+    out = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', out)
+    out = re.sub(
+        r"(?<![\"=>])\b(https?://[^\s<)]+)",
+        r'<a href="\1">\1</a>',
+        out,
+    )
+    for i, span in enumerate(spans):
+        out = out.replace(f"\x00{i}\x00", span)
+    return out
+
+
+def render_table(rows: list[list[str]]) -> str:
+    head, body = rows[0], rows[1:]
+    out = ['<div class="tablewrap"><table><thead><tr>']
+    out += [f"<th>{inline(c)}</th>" for c in head]
+    out.append("</tr></thead><tbody>")
+    for r in body:
+        out.append("<tr>" + "".join(f"<td>{inline(c)}</td>" for c in r) + "</tr>")
+    out.append("</tbody></table></div>")
+    return "".join(out)
+
+
+def split_row(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def convert(md: str) -> tuple[str, str]:
+    """Return (title, body_html)."""
+    lines = md.split("\n")
+    title = "Synthesis"
+    for ln in lines:
+        if ln.startswith("# "):
+            title = ln[2:].strip()
+            break
+
+    out: list[str] = []
+    i = 0
+    n = len(lines)
+    heading_stack: list[tuple[int, str, str]] = []  # level, text, id
+    toc: list[tuple[int, str, str]] = []
+
+    while i < n:
+        line = lines[i]
+
+        # fenced code
+        if line.startswith("```"):
+            i += 1
+            buf = []
+            while i < n and not lines[i].startswith("```"):
+                buf.append(lines[i])
+                i += 1
+            i += 1
+            out.append("<pre><code>" + html.escape("\n".join(buf)) + "</code></pre>")
+            continue
+
+        # table
+        if line.startswith("|") and i + 1 < n and re.match(r"^\|[\s:|-]+\|$", lines[i + 1].strip()):
+            rows = [split_row(line)]
+            i += 2
+            while i < n and lines[i].startswith("|"):
+                rows.append(split_row(lines[i]))
+                i += 1
+            out.append(render_table(rows))
+            continue
+
+        # blockquote
+        if line.startswith(">"):
+            buf = []
+            while i < n and (lines[i].startswith(">") or lines[i].strip() == ""):
+                if lines[i].startswith(">"):
+                    buf.append(lines[i].lstrip(">").strip())
+                elif buf and i + 1 < n and not lines[i + 1].startswith(">"):
+                    break
+                i += 1
+            paras = []
+            cur = []
+            for b in buf:
+                if b == "":
+                    if cur:
+                        paras.append(" ".join(cur))
+                        cur = []
+                else:
+                    cur.append(b)
+            if cur:
+                paras.append(" ".join(cur))
+            inner = "".join(f"<p>{inline(p)}</p>" for p in paras if p)
+            out.append(f"<blockquote>{inner}</blockquote>")
+            continue
+
+        # headings
+        m = re.match(r"^(#{1,4})\s+(.*)$", line)
+        if m:
+            level = len(m.group(1))
+            text = m.group(2).strip()
+            sid = slug(text)
+            if level >= 2:
+                toc.append((level, text, sid))
+            out.append(f'<h{level} id="{sid}">{inline(text)}</h{level}>')
+            i += 1
+            continue
+
+        # lists
+        if re.match(r"^\s*[-*]\s+", line):
+            buf = []
+            while i < n and re.match(r"^\s*[-*]\s+", lines[i]):
+                item = re.sub(r"^\s*[-*]\s+", "", lines[i])
+                i += 1
+                # A list item may wrap onto following indented lines. Join them, or a bold
+                # span that straddles the wrap stays unrendered (`**the kernel enforces` /
+                # `the bound**` was emitted literally on the first run of this file).
+                while (
+                    i < n
+                    and lines[i].strip()
+                    and not re.match(r"^(\s*[-*]\s|\s*\d+\.\s|#{1,4}\s|```|\||>|-{3,}$)", lines[i])
+                ):
+                    item += " " + lines[i].strip()
+                    i += 1
+                buf.append(item)
+            out.append("<ul>" + "".join(f"<li>{inline(b)}</li>" for b in buf) + "</ul>")
+            continue
+        if re.match(r"^\s*\d+\.\s+", line):
+            buf = []
+            while i < n and (re.match(r"^\s*\d+\.\s+", lines[i]) or
+                             (buf and lines[i].startswith("   ") and lines[i].strip())):
+                if re.match(r"^\s*\d+\.\s+", lines[i]):
+                    buf.append(re.sub(r"^\s*\d+\.\s+", "", lines[i]))
+                else:
+                    buf[-1] += " " + lines[i].strip()
+                i += 1
+            out.append("<ol>" + "".join(f"<li>{inline(b)}</li>" for b in buf) + "</ol>")
+            continue
+
+        # horizontal rule
+        if re.match(r"^-{3,}$", line.strip()):
+            out.append('<hr class="rule">')
+            i += 1
+            continue
+
+        # blank
+        if not line.strip():
+            i += 1
+            continue
+
+        # paragraph (gather until blank / structural)
+        buf = [line]
+        i += 1
+        while i < n and lines[i].strip() and not re.match(
+            r"^(#{1,4}\s|```|\||>|\s*[-*]\s|\s*\d+\.\s|-{3,}$)", lines[i]
+        ):
+            buf.append(lines[i])
+            i += 1
+        out.append("<p>" + inline(" ".join(buf)) + "</p>")
+
+    # build TOC from top-level (##) entries only
+    toc_items = "".join(
+        f'<li><a href="#{sid}">{inline(text)}</a></li>' for lvl, text, sid in toc if lvl == 2
+    )
+    toc_html = ""
+    if toc_items:
+        toc_html = (
+            '<nav class="toc"><h4>On this page</h4><ol>' + toc_items + "</ol></nav>"
+        )
+        # insert after the standfirst (first paragraph), before the body
+        out.insert(0, toc_html)
+
+    return title, "\n".join(out)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("source")
+    ap.add_argument("--out")
+    args = ap.parse_args()
+
+    src = pathlib.Path(args.source)
+    if not src.is_file():
+        print(f"FAIL no such file: {src}", file=sys.stderr)
+        return 2
+    md = src.read_text(encoding="utf-8")
+    title, body = convert(md)
+
+    out = pathlib.Path(args.out) if args.out else src.with_suffix(".html")
+    page = f"""<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{html.escape(title)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400&family=Public+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>{CSS}</style>
+<div class="wrap">
+<header>
+  <div class="eyebrow">idp · synthesis · measured {pathlib.Path(args.source).stem.split("-")[0]}</div>
+  <h1>{html.escape(title)}</h1>
+</header>
+<hr class="rule">
+<main>
+{body}
+<footer>
+  <span>Source: <code>{html.escape(str(src))}</code></span>
+  <span>Rendered by <code>bin/idp-synthesis-render</code></span>
+</footer>
+</main>
+</div>
+</html>
+"""
+    out.write_text(page, encoding="utf-8")
+    print(f"wrote {out} ({len(page)} bytes)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

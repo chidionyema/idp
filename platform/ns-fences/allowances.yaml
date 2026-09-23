@@ -43,8 +43,15 @@ exempt:
     two ceilings where the tighter one silently wins."
   jit: "already carries all four fences in platform/jit/fence.yaml, and two of its NetworkPolicies
     are named allow rules this generator cannot express -- the-broker-reaches-the-api-server-and-telegram
-    and the-one-that-may-speak-to-the-broker. Folding it in means rewriting the broker's own fence,
+    and-the-one-that-may-speak-to-the-broker. Folding it in means rewriting the broker's own fence,
     which is WJ.8 and the founder's review, not a green check."
+  acg: "already carries all four fences beside its own workload, in platform/acg/ns-fence.yaml and
+    platform/acg/network.yaml, shipped in the same apply as the namespace it fences (the shape
+    platform/concierge uses). It is exempt for the same reason cyrus and jit are: a second generated
+    quota and default-deny in that namespace would be two ceilings where the tighter one silently
+    wins, and acg's network fence carries two holes this generator cannot derive from a manifest scan
+    -- ingress from the shared Gateway in `prospector`, and egress to the internet on 443 for the
+    vendor model APIs the whole cascade exists to call."
 
 # Where a namespace was deliberately tuned by hand before this generator existed, its intent moves
 # here rather than being lost. `hard` is merged into that namespace's quota after the sizing above,
@@ -129,12 +136,6 @@ flows:
   # the allow would cut the route. It is declared here, where the fence that denies is written.
   demo-sandbox:
     ingress_from: [edge]
-    # The ARM voice benchmark downloads its models at run time: Kokoro's ONNX weights and voices
-    # from github.com, and the faster-whisper weights from huggingface.co. Without this the fence
-    # denies it and the Job fails on a refused connection rather than on anything it measured.
-    # 443 only, and named here rather than in the generated fence, because this is the file the
-    # generator reads -- editing the generated file would be overwritten on the next run.
-    egress_internet: [443]
   trivy-system:
     # The operator and its scan jobs (scanJobsInSameNamespace: false, so they land here too) pull
     # the vulnerability database from a public registry mirror (mirror.gcr.io); declared here so
@@ -596,12 +597,6 @@ flows:
     # ClusterIssuer could not register (dial tcp ...:443: i/o timeout) so new/rotated certs
     # never issued. allow-dns-egress already covers name resolution; open 443 for ACME.
     egress_internet: [443]
-  chaos-mesh:
-    # Serves an admission webhook, so the control plane calls IN. It is outside the pod
-    # network and outside every namespace selector, so default-deny drops it and only an
-    # ipBlock names it. Omit this and the webhook is unreachable; a fail-closed one then
-    # refuses every write to the cluster (found live 2026-09-08, kyverno, Flux 0/80).
-    ingress_apiserver: [10080, 10081, 10250]
   external-secrets:
     # Serves an admission webhook, so the control plane calls IN. It is outside the pod
     # network and outside every namespace selector, so default-deny drops it and only an

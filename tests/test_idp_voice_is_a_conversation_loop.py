@@ -14,11 +14,8 @@ from __future__ import annotations
 import asyncio
 import importlib.machinery
 import importlib.util
-import io
-import json
 import sys
 import time
-import urllib.error
 from pathlib import Path
 
 import pytest

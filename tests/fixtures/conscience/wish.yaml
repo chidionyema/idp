@@ -1,2 +1,0 @@
-tenets:
-  - {name: a, ethos: a tenet with no command, reads: exit, green: "== 0", pr_rule: r, mode: warn}

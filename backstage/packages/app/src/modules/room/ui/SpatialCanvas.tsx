@@ -3,8 +3,8 @@
 // the loud, the new, the dying. The rest stay in the hum. Trails are visible.
 
 import { useEffect, useRef, useState } from 'react';
-import type { AgentId, EventBus, RoomEvents } from '../core/types';
-import type {  } from '../core/types';
+import type { AgentId } from '../core/types';
+import type { EventBus, RoomEvents } from '../core/events';
 
 interface Node {
   id: AgentId;

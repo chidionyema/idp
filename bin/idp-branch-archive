@@ -20,8 +20,18 @@ only holds live work. Restore is one command:
 
 Protected: main, and `flux/*`, which Flux image automation writes and reads as a mailbox.
 Never touched: a branch with an open pull request. Idempotent: a second run over the same
-remote plans nothing. Dry run by default; `--apply` pushes the tags in one push and deletes the
-branches in one push (LAW 55: a summary, never a log). Runs on the estate's clock through
+remote plans nothing. Dry run by default.
+
+`--apply` pushes tags and deletes branches in batches of 20, never atomically, and treats a
+refspec the remote refuses as a SKIP, not a death. It has to: between 2026-09-09 and 2026-09-22
+this job ran eight times, planned `archived 795 branch(es); kept 137` correctly every time, and
+deleted nothing. One `git push` carried every refspec, one of them was refused, `check=True`
+raised, and `capture_output=True` swallowed git's reason -- so seven consecutive weekly runs
+reported `returned non-zero exit status 1` and no more, while 954 branches stayed. A fence that
+does nothing at all when one of 795 refs is bad is not a fence. Each batch now goes with
+`--porcelain` and `check=False`; a refused ref is named with the remote's own reason, and the
+other 794 land. A branch is deleted only once its tag is confirmed on the remote, so a refused
+tag costs that branch nothing. Runs on the estate's clock through
 .github/workflows/branch-archive.yml; the repo slug comes from GITHUB_REPOSITORY or `gh`, never
 from this file (LAW 46).
 """
@@ -98,18 +108,88 @@ def plan(remote: str, age_days: int, now: float) -> tuple[list[tuple[str, str, s
     return out, kept
 
 
-BATCH = 100  # first apply run (34303712950): one push of 860 refspecs was refused; 33 tags landed, no branch was deleted
+# 20, not 100 and never all 795: a batch is the blast radius of one bad refspec, and a
+# smaller batch is also a shorter retry. Never --atomic, which would restore the exact
+# all-or-nothing failure this file exists to end.
+BATCH = 20
 
 
-def apply(remote: str, rows: list[tuple[str, str, str, str]]) -> None:
-    existing = set(git("tag", "--list", "archive/*").split())
-    refspecs = [f"{sha}:refs/tags/{tag}" for _b, sha, _r, tag in rows if tag not in existing]
-    for i in range(0, len(refspecs), BATCH):
-        git("push", "--quiet", remote, *refspecs[i:i + BATCH])
-    # Every tag exists on the remote before the first branch goes: a failure above leaves branches.
-    branches = [b for b, *_ in rows]
-    for i in range(0, len(branches), BATCH):
-        git("push", "--quiet", remote, "--delete", *branches[i:i + BATCH])
+def push(remote: str, *refspecs: str) -> dict[str, str]:
+    """Push these refspecs and return {ref: the remote's reason} for the ones it refused.
+
+    `--porcelain` prints one machine-readable line per ref, so a refusal is data rather than
+    an exit code; `check=False` because a rejected ref is a skip, not a death. Returns an
+    empty dict when every ref landed.
+    """
+    p = subprocess.run(
+        ["git", "push", "--porcelain", remote, *refspecs],
+        text=True, capture_output=True,
+    )
+    refused: dict[str, str] = {}
+    for line in p.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3 or parts[0] not in ("!", "="):
+            continue
+        if parts[0] == "!":
+            refused[parts[1]] = parts[2]
+    if p.returncode != 0 and not refused:
+        # The push failed before it reported on any single ref -- auth, network, a server
+        # hook. Name every ref in the batch with git's own stderr, never a bare exit code:
+        # an unexplained `exit status 1` is what hid this failure for seven weeks.
+        reason = (p.stderr.strip().splitlines() or ["git push failed with no output"])[-1]
+        return {r: reason for r in refspecs}
+    return refused
+
+
+def remote_archive_tags(remote: str) -> set[str]:
+    """The archive tags ORIGIN holds. The runner's checkout is not the authority: a tag the
+    remote already has is a branch already archived, and re-pushing it is the refusal that
+    used to kill the run."""
+    out = git("ls-remote", "--tags", remote, "refs/tags/archive/*")
+    names = set()
+    for line in out.splitlines():
+        if "refs/tags/" not in line:
+            continue
+        name = line.split("refs/tags/", 1)[1].strip()
+        names.add(name[:-3] if name.endswith("^{}") else name)
+    return names
+
+
+def apply(remote: str, rows: list[tuple[str, str, str, str]]) -> tuple[int, dict[str, str]]:
+    """Tag then delete, in batches, skipping whatever the remote refuses.
+
+    Returns (branches deleted, {branch: why it was skipped}).
+    """
+    refused: dict[str, str] = {}
+    on_remote = remote_archive_tags(remote)
+
+    # Pre-filter: only tags origin does not already hold.
+    todo = [(b, sha, tag) for b, sha, _r, tag in rows if tag not in on_remote]
+    tagged = {b for b, _sha, _r, tag in rows if tag in on_remote}
+    for i in range(0, len(todo), BATCH):
+        chunk = todo[i:i + BATCH]
+        bad = push(remote, *[f"{sha}:refs/tags/{tag}" for _b, sha, tag in chunk])
+        for b, sha, tag in chunk:
+            why = bad.get(f"refs/tags/{tag}") or bad.get(f"{sha}:refs/tags/{tag}")
+            if why:
+                refused[b] = f"tag refused: {why}"
+            else:
+                tagged.add(b)
+
+    # A branch goes only once its tag is on the remote. A refused tag costs that branch
+    # nothing; it is simply carried to the next run.
+    deletable = [b for b, *_ in rows if b in tagged]
+    deleted = 0
+    for i in range(0, len(deletable), BATCH):
+        chunk = deletable[i:i + BATCH]
+        bad = push(remote, "--delete", *chunk)
+        for b in chunk:
+            why = bad.get(f"refs/heads/{b}") or bad.get(b)
+            if why:
+                refused[b] = f"delete refused: {why}"
+            else:
+                deleted += 1
+    return deleted, refused
 
 
 def main(argv: list[str]) -> int:
@@ -135,7 +215,19 @@ def main(argv: list[str]) -> int:
         with open(summary, "a", encoding="utf-8") as f:
             f.write("```\n" + text + "\n```\n")
     if a.apply and rows:
-        apply(a.remote, rows)
+        deleted, refused = apply(a.remote, rows)
+        done = [f"branch-archive  deleted {deleted} branch(es); skipped {len(refused)}"]
+        done += [f"  skipped: {b} -- {why}" for b, why in sorted(refused.items())]
+        text = "\n".join(done)
+        print(text)
+        if summary:
+            with open(summary, "a", encoding="utf-8") as f:
+                f.write("```\n" + text + "\n```\n")
+        # A skip is not a death, but deleting NOTHING when there was work to do is: that is
+        # the seven-week failure, and a gate that cannot fail is not a gate.
+        if deleted == 0:
+            print("branch-archive: planned work but deleted nothing", file=sys.stderr)
+            return 1
     return 0
 
 
