@@ -53,6 +53,18 @@ model_list:
       model: anthropic/claude-opus-4-5
       timeout: 600
 
+  # Sonnet passthrough (same rules as claude-opus above).
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      timeout: 600
+
+  # Haiku passthrough (same rules as claude-opus above).
+  - model_name: claude-haiku
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      timeout: 300
+
 router_settings:
   fallbacks:
     # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
