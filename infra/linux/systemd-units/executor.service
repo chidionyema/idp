@@ -1,0 +1,69 @@
+# infra/linux/systemd-units/executor.service
+#
+# Gateway-as-floor executor daemon on Linux. The Mac equivalent is the
+# root LaunchDaemon com.idp.executor.plist; the Linux equivalent is a
+# system-wide systemd unit running as the `_idp_executor` uid with its
+# own AF_UNIX socket under /run/idp/executor.sock. The script `bin/idp-
+# executor-install` (already in the repo) is the one place that creates
+# the uid, lays the unit, and chmods the socket; `bin/idp-device-provision
+# install` lays the binary into /usr/local/bin first, then calls that
+# script.
+#
+# Why unit file checked in but install path goes through executor-install:
+# per AGENTS.md SPIFFE primary rule 3, an agent never runs sudo.
+# executor-install itself refuses an agent-invoked shell (FOUNDER FENCE);
+# the founder runs it from their terminal once. This file is the unit
+# the script copies into /etc/systemd/system/.
+
+[Unit]
+Description=Gateway-as-floor executor daemon
+Documentation=bin/idp-executor --help
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=_idp_executor
+Group=_idp_executor
+WorkingDirectory=/var/lib/idp-executor
+ExecStartPre=/usr/bin/install -d -o _idp_executor -g _idp_executor -m 0750 /run/idp
+ExecStart=/usr/local/bin/executor-daemon \
+    --socket /run/idp/executor.sock \
+    --workdir /var/lib/idp-executor \
+    --audit-log /var/log/idp-executor-audit.log
+Restart=on-failure
+RestartSec=5s
+
+# Same hardening as spire-agent. The executor is the only path an agent
+# can write to a protected path; hardening has the same role here as for
+# the SPIRE agent, just one tier down the trust ladder.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorLogs=disabled
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictSUIDSGID=true
+
+RuntimeDirectory=idp
+RuntimeDirectoryMode=0750
+
+# The socket is what every workload (Claude Code, terminals) writes
+# through. Read/write by the executor uid only; everyone else connects
+# without filesystem credentials.
+SocketUser=_idp_executor
+SocketGroup=_idp_executor
+SocketMode=0640
+
+[Install]
+WantedBy=multi-user.target

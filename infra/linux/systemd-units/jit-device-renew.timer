@@ -1,0 +1,25 @@
+# infra/linux/systemd-units/jit-device-renew.timer
+#
+# Activation: every 10 minutes, with up to 30s jitter so a fleet of
+# devices does not stampede the broker at the same boundary.
+# Persistent=true so a missed tick (laptop asleep, daemon down) catches up
+# next time the timer is started.
+#
+# On macOS the same loop runs as a LaunchAgent with StartInterval=600; the
+# math is identical and the renewal threshold (~10m before the 1-hour SVID
+# expiry) holds for both classes of device.
+
+[Unit]
+Description=Renew agent-reader kubeconfig every 10 minutes
+Documentation=bin/idp-jit-device-renew --help
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+RandomizedDelaySec=30s
+AccuracySec=1s
+Persistent=true
+Unit=git-device-renew.service
+
+[Install]
+WantedBy=timers.target

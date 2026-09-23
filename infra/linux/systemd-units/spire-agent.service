@@ -1,0 +1,67 @@
+# infra/linux/systemd-units/spire-agent.service
+#
+# Unit for the SPIRE agent on Linux. Runs as the founder's uid (or the
+# service-account uid that owns the device's age key) under systemd's
+# per-user instance (`systemctl --user`); the system-wide form lands in
+# /etc/systemd/system/ for the root-owned variant.
+#
+# Why a unit file checked into the repo (the script generates no
+# platform-specific id at runtime): the unit's ExecStart path, the
+# Restart policy, and the security sandbox (NoNewPrivileges,
+# ProtectSystem=strict, ProtectHome=read-only) are SPIRE-specific
+# baselines that every device on the estate must agree on. Drift
+# here is a downgrade.
+
+[Unit]
+Description=SPIRE agent -- Workload API + JWT-SVID minting on this device
+Documentation=https://spiffe.io/docs/latest/spire/agent/
+After=network-online.target tailscaled.service
+Wants=network-online.target
+Requires=tailscaled.service
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+WorkingDirectory=/var/lib/spire
+EnvironmentFile=-/etc/spire/agent.conf.env
+ExecStartPre=-/usr/bin/test -S /tmp/spire-agent/public/api.sock
+ExecStart=/usr/local/bin/spire-agent run \
+    -config /etc/spire/agent.conf \
+    -expandEnv
+Restart=on-failure
+RestartSec=5s
+StartLimitInterval=60s
+StartLimitBurst=5
+
+# Hardening. SPIRE is the only path to a JWT-SVID on this device; hardening
+# is the difference between a node that contributes to the trust domain and
+# a node that owns a token-mint surface. The defaults below match what the
+# upstream SPIRE deployment guide ships for unix:uid attestor workloads.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorLogs=disabled
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictSUIDSGID=true
+PrivateUsers=true
+
+# The Workload API socket is what workloads read -- they need write access
+# to a public socket. PrivateTmp=true gives it a fresh /tmp; we bind the
+# socket path explicitly via spire-agent.conf.
+RuntimeDirectory=spire-agent
+RuntimeDirectoryMode=0750
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,46 @@
+# infra/linux/systemd-units/jit-device-renew.service
+#
+# Mirrors com.estate.jit-device-renew.plist on Mac: every 10 minutes,
+# re-mint the agent-reader kubeconfig from the per-device key the broker
+# holds for this machine. The Mac path is a LaunchAgent (per-user, no
+# sudo); the Linux path is `systemd --user` (the per-user systemd
+# instance, installed by `loginctl enable-linger <user>`).
+#
+# Why a Timer pair (this unit + the .timer below) instead of OnCalendar
+# in the Service unit: a Timer unit is what the systemd documentation
+# recommends for periodic jobs, lets multiple Services share one Timer,
+# and keeps `RandomizedDelaySec` honest without anacron.
+
+[Unit]
+Description=Renew agent-reader kubeconfig from the per-device JIT key
+Documentation=bin/idp-jit-device-renew --help
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=%i
+Group=%i
+WorkingDirectory=/home/%i
+EnvironmentFile=-/home/%i/.config/spire-renew.env
+ExecStart=/usr/local/bin/idp-jit-device-renew \
+    --quiet \
+    --kubeconfig /home/%i/.local/state/idp/agent.kubeconfig
+
+# Hardening (laxer than the SPIRE agent unit: this unit needs to talk
+# to the broker over the tailnet, which means a real socket; the
+# agent unit instead binds to a Unix socket only).
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+MemoryDenyWriteExecute=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+LockPersonality=true
+
+[Install]
+WantedBy=default.target

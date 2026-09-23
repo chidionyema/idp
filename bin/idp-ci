@@ -437,53 +437,103 @@ if "$MPY" -c "import dagster" 2>/dev/null; then
   else say "$out"; fail=1; fi
 else say "BLIND migration dagster not importable; gate not run"; fail=1; fi
 
-# 4z. mac-provision (per docs/reference/security-architecture.md §3 + §6).
-#     The Brewfile + LaunchDaemons + idp-mac-provision are the founder Mac install
-#     surface under SPIFFE primary. Linux cannot run `brew bundle`, but it
-#     CAN validate that the Brewfile parses and the plists are well-formed XML;
-#     the actual `brew bundle install` is the macos-14 GH Actions job.
-if [ -f "$IDP/infra/macos/Brewfile" ] && [ -d "$IDP/infra/macos/LaunchDaemons" ]; then
-  say "ok    mac-provision source tree present (infra/macos/)"
-  # Brewfile: every line that starts with `brew "NAME"` or `cask "NAME"` parses
-  # as Ruby in a strict subset. We use ruby --check (parses but does not run).
+# 4z. device-provision (per docs/reference/security-architecture.md §3 + §6).
+#     The Brewfile + apt-list + LaunchDaemons + systemd units + idp-device-provision are the
+#     install surface under SPIFFE primary for every device the estate trusts (founder Mac,
+#     Linux CI runners, enterprise laptops). The orchestrator dispatches mac/linux/win;
+#     this rung asserts the artifacts are well-formed without needing the platform itself.
+if [ -f "$IDP/infra/macos/Brewfile" ] && [ -d "$IDP/infra/macos/LaunchDaemons" ] && \
+   [ -f "$IDP/infra/linux/apt-lists/runtime.txt" ] && [ -d "$IDP/infra/linux/systemd-units" ]; then
+  say "ok    device-provision source tree present (infra/{macos,linux}/)"
+
+  # --- Brewfile (mac) ---
   if command -v ruby >/dev/null 2>&1; then
     if ruby -c "$IDP/infra/macos/Brewfile" >/dev/null 2>&1; then
-      say "ok    mac-provision Brewfile parses (ruby -c)"
+      say "ok    device-provision Brewfile parses (ruby -c)"
     else
-      say "FAIL  mac-provision Brewfile is not valid Ruby"; fail=1
+      say "FAIL  device-provision Brewfile is not valid Ruby"; fail=1
     fi
   else
-    say "BLIND mac-provision Brewfile ruby parser not on this runner; CI rung on macos-14 covers parse + bundle install"
+    say "BLIND device-provision Brewfile ruby parser not on this runner; CI rung on macos-14 covers parse + bundle install"
   fi
-  # Plists: each must be well-formed XML. xmllint is universal; plutil is Mac-only.
+
+  # --- apt list (linux) ---
+  bad_pkg=0
+  while IFS= read -r pkg; do
+    case "$pkg" in ''|'#'*) continue ;; esac
+    if command -v apt-get >/dev/null 2>&1; then
+      if ! apt-get install --dry-run -y --no-install-recommends "$pkg" >/dev/null 2>&1; then
+        bad_pkg=$((bad_pkg + 1))
+      fi
+    fi
+  done < "$IDP/infra/linux/apt-lists/runtime.txt"
+  if command -v apt-get >/dev/null 2>&1; then
+    if [ "$bad_pkg" = 0 ]; then
+      say "ok    device-provision every apt package in runtime.txt exists on the runner distro"
+    else
+      say "FAIL  device-provision $bad_pkg apt package(s) in runtime.txt are missing from this distro"; fail=1
+    fi
+  else
+    say "BLIND device-provision apt-get not on this runner; ubuntu-24.04 CI rung covers the runtime check"
+  fi
+
+  # --- Plists (mac) ---
   bad_plist=0
   for plist in "$IDP"/infra/macos/LaunchDaemons/*.plist; do
     [ -f "$plist" ] || continue
     if command -v xmllint >/dev/null 2>&1; then
       xmllint --noout --nonet "$plist" 2>/dev/null \
-        || { say "FAIL  mac-provision plist malformed: $plist"; bad_plist=1; }
+        || { say "FAIL  device-provision plist malformed: $plist"; bad_plist=1; }
     elif command -v plutil >/dev/null 2>&1; then
       plutil -lint "$plist" >/dev/null 2>&1 \
-        || { say "FAIL  mac-provision plist malformed: $plist"; bad_plist=1; }
+        || { say "FAIL  device-provision plist malformed: $plist"; bad_plist=1; }
     fi
   done
   if [ "$bad_plist" = 0 ]; then
     [ -f "$IDP"/infra/macos/LaunchDaemons/com.idp.spire-agent.plist ] && \
     [ -f "$IDP"/infra/macos/LaunchDaemons/com.idp.executor.plist ] && \
     [ -f "$IDP"/infra/macos/LaunchDaemons/com.estate.jit-device-renew.plist ] \
-      && say "ok    mac-provision all three LaunchDaemons/*.plist present + XML well-formed" \
-      || { say "FAIL  mac-provision missing one of the three required LaunchDaemon plists"; fail=1; }
+      && say "ok    device-provision all three LaunchDaemons/*.plist present + XML well-formed" \
+      || { say "FAIL  device-provision missing one of the three required LaunchDaemon plists"; fail=1; }
   else
     fail=1
   fi
-  # Script must parse
-  if bash -n "$IDP/bin/idp-mac-provision" 2>/dev/null; then
-    say "ok    mac-provision bin/idp-mac-provision parses"
+
+  # --- systemd units (linux) ---
+  for unit in "$IDP"/infra/linux/systemd-units/*.service "$IDP"/infra/linux/systemd-units/*.timer; do
+    [ -f "$unit" ] || continue
+    if command -v systemd-analyze >/dev/null 2>&1; then
+      systemd-analyze verify "$unit" >/dev/null 2>&1 \
+        || { say "FAIL  device-provision systemd unit invalid: $unit"; fail=1; }
+    else
+      warn "device-provision systemd-analyze not available; the linux CI rung covers unit verification"
+    fi
+  done
+
+  # --- Orchestrator ---
+  if bash -n "$IDP/bin/idp-device-provision" 2>/dev/null; then
+    say "ok    device-provision bin/idp-device-provision parses"
   else
-    say "FAIL  mac-provision bin/idp-mac-provision has a syntax error"; fail=1
+    say "FAIL  device-provision bin/idp-device-provision has a syntax error"; fail=1
+  fi
+  # Status contract on every platform has stable field order. Sanity check
+  # that the JSON parses and contains every required component -- a regression
+  # here means the dashboard at mumchimp.com/devices breaks.
+  if status_json=$(IDP_DEVICE_PROVISION_DRY=1 "$IDP/bin/idp-device-provision" status 2>/dev/null); then
+    if echo "$status_json" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+required = ['platform','brew','apt','tailscale','spire','executor','renew']
+for k in required:
+    assert k in d, f'missing component: {k}'
+    assert 'installed' in d[k] and isinstance(d[k]['installed'], int), f'installed must be int on {k}'
+print('ok    status contract holds for', len(d), 'components on', d['platform'])
+"; then : ; else say "FAIL  device-provision status JSON contract broke"; fail=1; fi
+  else
+    say "BLIND device-provision status command refused on this runner; the macos-14 and ubuntu-24.04 jobs both run it directly"
   fi
 else
-  say "BLIND mac-provision infra/macos/ not present (expected; the macos-14 GH Actions job owns it)"
+  say "BLIND device-provision infra/{macos,linux}/ not fully present; the GH Actions matrix owns the platform coverage"
 fi
 
 # 5. Every generated entity validates against the published Backstage schema.

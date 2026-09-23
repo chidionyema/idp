@@ -1,0 +1,57 @@
+# infra/linux/apt-lists/runtime.txt — Debian/Ubuntu packages for `bin/idp-device-provision`
+#
+# Mirrors infra/macos/Brewfile 1:1. Every package here has the same job as
+# its Brewfile row. The provision script reads this file with `xargs -a
+# runtime.txt apt-get install -y --no-install-recommends` after `apt-get update`.
+#
+# Why a plain text list, not a YAML:
+#   # The format above is the exact dpkg / apt-get install-oneliner's own input.
+#   # No parser, no reformat, no "what is the structure". apt-get takes it.
+#   # The CI rung (infra-linux-packages, bin/idp-ci) runs `apt-get install --dry-run
+#   # -y --no-install-recommends - < runtime.txt` on ubuntu-24.04 and FAILS on a
+#   # package that no longer exists in the distro. Same gate model as
+#   # infra-macos-bundle runs `brew bundle check --verbose` on macos-14.
+
+# --- Core CLI tools ---
+jq
+yq
+gh
+shellcheck
+shfmt
+actionlint
+
+# --- Vault / secrets ---
+sops
+age
+
+# --- Kubernetes / GitOps ---
+kubectl
+helm
+flux
+
+# --- SPIFFE / SPIRE primary ---
+# The SPIRE agent binary ships in the official SPIRE apt repo
+# (https://spiffe.io/docs/latest/spire/agents/) — we add that repo at
+# `bin/idp-device-provision install` time and pin via the version in the
+# repo URL, not via the OS package name (no `spire-agent` in distro).
+# apt-mark holds it after install so `apt-get upgrade` doesn't drift the
+# version when we ship a new SPIRE helmrelease.
+
+# --- Tailscale on Linux ---
+# Same as Mac: install via the official apt repo
+# (https://pkgs.tailscale.com/stable/ubuntu/jammy/main) — laid by the
+# provision script, package name `tailscale`. The systemd unit comes from
+# the upstream package, not from infra/linux/systemd-units/, so this row
+# is intentionally absent; the binary + the daemon unit are both handled
+# by the upstream `.deb`.
+
+# --- Mac App Store CLI ---
+# `mas` is Mac-only; absent here. CI matrix excludes it from the Linux rung.
+
+# --- build-from-source rows (no apt package exists) ---
+# oci-cli: same constraint as on macOS — cryptography<46 pin for intel macOS
+# wheels, irrelevant on linux/amd64; the script handles this via the
+# shared `bin/idp-cloud` vendor path.
+# spire-agent: built from the same upstream source via the install_upstream
+# recipe the bash version of the script carries; the version pin lives in
+# `bin/idp-device-provision install` itself, not in this file.
