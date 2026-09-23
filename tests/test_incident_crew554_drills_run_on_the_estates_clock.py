@@ -69,9 +69,9 @@ def test_dispatcher_is_a_restricted_hourly_cronjob_on_the_pinned_image() -> None
     minutes = [int(m) for m in minute.split(",")]
     assert hour == "*" and cj["spec"]["concurrencyPolicy"] == "Forbid"
     # crew#648: four firings an hour, 15 apart, so a `*/15` catalogue row is covered on the estate's clock
-    assert len(minutes) == 4 and {b - a for a, b in zip(minutes, minutes[1:])} == {
-        15
-    }, cj["spec"]["schedule"]
+    assert len(minutes) == 4 and {
+        b - a for a, b in zip(minutes, minutes[1:], strict=False)
+    } == {15}, cj["spec"]["schedule"]
     pod = cj["spec"]["jobTemplate"]["spec"]["template"]["spec"]
     assert (
         pod["securityContext"]["runAsNonRoot"] is True

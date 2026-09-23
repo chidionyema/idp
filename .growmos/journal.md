@@ -78,3 +78,11 @@ Consolidation landing. consolidate/all-outstanding holds 20 clean merges + 8 che
 ### 2026-09-23T17:31:42Z · agent
 
 Landed jev_affected (TIA) on the existing Jev layer + bin/idp-affected + jev-affected.yml + 6 fail-open tests. Chose to extend the estate's own decision layer over adopting jev-affected/chisel/coverage TIA as new dependencies (AGENTS.md section 6: one of each layer).
+
+### 2026-09-23T23:37:11Z · agent
+
+Captured the estate's architecture: Terminal Grammar (one rule — anything declaring input/output/grade is a terminal) closed under six algebras + bootstrap + falsifiable five-arrival proof. Resolved 3 seams (duality→one grammar, bootstrap→named seed, grade→need-declared comparison metric). Synth docs: closed-grammar.md/html, factory-inventory, programme, factory-contract, agents-book, capability-list (236 caps). Decision: factory contract lives in factory.yaml NOT capability.yaml (name already taken by auto-inventory descriptor in 3 repos). Telegram send blocked on missing OCI identity.
+
+### 2026-09-23T23:38:31Z · agent
+
+Build spec captured to graph. CRITICAL measured correction: agent-foundry's real interface is af.cli validate/plan/run (order file path), with Order/PriceAlertArmy/InProcessRunner classes and nodes.py functions (fetch_page/dom_strip/extract_price/math_check/alert_core). The build spec's Step 5 assumed af.army(order=,nodes=) which does NOT exist — idp-execute must shell out to af.cli run <order.json>, not import af.army. This is the one unverified premise that would block the first loop.

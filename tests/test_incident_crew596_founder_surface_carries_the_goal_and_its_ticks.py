@@ -127,7 +127,7 @@ def test_incident_20260829_goal_post_never_takes_the_pin_from_a_founder_action(
             def read(self):
                 return json.dumps({"result": self.body}).encode()
 
-        def urlopen(url, data=None, timeout=0):
+        def urlopen(url, data=None, timeout=0, holder=holder, calls=calls):
             calls.append(url.rsplit("/", 1)[1])
             return R(
                 {"pinned_message": {"message_id": 5, "text": holder}}

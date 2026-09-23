@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Closed Grammar — the terminal grammar, its closure, and the proof</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400&family=Public+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F5F7F5; --surface:#FFFFFF; --surface-2:#EDF1EE;
+  --ink:#15201B; --ink-soft:#525E58; --ink-faint:#7C8880;
+  --line:#DCE2DD; --line-strong:#C3CDC6;
+  --accent:#17624F; --accent-soft:#DCEDE6;
+  --warn:#9A5713; --warn-soft:#F6E9D8;
+  --stop:#8C2E2E; --stop-soft:#F4DEDE;
+  --shadow:0 1px 2px rgba(21,32,27,.05),0 8px 24px -12px rgba(21,32,27,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+    --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+    --line:#26312B; --line-strong:#374339;
+    --accent:#5CBEA1; --accent-soft:#17302A;
+    --warn:#D3934A; --warn-soft:#33261A;
+    --stop:#D57272; --stop-soft:#331E1E;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+  --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+  --line:#26312B; --line-strong:#374339;
+  --accent:#5CBEA1; --accent-soft:#17302A;
+  --warn:#D3934A; --warn-soft:#33261A;
+  --stop:#D57272; --stop-soft:#331E1E;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:17px; line-height:1.62; margin:0; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px 96px}
+main{display:flex;flex-direction:column;gap:44px}
+section{display:flex;flex-direction:column;gap:16px}
+p{margin:0;max-width:70ch}
+h1,h2,h3{hargin:0;margin:0;text-wrap:balance;font-family:Spectral,Georgia,"Times New Roman",serif;font-weight:600;letter-spacing:-.01em}
+h1{font-size:clamp(2.1rem,6vw,3.1rem);line-height:1.08;font-weight:700}
+h2{font-size:clamp(1.4rem,3.4vw,1.8rem);line-height:1.2;padding-top:8px}
+h3{font-size:1.08rem;line-height:1.3}
+h4{font-family:"Public Sans",sans-serif;font-size:.98rem;font-weight:700;margin:0}
+a{color:var(--accent);text-underline-offset:3px;text-decoration-thickness:1px}
+code{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;
+  background:var(--surface-2);border-radius:4px;padding:.1em .35em}
+pre{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;
+  padding:16px 18px;overflow-x:auto;margin:0}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.55;white-space:pre}
+strong{font-weight:700}
+header{padding:56px 0 0;display:flex;flex-direction:column;gap:20px}
+.eyebrow{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--ink-faint)}
+.standfirst{font-family:Spectral,Georgia,serif;font-size:clamp(1.05rem,2.4vw,1.28rem);line-height:1.5;color:var(--ink-soft);max-width:62ch}
+.rule{height:1px;background:var(--line-strong);border:0;margin:0}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:520px}
+th,td{text-align:left;padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+thead th{background:var(--surface-2);font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-soft);font-weight:700;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+blockquote{margin:0;background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--accent);border-radius:10px;padding:16px 20px;
+  display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+blockquote p{font-size:.96rem;color:var(--ink-soft)}
+blockquote p:first-of-type{color:var(--ink)}
+ul,ol{margin:0;padding-left:1.35em;max-width:70ch;display:flex;flex-direction:column;gap:7px}
+li{line-height:1.55}
+.toc{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:18px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+.toc h4{font-size:.72rem;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint)}
+.toc ol{font-size:.92rem;padding-left:1.2em}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-faint);font-size:.85rem;
+  display:flex;flex-wrap:wrap;gap:8px 20px}
+@media print{
+  :root{--ground:#fff;--surface:#fff;--surface-2:#f4f4f4;--shadow:none}
+  .toc{break-inside:avoid}
+  h2{break-after:avoid}
+  pre,table,blockquote{break-inside:avoid}
+}
+</style>
+<div class="wrap">
+<header>
+  <div class="eyebrow">idp · synthesis · measured closed</div>
+  <h1>The Closed Grammar — the terminal grammar, its closure, and the proof</h1>
+</header>
+<hr class="rule">
+<main>
+<nav class="toc"><h4>On this page</h4><ol><li><a href="#0-the-one-sentence">0. The one sentence</a></li><li><a href="#1-the-rule-the-terminal-grammar">1. The rule (the terminal grammar)</a></li><li><a href="#2-the-closure-six-operations-bootstrap-proof">2. The closure — six operations + bootstrap + proof</a></li><li><a href="#3-the-five-arrival-test-run-against-the-real-inventory">3. The five-arrival test — run against the real inventory</a></li><li><a href="#4-what-this-does-to-everything-built-so-far">4. What this does to everything built so far</a></li><li><a href="#5-the-three-seams-that-were-found-and-closed-the-record-of-this-session-s-review">5. The three seams that were found and closed (the record of this session's review)</a></li><li><a href="#6-the-bottom-line">6. The bottom line</a></li></ol></nav>
+<h1 id="the-closed-grammar-the-terminal-grammar-its-closure-and-the-proof">The Closed Grammar — the terminal grammar, its closure, and the proof</h1>
+<p><strong>Written 2026-09-23. The definitive capture of the estate's architecture.</strong> This is the document that supersedes every prior schema, build pack, and contract. It is the fixed point: one grammar, six algebras that close it, a bootstrap, and a falsifiable proof. Everything else — 65 repos, 236 capabilities, 1,500 components, 315 patches, every schema — is a <em>projection</em> of this one rule, or a demonstration that the rule works.</p>
+<hr class="rule">
+<h2 id="0-the-one-sentence">0. The one sentence</h2>
+<blockquote><p><strong>The factory is the minimal closed system that admits any future system.</strong></p></blockquote>
+<p>Three words carry the whole load:</p>
+<ul><li><strong>Closed</strong> — it can describe itself, extend itself, and grade itself.</li><li><strong>Minimal</strong> — one rule, not six.</li><li><strong>Admits any future system</strong> — the proof is a demonstration, not a claim.</li></ul>
+<hr class="rule">
+<h2 id="1-the-rule-the-terminal-grammar">1. The rule (the terminal grammar)</h2>
+<blockquote><p><strong>Anything that declares an input, an output, and a grade is a terminal. The factory admits terminals. Needs resolve to terminals. Terminals that lose their grade are shed. Nothing else.</strong></p></blockquote>
+<p>A capability is a terminal. A surface is a terminal. An order is a terminal. An agent is a terminal that composes terminals. A robot is a terminal whose output is actuation. A pair of glasses is a terminal whose input is perception. A shed is a terminal whose output is a retirement.</p>
+<p><strong>They are not different kinds. They are the same kind, with different annotations. The annotations are optional. The grammar is mandatory.</strong></p>
+<h3 id="the-single-shape">The single shape</h3>
+<pre><code>terminal:
+  id: &lt;stable&gt;
+  name: &lt;human&gt;
+  input:  &lt;shape&gt;          # what it accepts: text, image, order, actuation, perception, need
+  output: &lt;shape&gt;          # what it produces
+  grade:
+    metric: &lt;what proves it worked&gt;
+    gate:   &lt;the check that measures it&gt;
+  composes: [&lt;terminal_id&gt;]   # optional; a terminal may compose others
+  sheds:    [&lt;terminal_id&gt;]   # optional; a terminal may retire others
+  state:    current | incubating | deprecated
+  annotations:                # optional — everything below is an annotation, never a kind
+    class: perceive | act | surface | memory | compute | safety | make | agent | robot | glasses
+    mode:  function | frontier-call | trained-adapter | human-gate
+    scope: { resources, tenant_isolated }
+    role:  seed-expression | branch | product | rail</code></pre>
+<h3 id="the-admission-rule">The admission rule</h3>
+<p>Nothing is <em>approved</em>. Nothing is <em>enrolled</em>. The declaration <em>is</em> the membership:</p>
+<ol><li>A thing declares itself as a terminal, in the grammar.</li><li>It provides a grade (metric + gate). Without a grade it cannot become <code>current</code>.</li><li>The collector admits it.</li><li>The resolver binds a need to it if the need's <code>input_shape</code> matches its <code>output</code> and it is <code>current</code>.</li><li>If its grade fails, or a rival's grade beats it, it becomes <code>superseded</code> or <code>deprecated</code>.</li><li>The shed is recorded to the ledger.</li></ol>
+<p>No committee. No roadmap. No approval board. The grammar is the door. The grade is the gate. The ledger is the memory. This scales to unbounded membership: a partner, a customer's team, a future model that wrote itself — anyone who can declare in the grammar is admitted the moment they do. <strong>You do not build the future. You host it.</strong></p>
+<hr class="rule">
+<h2 id="2-the-closure-six-operations-bootstrap-proof">2. The closure — six operations + bootstrap + proof</h2>
+<p>The terminal grammar is a fixed point. The whole system is what you get when you close that fixed point under six algebras, bootstrap it, and prove it.</p>
+<h3 id="2-1-duality-the-need-is-a-terminal">2.1 Duality — the need is a terminal</h3>
+<p>A <em>need</em> is a terminal. Its input is a customer's expression (any language, any modality). Its output is a resolution. Its grade is the customer's confirmation. The resolver matches the need's <code>input_shape</code> against a terminal's <code>output</code> — that is the binding.</p>
+<blockquote><p><strong>Resolution of the dual:</strong> the need is <strong>not</strong> a second schema. It is a terminal with <code>class: need</code>. There is exactly one grammar. If two grammars exist, the spiral is at the doorstep. One grammar, forever. (This resolved the open seam — see §5.)</p></blockquote>
+<h3 id="2-2-composition-algebra">2.2 Composition algebra</h3>
+<p>A composition is itself a terminal. If <code>T₁ … Tₙ</code> are terminals with compatible shapes (<code>Tᵢ.output</code> matches <code>Tᵢ₊₁.input</code>), then <code>compose(T₁…Tₙ)</code> is a terminal with:</p>
+<ul><li><code>input</code>  = <code>T₁.input</code></li><li><code>output</code> = <code>Tₙ.output</code></li><li><code>grade</code>  = strict (<code>min</code>) or soft (<code>product</code>) of parts, per the composition's mode</li><li><code>scope</code>  = intersection of parts</li><li><code>tenant</code> = strictest of parts</li></ul>
+<p>Composition is <strong>associative, not commutative.</strong> The DAG is the composition; nothing else is. This is what makes agents terminals — an agent is not a new kind, it is a composition. A robot is a composition whose final terminal outputs actuation. Glasses are a composition whose first terminal inputs perception.</p>
+<h3 id="2-3-time-algebra">2.3 Time algebra</h3>
+<p>A terminal has states and versions. A version = same <code>id</code>, new <code>since</code>, a <code>supersedes</code> pointer. The resolver binds <strong>at execution time</strong> to the version whose state is <code>current</code> then.</p>
+<ul><li><code>birth(t, at)</code> → version, state = <code>incubating</code></li><li><code>promote(v, at)</code> → state = <code>current</code></li><li><code>deprecate(v, at)</code> → state = <code>deprecated</code></li><li><code>supersede(old, new)</code> → <code>old.supersedes = [new]</code>, <code>old.state = deprecated</code></li></ul>
+<p>Deprecation is <strong>not deletion.</strong> The version persists; the resolver stops binding to it; the ledger records the transition. Late binding is a property of the time algebra, not a feature.</p>
+<h3 id="2-4-grade-algebra-the-dial">2.4 Grade algebra (the dial)</h3>
+<p>A grade is <code>(metric, gate)</code>. Grades compose: composition grade = min (strict) or product (soft) of parts.</p>
+<blockquote><p><strong>Resolution of the comparison seam:</strong> a terminal's <strong>own</strong> grade is its self-measurement (its contract with the future — "the measurement by which I consent to be shed"). But the <strong>need carries the comparison metric for the slot it fills.</strong> The resolver ranks <em>claimants</em> on the <strong>need's</strong> metric, not on the claimants' incommensurable self-metrics. Without this, "the resolver binds the winners" is undefined when two terminals pass different gates on different scales. One rule, not a new grammar.</p></blockquote>
+<p>The grammar is fixed. The grade is the dial. No grade → no admission. Weak grade → admitted but loses. The factory does not decide what is good; the grade decides, and the factory enforces.</p>
+<h3 id="2-5-tenancy-algebra">2.5 Tenancy algebra</h3>
+<p>Tenants are terminals: <code>id</code>, <code>kind</code> (<code>corporate | personal | agent-on-behalf-of</code>), <code>scope</code>.</p>
+<ul><li>A terminal with <code>tenant_isolated: true</code> may only be granted into compatible compositions.</li><li>Corporate order → every part must be <code>tenant_isolated: true</code>; strictest wins.</li><li>Personal order → may use non-isolated terminals, but <strong>a human-gate must approve crossing.</strong></li><li>The boundary propagates through any depth because composition is associative.</li></ul>
+<p>No forks, no special cases. One rule applied per composition. (This resolved the earlier one-way-open boundary defect; the boundary is now symmetric.)</p>
+<h3 id="2-6-self-application">2.6 Self-application</h3>
+<p>The grammar is a terminal:</p>
+<ul><li><code>input</code>  = a declaration</li><li><code>output</code> = a member of the registry</li><li><code>grade</code>  = the collector's validation + the admission test</li><li><code>composes</code> = [collector, resolver, shed — all terminals]</li><li><code>produces_again: true</code></li></ul>
+<p>The grammar admits itself. That is the <strong>fixed point.</strong> There is no external authority, no meta-grammar one level up. The factory produces the factory.</p>
+<h3 id="2-7-bootstrap">2.7 Bootstrap</h3>
+<p>One step: given the grammar and any set of declarations, produce a registry. The first invocation is with the grammar itself; the registry then contains the grammar.</p>
+<blockquote><p><strong>Resolution of the bootstrap seam:</strong> the default is <strong>one irreducible hardcoded seed</strong> — a single line, "a terminal is <code>{input, output, grade}</code>" — written <em>outside</em> the data, that the grammar is first admitted <em>against</em>, before the recursion takes over. This is not a weakness; it is the honest floor. A system may admit a seed; it may not <em>claim</em> to have none. Naming the seed is what makes self-application true rather than a slogan.</p></blockquote>
+<p>Then the grammar admits terminals; terminals admit needs; needs admit resolutions; resolutions admit executions; executions admit shed decisions; sheds update the registry; the registry feeds the grammar's own grade. <strong>Closed.</strong></p>
+<h3 id="2-8-proof">2.8 Proof</h3>
+<p>The falsifiable test of the whole system:</p>
+<blockquote><p><strong>Take the next five things that come along — any five, anywhere, anyone. For each: can it declare itself as a terminal? Does the need grammar admit the need? Does the resolver bind it? Does the grade close? Does the shed record?</strong></p><p><strong>Five arrivals, zero grammar changes → closure holds. One change → the grammar was incomplete.</strong></p></blockquote>
+<p>Every schema change after the grammar is locked is debt. The proof is not "does it feel general." It is: <em>did you have to touch it?</em></p>
+<hr class="rule">
+<h2 id="3-the-five-arrival-test-run-against-the-real-inventory">3. The five-arrival test — run against the real inventory</h2>
+<p>The test is not abstract. It can be run today against the estate's own inventory. Five candidates, each expressed as <strong>one terminal</strong> in the <strong>one</strong> grammar, with <strong>zero</strong> new kind:</p>
+<div class="tablewrap"><table><thead><tr><th>Arrival</th><th>Terminal input</th><th>Terminal output</th><th>Its grade</th></tr></thead><tbody><tr><td>a voice gate</td><td>speech</td><td>gated speech / refusal</td><td>deterministic-tier1 conformance</td></tr><tr><td>a sandbox ring</td><td>code</td><td>isolated execution</td><td>escapes-vs-admissions ratio</td></tr><tr><td>a ledger</td><td>an event</td><td>an append</td><td>hash-chain verification</td></tr><tr><td>a surface (Discord)</td><td>a human message</td><td>a human reply</td><td>delivery + ack rate</td></tr><tr><td>a shed</td><td>a terminal</td><td>a retirement</td><td>recorded-to-ledger</td></tr></tbody></table></div>
+<p>If all five declare as terminals with only annotation differences, the grammar holds against the estate's <em>current</em> frontier. That is the first data point of the proof — not the last.</p>
+<hr class="rule">
+<h2 id="4-what-this-does-to-everything-built-so-far">4. What this does to everything built so far</h2>
+<p>The 65 repos, 236 capabilities, 1,500 components, 315 patches, the pipeline, the schemas, the tests — <strong>none of it is the product.</strong> It is the <strong>first set of terminals the grammar admits.</strong> It is the demonstration that the closure holds for the inventory that exists today.</p>
+<p>The product is the <strong>grammar plus its closure</strong> — the rule, the six algebras, the bootstrap, the proof. That is what admits tomorrow's inventory — robots, glasses, implants, drones, whatever the future declares itself as — in the same registry, under the same resolver, with the same shed, with <strong>zero grammar changes.</strong></p>
+<hr class="rule">
+<h2 id="5-the-three-seams-that-were-found-and-closed-the-record-of-this-session-s-review">5. The three seams that were found and closed (the record of this session's review)</h2>
+<p>This document captures not only the grammar but the review that hardened it. Three leaks were identified in the closure and each was resolved without changing the grammar:</p>
+<ol><li><strong>Duality leaked a second grammar</strong> (a <code>need:</code> schema beside the terminal schema). Resolved: the need is a terminal (<code>class: need</code>). One grammar.</li><li><strong>Self-application hid an unnamed bootstrap hardcode.</strong> Resolved: name the seed explicitly — one line outside the data that the grammar is first admitted against. Honest floor, not a hidden authority.</li><li><strong>Grade comparison was incommensurable</strong> (claimants graded on their own metrics can't be ranked). Resolved: the terminal self-grades (its consent to be shed); the <em>need</em> declares the comparison metric; the resolver ranks claimants on the need's metric.</li></ol>
+<p>None of these required a new kind. Each was a <em>decision</em> inside the existing one rule — which is itself the proof, in miniature, that the grammar self-corrects.</p>
+<hr class="rule">
+<h2 id="6-the-bottom-line">6. The bottom line</h2>
+<p>You do not guarantee the future by predicting it. You guarantee it by building the grammar that anything the future brings can be declared in.</p>
+<p>The 20% is one terminal. The 80% is the closure that makes one terminal scale to any future terminal, on any surface, for any need, at any time, without the rule ever changing.</p>
+<p><strong>That is the whole thing. This document is its capture.</strong></p>
+<footer>
+  <span>Source: <code>docs/synthesis/closed-grammar.md</code></span>
+  <span>Rendered by <code>bin/idp-synthesis-render</code></span>
+</footer>
+</main>
+</div>
+</html>

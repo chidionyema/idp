@@ -8,17 +8,14 @@ They grade behaviour, never prose (R76). Every case drives the real Broker objec
 
 from __future__ import annotations
 
-import json
 import pathlib
 import sys
-import time
 
-import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "platform" / "jit"))
 
-from broker.broker import Broker, Refused  # noqa: E402
+from broker.broker import Broker  # noqa: E402
 
 CATALOGUE = str(ROOT / "platform" / "jit" / "grants.yaml")
 KEY = b"a broker signing key that only the broker and the executor share"

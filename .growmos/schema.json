@@ -14,7 +14,8 @@
     "ISSUE",
     "FEATURE",
     "SPEC",
-    "DEFECT"
+    "DEFECT",
+    "SYSTEM"
   ],
   "history": [
     {
@@ -31,6 +32,11 @@
       "note": "added type DEFECT via remember",
       "ts": "2026-09-23T17:41:26Z",
       "version": 3
+    },
+    {
+      "note": "added type SYSTEM via remember",
+      "ts": "2026-09-23T23:36:35Z",
+      "version": 4
     }
   ],
   "predicate_hints": [
@@ -48,5 +54,5 @@
     "introduced in",
     "fixes"
   ],
-  "version": 3
+  "version": 4
 }

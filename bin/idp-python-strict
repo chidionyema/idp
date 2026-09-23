@@ -37,13 +37,20 @@ IGNORE = "S603,S607"
 #   S311  random, not for crypto -- statistical test noise
 #   S105  "hardcoded password" fires on a VARIABLE NAMED token in a fixture
 #   S608  "SQL injection" fires on a test's own query string, which is not user input
+#   S102  exec() builds a throwaway stub in a test, never evaluates untrusted input
+#   S108  /tmp and /var/tmp in a test's fixture path, not a production tempdir
+#   S104  binding 0.0.0.0 in a test that asserts the estate's own ingress rule
+#   S314  xml on a fixture the test itself wrote
+#   S106  a fixture passes ACTIONS_ID_TOKEN_REQUEST_TOKEN="rt" -- a literal, not a credential
 # This list is the one `pyproject.toml` already keeps under
 # [tool.ruff.lint.per-file-ignores]; the two must agree, and this is the one the rung uses.
 #
 # FORMAT. `ruff` accepts ONE pattern:rule per flag, and a comma inside the rule list is read as
 # the start of the next pattern (measured: `**/tests/**:S101,S311` -> "invalid value 'S311'").
 # So the rules are repeated, one flag each, built below rather than written as one string.
-_TEST_EXEMPT_RULES = ("S101", "S311", "S105", "S608")
+_TEST_EXEMPT_RULES = (
+    "S101", "S311", "S105", "S608", "S102", "S108", "S104", "S314", "S106",
+)
 _TEST_GLOBS = ("**/tests/**/*.py", "test_*.py", "*_test.py")
 PER_FILE_PARTS = [
     f"--per-file-ignores={g}:{r}" for g in _TEST_GLOBS for r in _TEST_EXEMPT_RULES

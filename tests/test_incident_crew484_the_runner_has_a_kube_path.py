@@ -4,7 +4,6 @@ of asking the API server. bin/idp-verify-drill now mints a kubeconfig from the e
 a Ready node is an ok row; a 403 is a BLIND row naming the IAM gap; a NotReady node is red."""
 
 import json
-import os
 import stat
 import subprocess
 from pathlib import Path
