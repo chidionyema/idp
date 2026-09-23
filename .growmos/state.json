@@ -7,7 +7,7 @@
   },
   "created": "2026-09-22T18:15:24Z",
   "last_eval": null,
-  "last_run": "2026-09-22T21:01:40Z",
+  "last_run": "2026-09-23T17:39:03Z",
   "last_sample": null,
   "pending_resummarize": [],
   "runs": [
@@ -149,6 +149,16 @@
       "kind": "link",
       "relation": "r_103840ce90d0",
       "ts": "2026-09-22T21:01:40Z"
+    },
+    {
+      "entity": "feature/jev-affected-test-impact-analysis",
+      "kind": "remember",
+      "ts": "2026-09-23T17:31:42Z"
+    },
+    {
+      "entity": "decision/dual-trunk-enforcement",
+      "kind": "remember",
+      "ts": "2026-09-23T17:39:03Z"
     }
   ]
 }
