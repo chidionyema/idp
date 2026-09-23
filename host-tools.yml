@@ -68,6 +68,18 @@ tools:
     version_command: [~/.cache/estate-tools/kubeconform, -v]
     why: schema validation, pinned by bin/idp-install-deps.
 
+  - name: wt
+    paths:
+      - ~/.cache/estate-tools/wt
+      - /opt/homebrew/bin/wt
+      - ~/.local/bin/wt
+    why: >-
+      the worktree lifecycle driver `.config/wt.toml` declares (post-create deps, pre-merge
+      gate). NOT INSTALLED on 2026-09-23 -- so the declared worktree workflow silently
+      degrades to plain branches, which is the 346-branch state it exists to prevent. This
+      row is the declaration that makes it a provisioned dependency rather than the next
+      hand-install.
+
   - name: timeout
     paths: [/usr/local/bin/timeout, /opt/homebrew/bin/gtimeout]
     why: >-
