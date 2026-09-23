@@ -1,0 +1,96 @@
+# Coroot: the zero-instrumentation service map (founder blueprint, 2026-09-23).
+#
+# LAYER 1 of the asymmetric collection pattern. eBPF attaches at the kernel to syscalls and
+# network activity, so every process on every node reports requests, latency, errors and
+# dependencies WITHOUT any service being changed, instrumented, or even aware. One DaemonSet
+# per node; the collection cost is flat while the visibility covers 100% of the estate --
+# our own services, third-party images, anything in any language.
+#
+# WHY THIS IS NOT A SECOND COPY OF THE SIGNOZ COLLECTOR (AGENTS.md section 6). They answer
+# different questions and neither can answer the other's:
+#   platform/observability-collector/k8s-infra  pod/node/kubelet METRICS and container LOGS
+#                                               (OTel collector; asks the kubelet and API).
+#   coroot (this file)                          the SERVICE MAP -- which process CALLS which,
+#                                               over which protocol, with which error rate,
+#                                               assembled from socket-level observation.
+# Measured 2026-09-23: no service-map producer existed anywhere in the estate (`rg -li
+# 'service.?map|coroot|bpf|obi'` returned no manifest, only unrelated matches). A pod/node
+# metric does not tell you that checkout calls payments and payments is timing out; that edge
+# only exists by observing sockets. Coroot is that edge, and it is the one genuinely missing
+# layer in the blueprint.
+#
+# FAIL-SOFT BY CONSTRUCTION. eBPF here is read-only observation: Coroot never sits in a request
+# path, so Coroot being down costs the map and never a call. That is the property that makes
+# this deployable today on an estate that is still bringing its cluster up.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: coroot
+  labels:
+    app.kubernetes.io/part-of: idp
+    # The same Pod Security level as observability-agent: the eBPF agent mounts /sys/kernel
+    # and the host filesystem to attach its programs, which `restricted` refuses.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+# The chart source. Pinned by the HelmRelease below, never a floating tag.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: coroot
+  namespace: coroot
+spec:
+  interval: 1h
+  url: https://coroot.github.io/helm-charts
+---
+# The store. Coroot's own Postgres/ClickHouse-backed TSDB: the service map, the per-service
+# RED metrics, the rollout comparisons and the profiles all land here, and the `coroot` UI
+# (and the Prometheus exporter below) read it back.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: coroot
+  namespace: coroot
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: coroot
+      # Pinned. A service map that changes shape on a floating chart version is not a map.
+      version: "0.5.28"
+      sourceRef:
+        kind: HelmRepository
+        name: coroot
+        namespace: coroot
+  # Bounded per HGC standard 6: Helm keeps one Secret per revision and an unbounded value is
+  # how this cluster previously reached its Secret ceiling. 3 covers a rollback of a rollback.
+  maxHistory: 3
+  install:
+    crds: Create
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    # The agent is the whole point: one DaemonSet, one eBPF program set per node, no
+    # per-application configuration anywhere in the estate.
+    nodeAgent:
+      enabled: true
+      # The agent reads /sys/kernel/debug and the host filesystem to attach; the Kyverno
+      # waiver that permits exactly these two hostPaths is platform/edge/coroot-exception.yaml,
+      # and nothing outside it is waived.
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits: { cpu: 1, memory: 1Gi }
+    # The store persists the map. Without it the UI has no history and the rollout comparison
+    # (this release vs the last) cannot exist.
+    coroot-ce:
+      enabled: false
+    postgres:
+      # Sized for one node's worth of service-map history, not a data warehouse. Raised when
+      # the estate has more than a laptop's worth of traffic.
+      persistence:
+        size: 10Gi

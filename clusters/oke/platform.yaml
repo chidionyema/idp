@@ -78,7 +78,7 @@ spec:
     - name: estate-db-migrate
     # github-token.yaml substitutes ${githubAppIDQuoted}/${githubAppInstallationIDQuoted}
     # from the flux-system/github-app Secret; strict envsubst fails the row until the
-    # alerts-github row has rendered it.
+    # Secret exists. github-app-creds (not alerts-github) now owns the Secret (T009).
     - name: github-app-creds
   postBuild:
     substituteFrom:
@@ -96,6 +96,52 @@ spec:
       kind: Deployment
       name: catalogue
       namespace: backstage
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: chaos-mesh
+  namespace: flux-system
+spec:
+  interval: 10m
+  # Platform rows never wait on the portal (crew#539, 2026-08-28: one stalled catalogue rollout held
+  # 15 rows — observability, spire, temporal, keda, monitoring, science — behind Deployment/backstage/catalogue).
+  # Only `chaos` (the experiments that target the portal) depends on backstage.
+  dependsOn:
+    - name: scheduling
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/chaos/mesh
+  prune: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: chaos-mesh
+      namespace: chaos-mesh
+---
+# The schedules. Split from the install (incident 2026-08-25): Flux dry-runs a row as one
+# unit, and a Schedule cannot be dry-run before chaos-mesh.org CRDs exist.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: chaos
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: chaos-mesh
+    # crew#488: the langfuse alert drill's Schedule and Workflow land in the observability namespace.
+    - name: observability
+    - name: monitoring   # crew#539 DoD 2: langfuse-alert-drill asks kps-alertmanager and kps-prometheus
+    - name: backstage   # the experiments kill portal pods; they are the one row that waits for it
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/chaos
+  prune: true
+  wait: true
 ---
 # crew#258 CP2: SigNoz, the one metrics/traces/logs store (crew/docs/STANDARDS.md "Observability").
 # Was ordered after backstage "so the portal keeps first claim on the single node's CPU" — the single
@@ -324,6 +370,29 @@ spec:
         name: estate-config
   timeout: 10m
 ---
+# ACG (Asymmetric Compute Grid) — OpenAI-compatible inference gateway, 5-layer cascade.
+# After llm: shares the llm namespace's secret-store dependency and the edge Gateway.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: acg
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/acg
+  prune: true
+  dependsOn:
+    - name: edge
+    - name: secret-store
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+  timeout: 10m
+---
 # The router's own event wiring (founder decision 2026-09-12: the database is the source of
 # truth and git is its backup, with nothing connected by a poll).
 #
@@ -377,7 +446,7 @@ spec:
     substituteFrom:
       # The estate-agents App's id and installation id for the GithubAccessToken generator that
       # mints the cicd/incidents token; rendered into flux-system by
-      # platform/alerts-github/github-app.yaml from the vault -- same road as platform/mcp.
+      # github-app-creds renders this Secret (T009: split from alerts-github).
       - kind: Secret
         name: github-app
   dependsOn:
@@ -413,7 +482,7 @@ spec:
       - kind: ConfigMap
         name: estate-config
       # The estate-agents App's id and installation id for the GithubAccessToken generator;
-      # rendered into flux-system by platform/alerts-github/github-app.yaml from the vault.
+      # github-app-creds renders this Secret (T009: split from alerts-github).
       - kind: Secret
         name: github-app
   dependsOn:
@@ -432,7 +501,7 @@ spec:
 # and Flux webhooks in, PRs verified by the judge/red-team/honesty harness (idp#3564) out.
 # engine-deployment.yaml's GithubAccessToken generator needs the estate-agents App's id and
 # installation id the same way hermes-agent's row above does -- substituteFrom + dependsOn on
-# alerts-github is the same wiring, not a new pattern.
+# github-app-creds is the same wiring (T009: split from alerts-github), not a new pattern.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -448,7 +517,7 @@ spec:
   postBuild:
     substituteFrom:
       # The estate-agents App's id and installation id for the GithubAccessToken generator;
-      # rendered into flux-system by platform/alerts-github/github-app.yaml from the vault.
+      # github-app-creds renders this Secret (T009: split from alerts-github).
       - kind: Secret
         name: github-app
   dependsOn:
@@ -556,7 +625,8 @@ spec:
       - kind: ConfigMap
         name: estate-config
       # The estate-agents App's id and installation id for the GithubAccessToken generator in
-      # platform/otto-gateway/agent-env.yaml (step 5), rendered by platform/alerts-github.
+      # platform/otto-gateway/agent-env.yaml (step 5), rendered by platform/github-app-creds
+      # (T009: split from alerts-github so a notification subsystem failure cannot block the door).
       - kind: Secret
         name: github-app
   dependsOn:
@@ -564,7 +634,9 @@ spec:
     - name: secret-store
     - name: edge
     - name: event-bus
-    # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
+    # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret.
+    # github-app-creds (not alerts-github) owns the Secret: alerts-github's health check was
+    # watching an unrelated Deployment and blocking this row whenever notifications degraded.
     - name: github-app-creds
     # estate-db-migrate is deliberately absent. It guarded a one-time copy of this
     # gateway's Postgres data onto the estate cluster, because this row is what deletes the
@@ -619,7 +691,8 @@ spec:
     - name: scheduling
     - name: edge
     - name: secret-store
-    # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
+    # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret.
+    # github-app-creds (not alerts-github) owns the Secret (T009).
     - name: github-app-creds
   timeout: 10m
   healthChecks:
@@ -639,14 +712,13 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
-      # The estate-agents App's id and installation id for the GithubAccessToken generator;
-      # rendered into flux-system by platform/alerts-github/github-app.yaml from the vault.
+      # github-app-creds renders this Secret (T009: split from alerts-github).
       - kind: Secret
         name: github-app
 ---
 # The agent workforce (crew#729 step 3): a crewAI CronJob that takes a queued-lane board
 # ticket to a plan comment and a pull request. No RBAC, no cluster hand; the founder merges and
-# deploys. After scheduling (its priority class), secret-store (the vault), alerts-github (the
+# deploys. After scheduling (its priority class), secret-store (the vault), github-app-creds (the
 # App Secret its token generator reads through strict envsubst) and llm (the router it calls).
 # `wait: true` on a CronJob proves the objects applied, nothing more: a CronJob carries no
 # readiness, so kstatus reads it Current the moment it exists. Whether a run succeeds is read
@@ -669,7 +741,7 @@ spec:
       - kind: ConfigMap
         name: estate-config
       # The estate-agents App's id and installation id for the GithubAccessToken generator;
-      # rendered into flux-system by platform/alerts-github/github-app.yaml from the vault.
+      # github-app-creds renders this Secret (T009: split from alerts-github).
       - kind: Secret
         name: github-app
   dependsOn:
@@ -1229,6 +1301,32 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: coroot
+  namespace: flux-system
+spec:
+  interval: 10m
+  # After monitoring, because the ServiceMonitor in ./platform/coroot is a
+  # monitoring.coreos.com/v1 object and those CRDs come from kube-prometheus-stack. Applying
+  # this row first would be a `no matches for kind "ServiceMonitor"` on a fresh cluster --
+  # the ordering failure crew#539 documents above, repeated.
+  dependsOn:
+    - name: monitoring
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # LAYER 1 of the asymmetric collection pattern (founder blueprint, 2026-09-23): the
+  # zero-instrumentation service map. eBPF at the kernel, so every process on every node reports
+  # requests, latency, errors and its dependencies without being instrumented. Nothing sits in a
+  # request path, so this row being NotReady costs the map and never a call.
+  path: ./platform/coroot
+  prune: true
+  wait: true
+  timeout: 10m
+
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: monitoring
   namespace: flux-system
 spec:
@@ -1290,6 +1388,32 @@ spec:
   path: ./platform/monitoring/rules
   prune: true
   wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+---
+# The hourly drills on the estate's clock (crew#554). GitHub fired its hourly schedules 1-3 times a
+# day account-wide (measured 2026-08-28); this CronJob dispatches them as the GitHub App every
+# hour. After secret-store (the App Secret is an ExternalSecret) and alerts-github (which owns it).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: drills
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/drills
+  prune: true
+  # crew#488 CP5: the Secret is now owned by github-app-creds (T009: split from alerts-github).
+  # Naming secret-store directly is still redundant: github-app-creds depends on secret-store.
+  dependsOn:
+    - name: github-app-creds
+  wait: true
+  timeout: 10m
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -1391,6 +1515,7 @@ spec:
   dependsOn:
     - name: secret-store
   timeout: 5m
+
 ---
 # Notifications row (R75 founder spec 2026-08-29): Apprise API, the single fan-out engine. Publish
 # once, deliver everywhere. Named channels (founder-telegram, Slack, email) route to distinct
@@ -1880,3 +2005,25 @@ spec:
       kind: HelmRelease
       name: trivy-operator
       namespace: trivy-system
+---
+# The guarantee against the 504 epidemic of 2026-09-03..10. A dead flannel left a
+# FLANNEL-POSTRTG chain in the nodes' nat table that masqueraded every cross-node pod packet
+# as the node's own address, so every destination NetworkPolicy -- which whitelists pod
+# selectors, never node addresses -- dropped it at the tier default, silently, for a week.
+# No gate in this tree could have caught it: they all read files. Two canaries, one per node,
+# probe each other every 15 seconds and print what they saw; bin/idp-cross-node-drill reads
+# those logs and is a row of the hourly verify-drill. Flux owns it so it cannot be lost.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cross-node-drill
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/cross-node-drill
+  prune: true
+  wait: true
+  timeout: 5m

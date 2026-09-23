@@ -1,0 +1,110 @@
+# agent-trunk-batch -- one PR to main per batch, never N.
+#
+# THE STRUCTURE THIS ENFORCES (founder, 2026-09-23). Agents write to `agent-trunk`, which has
+# no PR required and no human in the loop. `main` is protected and accepts only a BATCHED PR
+# from `agent-trunk`, opened by this workflow on a schedule. A human reviews ONE PR with N
+# validated commits, not N separate PRs -- and reviews intent, because the mechanical part
+# was already enforced by the gate at push time.
+#
+# WHY THIS REPLACES BRANCH-CLEANUP DISCIPLINE. The 63 branches and 41 stashes this week were
+# not a discipline failure; they were a STRUCTURE failure. A branch whose lifetime is "until
+# someone removes it" accumulates. Here a branch is incidental to the work -- what persists
+# is `agent-trunk`, and everything above it is a batch.
+#
+# THE GUARANTEE, and it is the whole point: this workflow opens a PR; it does not merge one.
+# `merge-when-green` + `deploy-when-green` + the ruleset on `main` are what land it. Those
+# are the estate's existing Greenlane, deliberately reused rather than replaced.
+name: agent-trunk-batch
+
+on:
+  schedule:
+    - cron: "23 */6 * * *" # four times a day, offset from other estate crons
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would be batched; open no PR"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: agent-trunk-batch
+  cancel-in-progress: false
+
+jobs:
+  batch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: is there a batch to open?
+        id: want
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --heads origin agent-trunk >/dev/null 2>&1; then
+            echo "no agent-trunk on origin -- nothing to batch"
+            echo "count=0" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          git fetch --quiet origin agent-trunk main
+          count=$(git rev-list --count origin/main..origin/agent-trunk)
+          echo "agent-trunk is $count commit(s) ahead of main"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: refuse a batch that does not pass the gate
+        if: steps.want.outputs.count != '0'
+        run: |
+          set -euo pipefail
+          # A BATCH PR IS NOT A PLACE TO DISCOVER A RED GATE. The pre-push hook refuses a red
+          # push to agent-trunk, so a red agent-trunk means the hook was bypassed -- and the
+          # batch does not open until that is resolved, because opening it would hand a known
+          # failure to a human and call it review.
+          git checkout --quiet origin/agent-trunk
+          if [ -x bin/idp-ci ]; then
+            IDP_CI_FAST=1 bin/idp-ci || {
+              echo "::error::agent-trunk is red; not batching. Fix it on agent-trunk first."
+              exit 1
+            }
+          fi
+
+      - name: open or update the batch PR
+        if: steps.want.outputs.count != '0' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COUNT: ${{ steps.want.outputs.count }}
+        run: |
+          set -euo pipefail
+          BODY="$(mktemp)"
+          {
+            echo "## agent-trunk batch"
+            echo
+            echo "**${COUNT}** commit(s) from \`agent-trunk\`, validated by the fast gate at push time."
+            echo
+            echo "### What to review"
+            echo
+            echo "The mechanical checks are already enforced. Read for INTENT:"
+            echo
+            echo "- [ ] does this batch of work belong in production?"
+            echo "- [ ] are there duplicated utilities or a second copy of an existing layer?"
+            echo "- [ ] did any change weaken, skip or quarantine a gate to get green?"
+            echo
+            echo "### The commits"
+            echo
+            echo '```'
+            git log --oneline origin/main..origin/agent-trunk
+            echo '```'
+          } > "$BODY"
+
+          existing=$(gh pr list --base main --head agent-trunk --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --body-file "$BODY"
+            echo "updated batch PR #$existing"
+          else
+            gh pr create --base main --head agent-trunk \
+              --title "agent-trunk batch: ${COUNT} validated commit(s)" \
+              --body-file "$BODY"
+          fi

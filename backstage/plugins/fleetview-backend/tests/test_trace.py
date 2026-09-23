@@ -168,6 +168,7 @@ def test_http_error_is_trace_unavailable(trace, monkeypatch):
 
 def test_available_false_envelope_on_unavailable(monkeypatch):
     """routes.py's trace_envelope returns available:False/503 on TraceUnavailable."""
+
     routes_path = (
         REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "routes.py"
     )

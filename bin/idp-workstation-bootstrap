@@ -164,13 +164,17 @@ install_upstream() {
     # tailscale.com; this row only fetches the `tailscale` and `tailscaled` binaries so the
     # bootstrap is operable headlessly (CI runners, dev containers). On a founder Mac the .pkg
     # install is the install path; phase4 below checks for that and reports what is missing.
-    # The pkgs.tailscale.com URL serves whatever version is current; no version pinning needed
-    # because the binary self-updates once installed.
+    # pkgs.tailscale.com serves binaries named `tailscale_<version>_<arch>.tgz` where
+    # arch ∈ {386, amd64, arm, arm64}; there is no `darwin_` prefix in the filename. Verified
+    # 2026-09-23 that `tailscale_<empty>_amd64.tgz` is a 404, `tailscale_1.102.4_amd64.tgz`
+    # is 200; pinned to the latest stable releases delivered by `tailscale update` after
+    # install keeps this version-free. `brew install --cask tailscale` is the founder-Mac
+    # path; this recipe only runs when brew is absent (CI runner, dev container).
     tailscale)
       mkdir -p "$TOOLS_DIR"
       local tmp; tmp="$(mktemp -d)"
       if curl -fsSL -o "$tmp/ts.tgz" \
-           "https://pkgs.tailscale.com/stable/tailscale_${uos}_${uarch}.tgz" \
+           "https://pkgs.tailscale.com/stable/tailscale_${uarch}.tgz" \
         && tar xzf "$tmp/ts.tgz" -C "$tmp"; then
         find "$tmp" -type f -name 'tailscale'  -exec cp {} "$TOOLS_DIR/tailscale"  \; 2>/dev/null
         find "$tmp" -type f -name 'tailscaled' -exec cp {} "$TOOLS_DIR/tailscaled" \; 2>/dev/null

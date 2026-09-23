@@ -13,7 +13,8 @@
     "DEPENDENCY",
     "ISSUE",
     "FEATURE",
-    "SPEC"
+    "SPEC",
+    "DEFECT"
   ],
   "history": [
     {
@@ -25,6 +26,11 @@
       "note": "added type SPEC via remember",
       "ts": "2026-09-22T21:01:11Z",
       "version": 2
+    },
+    {
+      "note": "added type DEFECT via remember",
+      "ts": "2026-09-23T17:41:26Z",
+      "version": 3
     }
   ],
   "predicate_hints": [
@@ -42,5 +48,5 @@
     "introduced in",
     "fixes"
   ],
-  "version": 2
+  "version": 3
 }

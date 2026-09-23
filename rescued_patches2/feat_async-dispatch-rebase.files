@@ -1,0 +1,17 @@
+.githooks/pre-push
+.gitignore
+backstage/app-config.yaml
+backstage/packages/app/src/modules/home/Fleet.test.tsx
+backstage/packages/app/src/modules/home/Fleet.tsx
+backstage/packages/app/src/modules/home/doorCopy.ts
+backstage/packages/app/src/modules/nav/EstateNav.tsx
+backstage/plugins/fleetview-backend/src/routes.py
+bin/idp-install-verifier-hooks
+bin/idp-precommit-verify
+bin/idp-prepush-verify
+bin/idp-verifier-curl
+docs/tickets/2026-09-14-bayesian-mcts-k8s-sre.md
+docs/tickets/2026-09-14-mcts-mcp-server.md
+docs/tickets/2026-09-14-reasoning-gateway.md
+proof_gate_fires.txt
+tests/test_verifier_hooks.py

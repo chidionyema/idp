@@ -1,0 +1,927 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index a6b1ac3a1..69d5ccd26 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -94,6 +94,7 @@ deprecate them. Eradicate them."
+ | A state-changing estate MCP tool (an @mcp.tool() named execute_* or exec_*) is refused unless the same module registers a simulate twin to propose its change first (MUM-288, ADR 0006) | MUM-288, ADR 0006 | `python3 bin/idp-simulate-gate` | tests/fixtures/simulate-grade/bad | tests/fixtures/simulate-grade/good |
+ | Otto's door presents a key the lifeboat it talks to can validate: when LITELLM_BASE_URL is the loopback otto-brain sidecar, the door derives the same master key from the same Secret the sidecar does. A sidecar with no database cannot look up a virtual key, so it refuses every turn with 400 "No connected db." before any of the three homes is tried | THE EMPIRICAL PROOF RULE | `python3 bin/idp-otto-door-key-agrees` | tests/fixtures/otto-door-key/bad.yaml | tests/fixtures/otto-door-key/good.yaml |
+ | A grading step whose verdict cannot reach the run is refused: a grader piped into tee/cat with neither pipefail nor -e, a bare grader that is not the last command under a set line without -e, or a grader ending in '|| true' with no '# optional: <reason>' marker. The step is accepted when the same job asserts the captured verdict in a later step | LAW 28 | `python3 bin/idp-grader-exit-gate` | tests/fixtures/grader-exit/bad | tests/fixtures/grader-exit/good |
++| No script waits on a clock where an event exists -- a bare sleep of 10 seconds or more is refused, a sleep of 5 or less is a yield and passes, and a longer fixed interval is accepted only with a sleep-ok marker giving the reason: the documented rate limit or protocol heartbeat that forces it. | LAW 14 | `python3 bin/idp-sleep-ban` | — | — |
+ | A pull request that changes a file deciding what the estate SPENDS carries a cost-proof block naming a before, an after and the command that took both -- a number with no way to re-take it is a remembered number, and a change that says caching-enabled without the measured pair is an assertion, not a proof. A change outside the cost paths is never refused. | LAW 2 | `python3 bin/idp-cost-proof` | — | — |
+ | Every workflow the founder can dispatch carries a '# button:' title and a '# founder:' sentence, and the portal template on disk matches the workflow that generated it. A feature with no door is not finished, and a door nobody regenerated opens onto something else. | LAW 32 | `python3 bin/idp-portal-buttons` | tests/fixtures/founder-door/bad.yml | .github/workflows/catalog-render.yml |
+ | No untracked, unignored checkout of this repository is nested under its own root: a gate that walks the tree reads the nested copy's own tests/fixtures/*/bad.yaml or Dockerfile and reports it as a defect in the branch under test | LAW 45, incident 2026-09-10 | `python3 bin/idp-stray-checkout` | tests/fixtures/stray-checkout/bad/nested-checkout | tests/fixtures/stray-checkout/good/plain-data |
+diff --git a/backstage/app-config.container.yaml b/backstage/app-config.container.yaml
+index 22a5e9170..7e1710797 100644
+--- a/backstage/app-config.container.yaml
++++ b/backstage/app-config.container.yaml
+@@ -52,6 +52,12 @@ proxy:
+     # crew#684 CP5: the Healthchecks tile on the Ops page. The read-only API key is a mounted file
+     # from ExternalSecret healthchecks-ro (platform/backstage/overlays/oke), added here so the
+     # browser never holds it. Read only: v3 list checks. The page never names the host.
++    # The guard inventory on the Ops page. The estate MCP server already answers this question
++    # (mcp/plugins/estate_guards.py, ADR 0006: one interface answers questions about the estate),
++    # so the page reads it there rather than growing a second source.
++    '/guards':
++      target: http://estate-mcp.mcp.svc:8001
++      allowedMethods: [GET]
+     '/healthchecks':
+       target: http://healthchecks.healthchecks.svc:8000/api/v3
+       allowedMethods: [GET]
+diff --git a/backstage/packages/app/src/modules/home/Ops.test.tsx b/backstage/packages/app/src/modules/home/Ops.test.tsx
+index 59c1ebf41..b7a93a12f 100644
+--- a/backstage/packages/app/src/modules/home/Ops.test.tsx
++++ b/backstage/packages/app/src/modules/home/Ops.test.tsx
+@@ -21,6 +21,18 @@ import { COMPILED_JSON } from './useCompiled';
+ import { HELMRELEASES, KUSTOMIZATIONS, NODES, PODS } from './useClusterHealth';
+ import { ALERTS } from './useOpenReds';
+ 
++// A guard inventory shaped exactly as mcp/plugins/estate_guards.py returns it: a total, a map of
++// guards that FIRED, and anything that could not be read. Written with one guard that fired and
++// one that refused, so the table is proved to carry both numbers.
++const GUARDS = {
++  total_guards: 56,
++  fired: {
++    'pre-commit': { fired: 249, blocked: 105, last_at: '2026-09-13T01:40:54Z', last_command: 'exit=1 event=git-hook' },
++    'sleep-ban': { fired: 1, blocked: 1, last_at: '2026-09-13T00:01:41Z', last_command: 'sleep 420' },
++  },
++  unreadable: [],
++};
++
+ const entities: Entity[] = [
+   {
+     apiVersion: 'backstage.io/v1alpha1',
+@@ -156,7 +168,9 @@ const render = (lists: Record<string, unknown[]>, fail = false) =>
+                     ok: true,
+                     status: 200,
+                     json: async () =>
+-                      url.endsWith(HC_CHECKS)
++                      url.endsWith('/guards')
++                        ? GUARDS
++                        : url.endsWith(HC_CHECKS)
+                         ? healthchecks
+                         : url.endsWith(INVENTORY_JSON)
+                         ? inventory
+@@ -350,3 +364,33 @@ describe('Ops', () => {
+     expect(screen.queryByTestId('ops-inventory')).toBeNull();
+   });
+ });
++
++describe('Ops — the guards section', () => {
++  it('draws every guard that fired, with how many it refused', async () => {
++    render({});
++    expect(await screen.findByTestId('ops-guards-table')).toBeInTheDocument();
++    // The guard that refused 105 times is on the page with its own number.
++    // getAllByText: the guard's id appears in the row AND in the sentence above the table, and
++    // getByText throws when a name is legitimately on the page twice.
++    expect(screen.getAllByText('pre-commit').length).toBeGreaterThan(0);
++    expect(screen.getByText('105')).toBeInTheDocument();
++    // The page shows the guard's PLAIN-ENGLISH name, not its id -- a reader should not have to
++    // know that `sleep-ban` means "Sleep ban". Both guards must appear, by the name a person reads.
++    expect(screen.getAllByText('Sleep ban').length).toBeGreaterThan(0);
++  });
++
++  it('states how many guards exist, so a short table is not read as the whole estate', async () => {
++    render({});
++    const sentence = await screen.findByTestId('ops-guards-sentence');
++    // 56 exist, 2 fired: the page must say both, or a reader sees 2 and concludes there are 2.
++    expect(sentence).toHaveTextContent('56');
++    expect(sentence).toHaveTextContent(/2 guards fired/);
++  });
++
++  it('says the guards could not be read instead of showing none', async () => {
++    render({}, true);
++    expect(await screen.findByTestId('ops-guards-error')).toBeInTheDocument();
++    // The distinction this whole estate keeps getting wrong: no evidence is not a green tick.
++    expect(screen.queryByTestId('ops-guards-table')).not.toBeInTheDocument();
++  });
++});
+diff --git a/backstage/packages/app/src/modules/home/Ops.tsx b/backstage/packages/app/src/modules/home/Ops.tsx
+index 8edcbe035..47d29302e 100644
+--- a/backstage/packages/app/src/modules/home/Ops.tsx
++++ b/backstage/packages/app/src/modules/home/Ops.tsx
+@@ -32,6 +32,8 @@ import { useOpenReds } from './useOpenReds';
+ import { FounderData, receiptsSentence, waitingSentence } from './founder';
+ import { useFounder } from './useFounder';
+ import { useHealthchecks } from './useHealthchecks';
++import { useGuards } from './useGuards';
++import { guardsSentence } from './guards';
+ import { usePlacement } from './usePlacement';
+ import { useCompiled } from './useCompiled';
+ import { cpuLabel, guaranteed } from './compiled';
+@@ -285,6 +287,7 @@ const InventoryTile = ({ data, now }: { data: InventoryData; now: number }) => {
+ 
+ export const Ops = () => {
+   const loaded = useClusterHealth();
++  const guards = useGuards();
+   const reds = useOpenReds();
+   const founder = useFounder();
+   const checks = useHealthchecks();
+@@ -425,6 +428,56 @@ export const Ops = () => {
+           </>
+         )}
+       </Section>
++      <Section
++        title="Guards"
++        blurb="Every guard this estate has, what fires it, what it refused, and what happens next. A guard that has not fired is shown as no evidence -- never as working."
++        testId="ops-guards-section"
++      >
++        {guards.state === 'loading' && (
++          <Waiting testId="ops-guards-loading">Reading the guard inventory.</Waiting>
++        )}
++        {guards.state === 'error' && (
++          <Unread testId="ops-guards-error">
++            The guard inventory could not be read, so the state of every guard is unknown: {guards.error}
++          </Unread>
++        )}
++        {guards.state === 'ready' && (
++          <>
++            <Text variant="body-medium" data-testid="ops-guards-sentence">
++              {guards.total} guards exist. {guardsSentence(guards.rows, 1440)}
++            </Text>
++            {guards.unreadable.map(u => (
++              <Unread key={u} testId="ops-guards-unreadable">
++                Could not be read: {u}
++              </Unread>
++            ))}
++            {guards.rows.length > 0 && (
++              <Sheet testId="ops-guards-table">
++                <thead>
++                  <tr>
++                    <th>Guard</th>
++                    <th>What it does</th>
++                    <th>Fired</th>
++                    <th>Refused</th>
++                    <th>Last</th>
++                  </tr>
++                </thead>
++                <tbody>
++                  {guards.rows.map(r => (
++                    <tr key={r.guard} data-testid="ops-guard">
++                      <td>{r.name}</td>
++                      <td>{r.what || '—'}</td>
++                      <td>{r.events}</td>
++                      <td>{r.blocked}</td>
++                      <td>{r.lastAt.replace('T', ' ').replace(/\.\d+/, '')}</td>
++                    </tr>
++                  ))}
++                </tbody>
++              </Sheet>
++            )}
++          </>
++        )}
++      </Section>
+       {/* The compiled estate: what every Helm chart RENDERS, straight from git.
+           This is the instrument that closes the five-day gap. A values file, a comment and a
+           postRenderer patch are all CLAIMS; the number below is the one the chart decides, which
+diff --git a/backstage/packages/app/src/modules/home/guards.ts b/backstage/packages/app/src/modules/home/guards.ts
+new file mode 100644
+index 000000000..cf409df89
+--- /dev/null
++++ b/backstage/packages/app/src/modules/home/guards.ts
+@@ -0,0 +1,113 @@
++// The guard ledger, as the Ops page reads it.
++//
++// Founder, 2026-09-12: "the final proof is me seeing everything real time on ops dashboard, every
++// active guard or extension... need to see it working and doing this thing realtime." A guard
++// whose only evidence is a README is a claim. This is the record of it having fired, with the
++// command that caused it.
++//
++// Every guard decision is one JSON line in ~/.estate/guards.jsonl, written by the extension as it
++// happens. This module parses those lines and states what they mean; it never invents a value for
++// a guard that has not run, because "no evidence" and "not working" are different answers and the
++// page must not confuse them.
++
++export type GuardEvent = {
++  at: string;
++  guard: string;
++  action: 'allow' | 'block' | 'warn';
++  session?: string;
++  pid?: number;
++  command?: string;
++  seconds?: number;
++  budget_s?: number;
++  set_to_ms?: number;
++  overdue_ms?: number;
++};
++
++export type GuardSummary = {
++  guard: string;
++  name: string;
++  what: string;
++  /** How many times it fired inside the window this page reads. */
++  events: number;
++  blocked: number;
++  lastAt: string;
++  lastCommand: string;
++};
++
++/** What each guard is, in the page's own words. A guard missing from here is shown by its id. */
++export const GUARD_NAMES: Record<string, { name: string; what: string }> = {
++  'turn-ceiling': {
++    name: 'Turn ceiling',
++    what:
++      'Caps every bash call so a turn cannot block. A command that would run longer comes back to ' +
++      'the agent instead of leaving the session silent.',
++  },
++  'sleep-ban': {
++    name: 'Sleep ban',
++    what:
++      'Refuses a bare sleep of ten seconds or more. A wait on a clock is a missing event: the ' +
++      'estate\u2019s own answer for CI is the merge queue, which returns at once and merges on green.',
++  },
++  'feed-guard': {
++    name: 'Handoff guard',
++    what:
++      'Blocks work when this session\u2019s last handoff to the estate feed is too old, so what one ' +
++      'session learns reaches the others.',
++  },
++};
++
++/** Parse one ledger line. A line that will not parse is skipped, never guessed at. */
++export function parseEvent(line: string): GuardEvent | null {
++  const t = line.trim();
++  if (!t) return null;
++  try {
++    const o = JSON.parse(t) as GuardEvent;
++    if (!o || typeof o.guard !== 'string' || typeof o.action !== 'string') return null;
++    return o;
++  } catch {
++    return null;
++  }
++}
++
++/**
++ * Parse a whole ledger and summarise it per guard.
++ *
++ * `sinceMs` is the window the page reports: an old block from yesterday is not evidence that the
++ * guard is working now, and showing it as such would be the same lie in the other direction.
++ */
++export function summarise(text: string, sinceMs: number, now = Date.now()): GuardSummary[] {
++  const cutoff = now - sinceMs;
++  const byGuard = new Map<string, GuardSummary>();
++  for (const line of text.split('\n')) {
++    const e = parseEvent(line);
++    if (!e) continue;
++    const at = Date.parse(e.at);
++    if (Number.isNaN(at) || at < cutoff) continue;
++    const known = GUARD_NAMES[e.guard] ?? { name: e.guard, what: '' };
++    const cur =
++      byGuard.get(e.guard) ??
++      { guard: e.guard, name: known.name, what: known.what, events: 0, blocked: 0, lastAt: e.at, lastCommand: '' };
++    cur.events += 1;
++    if (e.action === 'block') cur.blocked += 1;
++    if (e.at >= cur.lastAt) {
++      cur.lastAt = e.at;
++      cur.lastCommand = e.command ?? '';
++    }
++    byGuard.set(e.guard, cur);
++  }
++  return [...byGuard.values()].sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
++}
++
++/**
++ * The sentence above the table. It states the window and how many guards answered, and it says
++ * plainly when nothing has fired -- because an empty ledger is the honest "no evidence" and not a
++ * green tick.
++ */
++export function guardsSentence(rows: GuardSummary[], windowMin: number): string {
++  if (!rows.length) {
++    return `No guard has fired in the last ${windowMin} minutes. That is the absence of evidence, not proof the guards are idle.`;
++  }
++  const blocks = rows.reduce((n, r) => n + r.blocked, 0);
++  const names = rows.map(r => r.name).join(', ');
++  return `${rows.length} guard${rows.length === 1 ? '' : 's'} fired in the last ${windowMin} minutes (${names}); ${blocks} refused work.`;
++}
+diff --git a/backstage/packages/app/src/modules/home/useGuards.ts b/backstage/packages/app/src/modules/home/useGuards.ts
+new file mode 100644
+index 000000000..e288d651d
+--- /dev/null
++++ b/backstage/packages/app/src/modules/home/useGuards.ts
+@@ -0,0 +1,72 @@
++// The guard inventory, read from the estate MCP server through the backend proxy.
++//
++// Same shape as useHealthchecks: one GET, re-read on the page's own interval, and every failure
++// reported as a failure rather than as an empty list. An empty list and an unreadable endpoint are
++// different answers and the Ops page must never show one as the other.
++import { useEffect, useState } from 'react';
++import { discoveryApiRef, fetchApiRef, useApi } from '@backstage/frontend-plugin-api';
++import { GUARD_NAMES, GuardSummary } from './guards';
++import { REFRESH_MS } from './useEstate';
++
++const GUARDS = '/guards';
++
++export type LoadedGuards =
++  | { state: 'loading' }
++  | { state: 'error'; error: string }
++  | { state: 'ready'; rows: GuardSummary[]; total: number; unreadable: string[] };
++
++type Answer = {
++  total_guards?: number;
++  fired?: Record<string, { fired?: number; blocked?: number; last_at?: string; last_command?: string }>;
++  unreadable?: string[];
++};
++
++export const useGuards = () => {
++  const discoveryApi = useApi(discoveryApiRef);
++  const fetchApi = useApi(fetchApiRef);
++  const [loaded, setLoaded] = useState<LoadedGuards>({ state: 'loading' });
++
++  useEffect(() => {
++    let cancelled = false;
++    const tick = async () => {
++      try {
++        const base = await discoveryApi.getBaseUrl('proxy');
++        const r = await fetchApi.fetch(`${base}${GUARDS}`);
++        if (!r.ok) throw new Error(`The guard inventory answered ${r.status}`);
++        const body = (await r.json()) as Answer;
++        // The tool returns guards ALREADY AGGREGATED (`fired` is a map of counts), so this
++        // builds the rows directly. The first version fed that map through `summarise`, which
++        // parses LEDGER LINES and filters by timestamp -- so every guard was filtered out and the
++        // page said "no guard has fired" while holding two that had. Measured by the page's own
++        // test: it expected 2 guards and got 0.
++        const rows = Object.entries(body.fired ?? {}).map(([guard, c]) => ({
++          guard,
++          name: GUARD_NAMES[guard]?.name ?? guard,
++          what: GUARD_NAMES[guard]?.what ?? '',
++          events: c.fired ?? 0,
++          blocked: c.blocked ?? 0,
++          lastAt: c.last_at ?? '',
++          lastCommand: c.last_command ?? '',
++        })).sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
++        if (!cancelled) {
++          setLoaded({
++            state: 'ready',
++            rows,
++            total: body.total_guards ?? 0,
++            unreadable: body.unreadable ?? [],
++          });
++        }
++      } catch (e) {
++        if (!cancelled) setLoaded({ state: 'error', error: String((e as Error)?.message ?? e) });
++      }
++    };
++    tick();
++    const timer = setInterval(tick, REFRESH_MS);
++    return () => {
++      cancelled = true;
++      clearInterval(timer);
++    };
++  }, [discoveryApi, fetchApi]);
++
++  return loaded;
++};
+diff --git a/bin/idp-oci-login b/bin/idp-oci-login
+index aea2deb24..078c6840b 100755
+--- a/bin/idp-oci-login
++++ b/bin/idp-oci-login
+@@ -121,7 +121,9 @@ tries=1; [ "${1:-}" = --check ] || tries=16
+ for i in $(seq 1 "$tries"); do
+   out=$(oci iam region-subscription list --query 'data[0]."region-name"' --raw-output 2>&1 | grep -v '^Warning' | head -1) && [ "${out#ocid}" = "$out" ] && [[ "$out" =~ ^[a-z]+-[a-z]+-[0-9]$ ]] && break
+   [ "$i" = "$tries" ] && { echo "FAIL  oci     identity refused: ${out:0:160}"; exit 1; }
+-  echo "wait  oci     401 after a fresh key upload; retry $i/$tries in 30s"; sleep 30
++  # OCI returns 401 for a key that was only just uploaded; the propagation window is on Oracle's
++  # side and there is no event to subscribe to, so the wait is fixed and the retry is bounded.
++  echo "wait  oci     401 after a fresh key upload; retry $i/$tries in 30s"; sleep 30  # sleep-ok: OCI key-propagation window, bounded retry
+ done
+ AD=$(oci iam availability-domain list --compartment-id "$(vget OCI_TENANCY_OCID)" --query 'data[0].name' --raw-output)
+ CORES=$(oci limits resource-availability get --service-name compute --limit-name standard-a1-core-count \
+diff --git a/bin/idp-sleep-ban b/bin/idp-sleep-ban
+new file mode 100755
+index 000000000..4e3e41573
+--- /dev/null
++++ b/bin/idp-sleep-ban
+@@ -0,0 +1,145 @@
++#!/usr/bin/env python3
++"""Time is not a synchronisation primitive. A wait longer than 5 seconds is a missing event.
++
++    bin/idp-sleep-ban [paths...]     # grade scripts; default the tree
++
++WHY THIS EXISTS, and the founder said it first: an agent that writes `sleep 420` to wait for a
++state change has not understood the environment it is running in. A fixed sleep is wrong in both
++directions and there is no value of it that is right:
++
++  the work finished in 30s   -> 6.5 minutes of wall clock thrown away, and the session looks
++                                hung to the person watching it (measured 2026-09-12: the whole
++                                evening was punctuated by turns that produced nothing for
++                                minutes at a time)
++  the work took 421s         -> the sleep returns too early and the next command acts on state
++                                that is not there yet
++
++The estate already owns the event-driven answer for the case that caused this: GitHub's own
++merge queue. `gh pr merge --squash --auto` arms the merge and returns in 200ms; GitHub watches
++the checks and merges the instant they are green, or cancels if one fails. No polling, no
++guessing, no blocked thread.
++
++WHAT IS ALLOWED, because a ban that refuses correct work is an outage (R38):
++
++  sleep 5 and shorter       a yield, not a wait. Covers backoff between retries of a call that
++                            has already failed.
++  sleep with a marker       a line carrying `# sleep-ok: <reason>` is accepted, so a genuine
++                            fixed interval (a rate limit the API documents, a protocol heartbeat)
++                            can be written down instead of hidden. The reason is required: the
++                            marker is a place to state the case, not a way to silence the gate.
++  in a container manifest   a `sleep` inside a Kubernetes command that keeps a pod alive is not
++                            a synchronisation wait; those are excluded by path.
++
++WHAT IS REFUSED: a bare sleep of 10 seconds or more, waiting for something outside this process
++to change.
++"""
++
++from __future__ import annotations
++
++import argparse
++import pathlib
++import re
++import sys
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++
++# The largest gap that is a yield rather than a wait.
++MAX_YIELD_S = 5
++
++# A sleep this long is unambiguously waiting on external state.
++BAN_S = 10
++
++SLEEP = re.compile(r"\bsleep\s+(?P<arg>[0-9]+(?:\.[0-9]+)?)(?P<rest>[^\n]*)")
++ALLOW_MARK = re.compile(r"#\s*sleep-ok\s*:\s*\S", re.I)
++
++# Paths where a sleep is a liveness device, not a wait for state.
++EXEMPT_PARTS = ("/migrations/", "manifests/", "fixtures/")
++
++SKIP_DIRS = {".git", "node_modules", ".venv", "__pycache__", ".crew", "run", "scratchpad"}
++
++
++def scans(p: pathlib.Path) -> bool:
++    if any(part in SKIP_DIRS or part.startswith("wt-") or part.startswith(".wt-") for part in p.parts):
++        return False
++    return not any(x in str(p) for x in EXEMPT_PARTS)
++
++
++def grade(path: pathlib.Path) -> list[str]:
++    findings: list[str] = []
++    try:
++        lines = path.read_text(errors="replace").splitlines()
++    except OSError:
++        return findings
++    # A COMMENT OR A DOCSTRING IS NOT A COMMAND. This rule's own docstring quotes `sleep 420` as
++    # the example it refuses, so the gate refused itself the first time it ran -- prose about a
++    # sleep is not a sleep. The spans below are found rather than guessed: a triple-quoted block
++    # opens and closes, and every line between them is text.
++    prose: set[int] = set()
++    inside: str | None = None
++    for i, line in enumerate(lines, 1):
++        stripped = line.lstrip()
++        if inside is None:
++            for q in ('"""', "'''"):
++                if stripped.startswith(q) and not stripped[len(q):].rstrip().endswith(q):
++                    inside, _ = q, prose.add(i)
++                    break
++            else:
++                if stripped.startswith("#") or stripped.startswith("//"):
++                    prose.add(i)
++        else:
++            prose.add(i)
++            if inside in line:
++                inside = None
++
++    for n, line in enumerate(lines, 1):
++        if n in prose or ALLOW_MARK.search(line):
++            continue
++        m = SLEEP.search(line)
++        if not m:
++            continue
++        try:
++            secs = float(m.group("arg"))
++        except ValueError:
++            continue
++        if secs < BAN_S:
++            continue
++        findings.append(f"{path}:{n}: sleep {m.group('arg')} -- {line.strip()[:70]}")
++    return findings
++
++
++def main() -> int:
++    ap = argparse.ArgumentParser()
++    ap.add_argument("paths", nargs="*")
++    args = ap.parse_args()
++
++    roots = [pathlib.Path(p) for p in args.paths] or [ROOT / "bin", ROOT / "platform"]
++    files: list[pathlib.Path] = []
++    for r in roots:
++        r = r if r.is_absolute() else ROOT / r
++        if r.is_file():
++            files.append(r)
++        elif r.is_dir():
++            files += [f for f in r.rglob("*") if f.is_file() and scans(f)]
++
++    findings: list[str] = []
++    for f in sorted(set(files)):
++        findings += grade(f)
++
++    if findings:
++        print(f"FAIL  sleep-ban: {len(findings)} wait(s) on a clock instead of an event")
++        for f in findings[:12]:
++            print(f"      {f}")
++        print()
++        print("      a wait longer than 10s is a missing event. The estate's own answer for CI is")
++        print("      GitHub's merge queue:  gh pr merge <n> --squash --auto")
++        print("      for anything else the native reconciler is the waiter: Flux, a Kubernetes Job's")
++        print("      backoffLimit, a webhook. State the case with `# sleep-ok: <reason>` only when a")
++        print("      documented rate limit or protocol heartbeat forces a fixed interval.")
++        return 1
++
++    print(f"ok    sleep-ban: {len(set(files))} file(s) scanned, no wait on a clock")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/bin/idp-verify b/bin/idp-verify
+index 7a67c8ad2..22c9ed64c 100755
+--- a/bin/idp-verify
++++ b/bin/idp-verify
+@@ -133,7 +133,9 @@ while :; do
+   [ "$missing" -eq 0 ] && break
+   [ "$(date +%s)" -ge "$deadline" ] && break
+   say "          waiting: $missing of $want not ingested yet"
+-  sleep 15
++  # The loop has a deadline and breaks on it, so this interval is the poll rate rather than a
++  # guess at how long the work takes -- the sleep-ban rule and this marker exist for exactly this.
++  sleep 15  # sleep-ok: poll interval inside a loop that breaks on its own deadline
+ done
+ 
+ if [ "$missing" -eq 0 ]; then
+diff --git a/mcp/plugins/estate_guards.py b/mcp/plugins/estate_guards.py
+new file mode 100644
+index 000000000..47583d0aa
+--- /dev/null
++++ b/mcp/plugins/estate_guards.py
+@@ -0,0 +1,296 @@
++"""Datasette plugin: the `get_estate_guards` MCP tool.
++
++One more file the existing estate MCP server loads from `--plugins-dir`, registered through
++datasette-mcp's `register_mcp_tools(datasette, mcp)` -- the same mechanism as
++estate_inventory.py and estate_state.py; not a second server (ADR 0006).
++
++Founder, 2026-09-12: "the final proof is me seeing everything real time on ops dashboard, every
++active guard or extension... need to see it working and doing this thing realtime" -- and then
++"i need all guards".
++
++So this enumerates EVERY guard this estate has, from the four places they live, and reports each
++one's REAL state rather than a list of names:
++
++    ~/.estate/guards/hooks/           the git hooks every repository inherits (core.hooksPath)
++    ~/.estate/guards/bin/             the estate gate binaries
++    ~/.claude/scripts/*guard*.py      the session and commit guards
++    ~/.pi/agent/extensions/           the pi extensions, and which of them intercept a tool call
++
++STATE IS READ, NEVER ASSUMED. A guard that cannot be read is reported `unreadable` with the
++reason, and a guard that has never fired in the window is `idle` -- which is not the same as
++`working`, and this tool never conflates the two. The decision ledger (~/.estate/guards.jsonl)
++is what says a guard FIRED; the file system is what says it EXISTS. Both are needed, and a guard
++with no ledger rows is `no evidence of firing`, never green.
++
++No subprocess, no shell, no network: directory listings, one file read, and a clock.
++"""
++
++from __future__ import annotations
++
++import datetime as dt
++import json
++import os
++from pathlib import Path
++
++try:
++    from datasette import hookimpl
++except ImportError:  # pragma: no cover - datasette-less CI venv
++
++    def hookimpl(fn):
++        return fn
++
++
++# The four places a guard lives. Each entry is (kind, directory, how to recognise one).
++# A file named by a path that does not exist is reported, not skipped: an inventory that hides
++# its own gaps is a list of wishes.
++GUARD_DIRS = (
++    ("git-hook", "~/.estate/guards/hooks", None),
++    ("estate-bin", "~/.estate/guards/bin", None),
++    ("claude-guard", "~/.claude/scripts", "guard"),
++    ("pi-extension", "~/.pi/agent/extensions", None),
++)
++
++# THE OTHER LEDGER, and it is the bigger one. The git-hook router and the claude session guards
++# record every decision they make to this file -- 78,201 rows when this was written, the newest
++# seconds old. Each row is one guard, one event, an exit code and whether it REFUSED.
++#
++# Two ledgers rather than one because they are written by different systems: guards.jsonl is
++# written by the pi extensions, hook-outcomes.jsonl by the git hooks and the claude guards. The
++# estate already had the second one and I did not know it -- an inventory that reports only its
++# own half is the same lie as a green tick with no evidence.
++OUTCOMES = "~/.claude/state/hook-outcomes.jsonl"
++
++
++def config() -> dict:
++    return {
++        "ledger": os.environ.get(
++            "ESTATE_GUARD_LEDGER", str(Path.home() / ".estate" / "guards.jsonl")
++        ),
++        "window_minutes": int(os.environ.get("ESTATE_GUARD_WINDOW_MINUTES", "1440")),
++    }
++
++
++def _ts(value: str) -> dt.datetime | None:
++    try:
++        parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
++    except (TypeError, ValueError, AttributeError):
++        return None
++    if parsed.tzinfo is None:
++        parsed = parsed.replace(tzinfo=dt.timezone.utc)
++    return parsed.astimezone(dt.timezone.utc)
++
++
++def _executable(p: Path) -> bool:
++    return os.access(p, os.X_OK)
++
++
++def _inventory(directory: str, needle: str | None) -> tuple[list[dict], str | None]:
++    """Every guard file in one place. Returns (rows, why_it_could_not_be_read)."""
++    d = Path(directory).expanduser()
++    try:
++        entries = sorted(p for p in d.iterdir() if p.name != "__pycache__")
++    except OSError as exc:
++        return [], f"{d}: {exc.strerror or exc}"
++    rows = []
++    for p in entries:
++        if needle and needle not in p.name:
++            continue
++        if p.is_dir():
++            # A pi extension is a directory holding its entrypoint.
++            entry = p / f"{p.name}.ts"
++            rows.append(
++                {
++                    "name": p.name,
++                    "path": str(p),
++                    "executable": None,
++                    "note": "directory (pi extension)"
++                    if entry.exists()
++                    else "directory",
++                }
++            )
++            continue
++        rows.append(
++            {
++                "name": p.name,
++                "path": str(p),
++                "executable": _executable(p),
++                "note": "" if _executable(p) else "NOT executable -- it cannot run",
++            }
++        )
++    return rows, None
++
++
++def _ledger(path: str, since: dt.datetime) -> tuple[dict, str | None, int]:
++    """What the decision record says. Returns (per-guard counts, why unreadable, lines parsed)."""
++    p = Path(path).expanduser()
++    try:
++        text = p.read_text(errors="replace")
++    except OSError as exc:
++        return {}, f"{p}: {exc.strerror or exc}", 0
++    counts: dict[str, dict] = {}
++    parsed = 0
++    for line in text.splitlines():
++        line = line.strip()
++        if not line:
++            continue
++        try:
++            e = json.loads(line)
++        except ValueError:
++            continue
++        at = _ts(e.get("at", ""))
++        if at is None or at < since:
++            continue
++        parsed += 1
++        g = str(e.get("guard", "?"))
++        c = counts.setdefault(
++            g, {"fired": 0, "blocked": 0, "last_at": "", "last_command": ""}
++        )
++        c["fired"] += 1
++        if e.get("action") == "block":
++            c["blocked"] += 1
++        if str(e.get("at", "")) >= c["last_at"]:
++            c["last_at"] = str(e.get("at", ""))
++            c["last_command"] = str(e.get("command", ""))[:160]
++    return counts, None, parsed
++
++
++def _outcomes(path: str, since: dt.datetime) -> tuple[dict, str | None, int]:
++    """Read the git-hook and claude-guard ledger.
++
++    Each row is `{at, event, hook, session, exit, ms, refused}`. `refused: true` is a guard that
++    stopped something; `exit` is what it exited with. A row with neither is still evidence the
++    guard RAN, which is the distinction this whole tool exists to make.
++    """
++    p = Path(path).expanduser()
++    try:
++        text = p.read_text(errors="replace")
++    except OSError as exc:
++        return {}, f"{p}: {exc.strerror or exc}", 0
++    counts: dict[str, dict] = {}
++    parsed = 0
++    for line in text.splitlines():
++        line = line.strip()
++        if not line:
++            continue
++        try:
++            e = json.loads(line)
++        except ValueError:
++            continue
++        at = _ts(e.get("at", ""))
++        if at is None or at < since:
++            continue
++        parsed += 1
++        name = str(e.get("hook", "?"))
++        c = counts.setdefault(
++            name, {"fired": 0, "blocked": 0, "last_at": "", "last_command": ""}
++        )
++        c["fired"] += 1
++        if e.get("refused"):
++            c["blocked"] += 1
++        if str(e.get("at", "")) >= c["last_at"]:
++            c["last_at"] = str(e.get("at", ""))
++            c["last_command"] = f"exit={e.get('exit')} event={e.get('event')}"
++    return counts, None, parsed
++
++
++def build_guards(cfg: dict | None = None, now: dt.datetime | None = None) -> dict:
++    """The whole answer. Pure given the file system, the ledger and the clock."""
++    cfg = cfg or config()
++    now = now or dt.datetime.now(dt.timezone.utc)
++    since = now - dt.timedelta(minutes=cfg["window_minutes"])
++
++    places = []
++    missing = []
++    for kind, directory, needle in GUARD_DIRS:
++        rows, why = _inventory(directory, needle)
++        if why:
++            missing.append(f"{kind}: {why}")
++        for r in rows:
++            r["kind"] = kind
++        places.append(
++            {"kind": kind, "directory": os.path.expanduser(directory), "guards": rows}
++        )
++
++    counts, ledger_why, parsed = _ledger(cfg["ledger"], since)
++    if ledger_why:
++        missing.append(f"ledger: {ledger_why}")
++
++    # The second ledger: the git hooks and the claude session guards. Merged into the same map so
++    # a reader sees one answer per guard rather than two half-answers in two places.
++    outcomes, out_why, out_rows = _outcomes(OUTCOMES, since)
++    if out_why:
++        missing.append(f"outcomes: {out_why}")
++    for name, c in outcomes.items():
++        cur = counts.setdefault(
++            name, {"fired": 0, "blocked": 0, "last_at": "", "last_command": ""}
++        )
++        cur["fired"] += c["fired"]
++        cur["blocked"] += c["blocked"]
++        if c["last_at"] > cur["last_at"]:
++            cur["last_at"] = c["last_at"]
++            cur["last_command"] = c["last_command"]
++
++    total = sum(len(p["guards"]) for p in places)
++    return {
++        "available": True,
++        "generated_at": now.isoformat().replace("+00:00", "Z"),
++        "window_minutes": cfg["window_minutes"],
++        "total_guards": total,
++        "places": places,
++        # What the ledger says. A guard absent from this map has produced NO EVIDENCE of firing in
++        # the window -- which is not the same as being idle, and not the same as being broken.
++        "fired": counts,
++        "ledger": {
++            "extensions": {"path": cfg["ledger"], "rows_in_window": parsed},
++            "hooks_and_session": {
++                "path": os.path.expanduser(OUTCOMES),
++                "rows_in_window": out_rows,
++            },
++        },
++        # Anything that could not be read. An inventory that hides its own gaps is a list of wishes.
++        "unreadable": missing,
++        "note": (
++            "A guard appears here because it EXISTS on disk. Whether it FIRED is the `fired` map, "
++            "read from the decision ledger. A guard with no entry there has no evidence of firing "
++            "in the window -- absence of evidence, never a green tick."
++        ),
++    }
++
++
++def register_mcp_tools(datasette, mcp):
++    """Register `get_estate_guards` (ADR 0006: one interface answers questions about the estate).
++
++    Summarises by default and drills only on request, under a byte ceiling, like estate_state.py.
++    """
++
++    def _ceiling(doc: dict, limit: int = 20000) -> str:
++        text = json.dumps(doc, indent=2)
++        if len(text) <= limit:
++            return text
++        doc = dict(doc)
++        doc["places"] = [
++            {
++                **p,
++                "guards": p["guards"][:12],
++                "truncated": max(0, len(p["guards"]) - 12),
++            }
++            for p in doc["places"]
++        ]
++        doc["truncated"] = True
++        return json.dumps(doc, indent=2)
++
++    async def get_estate_guards(drill: bool = False) -> str:
++        """Every guard this estate has, from the four places they live, with the state of each.
++
++        Lists the git hooks, the estate binaries, the session guards and the pi extensions, and
++        says for each whether it exists, whether it is executable, and whether the decision ledger
++        records it having FIRED in the window. A guard with no ledger entry has no evidence of
++        firing -- absence of evidence, never a green tick. Set drill=true for every guard row;
++        the default summarises.
++        """
++        doc = build_guards()
++        if drill:
++            return json.dumps(doc, indent=2)[:200000]
++        return _ceiling(doc)
++
++    mcp.add_tool(get_estate_guards, name="get_estate_guards")
+diff --git a/rules.yaml b/rules.yaml
+index 78d8228a1..4b8f4226f 100644
+--- a/rules.yaml
++++ b/rules.yaml
+@@ -1926,6 +1926,42 @@ rules:
+     - .github/workflows
+     note: this repository's own workflows
+   ok: every grading step in the tree can fail its run, or a later step asserts the captured verdict
++  fail: 'measured 2026-09-10: ''set -u; grader | tee out'' exits 0 while the grader failed, so a run reports green having graded nothing. ''set -o pipefail'' or ''-e'' fixes it; a bare last command propagates
++    without -e, and a later step that tests the captured rc is an assertion'
++- id: sleep-ban
++  fast: true
++  label: sleep-ban
++  statement: >-
++    No script waits on a clock where an event exists -- a bare sleep of 10 seconds or more is
++    refused, a sleep of 5 or less is a yield and passes, and a longer fixed interval is accepted
++    only with a sleep-ok marker giving the reason: the documented rate limit or protocol
++    heartbeat that forces it.
++  law: LAW 14
++  planes:
++  - ci
++  - session
++  # A session rule grades only the paths it declares (bin/idp-rules, `session`), and without this
++  # the rule graded ZERO files and printed `ok` on a script that sleeps 420 -- measured here
++  # before the glob was added.
++  session_glob:
++  - bin/*
++  - scripts/*
++  - .github/workflows/*.yml
++  - platform/**/*.yaml
++  - platform/**/*.sh
++  run:
++  - python3
++  - bin/idp-sleep-ban
++  cases:
++  - expect: refuse
++    args:
++    - tests/fixtures/sleep-ban/bad.sh
++  - expect: pass
++    args:
++    - tests/fixtures/sleep-ban/good.sh
++  ok: no wait on a clock where an event exists; every fixed interval carries its reason
++  fail: a script sleeps 10 seconds or more to wait for state, or a fixed interval is unexplained
++  why: 'Founder 2026-09-12: "sleep 420 is a catastrophic failure of engineering... time is not a synchronization primitive. Events are." Measured the same evening: turns blocked for minutes at a time on `sleep 420` waiting for CI, which is why the session looked hung to the person watching it. The estate already owns the event-driven answer for that case -- gh pr merge --squash --auto arms the merge in 200ms and GitHub watches the checks -- and no rule said so.'
+   fail: 'measured 2026-09-10: ''set -u; grader | tee out'' exits 0 while the grader failed, so a run reports green having graded nothing. ''set -o pipefail'' or ''-e'' fixes it; a bare last command propagates without -e, and a later step that tests the captured rc is an assertion'
+ - id: cost-proof
+   fast: true
+diff --git a/tests/fixtures/sleep-ban/bad.sh b/tests/fixtures/sleep-ban/bad.sh
+new file mode 100755
+index 000000000..06b3f95c2
+--- /dev/null
++++ b/tests/fixtures/sleep-ban/bad.sh
+@@ -0,0 +1,7 @@
++#!/usr/bin/env bash
++# A wait on a clock. This is the shape the rule refuses.
++set -euo pipefail
++trap "exit 1" ERR
++gh pr checks 1
++sleep 420
++gh pr merge 1 --squash
+diff --git a/tests/fixtures/sleep-ban/good.sh b/tests/fixtures/sleep-ban/good.sh
+new file mode 100755
+index 000000000..eeb60806f
+--- /dev/null
++++ b/tests/fixtures/sleep-ban/good.sh
+@@ -0,0 +1,6 @@
++#!/usr/bin/env bash
++# The event-driven form. No wait at all.
++set -euo pipefail
++trap "exit 1" ERR
++gh pr merge 1 --squash --auto
++sleep 1

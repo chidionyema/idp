@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# bin/idp-python-strict-refresh: re-vendor the estate python-strict-default hook.
+#
+# Estate policy (crew#620 CP4): "the SAME file every Mac runs as a commit hook,
+# so CI and the hook can never disagree (one copy, LAW 43)." Vendoring into
+# bin/idp-python-strict breaks the rule on the day the estate changes the file.
+# This script is the only thing that may update bin/idp-python-strict.
+#
+# Usage:
+#   bin/idp-python-strict-refresh           # refresh in place
+#   bin/idp-python-strict-refresh --check   # exit 1 if drift, 0 if in sync
+#
+# The script writes to bin/idp-python-strict and prints the SHA-256 of both the
+# fetched copy and the on-disk copy so the diff is auditable.
+
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+TARGET="$REPO/bin/idp-python-strict"
+SOURCE_URL="https://raw.githubusercontent.com/chidionyema/estate/main/guards/hooks/python-strict-default"
+
+fetched=$(mktemp)
+trap 'rm -f "$fetched"' EXIT
+curl -fsSL "$SOURCE_URL" -o "$fetched"
+new_sha=$(shasum -a 256 "$fetched" | awk '{print $1}')
+
+if [ -f "$TARGET" ]; then
+    old_sha=$(shasum -a 256 "$TARGET" | awk '{print $1}')
+else
+    old_sha="(none)"
+fi
+
+if [ "${1:-}" = "--check" ]; then
+    if [ "$new_sha" = "$old_sha" ]; then
+        echo "in sync: $new_sha"
+        exit 0
+    fi
+    echo "DRIFT: estate=$new_sha  local=$old_sha" >&2
+    echo "fix: bin/idp-python-strict-refresh" >&2
+    exit 1
+fi
+
+if [ "$new_sha" = "$old_sha" ]; then
+    echo "already in sync: $new_sha"
+    exit 0
+fi
+
+mv "$fetched" "$TARGET"
+chmod +x "$TARGET"
+echo "updated: $old_sha -> $new_sha"

@@ -1,0 +1,7 @@
+bin/dockerfiles
+docs/demos/catalog-links.gif
+docs/demos/dagster.gif
+docs/demos/drill-evidence.gif
+docs/demos/intent-compiler.gif
+docs/demos/superset.gif
+docs/demos/truthteller-demo.gif

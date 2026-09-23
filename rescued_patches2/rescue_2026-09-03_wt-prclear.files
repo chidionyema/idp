@@ -1,0 +1,4 @@
+.github/workflows/kini-finish.yml
+bin/idp-image-update-pr
+tests/test_incident_crew66_federated_identity_mints_the_operator_client_with_no_secret.py
+tests/test_incident_crew66_tailscale_operator_client_is_minted_through_the_api.py

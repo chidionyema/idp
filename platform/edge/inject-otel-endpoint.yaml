@@ -80,10 +80,10 @@ spec:
               names: [weave-gitops*]
           - resources:
               namespaces: [commerce]
-              names: [lago*, redis*, commerce-redis]
+              names: [lago*, redis*]
           - resources:
               namespaces: [llm, idp-agent, via-negativa]
-              names: [redis*, litellm-cache*]
+              names: [redis*]
           - resources:
               namespaces: [dagster]
           - resources:
@@ -91,43 +91,7 @@ spec:
               names: [apprise*]
           - resources:
               namespaces: [edge]
-              names: [status-page*, traefik*, external-dns*]
-          # VENDOR — fully third-party Helm chart namespaces
-          - resources:
-              namespaces: [event-bus, robusta, estate-db, chaos-mesh, temporal]
-          - resources:
-              namespaces: [identity]
-              names: [oauth2-proxy*]
-          # DEMO — sandbox workload
-          - resources:
-              namespaces: [demo-sandbox]
-          # rotation-canary deploys into backstage namespace despite living in platform/state/
-          - resources:
-              namespaces: [backstage]
-              names: [rotation-canary*]
-          # ALREADY WIRED — these manifests declare the endpoint inline; injection is a no-op
-          # but the Kyverno +(name) add-if-absent patch conflicts with existing valueFrom entries
-          # in the same env list (POD_NAMESPACE / metadata fieldRef). Exclude them to prevent
-          # the dry-run rejection that blocks Flux reconciliation (crew# observed 2026-09-17).
-          - resources:
-              namespaces: [jit]
-              names: [jit-broker]
-          - resources:
-              namespaces: [idp-agent]
-              names: [idp-engine]
-          - resources:
-              namespaces: [hermes-agent]
-              names: [hermes-agent-gateway]
-          - resources:
-              namespaces: [otto-gateway]
-              names: [otto-gateway]
-          # PLATFORM WIP — pending OTel instrumentation (crew#584 follow-up)
-          - resources:
-              namespaces: [epistemic-fabric]
-              names: [epistemic-ingest-*]
-          - resources:
-              namespaces: [via-negativa]
-              names: [via-negativa-proxy*, via-negativa-rca*]
+              names: [status-page*]
       mutate:
         patchStrategicMerge:
           spec:

@@ -813,7 +813,7 @@ def test_the_agent_client_says_the_broker_is_unreachable_instead_of_raising(
 # refused. The 2026-09-07 regression they close is a broker that polled instead, took otto's
 # webhook away at every start, and then answered 409 forever.
 
-SECRET_TOKEN = "the-token-telegram-was-registered-with"
+SECRET_TOKEN = "the-token-telegram-was-registered-with"  # noqa: S105 — a fixture value, not a credential
 
 
 def _door(broker, phone, secret_token=SECRET_TOKEN, public_prefix=""):
@@ -903,7 +903,7 @@ def test_a_delivery_with_the_wrong_secret_token_is_refused(tmp_path):
     req = _asked(broker)
     httpd = _door(broker, Phone("t", "42", broker))
     try:
-        assert _deliver(httpd, _tap(broker, req, 42), token="not-it") == 401
+        assert _deliver(httpd, _tap(broker, req, 42), token="not-it") == 401  # noqa: S106 — a fixture value, not a credential
     finally:
         httpd.shutdown()
     assert req.state == "pending"

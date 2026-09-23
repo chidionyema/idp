@@ -28,7 +28,6 @@ spec:
         - name: rca
           image: ghcr.io/chidionyema/rca_worker
           env:
-            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
             - { name: REDIS_URL, value: "redis://via-negativa-redis.via-negativa.svc.cluster.local:6379" }
             - { name: REDIS_PASSWORD_FILE, value: "/run/secrets/via-negativa/redis/REDIS_PASSWORD" }
             # No password here -- estate-rw is the one Postgres (platform/estate-db); the

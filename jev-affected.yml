@@ -1,0 +1,35 @@
+# Test Impact Analysis -- which tasks a diff actually needs.
+#
+# Read by `jev_affected(repo, base)` in mcp/plugins/jev.py. Each task carries EITHER
+# `always: true` OR a natural-language `when:` condition that Jev evaluates against
+# `git diff <base>...HEAD`. The safety property: a task is skipped ONLY when the
+# condition's probability is STRICTLY BELOW the skip threshold (default 0.3). Equality
+# runs. A missing config, an unreadable one, a git failure, or a Jev escalation all RUN.
+#
+#   bin/idp-affected --plan          # analyse, run nothing
+#   bin/idp-affected --run           # run only the tasks whose condition passed
+#
+tasks:
+  fast-gate:
+    command: IDP_CI_FAST=1 bin/idp-ci
+    always: true
+
+  voice:
+    command: pytest backstage/plugins/fleetview-backend/tests -q
+    when: Could FleetView voice, the ASR/TTS engines, or the voice routes change?
+
+  bdd:
+    command: pytest sovereign/tests/bdd -q
+    when: Could an estate behaviour contract, a gate, or a policy change?
+
+  mcp:
+    command: pytest sovereign/tests/bdd/test_jev_layer.py -q
+    when: Could the estate MCP plugins, the decision layer, or a tool contract change?
+
+  backstage-portal:
+    command: yarn --cwd backstage tsc
+    when: Could the Backstage portal, its pages, or its TypeScript change?
+
+  platform-manifests:
+    command: bin/idp-catalog-refcheck
+    when: Could a Kubernetes manifest, a Flux Kustomization, or a catalog entity change?

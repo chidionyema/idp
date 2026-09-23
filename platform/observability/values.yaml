@@ -102,9 +102,33 @@ clickhouse:
     mark_cache_size: "536870912"
     index_mark_cache_size: "134217728"
     merges_mutations_memory_usage_to_ram_ratio: "0.3"
-    # 2026-09-13: THE TWO SETTINGS crew#483 DID NOT REACH, and the OOM it was meant to stop is
-    # still happening -- 49 OOMKilled restarts, `exitCode: 137, reason: OOMKilled`, one every ~30
-    # minutes for four and a half days, on a pod whose own tracker reported 1.45 GiB in use.
+    # 2026-09-13: the OOM crew#483 was meant to stop is still happening -- 49 OOMKilled
+    # restarts, `exitCode: 137, reason: OOMKilled`, one every ~30 minutes for four and a half
+    # days, on a pod whose own tracker reported 1.45 GiB in use. These are the settings it did
+    # not reach.
+    #
+    # NO max_server_memory_usage KEY LIVES HERE, and its absence is deliberate. Two pull requests
+    # put one in (#3349 at 3435973836, #3361 at 4187593113) and both were dead letters: ClickHouse
+    # ignores it. `config.xml` pins `<max_server_memory_usage>0</max_server_memory_usage>` -- zero
+    # meaning AUTO -- and the auto value is recomputed from `max_server_memory_usage_to_ram_ratio`
+    # 0.9 at every load, so the ratio always wins. Proved on the live pod: the operator's own
+    # `chop-generated-settings.xml` carried 4187593113 and `system.server_settings` still reported
+    # 3865470566, the 0.9 x 4Gi auto figure. The ratio setting cannot be changed at runtime and
+    # the chart renders no `files` key, so it is not reachable from this repository at all.
+    #
+    # Worse, the 3.20 GiB ceiling in #3349 briefly DID take effect and denied service. ClickHouse's
+    # own config.xml says why, in a comment on the parameter itself: "It is not practical to set
+    # this constraint to small values like just a few gigabytes, because memory allocator will keep
+    # this amount of memory in caches and the server will deny service of queries." Measured:
+    #
+    #   Code: 241 (MEMORY_LIMIT_EXCEEDED): would use 1.65 GiB, current RSS: 3.25 GiB,
+    #   maximum: 3.20 GiB -- while executing AggregatingTransform.
+    #
+    # on `select table, count() parts ... from system.parts group by table`. ClickHouse could not
+    # aggregate over its own part list, so the diagnostic query needed to investigate the outage
+    # was itself refused. A ceiling is not the lever. Resident parts are.
+    #
+    # The settings below are the ones that measurably helped.
     #
     # max_server_memory_usage is pinned EXPLICITLY, but NOT at the 80% a guide suggests -- that
     # was the first attempt and it was WRONG, in a way that made the box worse rather than better.
@@ -127,7 +151,6 @@ clickhouse:
     # slack below memory.max, and the ratio can still climb to ~1.3 before either bound is reached.
     # The real cure for the ratio is not a lower ceiling, it is fewer resident parts -- which is
     # what the `_0` twin TTLs below do.
-    max_server_memory_usage: "4187593113"
     # uncompressed_cache_size ships ACTIVELY SET to 8 GiB in ClickHouse's own config.xml -- twice
     # this whole pod -- so it is not a default that could be left alone. It is also not earning
     # its keep: `system.events` reads UncompressedCacheHits 23 against UncompressedCacheMisses

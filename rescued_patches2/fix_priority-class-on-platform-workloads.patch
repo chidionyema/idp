@@ -1,0 +1,95 @@
+diff --git a/platform/llm/litellm.yaml b/platform/llm/litellm.yaml
+index 66d4d8500..547603bcb 100644
+--- a/platform/llm/litellm.yaml
++++ b/platform/llm/litellm.yaml
+@@ -44,6 +44,8 @@ spec:
+           labelSelector:
+             matchLabels: { app.kubernetes.io/name: litellm }
+       automountServiceAccountToken: false
++      # crew#539: the scheduler ranks this workload under CPU pressure instead of guessing
++      priorityClassName: platform-service
+       securityContext:
+         runAsNonRoot: true
+         runAsUser: 10001
+diff --git a/platform/llm/postgres.yaml b/platform/llm/postgres.yaml
+index 47a1785f6..e30e6819a 100644
+--- a/platform/llm/postgres.yaml
++++ b/platform/llm/postgres.yaml
+@@ -38,6 +38,8 @@ spec:
+       labels: { app.kubernetes.io/name: litellm-db, app.kubernetes.io/part-of: idp }
+     spec:
+       automountServiceAccountToken: false
++      # crew#539: the scheduler ranks this workload under CPU pressure instead of guessing
++      priorityClassName: platform-service
+       securityContext:
+         runAsNonRoot: true
+         runAsUser: 70   # postgres uid in the alpine image
+diff --git a/platform/llm/spend-breaker-digest.yaml b/platform/llm/spend-breaker-digest.yaml
+index fd88bc79d..f12ded020 100644
+--- a/platform/llm/spend-breaker-digest.yaml
++++ b/platform/llm/spend-breaker-digest.yaml
+@@ -196,6 +196,8 @@ spec:
+       template:
+         spec:
+           automountServiceAccountToken: false
++          # crew#539: the scheduler ranks this workload under CPU pressure instead of guessing
++          priorityClassName: platform-batch
+           restartPolicy: Never
+           securityContext:
+             runAsNonRoot: true
+@@ -282,6 +284,8 @@ spec:
+       template:
+         spec:
+           automountServiceAccountToken: false
++          # crew#539: the scheduler ranks this workload under CPU pressure instead of guessing
++          priorityClassName: platform-batch
+           restartPolicy: Never
+           securityContext:
+             runAsNonRoot: true
+diff --git a/platform/mcp/estate-mcp.yaml b/platform/mcp/estate-mcp.yaml
+index 26576ce33..0b8a41757 100644
+--- a/platform/mcp/estate-mcp.yaml
++++ b/platform/mcp/estate-mcp.yaml
+@@ -36,6 +36,8 @@ spec:
+           labelSelector:
+             matchLabels: { app.kubernetes.io/name: estate-mcp }
+       automountServiceAccountToken: false
++      # crew#539: the scheduler ranks this workload under CPU pressure instead of guessing
++      priorityClassName: platform-service
+       imagePullSecrets:
+         - name: ghcr-pull   # mirrored by pull-secret.yaml
+       securityContext:
+diff --git a/platform/mcp/github-mcp.yaml b/platform/mcp/github-mcp.yaml
+index 09b5bb18c..6dd30392f 100644
+--- a/platform/mcp/github-mcp.yaml
++++ b/platform/mcp/github-mcp.yaml
+@@ -33,6 +33,8 @@ spec:
+           labelSelector:
+             matchLabels: { app.kubernetes.io/name: github-mcp }
+       automountServiceAccountToken: false
++      # crew#539: the scheduler ranks this workload under CPU pressure instead of guessing
++      priorityClassName: platform-service
+       securityContext:
+         runAsNonRoot: true
+         runAsUser: 10001
+diff --git a/platform/priority-classes/priorityclasses.yaml b/platform/priority-classes/priorityclasses.yaml
+index acd6c31ea..d80a4c767 100644
+--- a/platform/priority-classes/priorityclasses.yaml
++++ b/platform/priority-classes/priorityclasses.yaml
+@@ -35,3 +35,16 @@ value: 1000
+ globalDefault: false
+ preemptionPolicy: PreemptLowerPriority
+ description: "crew#584: nightly platform jobs; finish when the node is calm, yield to the radio room"
++---
++# Long-running platform services that are not the radio room (crew#539, founder order 2026-09-02,
++# ~/.claude/docs/founder/2026-09-02T1357Z-the-cluster-is-bleeding-out-across-three-different-cba107c9.md):
++# litellm, its database, the MCP servers. Above platform-batch so a nightly job never evicts the
++# model router; far below infrastructure-critical so monitoring and routing are always seated first.
++apiVersion: scheduling.k8s.io/v1
++kind: PriorityClass
++metadata:
++  name: platform-service
++value: 10000
++globalDefault: false
++preemptionPolicy: PreemptLowerPriority
++description: "crew#539: everyday platform services; outrank batch jobs, yield to the radio room"
