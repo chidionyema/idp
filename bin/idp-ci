@@ -115,7 +115,11 @@ if [ "$FAST" = 1 ]; then
   # fast-gate.yml runs in CI. Mirrors .github/workflows/fast-gate.yml lines 41-45 verbatim so a
   # format-dirty or B/S-class Python file can never reach the remote CI round trip. Vendored copy
   # of chidionyema/estate/guards/hooks/python-strict-default; the "one copy" rule (LAW 43) is
-  # honored by keeping this rung pointed at the vendored file, not by forking its checks.
+  # enforced by bin/idp-python-strict-refresh --check below, which refuses locally the moment
+  # the estate repo moves and CI's copy diverges.
+  "$IDP/bin/idp-python-strict-refresh" --check \
+    && say "ok    py-strict  drift-check" \
+    || { say "FAIL  py-strict  drift-check; bin/idp-python-strict-refresh to resync"; fail=1; }
   # bin/idp-python-strict calls `ruff` directly; if it's only on PATH as `python3 -m ruff`,
   # shim a binary on a tmpdir so shutil.which("ruff") inside the hook finds it.
   if ! command -v ruff >/dev/null 2>&1 && "$MPY" -m ruff --version >/dev/null 2>&1; then
