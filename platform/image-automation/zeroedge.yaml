@@ -16,8 +16,8 @@ metadata:
 spec:
   image: ghcr.io/chidionyema/zeroedge
   interval: 5m
-  # No secretRef: the package is public, so the reflector lists its tags anonymously. Every other
-  # ImageRepository here carries one because its package is private; this one does not need to be.
+  secretRef:
+    name: ghcr-pull
 ---
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy

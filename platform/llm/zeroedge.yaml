@@ -41,17 +41,10 @@ spec:
           whenUnsatisfiable: DoNotSchedule
           labelSelector:
             matchLabels: { app.kubernetes.io/name: zeroedge }
-      # No imagePullSecrets, on purpose. `ghcr.io/chidionyema/zeroedge` is a public package, so this
-      # pod needs no credential to start. #3834 mirrored a `ghcr-pull` ExternalSecret into `llm` to
-      # pull it privately, which put a registry password on the router's own path to live in a
-      # cluster whose admission webhook already refuses new Secrets:
-      #
-      #     admission webhook "oke-resource-leak-protection.oke.com" denied the request:
-      #     Cluster has 2650 secrets and the limit is 2000
-      #
-      # The Secret is never created, so the pod never pulls, and litellm's namespace carries a
-      # permanent ImagePullBackOff for a container built from our own source. An image is not a
-      # credential; making it one spends a Secret this cluster does not have.
+      # ghcr packages under this account are private (platform/image-automation/pull-secret.yaml),
+      # so the pull needs the mirrored Secret; pull-secret.yaml in this directory creates it.
+      imagePullSecrets:
+        - name: ghcr-pull
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -69,12 +62,6 @@ spec:
             # whether a model call can be refused by this pod, and a load-bearing default
             # belongs where someone reading the Deployment can see it.
             - { name: ZEROEDGE_BUDGET_ENFORCE, value: "0" }
-            # Not paperwork for require-otel-endpoint: the image installs zeroedge[otel] and
-            # the service emits one span per /optimize (zeroedge#3), carrying the tenant, the
-            # action taken and the model the routing layer chose -- the pre-call work the
-            # router's own span cannot see. Same collector as litellm.yaml and ollama.yaml.
-            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
-            - { name: OTEL_SERVICE_NAME, value: "zeroedge" }
           # /health is the whole claim this pod makes: the process is up and the provider
           # registry parsed. It answers from the same thread pool as /optimize, so a wedged
           # server fails the probe rather than passing it while the router times out.
@@ -107,10 +94,7 @@ kind: Service
 metadata:
   name: zeroedge
   namespace: llm
-  # founder-model-router, the same entity litellm, ollama and redis name: this is a layer of
-  # the router, not a second door. require-catalogue-entity refuses a Service that names none
-  # (crew#307: "how was even a surface allowed into the estate without being on Backstage").
-  labels: { app.kubernetes.io/name: zeroedge, backstage.io/kubernetes-id: founder-model-router }
+  labels: { app.kubernetes.io/name: zeroedge }
 spec:
   selector: { app.kubernetes.io/name: zeroedge }
   ports:
