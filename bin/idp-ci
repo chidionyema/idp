@@ -122,7 +122,18 @@ if [ "$FAST" = 1 ]; then
     _ruff_shim=$(mktemp -d); printf '#!/usr/bin/env bash\nexec %s -m ruff "$@"\n' "$MPY" > "$_ruff_shim/ruff"
     chmod +x "$_ruff_shim/ruff"; export PATH="$_ruff_shim:$PATH"; trap 'rm -rf "$_ruff_shim"' EXIT
   fi
-  base_local=$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1)
+  # ONE BASE, LOCAL AND CI. `IDP_CI_BASE` is what ci.yml/fast-gate.yml set on a pull request;
+  # `base_local` is what this computes on a laptop. They were TWO DIFFERENT VALUES, and the
+  # earlier path-gated rungs use the first while this rung used the second -- so a run with no
+  # IDP_CI_BASE graded only STAGED files (RANGE unset -> staged_python()), passed here, and then
+  # failed in CI on the same commit. That divergence is the loop this fixes: "how many times are
+  # we going to fix this" was four times, all of them this one mismatch.
+  #
+  # Now CI's base WINS when it is set, and the computed base is only the fallback. A local gate
+  # that grades a different range than the remote cannot protect the remote (LAW 38: a check that
+  # cannot fail on the machine that runs it is not a check).
+  base_local="${IDP_CI_BASE:-$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1)}"
+  export IDP_CI_BASE="$base_local"
   PYTHON_STRICT_RANGE="${base_local}...HEAD" "$IDP/bin/idp-python-strict" \
     && say "ok    py-strict  diff base..HEAD" \
     || { say "FAIL  py-strict  diff base..HEAD; ruff check --select E9,F,B,S --fix; ruff format"; fail=1; }
