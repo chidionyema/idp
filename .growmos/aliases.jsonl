@@ -59,6 +59,7 @@
 {"alias": "Dual-trunk enforcement", "entity": "decision/dual-trunk-enforcement", "type": "DECISION"}
 {"alias": "no-agent-works-in-the-main-checkout", "entity": "decision/no-agent-works-in-the-main-checkout", "type": "DECISION"}
 {"alias": "no-hardcoding law", "entity": "decision/no-hardcoding-law", "type": "DECISION"}
+{"alias": "Host provisioning drift", "entity": "defect/host-provisioning-drift", "type": "DEFECT"}
 {"alias": "salvage event 2026-09-07", "entity": "event/salvage-event-2026-09-07", "type": "EVENT"}
 {"alias": "Action Fusion", "entity": "feature/action-fusion", "type": "FEATURE"}
 {"alias": "Code mutation gate gap", "entity": "feature/code-mutation-gate-gap", "type": "FEATURE"}
