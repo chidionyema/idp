@@ -1,0 +1,65 @@
+# An agent never opens a pull request by hand. The push is the whole instruction: this
+# workflow opens the PR to the consolidation branch (or main when that branch is gone),
+# once, idempotently. The agent's job ends at `git push`; the gates grade it from there.
+#
+# Determinism notes:
+# - One PR per branch, ever: an existing open PR for the head branch exits ok.
+# - Title is the head commit's first line; the body carries the head sha, so what was
+#   pushed is what is graded -- no prose drift between sessions.
+# - GITHUB_TOKEN opens the PR. Pull-request events from GITHUB_TOKEN do not retrigger
+#   `on: pull_request` workflows, which is fine here: ci runs on push to the branch, and
+#   those checks land on the same head commit the PR shows.
+name: auto-pr
+
+on:
+  push:
+    branches-ignore:
+      - main
+      - "consolidate/**"
+      - "flux/image-updates"   # image-update-pr.yml owns this lane (deploy-when-green)
+      - "state/**"             # state branches are ledgers, never code
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: auto-pr-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  open:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: open the pull request for this branch, once
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          existing=$(gh pr list --state open --head "$BRANCH" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            echo "ok    auto-pr  #$existing already tracks $BRANCH"
+            exit 0
+          fi
+
+          base=main
+          if gh api "repos/$GH_REPO/branches/consolidate/all-into-main" >/dev/null 2>&1; then
+            base=consolidate/all-into-main
+          fi
+
+          title=$(gh api "repos/$GH_REPO/commits/$SHA" --jq '.commit.message' | head -1)
+
+          gh pr create --base "$base" --head "$BRANCH" --title "$title" --body "$(cat <<EOF
+          Opened by auto-pr on push of $SHA. The agent's work ended at the push; the gates grade it from here.
+
+          - head: $SHA
+          - base: $base
+          - branch: $BRANCH
+          EOF
+          )"
+          echo "ok    auto-pr  opened PR for $BRANCH -> $base"

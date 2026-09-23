@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""Every estate repository mirrors its GitHub issues into Linear the way crew does.
+
+Founder, 2026-09-09, verbatim: "The crew repo is already mapped that way, well all repos should
+just map the same way." Record: 2026-09-09T0518Z-all-repos-mirror-issues-into-linear-the-way-crew-does.
+
+The board is meant to be one place a person looks to see what the estate owes. It is not, and the
+reason is mechanical rather than anybody's decision: chidionyema/crew was connected to Linear's
+GitHub Issues Sync and nothing else ever was, so 396 of the estate's open issues are on the board
+and the other 225 are invisible to it.
+
+Why this is a check and not a script that fixes it. Linear's GraphQL schema carries
+issueImportCreateGithub (a one-off CSV-shaped import) and the integration connect/commit
+mutations, and no mutation that maps one repository to one team. The mapping is a row on a
+settings page, and Linear owns that page. R52 says a credential is never minted by hand; it does
+not say a vendor may never own a switch. What this refuses to do is let the switch be forgotten:
+the gap is measured on every run, and the run prints the founder's action with the exact URL and
+the exact rows, so the ask is a minute of clicking and never a research project.
+
+The second thing it measures is the one that decides whether "all repos" is even the right
+instruction. Linear's free plan counts *active* issues against 250 -- Done and Canceled both
+count until they are archived, which is why platform/linear/setup.py turns on auto-archive at one
+month. The estate has more open issues than that ceiling. So this prints the headroom next to the
+gap, because connecting every repository at once would not produce a fuller board; it would
+produce a board that refuses new issues.
+
+What it reads:
+  Linear   every issue's attachments, which is where the GitHub sync records the issue it mirrors.
+           An attachment's url names owner/repo, so the set of mirrored repositories is measured
+           from the board itself rather than from anybody's list of what was connected.
+  GitHub   every non-archived repository under the owner that has at least one open issue. A
+           repository with no issues is not a gap: connecting it mirrors nothing and spends a row.
+
+Credential: LINEAR_API_TOKEN, or vault entry cyrus-linear-api-token (the entry cyrus already
+reads, platform/cyrus/external-secret.yaml). No token is printed.
+
+Exit 0 every repository with issues is mirrored, 1 one or more are not, 2 BLIND (no token, no
+network, an API that answered something this cannot read). BLIND is not a pass: a run that could
+not measure says so, because a green from a check that read nothing is how a board stays empty
+for three days while everyone believes it is full.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+API = "https://api.linear.app/graphql"
+OWNER = os.environ.get("ESTATE_GITHUB_OWNER", "chidionyema")
+SETTINGS = "https://linear.app/crewestate/settings/integrations/github"
+# Linear's free plan ceiling on active issues. Named here because the gap and the ceiling only
+# mean anything together: a gap of 225 issues against 0 headroom is not a click, it is a bill.
+FREE_PLAN_ACTIVE_CEILING = 250
+
+
+def token():
+    t = os.environ.get("LINEAR_API_TOKEN", "").strip()
+    if t:
+        return t
+    try:
+        out = subprocess.run(
+            [os.path.join(ROOT, "bin", "idp-cloud"), "secret", "get", "cyrus-linear-api-token"],
+            capture_output=True, text=True, timeout=60,
+        ).stdout.strip()
+    except Exception:
+        return ""
+    if not out:
+        return ""
+    try:
+        d = json.loads(out)
+    except json.JSONDecodeError:
+        return out.splitlines()[-1].strip()
+    # the entry is one field whatever it is called; the token is the value, never the key
+    for v in d.values():
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def linear(tok, query):
+    req = urllib.request.Request(
+        API,
+        data=json.dumps({"query": query}).encode(),
+        headers={"Authorization": tok, "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=60) as fh:
+        body = json.load(fh)
+    if "errors" in body:
+        raise RuntimeError(body["errors"][0].get("message", "linear refused the query"))
+    return body["data"]
+
+
+REPO_IN_URL = re.compile(r"github\.com/([^/\s]+)/([^/\s]+)/issues/\d+")
+
+
+def mirrored_repos(tok):
+    """Repositories the board already carries, read off the attachments the sync writes.
+
+    Paged: a workspace with hundreds of issues does not come back in one response, and a first
+    page that happened to hold only crew's issues would report every other repository as a gap.
+    """
+    repos, active, cursor, pages = set(), 0, None, 0
+    while pages < 40:
+        after = f', after: "{cursor}"' if cursor else ""
+        data = linear(tok, """
+        { issues(first: 100%s) {
+            pageInfo { hasNextPage endCursor }
+            nodes { id state { type } attachments { nodes { url } } } } }
+        """ % after)
+        page = data["issues"]
+        for n in page["nodes"]:
+            # "active" is Linear's own word for what the free plan counts: everything not archived.
+            active += 1
+            for a in n["attachments"]["nodes"]:
+                m = REPO_IN_URL.search(a.get("url") or "")
+                if m:
+                    repos.add(f"{m.group(1)}/{m.group(2)}")
+        pages += 1
+        if not page["pageInfo"]["hasNextPage"]:
+            break
+        cursor = page["pageInfo"]["endCursor"]
+    return repos, active
+
+
+def repos_with_issues():
+    """Every non-archived repository under the owner that has an open issue, and how many.
+
+    open_issues_count includes pull requests, so the count is asked of the search API instead --
+    a repository whose only "issues" are open pull requests is not a board gap.
+    """
+    out = subprocess.run(
+        ["gh", "repo", "list", OWNER, "--limit", "200", "--json", "name,isArchived",
+         "-q", '.[] | select(.isArchived==false) | .name'],
+        capture_output=True, text=True, timeout=180,
+    )
+    if out.returncode != 0:
+        raise RuntimeError(f"gh repo list failed: {out.stderr.strip()[:200]}")
+    counts = {}
+    for name in [x for x in out.stdout.split() if x]:
+        r = subprocess.run(
+            ["gh", "api", f"search/issues?q=repo:{OWNER}/{name}+is:issue+is:open&per_page=1",
+             "-q", ".total_count"],
+            capture_output=True, text=True, timeout=90,
+        )
+        n = int(r.stdout.strip() or 0) if r.returncode == 0 and r.stdout.strip().isdigit() else 0
+        if n:
+            counts[f"{OWNER}/{name}"] = n
+    return counts
+
+
+def main():
+    tok = token()
+    if not tok:
+        print("BLIND   linear-mirror  no LINEAR_API_TOKEN and vault entry cyrus-linear-api-token "
+              "is unreadable from here; the board was not measured")
+        return 2
+    try:
+        have, active = mirrored_repos(tok)
+        want = repos_with_issues()
+    except (urllib.error.URLError, RuntimeError, ValueError, OSError) as exc:
+        print(f"BLIND   linear-mirror  could not read both sides: {str(exc)[:160]}")
+        return 2
+
+    missing = {r: n for r, n in sorted(want.items(), key=lambda kv: -kv[1]) if r not in have}
+    unmirrored = sum(missing.values())
+    headroom = FREE_PLAN_ACTIVE_CEILING - active
+
+    for r in sorted(have):
+        if r in want:
+            print(f"ok      linear-mirror  {r}: {want[r]} open issue(s), mirrored")
+    print(f"info    linear-mirror  board holds {active} active issue(s); the free plan counts "
+          f"{FREE_PLAN_ACTIVE_CEILING}, so headroom is {headroom}")
+
+    if not missing:
+        print(f"ok      linear-mirror  every repository with an open issue is on the board "
+              f"({len(want)} of {len(want)})")
+        return 0
+
+    for r, n in missing.items():
+        print(f"FAIL    linear-mirror  {r}: {n} open issue(s), on no Linear board")
+    print()
+    print(f"FOUNDER ACTION: connect {len(missing)} repositories to Linear, team MUM, two-way.")
+    print(f"  1. Open {SETTINGS}")
+    print("  2. Press 'Connect repository' (or 'Add' if the list is already there).")
+    print("  3. Pick team MUM and set the sync direction to two-way.")
+    print("  4. Repeat for each repository below, largest first:")
+    for r, n in missing.items():
+        print(f"       - {r}   ({n} open issues)")
+    if unmirrored > headroom:
+        print()
+        print(f"  Before step 1: connecting all of these mirrors {unmirrored} issues into "
+              f"{headroom} places. Linear will refuse the overflow. Either connect the top of the "
+              f"list only, or let platform/linear/setup.py's auto-archive run first -- it archives "
+              f"Done and Canceled at one month, and those are what is filling the 250.")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

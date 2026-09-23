@@ -1,0 +1,2 @@
+#!/bin/sh
+rclone lsf :s3:bucket/

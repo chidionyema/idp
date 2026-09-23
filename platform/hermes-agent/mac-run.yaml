@@ -1,0 +1,29 @@
+# crew#516 CP5, founder's locked spec (crew#66 5451926212, Phase 3): "inside the Hermes agent pod,
+# execution is cleanly abstracted into a deterministic script injected via a Kubernetes ConfigMap".
+# Mounted read-only, mode 0755, at /usr/local/bin/mac-run in the gateway container (gateway.yaml) —
+# never baked into the image, so a change here needs no rebuild. FOUNDER_MAC_USER and
+# FOUNDER_MAC_TS_IP are Flux postBuild substitutions from clusters/oke/estate-config.yaml (LAW 46:
+# this script is the only place the Mac's tailnet IP or login user may be named, and it names them
+# through a variable, never a literal).
+#
+# One deliberate departure from the founder's literal ssh line, logged rather than silently kept:
+# 5451926212 drops the SOCKS proxy (`ssh ... ${FOUNDER_MAC_USER}@${FOUNDER_MAC_TS_IP}` with no
+# ProxyCommand), which only reaches the tailnet if the sidecar runs kernel networking (TS_USERSPACE
+# unset), and kernel networking needs NET_ADMIN — a securityContext this namespace's restricted PSA
+# and the Kyverno `restricted` warn tier both refuse (LAW 21: secure by default, and prove it; the
+# how of an implementation is this worker's call, LAW 43: userspace + SOCKS5 is Tailscale's own
+# documented pattern for exactly this — tailscale.com/docs/solutions/connect-kubernetes-pods-to-tailnet-using-sidecar
+# — for a pod sidecar that must not hold NET_ADMIN). mac-run keeps the SOCKS5 ProxyCommand into
+# TS_SOCKS5_SERVER (localhost:1055, this pod's shared network namespace, tailscale.yaml); the
+# observable behaviour the spec asked for — mac-run takes no flags, no key, reaches the Mac by
+# tailnet identity — is unchanged. ConnectTimeout=5 is the fail-fast half of the "sleeping Mac" UX
+# (5451926212 Phase 3): a dead tunnel or a sleeping host answers in 5s, not a hung request.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-agent-mac-run
+  namespace: hermes-agent
+data:
+  mac-run: |
+    #!/bin/bash
+    exec ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -o ProxyCommand='nc -x localhost:1055 %h %p' "${FOUNDER_MAC_USER}@${FOUNDER_MAC_TS_IP}" "$@"

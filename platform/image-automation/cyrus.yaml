@@ -1,0 +1,30 @@
+# Cyrus's image (crew#834). The tag `main` was never pushed: the deployment asked for
+# ghcr.io/chidionyema/cyrus:main and every pull came back `manifest unknown`, so the pod sat in
+# ImagePullBackOff from the day it was applied. The registry holds `main-<run>-<sha>` tags, the
+# same convention every other estate image uses, so this row moves cyrus onto the automation the
+# other nine images already run on rather than leaving a hand-typed tag to rot again.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: cyrus
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/cyrus
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: cyrus
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: cyrus
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

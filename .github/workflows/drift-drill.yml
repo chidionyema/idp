@@ -1,0 +1,66 @@
+# crew#581 CP6: measure what Flux actually does to a hand-edit on a live cluster.
+#
+# The trust architecture the founder handed the crew says that when an engineer edits a running
+# server by hand, "Flux immediately deletes their change and reverts it back to what is written in
+# Git." That sentence is why the doc can claim the cluster cannot drift, and nothing in this
+# repository had ever measured it. Two things about it are worth a scheduled run rather than a
+# one-off: "immediately" is not what the tree declares — every Kustomization sets its own reconcile
+# interval and the drill reads the slowest one from the cluster — and the sentence is only true of
+# edits to fields the source declares. An added annotation, and by the same mechanism an added
+# sidecar or capability, is owned by nobody, so prune never sees it and it survives. The drill
+# grades both and prints the number, so the claim in the doc can be rewritten to the measured one.
+#
+# Same shape as portability-drill's k3s job: k3s straight on the runner VM, Flux from its own CLI,
+# this commit's tree hydrated. Nothing here touches OCI and no node is billed — GitHub-hosted
+# runners are free on a public repository, and the VM dies with the job.
+name: drift-drill
+on:
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - .github/workflows/drift-drill.yml
+      - bin/idp-drift-drill
+permissions:
+  contents: read
+concurrency:
+  group: drift-drill-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    # the drill waits out the slowest declared reconcile interval twice over, once for the managed
+    # edit and once for the undeclared annotation, on top of the hydrate
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: k3s on the runner VM
+        env:
+          # the release train platform/k3d/estate.yaml tracks, same pin as portability-drill
+          INSTALL_K3S_VERSION: v1.33.4+k3s1
+          INSTALL_K3S_EXEC: server --disable traefik --disable servicelb --write-kubeconfig-mode 644
+        run: |
+          set -euo pipefail
+          curl -sfL https://get.k3s.io | sh -
+          echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> "$GITHUB_ENV"
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          kubectl wait node --all --for=condition=Ready --timeout=120s
+      - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
+      - name: flux install, then the same tree OKE runs, from this commit
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REF: ${{ github.head_ref || github.ref_name }}
+        run: bin/idp-hydrate
+      - name: wait for what can come up
+        run: kubectl wait kustomization --all -A --for=condition=Ready --timeout=600s || true
+      - name: hand-edit a live resource and time what Flux does about it
+        run: bin/idp-drift-drill --receipt receipt/ | tee receipt/drift.txt
+      - name: the measured window on the run summary, not buried in a log
+        if: always()
+        run: cat receipt/drift.txt >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: drift-receipt
+          path: receipt/

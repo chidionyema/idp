@@ -1,0 +1,13 @@
+# What the portal's Showcase page reads: the sandbox's state, hold and expiry.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sandbox-launch
+  namespace: flux-system
+data:
+  state: "idle"
+  hold: "1h"
+  launched_at: "2026-09-12T20:07:03Z"
+  expires_at: "2026-09-12T21:07:03Z"
+  written_at: "2026-09-12T22:48:10Z"
+  run_url: "https://github.com/chidionyema/idp/actions/runs/34723705884"

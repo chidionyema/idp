@@ -1,0 +1,483 @@
+#!/usr/bin/env python3
+"""idp-gate-demo: one page per rule, carrying the gate's own real output.
+
+Founder, 2026-09-12: "everything needs UI demo."
+
+There are 65 rules in rules.yaml and 5 recordings under demos/. The five were hand-authored
+one at a time, which is why there are five: a tape is a claim about what a gate does, typed
+by hand, and nothing checks it against the gate. A demo that can drift from the thing it
+demonstrates is a liability, not evidence.
+
+This generates the opposite. For every rule it runs the rule's own refusing case and its own
+permitting case, with the fixture arguments the registry already names, and writes what the
+gate actually printed and the exit code it actually returned into docs/gates/<id>.md. The
+page therefore cannot say anything the gate did not say: re-render, and if the gate stopped
+discriminating the page changes and says so.
+
+    idp-gate-demo --out docs/gates            render every page, then the index
+    idp-gate-demo --out docs/gates --check    exit 1 when a page on disk is not what this writes
+    idp-gate-demo --only <rule-id>            one rule, to look at it
+    idp-gate-demo --rules <path> --out <dir>  another registry (the tests use this)
+
+A rule whose case cannot run at all -- its gate binary is absent, or it names no case with
+arguments -- gets a BLIND page that names what was missing. BLIND is never a pass (LAW 15),
+and a page that read as a pass while the gate could not be invoked would be the exact failure
+this estate keeps finding.
+
+The runner is bin/idp-rules: `_argv` builds the argv and `run_case` runs it. Both are reused
+rather than reimplemented (LAW 43), so this file and CI cannot disagree about what running a
+case means.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import os
+import re
+import subprocess
+import sys
+from importlib.machinery import SourceFileLoader
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parent.parent
+RULES = ROOT / "rules.yaml"
+OUT = ROOT / "docs" / "gates"
+
+
+# A case is worth running when it names arguments and is not marked live. A live case runs
+# against the estate, which a page render must not do: it would make the page depend on the
+# cluster's state and two renders would differ.
+def _load_rules_engine():
+    """Import bin/idp-rules, which has no .py suffix.
+
+    importlib.util.spec_from_file_location returns None for a file named `idp-rules`, so the
+    loader is built directly. SourceFileLoader accepts any file with a python shebang.
+    """
+    path = ROOT / "bin" / "idp-rules"
+    loader = SourceFileLoader("idp_rules_engine", str(path))
+    spec = importlib.util.spec_from_loader("idp_rules_engine", loader)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"could not load the rules engine from {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def cases_for(rule: dict) -> tuple[dict | None, dict | None]:
+    """(refusing case, permitting case) that name arguments, or None for each."""
+    refuse = pass_ = None
+    for case in rule.get("cases") or []:
+        if case.get("live") or not case.get("args"):
+            continue
+        if case.get("expect") == "refuse" and refuse is None:
+            refuse = case
+        elif case.get("expect") == "pass" and pass_ is None:
+            pass_ = case
+    return refuse, pass_
+
+
+def run(engine, rule: dict, case: dict) -> dict:
+    """Run one case and capture what the gate really did.
+
+    Returns dict(argv, exit, output, blind). `blind` carries the reason a case could not be
+    run at all, so the page can say BLIND rather than a pass it did not earn.
+    """
+    argv = engine._argv(rule, case)
+    if not _exists(argv):
+        absent = _absent_binary(argv)
+        return {
+            "argv": argv,
+            "exit": None,
+            "output": "",
+            "blind": f"the gate is not on disk: {absent}",
+        }
+    import subprocess
+
+    cwd = os.path.join(str(ROOT), rule.get("cwd", "."))
+    proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True)
+    return {
+        "argv": argv,
+        "exit": proc.returncode,
+        "output": (proc.stdout or "") + (proc.stderr or ""),
+        "blind": None,
+    }
+
+
+def _exists(argv: list[str]) -> bool:
+    """True when the interpreter and the SCRIPT it runs both resolve.
+
+    Only the script counts, never the script's arguments. Measured 2026-09-13 on
+    law32-demo-onboarding: its refusing case is `--added bin/feature-with-no-pages`, and the gate
+    is asked to refuse a NAME that has no demo and onboarding pages -- so no such file exists, and
+    none should. Scanning every argv entry carrying a slash reported
+
+      BLIND -- the gate is not on disk: bin/feature-with-no-pages
+
+    for a rule whose gate, `bin/law32-gate`, was on disk and refusing correctly. BLIND means the
+    GATE could not be run; an argument the gate exists to refuse is the case working, not a case
+    that could not run. A working gate shown blind is the same lie as a pass it did not earn
+    (LAW 15), because on this page a live rule and a dead one looked identical.
+
+    A script path is the first non-flag entry after the interpreter: `python3 bin/gate --added X`.
+    An interpreter such as `python3` carries no slash and is resolved on PATH, and a rule whose
+    argv is a single bare script is covered by the same first-non-flag rule.
+    """
+    for part in argv:
+        if part.startswith("-"):
+            continue
+        if "/" in part:
+            # The script itself: the first path-shaped entry. Everything after it is data.
+            return os.path.exists(os.path.join(str(ROOT), part)) or os.path.exists(part)
+    return True
+
+
+def _absent_binary(argv: list[str]) -> str:
+    """Name the argv entry that is missing, for the BLIND line.
+
+    Only the script can be named here: see `_exists` for why an argument is not evidence that the
+    gate is absent. If the script resolves, there is nothing to name.
+    """
+    for part in argv:
+        if part.startswith("-"):
+            continue
+        if "/" in part:
+            if not (os.path.exists(part) or os.path.exists(os.path.join(str(ROOT), part))):
+                return part
+            return ""
+    return ""
+
+
+def _stable(output: str) -> str:
+    """Remove what changes between two renders of the same registry.
+
+    A generated page is checked in (`bin/idp-gate-demo --check` fails when the page on disk is
+    not what a render produces), so a single varying byte makes the check unusable and the
+    idempotency test fail. Four things vary between two renders, and the third varies between two
+    MACHINES:
+
+      * a timestamp, e.g. `2026-09-12 23:45:29 +0100`
+      * a temp directory, e.g. `/var/folders/gq/.../tmp9ufe9b4a`, because a gate that imports
+        dagster is handed a fresh one per invocation
+      * the CHECKOUT PATH, e.g. `<somewhere>/tests/fixtures/definitions/relative-import.py`,
+        because a fixture's own traceback names the file it was read from, and the home
+        directory, because a gate that resolves a path reports it as being outside one
+      * a pytest DURATION, e.g. `13 passed in 456.72s (0:07:36)`, because seven rules in this
+        registry run pytest as their gate and no two runs take the same time
+
+    Measured 2026-09-12: docs/gates/defs-load-by-path.md differed between two consecutive renders
+    on pristine main for exactly these two reasons, and the page could never be current.
+    Measured again 2026-09-13, in CI run 34772174167: SEVEN pages were non-idempotent in one
+    render pair -- availability, breaker-enforcement, execution-boundary-holds, index,
+    licence-policy, placement-policy, rego-unit-tests -- and `--check` refused the committed tree
+    (`tests/test_gate_demo.py:126` `two renders of one registry differ` and `:130` `--check
+    refused a current tree`). Every one of the seven is a rule whose gate is pytest or conftest,
+    so the varying line was the summary pytest prints: `13 passed in 456.72s (0:07:36)`. The
+    earlier pass scrubbed the first two causes and left this one, and because the index page
+    copies each page's exit code the single leak also made `index.md` differ -- seven pages from
+    one unscrubbed number.
+
+    All four are replaced with a fixed token so the page records WHAT the gate said, not when
+    the demo happened to run it, not where it ran, and not how long it took. The duration is
+    deliberately NOT kept: it is a property of the machine that ran the demo, not of the gate,
+    and a page that changed when the laptop was busy would make `--check` a coin toss.
+
+    Measured 2026-09-13, and this is why the checkout path is scrubbed rather than excused:
+    `--check` FAILED on a clean detached checkout of the same commit it PASSED on in the working
+    tree, naming exactly four pages -- defs-load-by-path, sleep-ban, breaker-enforcement, index.
+    The page was not stale and the gates were not failing; the render had simply happened
+    somewhere else, and `defs-load-by-path.md` carries a fixture's traceback, which prints the
+    path the fixture was READ FROM: the temp checkout in one case, the working checkout in the
+    other. A committed page therefore named the machine of whoever generated it -- LAW 46, in a
+    generated file -- and `--check` could only ever pass on that one machine. CI is a different
+    machine, which is the `bdd-suites (tests)` failure.
+    """
+    out = re.sub(
+        r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\s*[+-]\d{4})?", "<timestamp>", output
+    )
+    # The checkout this render ran in. A gate that reads a fixture prints the absolute path it
+    # read, so without this the page is bound to one machine and `--check` is bound with it.
+    # Asked of git rather than guessed, so a worktree, a symlinked /private/tmp on macOS and a
+    # CI runner are all handled by the one answer; the longest root is tried first so a nested
+    # worktree is not half-replaced by its parent's path.
+    roots: list[Path] = []
+    for flag in ("--show-toplevel", "--git-common-dir"):
+        try:
+            proc = subprocess.run(
+                ["git", "rev-parse", flag],
+                cwd=Path(__file__).resolve().parent,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                p = Path(proc.stdout.strip())
+                roots.append(p.resolve() if flag == "--show-toplevel" else p.resolve().parent)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    for root in sorted(set(roots), key=lambda p: len(str(p)), reverse=True):
+        for spelled in (str(root), str(root).replace("/private/", "/")):
+            out = out.replace(spelled, "<checkout>")
+    # The home directory, for the same reason and in the same class of leak: `bin/idp-hardcode-scan`
+    # (LAW 46) refuses a file that names where the checkout, the home directory or the machine
+    # lives, and a gate that resolves a path can print any of the three. Measured 2026-09-13:
+    # docs/gates/vm-shared-path.md carried the literal account name in its refusal -- `the
+    # VM-shared tree (/Users/<person>)` -- which is the home directory, not the checkout, so the
+    # checkout scrub above would have missed it. Scrubbed AFTER the checkout so a checkout that
+    # lives under the home directory yields `<checkout>` rather than `<home>/dev/code/idp`.
+    home = Path(os.path.expanduser("~"))
+    if home != Path("/"):
+        for spelled in (str(home), str(home).replace("/private/", "/")):
+            out = out.replace(spelled, "<home>")
+    # A CPython repr carries the object's address: `<Foo object at 0x111ad3390>`, and pytest dumps
+    # whole reprs of test objects on a failure. The address changes every run.
+    out = re.sub(r"0x[0-9a-fA-F]{6,}", "<addr>", out)
+    out = re.sub(r"/(?:private/)?var/folders/\S*?/tmp[0-9A-Za-z_]+", "<tmpdir>", out)
+    out = re.sub(r"/tmp/tmp[0-9A-Za-z_]+", "<tmpdir>", out)  # noqa: S108 -- a pattern, not a path
+    # pytest's own temp root is `pytest-of-<user>/pytest-<n>` -- NUMBERED and USER-NAMED, not
+    # `tmp`-prefixed, so the pattern above misses it and both the account name and the session
+    # number leaked into a committed page. Measured on 2026-09-13: with the timestamp, duration
+    # and address scrubs already in place, breaker-enforcement.md was still the one page of 84
+    # that differed between two renders, and this line was in the diff.
+    out = re.sub(
+        r"/(?:private/)?var/folders/\S*?/pytest-of-[^/\s:'\"]+(?:/pytest-[^/\s:'\"]+)?",
+        "/<tmpdir>",
+        out,
+    )
+    # A uuid, e.g. pytest's `garbage-3ac755cf-46dd-4e4b-8a67-66489063ec71` -- the dirs it could
+    # not remove, named per run. Anchored on the 8-4-4-4-12 shape so an ordinary hyphenated word
+    # is untouched.
+    out = re.sub(
+        r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
+        "<uuid>",
+        out,
+    )
+    # pytest's summary line: `13 passed in 456.72s (0:07:36)`, `1 failed, 2 passed in 0.31s`.
+    # Anchored on `in <n>s` so a finding that merely contains the word "passed" is untouched. The
+    # optional space before the bracketed clock form is REQUIRED, not cosmetic: measured here on
+    # the first attempt, without it `456.72s (0:07:36)` scrubbed to `<duration> (0:07:36)` -- the
+    # clock was left behind, the page still differed between two renders, and the fix would have
+    # looked correct while the CI failure it was written for survived.
+    out = re.sub(
+        r"\b(in) \d+(?:\.\d+)?s(?:\s*\(\d+:\d{2}(?::\d{2})?\))?",
+        r"\1 <duration>",
+        out,
+    )
+    return out
+
+
+def _fence(output: str, limit: int = 60) -> str:
+    """The gate's output in a fenced block, trimmed to a readable length.
+
+    The first lines carry the verdict; a fixture that lists 400 findings would push the exit
+    code off the page. The count of lines dropped is stated, never silently cut.
+    """
+    lines = [ln for ln in _stable(output).splitlines() if ln.strip()]
+    if not lines:
+        return "```\n(no output)\n```"
+    shown = lines[:limit]
+    body = "\n".join(shown)
+    if len(lines) > limit:
+        body += f"\n… {len(lines) - limit} more line(s)"
+    return "```\n" + body + "\n```"
+
+
+def page(rule: dict, engine) -> str:
+    """One rule's page, from its own fields and its own runs."""
+    rid = rule["id"]
+    label = rule.get("label", rid)
+    statement = " ".join(str(rule.get("statement", "")).split())
+    law = rule.get("law", "")
+    origin = rule.get("origin", "")
+    planes = ", ".join(rule.get("planes") or [])
+    argv = " ".join(rule.get("run") or [])
+    ok_line = rule.get("ok", "")
+    fail_line = rule.get("fail", "")
+    refuse, permit = cases_for(rule)
+
+    out = [
+        f"# Gate: {label}",
+        "",
+        f"*`{rid}` · {law} · planes: {planes}*",
+        "",
+        statement,
+        "",
+        "This page is generated by `bin/idp-gate-demo` from `rules.yaml`. The output below is "
+        "what the gate itself printed when the generator ran it; it is not a description of "
+        "what the gate does.",
+        "",
+        "## Run it yourself",
+        "",
+        "```bash",
+        argv,
+        "```",
+        "",
+    ]
+
+    if refuse is None or permit is None:
+        # A rule whose refusing case lives on another plane -- a node id under a runner this page
+        # cannot steer, or a script the page is not the runner for -- still prints the case it
+        # CAN run. The heading names the half that is missing rather than the whole rule, because
+        # "nothing here is a pass" printed directly above a passing run reads as a false alarm.
+        absent = "refusing" if refuse is None else "permitting"
+        here = "permitting" if refuse is None else "refusing"
+        out += [
+            f"## BLIND to the {absent} direction: this rule names no {absent} case this page can run",
+            "",
+            f"The {absent} half of this rule cannot be shown here. The {here} case this page CAN "
+            f"run is printed below with the gate's own output; it is a real run, not a description. "
+            f"Where the {absent} direction is proved, the registry's `proved_elsewhere` field says.",
+            "",
+            f"- refusing case: {'yes' if refuse else 'none this page can run'}",
+            f"- permitting case: {'yes' if permit else 'none this page can run'}",
+            "",
+        ]
+    for title, case, want in (
+        ("Refused", refuse, "non-zero"),
+        ("Permitted", permit, "zero"),
+    ):
+        if case is None:
+            continue
+        result = run(engine, rule, case)
+        args = " ".join(case["args"])
+        out += [f"## {title}", "", f"Fixture: `{args}`", ""]
+        if result["blind"]:
+            out += [
+                f"**BLIND** — {result['blind']}",
+                "",
+                "Nothing was proved here. BLIND is a fail, never a pass.",
+                "",
+            ]
+            continue
+        exits = result["exit"]
+        verdict = "✓" if (exits != 0) == (want == "non-zero") else "✗"
+        out += [
+            f"Exit code `{exits}` (the registry expects {want}). {verdict}",
+            "",
+            _fence(result["output"]),
+            "",
+        ]
+
+    out += ["## The registry's own lines", ""]
+    if ok_line:
+        out += [f"- when it passes: {ok_line}"]
+    if fail_line:
+        out += [f"- when it refuses: {fail_line}"]
+    if origin:
+        out += ["", f"Origin: {origin}"]
+    out += [""]
+    return "\n".join(out)
+
+
+def index(pages: list[tuple[dict, str]]) -> str:
+    """The index: one row per gate, with the exit codes its page recorded."""
+    out = [
+        "# The gates",
+        "",
+        "Every rule in `rules.yaml`, one page each, generated by `bin/idp-gate-demo`. Each "
+        "page carries the gate's own output for its refusing and permitting cases, so a gate "
+        "that stopped discriminating shows up here rather than in a claim.",
+        "",
+        f"{len(pages)} gate(s).",
+        "",
+        "| gate | id | planes | law | refused | permitted |",
+        "|---|---|---|---|---|---|",
+    ]
+    for rule, body in pages:
+        rid = rule["id"]
+        label = rule.get("label", rid)
+        planes = ", ".join(rule.get("planes") or [])
+        law = str(rule.get("law", "")).replace("|", "/")[:40]
+        refused = _exit_from(body, "Refused")
+        permitted = _exit_from(body, "Permitted")
+        out.append(
+            f"| [{label}]({rid}.md) | `{rid}` | {planes} | {law} | {refused} | {permitted} |"
+        )
+    out.append("")
+    return "\n".join(out)
+
+
+def _exit_from(body: str, section: str) -> str:
+    """The exit code recorded under a section heading, or BLIND."""
+    m = re.search(rf"^## {section}\n(.*?)(?=^## |\Z)", body, re.MULTILINE | re.DOTALL)
+    if not m:
+        return "—"
+    if "**BLIND**" in m.group(1):
+        return "BLIND"
+    e = re.search(r"Exit code `(-?\d+)`", m.group(1))
+    return f"`{e.group(1)}`" if e else "—"
+
+
+def render(rules_path: Path, out_dir: Path, only: str | None) -> int:
+    engine = _load_rules_engine()
+    registry = yaml.safe_load(rules_path.read_text())
+    rules = registry.get("rules") or []
+    if only:
+        rules = [r for r in rules if r["id"] == only]
+        if not rules:
+            print(f"no rule with id {only!r}")
+            return 1
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rendered: list[tuple[dict, str]] = []
+    for rule in rules:
+        body = page(rule, engine)
+        rendered.append((rule, body))
+        (out_dir / f"{rule['id']}.md").write_text(body, encoding="utf-8")
+    if not only:
+        (out_dir / "index.md").write_text(index(rendered), encoding="utf-8")
+    blind = sum(1 for _, b in rendered if "**BLIND**" in b)
+    print(
+        f"ok    gate-demo {len(rendered)} page(s) written to {out_dir}"
+        + (f", {blind} BLIND" if blind else "")
+    )
+    return 0
+
+
+def check(rules_path: Path, out_dir: Path) -> int:
+    """Exit 1 when a page on disk is not what a fresh render produces."""
+    engine = _load_rules_engine()
+    registry = yaml.safe_load(rules_path.read_text())
+    stale: list[str] = []
+    for rule in registry.get("rules") or []:
+        want = page(rule, engine)
+        target = out_dir / f"{rule['id']}.md"
+        if not target.is_file() or target.read_text(encoding="utf-8") != want:
+            stale.append(str(target))
+    want_index = index([(r, page(r, engine)) for r in registry.get("rules") or []])
+    idx = out_dir / "index.md"
+    if not idx.is_file() or idx.read_text(encoding="utf-8") != want_index:
+        stale.append(str(idx))
+    if stale:
+        print("FAIL  gate-demo these page(s) are not what a render produces:")
+        for s in stale[:10]:
+            print(f"        {s}")
+        print("      run: bin/idp-gate-demo --out docs/gates")
+        return 1
+    print(
+        f"ok    gate-demo {len(registry.get('rules') or [])} page(s) match rules.yaml"
+    )
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--rules", default=str(RULES), help="the registry (default rules.yaml)"
+    )
+    ap.add_argument("--out", default=str(OUT), help="where the pages go")
+    ap.add_argument(
+        "--check", action="store_true", help="exit 1 when the pages are stale"
+    )
+    ap.add_argument("--only", help="render one rule")
+    args = ap.parse_args()
+    rules_path = Path(args.rules)
+    out_dir = Path(args.out)
+    if args.check:
+        return check(rules_path, out_dir)
+    return render(rules_path, out_dir, args.only)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

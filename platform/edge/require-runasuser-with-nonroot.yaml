@@ -1,0 +1,74 @@
+# 2026-08-31, tailscale/operator. The pod carried `runAsNonRoot: true` and no `runAsUser`, on an
+# image that declares no USER. The kubelet refuses that combination on every attempt, forever:
+#
+#   Error: container has runAsNonRoot and image will run as root
+#
+# It failed for 2d15h. Nothing upstream could see it. The YAML is valid, `helm template` renders
+# it, every posture policy in this estate reads `runAsNonRoot: true` and calls it correct -- the
+# manifest looks MORE secure than one that names a uid. The contradiction only exists once the
+# image's config is merged with the pod's securityContext, which happens in the kubelet and
+# nowhere earlier. Four Helm release revisions failed against it and `helm rollback` had no
+# deployed target to return to, so the release could not self-heal and could not be hand-cleared.
+#
+# Founder's placement rule (~/.claude/docs/founder/2026-08-31T0014Z-good-correction-and-the-guard
+# -moved-to-the-9f88e1fd.md): "place the control at the last point where all inputs are merged."
+# The last point this estate controls before the kubelet is admission, on the Pod -- which also
+# covers pods no manifest declares. The Tailscale operator's whole job is generating proxy
+# StatefulSets from its own config; a render-time check could never have seen those.
+#
+# The rule does not need to read the image. Requiring an explicit non-zero runAsUser whenever
+# runAsNonRoot is true makes the contradiction unrepresentable whatever the image declares, which
+# is the stronger property and the cheaper one to enforce.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: nonroot-names-a-uid
+  annotations:
+    policies.kyverno.io/title: A pod that says non-root names the uid it runs as
+    policies.kyverno.io/category: 2026-08-31 tailscale-operator permanent CreateContainerConfigError
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      runAsNonRoot: true with no runAsUser is a permanent kubelet refusal on any image whose
+      config declares no USER, and it reads as correct everywhere upstream of the kubelet. This
+      refuses the combination at admission, on the Pod, so operator-generated pods are covered
+      identically to ones this repo declares.
+spec:
+  background: true
+  rules:
+    - name: pod-level-nonroot-names-a-uid
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              operations: [CREATE, UPDATE]
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.securityContext.runAsNonRoot || `false` }}"
+            operator: Equals
+            value: true
+          - key: "{{ request.object.spec.securityContext.runAsUser || `0` }}"
+            operator: Equals
+            value: 0
+      validate:
+        # Enforce, not Audit. The Kyverno CLI counts an Audit violation in `fail:` exactly as
+        # it counts an Enforce one, so bin/idp-kyverno-render refuses the render either way --
+        # landing this as Audit would have bought nothing and said something untrue in a comment.
+        # The one other chart in this estate with the same default (cert-manager v1.21.1, on all
+        # four of its components) is fixed in this same commit by writing down the uid its images
+        # already run as, so Enforce refuses nothing that works today.
+        failureAction: Enforce
+        message: >-
+          This pod sets securityContext.runAsNonRoot: true and names no non-zero runAsUser. The
+          kubelet refuses that on any image with no USER in its config, on every attempt, with
+          'container has runAsNonRoot and image will run as root' -- and no Helm remediation
+          retry ever clears it (tailscale/operator, 2026-08-31, failed for 2d15h). Name the uid:
+          runAsUser: 65532 is the distroless nonroot uid most base images provide.
+        deny:
+          conditions:
+            any:
+              # Pod-level says non-root and no uid: the only escape is that EVERY container names
+              # its own non-zero uid, in which case the pod-level omission changes nothing.
+              - key: "{{ request.object.spec.containers[?!(securityContext.runAsUser) || securityContext.runAsUser == `0`] | length(@) }}"
+                operator: GreaterThan
+                value: 0

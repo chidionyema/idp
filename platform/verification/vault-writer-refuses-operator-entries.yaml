@@ -1,0 +1,36 @@
+# The key ingest door's refusal wall (docs/specs/key-ingest-door-part4.md, part B, and the shape
+# of platform/verification/verdict-key-wall.yaml beside it).
+#
+# The claim being graded: the writer may write a Customer-owned entry and may NOT write one whose
+# register Owner is Operator, even though the same pod could physically reach the vault. On a
+# node-identity cluster there is no per-pod OCI identity to rely on (platform/oci/vault.tf:4-6),
+# so the isolation is the scoped statement AND this process-level refusal -- and this wall is how
+# the second half is proved rather than asserted.
+#
+# This ExternalSecret asks for a key the CUSTOMER list does not carry. It is meant to stay NOT
+# Ready (SecretSyncedError, the vault's NotAuthorizedOrNotFound), because the scoped grant is a
+# name list and this name is not in it. Two readers grade it the same way the verdict wall is
+# graded: the estate/expect-ready annotation, and a run of bin/idp-root-trust which prints the
+# entry count. `Ready` here is the breach.
+#
+# The control is the other half, and it matters: bin/idp-root-trust proves the Customer entries
+# DO sync against the same store, so a wall that stays red because the store is broken cannot be
+# mistaken for the wall standing.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: vault-writer-refuses-operator-entries
+  namespace: backstage
+  annotations:
+    estate/expect-ready: "false"
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target: { name: vault-writer-refuses-operator-entries, creationPolicy: Owner }
+  data:
+    # verdict-hmac-key is Operator-owned in docs/reference/policy/root-trust.md and is excluded
+    # from the workers read grant by name for the same reason (crew#631 CP2). It is the sharpest
+    # available probe: if the write door's scope ever widened, this key is the one whose exposure
+    # would be a signing-key compromise rather than a leaked vendor token.
+    - secretKey: key
+      remoteRef: { key: verdict-hmac-key }

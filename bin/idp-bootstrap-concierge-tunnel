@@ -1,0 +1,506 @@
+#!/usr/bin/env python3
+# The concierge's public origin, minted, not asked for (crew#832; docs/reference/policy/root-trust.md).
+#   bin/idp-bootstrap-concierge-tunnel              mint a Cloudflare Tunnel + DNS record, write vault entry concierge-tunnel
+#   bin/idp-bootstrap-concierge-tunnel --preflight   prove the vault, the driver and the dashboard reachability, write nothing
+#   bin/idp-bootstrap-concierge-tunnel --rotate      mint anew even though the vault entry already verifies
+#
+# The gap this closes: mums-concierge/docs/DEPLOYMENT.md documents `PUBLIC_SERVER_URL` as "the
+# Cloudflare Tunnel origin" but the only tunnel command in that runbook is `cloudflared tunnel
+# --url http://127.0.0.1:8000` -- an ephemeral quick tunnel that hands back a random
+# `trycloudflare.com` host that changes on every restart, and a placeholder
+# `https://concierge.yourdomain.com` in the env template that nobody ever fills in
+# (mums-concierge/docs/STATUS.md: "the Twilio image delivery has never been verified end to
+# end"). That is not a founder task sitting undone -- it is a founder task that was never
+# actually askable, because a Cloudflare Tunnel is provider infrastructure, and R52 (founder
+# 2026-08-29) already settled how provider infrastructure gets made: one root token per
+# provider, set once, and code mints everything under it. The estate already holds that root for
+# Cloudflare (SEED_CLOUDFLARE_ROOT_TOKEN, "User API Tokens: Edit") and already uses it, unattended,
+# to mint the DNS and Workers tokens in bin/idp-bootstrap-cloudflare. This script is the same root,
+# the same pattern, one more child: a named, remotely-managed Tunnel bound to a stable hostname on
+# the estate's own zone, so `PUBLIC_SERVER_URL` is a value the estate hands the founder, not one it
+# asks him to go and find.
+#
+# What it mints, all via the API, none of it typed by a person:
+#   1. A short-lived token scoped to Account: Cloudflare Tunnel Read + Write (looked up by name, LAW 46).
+#   2. A remotely-managed Tunnel named "concierge" (POST /accounts/{account}/cfd_tunnel), whose
+#      token is what `cloudflared tunnel run --token ...` needs on the Mac -- no cert.pem, no
+#      credentials.json to copy by hand.
+#   3. Its public-hostname route, configured to point at the concierge's own port (127.0.0.1:8000,
+#      the same port DEPLOYMENT.md's launchd plist already binds).
+#   4. A DNS CNAME for the hostname -> <tunnel-id>.cfargotunnel.com, written with the estate's
+#      EXISTING cloudflare-api-token (Zone:DNS:Edit on ESTATE_ZONE) rather than minting a second
+#      DNS credential -- one root, and the fewest possible standing tokens under it.
+# Vaulted as `concierge-tunnel`: PUBLIC_SERVER_URL, PUBLIC_WSS_URL, TUNNEL_TOKEN, TUNNEL_ID. The
+# platform/concierge/tunnel-external-secret.yaml ExternalSecret reads it from estate-vault (the
+# store code writes to) into the concierge namespace -- never human-vault, because nothing here
+# was pasted by a person for a person to see again (LAW 44: a code-minted fact does not also live
+# in Bitwarden as if the founder produced it). Nothing but the NAMES of what got written is ever
+# printed.
+#
+# Rewritten from shell to Python 2026-09-15 (estate shell standard, crew#620: a new shell file
+# over 100 lines is written in Python instead). Same steps, same two roads for the root token,
+# same idempotency and revocation behaviour as the shell original.
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parent.parent
+API = os.environ.get("CLOUDFLARE_API_URL", "https://api.cloudflare.com/client/v4")
+CONSOLE = os.environ.get("CLOUDFLARE_CONSOLE_URL", "https://dash.cloudflare.com/profile/api-tokens")
+HOME_DIR = Path(os.environ.get("ESTATE_HOME", str(Path.home() / ".estate")))
+PROFILE = HOME_DIR / "cloudflare-browser"
+VENV = HOME_DIR / "bootstrap-venv"
+CFG = IDP / "clusters" / "oke" / "estate-config.yaml"
+
+
+def say(status: str, tag: str, msg: str) -> None:
+    print(f"{status:<7} {tag:<20} {msg}")
+
+
+def fail(tag: str, msg: str) -> None:
+    say("FAIL", tag, msg)
+    sys.exit(1)
+
+
+def bl(tag: str, msg: str) -> None:
+    say("BLIND", tag, msg)
+    sys.exit(2)
+
+
+def usage_and_exit(code: int = 2) -> None:
+    lines = Path(__file__).read_text().splitlines()[1:5]
+    print("\n".join(lines))
+    sys.exit(code)
+
+
+def cf(token: str, method: str, path: str, data: dict | None = None) -> dict:
+    # The token never reaches argv of a child process; it rides the Authorization header only.
+    body = json.dumps(data).encode() if data is not None else None
+    req = urllib.request.Request(API + path, data=body, method=method)
+    req.add_header("Authorization", f"Bearer {token}")
+    if body is not None:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as fh:  # noqa: S310 -- fixed Cloudflare API host
+            return json.loads(fh.read())
+    except urllib.error.HTTPError as exc:
+        return json.loads(exc.read())
+
+
+def verify(token: str) -> bool:
+    try:
+        result = cf(token, "GET", "/user/tokens/verify")
+        return bool(result.get("success")) and result.get("result", {}).get("status") == "active"
+    except (urllib.error.URLError, json.JSONDecodeError):
+        return False
+
+
+def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+    kw.setdefault("check", False)
+    return subprocess.run(cmd, **kw)
+
+
+def read_secret(name: str) -> dict:
+    proc = run([str(IDP / "bin" / "idp-cloud"), "secret", "get", name], capture_output=True, text=True)
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return {}
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {}
+
+
+def http_status(url: str) -> str:
+    try:
+        with urllib.request.urlopen(url, timeout=15) as fh:  # noqa: S310 -- URL is a fixed estate/vendor console
+            return str(fh.status)
+    except urllib.error.HTTPError as exc:
+        return str(exc.code)
+    except urllib.error.URLError:
+        return "curl-failed"
+
+
+PLAYWRIGHT_DRIVER = '''
+import re, sys, time
+from playwright.sync_api import sync_playwright
+console, profile, name, out = sys.argv[1:5]
+def step(s): print(f"        step    {s}", flush=True)
+with sync_playwright() as p:
+    ctx = p.chromium.launch_persistent_context(profile, headless=False, viewport={"width": 1280, "height": 900})
+    page = ctx.pages[0] if ctx.pages else ctx.new_page()
+    page.goto(console, wait_until="domcontentloaded"); step("dashboard opened")
+    create = page.get_by_role("link", name=re.compile(r"create token", re.I)).or_(page.get_by_role("button", name=re.compile(r"create token", re.I)))
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        if create.count() and create.first.is_visible(): break
+        time.sleep(2)
+    else:
+        sys.exit("FAIL    console   no API Tokens page after 5 minutes; login not completed")
+    step("signed in"); create.first.click()
+    page.get_by_role("link", name=re.compile(r"get started", re.I)).or_(page.get_by_role("button", name=re.compile(r"get started", re.I))).last.click()
+    step("custom token form")
+    page.get_by_label(re.compile(r"token name", re.I)).first.fill(name)
+    selects = page.locator("form select, form [role=combobox]")
+    def pick(i, text):
+        s = selects.nth(i); s.click()
+        opt = page.get_by_role("option", name=re.compile(text, re.I)).first
+        if opt.count(): opt.click()
+        else: s.select_option(label=re.compile(text, re.I))
+    pick(0, r"^user$"); pick(1, r"api tokens"); pick(2, r"^edit$")
+    step("permission User:API Tokens:Edit")
+    page.get_by_role("button", name=re.compile(r"continue to summary", re.I)).first.click()
+    page.get_by_role("button", name=re.compile(r"^create token$", re.I)).first.click()
+    step("created")
+    page.wait_for_timeout(1500)
+    text = page.inner_text("body")
+    m = re.search(r"\\b([A-Za-z0-9_-]{40})\\b", text)
+    if not m:
+        sys.exit("FAIL    console   token created but not found on the result page (selector drift); revoke the token named " + name + " and rerun after the driver is fixed")
+    open(out, "w").write(m.group(1) + "\\n")
+    ctx.close()
+'''
+
+
+def ensure_deps() -> None:
+    for tool in ("python3",):
+        if shutil.which(tool) is None:
+            bl("deps", f"{tool} missing")
+
+
+def read_zone() -> str:
+    if CFG.is_file():
+        for line in CFG.read_text().splitlines():
+            m = re.search(r"ESTATE_ZONE:\s*(\S+)", line)
+            if m:
+                return m.group(1)
+    bl("config", f"no ESTATE_ZONE in {CFG}")
+    return ""  # unreachable, keeps type-checkers happy
+
+
+def ensure_oci_session() -> tuple[str, str]:
+    # idp-oci-whoami only exports the right OCI_CLI_AUTH (api_key vs security_token) when
+    # sourced -- a plain subprocess call only gives back the profile name on stdout, and
+    # assuming security_token for an API-key fallback profile (e.g. DEFAULT) breaks every
+    # OCI call after it. Source it in a throwaway shell and read both vars back.
+    probe = run(
+        ["bash", "-c", f'source "{IDP}/bin/idp-oci-whoami" >&2 && printf "%s\\n%s\\n" "$OCI_CLI_PROFILE" "$OCI_CLI_AUTH"'],
+        capture_output=True,
+        text=True,
+    )
+    if probe.returncode == 0:
+        lines = probe.stdout.strip().splitlines()
+        if len(lines) >= 2 and lines[0]:
+            return lines[0], lines[1]
+    common_dir = run(
+        ["git", "-C", str(IDP), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    main_dir = Path(common_dir).parent
+    secrets_root = Path(os.environ.get("ESTATE_SECRETS", str(main_dir.parent / "estate-secrets")))
+    sv = secrets_root / "secrets" / os.environ.get("OCI_ENV", "dev")
+    os.environ.setdefault("SOPS_AGE_KEY_FILE", str(Path.home() / ".config" / "prospector" / "age-key.txt"))
+    region = run(
+        ["sops", "-d", "--extract", '["OCI_REGION"]', str(sv / "OCI_REGION.yaml")], capture_output=True, text=True
+    ).stdout.strip()
+    tenancy = run(
+        ["sops", "-d", "--extract", '["OCI_TENANCY_NAME"]', str(sv / "OCI_TENANCY_NAME.yaml")],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if not region or not tenancy:
+        bl("oci", f"no live session and no OCI_REGION / OCI_TENANCY_NAME in {sv}")
+    say("", "oci", "no live session: the browser opens once for OCI SSO")
+    auth_result = run(
+        ["oci", "session", "authenticate", "--region", region, "--tenancy-name", tenancy, "--profile-name", "estate-bootstrap"],
+        capture_output=True,
+    )
+    if auth_result.returncode != 0:
+        bl("oci", "session sign-in did not complete")
+    proc = run([str(IDP / "bin" / "idp-oci-whoami")], capture_output=True, text=True)
+    if proc.returncode != 0 or not proc.stdout.strip():
+        bl("oci", "signed in, but no session profile is live")
+    return proc.stdout.strip(), "security_token"
+
+
+def ensure_driver(py: Path) -> None:
+    if os.environ.get("CLOUDFLARE_ROOT_TOKEN"):
+        return
+    # py is VENV/bin/python, which does not exist before the first install below -- bash's
+    # `"$VENV/bin/python" -c ...` (the pre-2026-09-15 original) just returns nonzero for a missing
+    # binary, but subprocess.run raises FileNotFoundError for the same case, uncaught, which is
+    # exactly what killed the concierge-tunnel preflight the first time it ran on a bare CI runner
+    # (run 34987035759): treat "not there yet" the same as "there, but doesn't import" rather than
+    # letting the exception through.
+    check = run([str(py), "-c", "import playwright"], capture_output=True) if py.is_file() else None
+    if check is not None and check.returncode == 0:
+        version_proc = run(
+            [str(py), "-c", 'import playwright,importlib.metadata as m;print(m.version("playwright"))'],
+            capture_output=True,
+            text=True,
+        )
+        say("ok", "driver", f"playwright {version_proc.stdout.strip()}")
+        return
+    say("", "driver", f"installing playwright into {VENV} (once)")
+    run(["python3", "-m", "venv", str(VENV)], check=True, capture_output=True)
+    run([str(VENV / "bin" / "pip"), "install", "-q", "playwright"], check=True, capture_output=True)
+    run([str(VENV / "bin" / "playwright"), "install", "chromium"], check=True, capture_output=True)
+    version_proc = run(
+        [str(py), "-c", 'import playwright,importlib.metadata as m;print(m.version("playwright"))'],
+        capture_output=True,
+        text=True,
+    )
+    say("ok", "driver", f"playwright {version_proc.stdout.strip()}")
+
+
+def mint_root_via_browser(py: Path, tmp: Path) -> tuple[str, str]:
+    name = f"estate-root {__import__('datetime').datetime.utcnow().strftime('%Y-%m-%dT%H:%MZ')}"
+    say("", "console", f"opening {CONSOLE} in the estate browser profile; if Cloudflare asks you to sign in, do — that is the only hand")
+    out_path = tmp / "root"
+    proc = run(
+        [str(py), "-", CONSOLE, str(PROFILE), name, str(out_path)],
+        input=PLAYWRIGHT_DRIVER,
+        text=True,
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        fail("console", proc.stdout.strip() or proc.stderr.strip() or "driver failed")
+    root = out_path.read_text().strip() if out_path.is_file() else ""
+    if not root:
+        fail("console", "driver produced no token")
+    return root, name
+
+
+def main() -> None:
+    mode = sys.argv[1] if len(sys.argv) > 1 else "mint"
+    if mode in ("--help", "-h"):
+        usage_and_exit(0)
+    if mode not in ("mint", "--preflight", "--rotate"):
+        usage_and_exit()
+
+    ensure_deps()
+    zone = read_zone()
+    hostname = os.environ.get("CONCIERGE_HOSTNAME", f"concierge.{zone}")
+    HOME_DIR.mkdir(parents=True, exist_ok=True)
+    HOME_DIR.chmod(0o700)
+
+    # 0. driver, once, into the estate venv -- only on the laptop road, same as idp-bootstrap-cloudflare.
+    py = VENV / "bin" / "python"
+    ensure_driver(py)
+
+    # 1. the vault first (same OCI SSO fallback as bin/idp-bootstrap-cloudflare)
+    oci_profile, oci_auth = ensure_oci_session()
+    os.environ["OCI_CLI_PROFILE"] = oci_profile
+    os.environ["OCI_CLI_AUTH"] = oci_auth
+    preflight = run(
+        [str(IDP / "bin" / "idp-vault-put"), "concierge-tunnel", "--preflight"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "VAULT_PUT_PREFLIGHT": "1"},
+    )
+    if preflight.returncode != 0:
+        bl("vault", f"not reachable as {oci_profile}")
+    for line in preflight.stdout.splitlines():
+        print(f"        {line}")
+
+    # 2. the DNS token this script reuses (bin/idp-bootstrap-cloudflare must have run first) and
+    #    idempotency: a complete, still-live tunnel is kept.
+    dns_proc = run([str(IDP / "bin" / "idp-cloud"), "secret", "get", "cloudflare-api-token"], capture_output=True, text=True)
+    dns = dns_proc.stdout.strip() if dns_proc.returncode == 0 else ""
+    if not dns or not verify(dns):
+        bl("cloudflare", "no verifying cloudflare-api-token in the vault; run bin/idp-bootstrap-cloudflare first (it owns the estate's one Cloudflare root)")
+    zone_result = cf(dns, "GET", f"/zones?name={zone}")
+    zone_list = zone_result.get("result") or []
+    if not zone_list:
+        fail("zone", f"{zone} is not a zone of this account")
+    zone_id = zone_list[0]["id"]
+    account_id = zone_list[0]["account"]["id"]
+
+    if mode == "mint":
+        cur = read_secret("concierge-tunnel")
+        tid = cur.get("TUNNEL_ID", "")
+        if (
+            tid
+            and cur.get("PUBLIC_SERVER_URL") == f"https://{hostname}"
+            and len(cur.get("TUNNEL_TOKEN", "")) > 0
+        ):
+            check = cf(dns, "GET", f"/accounts/{account_id}/cfd_tunnel/{tid}")
+            if check.get("success") and check.get("result", {}).get("deleted_at") is None:
+                say("ok", "concierge-tunnel", f"tunnel {tid} for {hostname} already verifies; kept (--rotate to mint anew)")
+                sys.exit(0)
+
+    if mode == "--preflight":
+        if os.environ.get("CLOUDFLARE_ROOT_TOKEN"):
+            # Same guard as ensure_driver, and the same fix as bin/idp-bootstrap-cloudflare: the
+            # dashboard is only ever opened by mint_root_via_browser, a road the root-token road
+            # (R52, the only one CI/live ever takes) skips outright -- checking it here tests a
+            # road this run will never take, and Cloudflare's own bot-management WAF 403s a bare
+            # urllib request from a CI IP with no browser session regardless (run 34988252536).
+            say("ok", "console", "root token from the environment; browser road not needed, dashboard reachability moot")
+        else:
+            code = http_status(CONSOLE)
+            if code in ("200", "301", "302", "303"):
+                say("ok", "console", f"{CONSOLE} answers {code}")
+            else:
+                fail("console", f"{CONSOLE} answers {code}")
+        say("ok", "preflight", f"vault, driver, dashboard and DNS token (for {zone}) all reachable; nothing written")
+        sys.exit(0)
+
+    # 3. the root -- same two roads as bin/idp-bootstrap-cloudflare (env or a one-hour browser token).
+    tmp = Path(tempfile.mkdtemp())
+    os.umask(0o077)
+    try:
+        name = ""
+        if os.environ.get("CLOUDFLARE_ROOT_TOKEN"):
+            root = os.environ.pop("CLOUDFLARE_ROOT_TOKEN")
+            say("ok", "root", "root token from the environment (repository secret SEED_CLOUDFLARE_ROOT_TOKEN); no browser")
+        else:
+            root, name = mint_root_via_browser(py, tmp)
+        if not verify(root):
+            fail("verify", f"the root token does not verify at {API}/user/tokens/verify")
+        say("ok", "root", "root token verifies (User API Tokens: Edit)")
+
+        # 4. a single-purpose child: Account: Cloudflare Tunnel Read + Write, looked up by name (LAW 46),
+        #    never typed. Held only for the length of this run and revoked in step 9.
+        groups = cf(root, "GET", "/user/tokens/permission_groups")
+
+        def gid(gname: str, scope: str) -> str:
+            for g in groups.get("result", []):
+                if g["name"] == gname and scope in g.get("scopes", []):
+                    return g["id"]
+            return ""
+
+        # Cloudflare has since split the old combined "Cloudflare Tunnel:Edit" scope into two
+        # separate account-level groups; this run does GET (list/read token) and POST/PUT
+        # (create/configure), so it needs both (measured live, run 34997514190, idp#3537).
+        tun_gids = [gid(n, "com.cloudflare.api.account") for n in ("Cloudflare Tunnel Read", "Cloudflare Tunnel Write")]
+        if not all(tun_gids):
+            # Names are metadata, not a secret (LAW 21 is about credential values, not group
+            # labels) -- print what this account's token actually offers at account scope so the
+            # real name can be read straight out of the CI log instead of guessed blind.
+            account_names = sorted(
+                g["name"] for g in groups.get("result", []) if "com.cloudflare.api.account" in g.get("scopes", [])
+            )
+            fail(
+                "perms",
+                "no permission group 'Cloudflare Tunnel Read'/'Write' (account) -- LAW 46. "
+                f"account-scoped groups this token actually sees: {account_names}",
+            )
+        tunpol = [
+            {
+                "effect": "allow",
+                "resources": {f"com.cloudflare.api.account.{account_id}": "*"},
+                "permission_groups": [{"id": g} for g in tun_gids],
+            }
+        ]
+        tuntok_result = cf(root, "POST", "/user/tokens", {"name": f"estate-concierge-tunnel {hostname}", "policies": tunpol})
+        if not tuntok_result.get("success"):
+            fail("mint", "tunnel-mgmt token not created")
+        tun = tuntok_result["result"]["value"]
+        tun_tok_id = tuntok_result["result"]["id"]
+        if not verify(tun):
+            fail("verify", "tunnel-mgmt token does not verify")
+        say("ok", "mint", f"tunnel-management token minted (account {account_id}, Cloudflare Tunnel Read+Write)")
+
+        # 5. the tunnel itself: a remotely-managed tunnel (config_src=cloudflare) so `cloudflared
+        #    tunnel run --token ...` needs no cert.pem/credentials.json on the Mac.
+        existing_result = cf(tun, "GET", f"/accounts/{account_id}/cfd_tunnel?name=concierge&is_deleted=false")
+        existing = (existing_result.get("result") or [None])[0]
+        if existing:
+            tunnel_id = existing["id"]
+            say("ok", "tunnel", f"reusing existing tunnel 'concierge' ({tunnel_id})")
+        else:
+            created = cf(tun, "POST", f"/accounts/{account_id}/cfd_tunnel", {"name": "concierge", "config_src": "cloudflare"})
+            if not created.get("success"):
+                fail("tunnel", f"POST /cfd_tunnel refused: {created.get('errors')}")
+            tunnel_id = created["result"]["id"]
+            say("ok", "tunnel", f"tunnel 'concierge' created ({tunnel_id})")
+        token_result = cf(tun, "GET", f"/accounts/{account_id}/cfd_tunnel/{tunnel_id}/token")
+        tunnel_token = token_result.get("result") or ""
+        if not tunnel_token:
+            fail("tunnel", f"no token returned for tunnel {tunnel_id}")
+
+        # 6. the public hostname route -> the concierge's own port.
+        ingress = {"config": {"ingress": [{"hostname": hostname, "service": "http://127.0.0.1:8000"}, {"service": "http_status:404"}]}}
+        if not cf(tun, "PUT", f"/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations", ingress).get("success"):
+            fail("tunnel", "ingress configuration refused")
+        say("ok", "tunnel", f"public hostname {hostname} routed to 127.0.0.1:8000")
+
+        # 7. the DNS record, with the estate's EXISTING DNS-edit token (never a second one) --
+        #    LAW 15, prove it reads before it's trusted to write.
+        if not cf(dns, "GET", f"/zones/{zone_id}/dns_records?per_page=1").get("success"):
+            fail("verify", f"cloudflare-api-token cannot read {zone} records")
+        rec_result = cf(dns, "GET", f"/zones/{zone_id}/dns_records?type=CNAME&name={hostname}")
+        rec = (rec_result.get("result") or [None])[0]
+        body = {"type": "CNAME", "name": hostname, "content": f"{tunnel_id}.cfargotunnel.com", "proxied": True, "ttl": 1}
+        if rec:
+            if not cf(dns, "PUT", f"/zones/{zone_id}/dns_records/{rec['id']}", body).get("success"):
+                fail("dns", f"CNAME update for {hostname} refused")
+            say("ok", "dns", f"{hostname} CNAME updated -> {tunnel_id}.cfargotunnel.com")
+        else:
+            if not cf(dns, "POST", f"/zones/{zone_id}/dns_records", body).get("success"):
+                fail("dns", f"CNAME create for {hostname} refused")
+            say("ok", "dns", f"{hostname} CNAME created -> {tunnel_id}.cfargotunnel.com")
+
+        # 8. vault, in-process, key names only. PUBLIC_WSS_URL rides the same entry: it is the
+        #    same hostname, same tunnel, and voice_endpoints.py reads it as a hard os.environ[...].
+        env_path = tmp / "env"
+        env_path.write_text(
+            f"V_URL=https://{hostname}\nV_WSS=wss://{hostname}/ws/live-call\nV_TOKEN={tunnel_token}\nV_ID={tunnel_id}\n"
+        )
+        vault_write = run(
+            [
+                str(IDP / "bin" / "idp-vault-put"),
+                "--merge",
+                "concierge-tunnel",
+                "PUBLIC_SERVER_URL=V_URL",
+                "PUBLIC_WSS_URL=V_WSS",
+                "TUNNEL_TOKEN=V_TOKEN",
+                "TUNNEL_ID=V_ID",
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "ESTATE_ENV_FILE": str(env_path)},
+        )
+        if vault_write.returncode != 0:
+            # idp-vault-put prints key NAMES only, by its own header contract -- never a value --
+            # so its real stdout/stderr is safe to surface here instead of the generic one-liner
+            # that hid it (run 34998308859, idp#3537).
+            cause = (vault_write.stderr.strip() or vault_write.stdout.strip()).splitlines()
+            fail("vault", "concierge-tunnel write refused: " + (cause[-1][:200] if cause else "no output"))
+
+        # 9. the single-purpose tunnel-mgmt token is revoked; the DNS token it borrowed was
+        #    already standing and stays. A driver-born root dies with this process.
+        cf(root, "DELETE", f"/user/tokens/{tun_tok_id}")
+        if name:
+            tokens = cf(root, "GET", "/user/tokens")
+            match = next((t["id"] for t in tokens.get("result", []) if t.get("name") == name), None)
+            if match:
+                cf(root, "DELETE", f"/user/tokens/{match}")
+            revoked = "root token revoked"
+        else:
+            revoked = "standing root kept"
+        say(
+            "ok",
+            "concierge-tunnel",
+            f"concierge-tunnel vault entry written (PUBLIC_SERVER_URL https://{hostname}); "
+            f"tunnel-mgmt token revoked; {revoked}. cloudflared on the Mac still needs: launchctl "
+            "load with TUNNEL_TOKEN (docs/DEPLOYMENT.md #7); reachability itself is unverified "
+            "until cloudflared actually runs.",
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,41 @@
+name: device-provision-test
+
+# Why two jobs (matrix strategy=fail-fast): the founder's Mac
+# (idp/infra/macos/*, brew bundle, launchd plists) and any enterprise
+# Linux box (idp/infra/linux/*, apt-get install, systemd units) are two
+# install surfaces and two runtimes. Failing one path fast is more
+# useful than waiting on both. Both jobs run the same idp-device-provision
+# orchestrator -- the dispatch lives in the script, not in CI.
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - "bin/idp-device-provision"
+      - ".github/workflows/device-provision-test.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "bin/idp-device-provision"
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+      - run: bin/idp-device-provision self-test
+      - run: IDP_DEVICE_PROVISION_DRY=1 bin/idp-device-provision install
+      - run: bin/idp-device-provision status | jq -e '.platform == "macos"'
+      - run: bin/idp-device-provision uninstall
+      - run: IDP_DEVICE_PROVISION_DRY=1 bin/idp-device-provision install
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: bin/idp-device-provision self-test
+      - run: IDP_DEVICE_PROVISION_DRY=1 bin/idp-device-provision install
+      - run: bin/idp-device-provision status | jq -e '.platform == "linux"'
+      - run: bin/idp-device-provision uninstall
+      - run: IDP_DEVICE_PROVISION_DRY=1 bin/idp-device-provision install

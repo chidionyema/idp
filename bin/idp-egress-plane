@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""idp-egress-plane -- put every model vendor name behind the estate edge, and prove it.
+
+    bin/idp-egress-plane --check        grade the LIVE zone against the policy (needs network+token)
+    bin/idp-egress-plane --offline      grade the local client config against the policy. No network.
+    bin/idp-egress-plane --render       print the DNS records the policy asks for, as JSON
+    bin/idp-egress-plane --records      print them as Cloudflare API payloads, ready to POST
+    bin/idp-egress-plane --explain HOST why this hostname is intercepted, sinkholed, or absent
+
+Exit 0 clean, 1 a finding, 2 BLIND (could not answer -- never a pass; LAW 2, R38).
+
+THE PRINCIPLE. An agent's traffic is guilty until proven innocent; the default is deny. Identity is
+the agent, the user it acts for, or the workload -- never an IP, which is why this governs NAMES.
+See platform/egress/vendor_endpoints.py for the full reasoning and, more importantly, for the three
+things this layer does NOT cover (hardcoded IPs, TTL-delayed revocation, per-identity policy) and
+which layer does.
+
+WHY IT ALSO GRADES LOCAL CONFIG, WHICH IS THE PART THAT MATTERS TODAY. Layer 1 exists so that a
+caller cannot CHOOSE its destination. But the current estate does not fail closed even at the
+config level: a client's `baseUrl` may name any vendor, and nothing compares it to anything. That is
+how `~/.pi/agent/models-store.json` came to point sessions at api.deepseek.com and api.minimax.io
+while the estate believed every call crossed the router.
+
+So --offline reads the model-serving configs on this machine and reports every endpoint that is not
+in the policy. A vendor that is used but not listed is a FINDING, not a pass -- which is the control
+that would have caught the defect on the day it appeared.
+
+FAIL-CLOSED ON AN UNREADABLE ANSWER. A config that cannot be parsed, or a dig that cannot answer,
+is exit 2 BLIND. A checker that reports clean because it could not see is the whole story of the
+seven breaches.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "platform" / "egress"))
+from vendor_endpoints import (  # noqa: E402
+    EDGE_HOST,
+    ESTATE_ZONE,
+    SINKHOLE,
+    VENDORS,
+    records,
+)
+
+# Config files on this machine that choose where a model call goes. Each carries an absolute path
+# because there is no portable way to find them, and each is named rather than globbed so a file
+# that STOPS being read is noticed (a glob quietly matches nothing and reports clean).
+CLIENT_CONFIGS = [
+    "~/.pi/agent/models-store.json",
+    "~/.pi/agent/settings.json",
+    "~/.claude/settings.json",
+]
+
+# A base URL, wherever it sits in a JSON document.
+URL_KEY = re.compile(r"base[_]?url", re.I)
+
+findings: list[str] = []
+blind: list[str] = []
+
+
+def fail(msg: str) -> None:
+    findings.append(msg)
+
+
+def go_blind(msg: str) -> None:
+    blind.append(msg)
+
+
+def _iter_values(obj, key_hint=""):
+    """Every (key-path, string) pair in a nested JSON document, so a base URL is found wherever a
+    particular client chose to put it. Walking the structure is the point: the harnesses differ,
+    and that is exactly why this lives at a layer none of them owns."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield from _iter_values(v, f"{key_hint}.{k}" if key_hint else k)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            yield from _iter_values(v, f"{key_hint}[{i}]")
+    elif isinstance(obj, str):
+        yield key_hint, obj
+
+
+def host_of(url: str) -> str | None:
+    m = re.match(r"https?://([^/:]+)", url.strip())
+    return m.group(1).lower() if m else None
+
+
+def grade_local_configs() -> None:
+    """Every endpoint named in a local client config must be in the policy. Added, not waived."""
+    checked = 0
+    for raw in CLIENT_CONFIGS:
+        path = Path(os.path.expanduser(raw))
+        if not path.is_file():
+            # A config that is ABSENT is not a finding: not every harness is installed. It is also
+            # not silently fine -- it is named, so a config that disappears is visible.
+            print(f"note  {raw} is not present on this machine")
+            continue
+        try:
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            go_blind(f"{raw} could not be parsed: {exc}")
+            continue
+
+        for key_path, value in _iter_values(doc):
+            if not URL_KEY.search(key_path) and "://" not in value:
+                continue
+            host = host_of(value)
+            if not host:
+                continue
+            # The estate's own edge and the router are always permitted: they ARE the policy.
+            if host == EDGE_HOST or host.endswith(f".{ESTATE_ZONE}"):
+                checked += 1
+                continue
+            checked += 1
+            spec = VENDORS.get(host)
+            if spec is None:
+                fail(
+                    f"{raw}: {key_path} names {host}, which is in NO policy row. A vendor reached "
+                    f"from a local config is the bypass this layer exists to close -- add it to "
+                    f"platform/egress/vendor_endpoints.py with the state it deserves, or point the "
+                    f"config at {EDGE_HOST}."
+                )
+            elif spec["state"] != "intercept":
+                fail(
+                    f"{raw}: {key_path} names {host}, which the policy SINKHOLES ({spec['note']}). "
+                    f"That endpoint is not a destination this estate approves."
+                )
+            else:
+                print(f"ok    {raw}: {key_path} -> {host} (intercepted by policy)")
+    print(f"ok    graded {checked} endpoint(s) across {len(CLIENT_CONFIGS)} client config(s)")
+
+
+def grade_live_zone() -> None:
+    """Ask the real resolver where each governed name points, and compare to the policy."""
+    for host, spec in sorted(VENDORS.items()):
+        try:
+            out = subprocess.run(
+                ["dig", "+short", "+time=3", "+tries=2", host],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            go_blind(f"dig could not answer for {host}: {exc}")
+            continue
+        answers = [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
+        if not answers:
+            go_blind(f"{host} returned no answer, so this name's state is UNKNOWN")
+            continue
+
+        # PRINT EVERY NAME, PASS OR FAIL. The first version printed on success and on failure but
+        # said nothing for the `--check` path's success branch ordering, so a clean run LOOKED like
+        # it had graded one hostname when it had graded all of them. A control that cannot be seen
+        # working is indistinguishable from one that never ran -- and that is the exact ambiguity
+        # that let seven previous fixes be described as landed.
+        blob = " ".join(answers)
+        state = "ok   "
+        detail: str
+        if spec["state"] == "sinkhole":
+            if SINKHOLE in answers:
+                detail = f"-> sinkhole {SINKHOLE} (as policy says)"
+            else:
+                state = "FAIL "
+                detail = (
+                    f"should resolve to the sinkhole {SINKHOLE} and resolves to {blob} -- an "
+                    f"unapproved vendor that still answers is reachable"
+                )
+        else:
+            if ESTATE_ZONE in blob or EDGE_HOST in blob:
+                detail = f"-> {EDGE_HOST} (intercepted)"
+            else:
+                state = "FAIL "
+                detail = (
+                    f"should resolve to the estate edge ({EDGE_HOST}) and resolves to {blob} -- a "
+                    f"session reaching this name reaches the VENDOR, and every router control "
+                    f"(ceiling, decree, ledger, spend breaker) is bypassed"
+                )
+        print(f"{state} {host:42s} {detail}")
+        if state != "ok   ":
+            fail(f"{host}: {detail}")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    g = ap.add_mutually_exclusive_group()
+    g.add_argument("--check", action="store_true", help="grade the live zone (needs network)")
+    g.add_argument("--offline", action="store_true", help="grade local client config only")
+    g.add_argument("--render", action="store_true", help="print the policy as JSON")
+    g.add_argument("--records", action="store_true", help="print Cloudflare API payloads")
+    g.add_argument("--explain", metavar="HOST", help="why this hostname is governed the way it is")
+    args = ap.parse_args()
+
+    if args.explain:
+        spec = VENDORS.get(args.explain)
+        if not spec:
+            print(
+                f"{args.explain}: NO POLICY ROW. It is neither intercepted nor sinkholed, so "
+                f"nothing decides where it points. Absence is not a decision (LAW 2)."
+            )
+            return 1
+        target = EDGE_HOST if spec["state"] == "intercept" else SINKHOLE
+        print(f"{args.explain}: {spec['state']} -> {target}\n  {spec['note']}")
+        return 0
+
+    if args.render or args.records:
+        print(json.dumps(records(), indent=2))
+        return 0
+
+    if not (args.check or args.offline):
+        ap.print_help()
+        return 2
+
+    print(f"the estate edge is {EDGE_HOST}; the sinkhole is {SINKHOLE}\n")
+
+    if args.offline:
+        grade_local_configs()
+    else:
+        print("--- live zone ---")
+        grade_live_zone()
+        print("\n--- local client config ---")
+        grade_local_configs()
+
+    print()
+    if blind:
+        for b in blind:
+            print(f"BLIND {b}")
+        print(
+            "\n  BLIND is not a pass. A name whose state could not be read is UNKNOWN, and this "
+            "gate refuses to call that clean."
+        )
+        return 2
+    if findings:
+        for f in findings:
+            print(f"FAIL  {f}")
+        return 1
+
+    print("ok    idp-egress-plane: every governed name resolves as the policy says, and every")
+    print("      endpoint a local client config names is one the estate has decided about.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
