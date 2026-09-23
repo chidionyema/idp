@@ -72,6 +72,11 @@ OS="$(detect_os)"
 # Tool set the estate needs before anything else runs. Each row: <binary> <macos-pkg> <apt-pkg>
 # <dnf-pkg> <apk-pkg>. A dash means "install via curl from upstream" — filled in per-tool below.
 # Order matters: openssl and jq first so estate-seed's own preflight passes.
+#
+# A row in this list is a HARD dependency of the platform. A row that is "not strictly required"
+# does not go here; it goes in opt/. A row that the platform actually depends on but is missing
+# from this list is the failure mode the founder flagged on 2026-09-23 ("we can't be running
+# install manually") and is a P0 defect against this script. Adding a row is a code review.
 declare -a TOOLS=(
   "openssl  openssl@3          openssl        openssl        openssl"
   "jq       jq                 jq             jq             jq"
@@ -83,6 +88,16 @@ declare -a TOOLS=(
   "flux     fluxcd/tap/flux    -              -              -"
   "curl     curl               curl           curl           curl"
   "git      git                git            git            git"
+  # SPIFFE primary (docs/reference/security-architecture.md). The cluster runs SPIRE control plane
+  # + agent; this Mac needs the spire-agent binary to mint JWT-SVIDs for the workloads the founder
+  # runs from here (Claude Code, terminals, the executor daemon). No spire-agent = no SPIFFE on
+  # this device, which is exactly the "hacks" failure mode the founder called out.
+  "spire-agent  -              -              -              -"
+  # Tailscale: required for the JIT broker's tailnet door (100.74.93.65:8080, the founder's
+  # machine per OKE facts). Without tailscale the broker is unreachable from this Mac and every
+  # `bin/idp-jit` call that needs a real broker (enroll, renew, ask) BLINDs. SPIFFE primary does
+  # not change this — the broker is the SPIFFE control plane's reachability seam.
+  "tailscale  -                -              -              -"
 )
 
 TOOLS_DIR="${TOOLS_DIR:-$HOME/.cache/estate-tools}"   # the path bin/idp-install-deps and CI's estate-tools share
@@ -119,13 +134,50 @@ install_upstream() {
       local tmp; tmp="$(mktemp -d)"
       if curl -fsSL -o "$tmp/age.tgz" \
            "https://github.com/FiloSottile/age/releases/download/v${AGE_VER}/age-v${AGE_VER}-${uos}-${uarch}.tar.gz" \
-         && tar xzf "$tmp/age.tgz" -C "$tmp"; then
+        && tar xzf "$tmp/age.tgz" -C "$tmp"; then
         find "$tmp" -type f -name 'age' -exec cp {} "$TOOLS_DIR/age" \; 2>/dev/null
         find "$tmp" -type f -name 'age-keygen' -exec cp {} "$TOOLS_DIR/age-keygen" \; 2>/dev/null
         chmod +x "$TOOLS_DIR/age" "$TOOLS_DIR/age-keygen" 2>/dev/null
       fi
       rm -rf "$tmp"
       [ -x "$TOOLS_DIR/age" ] && "$TOOLS_DIR/age" --version >/dev/null 2>&1 ;;
+    # SPIRE agent for local JWT-SVID minting (SPIFFE primary, 2026-09-23). The cluster SPIRE
+    # control plane is reachable over tailnet on 100.74.93.65:8443; this binary joins that trust
+    # domain and serves a Workload API on a per-device Unix socket. Without it every "credential
+    # through SPIFFE" line in docs/reference/security-architecture.md is fiction on this Mac.
+    #
+    # SPIRE upstream does not ship prebuilt darwin tarballs — only the linux/amd64 linux/arm64
+    # binaries are on the GitHub release page (verified 2026-09-23). The darwin build path is
+    # `brew install spire` (preferred) or `go install .../cmd/spire-agent@latest` from source.
+    # When neither brew nor go is present (this Mac, 2026-09-23), we BLIND with the right cause
+    # and let phase4 own the install instruction; refusing to ship a broken upstream URL.
+    spire-agent)
+      command -v brew >/dev/null 2>&1 && brew install spire >/dev/null 2>&1 && return 0
+      command -v go   >/dev/null 2>&1 && {
+        local out; out="$(go env GOBIN 2>/dev/null || echo "$HOME/go/bin")"
+        mkdir -p "$out"
+        GOBIN="$out" go install github.com/spiffe/spire/cmd/spire-agent@v1.15.3 >/dev/null 2>&1 \
+          && [ -x "$out/spire-agent" ] && return 0
+      }
+      return 1 ;;
+    # Tailscale CLI — the daemon + Mac system extension are installed by the .pkg from
+    # tailscale.com; this row only fetches the `tailscale` and `tailscaled` binaries so the
+    # bootstrap is operable headlessly (CI runners, dev containers). On a founder Mac the .pkg
+    # install is the install path; phase4 below checks for that and reports what is missing.
+    # The pkgs.tailscale.com URL serves whatever version is current; no version pinning needed
+    # because the binary self-updates once installed.
+    tailscale)
+      mkdir -p "$TOOLS_DIR"
+      local tmp; tmp="$(mktemp -d)"
+      if curl -fsSL -o "$tmp/ts.tgz" \
+           "https://pkgs.tailscale.com/stable/tailscale_${uos}_${uarch}.tgz" \
+        && tar xzf "$tmp/ts.tgz" -C "$tmp"; then
+        find "$tmp" -type f -name 'tailscale'  -exec cp {} "$TOOLS_DIR/tailscale"  \; 2>/dev/null
+        find "$tmp" -type f -name 'tailscaled' -exec cp {} "$TOOLS_DIR/tailscaled" \; 2>/dev/null
+        chmod +x "$TOOLS_DIR/tailscale" "$TOOLS_DIR/tailscaled" 2>/dev/null
+      fi
+      rm -rf "$tmp"
+      [ -x "$TOOLS_DIR/tailscale" ] && "$TOOLS_DIR/tailscale" version >/dev/null 2>&1 ;;
     *) return 1 ;;
   esac
 }
@@ -328,12 +380,104 @@ verify() {
   command -v oci >/dev/null && oci session validate --profile DEFAULT >/dev/null 2>&1 && ok "verify oci: session live" || blind "verify oci: no session or no config"
 }
 
+# ---- Level 4: SPIFFE primary — wire the local identity surface ---------------
+# This is what `docs/reference/security-architecture.md` calls "primary": the cluster SPIRE
+# trust domain reaches this Mac and the workloads on it present JWT-SVIDs, not static keys.
+# Each row here is a single thing that must be operational for the primary to hold; the verify
+# rung below names what is missing. None of these prompt the founder; the one-time age-identity
+# proof (Level 1) is the only hand a person gives.
+#
+# 4a. tailscale daemon — required for the JIT broker's tailnet door. The Mac .pkg install
+#     needs sudo; the bootstrap cannot do that without a person. Report what's missing.
+# 4b. spire-agent — required for local Workload API (X.509-SVID over a Unix socket). Joining
+#     the trust domain needs the SPIRE control plane's trust bundle + join token; that is
+#     fetched over tailnet, so 4a must be operational first.
+# 4c. JIT device-renew LaunchAgent — the 10-minute renewal loop. Idempotent install; needs the
+#     device to be enrolled (phase3_agent_identity).
+# 4d. executor daemon — gateway-as-floor enforcement. Installs as a root LaunchDaemon under a
+#     uid the agent does not own (bin/idp-executor-install); refuses to proceed from an agent
+#     session, so this row only reports what is missing.
+phase4_spiffe() {
+  echo "-- Level 4: SPIFFE primary — local identity surface --"
+
+  # 4a. tailscale
+  if [ -d "/Applications/Tailscale.app" ] || command -v tailscale >/dev/null 2>&1 || [ -x "$TOOLS_DIR/tailscale" ]; then
+    ok "level4a tailscale present"
+  else
+    blind "level4a tailscale absent: install from https://tailscale.com/download/mac (one-time, sudo)
+         cause  the platform's broker is on tailnet 100.74.93.65:8080; without tailscale the JIT
+                broker is unreachable from this Mac and every bin/idp-jit call that needs a real
+                broker (enroll / renew / ask) BLINDs
+         fix    download the .pkg from tailscale.com/download/mac and run the installer; re-run
+                this bootstrap and phase4a will read GREEN"
+  fi
+
+  # 4b. spire-agent
+  local sa="$TOOLS_DIR/spire-agent"
+  if [ -x "$sa" ] || command -v spire-agent >/dev/null 2>&1; then
+    if [ -f "$HOME/.spire/agent.conf" ] && pgrep -f 'spire-agent' >/dev/null 2>&1; then
+      ok "level4b spire-agent running with config at $HOME/.spire/agent.conf"
+    else
+      blind "level4b spire-agent installed but not joined the trust domain yet.
+           cause  no $HOME/.spire/agent.conf; the trust bundle and join token come from the
+                  SPIRE control plane over tailnet (100.74.93.65:8443)
+           fix    run:  spire-agent fetch-spiffe-id -socketPath /tmp/spire-agent.sock  (one-time)
+                  and write agent.conf from the returned bundle. bootstrap will detect on re-run"
+    fi
+  else
+    blind "level4b spire-agent absent: level0 should have installed it; if level0 reported FAIL on
+         spire-agent, the bootstrap did not finish and SPIFFE primary is not active on this Mac"
+  fi
+
+  # 4c. JIT device-renew LaunchAgent
+  if [ -x "$IDP/bin/idp-jit-device-renew" ]; then
+    if launchctl list 2>/dev/null | grep -q 'com.estate.jit-device-renew'; then
+      ok "level4c JIT device-renew LaunchAgent loaded (renews every 10 min)"
+    else
+      if [ "$MODE" = "--check" ]; then
+        blind "level4c JIT device-renew LaunchAgent not loaded; 'bin/idp-jit-device-renew --install' would load it"
+      else
+        if "$IDP/bin/idp-jit-device-renew" --install 2>/dev/null; then
+          ok "level4c JIT device-renew LaunchAgent installed"
+        else
+          blind "level4c JIT device-renew --install refused: the device is not enrolled yet
+               cause  phase3_agent_identity BLINDed on enrollment
+               fix    re-run this bootstrap after phase1 (age key) answers GREEN and the JIT
+                      broker is reachable over tailnet (level4a GREEN)"
+        fi
+      fi
+    fi
+  else
+    blind "level4c bin/idp-jit-device-renew absent in $IDP/bin"
+  fi
+
+  # 4d. executor daemon
+  local sock="$HOME/.estate/executor.sock"
+  if [ -S "$sock" ]; then
+    if (echo '{"verb":"fs_read","path":"/etc/hostname"}' | nc -U "$sock" 2>/dev/null) | grep -q '"ok":'; then
+      ok "level4d executor daemon reachable at $sock"
+    else
+      blind "level4d executor socket exists at $sock but no daemon is listening
+           cause  bin/idp-executor-install ran, but the LaunchDaemon was not loaded, or the
+                  daemon process exited
+           fix    run sudo bin/idp-executor-install (it refuses an agent-invoked shell on
+                  purpose; the founder runs it from their own terminal). Re-run bootstrap."
+    fi
+  else
+    blind "level4d executor daemon absent at $sock: gateway-as-floor is not enforced on this Mac
+         cause  bin/idp-executor-install was never run (it is a sudo install that the agent
+                must NOT do)
+         fix    run sudo bin/idp-executor-install from the founder's terminal. Re-run bootstrap."
+  fi
+}
+
 phase0
 phase1
 phase2
 phase3_kube
 phase3_agent_identity
 phase3_gh
+phase4_spiffe
 verify
 
 [ "$RC" -eq 0 ] && echo "== bootstrap OK ==" || echo "== bootstrap had FAILs (see above) ==" >&2

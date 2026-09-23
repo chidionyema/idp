@@ -88,4 +88,4 @@ spire-agent:
 spiffe-csi-driver:
   enabled: true
 spiffe-oidc-discovery-provider:
-  enabled: false
+  enabled: true

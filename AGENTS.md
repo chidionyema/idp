@@ -1,23 +1,14 @@
 # AGENTS.md — the rules of this repository
 
 This file is the version-controlled boundary for agent work in `idp` (crew #180, CP6).
-The estate's laws live in `~/AGENTS.md`; this file holds only what is specific to this
-repo.
+Estate-wide laws live in `~/AGENTS.md`; this file holds only what is specific to this repo.
 
-Rules here are already types or tools, and so need no registry row and no separate gate
-script: compose files must parse (`docker compose config`), the gateway config must match
-its release schema (`check-jsonschema`), every catalog entity must match the Backstage
-schema, every script must pass `shellcheck`, every generator must be idempotent (two runs
-over one inventory, byte-identical), the generated catalogue must carry a relationship
-graph, and every entity reference in it must resolve to an entity something defines
-(`bin/catalog-refcheck`, proved both ways in the same run). Those run unconditionally in
-`bin/idp-ci`.
-
-There is no `rules.yaml`, no `bin/idp-rules`, and no generated rule table in this repo any
-more: the 100-row registry and its engine were deleted (via-negativa, 2026-09-20) because a
-registry that re-described rules already enforced as types and tools is a second copy that
-can drift, not an additional gate (AGENTS.md estate law: one of each layer). A rule is a
-rung in `bin/idp-ci`, not a row in a table.
+Rules here are enforced as types or tools, run unconditionally by `bin/idp-ci`:
+`docker compose config`, `check-jsonschema` (gateway), Backstage schema, `shellcheck`
+(scripts), idempotent generators, the catalog relationship graph, and `bin/catalog-refcheck`
+(proved both ways). No `rules.yaml` — the 100-row registry was deleted 2026-09-20 because
+a registry that re-describes rules already enforced as types is a second copy that drifts.
+A rule is a rung in `bin/idp-ci`, not a row in a table.
 
 ## Andon cord: main must be green; never more than 3 red PRs (2026-09-17)
 
@@ -43,11 +34,6 @@ IDP_MAIN_GREEN_GATE=0 git push   # you are the fix for main
 IDP_WIP_GATE=0        git push   # genuine emergency past the cap
 ```
 
-**The reason these rules exist:** Five agent sessions, one after another, each
-opened new PRs while existing ones were red and while main itself was failing.
-The pile-up made it impossible to tell whether any new code was broken or was
-just inheriting the baseline. This is the structural fix.
-
 ## Done is operating, not pushed: a PR is only the beginning of done (2026-09-20)
 
 **Estate-wide. Applies to every agent, every tool, every workflow.**
@@ -57,25 +43,13 @@ done.** The only thing that ends a piece of work is the thing running in
 production, proven by a real log line — not by a green CI gate, not by an HTTP
 200, not by "the diff looks right."
 
-The full path from a change to done is:
-
-1. commit
-2. push → PR
-3. CI green
-4. merge to `main`
-5. `build-multiarch.yml` builds amd64 + arm64, Trivy, cosign → OCI tag
-6. Flux image-reflector polls → `image-automation` writes `flux/image-updates`
-7. `deploy-when-green` merges
-8. **operating in the cluster, evidenced by a production log line**
-
-Steps 1–7 are "built." Step 8 is "operating." They are different facts — say
-which one you mean, and never report a step as if it were the one after it
-(estate law: built and operating are different facts; proof, not assertion).
-A step is only reached when the one before it is measured green.
-
-This is the same rule as "proof, not assertion" and "a gate that cannot fail is
-not a gate," stated once so no agent can treat opening a PR as the finish line.
-The PR is the beginning of done; the production log line is done.
+The full path: commit → push/PR → CI green → merge to `main` →
+`build-multiarch.yml` (amd64+arm64, Trivy, cosign) → Flux image-reflector →
+`image-automation` → `deploy-when-green` → **operating in the cluster,
+evidenced by a production log line.** Steps 1–7 are "built", step 8 is
+"operating" — different facts, never reported as one another (estate law:
+built and operating are different facts; proof, not assertion). A step is
+only reached when the one before it is measured green.
 
 ## Gateway-as-floor: agents emit events, the gateway writes (2026-09-17)
 
@@ -95,9 +69,18 @@ A task is only done when all three are true:
 
 A PR that writes to GITHUB_STEP_SUMMARY, a JSONL ledger file, a Backstage TechDocs page, or an OrbStack log is not done. It is ghost code. The next step after every merge is always: wire it into the live execution path. If wiring is blocked, say so explicitly and name the blocker — do not move on to the next build task.
 
-## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
+## SPIFFE primary: never ask the founder to log in (2026-09-23)
 
-**Mandate: On any fresh checkout, run `bin/idp-install-hooks` before your first commit.**
+**Estate-wide. Applies to every agent, every tool, every workflow.** Full architecture in `docs/reference/security-architecture.md`; every agent reads it before acting on estate security. The rules, one line each:
+
+1. An agent never asks the founder to log in (Claude Code, OCI, `gh`, any LLM proxy).
+2. An agent never pastes a static key (no `LITELLM_API_KEY`, no OCI API key on disk). The credential arrives through SPIFFE or it does not arrive.
+3. An agent never tells the founder to "run this script" for security reasons. Hook install, workstation bootstrap, JIT enrollment, device-renew all run on the agent's own clock. The one-time per-Mac `bin/idp-jit enroll` is the only founder exception.
+4. The "executive" / CEO function is a JWT-SVID audience, not a phone tap. `bin/idp-jit ask` fires the broker, the broker validates a SPIFFE-issued JWT-SVID instead of pinging a phone.
+
+## Hooks first: the agent installs them, not the founder (2026-09-16)
+
+**Mandate: The agent runs `bin/idp-install-hooks` itself, on its first action in any fresh checkout, before its first commit. The founder is not asked to do this.**
 
 The estate's `.githooks/pre-push` is the hook the founder shipped (crew#584 CP2) to refuse a
 push whose session-plane rules would fail in CI seven minutes later. It only fires when
@@ -118,13 +101,13 @@ Why: Raw command output can exceed 50 lines and bloat the context window. `bin/i
 
 Usage: `bin/idp-exec cat large_file.log` instead of `cat large_file.log`
 
-## Workstation bootstrap: bin/idp-workstation-bootstrap on any fresh machine (2026-09-17)
+## Workstation bootstrap: the agent boots its own workstation (2026-09-17)
 
-**Mandate: On any fresh workstation (Mac, Linux, CI runner, dev container), run `bin/idp-workstation-bootstrap` once to reach dev-ready. It is idempotent; re-runs keep whatever already works.**
+**Mandate: The agent runs `bin/idp-workstation-bootstrap` itself, once, on any fresh workstation it lands on. The founder is not asked to do this.**
 
 Why (founder 2026-09-17): "our system must be able to bootstrap itself in any env". The prior bootstrap chain (`bin/idp-bootstrap-estate`) assumed the tool set was already installed and did not wire local `gh`/`kubectl` conveniences, so a fresh macbook on 2026-09-17 had age identity but no OCI config, no kubeconfig, and unauthed `gh` — which blocked Lane E (PR #3599) on a laptop-only credential gap. This script closes Level 0 (portable tool install per OS family) and Level 3 (local `gh auth` + `~/.kube/config`) around the existing Level 2 estate bootstrap.
 
-The one hand a person still gives is the age identity restore (iCloud Keychain / paper / hardware key); this script refuses to proceed if `SOPS_AGE_KEY_FILE` is not readable. Vendor-neutral throughout: no local container runtime is installed by this script (see 2026-09-17 container-runtime mandate above).
+The one hand a person still gives is the age identity restore (iCloud Keychain / paper / hardware key); this script refuses to proceed if `SOPS_AGE_KEY_FILE` is not readable.
 
 ## The estate twin: ask the graph, not the cluster (2026-09-12)
 
