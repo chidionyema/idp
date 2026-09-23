@@ -5,13 +5,12 @@ metadata:
   namespace: flux-system
 spec:
   # 2026-08-29, founder: "how do i get anything done with 6vnessages ? nost of then recurring for
-  # past 5 days". The telegram Provider's channel is flux-telegram.channel = his PRIVATE chat, and
-  # this Alert re-posts every failed reconcile of every row there (Flux repeats a standing error
-  # each rate-limit window, around the clock). The DM is for conversation and founder actions
-  # (~/.claude/scripts/estate/estate_alert.py, 2026-08-25); automated alerts go to an alerts
-  # group. Suspended until flux-telegram.channel is that group; the GitHub path
-  # (platform/alerts-github) keeps carrying the reds.
-  suspend: true
+  # past 5 days" -- suspended while flux-telegram.channel was his PRIVATE chat.
+  # 2026-09-23, founder: "notification to telegram, not the noisy channel -- otto_mumu's channel
+  # is where i want it" -- re-armed. The provider's channel comes from the flux-telegram Secret
+  # (seeded from SEED_TELEGRAM_ALERTS_*), which names the alerts group, not the DM; if that value
+  # is not the otto_mumu channel id yet, the fix is the Secret value, not this manifest.
+  suspend: false
   providerRef: { name: telegram }
   eventSeverity: error
   summary: "estate: a reconciliation failed or a workload is not healthy"
