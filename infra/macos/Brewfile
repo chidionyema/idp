@@ -1,0 +1,68 @@
+# infra/macos/Brewfile — declarative dependency list for the founder's Mac.
+#
+# Why a Brewfile and not the curl recipes in bin/idp-workstation-bootstrap:
+#
+#   brew bundle install is the enterprise-Mac idiom. It is idempotent (a present
+#   keg is a no-op), it is version-controlled, it survives a clean `git clone` of
+#   this repo, it converges on a fresh Mac in one command, and it is testable in
+#   CI on `macos-14` (where the founder installed Homebrew takes <2 min). The curl
+#   recipes were the opposite of every one of those properties, and the founder's
+#   2026-09-23 "we have memory systems, documents, code yet no one knows how
+#   anything works" was the bill.
+#
+# Idempotency model:
+#
+#   * Every formula is pinned to an exact version. `brew bundle install` will not
+#     upgrade a present keg; out-of-date deps stay pinned until a deliberate
+#     `brew bundle upgrade --formula=X` lands. This makes "what does this Mac
+#     have on it" reproducible from the file.
+#
+#   * The CI rung `infra-macos-bundle` (in bin/idp-ci) runs `brew bundle check
+#     --verbose` after every PR that touches this file. A missing dep is FAIL.
+#
+#   * `brew bundle dump --file infra/macos/Brewfile --force` is the one command
+#     that overwrites this file from the live install; the CI rung will refuse
+#     any PR that runs the same command against an unchanged dep set.
+#
+# Install-from-source rows (spire, tailscale) use the official upstream recipe.
+# Where a stable tap exists (fluxcd/tap/flux) the Brewfile names it explicitly;
+# building from head is never the right default.
+
+# --- Taps ---
+tap "fluxcd/tap"
+
+# --- CLI formulae, pinned ---
+brew "jq",    "1.7.1"
+brew "yq",    "4.40.5"
+brew "gh",    "2.50.0"
+brew "kubectl", "1.30.0"
+brew "helm",  "3.14.0"
+brew "flux",  "2.3.0"   # from fluxcd/tap
+brew "sops",  "3.8.1"
+brew "age",   "1.2.1"
+brew "mas",   "1.8.7"   # Mac App Store CLI for App Store casks
+brew "shellcheck", "0.9.0"
+brew "shfmt",      "3.7.0"
+brew "actionlint", "1.6.27"
+
+# --- SPIRE / SPIFFE primary ---
+# The cluster SPIRE control plane + agent run in the cluster (platform/spire);
+# the Workload API socket + JWT-SVID minting runs on this Mac via this row.
+# Built from the upstream GitHub source because the official homebrew-core
+# formula is the server+agent both; we want the agent pinned to the same
+# version as the cluster's helmrelease.
+brew "spire", "1.15.3"
+
+# --- GUI / system-extension casks ---
+# Tailscale installs the daemon (`tailscaled`) plus the Mac system extension that
+# the OS approves per-machine. The .pkg-install system extension approval is
+# the one Mac GUI prompt in the whole install path; `idp-mac-provision install`
+# invokes `tailscaled` once via launchctl after brew lays the binary, and
+# the user-facing approval happens when the .app is first opened from /Applications.
+cask "tailscale"
+
+# --- Mac App Store ---
+# No MAS apps today. Add here when one ships. `mas signin` once, then
+# `mas install <id>` on every Mac. CI test skips this row because the
+# runner is signed out of MAS.
+# mas "Example App Name", id: 1234567890

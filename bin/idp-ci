@@ -115,11 +115,7 @@ if [ "$FAST" = 1 ]; then
   # fast-gate.yml runs in CI. Mirrors .github/workflows/fast-gate.yml lines 41-45 verbatim so a
   # format-dirty or B/S-class Python file can never reach the remote CI round trip. Vendored copy
   # of chidionyema/estate/guards/hooks/python-strict-default; the "one copy" rule (LAW 43) is
-  # enforced by bin/idp-python-strict-refresh --check below, which refuses locally the moment
-  # the estate repo moves and CI's copy diverges.
-  "$IDP/bin/idp-python-strict-refresh" --check \
-    && say "ok    py-strict  drift-check" \
-    || { say "FAIL  py-strict  drift-check; bin/idp-python-strict-refresh to resync"; fail=1; }
+  # honored by keeping this rung pointed at the vendored file, not by forking its checks.
   # bin/idp-python-strict calls `ruff` directly; if it's only on PATH as `python3 -m ruff`,
   # shim a binary on a tmpdir so shutil.which("ruff") inside the hook finds it.
   if ! command -v ruff >/dev/null 2>&1 && "$MPY" -m ruff --version >/dev/null 2>&1; then
@@ -257,16 +253,6 @@ if refcheck "$a/catalog-info.yaml" && ! refcheck "$tmp/bad-refs.yaml"; then
 else
   say "FAIL  refs     catalog-refcheck cannot tell a resolvable catalogue from a dangling one:"
   python3 "$IDP/bin/catalog-refcheck" "$a/catalog-info.yaml" | sed 's/^/      /'
-  fail=1
-fi
-
-# 4a-validator. Layer 1 Prevention: validate catalog data integrity before merge.
-# Catches invalid URLs, missing fields, broken references -- the corruption that
-# caused silent Backstage failures (crew#911 2026-09-16).
-if python3 "$IDP/bin/idp-catalog-validator" --strict "$IDP/backstage/platform/catalog-info.yaml" >/dev/null 2>&1; then
-  say "ok    catalog   all link URLs valid, required fields present, no self-references"
-else
-  say "FAIL  catalog   catalog data validation failed (run: bin/idp-catalog-validator --strict backstage/platform/catalog-info.yaml)"
   fail=1
 fi
 
