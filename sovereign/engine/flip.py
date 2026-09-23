@@ -23,6 +23,7 @@ root/owner privilege bypassing the permission bit while flipped. A
 mismatch there raises FlipError and refuses the rollback rather than
 handing back a legacy DB rollback() cannot vouch for.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -62,7 +63,9 @@ def is_read_only(path: Path | None = None) -> bool:
 
 
 def _last_flip_receipt() -> dict[str, Any] | None:
-    rows = [r for r in receipts_mod.read_all() if r.get("kind") in ("flip", "flip_rollback")]
+    rows = [
+        r for r in receipts_mod.read_all() if r.get("kind") in ("flip", "flip_rollback")
+    ]
     return rows[-1] if rows else None
 
 
@@ -79,9 +82,17 @@ def flip(by: str, signed: bool = False) -> dict[str, Any]:
 
     text = config.FLIP_RECEIPT_TEMPLATE.format(root=root_state["root"])
     record = {
-        "session_id": "-", "kind": "flip", "by": by, "text": text,
-        "step": 0, "status": "flipped", "task": "", "runner": "",
-        "root": root_state["root"], "legacy_hash": legacy_hash, "legacy_path": str(path),
+        "session_id": "-",
+        "kind": "flip",
+        "by": by,
+        "text": text,
+        "step": 0,
+        "status": "flipped",
+        "task": "",
+        "runner": "",
+        "root": root_state["root"],
+        "legacy_hash": legacy_hash,
+        "legacy_path": str(path),
     }
     if signed:
         record["signed"] = True
@@ -105,14 +116,24 @@ def rollback(by: str, signed: bool = False) -> dict[str, Any]:
     path = legacy_db_path()
     current_hash = _sha256_file(path)
     if current_hash != last.get("legacy_hash"):
-        raise FlipError("legacy DB changed while flipped -- refusing to roll back onto it")
+        raise FlipError(
+            "legacy DB changed while flipped -- refusing to roll back onto it"
+        )
 
     os.chmod(path, config.FLIP_WRITABLE_MODE)
     text = config.FLIP_ROLLBACK_RECEIPT_TEMPLATE.format(root=last.get("root"))
     record = {
-        "session_id": "-", "kind": "flip_rollback", "by": by, "text": text,
-        "step": 0, "status": "rolled_back", "task": "", "runner": "",
-        "root": last.get("root"), "legacy_hash": current_hash, "legacy_path": str(path),
+        "session_id": "-",
+        "kind": "flip_rollback",
+        "by": by,
+        "text": text,
+        "step": 0,
+        "status": "rolled_back",
+        "task": "",
+        "runner": "",
+        "root": last.get("root"),
+        "legacy_hash": current_hash,
+        "legacy_path": str(path),
     }
     if signed:
         record["signed"] = True

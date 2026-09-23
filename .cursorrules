@@ -1,0 +1,56 @@
+# Cursor Rules for idp
+
+## Memory (shared across all agents)
+
+This repo has persistent memory via MCP. Use it to remember decisions, learn context, and avoid re-asking.
+
+### MCP Server (if your client supports MCP)
+```json
+{
+  "mcpServers": {
+    "memory": {
+      "command": "/Users/roseonyema/Documents/code/estate-core/memory/mcp_server.py"
+    }
+  }
+}
+```
+
+Tools available:
+- `memory_write` — store facts, decisions, observations
+- `memory_recall` — query what you've learned
+- `memory_ambient` — get context-aware suggestions
+
+### REST API (fallback for any agent)
+```bash
+# Start the server (needs Neo4j running)
+uvicorn estate-core.memory.a2m_server:app --port 8787
+
+# Write memory
+curl -X POST http://localhost:8787/memory \
+  -H "Content-Type: application/json" \
+  -d '{"content": "User prefers X over Y", "source": "cursor-agent"}'
+
+# Recall
+curl -X POST http://localhost:8787/recall \
+  -d '{"query": "user preferences"}'
+```
+
+## Knowledge Graph
+
+Run `growmos context` at session start to load the repo's knowledge graph.
+Run `growmos query "your question"` before asking cross-cutting questions.
+Run `growmos remember` / `growmos link` when you learn something durable.
+
+## Estate Scripts
+
+Guard scripts and hooks live in `/Users/roseonyema/Documents/code/estate-core/scripts/`.
+These are model-agnostic Python scripts for:
+- Token auditing
+- Secret scrubbing
+- Rule enforcement
+- Session recording
+
+## Agent Roles
+
+Role definitions in `/Users/roseonyema/Documents/code/estate-core/agents/*.md`.
+Each defines tools, model, and behavior for a specific job (PM, QA, builder, etc.).

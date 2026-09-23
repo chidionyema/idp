@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Refuse to let a full disk cost you a file silently.
+#
+# WHY THIS EXISTS. 2026-09-18: the Mac's data volume reached 99% full (995 MB free at the start
+# of the session, 1.0 GiB by the afternoon). Two separate things happened, and only one of them
+# was the disk's fault:
+#
+#   1. `brew install kubernetes-cli` hung for seven minutes and then died with
+#      `No space left on device` while copying its build tree -- a tool that normally takes
+#      ninety seconds, indistinguishable from a network hang.
+#   2. `bin/idp-oci-login` disappeared from the working tree. That one turned out to be a
+#      quotation slip (`rm -rf /private/tmp/homebrew-* bin/idp-oci-login` takes TWO paths), so
+#      the disk was innocent -- but the *reason it was noticed* was that the founder ran the
+#      script and got exit 127, and nothing anywhere had said the tree was being edited under
+#      memory pressure at the same time.
+#
+# The lesson is not "the disk ate my file". It is that a machine under storage pressure fails
+# in ways that read as unrelated faults, and nothing in this estate reported the pressure. This
+# guard reports it, at the boundary where it can still be acted on, before another write.
+#
+# WHAT IT IS NOT. It deletes nothing, and it is not a cleanup tool. `bin/estate-cleaner` is that.
+# A guard that silently removes things on a machine whose problem is surprise deletions would be
+# the joke writing itself. This measures, names the consequence, and suggests; the human decides.
+#
+# Exit codes: 0 always. A guard that fails a build on a full disk would be a guard that blocks
+# the very work that might free it. `BLIND` when the number cannot be read, never a silent pass.
+#
+# Usage:
+#   bin/idp-disk-guard            # report; loud when under MIN_FREE
+#   bin/idp-disk-guard --quiet    # say nothing when healthy (for hooks)
+#   MIN_FREE_GB=20 bin/idp-disk-guard
+set -uo pipefail
+
+# The floor. Chosen from what actually broke: 995 MB was not enough for a brew build (needs
+# roughly 1.5 GB of scratch for kubernetes-cli alone) and not enough headroom for git to write
+# a new blob beside an old one. 10 GB is the point below which a Mac in daily use starts
+# failing writes that have nothing to do with the work in front of you.
+MIN_FREE_GB="${MIN_FREE_GB:-10}"
+QUIET=0
+[ "${1:-}" = "--quiet" ] && QUIET=1
+
+# The data volume, not `/`. On macOS they are different: the system volume is read-only and
+# always looks roomy, so measuring it would report green while the writable volume is full.
+#
+# Falling back to `/` was the first version and the suite caught it immediately: with a bad path
+# the guard reported `/` at 76% used and 3G free -- a volume nothing writes to -- while the data
+# volume was at 97%. A storage guard that measures the wrong disk is worse than none, because it
+# is the one that gets believed.
+TARGET="${DISK_GUARD_PATH:-/System/Volumes/Data}"
+if [ ! -d "$TARGET" ]; then
+	echo "BLIND   disk    $TARGET is not a directory; refusing to guess which volume to measure"
+	exit 0
+fi
+
+# `df -k` and column 4: POSIX, and the same on BSD and GNU. Parsing `df -h` means parsing "1.0Gi"
+# -- a string whose units depend on the implementation, which is how a guard reports nonsense.
+avail_k="$(df -k "$TARGET" 2>/dev/null | awk 'NR==2 {print $4}')"
+if [ -z "$avail_k" ]; then
+	echo "BLIND   disk    could not read free space for $TARGET"
+	exit 0
+fi
+avail_gb=$((avail_k / 1024 / 1024))
+used_pct="$(df -k "$TARGET" 2>/dev/null | awk 'NR==2 {gsub(/%/,"",$5); print $5}')"
+
+if [ "$avail_gb" -ge "$MIN_FREE_GB" ]; then
+	[ "$QUIET" = 1 ] || echo "ok      disk    ${avail_gb}G free on $TARGET (floor ${MIN_FREE_GB}G, ${used_pct}% used)"
+	exit 0
+fi
+
+# Below the floor. Say what is measured, what it costs, and what to do -- in that order, because
+# "low disk" on its own is a fact nobody can act on.
+echo "FAIL    disk    ${avail_gb}G free on $TARGET (${used_pct}% used); floor is ${MIN_FREE_GB}G"
+echo "        consequence  writes fail in ways that read as unrelated faults: a brew build"
+echo "                     dies after minutes as 'No space left on device' (measured"
+echo "                     2026-09-18), git cannot write a blob beside its old copy, and a"
+echo "                     tool mid-copy can leave a truncated file behind"
+echo "        fix          bin/estate-cleaner, or free regenerable caches by hand. The largest"
+echo "                     safe targets on this machine, measured 2026-09-18:"
+echo "                       rm -rf ~/.npm/_npx          # 595M of npx-downloaded packages"
+echo "                       npm cache clean --force     # ~1.1G"
+echo "                       brew cleanup -s             # ~1.8G when caches are cold"
+echo "        do not       delete anything under ~/Pictures, ~/Documents or ~/Music to satisfy"
+echo "                     this guard. Those are the user's, not the build's."
+exit 0

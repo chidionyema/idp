@@ -1,0 +1,25 @@
+{{- if and .Values.observability.metrics.enabled .Values.observability.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "fleetview-voice.fullname" . }}
+  labels:
+    {{- include "fleetview-voice.labels" . | nindent 4 }}
+    {{- with .Values.observability.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- if .Values.observability.metrics.serviceMonitor.namespace }}
+  namespace: {{ .Values.observability.metrics.serviceMonitor.namespace }}
+  {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "fleetview-voice.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: {{ .Values.observability.metrics.path }}
+      interval: {{ .Values.observability.metrics.serviceMonitor.interval }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+{{- end }}

@@ -9,6 +9,7 @@ rm -- and the next receipt still gets a number no earlier receipt used).
 "Survives restart" is the requirement, so every test here reloads the
 module state the way a new process would: nothing is cached in memory.
 """
+
 from __future__ import annotations
 
 import json
@@ -38,7 +39,9 @@ class CounterTestBase(unittest.TestCase):
             p = patch.object(config, name, val)
             p.start()
             self.addCleanup(p.stop)
-        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
+        p = patch.object(
+            receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file")
+        )
         p.start()
         self.addCleanup(p.stop)
 
@@ -82,7 +85,9 @@ class CounterIncidentTest(CounterTestBase):
         """The watermark is signed with the same estate key as the chain,
         so a file anyone can write is not a file anyone can raise."""
         receipts.append({"kind": "step", "by": "engine"})
-        config.RECEIPTS_COUNTER.write_text(json.dumps({"counter": 9999, "sig": "forged"}))
+        config.RECEIPTS_COUNTER.write_text(
+            json.dumps({"counter": 9999, "sig": "forged"})
+        )
         line = receipts.append({"kind": "step", "by": "engine"})
         self.assertEqual(int(line["counter"]), 2)
 
@@ -103,9 +108,15 @@ class CounterIncidentTest(CounterTestBase):
     def test_a_line_removed_from_the_middle_still_fails(self) -> None:
         for _ in range(3):
             receipts.append({"kind": "step", "by": "engine"})
-        rows = [json.loads(x) for x in config.SB_RECEIPTS.read_text().splitlines() if x.strip()]
+        rows = [
+            json.loads(x)
+            for x in config.SB_RECEIPTS.read_text().splitlines()
+            if x.strip()
+        ]
         del rows[1]
-        config.SB_RECEIPTS.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows))
+        config.SB_RECEIPTS.write_text(
+            "".join(json.dumps(r, sort_keys=True) + "\n" for r in rows)
+        )
         self.assertFalse(receipts.verify()["ok"])
 
 

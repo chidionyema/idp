@@ -13,6 +13,7 @@ constructors of CatastropheAlert and Digest refuse a text that does, so
 no such value can exist to be sent (cp32: "no message is sent to the
 chat that asks the founder a question").
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -30,7 +31,9 @@ class AsksAQuestion(ValueError):
 
 def _refuse_question(text: str) -> None:
     if _QUESTION_MARK in text:
-        raise AsksAQuestion(f"a system message may not ask the founder anything: {text!r}")
+        raise AsksAQuestion(
+            f"a system message may not ask the founder anything: {text!r}"
+        )
 
 
 @dataclass(frozen=True)
@@ -85,7 +88,9 @@ class Digest:
         if not self.lines:
             raise ValueError("a digest has at least the hash line")
         if len(self.lines) > max_lines:
-            raise ValueError(f"a digest is at most {max_lines} lines, got {len(self.lines)}")
+            raise ValueError(
+                f"a digest is at most {max_lines} lines, got {len(self.lines)}"
+            )
         if any("\n" in line for line in self.lines):
             raise ValueError("a digest line is one line")
         if not self.lines[-1].endswith(self.receipts_hash):

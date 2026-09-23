@@ -6,6 +6,7 @@ subcommands plug in through the try-import hook at the bottom of main() --
 this module never imports them at module load time, so it works with
 neither present (cp6: the engine runs with no vendor around).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -65,14 +66,22 @@ def cmd_start(args: argparse.Namespace) -> int:
 
         res = asyncio.run(
             branching.start_on_estate(
-                args.task, runner=args.runner, repo=args.repo, budget=int(budget_resolved.value), count=int(args.branches)
+                args.task,
+                runner=args.runner,
+                repo=args.repo,
+                budget=int(budget_resolved.value),
+                count=int(args.branches),
             )
         )
         _emit(res, args.json)
         return 0
     res = asyncio.run(
         engine_client.start(
-            args.task, runner=args.runner, repo=args.repo, by=args.by, budget=int(budget_resolved.value),
+            args.task,
+            runner=args.runner,
+            repo=args.repo,
+            by=args.by,
+            budget=int(budget_resolved.value),
             critical=bool(getattr(args, "critical", False)),
         )
     )
@@ -187,7 +196,14 @@ def cmd_recover(args: argparse.Namespace) -> int:
 
     res = checkpoint.recover(args.by)
     started = _services_up() if config.RECOVER_START_SERVICES else {}
-    _emit({**res, "services": started, "services_started": bool(config.RECOVER_START_SERVICES)}, args.json)
+    _emit(
+        {
+            **res,
+            "services": started,
+            "services_started": bool(config.RECOVER_START_SERVICES),
+        },
+        args.json,
+    )
     return 0
 
 
@@ -249,6 +265,7 @@ def cmd_drop(args: argparse.Namespace) -> int:
         print(f"no such branch: {exc}", file=sys.stderr)
         return config.CLI_EXIT_USAGE_ERROR
 
+
 def cmd_flip(args: argparse.Namespace) -> int:
     """cp13: `sb flip --by <who> --signed` sets the legacy DB read-only
     and signs one "flip" receipt; `sb flip --rollback --by <who> --signed`
@@ -264,6 +281,7 @@ def cmd_flip(args: argparse.Namespace) -> int:
     except flip.FlipError as exc:
         print(f"flip refused: {exc}", file=sys.stderr)
         return config.CLI_EXIT_USAGE_ERROR
+
 
 def cmd_rebuild(args: argparse.Namespace) -> int:
     """cp14: `sb rebuild --json` replays the whole DAG from genesis and
@@ -289,7 +307,9 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
-    res = asyncio.run(engine_client.signal(args.session_id, "stop", args.by, args.reason or ""))
+    res = asyncio.run(
+        engine_client.signal(args.session_id, "stop", args.by, args.reason or "")
+    )
     _emit(res, args.json)
     return 0
 
@@ -330,7 +350,9 @@ def cmd_approve(args: argparse.Namespace) -> int:
             envelope = approval.sign_fallback(challenge)
 
     if envelope is None and not config.REQUIRE_SIGNED_APPROVAL:
-        res = asyncio.run(engine_client.signal(args.session_id, APPROVE_ACTION, args.by))
+        res = asyncio.run(
+            engine_client.signal(args.session_id, APPROVE_ACTION, args.by)
+        )
         _emit(res, args.json)
         return 0
 
@@ -365,10 +387,17 @@ def cmd_approve(args: argparse.Namespace) -> int:
     )
     interventions_mod.mirror(entry)
     res = asyncio.run(
-        engine_client.signal(args.session_id, APPROVE_ACTION, args.by, attestation=verdict["attestation"])
+        engine_client.signal(
+            args.session_id, APPROVE_ACTION, args.by, attestation=verdict["attestation"]
+        )
     )
     _emit(
-        {**res, "attestation": verdict["attestation"], "counter": entry["counter"], "hash": entry["hash"]},
+        {
+            **res,
+            "attestation": verdict["attestation"],
+            "counter": entry["counter"],
+            "hash": entry["hash"],
+        },
         args.json,
     )
     return 0
@@ -381,7 +410,9 @@ def cmd_model_consensus(args: argparse.Namespace) -> int:
     DB-versus-DAG dual read. Same English word, two unrelated questions."""
     from sovereign.consensus.decide import decide as decide_fn
 
-    destructive = True if args.destructive else (False if args.non_destructive else None)
+    destructive = (
+        True if args.destructive else (False if args.non_destructive else None)
+    )
     res = decide_fn(args.op, destructive=destructive)
     _emit(res, args.json)
     return 0 if res["ok"] else 1
@@ -402,7 +433,14 @@ def cmd_identity(args: argparse.Namespace) -> int:
         _emit({"revoked": spiffe.sweep()}, args.json)
         return 0
     me = spiffe.identity()
-    _emit({**me, "revoked": spiffe.is_revoked(me["spiffe_id"]), "registry": spiffe.status()}, args.json)
+    _emit(
+        {
+            **me,
+            "revoked": spiffe.is_revoked(me["spiffe_id"]),
+            "registry": spiffe.status(),
+        },
+        args.json,
+    )
     return 0 if me["trusted"] else 1
 
 
@@ -434,7 +472,9 @@ def cmd_deny(args: argparse.Namespace) -> int:
 
 
 def cmd_steer(args: argparse.Namespace) -> int:
-    res = asyncio.run(engine_client.signal(args.session_id, "steer", args.by, args.text or ""))
+    res = asyncio.run(
+        engine_client.signal(args.session_id, "steer", args.by, args.text or "")
+    )
     _emit(res, args.json)
     return 0
 
@@ -448,7 +488,10 @@ def cmd_episodes(args: argparse.Namespace) -> int:
 def cmd_config(args: argparse.Namespace) -> int:
     if getattr(args, "config_command", None) == "set":
         resolved = config.set_key(args.key, args.value, args.by)
-        _emit({"key": resolved.key, "value": resolved.value, "source": resolved.source}, args.json)
+        _emit(
+            {"key": resolved.key, "value": resolved.value, "source": resolved.source},
+            args.json,
+        )
         return 0
 
     if args.lint:
@@ -467,7 +510,11 @@ def cmd_config(args: argparse.Namespace) -> int:
                 "source": resolved.source,
             }
         else:
-            rows[key] = {"value": resolved.value, "default": resolved.default, "source": resolved.source}
+            rows[key] = {
+                "value": resolved.value,
+                "default": resolved.default,
+                "source": resolved.source,
+            }
     _emit(rows, args.json)
     return 0
 
@@ -529,7 +576,11 @@ def cmd_up(args: argparse.Namespace) -> int:
 
     boot_check = projection.ensure_fresh(by="boot")
 
-    result = {"temporal": "already-running", "worker": "already-running", "projection": boot_check}
+    result = {
+        "temporal": "already-running",
+        "worker": "already-running",
+        "projection": boot_check,
+    }
 
     if _alive(_read_pid(config.TEMPORAL_PID_FILE)) or _port_open(
         config.TEMPORAL_ADDRESS, config.CLI_PORT_PROBE_TIMEOUT_S
@@ -538,12 +589,18 @@ def cmd_up(args: argparse.Namespace) -> int:
     else:
         host, _, port_s = config.TEMPORAL_ADDRESS.rpartition(config.NET_HOST_PORT_SEP)
         temporal_cmd = [
-            "temporal", "server", "start-dev",
-            "--db-filename", str(config.TEMPORAL_DB),
-            "--namespace", config.TEMPORAL_NAMESPACE,
+            "temporal",
+            "server",
+            "start-dev",
+            "--db-filename",
+            str(config.TEMPORAL_DB),
+            "--namespace",
+            config.TEMPORAL_NAMESPACE,
             "--headless",
-            "--ip", host or config.TEMPORAL_HOST,
-            "--port", port_s or config.TEMPORAL_PORT,
+            "--ip",
+            host or config.TEMPORAL_HOST,
+            "--port",
+            port_s or config.TEMPORAL_PORT,
         ]
         pid = _spawn(temporal_cmd, config.TEMPORAL_LOG_FILE, config.TEMPORAL_PID_FILE)
         result["temporal"] = f"started pid={pid}"
@@ -593,7 +650,10 @@ def _stop_by_pid(pid: int) -> None:
 
 def cmd_down(args: argparse.Namespace) -> int:
     result = {}
-    for name, pid_path in (("worker", config.WORKER_PID_FILE), ("temporal", config.TEMPORAL_PID_FILE)):
+    for name, pid_path in (
+        ("worker", config.WORKER_PID_FILE),
+        ("temporal", config.TEMPORAL_PID_FILE),
+    ):
         pid = _read_pid(pid_path)
         if pid is None:
             result[name] = "not-running"
@@ -629,17 +689,31 @@ def cmd_kini(args: argparse.Namespace) -> int:
     from sovereign.engine import kini
 
     async def go() -> dict[str, Any]:
-        client = await Client.connect(config.TEMPORAL_ADDRESS, namespace=config.TEMPORAL_NAMESPACE)
+        client = await Client.connect(
+            config.TEMPORAL_ADDRESS, namespace=config.TEMPORAL_NAMESPACE
+        )
         if args.kini_command == "finish":
             try:
                 handle = await client.start_workflow(
-                    kini.WORKFLOW, config.kini_workflow_params(),
-                    id=config.KINI_WORKFLOW_ID, task_queue=config.TEMPORAL_TASK_QUEUE,
+                    kini.WORKFLOW,
+                    config.kini_workflow_params(),
+                    id=config.KINI_WORKFLOW_ID,
+                    task_queue=config.TEMPORAL_TASK_QUEUE,
                 )
             except WorkflowAlreadyStartedError:
                 handle = client.get_workflow_handle(config.KINI_WORKFLOW_ID)
-                return {"ok": True, "started": False, "already_running": True, "workflow_id": handle.id}
-            out = {"ok": True, "started": True, "workflow_id": handle.id, "run_id": handle.result_run_id}
+                return {
+                    "ok": True,
+                    "started": False,
+                    "already_running": True,
+                    "workflow_id": handle.id,
+                }
+            out = {
+                "ok": True,
+                "started": True,
+                "workflow_id": handle.id,
+                "run_id": handle.result_run_id,
+            }
             if args.wait:
                 try:
                     out["result"] = await handle.result()
@@ -653,8 +727,17 @@ def cmd_kini(args: argparse.Namespace) -> int:
         except RPCError as e:
             if e.status != RPCStatusCode.NOT_FOUND:
                 raise
-            return {"ok": True, "workflow_id": handle.id, "status": "NONE", "never_started": True}
-        out: dict[str, Any] = {"ok": True, "workflow_id": handle.id, "status": desc.status.name if desc.status else None}
+            return {
+                "ok": True,
+                "workflow_id": handle.id,
+                "status": "NONE",
+                "never_started": True,
+            }
+        out: dict[str, Any] = {
+            "ok": True,
+            "workflow_id": handle.id,
+            "status": desc.status.name if desc.status else None,
+        }
         out["close_time"] = desc.close_time.isoformat() if desc.close_time else None
         if desc.status is not None and desc.status.name == "RUNNING":
             out["progress"] = await handle.query("progress")
@@ -670,7 +753,12 @@ def cmd_kini(args: argparse.Namespace) -> int:
     if args.kini_command == "receipt":
         # The receipt platform/temporal/kini-state.yaml publishes as state/kini and
         # bin/idp-kini-state grades: line 1 is the verdict, the rest is the JSON body.
-        sys.stdout.write(kini.receipt_head(res) + "\n" + json.dumps(res, sort_keys=True, default=str) + "\n")
+        sys.stdout.write(
+            kini.receipt_head(res)
+            + "\n"
+            + json.dumps(res, sort_keys=True, default=str)
+            + "\n"
+        )
         return 0
     _emit(res, args.json)
     return 0 if res.get("ok") else 1
@@ -686,13 +774,28 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--repo", default=None)
     p.add_argument("--by", default="cli")
     p.add_argument("--budget", type=int, default=None)
-    p.add_argument("--critical", action="store_true", help="survives self-termination (crew#284 CP6, spec section 5)")
-    p.add_argument("--estate", default=None, help="attach root; repo defaults to it, receipts chain under its estate dir")
-    p.add_argument("--branches", type=int, default=None, help="R19: fork this many silent child sessions instead of one (sovereign/shadow)")
+    p.add_argument(
+        "--critical",
+        action="store_true",
+        help="survives self-termination (crew#284 CP6, spec section 5)",
+    )
+    p.add_argument(
+        "--estate",
+        default=None,
+        help="attach root; repo defaults to it, receipts chain under its estate dir",
+    )
+    p.add_argument(
+        "--branches",
+        type=int,
+        default=None,
+        help="R19: fork this many silent child sessions instead of one (sovereign/shadow)",
+    )
     _add_json(p)
     p.set_defaults(func=cmd_start)
 
-    p = sub.add_parser("refill", help="signal a halted session to resume with more budget")
+    p = sub.add_parser(
+        "refill", help="signal a halted session to resume with more budget"
+    )
     p.add_argument("session_id")
     p.add_argument("--tokens", type=int, required=True)
     p.add_argument("--by", required=True)
@@ -704,34 +807,58 @@ def main(argv: list[str] | None = None) -> int:
     _add_json(p)
     p.set_defaults(func=cmd_verify_receipts)
 
-    p = sub.add_parser("audit", help="cp34 -- verify the signed receipt chain and the DAG, or explain one receipt")
-    p.add_argument("--verify", action="store_true", help="verify every signature, the counter, the anchor and heads/main")
-    p.add_argument("--at", default=None, help="explain the receipt with this chain hash")
+    p = sub.add_parser(
+        "audit",
+        help="cp34 -- verify the signed receipt chain and the DAG, or explain one receipt",
+    )
+    p.add_argument(
+        "--verify",
+        action="store_true",
+        help="verify every signature, the counter, the anchor and heads/main",
+    )
+    p.add_argument(
+        "--at", default=None, help="explain the receipt with this chain hash"
+    )
     _add_json(p)
     p.set_defaults(func=cmd_audit)
 
     p = sub.add_parser("undo", help="R7 -- revert the commit a session's receipt names")
     p.add_argument("session_id")
     p.add_argument("--by", required=True)
-    p.add_argument("--to", default=None, help="receipt hash to walk the chain back to; default is the newest with a commit")
+    p.add_argument(
+        "--to",
+        default=None,
+        help="receipt hash to walk the chain back to; default is the newest with a commit",
+    )
     _add_json(p)
     p.set_defaults(func=cmd_undo)
 
-    p = sub.add_parser("rewind", help="cp33 -- move heads/main to a DAG hash and rebuild the views")
+    p = sub.add_parser(
+        "rewind", help="cp33 -- move heads/main to a DAG hash and rebuild the views"
+    )
     p.add_argument("hash")
     p.add_argument("--by", required=True)
-    p.add_argument("--signed", action="store_true", help="sign the receipt with the trust anchor (required)")
+    p.add_argument(
+        "--signed",
+        action="store_true",
+        help="sign the receipt with the trust anchor (required)",
+    )
     _add_json(p)
     p.set_defaults(func=cmd_rewind)
 
-    p = sub.add_parser("recover", help="cp35 -- point heads/main at the last fully committed root and rebuild")
+    p = sub.add_parser(
+        "recover",
+        help="cp35 -- point heads/main at the last fully committed root and rebuild",
+    )
     p.add_argument("--by", default="recover")
     _add_json(p)
     p.set_defaults(func=cmd_recover)
 
     p = sub.add_parser("config", help="show or change engine configuration")
     _add_json(p)
-    p.add_argument("--lint", action="store_true", help="report magic literals outside config.py")
+    p.add_argument(
+        "--lint", action="store_true", help="report magic literals outside config.py"
+    )
     config_sub = p.add_subparsers(dest="config_command")
     p_set = config_sub.add_parser("set", help="set one config key in estate.toml")
     p_set.add_argument("key")
@@ -739,37 +866,56 @@ def main(argv: list[str] | None = None) -> int:
     p_set.add_argument("--by", required=True)
     p.set_defaults(func=cmd_config)
 
-    p = sub.add_parser("root", help="cp9 -- show and verify the shadow Merkle root, the shadow_main head")
+    p = sub.add_parser(
+        "root",
+        help="cp9 -- show and verify the shadow Merkle root, the shadow_main head",
+    )
     _add_json(p)
     p.set_defaults(func=cmd_root)
 
-    p = sub.add_parser("consensus", help="cp11 -- legacy versus DAG dual-read match rate")
+    p = sub.add_parser(
+        "consensus", help="cp11 -- legacy versus DAG dual-read match rate"
+    )
     _add_json(p)
     p.set_defaults(func=cmd_consensus)
 
-    p = sub.add_parser("fork", help="cp12 -- create a zero-cost, copy-on-write branch off production")
+    p = sub.add_parser(
+        "fork", help="cp12 -- create a zero-cost, copy-on-write branch off production"
+    )
     p.add_argument("name")
     _add_json(p)
     p.set_defaults(func=cmd_fork)
 
-    p = sub.add_parser("switch", help="cp12 -- move the working branch pointer to an existing fork or production")
+    p = sub.add_parser(
+        "switch",
+        help="cp12 -- move the working branch pointer to an existing fork or production",
+    )
     p.add_argument("name")
     _add_json(p)
     p.set_defaults(func=cmd_switch)
 
-    p = sub.add_parser("drop", help="cp12 -- remove a fork's pointer; its DAG nodes and receipts stay archived")
+    p = sub.add_parser(
+        "drop",
+        help="cp12 -- remove a fork's pointer; its DAG nodes and receipts stay archived",
+    )
     p.add_argument("name")
     _add_json(p)
     p.set_defaults(func=cmd_drop)
 
-    p = sub.add_parser("flip", help="cp13 -- flip the DAG to primary, legacy DB to read-only (or --rollback)")
+    p = sub.add_parser(
+        "flip",
+        help="cp13 -- flip the DAG to primary, legacy DB to read-only (or --rollback)",
+    )
     p.add_argument("--rollback", action="store_true")
     p.add_argument("--by", required=True)
     p.add_argument("--signed", action="store_true")
     _add_json(p)
     p.set_defaults(func=cmd_flip)
 
-    p = sub.add_parser("rebuild", help="cp14 -- replay the DAG from genesis and rewrite the projection store")
+    p = sub.add_parser(
+        "rebuild",
+        help="cp14 -- replay the DAG from genesis and rewrite the projection store",
+    )
     p.add_argument("--by", default="operator")
     _add_json(p)
     p.set_defaults(func=cmd_rebuild)
@@ -790,34 +936,69 @@ def main(argv: list[str] | None = None) -> int:
     _add_json(p)
     p.set_defaults(func=cmd_stop)
 
-    p = sub.add_parser("approve", help="approve a waiting session (requires a signature)")
+    p = sub.add_parser(
+        "approve", help="approve a waiting session (requires a signature)"
+    )
     p.add_argument("session_id")
     p.add_argument("--by", required=True)
-    p.add_argument("--sign", action="store_true", help="sign here and now with Touch ID, or with the 2-of-3 fallback set")
-    p.add_argument("--signature", default=None, help="a signed approval envelope, as JSON or a path to it")
+    p.add_argument(
+        "--sign",
+        action="store_true",
+        help="sign here and now with Touch ID, or with the 2-of-3 fallback set",
+    )
+    p.add_argument(
+        "--signature",
+        default=None,
+        help="a signed approval envelope, as JSON or a path to it",
+    )
     _add_json(p)
     p.set_defaults(func=cmd_approve)
 
-    p = sub.add_parser("model-consensus", help="cp30 -- three models vote via LiteLLM, policy overrules them")
+    p = sub.add_parser(
+        "model-consensus",
+        help="cp30 -- three models vote via LiteLLM, policy overrules them",
+    )
     p.add_argument("--op", required=True, help="the operation to put to the models")
     p.add_argument("--destructive", action="store_true", help="force the 3-model path")
-    p.add_argument("--non-destructive", action="store_true", dest="non_destructive", help="force the single cheap model")
+    p.add_argument(
+        "--non-destructive",
+        action="store_true",
+        dest="non_destructive",
+        help="force the single cheap model",
+    )
     _add_json(p)
     p.set_defaults(func=cmd_model_consensus)
 
-    p = sub.add_parser("identity", help="R31 -- this agent's SPIFFE identity and heartbeat state")
+    p = sub.add_parser(
+        "identity", help="R31 -- this agent's SPIFFE identity and heartbeat state"
+    )
     p.add_argument("--beat", default=None, help="record a heartbeat for this SPIFFE ID")
-    p.add_argument("--miss", default=None, help="record a missed heartbeat for this SPIFFE ID")
-    p.add_argument("--sweep", action="store_true", help="charge a missed beat to every stale identity")
+    p.add_argument(
+        "--miss", default=None, help="record a missed heartbeat for this SPIFFE ID"
+    )
+    p.add_argument(
+        "--sweep",
+        action="store_true",
+        help="charge a missed beat to every stale identity",
+    )
     _add_json(p)
     p.set_defaults(func=cmd_identity)
 
-    p = sub.add_parser("self-check", help="R32 -- evaluate the self-termination conditions")
-    p.add_argument("--low-confidence-streak", type=int, default=0, dest="low_confidence_streak")
+    p = sub.add_parser(
+        "self-check", help="R32 -- evaluate the self-termination conditions"
+    )
+    p.add_argument(
+        "--low-confidence-streak", type=int, default=0, dest="low_confidence_streak"
+    )
     p.add_argument("--last-latency-s", type=float, default=0.0, dest="last_latency_s")
-    p.add_argument("--latency-retries-used", type=int, default=0, dest="latency_retries_used")
-    p.add_argument("--enforce", action="store_true",
-                   help="act on the verdict: halt/soft_halt stop every running session, digest posts one signed digest (crew#284 CP6)")
+    p.add_argument(
+        "--latency-retries-used", type=int, default=0, dest="latency_retries_used"
+    )
+    p.add_argument(
+        "--enforce",
+        action="store_true",
+        help="act on the verdict: halt/soft_halt stop every running session, digest posts one signed digest (crew#284 CP6)",
+    )
     p.add_argument("--by", default="kernel", help="who the stop receipt names")
     _add_json(p)
     p.set_defaults(func=cmd_self_check)
@@ -854,7 +1035,14 @@ def main(argv: list[str] | None = None) -> int:
 
     # Plug-in hook: otto and cockpit register their own subcommands here if
     # their package is present. Absence of either is not an error (cp6).
-    for modname in ("sovereign.otto.cli", "sovereign.cockpit.cli", "sovereign.attach.cli", "sovereign.intake.cli", "sovereign.presence.cli", "sovereign.shadow.cli"):
+    for modname in (
+        "sovereign.otto.cli",
+        "sovereign.cockpit.cli",
+        "sovereign.attach.cli",
+        "sovereign.intake.cli",
+        "sovereign.presence.cli",
+        "sovereign.shadow.cli",
+    ):
         try:
             mod = importlib.import_module(modname)
         except ImportError:
@@ -871,25 +1059,45 @@ def main(argv: list[str] | None = None) -> int:
     def cmd_install_plugin(args: argparse.Namespace) -> int:
         # otto is not importable in this checkout, so there is nothing to delegate to. Say so;
         # a NameError here (crew#325, ruff F821) used to be the only message.
-        _emit({"ok": False, "error": "install-plugin needs sovereign.otto, which this checkout does not import"}, args.json)
+        _emit(
+            {
+                "ok": False,
+                "error": "install-plugin needs sovereign.otto, which this checkout does not import",
+            },
+            args.json,
+        )
         return 2
 
     if "install-plugin" not in sub.choices:
-        p = sub.add_parser("install-plugin", help="install the hermes plugin (delegates to otto.cli)")
+        p = sub.add_parser(
+            "install-plugin", help="install the hermes plugin (delegates to otto.cli)"
+        )
         _add_json(p)
         p.set_defaults(func=cmd_install_plugin)
 
     if "kini" not in sub.choices:
-        p = sub.add_parser("kini", help="KINI checkpoints as one durable workflow (crew#396)")
+        p = sub.add_parser(
+            "kini", help="KINI checkpoints as one durable workflow (crew#396)"
+        )
         ks = p.add_subparsers(dest="kini_command", required=True)
-        pf = ks.add_parser("finish", help="start KiniFinishWorkflow; the worker runs CP1..CP7 with retries and healing")
-        pf.add_argument("--wait", action="store_true", help="block until the workflow returns")
+        pf = ks.add_parser(
+            "finish",
+            help="start KiniFinishWorkflow; the worker runs CP1..CP7 with retries and healing",
+        )
+        pf.add_argument(
+            "--wait", action="store_true", help="block until the workflow returns"
+        )
         _add_json(pf)
         pf.set_defaults(func=cmd_kini)
-        pst = ks.add_parser("status", help="progress of the running (or last) KiniFinishWorkflow")
+        pst = ks.add_parser(
+            "status", help="progress of the running (or last) KiniFinishWorkflow"
+        )
         _add_json(pst)
         pst.set_defaults(func=cmd_kini)
-        prc = ks.add_parser("receipt", help="the state/kini receipt: verdict line then JSON (kini-state CronJob)")
+        prc = ks.add_parser(
+            "receipt",
+            help="the state/kini receipt: verdict line then JSON (kini-state CronJob)",
+        )
         prc.set_defaults(func=cmd_kini, json=True)
 
     args = parser.parse_args(argv)

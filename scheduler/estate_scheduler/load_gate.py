@@ -21,10 +21,14 @@ def load_ceiling(spec: dict, cores: int = CORES) -> float:
     return float(spec.get("max_load_per_core", LOAD_PER_CORE)) * cores
 
 
-def load_verdict(label: str, spec: dict, current: float, cores: int = CORES) -> str | None:
+def load_verdict(
+    label: str, spec: dict, current: float, cores: int = CORES
+) -> str | None:
     """The skip reason, or None when the job may run."""
     ceiling = load_ceiling(spec, cores)
     if current > ceiling:
-        return (f"{label}: load {current:.1f} > {ceiling:.1f} "
-                f"({current / cores:.2f} per core, ceiling {ceiling / cores:.2f})")
+        return (
+            f"{label}: load {current:.1f} > {ceiling:.1f} "
+            f"({current / cores:.2f} per core, ceiling {ceiling / cores:.2f})"
+        )
     return None

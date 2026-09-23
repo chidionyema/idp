@@ -3,8 +3,11 @@ import Timeline from '@material-ui/icons/Timeline';
 import VpnKey from '@material-ui/icons/VpnKey';
 import Extension from '@material-ui/icons/Extension';
 import {
+  CountdownBar,
   StateDonut,
   SystemBars,
+  countdownFraction,
+  countdownState,
   systemIcon,
   SYSTEM_ICON_KEYWORDS,
 } from './visuals';
@@ -109,5 +112,43 @@ describe('systemIcon', () => {
     expect(SYSTEM_ICON_KEYWORDS[0].keywords).toContain('observ');
     expect(SYSTEM_ICON_KEYWORDS[0].icon).toBe(Timeline);
     expect(SYSTEM_ICON_KEYWORDS.map(r => r.keywords.length).every(n => n > 0)).toBe(true);
+  });
+});
+
+describe('CountdownBar (CP2)', () => {
+  it('reads a fraction of the hold, clamped to 0..1 and safe on a bad TTL', () => {
+    expect(countdownFraction(50, 100)).toBe(0.5);
+    expect(countdownFraction(200, 100)).toBe(1);
+    expect(countdownFraction(-5, 100)).toBe(0);
+    expect(countdownFraction(50, 0)).toBe(0);
+  });
+
+  it('calls the sandbox good, running low, or nearly gone by how much hold is left', () => {
+    expect(countdownState(3600_000, 3600_000)).toBe('good');
+    expect(countdownState(1200_000, 3600_000)).toBe('needs');
+    expect(countdownState(300_000, 3600_000)).toBe('red');
+    expect(countdownState(0, 3600_000)).toBe('red');
+  });
+
+  it('draws the bar with an aria sentence and the word, so it is never colour alone', () => {
+    render(<CountdownBar remainingMs={1200_000} ttlMs={3600_000} />);
+    const bar = screen.getByTestId('sandbox-countdown');
+    expect(bar).toHaveAttribute('role', 'img');
+    expect(bar).toHaveAttribute(
+      'aria-label',
+      'Sandbox: 20 minutes left, then it is gone.',
+    );
+    // The word carries the state, so the state survives with no colour at all (rule 24).
+    expect(bar).toHaveTextContent('Sandbox running low');
+    expect(bar).toHaveTextContent('20 minutes left');
+    // The fill is one third of the track.
+    expect(document.querySelector('[data-fill]')).toHaveStyle({ width: '33.33333333333333%' });
+  });
+
+  it('says "gone" and paints red at zero hold', () => {
+    render(<CountdownBar remainingMs={0} ttlMs={3600_000} />);
+    const bar = screen.getByTestId('sandbox-countdown');
+    expect(bar).toHaveAttribute('data-state', 'red');
+    expect(bar).toHaveTextContent('gone');
   });
 });

@@ -2,6 +2,7 @@
 download hit "Recv failure: Connection reset by peer"; rule-guard then refused every merge onto the red
 main. Rule (rung 4): every network download in a workflow retries, so a single peer reset is not a red
 main. Both ways: the real files pass; a stripped copy fails."""
+
 import re
 from pathlib import Path
 

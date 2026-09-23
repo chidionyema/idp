@@ -49,7 +49,13 @@ services:
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     volumes:
       - ./config.yaml:/app/config.yaml:ro
+      # The efficiency gateway and its dependencies, on the path the router imports from.
+      # Same mount as the cluster (platform/llm/litellm.yaml), so both routers run the same
+      # token-optimisation stack and the laptop is a valid integration-test environment.
+      - ../platform/llm/efficiency_gateway.py:/etc/litellm/ceilings/efficiency_gateway.py:ro
     environment:
+      # PYTHONPATH for the efficiency gateway module.
+      PYTHONPATH: /etc/litellm/ceilings
       DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD}@litellm-db:5432/litellm
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}

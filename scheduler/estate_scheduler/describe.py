@@ -24,9 +24,23 @@ from pathlib import Path
 # `python3 founder_board.py --html out.html` by founder_board.py and never by
 # out.html. So: skip interpreters and wrappers, keep only files that are source
 # we own, and take the last one.
-INTERPRETERS = {"python", "python3", "python3.9", "python3.11", "python3.12",
-                "python3.13", "bash", "sh", "zsh", "env", "node", "ruby",
-                "perl", "uv", "uvx"}
+INTERPRETERS = {
+    "python",
+    "python3",
+    "python3.9",
+    "python3.11",
+    "python3.12",
+    "python3.13",
+    "bash",
+    "sh",
+    "zsh",
+    "env",
+    "node",
+    "ruby",
+    "perl",
+    "uv",
+    "uvx",
+}
 
 # A wrapper's own docstring describes the wrapper. Attributing it to the job
 # would put "run a scheduled job under Healthchecks monitoring" on six
@@ -35,8 +49,24 @@ WRAPPERS = {"hc-wrap.sh"}
 
 SOURCE_SUFFIXES = {".py", ".sh", ".bash", ".zsh"}
 # an output path is an argument too: --html board.html, --out report.json
-NOT_SOURCE = {".html", ".json", ".jsonl", ".yml", ".yaml", ".md", ".txt", ".csv",
-              ".log", ".db", ".sqlite", ".png", ".svg", ".xml", ".plist", ".toml"}
+NOT_SOURCE = {
+    ".html",
+    ".json",
+    ".jsonl",
+    ".yml",
+    ".yaml",
+    ".md",
+    ".txt",
+    ".csv",
+    ".log",
+    ".db",
+    ".sqlite",
+    ".png",
+    ".svg",
+    ".xml",
+    ".plist",
+    ".toml",
+}
 
 MAX_LEN = 400
 
@@ -158,12 +188,16 @@ def describe(label: str, spec: dict) -> tuple[str, str]:
     script = target_script(spec.get("command") or [], spec.get("cwd"))
     if script is None:
         cmd = shlex.join(str(a) for a in (spec.get("command") or []))
-        return (f"No description: {label} runs `{cmd}`, which names no readable "
-                f"script this repo can quote. Add `description:` to its entry in "
-                f"scheduler/schedule.yml."), ""
-    return (from_script(script) or
-            f"No description: {script} has no module docstring or header comment. "
-            f"Write one there and this job documents itself."), str(script)
+        return (
+            f"No description: {label} runs `{cmd}`, which names no readable "
+            f"script this repo can quote. Add `description:` to its entry in "
+            f"scheduler/schedule.yml."
+        ), ""
+    return (
+        from_script(script)
+        or f"No description: {script} has no module docstring or header comment. "
+        f"Write one there and this job documents itself."
+    ), str(script)
 
 
 def is_documented(label: str, spec: dict) -> bool:
@@ -186,8 +220,10 @@ def _audit(path) -> int:
         text, source = describe(label, spec[label])
         ok = is_documented(label, spec[label])
         bad += 0 if ok else 1
-        print(f"{'ok  ' if ok else 'FAIL'}  {label}\n        {text[:160]}\n"
-              f"        from {source or '(no readable script)'}")
+        print(
+            f"{'ok  ' if ok else 'FAIL'}  {label}\n        {text[:160]}\n"
+            f"        from {source or '(no readable script)'}"
+        )
     print(f"\n{len(spec) - bad} of {len(spec)} jobs carry a description")
     return 1 if bad else 0
 
@@ -198,13 +234,26 @@ def _selftest() -> int:
     been shown to permit)."""
     here = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
     cases = [
-        ("finds the docstring behind a wrapper and an interpreter",
-         [str(Path.home() / ".claude/scripts/hc-wrap.sh"), "slug", "/usr/bin/python3",
-          str(here / "describe" / "documented.py")], True),
-        ("refuses a script with no docstring",
-         ["/usr/bin/python3", str(here / "describe" / "undocumented.py")], False),
-        ("does not mistake an output path for the script",
-         ["/usr/bin/python3", "--html", str(here / "describe" / "out.html")], False),
+        (
+            "finds the docstring behind a wrapper and an interpreter",
+            [
+                str(Path.home() / ".claude/scripts/hc-wrap.sh"),
+                "slug",
+                "/usr/bin/python3",
+                str(here / "describe" / "documented.py"),
+            ],
+            True,
+        ),
+        (
+            "refuses a script with no docstring",
+            ["/usr/bin/python3", str(here / "describe" / "undocumented.py")],
+            False,
+        ),
+        (
+            "does not mistake an output path for the script",
+            ["/usr/bin/python3", "--html", str(here / "describe" / "out.html")],
+            False,
+        ),
     ]
     bad = 0
     for name, cmd, want in cases:
@@ -220,5 +269,8 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv:
         raise SystemExit(_selftest())
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    raise SystemExit(_audit(args[0] if args else
-                            Path(__file__).resolve().parents[1] / "schedule.yml"))
+    raise SystemExit(
+        _audit(
+            args[0] if args else Path(__file__).resolve().parents[1] / "schedule.yml"
+        )
+    )

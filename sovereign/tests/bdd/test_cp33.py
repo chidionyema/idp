@@ -6,6 +6,7 @@ Temporal `sb up` manages; in this harness neither is running, and the
 rewind reports each as not-running -- the stop path is the same code
 `sb down` runs, not a stand-in.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -35,7 +36,12 @@ def _advance(parent: str, n: int, start_ts: int) -> list[str]:
     out: list[str] = []
     for i in range(n):
         key = STATE_KEYS[i % len(STATE_KEYS)]
-        parent, _body = dag.write_node({key: f"{key}@{start_ts + i}"}, parent, timestamp=start_ts + i, budget_remaining=1000 - i)
+        parent, _body = dag.write_node(
+            {key: f"{key}@{start_ts + i}"},
+            parent,
+            timestamp=start_ts + i,
+            budget_remaining=1000 - i,
+        )
         out.append(parent)
     return out
 
@@ -50,7 +56,9 @@ def _advanced(context: dict[str, Any], dag_root: Path, n: int) -> None:
     tip = after_h[-1]
     dag.write_head(dag.main_head_name(), tip)
     checkpoint.rebuild_views(tip)
-    context.update(H=h, tip=tip, all_nodes=before_h + after_h, state_at_H=dag.materialize(h))
+    context.update(
+        H=h, tip=tip, all_nodes=before_h + after_h, state_at_H=dag.materialize(h)
+    )
     assert set(context["state_at_H"]) == set(STATE_KEYS)
     assert dag.materialize(tip) != context["state_at_H"]
 
@@ -62,12 +70,17 @@ def _run_rewind(context: dict[str, Any], sb) -> None:
     context["out"] = res.json()
 
 
-@then("services are stopped, heads/main is H, projection views are rebuilt from the DAG")
+@then(
+    "services are stopped, heads/main is H, projection views are rebuilt from the DAG"
+)
 def _stopped_head_views(context: dict[str, Any], config) -> None:
     from sovereign.engine import checkpoint, dag
 
     out = context["out"]
-    assert out["services_stopped"] and all(v in ("not-running",) or v.startswith("stopped") for v in out["services_stopped"].values()), out["services_stopped"]
+    assert out["services_stopped"] and all(
+        v in ("not-running",) or v.startswith("stopped")
+        for v in out["services_stopped"].values()
+    ), out["services_stopped"]
     assert dag.read_head(dag.main_head_name())["root"] == context["H"]
     view = checkpoint.read_main_view()
     assert view and view["root"] == context["H"]
@@ -89,7 +102,11 @@ def _nothing_deleted(context: dict[str, Any]) -> None:
 
     for h in context["all_nodes"]:
         assert dag.read_node(h) is not None, h
-    assert context["out"]["nodes_after"] == context["out"]["nodes_before"] == len(context["all_nodes"])
+    assert (
+        context["out"]["nodes_after"]
+        == context["out"]["nodes_before"]
+        == len(context["all_nodes"])
+    )
     assert dag.verify(context["tip"])["verified"]
 
 

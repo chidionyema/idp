@@ -1,6 +1,7 @@
 """Binds features/stale_pr.feature (crew#299, crew#504). actions/stale owns the clock; the estate owns
 its inputs, so the steps read .github/workflows/stale.yml for real and grade what the action is told.
 actions/stale v11 parses days-before-pr-close with parseInt, so a same-run close is 0, never 0.5."""
+
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,12 @@ def _workflow() -> dict:
 
 def _inputs() -> dict:
     wf = _workflow()
-    steps = [s for j in wf["jobs"].values() for s in j["steps"] if str(s.get("uses", "")).startswith("actions/stale@")]
+    steps = [
+        s
+        for j in wf["jobs"].values()
+        for s in j["steps"]
+        if str(s.get("uses", "")).startswith("actions/stale@")
+    ]
     assert len(steps) == 1, "stale.yml must run actions/stale exactly once"
     return steps[0]["with"]
 

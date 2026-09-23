@@ -91,7 +91,29 @@ const fleetPage = PageBlueprint.make({
   name: 'fleet',
   params: {
     path: '/fleet',
-    loader: () => import('./Fleet').then(m => <m.Fleet />),
+    // THE FOUNDER'S FLEET REACTOR 2100 IS THE PAGE.
+    //
+    // Until now /fleet rendered ./Fleet -- a Backstage shell wrapping a 2D canvas that was
+    // written for an earlier spec. The founder's Reactor (room/ui/FleetReactorApp.tsx, 549 lines
+    // of their own code: WebGL scene, concentric holographic meshes, spatial radial menu, blast
+    // radius sonar, orbital camera) was on disk and on NO ROUTE AT ALL, so it could never be seen
+    // in the browser. Every claim about it was measured in a standalone preview of a file nobody
+    // could open.
+    //
+    // It mounts here, at /fleet, full-bleed, with no Backstage chrome around it because the
+    // component draws its own HUD.
+    //
+    // `noHeader` IS WHAT MAKES THAT TRUE, AND IT WAS MISSING. The comment claimed full-bleed and
+    // the page did not get it: measured 2026-09-20 by sampling the rendered pixels, the top 97
+    // pixels were Backstage's own `bui-PluginHeaderToolbar` in near-white rgb(245,245,245), and the
+    // room's dark background only began at y=97. So the page was a titled panel containing a 3-D
+    // view rather than the full-bleed room the design and this comment both describe -- and no
+    // amount of CSS in FleetReactorApp could fix it, because the chrome sits ABOVE the component.
+    //
+    // Backstage's own docs for the flag: "Hide the default plugin page header, making the page fill
+    // up all available space." That is the sentence this comment was paraphrasing all along.
+    noHeader: true,
+    loader: () => import('../room/ui/FleetReactorApp').then(m => <m.default />),
   },
 });
 

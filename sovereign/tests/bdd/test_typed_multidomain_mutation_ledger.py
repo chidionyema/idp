@@ -202,7 +202,15 @@ GOOD_SQL = "CREATE TABLE mutdoor_widgets (id INTEGER PRIMARY KEY, name TEXT);\n"
 BROKEN_SQL = "CREATE TABLE mutdoor_widgets (id INTEGER PRIMARY KEY, name TEXT NOT VALID GARBAGE HERE);\n"
 
 
-def _propose(context, *, code="", manifest="", sql="", tests="", claim=""):
+def _propose(
+    context, *, code="", manifest="", sql="", tests="", claim="", envelope="DEFAULT"
+):
+    # A proposal must carry a reversibility envelope (ADR 0024) or `verify_mutation` refuses it
+    # with NO_INVERSE. Every setup proposal in this suite is a reversible mutation, so the
+    # default envelope is the well-formed one; the scenarios that deliberately test a MISSING or
+    # defective envelope pass `envelope=None` or their own mapping.
+    if envelope == "DEFAULT":
+        envelope = _default_envelope(code=code, manifest=manifest, sql=sql)
     return context["door"].request(
         {
             "verb": "propose_mutation",
@@ -211,8 +219,37 @@ def _propose(context, *, code="", manifest="", sql="", tests="", claim=""):
             "sql_migration": sql,
             "tests": tests,
             "claim": claim,
+            "envelope": envelope,
         }
     )
+
+
+def _default_envelope(*, code="", manifest="", sql=""):
+    """The inverse a benign ledger mutation declares: apply the bundle, delete it to undo."""
+    return {
+        "mutation_id": "ldg-mutdoor-default",
+        "target": "deployment/mutdoor",
+        "forward": {
+            "action": "apply_bundle",
+            "parameters": {
+                "code": bool(code),
+                "manifest": bool(manifest),
+                "sql": bool(sql),
+            },
+        },
+        "inverse_spec": {
+            "type": "deterministic_inverse",
+            "action": "delete_bundle",
+            "parameters": {
+                "code": bool(code),
+                "manifest": bool(manifest),
+                "sql": bool(sql),
+            },
+            "verification_probe": (
+                "the estate's checkout reports no mutdoor_* file from this ledger"
+            ),
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -560,3 +597,297 @@ def pr_required_is_true(context: dict[str, Any]) -> None:
     assert context["admission"].get("pr_required") is True, (
         f"admit_mutation must never claim to have merged: {context['admission']!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Rule: a mutation carries a pre-validated inverse or it is refused (ADR 0024).
+#
+# OPERATIONAL proof, not a shape check: every scenario below drives the LIVE daemon over its
+# real socket and asserts what `verify_mutation` actually answered. The gate's own unit tests
+# (tests/test_reversibility_gate.py) prove the gate discriminates; these prove the DOOR asks,
+# on every mutation, and refuses before the gauntlet runs.
+# ---------------------------------------------------------------------------
+
+# A well-formed deterministic inverse over the mutdoor fixture. The forward action and the
+# inverse action differ, and the probe is a deterministic state assertion, so this is the
+# "pass" half that proves the door is not a blanket refusal.
+GOOD_INVERSE_ENVELOPE = {
+    "mutation_id": "ldg-mutdoor-reversible",
+    "target": "deployment/mutdoor",
+    "forward": {
+        "action": "apply_manifest",
+        "parameters": {"path": "mutdoor_deploy.yaml", "replicas": 3},
+    },
+    "inverse_spec": {
+        "type": "deterministic_inverse",
+        "action": "delete_manifest",
+        "parameters": {"path": "mutdoor_deploy.yaml"},
+        "verification_probe": (
+            "kubectl get deployment mutdoor -o jsonpath='{.metadata.name}' == "
+            "ErrorFromServer/NotFound"
+        ),
+    },
+}
+
+ECHO_INVERSE_ENVELOPE = {
+    "mutation_id": "ldg-mutdoor-echo",
+    "target": "deployment/mutdoor",
+    "forward": {
+        "action": "apply_manifest",
+        "parameters": {"path": "mutdoor_deploy.yaml", "replicas": 3},
+    },
+    "inverse_spec": {
+        "type": "deterministic_inverse",
+        "action": "apply_manifest",
+        "parameters": {"path": "mutdoor_deploy.yaml", "replicas": 3},
+        "verification_probe": "kubectl get deployment mutdoor == mutdoor",
+    },
+}
+
+FORGED_EXEMPTION_ENVELOPE = {
+    "mutation_id": "ldg-mutdoor-forged",
+    "target": "bucket/mutdoor-archive",
+    "subject": "sha256:" + "7f" * 32,
+    "forward": {
+        "action": "drop_bucket",
+        "parameters": {"bucket_name": "mutdoor-archive"},
+    },
+    "inverse_spec": {
+        "type": "irreversible_exemption",
+        "justification": (
+            "An exemption claimed without a signature, over a destructive forward action."
+        ),
+        "attestation": {
+            "scheme": "estate-ed25519",
+            "subject": "sha256:" + "7f" * 32,
+            # The base64 of the literal "sig-live-quorum-..." -- the shape the REJECTED design
+            # accepted by startswith. The door must refuse it on the signature, not the prefix.
+            "public_key": "AAAA",
+            "signature": "c2lnLWxpdmUtcXVvcnVtLWZvcmdlZHRva2Vu",
+        },
+    },
+}
+
+
+def _propose_with_envelope(context, envelope):
+    return context["door"].request(
+        {
+            "verb": "propose_mutation",
+            "code_patch": GOOD_CODE_PATCH,
+            "manifest_patch": GOOD_MANIFEST_PATCH,
+            "sql_migration": "",
+            "tests": "def test_add():\n    from mutdoor_code import add\n    assert add(1, 2) == 3\n",
+            "claim": "a mutation whose reversibility is graded by the door",
+            "envelope": envelope,
+        }
+    )
+
+
+@given(
+    'an agent has proposed a mutation touching "code, manifest, sql" with no envelope'
+)
+def an_agent_has_proposed_with_no_envelope(context: dict[str, Any], door: Door) -> None:
+    context["door"] = door
+    proposal = _propose(
+        context,
+        code=GOOD_CODE_PATCH,
+        manifest=GOOD_MANIFEST_PATCH,
+        sql=GOOD_SQL,
+        tests="def test_add():\n    from mutdoor_code import add\n    assert add(1, 2) == 3\n",
+        claim="a mutation with no reversibility envelope",
+        envelope=None,
+    )
+    assert proposal.get("ok") is True, f"setup proposal was refused: {proposal!r}"
+    context["ledger_id"] = proposal["ledger_id"]
+
+
+@given(
+    "an agent has proposed a mutation whose envelope answers the forward with itself"
+)
+def an_agent_has_proposed_an_echo_inverse(context: dict[str, Any], door: Door) -> None:
+    context["door"] = door
+    proposal = _propose_with_envelope(context, ECHO_INVERSE_ENVELOPE)
+    assert proposal.get("ok") is True, f"setup proposal was refused: {proposal!r}"
+    context["ledger_id"] = proposal["ledger_id"]
+
+
+@given(
+    "an agent has proposed a destructive mutation claiming an exemption it did not sign"
+)
+def an_agent_has_proposed_a_forged_exemption(
+    context: dict[str, Any], door: Door
+) -> None:
+    context["door"] = door
+    proposal = _propose_with_envelope(context, FORGED_EXEMPTION_ENVELOPE)
+    assert proposal.get("ok") is True, f"setup proposal was refused: {proposal!r}"
+    context["ledger_id"] = proposal["ledger_id"]
+
+
+@given("an agent has proposed a reversible mutation with a deterministic inverse")
+def an_agent_has_proposed_a_reversible_mutation(
+    context: dict[str, Any], door: Door
+) -> None:
+    context["door"] = door
+    proposal = _propose_with_envelope(context, GOOD_INVERSE_ENVELOPE)
+    assert proposal.get("ok") is True, f"setup proposal was refused: {proposal!r}"
+    context["ledger_id"] = proposal["ledger_id"]
+
+
+@then(parsers.parse('the bundle is refused with violation code "{code}"'))
+def the_bundle_is_refused_with_code(context: dict[str, Any], code: str) -> None:
+    verdict = context["verdict"]
+    assert verdict.get("ok") is False, (
+        f"a proposal with no verifiable inverse was admitted: {verdict!r}"
+    )
+    assert verdict.get("admissible") is False, (
+        f"the bundle was marked admissible despite having no inverse: {verdict!r}"
+    )
+    assert verdict.get("violation_code") == code, (
+        f"expected violation_code {code!r}, got {verdict.get('violation_code')!r}: {verdict!r}"
+    )
+
+
+@then("the refusal names the missing envelope, not a paraphrase")
+def the_refusal_names_the_envelope(context: dict[str, Any]) -> None:
+    error = context["verdict"].get("error", "")
+    assert "no mutation envelope" in error, (
+        f"the refusal does not name the missing envelope: {error!r}"
+    )
+
+
+@then("the refusal names an inverse that reverses nothing")
+def the_refusal_names_the_echo(context: dict[str, Any]) -> None:
+    error = context["verdict"].get("error", "")
+    assert "No inverse" in error or "NO_INVERSE" in error, (
+        f"the refusal does not name the inverse defect: {error!r}"
+    )
+    assert "cannot match forward action" in error or "reverses nothing" in error, (
+        f"the refusal does not name the echo: {error!r}"
+    )
+
+
+@then("the refusal is a signature verdict, not a prefix match")
+def the_refusal_is_a_signature_verdict(context: dict[str, Any]) -> None:
+    error = context["verdict"].get("error", "")
+    assert "did not verify" in error, (
+        f"the forged exemption was not refused on its signature: {error!r}"
+    )
+    assert "sig-live-quorum" not in error, (
+        "the refusal names the token prefix -- that is the check that was removed"
+    )
+
+
+@then("the inverse is accepted and the bundle is graded on its own merits")
+def the_inverse_is_accepted(context: dict[str, Any]) -> None:
+    verdict = context["verdict"]
+    assert verdict.get("violation_code") != "NO_INVERSE", (
+        f"a valid inverse was refused: {verdict!r}"
+    )
+    # The door's verdict must be the gauntlet's, not a reversibility refusal: whatever the
+    # gauntlet says about the code, the inverse itself was accepted.
+    assert "no mutation envelope" not in verdict.get("error", ""), (
+        f"the envelope was read as absent: {verdict!r}"
+    )
+    assert "did not verify" not in verdict.get("error", ""), (
+        f"the signature path refused a plain deterministic inverse: {verdict!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rule: a declared probe is EXECUTED, not read as a string.
+#
+# The empirical proof the estate requires. The daemon's `verify_inverse` verb runs the probe
+# command against the real OS and answers with the machine's own exit code -- so this scenario
+# creates a real file, has the daemon probe for its absence (fails), deletes it (the inverse),
+# and probes again (passes). A probe that merely existed as a string could not do any of that.
+# ---------------------------------------------------------------------------
+
+
+@given("a forward mutation has created a file on the real filesystem")
+def a_forward_mutation_created_a_file(context: dict[str, Any], tmp_path: Path) -> None:
+    context["artifact"] = tmp_path / "mutdoor_forward_artifact.txt"
+    context["artifact"].write_text("state the forward mutation created\n")
+    context["probe"] = f"test ! -e {context['artifact']}"
+    context["rollback_cwd"] = str(tmp_path)
+
+
+@when("the rollback path performs the inverse")
+def the_rollback_path_performs_the_inverse(context: dict[str, Any], door: Door) -> None:
+    context["door"] = door
+    # Probe BEFORE the inverse: the file the forward created is still present, so the declared
+    # assertion ("the artifact is gone") must not hold. This is the half a shape-check cannot do.
+    context["probe_before"] = door.request(
+        {
+            "verb": "verify_inverse",
+            "probe": context["probe"],
+            "cwd": context["rollback_cwd"],
+        }
+    )
+    context["artifact"].unlink()  # the inverse itself
+    context["probe_after"] = door.request(
+        {
+            "verb": "verify_inverse",
+            "probe": context["probe"],
+            "cwd": context["rollback_cwd"],
+        }
+    )
+
+
+@then("verify_inverse runs the declared probe and reports the machine's exit code")
+def verify_inverse_ran_the_probe(context: dict[str, Any]) -> None:
+    before = context["probe_before"]
+    after = context["probe_after"]
+    assert before.get("executed") is True, (
+        f"the probe was not executed -- it was read as a string: {before!r}"
+    )
+    assert after.get("executed") is True, (
+        f"the probe was not executed after the inverse: {after!r}"
+    )
+    assert isinstance(before.get("exit_code"), int), (
+        f"no real exit code came back from the machine: {before!r}"
+    )
+    assert isinstance(after.get("exit_code"), int), (
+        f"no real exit code came back from the machine: {after!r}"
+    )
+
+
+@then("the probe holds only after the inverse has run")
+def the_probe_holds_only_after(context: dict[str, Any]) -> None:
+    before = context["probe_before"]
+    after = context["probe_after"]
+    assert before.get("passed") is False, (
+        f"the probe passed while the forward state was still present: {before!r}"
+    )
+    assert before.get("exit_code") != 0, before
+    assert after.get("passed") is True, (
+        f"the probe did not hold after the inverse ran: {after!r}"
+    )
+    assert after.get("exit_code") == 0, after
+
+
+# ---------------------------------------------------------------------------
+# Rule: admission DELIVERS -- the gateway pushes the branch and opens the PR.
+#
+# The path ADR 0025 describes only works if the last step exists: the agent never runs git, so
+# the executor must push the branch and open its pull request, or the admitted mutation sits as
+# a local ref that Greenlane Row 3 can never see. These steps assert delivery was ATTEMPTED and
+# its outcome REPORTED -- fail-soft, because the test checkout has no writable origin and a
+# failed push must still leave the mutation admitted (an admitted change is never lost to a
+# delivery error).
+# ---------------------------------------------------------------------------
+
+
+@then("the admission reports its delivery outcome")
+def the_admission_reports_its_delivery(context: dict[str, Any]) -> None:
+    reply = context["admission"]
+    assert "pushed" in reply, (
+        f"the admit reply says nothing about delivery: {reply!r}. Without this the branch sits "
+        f"local and Greenlane Row 3 never sees a pull request."
+    )
+    # Fail-soft contract: whatever happened, the mutation is still admitted and the reason is
+    # named. A push that could not happen must not read as success, and must not lose the work.
+    if reply.get("pushed") is False:
+        assert reply.get("delivery_error"), (
+            f"delivery failed without saying why: {reply!r}"
+        )
+    assert reply.get("admitted_path"), reply

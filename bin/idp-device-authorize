@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+"""The local half of the device-authorization handoff.
+
+WHERE THIS SITS (founder's ruling, 2026-09-18): "Keep key delivery out of the portal. The
+[Authorize this device] button becomes a guided local handoff, not a browser-based key-delivery
+flow." So the division is:
+
+    PORTAL   shows state, opens `idp-device://authorize?challenge=<opaque nonce>`, and holds
+             nothing. It never sees a key, a token, or a vault credential.
+    THIS     runs on the device, holds the cloud identity that reads the vault, and performs
+             the actual delivery through `bin/idp-mac-secret-deliver` -- the trusted local
+             mechanism that already refuses an agent session by design.
+
+The portal cannot reach this file. This file does not exist in the portal's image. The only
+thing that crosses between them is the nonce, which is what makes the handoff safe to put in a
+URL at all.
+
+    bin/idp-device-authorize --url 'idp-device://authorize?challenge=...'
+    bin/idp-device-authorize --challenge <nonce>
+    bin/idp-device-authorize --install      # register the idp-device:// scheme handler
+    bin/idp-device-authorize --check        # is a key on this device? (delegates to idp-jit)
+
+WHAT IT REFUSES. A challenge that is not the shape the portal issues (see handoff.py's
+`is_well_formed_challenge`); a challenge that is not the one the portal most recently minted,
+when this device is the portal's own host; and any run where the vault read fails, which is the
+same loud failure `bin/idp-mac-secret-deliver` already has. It never prints a secret: it prints
+the path it wrote and a hash prefix, exactly as the delivery tool does.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.parse
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parent.parent
+DELIVER = IDP / "bin" / "idp-mac-secret-deliver"
+LABEL = "com.estate.device-authorize"
+
+# The one engine the portal issues challenges for. Named here rather than inferred, because a
+# helper that accepts any key name is a helper that can be pointed at the wrong secret.
+ENTRY = "jit-broker"
+KEY = "JIT_AGENT_KEY"
+OUT = "~/.local/state/idp/agent-key"
+SERVICE = "local"
+
+# Single-use and short-lived: the portal writes the challenge it minted, and this refuses
+# anything else. A file rather than an env var so a scheme-launched process can see it.
+CHALLENGE_FILE = "~/.local/state/idp/pending-challenge"
+
+
+def challenge_path() -> Path:
+    return Path(os.path.expanduser(CHALLENGE_FILE))
+
+
+def read_pending() -> dict | None:
+    try:
+        doc = json.loads(challenge_path().read_text())
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def write_pending(challenge: str) -> None:
+    p = challenge_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        json.dump({"challenge": challenge, "at": int(time.time())}, fh)
+
+
+def well_formed(challenge: str) -> bool:
+    """The same shape handoff.py issues: base64url-ish, 32-64 chars, nothing else."""
+    return bool(re.fullmatch(r"[A-Za-z0-9_-]{32,64}", challenge or ""))
+
+
+def extract_challenge(url: str | None, challenge: str | None) -> str | None:
+    if challenge:
+        return challenge
+    if not url:
+        return None
+    try:
+        q = urllib.parse.urlparse(url)
+    except ValueError:
+        return None
+    if q.scheme and q.scheme != "idp-device":
+        return None
+    return urllib.parse.parse_qs(q.query).get("challenge", [None])[0]
+
+
+def authorize(challenge: str, *, quiet: bool) -> int:
+    if not well_formed(challenge):
+        print(f"refused: challenge is not the shape the portal issues", file=sys.stderr)
+        return 2
+
+    pending = read_pending()
+    # The portal mints the challenge and records it; this is the other half of that. A helper
+    # run without a matching pending challenge is either a stale URL or a hand-made one, and
+    # both should be refused rather than treated as a fresh authorization.
+    if pending and pending.get("challenge") != challenge:
+        print("refused: this challenge is not the one this device is waiting for", file=sys.stderr)
+        return 2
+    if pending:
+        age = int(time.time()) - int(pending.get("at") or 0)
+        if age > 600:
+            print(f"refused: the challenge expired {age}s ago; ask the portal again", file=sys.stderr)
+            return 2
+
+    if not DELIVER.exists():
+        print(f"cannot deliver: {DELIVER} does not exist", file=sys.stderr)
+        return 1
+
+    # The delivery itself. `--service local` keeps the write inside ~/.local, and the tool
+    # enforces that boundary itself; this does not re-implement the check.
+    p = subprocess.run(
+        [
+            str(DELIVER),
+            "--entry", ENTRY,
+            "--key", KEY,
+            "--out", OUT,
+            "--service", SERVICE,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if p.stdout and not quiet:
+        # The tool prints only a path and a hash prefix; passing it through keeps one place
+        # that decides what is safe to say.
+        sys.stdout.write(p.stdout)
+    if p.returncode != 0:
+        print(p.stderr.strip()[:400] or "delivery failed", file=sys.stderr)
+        print(
+            "  cause  the vault is unreadable by this device's identity\n"
+            "  fix    the same one-time browser login the runbook names; this helper does not\n"
+            "         hold a cloud identity of its own",
+            file=sys.stderr,
+        )
+        return p.returncode
+
+    if not quiet:
+        print("authorized -- this device can now read the cluster; renews itself every 10 minutes")
+    # Consume the challenge: single use, so a replayed URL does nothing.
+    try:
+        challenge_path().unlink()
+    except OSError:
+        pass
+    return 0
+
+
+def install(quiet: bool) -> int:
+    """Register the idp-device:// scheme so the portal's button can reach this helper.
+
+    A LaunchServices bundle is the only thing macOS will route a custom scheme to, so this
+    writes a minimal app bundle whose only job is to exec this script with the incoming URL.
+    Deliberately minimal: no icon, no window, no state.
+    """
+    apps = Path.home() / "Applications"
+    app = apps / "IDPDeviceAuthorize.app"
+    macos = app / "Contents" / "MacOS"
+    macos.mkdir(parents=True, exist_ok=True)
+
+    runner = macos / "IDPDeviceAuthorize"
+    runner.write_text(
+        "#!/bin/bash\n"
+        "# Written by bin/idp-device-authorize --install. Forwards the URL to the helper.\n"
+        f'exec "{Path(__file__).resolve()}" --url "$1"\n'
+    )
+    runner.chmod(0o755)
+
+    (app / "Contents" / "Info.plist").write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>com.estate.device-authorize</string>
+  <key>CFBundleName</key><string>IDPDeviceAuthorize</string>
+  <key>CFBundleExecutable</key><string>IDPDeviceAuthorize</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>com.estate.device-authorize</string>
+      <key>CFBundleURLSchemes</key><array><string>idp-device</string></array>
+    </dict>
+  </array>
+</dict>
+</plist>
+"""
+    )
+    # Ask LaunchServices to notice it now rather than at next login.
+    lsregister = (
+        "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
+        "LaunchServices.framework/Support/lsregister"
+    )
+    if os.path.exists(lsregister):
+        subprocess.run([lsregister, "-f", str(app)], capture_output=True, check=False)
+    if not quiet:
+        print(f"installed  {app}")
+        print("           the portal's button now opens this helper; no terminal")
+    return 0
+
+
+def present() -> bool:
+    return (Path.home() / "Applications" / "IDPDeviceAuthorize.app").exists()
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--url", help="the idp-device:// URL the portal opened")
+    ap.add_argument("--challenge", help="the bare challenge, when calling by hand")
+    ap.add_argument("--install", action="store_true", help="register the idp-device:// handler")
+    ap.add_argument("--check", action="store_true", help="report whether a handler and key exist")
+    ap.add_argument("--mint", action="store_true", help="mint and record a challenge (portal side)")
+    ap.add_argument("--quiet", action="store_true")
+    a = ap.parse_args()
+
+    if a.install:
+        return install(a.quiet)
+    if a.check:
+        print(json.dumps({"helper_present": present(), "entry": ENTRY, "key": KEY}))
+        return 0
+    if a.mint:
+        import secrets as _s
+
+        c = _s.token_urlsafe(32)[:64]
+        write_pending(c)
+        print(json.dumps({"challenge": c, "url": f"idp-device://authorize?challenge={c}"}))
+        return 0
+
+    challenge = extract_challenge(a.url, a.challenge)
+    if not challenge:
+        print(
+            "nothing to do: pass --url or --challenge.\n"
+            "  the portal's button creates the URL; --install registers the handler for it",
+            file=sys.stderr,
+        )
+        return 2
+    return authorize(challenge, quiet=a.quiet)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -4,6 +4,7 @@
 Never opens maestro's real database -- every test builds its own
 disposable sqlite3 file, same pattern as test_sidecar.py.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -42,19 +43,26 @@ class DualReadTestBase(unittest.TestCase):
             p = patch.object(config, name, val)
             p.start()
             self.addCleanup(p.stop)
-        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
+        p = patch.object(
+            receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file")
+        )
         p.start()
         self.addCleanup(p.stop)
 
         self.db_path = root / "legacy.db"
         self.conn = sqlite3.connect(str(self.db_path))
-        self.conn.execute("CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)")
+        self.conn.execute(
+            "CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)"
+        )
         self.conn.commit()
         self.addCleanup(self.conn.close)
         self.sc = sidecar_core.attach(self.conn, "episodes", dag_dir=self.dag_dir)
 
     def _insert(self, row_id: str, lane: str, note: str) -> int:
-        cur = self.conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)", (row_id, lane, note))
+        cur = self.conn.execute(
+            "INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)",
+            (row_id, lane, note),
+        )
         self.conn.commit()
         return cur.lastrowid
 
@@ -63,7 +71,9 @@ class DualReadTestBase(unittest.TestCase):
 
 
 class DualReadPropertyTest(DualReadTestBase):
-    def test_property_1000_drained_reads_all_match_and_p95_overhead_is_under_budget(self) -> None:
+    def test_property_1000_drained_reads_all_match_and_p95_overhead_is_under_budget(
+        self,
+    ) -> None:
         overheads: list[float] = []
         for i in range(1000):
             rowid = self._insert(f"ep-{i}", "ops", f"note-{i}")
@@ -74,7 +84,9 @@ class DualReadPropertyTest(DualReadTestBase):
 
         p95 = statistics.quantiles(overheads, n=100)[94]
         self.assertLess(
-            p95, config.DUALREAD_MAX_OVERHEAD_MS, f"p95 router overhead {p95:.3f}ms over budget {config.DUALREAD_MAX_OVERHEAD_MS}ms"
+            p95,
+            config.DUALREAD_MAX_OVERHEAD_MS,
+            f"p95 router overhead {p95:.3f}ms over budget {config.DUALREAD_MAX_OVERHEAD_MS}ms",
         )
 
         write_receipts = self._receipts_of_kind("dualread")
@@ -90,11 +102,16 @@ class DualReadPropertyTest(DualReadTestBase):
 
         result = dualread.read(self.conn, "episodes", rowid, dag_dir=self.dag_dir)
         self.assertIsNone(result["row"])
-        self.assertTrue(result["match"], "legacy None and DAG-deleted None must match, not silently skip")
+        self.assertTrue(
+            result["match"],
+            "legacy None and DAG-deleted None must match, not silently skip",
+        )
 
 
 class DualReadIncidentTest(DualReadTestBase):
-    def test_incident_cp10_no_shadow_head_yet_reports_mismatch_not_a_crash(self) -> None:
+    def test_incident_cp10_no_shadow_head_yet_reports_mismatch_not_a_crash(
+        self,
+    ) -> None:
         # Written but never drained -- .estate/heads/shadow_main does not
         # exist yet. The router must not raise, and must not report a
         # false match by swallowing the missing-head case into "row=None
@@ -105,7 +122,9 @@ class DualReadIncidentTest(DualReadTestBase):
         result = dualread.read(self.conn, "episodes", rowid, dag_dir=self.dag_dir)
 
         self.assertIsNotNone(result["row"], "legacy read must still succeed")
-        self.assertFalse(result["match"], "an undrained row is a real mismatch, not a silent pass")
+        self.assertFalse(
+            result["match"], "an undrained row is a real mismatch, not a silent pass"
+        )
         degraded = self._receipts_of_kind("dualread")
         self.assertEqual(len(degraded), 1)
         self.assertFalse(degraded[0]["match"])

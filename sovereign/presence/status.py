@@ -8,6 +8,7 @@ reads; `ghost_line` renders the founder's one line. Neither carries
 per-session detail -- that only exists once the founder clicks into
 Spatial (GET /api/spatial).
 """
+
 from __future__ import annotations
 
 from typing import Any

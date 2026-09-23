@@ -27,6 +27,7 @@ from the bus. The registry is a small JSON file under $ESTATE_HOME so the
 CLI and the worker (two processes) see the same revocations; it is state,
 not an audit trail, so it is not the signed receipt chain.
 """
+
 from __future__ import annotations
 
 import getpass
@@ -72,7 +73,11 @@ def _socket_path(addr: str) -> str:
 def _dev_identity(reason: str) -> dict[str, Any]:
     """An identity that is obviously not attested, and says why."""
     return {
-        "spiffe_id": make_id(str(ck.get("spiffe.dev_path_prefix")), getpass.getuser(), socket.gethostname()),
+        "spiffe_id": make_id(
+            str(ck.get("spiffe.dev_path_prefix")),
+            getpass.getuser(),
+            socket.gethostname(),
+        ),
         "source": str(ck.get("spiffe.dev_fallback_label")),
         "trusted": False,
         "reason": reason,

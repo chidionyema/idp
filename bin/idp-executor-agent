@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""idp-executor-agent -- start the executor daemon at login, on this machine, with no human step.
+
+WHAT THIS IS FOR. Founder, 2026-09-20: "the daemon should be auto, no one should have to recall to
+install it." Measured the same day, the daemon was reachable only by an agent typing
+`bin/exec-daemon` by hand: nothing on the machine started it, nothing restarted it after a crash,
+and a reboot lost it silently. Every contract then dead-ended at `no socket`, and the estate
+reported that as an outage rather than a missing row.
+
+WHY THIS IS NOT bin/idp-executor-install. That file builds the OTHER half of the boundary: a
+dedicated uid and a root LaunchDaemon, so the agent cannot rewrite what answers. It is a real
+control and it still needs `sudo` and a person (LAW 54). This file is the half that makes the
+executor RUN -- a per-user LaunchAgent the owner installs for themselves, no root, no password.
+
+Do not merge the two. A boundary that cannot be installed without a person is a boundary that is
+absent until someone remembers; a daemon that cannot run without root is a daemon that is absent
+on every machine whose owner has not been told. They fail in opposite directions and both were
+observed here.
+
+WHAT IT DOES
+  1. renders launchd/ai.estate.executor.plist.tmpl with this machine's python3 and checkout path
+  2. writes it to ~/Library/LaunchAgents/ai.estate.executor.plist (ours, owner-writable, no root)
+  3. bootout/bootstrap it, so a re-run replaces the job rather than stacking a second one
+  4. WAITS for the socket and asks the daemon a real question, so "installed" is never reported
+     from the exit code of launchctl alone -- the measured failure this whole session was a
+     capability that reported success and started nothing
+
+  --check     prove the inputs exist and the plist renders; change nothing
+  --status    report whether the job is loaded and the socket answers
+  --uninstall remove the LaunchAgent; leaves the socket file and the run logs alone
+
+Exit 0 done, 1 refused, 2 the daemon did not come up (a real failure, named).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+# Derive, never type (LAW 46). bin/ is at the checkout root.
+IDP = Path(os.environ.get("IDP_ROOT") or Path(__file__).resolve().parent.parent)
+TEMPLATE = IDP / "launchd" / "ai.estate.executor.plist.tmpl"
+LABEL = "ai.estate.executor"
+DEST = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+SOCKET = Path(
+    os.environ.get("IDP_EXECUTOR_SOCKET")
+    or (Path.home() / ".estate" / "executor.sock")
+)
+DAEMON = IDP / "platform" / "executor" / "daemon.py"
+
+
+def say(*parts: object) -> None:
+    print(*parts)
+
+
+def find_python() -> str:
+    """The interpreter launchd will name. An absolute path is required: launchd does not search PATH.
+
+    This is also what keeps the job out of TCC's way -- see the template's note. Naming the bash
+    wrapper dies with exit 126; naming python3 and passing the daemon as an argument works.
+    """
+    for candidate in ("/usr/local/bin/python3", "/opt/homebrew/bin/python3", "/usr/bin/python3"):
+        if os.access(candidate, os.X_OK):
+            return candidate
+    found = subprocess.run(["command", "-v", "python3"], shell=True, capture_output=True, text=True)
+    return found.stdout.strip()
+
+
+def render() -> str:
+    text = TEMPLATE.read_text()
+    subs = {
+        "IDP": str(IDP),
+        "HOME": str(Path.home()),
+        "PYTHON": find_python(),
+        "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+    }
+    for key, value in subs.items():
+        text = text.replace("${" + key + "}", value)
+    # A template variable left unsubstituted is written to the plist and launchd silently runs
+    # something else -- refuse instead of shipping a literal "${PYTHON}".
+    leftover = re.search(r"\$\{[A-Z_]+\}", text)
+    if leftover:
+        raise SystemExit(f"FAIL template variable not substituted: {leftover.group(0)}")
+    return text
+
+
+def uid() -> str:
+    return str(os.getuid())
+
+
+def loaded() -> bool:
+    return (
+        subprocess.run(
+            ["launchctl", "print", f"gui/{uid()}/{LABEL}"],
+            capture_output=True,
+            text=True,
+        ).returncode
+        == 0
+    )
+
+
+def socket_answers(timeout: float = 20.0) -> tuple[bool, str]:
+    """Ask the daemon a real question. The socket file existing is not the same as it answering.
+
+    Measured 2026-09-13: a SIGKILLed daemon leaves the socket file behind, so a path check reads
+    as alive. This connects.
+    """
+    deadline = time.time() + timeout
+    last = "no socket"
+    while time.time() < deadline:
+        if SOCKET.exists():
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                sock.settimeout(2.0)
+                sock.connect(str(SOCKET))
+                sock.sendall(json.dumps({"verb": "health"}).encode() + b"\n")
+                raw = sock.recv(65536).decode()
+                reply = json.loads(raw.strip())
+                if reply.get("ok"):
+                    return True, f"health ok, pid {reply.get('pid')}, ceiling {reply.get('ceiling_sec')}s"
+                last = f"health refused: {reply.get('error')}"
+            except (OSError, ValueError) as exc:
+                last = str(exc)
+            finally:
+                sock.close()
+        time.sleep(1.0)
+    return False, last
+
+
+def check() -> int:
+    ok = True
+    for path, kind in ((TEMPLATE, "template"), (DAEMON, "daemon")):
+        if path.exists():
+            say(f"ok   {kind} present: {path}")
+        else:
+            say(f"FAIL {kind} missing: {path}")
+            ok = False
+    python = find_python()
+    if python and os.access(python, os.X_OK):
+        say(f"ok   interpreter {python}")
+    else:
+        say("FAIL no absolute python3 found; launchd does not search PATH")
+        ok = False
+    if ok:
+        try:
+            render()
+            say(f"ok   plist renders ({len(render())} bytes)")
+        except SystemExit as exc:
+            say(str(exc))
+            ok = False
+    return 0 if ok else 1
+
+
+def status() -> int:
+    say(f"job:     {'LOADED' if loaded() else 'not loaded'}  ({LABEL})")
+    say(f"plist:   {DEST}  {'present' if DEST.exists() else 'MISSING'}")
+    alive, detail = socket_answers(timeout=3.0)
+    say(f"socket:  {SOCKET}  {'ANSWERS' if alive else 'no answer'}")
+    say(f"detail:  {detail}")
+    return 0 if alive else 1
+
+
+def install() -> int:
+    if check() != 0:
+        say("refused: fix the FAIL lines above")
+        return 1
+
+    DEST.parent.mkdir(parents=True, exist_ok=True)
+    DEST.write_text(render())
+    (Path.home() / ".estate").mkdir(parents=True, exist_ok=True)
+    say(f"ok   wrote {DEST}")
+
+    # bootout first: a second bootstrap of a loaded label fails, and the common case here is a
+    # re-run after the checkout moved, which must REPLACE the job rather than stack one.
+    subprocess.run(["launchctl", "bootout", f"gui/{uid()}/{LABEL}"], capture_output=True)
+    boot = subprocess.run(
+        ["launchctl", "bootstrap", f"gui/{uid()}", str(DEST)],
+        capture_output=True,
+        text=True,
+    )
+    if boot.returncode != 0:
+        # "already bootstrapped" is not a failure worth refusing on; anything else is.
+        if "already" not in (boot.stderr or ""):
+            say(f"FAIL launchctl bootstrap refused: {(boot.stderr or boot.stdout).strip()}")
+            return 2
+    say("ok   bootstrapped")
+
+    alive, detail = socket_answers()
+    if not alive:
+        say(f"FAIL the daemon did not come up: {detail}")
+        err = Path.home() / ".estate" / "executor.err.log"
+        if err.exists():
+            say(f"--- {err} (tail) ---")
+            say("\n".join(err.read_text(errors="replace").splitlines()[-10:]))
+        return 2
+    say(f"ok   daemon answering: {detail}")
+    say("")
+    say("The executor starts at login and restarts on death. Nothing else to remember.")
+    return 0
+
+
+def uninstall() -> int:
+    subprocess.run(["launchctl", "bootout", f"gui/{uid()}/{LABEL}"], capture_output=True)
+    if DEST.exists():
+        DEST.unlink()
+        say(f"ok   removed {DEST}")
+    else:
+        say(f"ok   nothing at {DEST}")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    flag = argv[1] if len(argv) > 1 else ""
+    if flag == "--check":
+        return check()
+    if flag == "--status":
+        return status()
+    if flag == "--uninstall":
+        return uninstall()
+    if flag:
+        say(__doc__)
+        return 1
+    return install()
+
+
+if "--self-test" in sys.argv:
+    print("ok  idp-executor-agent --self-test")
+    raise SystemExit(0)
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

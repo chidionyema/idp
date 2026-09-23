@@ -11,6 +11,7 @@ it off (starting a Temporal dev server inside an acceptance test is a
 daemon, a true external boundary), so the step checks the switch is
 reported honestly rather than claiming a daemon it did not start.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -41,7 +42,9 @@ def _crash(context: dict[str, Any], dag_root: Path, config) -> None:
     parent = dag.GENESIS
     committed: list[str] = []
     for i in range(5):
-        parent, _ = dag.write_node({"code": f"c{i}", "db": f"d{i}"}, parent, timestamp=TIMESTAMP_0 + i)
+        parent, _ = dag.write_node(
+            {"code": f"c{i}", "db": f"d{i}"}, parent, timestamp=TIMESTAMP_0 + i
+        )
         committed.append(parent)
     last_good = committed[-1]
     dag.write_head(dag.main_head_name(), last_good)
@@ -50,11 +53,20 @@ def _crash(context: dict[str, Any], dag_root: Path, config) -> None:
     # The crash: node 6 was being written when the process died. Its tmp
     # file exists, a torn copy sits under its final name, heads/main was
     # already moved to it, and the view rebuild was mid-replace too.
-    torn_body = {"parent": last_good, "timestamp": TIMESTAMP_0 + 5, "diff": {"code": "c5"}, "context_hash": "", "budget_remaining": 0, "signature": ""}
+    torn_body = {
+        "parent": last_good,
+        "timestamp": TIMESTAMP_0 + 5,
+        "diff": {"code": "c5"},
+        "context_hash": "",
+        "budget_remaining": 0,
+        "signature": "",
+    }
     torn_hash = dag.node_hash_of(torn_body)
     full = json.dumps(torn_body, sort_keys=True)
     dag.node_path(torn_hash).write_text(full[: len(full) // 2])
-    dag.node_path(torn_hash).with_suffix(config.DAG_NODE_SUFFIX + ".tmp").write_text(full)
+    dag.node_path(torn_hash).with_suffix(config.DAG_NODE_SUFFIX + ".tmp").write_text(
+        full
+    )
     dag.write_head(dag.main_head_name(), torn_hash)
     checkpoint.main_view_path().with_suffix(".json.tmp").write_text("{")
     for pid_file in (config.WORKER_PID_FILE, config.TEMPORAL_PID_FILE):
@@ -86,7 +98,11 @@ def _views_match(context: dict[str, Any]) -> None:
 
     view = checkpoint.read_main_view()
     assert view and view["root"] == context["last_good"]
-    assert view["state"] == dag.materialize(context["last_good"]) == context["out"]["state"]
+    assert (
+        view["state"]
+        == dag.materialize(context["last_good"])
+        == context["out"]["state"]
+    )
     assert not list(checkpoint.views_dir().glob("*.tmp"))
     assert not list(dag.root().glob("*.tmp"))
 
@@ -97,7 +113,10 @@ def _services(context: dict[str, Any], config) -> None:
     assert out["services_started"] == bool(config.RECOVER_START_SERVICES)
     if config.RECOVER_START_SERVICES:
         assert set(out["services"]) == {"temporal", "worker"}
-        assert all(v == "already-running" or v.startswith("started") for v in out["services"].values()), out["services"]
+        assert all(
+            v == "already-running" or v.startswith("started")
+            for v in out["services"].values()
+        ), out["services"]
     else:
         # recover.start_services is off in this harness; the output says so
         # and names no service as started.

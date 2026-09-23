@@ -29,6 +29,7 @@ it is already this estate's embedded store (the sidecar mirrors one), and
 it needs no daemon. A hand-rolled lock file would have been the LAW 43
 violation.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -70,7 +71,11 @@ def db_path() -> Path:
 def _connect() -> sqlite3.Connection:
     path = db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), isolation_level=None, timeout=config.BUDGET_BUSY_TIMEOUT_MS / config.MS_PER_SECOND)
+    conn = sqlite3.connect(
+        str(path),
+        isolation_level=None,
+        timeout=config.BUDGET_BUSY_TIMEOUT_MS / config.MS_PER_SECOND,
+    )
     conn.execute(f"PRAGMA busy_timeout = {int(config.BUDGET_BUSY_TIMEOUT_MS)}")
     conn.execute(_SCHEMA)
     return conn
@@ -95,7 +100,8 @@ def read(session_id: str, *, _conn: sqlite3.Connection | None = None) -> Spend:
     conn = _conn or _connect()
     try:
         row = conn.execute(
-            "SELECT total, remaining, version FROM budget WHERE session_id = ?", (session_id,)
+            "SELECT total, remaining, version FROM budget WHERE session_id = ?",
+            (session_id,),
         ).fetchone()
         if row is None:
             return Spend(session_id, 0, 0, 0, 0, True, 0)
@@ -119,7 +125,8 @@ def spend(session_id: str, tokens: int) -> Spend:
     try:
         for attempt in range(1, config.BUDGET_MAX_CAS_RETRIES + 1):
             row = conn.execute(
-                "SELECT total, remaining, version FROM budget WHERE session_id = ?", (session_id,)
+                "SELECT total, remaining, version FROM budget WHERE session_id = ?",
+                (session_id,),
             ).fetchone()
             if row is None:
                 return Spend(session_id, want, 0, 0, 0, True, attempt)
@@ -132,7 +139,15 @@ def spend(session_id: str, tokens: int) -> Spend:
                 (new_remaining, session_id, version),
             )
             if cur.rowcount == 1:
-                return Spend(session_id, want, taken, new_remaining, version + 1, new_remaining <= 0, attempt)
+                return Spend(
+                    session_id,
+                    want,
+                    taken,
+                    new_remaining,
+                    version + 1,
+                    new_remaining <= 0,
+                    attempt,
+                )
         raise BudgetContention(
             f"{config.BUDGET_MAX_CAS_RETRIES} compare-and-swap attempts lost for session {session_id!r}"
         )
@@ -147,7 +162,8 @@ def refill(session_id: str, tokens: int) -> Spend:
     try:
         for attempt in range(1, config.BUDGET_MAX_CAS_RETRIES + 1):
             row = conn.execute(
-                "SELECT total, remaining, version FROM budget WHERE session_id = ?", (session_id,)
+                "SELECT total, remaining, version FROM budget WHERE session_id = ?",
+                (session_id,),
             ).fetchone()
             if row is None:
                 conn.execute(
@@ -162,7 +178,9 @@ def refill(session_id: str, tokens: int) -> Spend:
                 (total + add, remaining + add, session_id, version),
             )
             if cur.rowcount == 1:
-                return Spend(session_id, 0, 0, remaining + add, version + 1, False, attempt)
+                return Spend(
+                    session_id, 0, 0, remaining + add, version + 1, False, attempt
+                )
         raise BudgetContention(
             f"{config.BUDGET_MAX_CAS_RETRIES} compare-and-swap attempts lost for session {session_id!r}"
         )

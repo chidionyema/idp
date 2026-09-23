@@ -15,7 +15,6 @@ spec:
     any:
       # INFRA — probe/canary/balloon, no meaningful spans
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [scheduling], names: [balloon*] }
-      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [cross-node-drill], names: [cross-node-canary*] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [staging], names: [canary*, canary-gauge*] }
       # rotation-canary deploys into backstage namespace (file is in platform/state/ but ns: backstage)
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [backstage], names: [rotation-canary*] }
@@ -23,7 +22,6 @@ spec:
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [event-bus] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [robusta] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [estate-db] }
-      - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [chaos-mesh] }
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [temporal] }
       # VENDOR — third-party image, no OTel SDK
       - resources: { kinds: [Deployment, StatefulSet, Pod, ReplicaSet], namespaces: [guacamole], names: [guacamole*, guacd*] }

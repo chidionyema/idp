@@ -16,6 +16,7 @@ Steps are synchronous; the Temporal environment lives on a background
 event loop for the length of one scenario so "Given running / When stop /
 Then stopped" can each submit work to the same server.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -107,7 +108,9 @@ class TemporalLab:
 
     def history_activity_types(self, workflow_id: str) -> list[str]:
         async def _fetch() -> list[str]:
-            handle: WorkflowHandle[Any, Any] = self.client.get_workflow_handle(workflow_id)
+            handle: WorkflowHandle[Any, Any] = self.client.get_workflow_handle(
+                workflow_id
+            )
             history = await handle.fetch_history()
             out: list[str] = []
             for event in history.events:
@@ -131,17 +134,42 @@ def lab(estate_home: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Temporal
 
 
 def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+    return subprocess.run(
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
 
 
-def _fork(lab: TemporalLab, repo: Path, task: str, runner: str, budget: int, count: int, context: dict[str, Any]) -> None:
-    p = branching.params(task, runner=_RUNNER_STAND_IN.get(runner, runner), repo=str(repo), budget=budget, count=count)
+def _fork(
+    lab: TemporalLab,
+    repo: Path,
+    task: str,
+    runner: str,
+    budget: int,
+    count: int,
+    context: dict[str, Any],
+) -> None:
+    p = branching.params(
+        task,
+        runner=_RUNNER_STAND_IN.get(runner, runner),
+        repo=str(repo),
+        budget=budget,
+        count=count,
+    )
     started = lab.run(branching.start(lab.client, p, task_queue=lab.task_queue))
-    context.update({"params": p, "parent_id": p["parent_id"], "children": started["children"], "repo": repo,
-                    "handle": lab.client.get_workflow_handle(p["parent_id"])})
+    context.update(
+        {
+            "params": p,
+            "parent_id": p["parent_id"],
+            "children": started["children"],
+            "repo": repo,
+            "handle": lab.client.get_workflow_handle(p["parent_id"]),
+        }
+    )
 
 
-def _finish(lab: TemporalLab, context: dict[str, Any], timeout: float = 120) -> dict[str, Any]:
+def _finish(
+    lab: TemporalLab, context: dict[str, Any], timeout: float = 120
+) -> dict[str, Any]:
     if "result" not in context:
         context["result"] = lab.run(context["handle"].result(), timeout=timeout)
     return context["result"]
@@ -150,8 +178,19 @@ def _finish(lab: TemporalLab, context: dict[str, Any], timeout: float = 120) -> 
 # ---- scenario 1: fork, merge, keep the losers ---------------------------------
 
 
-@when(parsers.parse('I run "bin/sb start --runner {runner} --repo <repo> --task {task} --branches {count:d} --json"'))
-def _start_branches(lab: TemporalLab, scratch_repo: Path, runner: str, task: str, count: int, context: dict[str, Any]) -> None:
+@when(
+    parsers.parse(
+        'I run "bin/sb start --runner {runner} --repo <repo> --task {task} --branches {count:d} --json"'
+    )
+)
+def _start_branches(
+    lab: TemporalLab,
+    scratch_repo: Path,
+    runner: str,
+    task: str,
+    count: int,
+    context: dict[str, Any],
+) -> None:
     _fork(lab, scratch_repo, shlex.split(task)[0], runner, 10_000, count, context)
 
 
@@ -159,12 +198,18 @@ def _start_branches(lab: TemporalLab, scratch_repo: Path, runner: str, task: str
 def _three_children_ghost(lab: TemporalLab, context: dict[str, Any]) -> None:
     result = _finish(lab, context)
     assert len(context["children"]) == 3
-    assert [c["status"] for c in result["children"]] == ["done", "done", "done"], result["children"]
+    assert [c["status"] for c in result["children"]] == ["done", "done", "done"], (
+        result["children"]
+    )
     for child_id in context["children"]:
         types = lab.history_activity_types(child_id)
         assert types, f"{child_id} scheduled no activity"
-        assert not any("notify" in t.lower() for t in types), f"{child_id} scheduled a notification: {types}"
-    assert not any("notify" in t.lower() for t in lab.history_activity_types(context["parent_id"]))
+        assert not any("notify" in t.lower() for t in types), (
+            f"{child_id} scheduled a notification: {types}"
+        )
+    assert not any(
+        "notify" in t.lower() for t in lab.history_activity_types(context["parent_id"])
+    )
 
 
 @then("zero messages are sent during their run")
@@ -176,7 +221,9 @@ def _zero_messages(messages: Any) -> None:
 def _one_receipt(lab: TemporalLab, context: dict[str, Any], line: str) -> None:
     result = _finish(lab, context)
     rows = receipts_mod.read_all()
-    assert len(rows) == 1, f"expected exactly one receipt, got {[r.get('kind') for r in rows]}"
+    assert len(rows) == 1, (
+        f"expected exactly one receipt, got {[r.get('kind') for r in rows]}"
+    )
     row = rows[0]
     assert row["kind"] == str(ck.get("branch.merge_receipt_kind"))
     winner = result["winner"]
@@ -195,7 +242,10 @@ def _losers_exist(context: dict[str, Any]) -> None:
     result = context["result"]
     losers = result["merge"]["losers"]
     assert len(losers) == 2
-    existing = set(re.sub(r"^[* ]+", "", b).strip() for b in _git(context["repo"], "branch", "--list").splitlines())
+    existing = set(
+        re.sub(r"^[* ]+", "", b).strip()
+        for b in _git(context["repo"], "branch", "--list").splitlines()
+    )
     for loser in losers:
         assert loser in existing, f"losing branch {loser} was deleted; have {existing}"
     assert result["winner"] in existing
@@ -205,7 +255,9 @@ def _losers_exist(context: dict[str, Any]) -> None:
 
 
 @given("three branches are running")
-def _branches_running(lab: TemporalLab, scratch_repo: Path, context: dict[str, Any]) -> None:
+def _branches_running(
+    lab: TemporalLab, scratch_repo: Path, context: dict[str, Any]
+) -> None:
     _fork(lab, scratch_repo, "sleep 60", "sleep", 10_000, 3, context)
     deadline = time.monotonic() + 30
     states: list[dict[str, Any]] = []
@@ -224,11 +276,17 @@ def _branches_running(lab: TemporalLab, scratch_repo: Path, context: dict[str, A
 @when(parsers.parse('I run "bin/sb stop <parent_id> --by {by}"'))
 def _stop_parent(lab: TemporalLab, context: dict[str, Any], by: str) -> None:
     context["stop_at"] = time.monotonic()
-    lab.run(context["handle"].signal(BranchParentWorkflow.stop, args=[by, "founder stop"]))
+    lab.run(
+        context["handle"].signal(BranchParentWorkflow.stop, args=[by, "founder stop"])
+    )
 
 
-@then(parsers.parse('all three child sessions are "{status}" within {seconds:d} seconds'))
-def _children_stopped(lab: TemporalLab, context: dict[str, Any], status: str, seconds: int) -> None:
+@then(
+    parsers.parse('all three child sessions are "{status}" within {seconds:d} seconds')
+)
+def _children_stopped(
+    lab: TemporalLab, context: dict[str, Any], status: str, seconds: int
+) -> None:
     result = _finish(lab, context, timeout=seconds)
     elapsed = time.monotonic() - context["stop_at"]
     assert elapsed <= seconds, f"stop took {elapsed:.1f}s"
@@ -249,8 +307,19 @@ def _receipt_parent_hash(context: dict[str, Any]) -> None:
 # ---- scenario 3 (crew#213): the 10% budget cap ---------------------------------
 
 
-@given(parsers.parse("a parent session with budget {budget:d} tokens and branches costing {cost:d} tokens per step"))
-def _capped_parent(lab: TemporalLab, scratch_repo: Path, monkeypatch: pytest.MonkeyPatch, budget: int, cost: int, context: dict[str, Any]) -> None:
+@given(
+    parsers.parse(
+        "a parent session with budget {budget:d} tokens and branches costing {cost:d} tokens per step"
+    )
+)
+def _capped_parent(
+    lab: TemporalLab,
+    scratch_repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    budget: int,
+    cost: int,
+    context: dict[str, Any],
+) -> None:
     # burn.tokens_per_step is a module constant of sovereign.config, so the
     # env override needs the module re-resolved; the estate_home fixture
     # reloads it again on teardown.
@@ -278,8 +347,14 @@ def _child_budget(context: dict[str, Any], pct: int) -> None:
 @then(parsers.parse('each child halts with a receipt reason "{reason}"'))
 def _children_halt(context: dict[str, Any], reason: str) -> None:
     result = context["result"]
-    assert [c["status"] for c in result["children"]] == ["halted"] * 3, result["children"]
-    rows = [r for r in receipts_mod.read_all() if r.get("kind") == str(ck.get("branch.halt_receipt_kind"))]
+    assert [c["status"] for c in result["children"]] == ["halted"] * 3, result[
+        "children"
+    ]
+    rows = [
+        r
+        for r in receipts_mod.read_all()
+        if r.get("kind") == str(ck.get("branch.halt_receipt_kind"))
+    ]
     assert len(rows) == 3
     assert all(r["text"] == reason and r["budget_remaining"] == 0 for r in rows), rows
     assert set(r["session_id"] for r in rows) == set(context["children"])

@@ -1,8 +1,0 @@
-# crew#488 CP5: the layers that can never come Ready on a cluster with no OCI identity, and the
-# Flux reason each one gives. bin/idp-portability-drill reads this: a layer red for one of these
-# reasons is an honest red; a layer red for any other reason of its own (a CRD applied before its
-# operator, a chart that will not template, a node label only one cloud has) FAILS the run, and a
-# layer red only because a row above it is red is a cascade and is counted, not judged.
-# One row per line: <Kustomization name>  <substring of Flux's Ready message>
-secret-store    ConfigMap/estate-vars
-estate-catalog  artifact not found

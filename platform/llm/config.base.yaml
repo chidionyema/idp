@@ -1,9 +1,16 @@
 # LiteLLM config for the cluster. Every hosted model here is the same entry as llm/config.yaml
 # (tests/test_llm_row.py diffs them); what is missing is on purpose:
-#   - the ollama* entries: they point at the founder's Mac (host.docker.internal), which the
-#     cluster cannot reach. The free local lane stays on the laptop compose.
-#   - the ollama fallbacks, for the same reason.
+#   - ollama-vision and ollama-llama: llm/config.base.yaml's copies point at the founder's Mac
+#     (host.docker.internal), killed 2026-09-10 ("no i killed ollama because machine is slow",
+#     platform/otto-gateway/three-homes.yaml:28-29) and never reachable from the cluster anyway.
+#     No room for a second or third resident local model on the 2 OCPU / 12 GB free pool
+#     (docs/reference/oci-tenancy.md:18) alongside `ollama` below, litellm, redis, postgres,
+#     temporal-worker, langfuse and signoz.
 # `vision` is an alias so photo intake names a capability, not a vendor (crew#284 CP1).
+#
+# `ollama` below is the one that WAS also missing here for the same host.docker.internal
+# reason -- fixed 2026-09-15 by giving the cluster its own local model instead
+# (platform/llm/ollama.yaml), so this lane no longer depends on any laptop being on.
 
 model_list:
   # @vendor-lanes@
@@ -53,17 +60,32 @@ model_list:
       model: anthropic/claude-opus-4-5
       timeout: 600
 
-  # Sonnet passthrough (same rules as claude-opus above).
+  # EVERY Claude model, not only opus (founder, 2026-09-22: "not just opus but all claude
+  # models"). The named rows below exist so a lane can be granted, budgeted and read back by
+  # name -- `/v1/models` enumerates them, which is how bin/idp-router-key puts a lane on a
+  # consumer's key. The wildcard row after them is what makes the passthrough complete.
   - model_name: claude-sonnet
     litellm_params:
-      model: anthropic/claude-sonnet-4-6
+      model: anthropic/claude-sonnet-4-5
       timeout: 600
 
-  # Haiku passthrough (same rules as claude-opus above).
   - model_name: claude-haiku
     litellm_params:
       model: anthropic/claude-haiku-4-5
-      timeout: 300
+      timeout: 600
+
+  # The catch-all, and the row that actually carries Claude Code. A client does not send the
+  # tidy alias above -- it sends the exact dated id it was built against
+  # (claude-haiku-4-5-20251001, and whatever ships next), and a named row can only ever hold
+  # the ids that existed the day it was written. LiteLLM's pattern routing substitutes what
+  # `*` matched into the upstream model, so `claude-sonnet-4-5-20250929` leaves here as
+  # `anthropic/claude-sonnet-4-5-20250929`: the client's own model name, relayed unchanged to
+  # Anthropic under the client's own OAuth token, exactly as the passthrough comment above
+  # describes. No api_key here either, for the same reason and by the same mechanism.
+  - model_name: "claude-*"
+    litellm_params:
+      model: "anthropic/claude-*"
+      timeout: 600
 
 router_settings:
   fallbacks:
@@ -74,6 +96,8 @@ router_settings:
     # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
     # job aliases) but sit in no chain while the account is unfunded: a hop that always
     # answers 402 is latency, not redundancy.
+    # claude-opus passthrough has no API key; it falls back to the same pool as default/fast
+    - claude-opus: [default, fast, deepseek, gemini, minimax, groq]
     # @vendor-fallbacks@
     # @vendor-cluster-fallbacks@
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
@@ -126,7 +150,7 @@ litellm_settings:
   # on 2026-09-13 and did not sever -- it grades the hour's total, so one session at 737,169 per
   # call is indistinguishable from 200 sessions at 3,700. Its own comment says it:
   # "It reports and warns; it does not sever the router."
-  callbacks: ["otel", "request_ceiling.proxy_handler_instance", "efficiency_gateway.proxy_handler_instance"]
+  callbacks: ["otel", "request_ceiling.proxy_handler_instance", "efficiency_gateway.proxy_handler_instance", "zeroedge_gateway.proxy_handler_instance"]
   # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
   # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
   # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.

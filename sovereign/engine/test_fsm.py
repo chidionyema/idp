@@ -6,6 +6,7 @@ cycle counter halts at exactly max_cycles) and one differential case
 (engine/workflow.py's inline advance must agree with this module, so the
 workflow and the machine cannot drift apart).
 """
+
 from __future__ import annotations
 
 import random
@@ -16,7 +17,9 @@ from sovereign.engine import fsm
 
 
 class FsmPropertyTest(unittest.TestCase):
-    def test_property_no_sequence_of_legal_moves_leaves_the_declared_states(self) -> None:
+    def test_property_no_sequence_of_legal_moves_leaves_the_declared_states(
+        self,
+    ) -> None:
         rng = random.Random(20260825)
         for _ in range(200):
             m = fsm.FSM(max_cycles=rng.randint(1, 8))
@@ -46,11 +49,15 @@ class FsmPropertyTest(unittest.TestCase):
                     completed = m.cycles
             self.assertEqual(completed, limit)
             self.assertTrue(m.paused)
-            self.assertEqual(m.state, fsm.CYCLE_PATH[-1], "a paused machine waits where it stopped")
+            self.assertEqual(
+                m.state, fsm.CYCLE_PATH[-1], "a paused machine waits where it stopped"
+            )
 
     def test_the_default_limit_is_the_spec_number(self) -> None:
         self.assertEqual(config.FSM_MAX_CYCLES, 5)
-        self.assertEqual(fsm.STATES, ("init", "planning", "tool_use", "synthesis", "terminal"))
+        self.assertEqual(
+            fsm.STATES, ("init", "planning", "tool_use", "synthesis", "terminal")
+        )
 
     def test_aliases_resolve_the_older_names(self) -> None:
         """The crew#200 table calls the middle states executing/verifying;

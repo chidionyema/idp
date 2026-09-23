@@ -158,3 +158,59 @@ def test_remediation_without_a_green_shadow_proof_never_lands():
     ):
         bl = dict(labels=[{"name": "type:auto-remediation"}], **broken)
         assert verdict(pull_request(**bl)) == "SKIP", f"should SKIP: {bl}"
+
+
+def test_row_three_wires_the_admitted_mutation_scope_check():
+    """ADR 0025: the Greenlane grows by adding a row whose scope binary is called, proved both
+    ways. Row 3 (an admitted reversible mutation) must CALL bin/idp-admitted-mutation-diff --
+    a row that names the rule but never runs the binary lands anything."""
+    body = open(os.path.join(ROOT, ".github/workflows/deploy-when-green.yml")).read()
+    assert "bin/idp-admitted-mutation-diff" in body, (
+        "Row 3 does not call the scope check, so a mutation PR would be treated as landable"
+    )
+    assert "mutation/" in body, "Row 3 does not scope itself to mutation/* branches"
+    # The scope check must be a PRECONDITION of landing, like Row 1's image-only check: it is
+    # called and, only on success, try_land is reached. A row that lands first and proves later
+    # is not a guard.
+    assert re.search(
+        r"if bin/idp-admitted-mutation-diff --pr \"\$p\"; then\s*\n\s*try_land \"\$p\"",
+        body,
+    ), "Row 3 does not gate try_land on the scope check passing"
+
+
+def test_the_admitted_mutation_scope_check_refuses_a_double_inverse_free_branch(
+    monkeypatch,
+):
+    """The scope binary itself is exercised from disk: a non-mutation branch is refused.
+
+    This is the rung the ADR asks a new row to carry -- a fixture it must refuse and one it must
+    pass -- read here so the row cannot be added without a working binary behind it.
+    """
+    import subprocess
+    import sys as _sys
+
+    binary = os.path.join(ROOT, "bin", "idp-admitted-mutation-diff")
+    good = subprocess.run(
+        [
+            _sys.executable,
+            binary,
+            "--fixture-dir",
+            "tests/fixtures/admitted-mutation/good",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert good.returncode == 0, good.stdout + good.stderr
+    bad = subprocess.run(
+        [
+            _sys.executable,
+            binary,
+            "--fixture-dir",
+            "tests/fixtures/admitted-mutation/bad",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert bad.returncode == 1, bad.stdout + bad.stderr

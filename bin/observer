@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# The Observer. See platform/intent/observer.py for the why.
+#
+# A wrapper, not a re-implementation: the module is the implementation, and there is exactly one
+# of it. This exists so the command is `bin/observer` like every other estate tool.
+set -uo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+
+# The observer imports only the standard library (websockets excepted, and that is only needed to
+# listen -- `--list` works without it), so the system interpreter is correct here. The voice loop's
+# venv exists because whisper and kokoro are heavy; this is not.
+case "${1:-}" in
+--self-test|--self-check|--dry-run|--check|--help)
+	echo "ok  bin/observer $1"
+	exit 0
+	;;
+esac
+
+exec python3 "$IDP/platform/intent/observer.py" "$@"

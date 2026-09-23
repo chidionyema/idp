@@ -8,6 +8,7 @@ after phase1.sh's `grep -v '"kind": "halt"'` happened to drop the tail
 receipt. Fixed by a signed head anchor rewritten on every append() and
 checked by verify() against the last line actually on disk.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,9 +28,13 @@ class ReceiptsChainTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         root = Path(self._tmp.name)
-        self._sb_receipts_patch = patch.object(config, "SB_RECEIPTS", root / "receipts.jsonl")
+        self._sb_receipts_patch = patch.object(
+            config, "SB_RECEIPTS", root / "receipts.jsonl"
+        )
         self._head_patch = patch.object(config, "RECEIPTS_HEAD", root / "receipts.head")
-        self._key_patch = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
+        self._key_patch = patch.object(
+            receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file")
+        )
         self._sb_receipts_patch.start()
         self._head_patch.start()
         self._key_patch.start()
@@ -76,7 +81,9 @@ class ReceiptsChainTest(unittest.TestCase):
 
         result = receipts.verify()
 
-        self.assertEqual(result["ok"], False, "tail-truncated chain must never verify as ok")
+        self.assertEqual(
+            result["ok"], False, "tail-truncated chain must never verify as ok"
+        )
         self.assertEqual(result["reason"], "truncated")
 
     def test_missing_anchor_fails_closed_not_silently(self) -> None:
@@ -114,10 +121,13 @@ class SignedLineVerifiesTest(ReceiptsChainTest):
 
         from sovereign.engine.receipts import HardwareTrustAnchor
 
-        with _patch.object(HardwareTrustAnchor, "sign", lambda self, digest: ("ab" * 32, "software_key")):
+        with _patch.object(
+            HardwareTrustAnchor,
+            "sign",
+            lambda self, digest: ("ab" * 32, "software_key"),
+        ):
             self._append(kind="plain")
             line = self._append(kind="rewind", signed=True)
             self._append(kind="plain")
         self.assertEqual(line["hw_backend"], "software_key")
         self.assertEqual(receipts.verify()["ok"], True, receipts.verify())
-

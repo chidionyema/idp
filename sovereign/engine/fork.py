@@ -34,6 +34,7 @@ because deleting a Merkle DAG node a receipt or another fork's history
 might still reference is exactly the kind of edit a hash chain exists to
 catch (cp12: "its DAG nodes remain (archived, never deleted)").
 """
+
 from __future__ import annotations
 
 import json
@@ -104,7 +105,12 @@ def create(name: str) -> dict[str, Any]:
     storage = _storage_for_new_fork()
     dag.write_head(name, prod_root, extra={"storage": storage})
     elapsed_ms = (time.perf_counter() - t0) * config.MS_PER_SECOND
-    return {"name": name, "root": prod_root, "storage": storage, "elapsed_ms": elapsed_ms}
+    return {
+        "name": name,
+        "root": prod_root,
+        "storage": storage,
+        "elapsed_ms": elapsed_ms,
+    }
 
 
 def fork_storage(name: str) -> str:
@@ -118,7 +124,10 @@ def fork_storage(name: str) -> str:
 
 def current() -> str:
     if config.FORK_WORKING_POINTER.exists():
-        return config.FORK_WORKING_POINTER.read_text().strip() or config.SHADOW_HEAD_FILENAME
+        return (
+            config.FORK_WORKING_POINTER.read_text().strip()
+            or config.SHADOW_HEAD_FILENAME
+        )
     return config.SHADOW_HEAD_FILENAME
 
 
@@ -130,7 +139,9 @@ def switch(name: str) -> dict[str, Any]:
     if name != config.SHADOW_HEAD_FILENAME and name not in list_forks():
         raise UnknownForkError(name)
     config.FORK_WORKING_POINTER.parent.mkdir(parents=True, exist_ok=True)
-    tmp = config.FORK_WORKING_POINTER.with_suffix(config.FORK_WORKING_POINTER.suffix + ".tmp")
+    tmp = config.FORK_WORKING_POINTER.with_suffix(
+        config.FORK_WORKING_POINTER.suffix + ".tmp"
+    )
     tmp.write_text(name)
     os.replace(tmp, config.FORK_WORKING_POINTER)
     return {"working": name}

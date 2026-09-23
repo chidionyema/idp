@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://idp.estate/schema/mutation-envelope.schema.json",
+  "title": "ReversibleMutationEnvelope",
+  "description": "The envelope a mutation must carry to be admitted. `inverse_spec` is the field ADR 0024 implies and nothing previously required: either a deterministic inverse with a state probe, or an irreversible exemption carrying an attestation verified over `subject`. Read by bin/idp-reversibility-gate; the ledger door (propose_mutation -> verify_mutation -> seal_mutation -> admit_mutation) is what consumes it.",
+  "type": "object",
+  "required": ["target", "forward", "inverse_spec"],
+  "properties": {
+    "mutation_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{3,}$",
+      "description": "Ledger id. Deliberately not a fixed hex shape: the executor's ledger ids are opaque strings (docs/specs/2026-09-15-typed-multidomain-mutation-ledger-door.md), and pinning a format here would refuse correct work (LAW 38)."
+    },
+    "subject": {
+      "type": "string",
+      "description": "The digest an irreversible exemption's attestation must be signed over. Required in practice when inverse_spec.type is irreversible_exemption; the gate refuses an exemption whose subject is absent."
+    },
+    "target": {
+      "type": "string",
+      "description": "What the mutation acts on, e.g. deployment/payment-processor."
+    },
+    "forward": {
+      "type": "object",
+      "required": ["action", "parameters"],
+      "properties": {
+        "action": { "type": "string", "minLength": 1 },
+        "parameters": { "type": "object" }
+      }
+    },
+    "inverse_spec": {
+      "type": "object",
+      "required": ["type"],
+      "oneOf": [
+        {
+          "required": ["type", "action", "parameters", "verification_probe"],
+          "properties": {
+            "type": { "const": "deterministic_inverse" },
+            "action": { "type": "string", "minLength": 1 },
+            "parameters": { "type": "object" },
+            "verification_probe": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A deterministic state assertion the rollback path can run, e.g. `kubectl get deployment payment-processor -o jsonpath='{.status.readyReplicas}' == 2`. Not a description of intent."
+            }
+          }
+        },
+        {
+          "required": ["type", "justification", "attestation"],
+          "properties": {
+            "type": { "const": "irreversible_exemption" },
+            "justification": {
+              "type": "string",
+              "minLength": 20,
+              "description": "Why this mutation cannot be reversed. The human's answer to 'why is there no undo'."
+            },
+            "attestation": {
+              "type": "object",
+              "description": "A Sigstore bundle or the estate ed25519 envelope, verified by sovereign.verifier.verify_attestation over `subject`. NOT a token with a magic prefix -- a prefix check is not authentication."
+            }
+          }
+        }
+      ]
+    }
+  }
+}

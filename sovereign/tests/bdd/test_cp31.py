@@ -7,6 +7,7 @@ strings these together is exercised by its own unit tests, and what this
 feature states are rules about the budget, the machine and the halt
 reasons, which these modules hold.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,7 +30,9 @@ def software_trust(estate_home: Path, monkeypatch: pytest.MonkeyPatch):
     importlib.reload(importlib.import_module("sovereign.config"))
 
 
-def _receipt(context: dict[str, Any], kind: str, status: str, text: str, **fields: Any) -> dict[str, Any]:
+def _receipt(
+    context: dict[str, Any], kind: str, status: str, text: str, **fields: Any
+) -> dict[str, Any]:
     from sovereign.engine import activities
 
     record = {
@@ -42,7 +45,11 @@ def _receipt(context: dict[str, Any], kind: str, status: str, text: str, **field
         "status": status,
         "task": "",
         "runner": "",
-        "state": {"session_id": context.get("session_id", SESSION), "step": context.get("step", 0), "status": status},
+        "state": {
+            "session_id": context.get("session_id", SESSION),
+            "step": context.get("step", 0),
+            "status": status,
+        },
         **fields,
     }
     return asyncio.run(activities.append_receipt(record))
@@ -90,7 +97,14 @@ def _refill(context: dict[str, Any], tokens: int) -> None:
 
     refilled = budget.refill(SESSION, tokens * 1000)
     assert not refilled.halted
-    line = _receipt(context, "refill", "running", f"refill:{tokens}k", signed=True, tokens=tokens * 1000)
+    line = _receipt(
+        context,
+        "refill",
+        "running",
+        f"refill:{tokens}k",
+        signed=True,
+        tokens=tokens * 1000,
+    )
     assert line.get("hw_sig") and line.get("hw_backend"), line
     context["resume"] = _receipt(context, "resume", "running", "resumed")
 
@@ -155,9 +169,18 @@ def _pauses(context: dict[str, Any], reason: str) -> None:
 def _langfuse_blind(context: dict[str, Any], config) -> None:
     from sovereign.engine import termination
 
-    blind_s = float(config.get("blind.halt_after_min").value) * termination.SECONDS_PER_MINUTE + 1
-    context["verdict"] = termination.evaluate(termination.Signals(langfuse_blind_s=blind_s))
-    context["sessions"] = [("sb-blind-a", False), ("sb-blind-b", False), ("sb-critical", True)]
+    blind_s = (
+        float(config.get("blind.halt_after_min").value) * termination.SECONDS_PER_MINUTE
+        + 1
+    )
+    context["verdict"] = termination.evaluate(
+        termination.Signals(langfuse_blind_s=blind_s)
+    )
+    context["sessions"] = [
+        ("sb-blind-a", False),
+        ("sb-blind-b", False),
+        ("sb-critical", True),
+    ]
 
 
 @then(parsers.parse('every non-critical session is halted with reason "{reason}"'))
@@ -170,7 +193,11 @@ def _halt_non_critical(context: dict[str, Any], reason: str) -> None:
     for session_id, critical in context["sessions"]:
         if not critical:
             _receipt({"session_id": session_id, "step": 1}, "halt", "halted", fired[0])
-    halted = {r["session_id"] for r in receipts.read_all() if r.get("kind") == "halt" and r.get("text") == reason}
+    halted = {
+        r["session_id"]
+        for r in receipts.read_all()
+        if r.get("kind") == "halt" and r.get("text") == reason
+    }
     assert halted == {s for s, critical in context["sessions"] if not critical}
 
 
@@ -190,7 +217,10 @@ def _concurrent_spend(context: dict[str, Any]) -> None:
         gate.wait()
         results[name] = budget.spend("sb-race", tokens)
 
-    threads = [threading.Thread(target=spender, args=("a", a)), threading.Thread(target=spender, args=("b", b))]
+    threads = [
+        threading.Thread(target=spender, args=("a", a)),
+        threading.Thread(target=spender, args=("b", b)),
+    ]
     for t in threads:
         t.start()
     for t in threads:

@@ -1,5 +1,6 @@
 """Binds features/gates/capacity-cap.feature (crew#281, crew#289, crew#297). Steps run conftest
 for real against policy/node_pool.rego over policy/fixtures/capacity-{under,over}-cap.json."""
+
 import json
 import shutil
 import subprocess
@@ -18,14 +19,24 @@ HOURS = 730
 def _conftest(path: Path) -> subprocess.CompletedProcess:
     exe = shutil.which("conftest")
     assert exe, "conftest is not installed; the bdd job installs it"
-    return subprocess.run([exe, "test", str(path), "-p", str(IDP / "policy"), "-n", "main", "--no-color"],
-                          capture_output=True, text=True)
+    return subprocess.run(
+        [exe, "test", str(path), "-p", str(IDP / "policy"), "-n", "main", "--no-color"],
+        capture_output=True,
+        text=True,
+    )
 
 
 def _estimate(cap: dict) -> float:
     paid_ocpu = max(0, cap["ocpus"] - cap["free"]["ocpus"])
     paid_gb = max(0, cap["memory_gb"] - cap["free"]["memory_gb"])
-    return round((paid_ocpu * cap["price_usd_hr"]["ocpu"] + paid_gb * cap["price_usd_hr"]["memory_gb"]) * HOURS, 2)
+    return round(
+        (
+            paid_ocpu * cap["price_usd_hr"]["ocpu"]
+            + paid_gb * cap["price_usd_hr"]["memory_gb"]
+        )
+        * HOURS,
+        2,
+    )
 
 
 @pytest.fixture
@@ -36,7 +47,12 @@ def state() -> dict:
 @given("the node pool is 4 OCPU and 24 GB with 2 OCPU and 12 GB free")
 def _under(state: dict) -> None:
     cap = json.loads((FIXTURES / "capacity-under-cap.json").read_text())["capacity"]
-    assert (cap["ocpus"], cap["memory_gb"], cap["free"]["ocpus"], cap["free"]["memory_gb"]) == (4, 24, 2, 12)
+    assert (
+        cap["ocpus"],
+        cap["memory_gb"],
+        cap["free"]["ocpus"],
+        cap["free"]["memory_gb"],
+    ) == (4, 24, 2, 12)
     state["cap"] = cap
 
 
@@ -48,7 +64,12 @@ def _prices(state: dict) -> None:
 @given("the node pool is 8 OCPU and 48 GB with the same free allowance and prices")
 def _over(state: dict) -> None:
     cap = json.loads((FIXTURES / "capacity-over-cap.json").read_text())["capacity"]
-    assert (cap["ocpus"], cap["memory_gb"], cap["free"]["ocpus"], cap["free"]["memory_gb"]) == (8, 48, 2, 12)
+    assert (
+        cap["ocpus"],
+        cap["memory_gb"],
+        cap["free"]["ocpus"],
+        cap["free"]["memory_gb"],
+    ) == (8, 48, 2, 12)
     assert cap["price_usd_hr"] == {"ocpu": 0.01, "memory_gb": 0.0015}
     state["cap"] = cap
 
@@ -82,15 +103,23 @@ def _passes(state: dict) -> None:
     assert r.returncode == 0 and "0 failures" in r.stdout, r.stdout + r.stderr
 
 
-@then("the gate refuses with an estimate of USD 83.22 a month and the words FOUNDER ACTION")
+@then(
+    "the gate refuses with an estimate of USD 83.22 a month and the words FOUNDER ACTION"
+)
 def _refuses(state: dict) -> None:
     assert _estimate(state["cap"]) == 83.22
     r = state["run"]
-    assert r.returncode != 0 and "USD 83.22" in r.stdout and "FOUNDER ACTION" in r.stdout, r.stdout + r.stderr
+    assert (
+        r.returncode != 0 and "USD 83.22" in r.stdout and "FOUNDER ACTION" in r.stdout
+    ), r.stdout + r.stderr
 
 
 @then("the gate refuses and names the missing field")
 def _blind(state: dict) -> None:
     for field, r in state["runs"]:
-        assert r.returncode != 0 and "FAIL" in r.stdout, f"{field}: {r.stdout}{r.stderr}"
-        assert field in r.stdout or ("price row" in r.stdout and field == "price_usd_hr"), f"{field}: {r.stdout}"
+        assert r.returncode != 0 and "FAIL" in r.stdout, (
+            f"{field}: {r.stdout}{r.stderr}"
+        )
+        assert field in r.stdout or (
+            "price row" in r.stdout and field == "price_usd_hr"
+        ), f"{field}: {r.stdout}"

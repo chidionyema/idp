@@ -12,6 +12,7 @@ the trust lane's (cp29) and the workflow is the engine's, and neither is
 what this feature is about -- what it asserts is that one approval covers
 the whole predicted trajectory.
 """
+
 from __future__ import annotations
 
 import re
@@ -43,20 +44,38 @@ def _software_trust(estate_home: Any, monkeypatch: pytest.MonkeyPatch) -> None:
 def _seed_founder_decisions(kind: str, boundary: str, count: int) -> None:
     for i in range(count):
         receipts_mod.append(
-            {"session_id": f"seed-{i}", "kind": kind, "by": str(ck.get("shadow.founder")), "text": boundary,
-             "boundary": boundary, "step": i, "status": "running"}
+            {
+                "session_id": f"seed-{i}",
+                "kind": kind,
+                "by": str(ck.get("shadow.founder")),
+                "text": boundary,
+                "boundary": boundary,
+                "step": i,
+                "status": "running",
+            }
         )
 
 
 def _shadow_auth_rows() -> list[dict[str, Any]]:
-    return [r for r in receipts_mod.read_all() if r.get("kind") == str(ck.get("shadow.auth_receipt_kind"))]
+    return [
+        r
+        for r in receipts_mod.read_all()
+        if r.get("kind") == str(ck.get("shadow.auth_receipt_kind"))
+    ]
 
 
 # ---- scenario 1 --------------------------------------------------------------
 
 
-@given(parsers.parse("a session with budget {budget} tokens and {n:d} predicted steps costing {cost}"), target_fixture="session")
-def _session(budget: str, n: int, cost: str, context: dict[str, Any]) -> preauth.Session:
+@given(
+    parsers.parse(
+        "a session with budget {budget} tokens and {n:d} predicted steps costing {cost}"
+    ),
+    target_fixture="session",
+)
+def _session(
+    budget: str, n: int, cost: str, context: dict[str, Any]
+) -> preauth.Session:
     total = _tokens(cost)
     per_step = total // n
     session = preauth.Session("sb-cp26", _tokens(budget), [per_step] * n)
@@ -67,7 +86,9 @@ def _session(budget: str, n: int, cost: str, context: dict[str, Any]) -> preauth
 
 
 @then(parsers.parse('the session status is "{status}" before the boundary is reached'))
-def _status_before_boundary(session: preauth.Session, status: str, context: dict[str, Any]) -> None:
+def _status_before_boundary(
+    session: preauth.Session, status: str, context: dict[str, Any]
+) -> None:
     assert session.status == status
     assert session.steps_run == 0, "the ask came before any predicted step ran"
     assert session.remaining == context["budget"], "nothing was spent before the ask"
@@ -99,7 +120,11 @@ def _all_steps_run(session: preauth.Session) -> None:
 # ---- scenario 2 --------------------------------------------------------------
 
 
-@given(parsers.parse('the receipts hold at least {count:d} founder approvals of "{boundary}" with no denials'))
+@given(
+    parsers.parse(
+        'the receipts hold at least {count:d} founder approvals of "{boundary}" with no denials'
+    )
+)
 def _seed_approvals(count: int, boundary: str) -> None:
     _seed_founder_decisions(str(ck.get("shadow.approve_kind")), boundary, count)
     hist = preauth.history(boundary)
@@ -114,9 +139,17 @@ def _same_boundary(context: dict[str, Any], messages: Any) -> preauth.Session:
     return session
 
 
-@then(parsers.re(r'the kernel writes a receipt kind "(?P<kind>[^"]+)" with a confidence (?:≥|>=) (?P<threshold>[0-9.]+)'))
+@then(
+    parsers.re(
+        r'the kernel writes a receipt kind "(?P<kind>[^"]+)" with a confidence (?:≥|>=) (?P<threshold>[0-9.]+)'
+    )
+)
 def _shadow_auth_receipt(kind: str, threshold: str, session: preauth.Session) -> None:
-    rows = [r for r in receipts_mod.read_all() if r.get("kind") == kind and r.get("session_id") == session.session_id]
+    rows = [
+        r
+        for r in receipts_mod.read_all()
+        if r.get("kind") == kind and r.get("session_id") == session.session_id
+    ]
     assert len(rows) == 1, f"expected one {kind} receipt, got {len(rows)}"
     assert float(rows[0]["confidence"]) >= float(threshold)
     assert rows[0]["founder_notified"] is False
@@ -124,7 +157,9 @@ def _shadow_auth_receipt(kind: str, threshold: str, session: preauth.Session) ->
 
 
 @then("the founder is not asked")
-def _not_asked(session: preauth.Session, messages: Any, context: dict[str, Any]) -> None:
+def _not_asked(
+    session: preauth.Session, messages: Any, context: dict[str, Any]
+) -> None:
     assert session.status == "running"
     assert session.asking is None
     assert session.asks == context["asks_before"]

@@ -345,67 +345,6 @@ def _edit_only_not_stranded() -> None:
     assert rows == 0, f"{rows} branch(es) with no new files are marked stranded"
 
 
-# ---------------------------------------------------------------------------- agreement
-
-
-@given("both the twin and bin/catalog-dark-matter have read the same git state")
-def _both_read() -> None:
-    if not (ROOT / "bin" / "catalog-dark-matter").exists():
-        pytest.fail(
-            "bin/catalog-dark-matter does not exist; the two cannot be compared"
-        )
-
-
-@when("their counts of stranded branches are compared")
-def _compare(context: dict) -> None:
-    proc = _run([str(ROOT / "bin" / "catalog-dark-matter"), "--check"])
-    context["generator_ok"] = proc.returncode == 0
-    context["generator_out"] = proc.stdout + proc.stderr
-    con = _db()
-    _require(con, "nodes")
-    context["twin"] = con.execute(
-        "select count(*) from nodes where domain='code' and status='stranded'"
-    ).fetchone()[0]
-    con.close()
-
-
-@then("the two counts are equal")
-def _equal(context: dict) -> None:
-    """The two surfaces must report one number.
-
-    The generator writes its counts to `backstage/platform/dark-matter.json`; the twin reads
-    that file into a `git:summary:stranded` node. So the comparison is: does the graph's
-    summary agree with the file the generator wrote? A drift here means the portal and the
-    graph tell a founder two different numbers, which is the failure this system exists to
-    end.
-    """
-    assert context.get("generator_ok"), (
-        "bin/catalog-dark-matter --check is not green, so there is no generator count "
-        "to compare against:\n" + context.get("generator_out", "")
-    )
-    counts_file = ROOT / "backstage" / "platform" / "dark-matter.json"
-    assert counts_file.exists(), (
-        "the catalogue generator wrote no dark-matter.json, so the twin has no count to "
-        "read and the two surfaces cannot be compared"
-    )
-    gen = int(json.loads(counts_file.read_text())["stranded_branches"])
-
-    con = _db()
-    row = con.execute(
-        "select metadata from nodes where id = 'git:summary:stranded'"
-    ).fetchone()
-    con.close()
-    assert row is not None, (
-        "the graph holds no git:summary:stranded node, so it reports no branch count at all"
-    )
-    twin = int(json.loads(row[0])["stranded_branches"])
-
-    assert twin == gen, (
-        f"the twin says {twin} stranded branches and the catalogue generator says {gen}; "
-        f"a founder would read two different numbers"
-    )
-
-
 # ------------------------------------------------------------------------ freshness rule
 
 

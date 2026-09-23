@@ -5,6 +5,7 @@ property: >= 500 generated (dependencies x samples x ceiling) cases, every body
 under its ceiling. Log lines are generated but never handed to the builder,
 which is the point: the tool has no log input at all (cp3 owns logs).
 """
+
 from __future__ import annotations
 
 import json
@@ -29,14 +30,33 @@ def ctx(tmp_path: Path) -> dict[str, Any]:
     cat, db = tmp_path / "catalog-info.yaml", tmp_path / "estate.db"
     plist, _ = sa.write_job(tmp_path, "app-x", 10)
     sa.write_estate_db(db, [sa.job_row(ASSET, plist)])
-    return {"cat": cat, "db": db, "calls": 0, "samples": {}, "log_lines": [],
-            "cfg": {"catalog_path": str(cat), "estate_db_path": str(db), "byte_ceiling": 8000}}
+    return {
+        "cat": cat,
+        "db": db,
+        "calls": 0,
+        "samples": {},
+        "log_lines": [],
+        "cfg": {
+            "catalog_path": str(cat),
+            "estate_db_path": str(db),
+            "byte_ceiling": 8000,
+        },
+    }
 
 
 def _register(ctx, deps: int) -> None:
-    sa.write_catalog(ctx["cat"], [{"name": "app-x", "owner": "group:default/platform",
-                                   "repo": "chidionyema/app-x", "asset_path": ASSET,
-                                   "depends_on": [f"component:default/dep-{i:05d}" for i in range(deps)]}])
+    sa.write_catalog(
+        ctx["cat"],
+        [
+            {
+                "name": "app-x",
+                "owner": "group:default/platform",
+                "repo": "chidionyema/app-x",
+                "asset_path": ASSET,
+                "depends_on": [f"component:default/dep-{i:05d}" for i in range(deps)],
+            }
+        ],
+    )
 
 
 @given('a workload "app-x" registered in the Backstage catalog')
@@ -48,14 +68,23 @@ def _registered(ctx):
 @when("get_workload_state is called for it")
 def _call(ctx):
     ctx["calls"] += 1
-    ctx["resp"] = ws.build_workload_state("app-x", ctx["cfg"], metric_samples=ctx["samples"])
+    ctx["resp"] = ws.build_workload_state(
+        "app-x", ctx["cfg"], metric_samples=ctx["samples"]
+    )
 
 
 @then("the response includes the catalog entry (owner, repo, dependencies)")
 def _catalog(ctx):
     r = ctx["resp"]
-    assert r["found"] and r["owner"] == "group:default/platform" and r["repo"] == "chidionyema/app-x"
-    assert r["dependencies"] == ["component:default/dep-00000", "component:default/dep-00001"]
+    assert (
+        r["found"]
+        and r["owner"] == "group:default/platform"
+        and r["repo"] == "chidionyema/app-x"
+    )
+    assert r["dependencies"] == [
+        "component:default/dep-00000",
+        "component:default/dep-00001",
+    ]
 
 
 @then("the response includes summarized metrics (not raw timeseries points)")
@@ -101,12 +130,20 @@ def _agg(ctx):
     assert m["count"] == 90 * 24 * 60 and m["min"] == 0.0 and m["max"] == 996.0
 
 
-@given("a property test generating workloads with 1 to 100,000 log lines, 0 to 500 dependencies, and 0 to 10,000 metric samples")
+@given(
+    "a property test generating workloads with 1 to 100,000 log lines, 0 to 500 dependencies, and 0 to 10,000 metric samples"
+)
 def _property(ctx):
     rng = random.Random(297)
-    ctx["cases"] = [(rng.randint(1, 100_000), rng.choice([0, 1, 5, 50, 200, 500]),
-                     rng.choice([0, 1, 10, 200, 1000, 10_000]), rng.choice([700, 2000, 8000, 50_000]))
-                    for _ in range(520)]
+    ctx["cases"] = [
+        (
+            rng.randint(1, 100_000),
+            rng.choice([0, 1, 5, 50, 200, 500]),
+            rng.choice([0, 1, 10, 200, 1000, 10_000]),
+            rng.choice([700, 2000, 8000, 50_000]),
+        )
+        for _ in range(520)
+    ]
 
 
 @when("get_workload_state is called for each generated workload")
@@ -114,7 +151,11 @@ def _run_cases(ctx):
     ctx["sizes"] = []
     for _log_lines, deps, nsamples, ceiling in ctx["cases"]:
         _register(ctx, deps)
-        samples = {"latency_ms": [float(i % 997) for i in range(nsamples)]} if nsamples else {}
+        samples = (
+            {"latency_ms": [float(i % 997) for i in range(nsamples)]}
+            if nsamples
+            else {}
+        )
         cfg = dict(ctx["cfg"], byte_ceiling=ceiling)
         payload = ws.build_workload_state("app-x", cfg, metric_samples=samples)
         ctx["sizes"].append((ws._json_bytes(payload), ceiling))

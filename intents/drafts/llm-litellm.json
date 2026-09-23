@@ -9,7 +9,8 @@
     "LANGFUSE_HOST": "http://langfuse-web.observability.svc:3000",
     "LITELLM_LOG": "INFO",
     "OTEL_EXPORTER": "otlp_http",
-    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://signoz-otel-collector.observability.svc:4318"
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://signoz-otel-collector.observability.svc:4318",
+    "PYTHONPATH": "/etc/litellm/ceilings"
   },
   "name": "litellm",
   "port": 4000,

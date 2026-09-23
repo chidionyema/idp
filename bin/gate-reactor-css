@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""Fail if any class the Reactor's markup uses has NO CSS rule.
+
+    bin/gate-reactor-css
+
+WHY. The Reactor is written in Tailwind's vocabulary into a project that has no Tailwind; the rules
+come from `bin/gen-reactor-css`. When a class is used but no rule exists, nothing fails: the element
+silently falls back to the browser default. Measured 2026-09-20, that produced a **white
+rgb(239,239,239) button** where `bg-black/40` was written, a **9px black-on-grey tab strip**, and a
+hologram with no box at all -- because the hand-written bridge had drifted and 80+ classes were
+missing.
+
+This compares the two sides and names anything unresolved. It is the check that would have caught
+all of it on the day it started.
+
+Exit 0 clean, 1 on a gap. No browser, no build.
+"""
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx"
+CSS = ROOT / "backstage/packages/app/src/styles.css"
+
+
+def esc(c: str) -> str:
+    """CSS-escape a class name the way the GENERATOR does, so the two can be compared.
+
+    THE ESCAPE SETS MUST MATCH EXACTLY, and they did not: the generator escapes `#` (needed, because
+    a selector containing a bare `#` is invalid) while this function did not, so every
+    arbitrary-value class with a colour -- `shadow-[0_0_10px_rgba(0,240,255,0.8)]` and five others
+    -- was reported MISSING while its rule sat in the stylesheet. A verifier whose escaping differs
+    from the writer's reports phantom gaps, and phantom gaps are how a real gap gets ignored.
+    """
+    return re.sub(r"([./\[\]()#%:,])", r"\\\1", c)
+
+
+def used_classes() -> set[str]:
+    src = SRC.read_text()
+    out: set[str] = set()
+    for m in re.finditer(r'className="([^"]*)"', src):
+        out |= {c for c in m.group(1).split() if c and "$" not in c}
+    for m in re.finditer(r"className=\{`([^`]*)`\}", src):
+        static = re.sub(r"\$\{[^}]*\}", " ", m.group(1))
+        out |= {c for c in static.split() if c}
+        for arm in re.finditer(r"'([^']*)'", m.group(0)):
+            out |= {c for c in arm.group(1).split() if c}
+    # strip state prefixes the stylesheet keeps as part of the selector
+    return {c for c in out if not c.startswith("group-hover:")}
+
+
+def defined_selectors() -> set[str]:
+    """Every class name that appears in a `.fleet-reactor ...` rule, UNESCAPED AND INTACT.
+
+    THE SPLITTER MUST NOT BREAK INSIDE PARENTHESES. An earlier version split the selector on
+    `[\\s,>+~]+`, which tore `shadow-[0_0_10px_rgba(0,240,255,0.8)]` apart at its commas -- so six
+    arbitrary-value classes were reported MISSING while their rules sat in the stylesheet. A
+    verifier that cannot read the selector it is checking reports phantom gaps, and phantom gaps
+    teach a reader to ignore the real ones.
+
+    So the scan is character-by-character: a class name runs from a `.` to the next unescaped
+    separator AT BRACKET DEPTH ZERO. Anything inside `[]` or `()` -- which is where every arbitrary
+    Tailwind value lives -- is part of the name.
+    """
+    css = CSS.read_text()
+    names: set[str] = set()
+    for m in re.finditer(r"\.fleet-reactor\s+([^{]+)\{", css):
+        sel = m.group(1)
+        depth = 0
+        cur: list[str] = []
+        started = False
+        i = 0
+        parts: list[str] = []
+        while i < len(sel):
+            ch = sel[i]
+            if ch == "\\" and i + 1 < len(sel):
+                cur.append(ch); cur.append(sel[i + 1]); i += 2; continue
+            if ch in "[(":
+                depth += 1
+            elif ch in "])":
+                depth = max(0, depth - 1)
+            if depth == 0 and (ch.isspace() or ch in ",>+~"):
+                if cur:
+                    parts.append("".join(cur)); cur = []
+                i += 1
+                started = False
+                continue
+            if ch == "." and depth == 0 and not started:
+                started = True
+            elif started:
+                cur.append(ch)
+            i += 1
+        if cur:
+            parts.append("".join(cur))
+        for raw in parts:
+            # STRIP A PSEUDO SUFFIX, including `::placeholder` -- the double colon left a stray
+            # `:` behind when only the word was matched, so `placeholder-white\\/25` never equalled
+            # the `placeholder-white\\/25:` the parser stored. One character, one phantom gap.
+            raw = re.sub(r":{1,2}(hover|focus|active|disabled|placeholder|before|after)$", "", raw)
+            raw = raw.rstrip(":")
+            names.add(raw)
+            names.add(re.sub(r"\\(.)", r"\1", raw))
+    # descendant component classes written by hand: `.node-label .nl-state`
+    for m in re.finditer(r"\.fleet-reactor\s+\.node-label[^{]*\{", css):
+        for c in ("node-label", "nl-state", "nl-task", "nl-meta"):
+            names.add(c)
+    return names
+
+
+def chrome_buttons() -> list[int]:
+    """Lines of `<button>` elements that declare NO background, so the browser paints its own.
+
+    THE DEFECT THIS CATCHES IS NOT A MISSING RULE, IT IS A MISSING DECLARATION. The tab strip and
+    the nine mic buttons were fully covered by the class check below -- every class they used had a
+    rule -- and they still rendered as `rgb(239,239,239)` grey squares, because they declared only a
+    text colour and the browser filled the rest. `appearance: none` in `tab-plain` does not fix it:
+    the UA background is not "chrome" once no author background exists.
+
+    So this reads each button's own `className`/`style` and asks the only question that matters:
+    did ANY of them set a background? A button that sets none is a button we did not finish, and on
+    a dark room it is a white rectangle -- measured 2026-09-20, twelve of them.
+    """
+    src = SRC.read_text()
+    bad: list[int] = []
+    for m in re.finditer(r"<button", src):
+        i = m.start()
+        # THE TAG ENDS AT THE FIRST `>` AT DEPTH ZERO, and it must be scanned, not guessed. A fixed
+        # 12-line window was the first version and it reported 12 when 7 were bare: it swallowed the
+        # NEXT button's `bg-` class and called a bare button clean. A verifier with a sloppy boundary
+        # reports numbers that are not about the thing it claims to measure.
+        depth, quote, j = 0, None, i + len("<button")
+        while j < len(src):
+            ch = src[j]
+            if quote:
+                if ch == quote:
+                    quote = None
+            elif ch in "\"'`":
+                quote = ch
+            elif ch in "{[(":
+                depth += 1
+            elif ch in "}][)":
+                depth -= 1
+            elif ch == ">" and depth == 0:
+                break
+            j += 1
+        tag = src[i : j + 1]
+        # `all: 'unset'` and `style={SOMETHING}` are legitimate: the first is a visually-hidden
+        # keyboard target whose box does not paint, the second names a style object I cannot read
+        # from here. Neither paints browser chrome, so neither is what this gate is about. It weeds
+        # out exactly those two, and nothing else -- a gate that excuses what it cannot see is a
+        # gate that reports a number it did not measure.
+        sets_bg = (
+            re.search(r"(^|[\s'\"`])bg-", tag)
+            or "background" in tag
+            or "all: 'unset'" in tag
+            or re.search(r"style=\{\s*[A-Za-z_$]", tag)
+        )
+        if not sets_bg:
+            bad.append(src[:i].count("\n") + 1)
+    return bad
+
+
+def main() -> int:
+    used = used_classes()
+    defined = defined_selectors()
+    missing = sorted(c for c in used if c not in defined and c != "fleet-reactor")
+    # Classes the markup uses purely as hooks carry no rule on purpose.
+    hooks = {"rail-card", "you", "group"}
+    missing = [c for c in missing if c not in hooks]
+    if missing:
+        print(f"FAIL  {len(missing)} class(es) used in markup with NO CSS rule:")
+        for c in missing:
+            print(f"      {c}")
+        print("\nRun `bin/gen-reactor-css --write` to regenerate, or add the class to the")
+        print("generator's _HANDWRITTEN block if it is a component class rather than a utility.")
+        return 1
+    print(f"ok    {len(used)} classes in the markup, all {len(used)} have rules")
+
+    bare = chrome_buttons()
+    if bare:
+        print(f"FAIL  {len(bare)} <button>(s) declare NO background -- the browser paints")
+        print("      its own rgb(239,239,239) chrome, which is what \"some white there\" means:")
+        for ln in bare:
+            print(f"      FleetReactorApp.tsx:{ln}")
+        print("\nGive each one a background class (`bg-black/40`, ...) and `tab-plain` to drop the")
+        print("native chrome. Only `bg-transparent` is a legitimate no-background.")
+        return 1
+    print("ok    every <button> declares its own background")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

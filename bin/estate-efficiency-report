@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""What the efficiency mechanisms actually saved, from the ledger rather than from memory.
+
+The gateway (`platform/llm/efficiency_gateway.py`) writes one JSONL row per call, carrying
+the payload size before and after the mechanism chain plus each mechanism's own byte delta.
+This reads that ledger and prints the attribution.
+
+    bin/estate-efficiency-report                 # the whole ledger
+    bin/estate-efficiency-report --since 1h      # only recent rows
+    bin/estate-efficiency-report --json          # machine-readable
+
+A row is written whether or not anything was saved, so "0 saved" and "not instrumented" are
+different answers -- that distinction is the whole point (the counters this replaces reported
+`hit_rate=0.0%` while 18M tokens were served at a 99.9% cache-hit rate).
+
+The ledger lives at $ESTATE_EFFICIENCY_LEDGER, default ~/.estate/efficiency-ledger.jsonl.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+LEDGER_ENV = "ESTATE_EFFICIENCY_LEDGER"
+LEDGER_DEFAULT = "~/.estate/efficiency-ledger.jsonl"
+
+# mechanism -> (ledger field for its counter, ledger field for its bytes, one-line label)
+MECHANISMS = [
+    ("[1] CacheGuardian", "m1_cache_hits", None, "system-prompt drift / prefix preserved"),
+    ("[2] TokenKiller", "m2_lines_compressed", "m2_bytes_saved", "duplicate lines in tool results"),
+    ("[3] MCPAdapter", "m3_schemas_compressed", "m3_bytes_saved", "long tool descriptions trimmed"),
+    ("[5] SoLPi", "m5_obs_hits", "m5_bytes_saved", "repeated large observations -> handle"),
+    ("[6] ContextPruning", "m6_pruned", "m6_bytes_saved", "duplicate tool_result entries"),
+    ("[7] CompactionManager", "m7_compactions", "m7_bytes_saved", "old messages dropped"),
+    ("[8] Gisting", "m8_gisted", "m8_bytes_saved", "old assistant turns condensed"),
+]
+
+
+def ledger_path() -> Path:
+    return Path(os.path.expanduser(os.environ.get(LEDGER_ENV) or LEDGER_DEFAULT))
+
+
+def load(path: Path, since: dt.datetime | None):
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if since is not None:
+            try:
+                at = dt.datetime.strptime(r.get("at", ""), "%Y-%m-%dT%H:%M:%SZ").replace(
+                    tzinfo=dt.timezone.utc
+                )
+            except ValueError:
+                continue
+            if at < since:
+                continue
+        rows.append(r)
+    return rows
+
+
+def parse_since(text: str) -> dt.datetime:
+    n = int(text[:-1])
+    unit = text[-1]
+    secs = {"s": 1, "m": 60, "h": 3600, "d": 86400}[unit]
+    return dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=n * secs)
+
+
+def report(rows: list[dict]) -> int:
+    if not rows:
+        print(f"no rows in {ledger_path()}")
+        print("  (a session that made no calls through the router writes nothing;")
+        print("   the gateway is registered in platform/llm/config.yaml callbacks)")
+        return 0
+
+    calls = len(rows)
+    b_before = sum(r.get("bytes_before", 0) for r in rows)
+    b_after = sum(r.get("bytes_after", 0) for r in rows)
+    b_saved = sum(r.get("bytes_saved", 0) for r in rows)
+    msgs_dropped = sum(r.get("m7_dropped_messages", 0) for r in rows)
+    calls_that_saved = sum(1 for r in rows if r.get("bytes_saved", 0) > 0)
+
+    print(f"efficiency ledger: {ledger_path()}")
+    print(f"  calls          {calls:>12,}")
+    print(f"  bytes before   {b_before:>12,}")
+    print(f"  bytes after    {b_after:>12,}")
+    pct = (b_saved / b_before * 100) if b_before else 0
+    print(f"  bytes saved    {b_saved:>12,}  ({pct:.2f}%)")
+    print(f"  calls saving   {calls_that_saved:>12,}  of {calls:,}")
+    # 4 chars/token is the gateway's own CHARS_PER_TOKEN; named here so the conversion is visible.
+    print(f"  est tokens cut {b_saved // 4:>12,}  (bytes/4, the gateway's own ratio)")
+    if msgs_dropped:
+        print(f"  messages gone  {msgs_dropped:>12,}")
+
+    print("\n  BY MECHANISM (its own ledger field, not a decomposition)")
+    print(f"  {'mechanism':<22} {'events':>10}  {'bytes saved':>12}  {'share':>7}  what it does")
+    for label, count_field, bytes_field, what in MECHANISMS:
+        ev = sum(r.get(count_field, 0) for r in rows)
+        by = sum(r.get(bytes_field, 0) for r in rows) if bytes_field else 0
+        share = (by / b_saved * 100) if (b_saved and bytes_field) else 0
+        bs = f"{by:,}" if bytes_field else "n/a (prefix)"
+        print(f"  {label:<22} {ev:>10,}  {bs:>12}  {share:>6.1f}%  {what}")
+
+    inert = [
+        label
+        for label, count_field, _b, _w in MECHANISMS
+        if sum(r.get(count_field, 0) for r in rows) == 0
+    ]
+    if inert:
+        print(f"\n  INERT on this ledger ({len(inert)}/{len(MECHANISMS)}): {', '.join(inert)}")
+        print("  Not necessarily broken: [7] runs before [2]/[6] and drops what they would trim,")
+        print("  and [5]/[8] need a repeated >=500-char payload / >40 messages to act at all.")
+        print("  Measured, not assumed -- see tests/test_efficiency_gateway_records_what_it_saved.py")
+
+    # The per-mechanism byte totals can EXCEED the chain total, because mechanisms act on
+    # overlapping bytes: [7] drops messages whose bytes [5] may already have counted, so the
+    # same byte is attributed twice. Measured 2026-09-18 and left visible rather than hidden --
+    # a reader who adds the column and gets >100% must be told why, not left to conclude the
+    # instrument is broken or, worse, quote a number that double-counts.
+    mech_sum = sum(
+        sum(r.get(b, 0) for r in rows) for _l, _c, b, _w in MECHANISMS if b
+    )
+    if b_saved and mech_sum > b_saved * 1.02:
+        over = (mech_sum / b_saved - 1) * 100
+        print(
+            f"\n  NOTE  per-mechanism bytes sum to {mech_sum:,}, {over:.1f}% above the chain "
+            f"total ({b_saved:,}).")
+        print(
+            "        The mechanisms act on OVERLAPPING bytes -- [7] compaction drops messages"
+        )
+        print(
+            "        whose bytes [5] may already have counted -- so the columns double-count a"
+        )
+        print(
+            "        byte and must not be added up. `bytes_saved` is the real total; the"
+        )
+        print("        per-mechanism column is attribution, not a decomposition.")
+
+    # models, so the routing half of the story sits next to the mechanism half
+    by_model = defaultdict(lambda: [0, 0, 0])
+    for r in rows:
+        m = r.get("model") or "(none)"
+        by_model[m][0] += 1
+        by_model[m][1] += r.get("bytes_before", 0)
+        by_model[m][2] += r.get("bytes_saved", 0)
+    if by_model:
+        print("\n  BY MODEL")
+        for m, (n, bb, bs) in sorted(by_model.items(), key=lambda x: -x[1][0]):
+            p = (bs / bb * 100) if bb else 0
+            print(f"  {m:<24} calls={n:>8,}  saved={bs:>12,}  ({p:.1f}% of its bytes)")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--since", help="window, e.g. 30m / 2h / 7d")
+    ap.add_argument("--json", action="store_true", help="emit the summary as JSON")
+    a = ap.parse_args()
+    rows = load(ledger_path(), parse_since(a.since) if a.since else None)
+    if a.json:
+        print(json.dumps({"rows": len(rows), "ledger": str(ledger_path())}, indent=2))
+        return 0
+    return report(rows)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

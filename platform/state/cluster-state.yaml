@@ -540,12 +540,46 @@ data:
     def iso_utc(x):
         return datetime.strptime(str(x)[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
     secret_stale, secrets_error = [], ""
+    # HGC (docs/reference/policy/enterprise-operating-model.md, standard 6): the TOTAL count and
+    # a breakdown by creator. OKE refuses every new resource past its ceiling -- measured
+    # 2026-09-18, "Cluster has 2650 secrets and the limit is 2000", which stalled 30 Flux objects
+    # and everything behind them -- and until this row nothing counted them. The loop below
+    # already lists every Secret to compute staleness, so the count costs one len() and the
+    # breakdown one pass over metadata that is already in memory.
+    #
+    # WHY A BREAKDOWN AND NOT JUST A NUMBER. 2650 tells nobody what to do. `helm` says delete old
+    # revisions (`history-max`), `cert-manager` says pruning is a policy question, and
+    # `external-secrets`/`kubernetes.io/service-account-token` say look somewhere else entirely.
+    # The founder's question on reading the number was "makes no sense we have so many, we must
+    # be doing something really stupid" -- and the only honest answer to that is a breakdown.
+    secret_count = 0
+    secret_by_kind = {}
     RELOAD_EXEMPT_NS = ("kube-system", "flux-system", "kyverno")
     try:
         PMDL = "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1"
         written = {}
         for s in get("/api/v1/secrets", accept=PMDL)["items"]:
             md = s["metadata"]
+            secret_count += 1
+            # The creator, in the order that actually explains a count this size: Helm release
+            # history (one Secret per revision, and `helm.sh/release.v1` is unambiguous), then
+            # cert-manager's renewals, then External Secrets, then the two kinds Kubernetes
+            # itself makes. Anything unattributable is counted as `other` rather than guessed at.
+            st = s.get("type") or "Opaque"
+            name = md.get("name") or ""
+            if st == "helm.sh/release.v1":
+                kind = "helm-release"
+            elif st == "kubernetes.io/service-account-token":
+                kind = "service-account-token"
+            elif st.startswith("kubernetes.io/tls") or (md.get("annotations") or {}).get("cert-manager.io/certificate-name"):
+                kind = "cert-manager"
+            elif (md.get("annotations") or {}).get("reloader.stakater.com/match") or md.get("labels", {}).get("app.kubernetes.io/managed-by") == "external-secrets":
+                kind = "external-secrets"
+            elif name.startswith("sh.helm.release") or ".v1" in name:
+                kind = "helm-release"
+            else:
+                kind = "other"
+            secret_by_kind[kind] = secret_by_kind.get(kind, 0) + 1
             stamps = [f["time"] for f in (md.get("managedFields") or []) if f.get("time")]
             written[(md.get("namespace"), md["name"])] = max(stamps) if stamps else md.get("creationTimestamp")
         now_dt = datetime.now(timezone.utc)
@@ -863,7 +897,7 @@ data:
     cpu_used_pct, mem_used_pct = pct("cpu_used", tot_cpu), pct("memory_used_gb", tot_mem)
     cpu_req_pct, mem_req_pct = pct("cpu_requested", tot_cpu), pct("memory_requested_gb", tot_mem)
     head = (f"ok cluster-state at {at} nodes={len(node_rows)} ready={ready} pods={len(pods)} pods_not_ready={len(not_ready)}"
-            f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} deploy_short={len(deploy_short)} secret_stale_consumers={secret_stale_count} events_warning={len(events)}"
+            f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} deploy_short={len(deploy_short)} secret_stale_consumers={secret_stale_count} secret_count={secret_count} events_warning={len(events)}"
             f" hostnames={len(hostnames or [])} spiffe_ids={len(spiffe['clusterspiffeids'] or [])} spiffe_workloads={len(spiffe['csi_workloads'])}"
             f" svids={sum(len(r['spiffe_ids']) for r in spiffe['svids'])} spire_agents={len(spiffe['agents'])}"
             f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)} k8sgpt_findings={len(k8sgpt)} k8sgpt_scans={len((k8sgpt_config or {}).get('filters') or [])} k8sgpt_remediation={(k8sgpt_config or {}).get('auto_remediation_enabled')}"
@@ -871,7 +905,7 @@ data:
             f" cpu_used_pct={cpu_used_pct} mem_used_pct={mem_used_pct} cpu_req_pct={cpu_req_pct} mem_req_pct={mem_req_pct}"
             f" unschedulable={sum(1 for r in placement['pods'] if r['unschedulable'])}")
     body = {"at": at, "placement": placement, "capacity": capacity, "capacity_error": cap_error, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
-            "flux": flux, "flux_not_ready": flux_not_ready, "secret_stale_consumers": secret_stale, "secrets_error": secrets_error, "policy_exceptions": policy_exceptions, "kyverno_policies": kyverno_policies, "k8sgpt": k8sgpt, "k8sgpt_config": k8sgpt_config, "daemonsets": ds, "ds_short": ds_short, "deploy_short": deploy_short, "events_warning": events,
+            "flux": flux, "flux_not_ready": flux_not_ready, "secret_stale_consumers": secret_stale, "secrets_error": secrets_error, "secret_count": secret_count, "secret_by_kind": secret_by_kind, "policy_exceptions": policy_exceptions, "kyverno_policies": kyverno_policies, "k8sgpt": k8sgpt, "k8sgpt_config": k8sgpt_config, "daemonsets": ds, "ds_short": ds_short, "deploy_short": deploy_short, "events_warning": events,
             "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe,
             "services_unlisted": services_unlisted, "services_unlisted_error": unlisted_error,
             "oci_identity": {"pods": oci_pods, "static_key_pods": oci_static_key_pods,

@@ -5,6 +5,7 @@ the estate queue while engine/worker.py served only SessionWorkflow, so the
 run sat unpicked with no error. The rule is checked against the module the
 launchd job imports, not a copy of its list.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -24,7 +25,9 @@ def _registered_activity_names() -> set[str]:
 
 
 def test_branch_workflows_registered() -> None:
-    assert {SessionWorkflow, BranchParentWorkflow, BranchChildWorkflow} <= set(worker.WORKFLOWS)
+    assert {SessionWorkflow, BranchParentWorkflow, BranchChildWorkflow} <= set(
+        worker.WORKFLOWS
+    )
 
 
 def test_every_shadow_activity_the_workflow_executes_is_registered() -> None:
@@ -34,7 +37,9 @@ def test_every_shadow_activity_the_workflow_executes_is_registered() -> None:
     assert called, "no execute_activity calls found; the regex is stale"
     names = _registered_activity_names()
     missing = called - names
-    assert not missing, f"shadow workflow calls activities the worker does not register: {sorted(missing)}"
+    assert not missing, (
+        f"shadow workflow calls activities the worker does not register: {sorted(missing)}"
+    )
 
 
 def test_rule_is_documented_next_to_the_list() -> None:

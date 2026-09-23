@@ -11,6 +11,7 @@ scenario's estate, so "a Langfuse dataset item exists" is proved on the
 local mirror, which is the same item the Langfuse client is handed when
 the host is configured (distill._push_to_langfuse).
 """
+
 from __future__ import annotations
 
 import json
@@ -59,7 +60,9 @@ def _one_step(status: str, context: dict[str, Any]) -> None:
     context["item"] = distill.capture(context["step"])
 
 
-@then("a Langfuse dataset item exists with prompt, completion and tool calls, tagged with the task class")
+@then(
+    "a Langfuse dataset item exists with prompt, completion and tool calls, tagged with the task class"
+)
 def _item_exists(context: dict[str, Any]) -> None:
     step = context["step"]
     rows = distill.items(_TASK_CLASS)
@@ -73,7 +76,12 @@ def _item_exists(context: dict[str, Any]) -> None:
     assert distill.queue_path().exists()
     # A step that did not finish "done", or ran on the local model, is not a training row.
     assert distill.capture(_frontier_step(2, "failed")) is None
-    assert distill.capture({**_frontier_step(3), "model": str(ck.get("distill.local_model"))}) is None
+    assert (
+        distill.capture(
+            {**_frontier_step(3), "model": str(ck.get("distill.local_model"))}
+        )
+        is None
+    )
     assert len(distill.items(_TASK_CLASS)) == 1
 
 
@@ -81,7 +89,12 @@ def _item_exists(context: dict[str, Any]) -> None:
 
 
 @when(parsers.parse('I run "bin/sb distill --task-class {task_class} --json"'))
-def _run_distill(task_class: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], context: dict[str, Any]) -> None:
+def _run_distill(
+    task_class: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    context: dict[str, Any],
+) -> None:
     minimum = int(ck.get("distill.min_items"))
     expected: dict[str, str] = {}
     for n in range(minimum):
@@ -110,14 +123,20 @@ def _run_distill(task_class: str, monkeypatch: pytest.MonkeyPatch, capsys: pytes
 
     monkeypatch.setattr(distill, "local_completer", lambda model=None: _stub_completer)
 
-    rc = sb_cli.main(["distill", "--task-class", task_class, "--json"])  # the real entry point, plug-in loop included
+    rc = sb_cli.main(
+        ["distill", "--task-class", task_class, "--json"]
+    )  # the real entry point, plug-in loop included
     assert rc == 0
     context["out"] = json.loads(capsys.readouterr().out)
     context["train_calls"] = calls
     context["task_class"] = task_class
 
 
-@then(parsers.parse('the output has "{field}" measured over at least {minimum:d} dataset items'))
+@then(
+    parsers.parse(
+        'the output has "{field}" measured over at least {minimum:d} dataset items'
+    )
+)
 def _measured(context: dict[str, Any], field: str, minimum: int) -> None:
     out = context["out"]
     assert out["measured"] is True
@@ -130,7 +149,11 @@ def _measured(context: dict[str, Any], field: str, minimum: int) -> None:
     assert context["task_class"] in " ".join(argv)
 
 
-@then(parsers.re(r"if local_accuracy (?:≥|>=) (?P<threshold>[0-9.]+) the LiteLLM route for that class is set to the local model"))
+@then(
+    parsers.re(
+        r"if local_accuracy (?:≥|>=) (?P<threshold>[0-9.]+) the LiteLLM route for that class is set to the local model"
+    )
+)
 def _route_flips(context: dict[str, Any], threshold: str) -> None:
     out = context["out"]
     assert float(out["threshold"]) == float(threshold)
@@ -146,10 +169,18 @@ def _route_flips(context: dict[str, Any], threshold: str) -> None:
 
 @then(parsers.parse('a receipt "{line}" is written'))
 def _receipt_written(context: dict[str, Any], line: str) -> None:
-    rows = [r for r in receipts_mod.read_all() if r.get("kind") == str(ck.get("distill.receipt_kind"))]
+    rows = [
+        r
+        for r in receipts_mod.read_all()
+        if r.get("kind") == str(ck.get("distill.receipt_kind"))
+    ]
     assert len(rows) == 1
     text = rows[0]["text"]
-    pattern = re.escape(line).replace(re.escape("<n>"), r"[0-9.]+").replace(re.escape("<model>"), r"\S+")
+    pattern = (
+        re.escape(line)
+        .replace(re.escape("<n>"), r"[0-9.]+")
+        .replace(re.escape("<model>"), r"\S+")
+    )
     assert re.fullmatch(pattern, text), (text, pattern)
     assert text == context["out"]["text"]
     assert rows[0]["local_accuracy"] == context["out"]["local_accuracy"]

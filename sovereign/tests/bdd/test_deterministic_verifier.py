@@ -1064,6 +1064,7 @@ def test_rule_4_has_two_enforcement_points() -> None:
         and not line.endswith("test_deterministic_verifier.py")
     )
     assert enforcing == [
+        "bin/idp-gateway-emit",
         "platform/executor/daemon.py",
         "platform/verification/refuse-unattested-provenance.yaml",
     ], (

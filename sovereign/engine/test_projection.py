@@ -7,6 +7,7 @@ config.SHADOW_HEADS_DIR / config.PROJECTION_STORE_PATH at a temp dir,
 same pattern as sovereign/sidecar/test_sidecar.py and
 sovereign/engine/test_flip.py.
 """
+
 from __future__ import annotations
 
 import random
@@ -38,13 +39,17 @@ class ProjectionTestBase(unittest.TestCase):
             p = patch.object(config, name, val)
             p.start()
             self.addCleanup(p.stop)
-        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
+        p = patch.object(
+            receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file")
+        )
         p.start()
         self.addCleanup(p.stop)
 
         self.db_path = root / "legacy.db"
         self.conn = sqlite3.connect(str(self.db_path))
-        self.conn.execute("CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)")
+        self.conn.execute(
+            "CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)"
+        )
         self.conn.commit()
         self.addCleanup(self.conn.close)
         # no dag_dir override -- relies on the patched config.SIDECAR_DAG_DIR
@@ -54,7 +59,10 @@ class ProjectionTestBase(unittest.TestCase):
         self.sc = sidecar_core.attach(self.conn, "episodes")
 
     def _insert(self, row_id: str, lane: str, note: str) -> None:
-        self.conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)", (row_id, lane, note))
+        self.conn.execute(
+            "INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)",
+            (row_id, lane, note),
+        )
         self.conn.commit()
 
     def _update(self, row_id: str, note: str) -> None:
@@ -66,12 +74,16 @@ class ProjectionTestBase(unittest.TestCase):
         self.conn.commit()
 
     def _legacy_rows(self) -> dict[str, dict]:
-        rows = self.conn.execute("SELECT rowid, id, lane, note FROM episodes").fetchall()
+        rows = self.conn.execute(
+            "SELECT rowid, id, lane, note FROM episodes"
+        ).fetchall()
         return {str(r[0]): {"id": r[1], "lane": r[2], "note": r[3]} for r in rows}
 
 
 class ProjectionPropertyTest(ProjectionTestBase):
-    def test_property_rebuild_from_scratch_matches_legacy_state_for_any_op_sequence(self) -> None:
+    def test_property_rebuild_from_scratch_matches_legacy_state_for_any_op_sequence(
+        self,
+    ) -> None:
         rng = random.Random(1787631900)
         for trial in range(20):
             row_id = f"r{trial}"
@@ -92,7 +104,9 @@ class ProjectionPropertyTest(ProjectionTestBase):
 
         last = receipts.read_all()[-1]
         self.assertEqual(last["kind"], "rebuild")
-        self.assertEqual(last["text"], config.REBUILD_RECEIPT_TEMPLATE.format(root=result["root"]))
+        self.assertEqual(
+            last["text"], config.REBUILD_RECEIPT_TEMPLATE.format(root=result["root"])
+        )
 
     def test_property_deleted_store_rebuilds_to_the_exact_same_state(self) -> None:
         for row_id, lane, note in (("a", "ops", "n1"), ("b", "ops", "n2")):
@@ -110,14 +124,22 @@ class ProjectionPropertyTest(ProjectionTestBase):
         after_text = config.PROJECTION_STORE_PATH.read_text()
 
         self.assertEqual(first["root"], second["root"])
-        self.assertEqual(before_text, after_text, "the views match the root hash: rebuild is deterministic")
+        self.assertEqual(
+            before_text,
+            after_text,
+            "the views match the root hash: rebuild is deterministic",
+        )
         legacy = self._legacy_rows()
         for rowid, row in legacy.items():
-            self.assertEqual(projection.read("episodes", rowid), row, "every read answers as before")
+            self.assertEqual(
+                projection.read("episodes", rowid), row, "every read answers as before"
+            )
 
 
 class ProjectionBootCheckTest(ProjectionTestBase):
-    def test_incident_cp14_boot_check_rebuilds_when_a_write_landed_after_the_last_rebuild(self) -> None:
+    def test_incident_cp14_boot_check_rebuilds_when_a_write_landed_after_the_last_rebuild(
+        self,
+    ) -> None:
         """cp14's own safety bar: `sb up`'s boot check (ensure_fresh) must
         detect that the DAG head moved since the projection store was last
         built and rebuild before anything reads it -- if that comparison
@@ -126,7 +148,10 @@ class ProjectionBootCheckTest(ProjectionTestBase):
         self._insert("seed", "ops", "n0")
         self.sc.drain()
         projection.rebuild(by="test")
-        self.assertEqual(projection.read("episodes", "1"), {"id": "seed", "lane": "ops", "note": "n0"})
+        self.assertEqual(
+            projection.read("episodes", "1"),
+            {"id": "seed", "lane": "ops", "note": "n0"},
+        )
 
         # a write lands after the last rebuild -- exactly the boot
         # scenario: something wrote to the DAG while the store was stale
@@ -134,11 +159,16 @@ class ProjectionBootCheckTest(ProjectionTestBase):
         self.sc.drain()
 
         stale_read = projection.read("episodes", "2")
-        self.assertIsNone(stale_read, "precondition: the store has not been rebuilt yet")
+        self.assertIsNone(
+            stale_read, "precondition: the store has not been rebuilt yet"
+        )
 
         boot_result = projection.ensure_fresh(by="boot")
         self.assertTrue(boot_result["rebuilt"], "the head moved since the last rebuild")
-        self.assertEqual(projection.read("episodes", "2"), {"id": "late", "lane": "ops", "note": "n1"})
+        self.assertEqual(
+            projection.read("episodes", "2"),
+            {"id": "late", "lane": "ops", "note": "n1"},
+        )
 
     def test_ensure_fresh_is_a_noop_when_already_current(self) -> None:
         self._insert("seed", "ops", "n0")

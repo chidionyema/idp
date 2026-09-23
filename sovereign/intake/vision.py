@@ -11,6 +11,7 @@ model name (R8, cp25 "Model is configuration").
 messages and returning the raw content string. Tests pass a stub through it
 so no paid model is ever called from a test.
 """
+
 from __future__ import annotations
 
 import base64
@@ -55,7 +56,9 @@ def system_prompt() -> str:
     )
 
 
-def messages_for(image: bytes, caption: str, mime: str | None = None) -> list[dict[str, Any]]:
+def messages_for(
+    image: bytes, caption: str, mime: str | None = None
+) -> list[dict[str, Any]]:
     mime = mime or str(ck.get("intake.image_mime_default"))
     url = (
         f"{ck.get('intake.image_data_url_prefix')}{mime}"
@@ -79,7 +82,11 @@ def litellm_call(model: str, messages: list[dict[str, Any]]) -> str:
 
     if not config.LITELLM_BASE_URL:
         raise ExtractionError("LITELLM_BASE_URL not configured")
-    headers = {"Authorization": f"Bearer {config.LITELLM_API_KEY}"} if config.LITELLM_API_KEY else {}
+    headers = (
+        {"Authorization": f"Bearer {config.LITELLM_API_KEY}"}
+        if config.LITELLM_API_KEY
+        else {}
+    )
     body = {
         "model": model,
         "messages": messages,
@@ -140,7 +147,13 @@ def parse(content: str, model: str) -> Extraction:
     )
 
 
-def extract(image: bytes, caption: str, *, call: VisionCall | None = None, mime: str | None = None) -> Extraction:
+def extract(
+    image: bytes,
+    caption: str,
+    *,
+    call: VisionCall | None = None,
+    mime: str | None = None,
+) -> Extraction:
     model = vision_model()
     content = (call or litellm_call)(model, messages_for(image, caption, mime))
     return parse(content, model)

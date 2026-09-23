@@ -1,0 +1,4 @@
+diff --git a/pvc.yaml b/pvc.yaml
++++ b/pvc.yaml
+@@ -0,0 +1 @@
++gone

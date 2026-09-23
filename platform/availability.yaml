@@ -10,6 +10,14 @@
 #
 # There is no wildcard and no default: a surface nobody named is BLIND (exit 2), never green.
 waivers:
+  - surface: llm/ollama
+    reason: >-
+      The free local floor keeps its pulled model on one RWO claim (ollama.yaml:17-23), so a
+      second replica is a second writer against a volume only one pod can mount, and the
+      Deployment strategy is Recreate for exactly that reason. This is a fallback lane, not a
+      load-bearing tier: llm/config.yaml's chain already falls through to a paid model when this
+      pod is down. HA here is the model moving off the PVC, not a replica count.
+    issue: chidionyema/idp#3528
   - surface: jit/jit-broker
     reason: >-
       The break-glass broker keeps its ledger on one RWO claim, so a second replica is not a

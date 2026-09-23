@@ -24,6 +24,7 @@ is a versioned row (sovereign/engine/budget.py) reached through the
 `budget_op` activity, because the race the spec names is between
 concurrent activities and a workflow attribute cannot see it.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -34,7 +35,16 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, CancelledError
 
-STATUSES = ("running", "waiting", "halted", "paused", "stopped", "denied", "done", "failed")
+STATUSES = (
+    "running",
+    "waiting",
+    "halted",
+    "paused",
+    "stopped",
+    "denied",
+    "done",
+    "failed",
+)
 
 # Mirrors sovereign.engine.fsm.STATES. Never imported from there (see the
 # module docstring); the exact list arrives in params and this tuple is
@@ -297,12 +307,20 @@ class SessionWorkflow:
         self._notify_retry_max_attempts = int(params["notify_retry_max_attempts"])
         self._step_start_to_close_min = int(params["step_start_to_close_min"])
         self._step_heartbeat_s = int(params["step_heartbeat_s"])
-        self._step_activity_retry_max_attempts = int(params["step_activity_retry_max_attempts"])
+        self._step_activity_retry_max_attempts = int(
+            params["step_activity_retry_max_attempts"]
+        )
         self._last_output_max_chars = int(params["last_output_max_chars"])
         self._fsm_order = list(params.get("fsm_states") or FSM_STATES)
         self._fsm_max_cycles = int(params.get("fsm_max_cycles") or 0)
-        self._budget_activity_timeout_s = int(params.get("budget_activity_timeout_s") or params["receipt_activity_timeout_s"])
-        self._budget_retry_max_attempts = int(params.get("budget_retry_max_attempts") or params["receipt_retry_max_attempts"])
+        self._budget_activity_timeout_s = int(
+            params.get("budget_activity_timeout_s")
+            or params["receipt_activity_timeout_s"]
+        )
+        self._budget_retry_max_attempts = int(
+            params.get("budget_retry_max_attempts")
+            or params["receipt_retry_max_attempts"]
+        )
         self.fsm_state = self._fsm_order[0]
         self._approval_timeout_min = int(params.get("approval_timeout_min", 0))
         self.started_at = workflow.now().isoformat()
@@ -335,7 +353,9 @@ class SessionWorkflow:
                 if self._stop_requested:
                     self.status = "stopped"
                     self._fsm_terminate()
-                    await self._receipt("stop", self.stopped_by or "unknown", self.reason)
+                    await self._receipt(
+                        "stop", self.stopped_by or "unknown", self.reason
+                    )
                     return self._state()
                 if self._decision == "deny":
                     self.status = "denied"
@@ -369,7 +389,9 @@ class SessionWorkflow:
                 step_input,
                 start_to_close_timeout=timedelta(minutes=self._step_start_to_close_min),
                 heartbeat_timeout=timedelta(seconds=self._step_heartbeat_s),
-                retry_policy=RetryPolicy(maximum_attempts=self._step_activity_retry_max_attempts),
+                retry_policy=RetryPolicy(
+                    maximum_attempts=self._step_activity_retry_max_attempts
+                ),
             )
             self._active_activity_handle = activity_handle
             self._fsm_advance()  # -> tool_use
@@ -394,8 +416,16 @@ class SessionWorkflow:
                 return self._state()
 
             self._fsm_advance()  # -> synthesis
-            self.last_output = str(result.get("output", ""))[: self._last_output_max_chars]
-            self.steps.append({"n": self.step, "output": result.get("output", ""), "ts": workflow.now().isoformat()})
+            self.last_output = str(result.get("output", ""))[
+                : self._last_output_max_chars
+            ]
+            self.steps.append(
+                {
+                    "n": self.step,
+                    "output": result.get("output", ""),
+                    "ts": workflow.now().isoformat(),
+                }
+            )
             self.last_commit = result.get("commit") or self.last_commit
             self.last_tokens = int(result.get("tokens", 0))
             spent = await self._budget("spend", self.last_tokens)
@@ -406,12 +436,16 @@ class SessionWorkflow:
                 self.reason = "budget"
                 await self._receipt("halt", "engine", "budget")
 
-                await workflow.wait_condition(lambda: self._refill is not None or self._stop_requested)
+                await workflow.wait_condition(
+                    lambda: self._refill is not None or self._stop_requested
+                )
 
                 if self._stop_requested:
                     self.status = "stopped"
                     self._fsm_terminate()
-                    await self._receipt("stop", self.stopped_by or "unknown", self.reason)
+                    await self._receipt(
+                        "stop", self.stopped_by or "unknown", self.reason
+                    )
                     return self._state()
 
                 refill = self._refill
@@ -445,12 +479,20 @@ class SessionWorkflow:
                 # request usually means the founder was in a meeting, not
                 # that he refused. Halted keeps the state and still needs
                 # a signed act to leave.
-                deadline = timedelta(minutes=self._approval_timeout_min) if self._approval_timeout_min else None
+                deadline = (
+                    timedelta(minutes=self._approval_timeout_min)
+                    if self._approval_timeout_min
+                    else None
+                )
                 timed_out = False
                 while True:
                     try:
                         await workflow.wait_condition(
-                            lambda: self._decision is not None or self._stop_requested or bool(self._pending_receipts),
+                            lambda: (
+                                self._decision is not None
+                                or self._stop_requested
+                                or bool(self._pending_receipts)
+                            ),
                             timeout=deadline,
                         )
                     except asyncio.TimeoutError:
@@ -472,7 +514,9 @@ class SessionWorkflow:
                 if self._stop_requested:
                     self.status = "stopped"
                     self._fsm_terminate()
-                    await self._receipt("stop", self.stopped_by or "unknown", self.reason)
+                    await self._receipt(
+                        "stop", self.stopped_by or "unknown", self.reason
+                    )
                     return self._state()
 
                 if self._decision == "deny":
@@ -484,7 +528,9 @@ class SessionWorkflow:
                 # approve: continue the loop for the next step
                 self.status = "running"
                 self.asking = None
-                await self._receipt("approve", self._decision_by, self._decision_attestation)
+                await self._receipt(
+                    "approve", self._decision_by, self._decision_attestation
+                )
                 self._decision = None
                 self._decision_by = ""
                 self._decision_attestation = ""

@@ -4,6 +4,7 @@ The audit log is the signed receipt chain (engine/receipts.py) plus the DAG
 under heads/main; both are real here, built under the temporary estate, and
 the real `bin/sb audit` entrypoint is what is run.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -35,9 +36,42 @@ def _build_estate(context: dict[str, Any]) -> None:
     tip, _ = dag.write_node({"db": "v1"}, parent, timestamp=TIMESTAMP_0 + 1)
     dag.write_head(dag.main_head_name(), tip)
     hashes = [
-        receipts.append({"ts": "1970-01-01T00:00:00+00:00", "session_id": "sb-audit", "kind": "step", "by": "engine", "text": "step 1", "step": 1, "status": "running", "task": "t", "runner": "echo"})["hash"],
-        interventions.record("approve", "founder", "approve", session_id="sb-audit", step=1, status="approve", task="t", runner="echo", ts="1970-01-01T00:00:01+00:00", signed=True)["line"]["hash"],
-        interventions.record("stop", "founder", "done", session_id="sb-audit", step=2, status="stopped", task="t", runner="echo", ts="1970-01-01T00:00:02+00:00")["line"]["hash"],
+        receipts.append(
+            {
+                "ts": "1970-01-01T00:00:00+00:00",
+                "session_id": "sb-audit",
+                "kind": "step",
+                "by": "engine",
+                "text": "step 1",
+                "step": 1,
+                "status": "running",
+                "task": "t",
+                "runner": "echo",
+            }
+        )["hash"],
+        interventions.record(
+            "approve",
+            "founder",
+            "approve",
+            session_id="sb-audit",
+            step=1,
+            status="approve",
+            task="t",
+            runner="echo",
+            ts="1970-01-01T00:00:01+00:00",
+            signed=True,
+        )["line"]["hash"],
+        interventions.record(
+            "stop",
+            "founder",
+            "done",
+            session_id="sb-audit",
+            step=2,
+            status="stopped",
+            task="t",
+            runner="echo",
+            ts="1970-01-01T00:00:02+00:00",
+        )["line"]["hash"],
     ]
     context["hashes"] = hashes
 
@@ -69,7 +103,9 @@ def _run_at(context: dict[str, Any], sb) -> None:
     context["at"] = res.json()
 
 
-@then("the output names who did what, when, under which policy, and which trust backend signed it")
+@then(
+    "the output names who did what, when, under which policy, and which trust backend signed it"
+)
 def _who_what_when(context: dict[str, Any]) -> None:
     out = context["at"]
     assert out["hash"] == context["at_hash"]

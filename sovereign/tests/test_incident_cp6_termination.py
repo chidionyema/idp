@@ -4,6 +4,7 @@ and the enforcement step with the Temporal boundary stubbed.
 Before this, evaluate() was a pure function only `sb self-check` printed;
 nothing halted. The thresholds are read from config, never typed here.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -14,28 +15,57 @@ from sovereign.engine import config_keys as ck
 
 
 def _blind_s(extra: float) -> float:
-    return float(config.get("blind.halt_after_min").value) * termination.SECONDS_PER_MINUTE + extra
+    return (
+        float(config.get("blind.halt_after_min").value) * termination.SECONDS_PER_MINUTE
+        + extra
+    )
 
 
 def test_incident_cp6_langfuse_blind_over_five_minutes_halts() -> None:
-    assert termination.evaluate(termination.Signals(langfuse_blind_s=_blind_s(+1)))["action"] == "halt"
-    assert termination.evaluate(termination.Signals(langfuse_blind_s=_blind_s(0)))["action"] == "continue"
+    assert (
+        termination.evaluate(termination.Signals(langfuse_blind_s=_blind_s(+1)))[
+            "action"
+        ]
+        == "halt"
+    )
+    assert (
+        termination.evaluate(termination.Signals(langfuse_blind_s=_blind_s(0)))[
+            "action"
+        ]
+        == "continue"
+    )
 
 
 def test_incident_cp6_low_confidence_three_steps_soft_halts() -> None:
     n = int(ck.get("terminate.low_confidence_steps"))
-    assert termination.evaluate(termination.Signals(low_confidence_streak=n))["action"] == "soft_halt"
-    assert termination.evaluate(termination.Signals(low_confidence_streak=n - 1))["action"] == "continue"
-    assert termination.is_low_confidence(float(ck.get("terminate.min_confidence")) - 0.01)
+    assert (
+        termination.evaluate(termination.Signals(low_confidence_streak=n))["action"]
+        == "soft_halt"
+    )
+    assert (
+        termination.evaluate(termination.Signals(low_confidence_streak=n - 1))["action"]
+        == "continue"
+    )
+    assert termination.is_low_confidence(
+        float(ck.get("terminate.min_confidence")) - 0.01
+    )
 
 
 def test_incident_cp6_alert_flood_over_fifty_per_hour_digests() -> None:
     cap = int(config.get("alerts.digest_over_per_hour").value)
-    assert termination.evaluate(termination.Signals(alerts_last_hour=cap + 1))["action"] == "digest"
-    assert termination.evaluate(termination.Signals(alerts_last_hour=cap))["action"] == "continue"
+    assert (
+        termination.evaluate(termination.Signals(alerts_last_hour=cap + 1))["action"]
+        == "digest"
+    )
+    assert (
+        termination.evaluate(termination.Signals(alerts_last_hour=cap))["action"]
+        == "continue"
+    )
 
 
-def test_incident_cp6_enforce_stops_running_sessions_only_on_halt(monkeypatch: Any) -> None:
+def test_incident_cp6_enforce_stops_running_sessions_only_on_halt(
+    monkeypatch: Any,
+) -> None:
     from sovereign.engine import client as engine_client
 
     rows = [
@@ -49,7 +79,9 @@ def test_incident_cp6_enforce_stops_running_sessions_only_on_halt(monkeypatch: A
     async def fake_list() -> list[dict[str, Any]]:
         return rows
 
-    async def fake_signal(session_id: str, name: str, by: str, reason: str = "") -> dict[str, Any]:
+    async def fake_signal(
+        session_id: str, name: str, by: str, reason: str = ""
+    ) -> dict[str, Any]:
         signalled.append((session_id, name, reason))
         return {"ok": True}
 
@@ -60,8 +92,12 @@ def test_incident_cp6_enforce_stops_running_sessions_only_on_halt(monkeypatch: A
     done = termination.enforce(halt)
     assert done["stopped"] == ["s-run", "s-ask"]
     assert done["kept"] == ["s-crit"]
-    assert all(n == "stop" and r.startswith("self-termination:blind") for _, n, r in signalled)
+    assert all(
+        n == "stop" and r.startswith("self-termination:blind") for _, n, r in signalled
+    )
 
     signalled.clear()
-    assert termination.enforce(termination.evaluate(termination.Signals())) == {"action": "continue"}
+    assert termination.enforce(termination.evaluate(termination.Signals())) == {
+        "action": "continue"
+    }
     assert signalled == []

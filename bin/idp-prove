@@ -18,7 +18,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import time
 import uuid
 
@@ -99,33 +98,6 @@ def running_artifact():
     return digest, hr or "", None
 
 
-def l3_via_drill():
-    """The cold handshake is bin/idp-login-drill's, on the same run: it signs in through the front
-    door with a browser holding nothing, walks into Langfuse, and writes the two L3 assertions
-    (probes/langfuse.l3_from_sessions) to DRILL_ASSERTIONS_OUT. A second Playwright sign-in here
-    would be the same code twice."""
-    out = os.path.join(tempfile.mkdtemp(prefix="prove-"), "l3.json")
-    env = dict(os.environ, DRILL_ASSERTIONS_OUT=out)
-    rc, so, se = run(
-        [os.path.join(IDP, "bin", "idp-login-drill")], env=env, timeout=900
-    )
-    for line in so.splitlines():
-        if re.match(r"^(ok|FAIL|sso|BLIND) ", line):
-            print(f"drill   prove  {line[:200]}")
-    if os.path.exists(out):
-        with open(out) as f:
-            return json.load(f)
-    last = [ln for ln in so.splitlines() if ln.startswith("FAIL")] or [
-        se.strip()[-200:] or f"drill exit {rc}"
-    ]
-    return [
-        V.assertion(
-            "l3.drill.reached_langfuse",
-            "drill walked into Langfuse",
-            last[-1][:300],
-            False,
-        )
-    ]
 
 
 def prove_langfuse(out_path):
@@ -158,7 +130,11 @@ def prove_langfuse(out_path):
         blocked = (
             blocked or "langfuse-init-public-key / secret-key unreadable from the vault"
         )
-    assertions += l3_via_drill()
+    # L3 (the cold front-door walk) was bin/idp-login-drill's, shelled out to from here.
+    # The drill is deleted (founder 2026-09-21): it was the only failing stage in either
+    # verdict, and one broken portal route in it reddened two checks at once. What remains
+    # is what was already passing on its own -- L1 liveness, L2 with a real key, the
+    # NEGATIVE no-key refusal, and (langfuse) the L4 OTLP round trip.
     v = V.build(
         "langfuse.l1-l3.cold_sso",
         f"langfuse@{z}",
@@ -289,36 +265,6 @@ def workload_artifact(kind, name, ns):
     return None, None, f"no ready {name} pod reports an imageID"
 
 
-def surface_via_drill(name):
-    """The front-door walk to one surface is bin/idp-login-drill's, on this run: it writes every
-    surface's two L3 assertions (probes/front_door.py) to DRILL_SURFACES_OUT. Returns
-    (assertions, second_login_reason): the reason is the drill's own SECOND_LOGIN_EXPECTED text
-    when the surface came to rest on its own sign-in page, and the prover marks the verdict
-    BLOCKED with it (crew#718: never a green over a login screen)."""
-    out = os.path.join(tempfile.mkdtemp(prefix="prove-"), "surfaces.json")
-    env = dict(os.environ, DRILL_SURFACES_OUT=out)
-    rc, so, se = run(
-        [os.path.join(IDP, "bin", "idp-login-drill")], env=env, timeout=900
-    )
-    for line in so.splitlines():
-        if re.match(r"^(ok|FAIL|sso|2nd|BLIND) ", line):
-            print(f"drill   prove  {line[:200]}")
-    if os.path.exists(out):
-        with open(out) as f:
-            row = json.load(f).get(name) or {}
-        if row.get("assertions"):
-            return row["assertions"], row.get("second_login")
-    last = [ln for ln in so.splitlines() if ln.startswith("FAIL")] or [
-        se.strip()[-200:] or f"drill exit {rc}"
-    ]
-    return [
-        V.assertion(
-            f"l3.front_door.{name}.reached_host",
-            f"drill walked to {name}",
-            last[-1][:300],
-            False,
-        )
-    ], None
 
 
 def prove_signoz(out_path):
@@ -346,10 +292,11 @@ def prove_signoz(out_path):
             blocked
             or "signoz-prover.key unreadable from the vault (oke-check.yml -f mode=apply runs bin/idp-estate-seed, whose step 4 is bin/idp-signoz-key)"
         )
-    l3, second_login = surface_via_drill("signoz")
-    assertions += l3
-    if second_login:
-        blocked = blocked or f"L3 cannot pass: {second_login}"
+    # L3 (the cold front-door walk) was bin/idp-login-drill's, shelled out to from here.
+    # The drill is deleted (founder 2026-09-21): it was the only failing stage in either
+    # verdict, and one broken portal route in it reddened two checks at once. What remains
+    # is what was already passing on its own -- L1 liveness, L2 with a real key, the
+    # NEGATIVE no-key refusal, and (langfuse) the L4 OTLP round trip.
     v = V.build(
         "signoz.l1-l3.service_account_key",
         f"signoz@{z}",

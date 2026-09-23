@@ -12,7 +12,8 @@ Three checks:
      (minus -gate/-report) or a prefix of it before a hyphen (scheduler-up -> scheduler).
   2. Every page under docs/tutorials/demo and docs/how-to/onboarding carries >= 200 characters of prose
      once headings and blank lines are stripped (LAW 32's floor).
-  3. Every page under docs/tutorials/demo and docs/how-to/onboarding is in the mkdocs nav. Measured
+  3. (retired 2026-09-22) Every page under docs/tutorials/demo and docs/how-to/onboarding was
+     in the mkdocs nav. The nav is generated now, so this holds by construction. Measured
      2026-08-25: nine onboarding pages and five demos existed and none was in the nav,
      so the portal showed the founder no proof at all.
 
@@ -98,8 +99,10 @@ def main(argv):
         stem = os.path.basename(f)
         if not has_pair(stem, names):
             fails.append(f"{f}: no docs/tutorials/demo/<n>.md + docs/how-to/onboarding/<n>.md for a feature named <n> where <n> is '{stem}' or a hyphen-prefix of it")
-    mk = os.path.join(ROOT, "mkdocs.yml")
-    nav = open(mk, encoding="utf-8").read() if os.path.isfile(mk) else ""
+    # No nav check. MkDocs builds the nav from the docs/ tree (mkdocs.yml, 2026-09-22),
+    # so a page that exists is reachable and this gate has nothing left to police here.
+    # It checked by hand for as long as the nav was written by hand, and that nav broke
+    # seven times. An invariant that holds by construction does not get a gate.
     pages = 0
     for d in PAGE_DIRS:
         p = os.path.join(ROOT, "docs", d)
@@ -111,8 +114,6 @@ def main(argv):
             c = prose_chars(os.path.join(p, f))
             if c < FLOOR:
                 fails.append(f"docs/{rel}: {c} characters of prose, the floor is {FLOOR}")
-            if rel not in nav:
-                fails.append(f"docs/{rel}: not in mkdocs.yml nav, so the portal never shows it")
     if pages == 0:
         fails.append(f"no pages under docs/{' or docs/'.join(PAGE_DIRS)}: a gate that scans nothing is not green (ADR 0002 sweep)")
     for m in fails:
@@ -122,7 +123,7 @@ def main(argv):
     if blind:
         print(blind)
         return 2
-    print(f"ok    law32 {len(added)} new bin file(s) carry a demo+onboarding pair; {pages} page(s) above the {FLOOR}-char floor and in the nav")
+    print(f"ok    law32 {len(added)} new bin file(s) carry a demo+onboarding pair; {pages} page(s) above the {FLOOR}-char floor")
     return 0
 
 

@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""Is this pull request an admitted, reversible mutation the executor sealed? (Greenlane row 3)
+
+WHY IT EXISTS. ADR 0025 built the Greenlane -- `.github/workflows/deploy-when-green.yml` -- and
+gave it exactly one row: the automation-owned image tag bump, proved by `bin/idp-image-only-diff`.
+The ADR also fixed how the lane grows: "a row is admitted only when someone has written the binary
+that proves its scope, with a fixture it must refuse and a fixture it must pass." This is that
+binary for the estate's first NON-tag row: a mutation the executor proposed, verified, sealed and
+admitted -- a change that carries its own inverse (ADR 0024) and a Deterministic Verifier's
+signature over the exact bundle bytes.
+
+WHAT IT PROVES, and nothing else. A pull request may auto-merge through this row only when every
+one of these is a fact read from the tree and the executor's own ledger, never asserted by the PR:
+
+  1. the PR head branch is named `mutation/<ledger_id>` (the executor's own naming -- see
+     `platform/executor/daemon.py`'s `_admit_mutation`, which builds `f"mutation/{ledger_id}"`);
+  2. the executor has an ADMITTED record for that ledger id (`<runs>/ledgers/admitted/<id>.patch`
+     plus the `<id>.json` envelope `_admit_mutation` writes beside it);
+  3. that admitted envelope carries a verifiable inverse: `inverse_spec` of type
+     `deterministic_inverse` with a probe, or `irreversible_exemption` with an attestation --
+     graded by `bin/idp-reversibility-gate`, the one implementation of that judgement (LAW 43);
+  4. the branch's diff touches nothing outside the files the ledger's own proposal named -- a
+     branch that grew a second change after it was admitted is not the change that was verified.
+
+WHY IT IS SAFE TO LET THIS ROW MERGE WITHOUT THE FOUNDER. The binary does not re-run the checks or
+trust a label: it reads the executor's ledger, which only `verify_mutation` -> `seal_mutation` ->
+`admit_mutation` can write, and every one of those refuses without a passing gauntlet and a
+matching attestation. A PR that lacks any of the four facts waits for the founder like any other
+platform change.
+
+  bin/idp-admitted-mutation-diff --pr N                 ask GitHub for the branch, diff and ledger
+  bin/idp-admitted-mutation-diff --diff FILE --branch B --ledger-root DIR
+                                                        grade from disk (tests, and a dry run)
+
+Exit 0 admitted reversible mutation, 1 anything else, 2 BLIND (no diff, no branch, or no ledger to
+read -- an empty or unreadable answer is never treated as an admitted mutation).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+BRANCH_RE = re.compile(r"^mutation/(?P<ledger>ldg-[A-Za-z0-9._-]+)$")
+
+# The gate that owns "is this envelope reversible" (ADR 0024). One implementation, called, never
+# re-decided here (LAW 43).
+GATE = Path(__file__).resolve().parent / "idp-reversibility-gate"
+
+
+def ledger_root(explicit: str | None) -> Path:
+    """The executor's ledger root, from the environment, never a typed home directory (LAW 46)."""
+    if explicit:
+        return Path(explicit)
+    runs = os.environ.get("IDP_EXECUTOR_RUNS") or os.path.expanduser("~/.estate/runs")
+    return Path(runs) / "ledgers"
+
+
+def admitted_files(root: Path, ledger_id: str) -> tuple[Path, Path]:
+    admitted = root / "admitted"
+    return admitted / f"{ledger_id}.patch", admitted / f"{ledger_id}.json"
+
+
+def _files_in_diff(diff: str) -> set[str]:
+    files = set()
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            files.add(line.split(" b/")[-1].strip())
+    return files
+
+
+def grade(
+    *,
+    branch: str,
+    diff: str,
+    root: Path,
+    envelope: dict | None = None,
+    admitted_patch: Path | None = None,
+) -> tuple[bool | None, str]:
+    """(ok, reason). ok is None for BLIND -- a fact we could not read is never a pass."""
+    m = BRANCH_RE.match(branch or "")
+    if not m:
+        return False, (
+            f"the branch {branch!r} is not a mutation branch; this row lands only "
+            f"`mutation/<ledger_id>` (the executor's own naming)"
+        )
+    ledger_id = m.group("ledger")
+
+    patch, envelope_path = admitted_files(root, ledger_id)
+    if admitted_patch is not None:
+        patch = admitted_patch
+    if not patch.exists():
+        return (
+            None,
+            f"no admitted record for {ledger_id} under {root}; the executor admitted no such "
+            f"mutation, so this row cannot prove it",
+        )
+    if not envelope_path.exists():
+        return False, (
+            f"the mutation {ledger_id} was admitted but carries no envelope; a change with no "
+            f"declared inverse is refused (ADR 0024)"
+        )
+
+    if envelope is None:
+        try:
+            envelope = json.loads(envelope_path.read_text())
+        except (OSError, ValueError) as exc:
+            return None, f"the admitted envelope for {ledger_id} is unreadable: {exc}"
+
+    # Fact 3: ask the one gate that owns reversibility, over the admitted envelope.
+    if not GATE.exists():
+        return None, f"the reversibility gate is not present at {GATE}"
+    import tempfile
+
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+            json.dump(envelope, fh)
+            tmp = fh.name
+        proc = subprocess.run(
+            [sys.executable, str(GATE), tmp], capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"the reversibility gate could not be run: {exc}"
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    if proc.returncode != 0:
+        detail = (proc.stdout or proc.stderr or "").strip().splitlines()
+        return False, (
+            f"the admitted envelope for {ledger_id} is not reversible: "
+            f"{detail[-1] if detail else 'the gate refused it'}"
+        )
+
+    # Fact 4: the branch's diff touches only files the admitted bundle named.
+    if not diff.strip():
+        return None, "the diff came back empty; an empty diff is not an admitted mutation"
+    changed = _files_in_diff(diff)
+    if not changed:
+        return False, "the diff names no file; there is nothing to prove against the ledger"
+    allowed = _bundle_files(patch)
+    if allowed is None:
+        return None, f"the admitted bundle {patch} could not be read"
+    outside = sorted(changed - allowed)
+    if outside:
+        return False, (
+            f"the branch changed file(s) the admitted bundle never named: {outside}. A branch "
+            f"that grew a second change after it was verified is not the change that was verified"
+        )
+
+    inverse_type = (envelope.get("inverse_spec") or {}).get("type", "?")
+    return (
+        True,
+        f"admitted reversible mutation {ledger_id}: {len(changed)} file(s), inverse "
+        f"{inverse_type!r}, sealed by the executor",
+    )
+
+
+def _bundle_files(patch: Path) -> set[str] | None:
+    """Every file the admitted bundle wrote, from its own `+++`/`---` headers."""
+    try:
+        text = patch.read_text(errors="replace")
+    except OSError:
+        return None
+    files = set()
+    for line in text.splitlines():
+        if line.startswith("+++ ") or line.startswith("--- "):
+            name = line[4:].strip()
+            if name in ("/dev/null", ""):
+                continue
+            files.add(name[2:] if name.startswith(("a/", "b/")) else name)
+    return files
+
+
+def _grade_fixture_dir(path: Path) -> int:
+    """Grade every case under a fixture directory; exit 1 if any case refuses.
+
+    A case is a directory holding `branch.txt`, `diff.txt` and (optionally) `ledgers/`. This is
+    the fixture form the registry runs: `good/` must pass every case, `bad/` must refuse at least
+    the cases it holds, and a directory with no cases is BLIND rather than an empty pass.
+    """
+    cases = sorted(p for p in path.rglob("branch.txt"))
+    if not cases:
+        print(f"BLIND   admitted-mutation  no fixture case under {path} (a case needs branch.txt)")
+        return 2
+    worst = 0
+    for case in cases:
+        case_dir = case.parent
+        diff_file = case_dir / "diff.txt"
+        ledgers = case_dir / "ledgers"
+        if not diff_file.exists():
+            print(f"BLIND   admitted-mutation  {case_dir} has no diff.txt")
+            return 2
+        ok, why = grade(
+            branch=case.read_text().strip(),
+            diff=diff_file.read_text(),
+            root=ledgers if ledgers.exists() else case_dir / "ledgers",
+        )
+        if ok is None:
+            print(f"BLIND   admitted-mutation  {case_dir}: {why}")
+            return 2
+        print(f"{'ok     ' if ok else 'FAIL   '} admitted-mutation  {case_dir.name}: {why}")
+        if not ok:
+            worst = 1
+    return worst
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser()
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--pr")
+    g.add_argument("--diff")
+    g.add_argument("--fixture-dir")
+    ap.add_argument("--branch", default="")
+    ap.add_argument(
+        "--branch-file",
+        default=None,
+        help="read the head branch from a file (a fixture form: the branch a PR is on, without GitHub)",
+    )
+    ap.add_argument("--ledger-root", default=None)
+    a = ap.parse_args(argv)
+
+    if a.fixture_dir:
+        return _grade_fixture_dir(Path(a.fixture_dir))
+
+    root = ledger_root(a.ledger_root)
+
+    if a.diff:
+        try:
+            diff = Path(a.diff).read_text()
+        except OSError as exc:
+            print(f"BLIND   admitted-mutation  cannot read {a.diff}: {exc}")
+            return 2
+        branch = a.branch
+        if a.branch_file:
+            try:
+                branch = Path(a.branch_file).read_text().strip()
+            except OSError as exc:
+                print(f"BLIND   admitted-mutation  cannot read {a.branch_file}: {exc}")
+                return 2
+    else:
+        pr = a.pr
+        view = subprocess.run(
+            ["gh", "pr", "view", pr, "--json", "headRefName"], capture_output=True, text=True
+        )
+        if view.returncode != 0:
+            print(
+                f"BLIND   admitted-mutation  cannot read #{pr}: "
+                f"{(view.stderr or view.stdout).strip()[:120]}"
+            )
+            return 2
+        try:
+            branch = json.loads(view.stdout).get("headRefName", "")
+        except ValueError:
+            print(f"BLIND   admitted-mutation  #{pr} returned unreadable JSON")
+            return 2
+        d = subprocess.run(
+            ["gh", "pr", "diff", pr], capture_output=True, text=True, timeout=120
+        )
+        if d.returncode != 0:
+            print(
+                f"BLIND   admitted-mutation  cannot read the diff of #{pr}: "
+                f"{(d.stderr or d.stdout).strip()[:120]}"
+            )
+            return 2
+        diff = d.stdout
+
+    ok, why = grade(branch=branch, diff=diff, root=root)
+    if ok is None:
+        print(f"BLIND   admitted-mutation  {why}")
+        return 2
+    print(f"{'ok     ' if ok else 'FAIL   '} admitted-mutation  {why}")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

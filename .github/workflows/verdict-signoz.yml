@@ -22,7 +22,6 @@ on:
       - probes/**
       - bin/idp-prove
       - bin/idp-verdict
-      - bin/idp-login-drill
       - platform/observability/signoz*
       - platform/observability/httproute.yaml
       - bin/idp-signoz-key
@@ -45,11 +44,11 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: |
-            .github/requirements/login-drill.txt
+            .github/requirements/oci-cli.txt
             .github/requirements/oci-cli.txt
       - name: oci cli and a headless browser
         run: |
-          pip install -q -r .github/requirements/login-drill.txt
+          pip install -q -r .github/requirements/oci-cli.txt
           playwright install --with-deps chromium
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2

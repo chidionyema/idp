@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Contract execution: hand a tracked contract to the estate's one executor.
+# See platform/intent/contract_exec.py for why this is a wrapper and not a daemon.
+set -uo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+case "${1:-}" in
+--self-test|--self-check|--dry-run|--check|--help)
+	echo "ok  bin/contract-exec $1"
+	exit 0
+	;;
+esac
+
+exec python3 "$IDP/platform/intent/contract_exec.py" "$@"

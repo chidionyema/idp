@@ -5,6 +5,7 @@ are stubbed: `sb` (a subprocess) and the Telegram Bot API (card._send).
 Everything between them -- the hook's decision, the receipt formatter, the
 argv handed to sb -- is real.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -33,14 +34,21 @@ def plugin(monkeypatch):
     def fake_run_sb(*args):
         calls.append(list(args))
         if args[0] == "intake":
-            return True, {"line": "[✓] DOC_COMMIT | file:docs/save-this-article.md | hash:8f2a1b3c | tags:#ml | budget:-1.2k | state:8f2a1b3c", "commit": "8f2a1b3c"}
+            return True, {
+                "line": "[✓] DOC_COMMIT | file:docs/save-this-article.md | hash:8f2a1b3c | tags:#ml | budget:-1.2k | state:8f2a1b3c",
+                "commit": "8f2a1b3c",
+            }
         if args[0] == "episodes":
             return True, chain
         return True, {}
 
     monkeypatch.setattr(mod, "_run_sb", fake_run_sb)
-    monkeypatch.setattr(mod, "_send_line", lambda event, line: sent.append(line) or True)
-    mod._test = SimpleNamespace(calls=calls, sent=sent, chain=chain, event=None, result=None, reply=None)
+    monkeypatch.setattr(
+        mod, "_send_line", lambda event, line: sent.append(line) or True
+    )
+    mod._test = SimpleNamespace(
+        calls=calls, sent=sent, chain=chain, event=None, result=None, reply=None
+    )
     return mod
 
 
@@ -48,24 +56,40 @@ def plugin(monkeypatch):
 def photo_with_caption(plugin, tmp_path, caption):
     img = tmp_path / "photo.jpg"
     img.write_bytes(b"\xff\xd8\xff")
-    plugin._test.event = SimpleNamespace(text=caption, media_urls=[str(img)], source=SimpleNamespace(chat_id="42"))
+    plugin._test.event = SimpleNamespace(
+        text=caption, media_urls=[str(img)], source=SimpleNamespace(chat_id="42")
+    )
 
 
 @given("the founder sends a photo with no caption")
 def photo_no_caption(plugin, tmp_path):
     img = tmp_path / "photo.jpg"
     img.write_bytes(b"\xff\xd8\xff")
-    plugin._test.event = SimpleNamespace(text="", media_urls=[str(img)], source=SimpleNamespace(chat_id="42"))
+    plugin._test.event = SimpleNamespace(
+        text="", media_urls=[str(img)], source=SimpleNamespace(chat_id="42")
+    )
 
 
 @given(parsers.parse('session "{sid}" has a receipt of kind "{kind}" in the chain'))
 def receipt_in_chain(plugin, sid, kind):
-    plugin._test.chain.append({"session_id": sid, "kind": kind, "hash": "abcdef0123456789", "counter": 7, "tokens": 120, "status": "ok", "fsm_state": "terminal"})
+    plugin._test.chain.append(
+        {
+            "session_id": sid,
+            "kind": kind,
+            "hash": "abcdef0123456789",
+            "counter": 7,
+            "tokens": 120,
+            "status": "ok",
+            "fsm_state": "terminal",
+        }
+    )
 
 
 @when("the gateway pre-dispatch hook runs")
 def run_hook(plugin):
-    plugin._test.result = plugin.on_pre_gateway_dispatch(event=plugin._test.event, gateway=None, session_store=None)
+    plugin._test.result = plugin.on_pre_gateway_dispatch(
+        event=plugin._test.event, gateway=None, session_store=None
+    )
 
 
 @when(parsers.parse('the founder sends "/sb-undo {args}"'))
@@ -90,7 +114,11 @@ def one_sent(plugin):
     assert len(plugin._test.sent) == 1
 
 
-@then(parsers.parse('that message is one line containing "{word}", a hash and a budget delta'))
+@then(
+    parsers.parse(
+        'that message is one line containing "{word}", a hash and a budget delta'
+    )
+)
 def one_line(plugin, word):
     line = plugin._test.sent[0]
     assert "\n" not in line and word in line and "hash:" in line and "budget:" in line

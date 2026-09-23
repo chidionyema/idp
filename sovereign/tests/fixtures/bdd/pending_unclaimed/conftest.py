@@ -1,5 +1,6 @@
 """Reuse the real suite's pending hooks here, so this fixture directory is
 judged by the same rule the suite is and not by a copy of it."""
+
 from __future__ import annotations
 
 import sys

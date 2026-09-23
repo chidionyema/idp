@@ -7,6 +7,7 @@ row it came from, the token delta, and the state hash. `from_record`
 turns a row of sovereign.engine.receipts into that line; `format_line`
 is the pure formatter behind it.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -33,8 +34,13 @@ class Receipt:
     @property
     def text(self) -> str:
         return format_line(
-            ok=self.ok, op=self.op, hash=self.hash, budget_delta=self.budget_delta,
-            state=self.state, file=self.file, tags=self.tags,
+            ok=self.ok,
+            op=self.op,
+            hash=self.hash,
+            budget_delta=self.budget_delta,
+            state=self.state,
+            file=self.file,
+            tags=self.tags,
         )
 
 
@@ -58,7 +64,9 @@ def format_line(
     file: str | None = None,
     tags: tuple[str, ...] = (),
 ) -> str:
-    mark = config_keys.resolve("presence.receipt_ok_mark" if ok else "presence.receipt_fail_mark")
+    mark = config_keys.resolve(
+        "presence.receipt_ok_mark" if ok else "presence.receipt_fail_mark"
+    )
     sep = str(config_keys.resolve("presence.receipt_field_sep"))
     hash_chars = int(config_keys.resolve("presence.receipt_hash_chars"))
     state_chars = int(config_keys.resolve("presence.receipt_state_chars"))
@@ -91,7 +99,13 @@ def from_record(row: dict[str, Any]) -> Receipt:
     returns one) as a one-line receipt."""
     status = str(row.get("status") or "")
     tokens = int(row.get("tokens") or 0)
-    state = str(row.get("commit") or row.get("state_hash") or row.get("fsm_state") or row.get("hash") or "")
+    state = str(
+        row.get("commit")
+        or row.get("state_hash")
+        or row.get("fsm_state")
+        or row.get("hash")
+        or ""
+    )
     return Receipt(
         ok=status not in _STATUS_FAILED,
         op=str(row.get("kind") or "receipt"),

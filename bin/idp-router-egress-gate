@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""Guard against a second, undeclared LiteLLM router config landing outside the reviewed set
+(idp#3525 CP3, ROUTE-01).
+
+ROUTE-01: "All model calls SHALL traverse the standardized model-agnostic router with mandatory
+fallback chains. Direct provider calls are rogue per crew policy." ACCEPT (spec section 3):
+"network policy denies egress to provider APIs except router; bypass attempt alerts."
+
+Kubernetes NetworkPolicy in this cluster (Calico, iptables/VXLAN dataplane) filters by IP/CIDR/
+port only, never by domain name -- measured against platform/ns-fences/allowances.yaml, where
+`egress_internet: [443]` is a raw internet hole on that port, not a "provider APIs blocked,
+router allowed" distinction. So the network layer alone cannot enforce ROUTE-01's first clause;
+the only place a second router is visible at all is the config that names it. A `model_list`
+block whose `litellm_params.api_key` is `os.environ/<...>_API_KEY` IS a LiteLLM router -- the
+shape platform/llm/config.yaml (the estate router) and platform/otto-gateway/three-homes.yaml
+(Otto's founder-ordered lifeboat, homes 2/3) both use. three-homes.yaml's own header says it
+straight: "This is not a second platform router. The estate keeps one router and home 1 is it."
+
+This gate is the review gate for THE HEADLINE's "Shared layers ... exist once": every model_list
+config the repo carries must belong to a namespace on the reviewed ledger below, with a reason. A
+third one appearing in an unreviewed namespace is the rogue direct-provider path ROUTE-01 names,
+caught here, in the pull request, before it reaches a cluster where NetworkPolicy cannot tell it
+apart from the router's own traffic.
+
+Runtime bypass-attempt alerting -- ROUTE-01's other ACCEPT clause -- is a separate, pre-existing,
+already-tracked gap: bin/idp-calico-deny-log parses Calico's own deny-flow evidence, but its own
+rules.yaml row already records `live_gap: chidionyema/idp#2452 -- no real deny feed is collected
+anywhere`. This gate does not claim to close #2452 (a live cluster-integration gap, out of this
+gate's reach), and #2452 could not have caught this class of bypass either way: an already-
+allowed egress_internet hole produces no deny flow, and Calico sees an IP, never a router's name.
+"""
+
+from __future__ import annotations
+
+import pathlib
+import re
+import sys
+
+import yaml
+
+# namespace -> why it is allowed to hold a model_list-shaped LiteLLM config (i.e. to run a
+# second router instance). Reviewed here, by a human reading the code each one points at --
+# never discovered or inferred by this gate.
+REVIEWED_ROUTER_NAMESPACES = {
+    "llm": "the estate router itself (platform/llm/config.yaml, platform/llm/litellm.yaml)",
+    "otto-gateway": (
+        "founder-ordered lifeboat (2026-09-09/10, 'otto must have 3 homes'): a non-database "
+        "litellm sidecar carrying homes 2/3 for Otto alone, on 127.0.0.1 in Otto's own pod -- "
+        "see platform/otto-gateway/three-homes.yaml's own header"
+    ),
+}
+
+_API_KEY = re.compile(r"os\.environ/\w*_API_KEY\w*")
+
+
+def _yaml_docs(text: str):
+    try:
+        docs = yaml.safe_load_all(text)
+        yield from (d for d in docs if isinstance(d, dict))
+    except yaml.YAMLError:
+        return
+
+
+def is_router_config(doc: dict) -> bool:
+    """A dict is a LiteLLM router config iff it declares model_list rows with an
+    os.environ-sourced api_key -- the shape both known routers share."""
+    rows = doc.get("model_list")
+    if not isinstance(rows, list):
+        return False
+    for row in rows:
+        params = (row or {}).get("litellm_params") or {}
+        if _API_KEY.search(str(params.get("api_key", ""))):
+            return True
+    return False
+
+
+def namespace_of(doc: dict, path: pathlib.Path) -> str | None:
+    ns = (doc.get("metadata") or {}).get("namespace")
+    if ns:
+        return ns
+    # A bare litellm proxy config carries no k8s metadata at all (platform/llm/config.yaml,
+    # config.base.yaml): the directory it lives in IS its deployment, per litellm.yaml's own
+    # Deployment mounting it from platform/llm/.
+    if path.parent.name == "llm":
+        return "llm"
+    return None
+
+
+def router_configs(root: pathlib.Path):
+    """Yield (path, namespace, doc) for every LiteLLM-shaped model_list config under root,
+    whether it is a bare proxy config or embedded as a ConfigMap's string data field."""
+    files = sorted(root.rglob("*.yaml")) if root.is_dir() else [root]
+    for f in files:
+        if f.name == "kustomization.yaml":
+            continue
+        try:
+            text = f.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for doc in _yaml_docs(text):
+            if is_router_config(doc):
+                yield f, namespace_of(doc, f), doc
+            data = doc.get("data")
+            if not isinstance(data, dict):
+                continue
+            ns = namespace_of(doc, f)
+            for value in data.values():
+                if not isinstance(value, str) or "model_list" not in value:
+                    continue
+                for nested in _yaml_docs(value):
+                    if is_router_config(nested):
+                        yield f, ns, nested
+
+
+def check(path: str) -> int:
+    root = pathlib.Path(path)
+    if not root.exists():
+        print(f"idp-router-egress-gate: nothing at {path}")
+        return 2
+
+    found_ns: dict[str, list[str]] = {}
+    for f, ns, _doc in router_configs(root):
+        found_ns.setdefault(ns or "<unknown>", []).append(str(f))
+
+    bad = 0
+    for ns, paths in sorted(found_ns.items()):
+        listed = ", ".join(sorted(set(paths)))
+        if ns in REVIEWED_ROUTER_NAMESPACES:
+            print(
+                f"ok      router-egress-gate  {ns}: {REVIEWED_ROUTER_NAMESPACES[ns]}  ({listed})"
+            )
+            continue
+        bad += 1
+        print(
+            f"FAIL    router-egress-gate  a LiteLLM router config lives in namespace "
+            f"{ns!r}, which is on no reviewed list ({listed}): a rogue direct-provider "
+            f"router (ROUTE-01)"
+        )
+
+    if bad:
+        print(f"idp-router-egress-gate: {bad} unreviewed router namespace(s) refused")
+        return 1
+    if not found_ns:
+        print(
+            f"idp-router-egress-gate: no LiteLLM router config found under {path}; nothing was graded"
+        )
+    print("verdict router-egress-gate PASS")
+    return 0
+
+
+def _usage() -> str:
+    return (
+        "usage: idp-router-egress-gate <path>   grade a fixture file or a directory tree\n"
+        "       idp-router-egress-gate --self-test\n"
+        "       idp-router-egress-gate --help"
+    )
+
+
+def _self_test() -> int:
+    """LAW 45: this script has not run until --self-test proves it, against its own fixtures."""
+    root = pathlib.Path(__file__).resolve().parent.parent
+    good = root / "tests/fixtures/router-egress/good.yaml"
+    bad = root / "tests/fixtures/router-egress/bad.yaml"
+    if not good.exists() or not bad.exists():
+        print(f"SKIP router-egress-gate --self-test: fixtures not found under {root}")
+        return 0
+    if check(str(good)) != 0:
+        print(f"FAIL router-egress-gate --self-test: {good} should pass and did not")
+        return 1
+    if check(str(bad)) == 0:
+        print(
+            f"FAIL router-egress-gate --self-test: {bad} should be refused and passed"
+        )
+        return 1
+    print(
+        "ok   router-egress-gate --self-test: good fixture passes, bad fixture refused"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    if len(sys.argv) == 2 and sys.argv[1] in ("--help", "-h"):
+        print(_usage())
+        sys.exit(0)
+    if len(sys.argv) == 2 and sys.argv[1] == "--self-test":
+        sys.exit(_self_test())
+    if len(sys.argv) != 2:
+        print("idp-router-egress-gate: expected one fixture path (file or directory)")
+        sys.exit(2)
+    sys.exit(check(sys.argv[1]))

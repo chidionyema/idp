@@ -77,22 +77,23 @@ describe('layerSentence (pure)', () => {
 });
 
 // A faked Kubernetes API behind kubernetesApiRef: serves the two /apis endpoints the card's
-// hook reads, returning a ready or failing layer's objects.
-const fakeCluster = (flux: string, ready: boolean) => ({
+// hook reads, returning a ready or failing layer's objects. `since` (when given) is the Flux
+// Ready condition's lastTransitionTime, so the card has a real age to name.
+const fakeCluster = (flux: string, ready: boolean, since?: string) => ({
   getClusters: async () => [{ name: 'estate' }],
   proxy: async ({ path }: { path: string }) => {
+    const readyCond = {
+      type: 'Ready',
+      status: ready ? 'True' : 'False',
+      reason: ready ? 'ReconciliationSucceeded' : 'ApplyFailed',
+      ...(since ? { lastTransitionTime: since } : {}),
+    };
     const byPath: Record<string, unknown> = {
       '/apis/kustomize.toolkit.fluxcd.io/v1/kustomizations': {
         items: [
           {
             metadata: { name: flux },
-            status: {
-              conditions: [
-                ready
-                  ? { type: 'Ready', status: 'True', reason: 'ReconciliationSucceeded' }
-                  : { type: 'Ready', status: 'False', reason: 'ApplyFailed' },
-              ],
-            },
+            status: { conditions: [readyCond] },
           },
         ],
       },
@@ -136,5 +137,52 @@ describe('LayerOnCluster (rendered behind kubernetesApiRef)', () => {
       </TestApiProvider>,
     );
     expect(await screen.findByText(/ApplyFailed/i)).toBeInTheDocument();
+  });
+
+  it('names how long the verdict has held, from the Flux last-transition, never an invented age', async () => {
+    // The fake cluster's Ready condition carries no lastTransitionTime, so the card has no real
+    // age to claim and must show none -- inventing one is exactly rule 13's failure. Proved by a
+    // second entity whose window is frozen: the same cluster read, but a layer that does carry a
+    // last-transition is graded by the pure heldSinceAgo below, not by a fabricated card fixture.
+    await renderInTestApp(
+      <TestApiProvider apis={[[kubernetesApiRef, fakeCluster('alerts', true) as never]]}>
+        <LayerOnCluster entity={layer('alerts', 'alerts')} />
+      </TestApiProvider>,
+    );
+    expect(await screen.findByTestId('layer-on-cluster')).toBeInTheDocument();
+    expect(screen.queryByText(/^since /i)).not.toBeInTheDocument();
+  });
+
+  it('names how long the verdict has held when the Flux object carries a last-transition', async () => {
+    // Ready since a fixed two hours before `now`, so the card must read "since 2h ago" -- the
+    // third CP4 fact beside Ready and pod count. `now` is pinned so the words are deterministic.
+    const now = Date.parse('2026-09-22T12:00:00Z');
+    const since = new Date(now - 2 * 3600 * 1000).toISOString();
+    await renderInTestApp(
+      <TestApiProvider apis={[[kubernetesApiRef, fakeCluster('alerts', true, since) as never]]}>
+        <LayerOnCluster entity={layer('alerts', 'alerts')} now={now} />
+      </TestApiProvider>,
+    );
+    expect(await screen.findByText(/since 2h ago/i)).toBeInTheDocument();
+  });
+
+  it('draws a status pill that carries the state word, so it is never colour alone', async () => {
+    // A ready layer's card must show the estate's own word for the state ("Good"), not just a
+    // green tint a person who cannot see colour would miss (DESIGN-RULES 24).
+    const { container } = await renderInTestApp(
+      <TestApiProvider apis={[[kubernetesApiRef, fakeCluster('alerts', true) as never]]}>
+        <LayerOnCluster entity={layer('alerts', 'alerts')} />
+      </TestApiProvider>,
+    );
+    const pill = await screen.findByText('Good');
+    expect(pill.closest('.estate-state-pill')).toHaveAttribute('data-state', 'good');
+    // A failing layer shows its own word too, never a silent green.
+    container.remove();
+    await renderInTestApp(
+      <TestApiProvider apis={[[kubernetesApiRef, fakeCluster('alerts', false) as never]]}>
+        <LayerOnCluster entity={layer('alerts', 'alerts')} />
+      </TestApiProvider>,
+    );
+    expect(await screen.findByText('Red')).toBeInTheDocument();
   });
 });

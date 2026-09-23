@@ -40,6 +40,7 @@ a log file a launchd job already writes as part of its own normal operation, bou
 to at most ESTATE_LOGS_MAX_TAIL lines. No other estate.db column, no plist key other
 than the two log-path keys, reaches the response.
 """
+
 from __future__ import annotations
 
 import os
@@ -53,13 +54,16 @@ import yaml
 try:
     from datasette import hookimpl
 except ImportError:  # pragma: no cover - exercised only in the datasette-less CI venv
+
     def hookimpl(fn):
         return fn
 
 
 def config() -> dict:
     return {
-        "catalog_path": os.environ.get("ESTATE_CATALOG_PATH", "/data/catalog-info.yaml"),
+        "catalog_path": os.environ.get(
+            "ESTATE_CATALOG_PATH", "/data/catalog-info.yaml"
+        ),
         "estate_db_path": os.environ.get("ESTATE_DB_PATH", "/data/estate.db"),
         "max_tail": int(os.environ.get("ESTATE_LOGS_MAX_TAIL", "500")),
     }
@@ -109,7 +113,10 @@ def resolve_log_path(db_path: str, asset_path: str) -> "tuple[str | None, str | 
     if row is None:
         return None, f"no assets row for path {asset_path!r}"
     if row["kind"] != "scheduled_job" or not row["plist"]:
-        return None, "no known log source for this asset (not a scheduled_job, or no plist recorded)"
+        return (
+            None,
+            "no known log source for this asset (not a scheduled_job, or no plist recorded)",
+        )
     try:
         with open(row["plist"], "rb") as fh:
             plist = plistlib.load(fh)
@@ -121,7 +128,9 @@ def resolve_log_path(db_path: str, asset_path: str) -> "tuple[str | None, str | 
     return log_path, None
 
 
-def tail_lines(path: str, requested_tail: int, max_tail: int) -> "tuple[list, int, str | None]":
+def tail_lines(
+    path: str, requested_tail: int, max_tail: int
+) -> "tuple[list, int, str | None]":
     """The last min(requested_tail, max_tail) lines of `path`, and the max actually
     enforced (feature scenario 2: the response states the maximum it enforced).
     Reads at most a bounded number of trailing bytes rather than the whole file, so a
@@ -151,18 +160,42 @@ def build_workload_logs(app: str, tail: int = 50, cfg: "dict | None" = None) -> 
     cfg = cfg or config()
     asset_path, catalog_error = read_catalog_asset_path(cfg["catalog_path"], app)
     if catalog_error:
-        return {"app": app, "found": False, "log_path": None, "lines": [],
-                "line_count": 0, "requested_tail": tail, "max_tail": cfg["max_tail"],
-                "tail_enforced": 0, "error": catalog_error}
+        return {
+            "app": app,
+            "found": False,
+            "log_path": None,
+            "lines": [],
+            "line_count": 0,
+            "requested_tail": tail,
+            "max_tail": cfg["max_tail"],
+            "tail_enforced": 0,
+            "error": catalog_error,
+        }
     log_path, resolve_error = resolve_log_path(cfg["estate_db_path"], asset_path)
     if resolve_error:
-        return {"app": app, "found": True, "log_path": None, "lines": [],
-                "line_count": 0, "requested_tail": tail, "max_tail": cfg["max_tail"],
-                "tail_enforced": 0, "error": resolve_error}
+        return {
+            "app": app,
+            "found": True,
+            "log_path": None,
+            "lines": [],
+            "line_count": 0,
+            "requested_tail": tail,
+            "max_tail": cfg["max_tail"],
+            "tail_enforced": 0,
+            "error": resolve_error,
+        }
     lines, enforced, read_error = tail_lines(log_path, tail, cfg["max_tail"])
-    return {"app": app, "found": True, "log_path": log_path, "lines": lines,
-            "line_count": len(lines), "requested_tail": tail,
-            "max_tail": cfg["max_tail"], "tail_enforced": enforced, "error": read_error}
+    return {
+        "app": app,
+        "found": True,
+        "log_path": log_path,
+        "lines": lines,
+        "line_count": len(lines),
+        "requested_tail": tail,
+        "max_tail": cfg["max_tail"],
+        "tail_enforced": enforced,
+        "error": read_error,
+    }
 
 
 @hookimpl

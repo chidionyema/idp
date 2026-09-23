@@ -21,6 +21,7 @@ retries, never stops anything; the legacy answer above is still what the
 caller gets. summary() aggregates every dualread receipt on disk into
 {reads, matches, mismatches, rate} for `bin/sb consensus --json`.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -81,7 +82,9 @@ def _hash_row(row: dict[str, Any] | None) -> str:
     return hashlib.sha256(config.canonical_json({"row": row})).hexdigest()
 
 
-def read(conn: sqlite3.Connection, table: str, rowid: int, dag_dir: Path | None = None) -> dict[str, Any]:
+def read(
+    conn: sqlite3.Connection, table: str, rowid: int, dag_dir: Path | None = None
+) -> dict[str, Any]:
     """Returns {"row", "match", "legacy_ms", "dag_ms", "overhead_ms"}.
     `row` is always the legacy DB's answer -- the DAG side only ever
     informs `match` and the receipt, never what the caller sees."""

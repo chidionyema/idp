@@ -2,6 +2,7 @@
 and never again; a706e26 (16:29 the same day) added --pubkey and --verify-sig to the source, so on
 the founder's Mac `enroll()` got {"error":"unknown command"} and failed closed. Rule (rung 4): a
 cached build artifact is invalidated by its source's content, not by its existence."""
+
 import hashlib
 from pathlib import Path
 
@@ -33,12 +34,17 @@ def test_helper_rebuilds_when_the_source_changes(fake_toolchain):
     src, out, calls = fake_toolchain
     src.write_text("v1 --detect --sign --verify")
     assert anchor._ensure_swift_helper_compiled() == out and len(calls) == 1
-    assert anchor._ensure_swift_helper_compiled() == out and len(calls) == 1, "unchanged source: cached"
+    assert anchor._ensure_swift_helper_compiled() == out and len(calls) == 1, (
+        "unchanged source: cached"
+    )
     src.write_text("v2 --detect --sign --verify --pubkey --verify-sig")
     assert anchor._ensure_swift_helper_compiled() == out
     assert len(calls) == 2, "changed source must recompile"
     assert out.read_text() == src.read_text()
-    assert out.with_suffix(".sha256").read_text() == hashlib.sha256(src.read_bytes()).hexdigest()
+    assert (
+        out.with_suffix(".sha256").read_text()
+        == hashlib.sha256(src.read_bytes()).hexdigest()
+    )
 
 
 def test_binary_without_a_stamp_is_rebuilt_once(fake_toolchain):

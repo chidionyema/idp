@@ -9,6 +9,8 @@ import {
   order,
   prLabel,
   runtimeCounts,
+  signalSentence,
+  signalWord,
   spendLabel,
   stateLabel,
   summarise,
@@ -365,6 +367,11 @@ describe('timeline: notes and signals merged, nothing synthesized', () => {
     ok: true,
     error: null,
     created_at: '2026-09-15T09:30:00Z',
+    // 2026-09-18: the two fields that distinguish a written directive from a read one.
+    // Defaulted to acknowledged so the pre-existing cases keep describing what they described
+    // (their subject is the ORDER of a timeline, not an ack); the ack cases below set them.
+    read_at: '2026-09-15T09:31:00Z',
+    acknowledged: true,
     ...over,
   });
 
@@ -391,5 +398,83 @@ describe('timeline: notes and signals merged, nothing synthesized', () => {
   it('a failed signal carries its error through, never hidden', () => {
     const result = timelineFor([], [signal({ ok: false, error: 'workflow not found' })]);
     expect(result[0]).toMatchObject({ kind: 'signal', ok: false, error: 'workflow not found' });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// 2026-09-18: 'delivered' was a lie, and this is the vocabulary that replaced it.
+//
+// The audit table can prove exactly two things about a signal: the channel accepted the dispatch
+// (`ok`), and the session's own hook consumed the directive (`read_at`). The board had one word
+// for both, and it showed the optimistic one -- a directive file written to
+// ~/.claude/state/directives/ and read by nobody rendered as "delivered" for a day. SPEC CP8's
+// done-condition is that the session ACKNOWLEDGES it, so the word now names what was proven.
+describe('signal acknowledgement', () => {
+  // Its own fixture rather than the enclosing describe's, so this block reads the ack fields it
+  // is about instead of inheriting defaults set for a different subject.
+  const sig = (over: Partial<Signal> = {}): Signal => ({
+    id: 1,
+    session_id: 's',
+    runtime: 'claude-code',
+    kind: 'steer',
+    by: 'founder',
+    text: 'check the auth module',
+    ok: true,
+    error: null,
+    created_at: '2026-09-18T00:00:00Z',
+    read_at: null,
+    acknowledged: false,
+    ...over,
+  });
+
+  const s = (over: Partial<Signal>): Pick<Signal, 'ok' | 'acknowledged'> => ({
+    ok: true,
+    acknowledged: false,
+    ...over,
+  });
+
+  it('says "read" only when the session consumed it', () => {
+    expect(signalWord(s({ ok: true, acknowledged: true }))).toBe('read');
+  });
+
+  it('says "not yet read" for a written directive nobody has consumed', () => {
+    // The exact state that used to render as "delivered".
+    expect(signalWord(s({ ok: true, acknowledged: false }))).toBe('not yet read');
+  });
+
+  it('says "failed" only when the channel refused it', () => {
+    expect(signalWord(s({ ok: false, acknowledged: false }))).toBe('failed');
+    // And a failed dispatch can never read as read, whatever the ack column says.
+    expect(signalWord(s({ ok: false, acknowledged: true }))).toBe('failed');
+  });
+
+  it('never claims delivery from the write alone', () => {
+    // The regression guard, in one assertion: ok=true with no ack must not be the best word.
+    expect(signalWord(s({ ok: true, acknowledged: false }))).not.toBe('read');
+  });
+
+  it('renders a sentence naming what was proven', () => {
+    expect(signalSentence(sig({ acknowledged: true }))).toBe(
+      'steer founder sent, read by the session',
+    );
+    expect(signalSentence(sig({ acknowledged: false }))).toBe(
+      'steer founder sent, not yet read',
+    );
+    expect(signalSentence(sig({ ok: false, error: 'no channel' }))).toBe(
+      'steer failed: no channel',
+    );
+  });
+
+  it('carries the ack through the merged timeline', () => {
+    const notRead = sig({ id: 1, acknowledged: false, read_at: null });
+    const read = sig({ id: 2, acknowledged: true, read_at: '2026-09-15T09:32:00Z' });
+    const entries = timelineFor([], [notRead, read]);
+    expect(entries).toHaveLength(2);
+    for (const e of entries) {
+      expect(e.kind).toBe('signal');
+      if (e.kind === 'signal') {
+        expect(typeof e.acknowledged).toBe('boolean');
+      }
+    }
   });
 });

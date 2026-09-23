@@ -7,7 +7,7 @@
 # answers that call with `GraphQL: Auto merge is not allowed for this repository
 # (enablePullRequestAutoMerge)` and the step exits 1. Five callers did it, so five robots went red
 # and stayed red: the catalogue deploy (image-update-pr), the shop deploy (the same branch),
-# catalog-render, kini-finish, pr-age and conscience.
+# catalog-render, kini-finish and pr-age.
 #
 # The cost was not the red run. It was that nobody was told the estate had stopped deploying:
 # idp#1011 carried the portal build from 2026-08-30T14:45Z onward and never merged, so

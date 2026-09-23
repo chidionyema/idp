@@ -106,6 +106,17 @@ oci_compartment() {
     local T; T=$(awk -F'"' '/^compartment_ocid/{print $2}' "$IDP/platform/oci/terraform.tfvars")
     if [ -n "$T" ]; then printf '%s' "$T"; return 0; fi
   fi
+  # Fourth road, added 2026-09-19: the committed estate config. `clusters/oke/estate-config.yaml`
+  # carries ESTATE_OCI_COMPARTMENT_OCID, and its own comment already rules that an OCID is an
+  # identifier and not a secret (same rule as the instance OCID in platform/rbac/bridge.yaml).
+  # Without this, every caller BLINDed on a laptop that has a live OCI session but no rendered
+  # tfvars and no sops envelope -- measured: `cluster kubeconfig` printed "cannot operate on
+  # non-existent file .../OCI_COMPARTMENT_OCID.yaml" and reported the compartment unresolvable
+  # while `oci iam region list` was answering. Read from the file that IS in the tree.
+  if [ -f "$IDP/clusters/oke/estate-config.yaml" ]; then
+    local E; E=$(awk -F'"' '/ESTATE_OCI_COMPARTMENT_OCID/{print $2}' "$IDP/clusters/oke/estate-config.yaml")
+    if [ -n "$E" ]; then printf '%s' "$E"; return 0; fi
+  fi
   sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml"
 }
 
@@ -533,6 +544,33 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             ;;
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
+            # crew#345 / measured 2026-09-19: this Mac's ONLY OCI identity is a
+            # security-token session (~/.oci/config carries security_token_file and no API
+            # key). The oci CLI does not infer that from the file -- it warns
+            # "The active profile contains a value for 'security_token_file' which is not
+            # being used. To authenticate using the token, specify --auth security_token"
+            # and then answers NotAuthenticated 401. So this verb failed for the one
+            # identity it is documented to serve, and bin/idp-kube reported the cluster
+            # BLIND while the cluster and the session were both healthy. `oci_compartment`
+            # above already exports OCI_CLI_AUTH=security_token; this branch never called
+            # it, which is the whole bug. Default it here rather than requiring the export.
+            export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
+            export SUPPRESS_LABEL_WARNING=True
+            # And the SECOND bug the 401 had been hiding, found once auth stopped failing:
+            # `--cluster-id "$NAME"` passed the NAME where an OCID belongs (measured
+            # `--cluster-id estate` -> InvalidParameter). `cluster list` and `nodepools` both
+            # resolve through oci_compartment/list; this branch did not. crew#345: a red row
+            # hides the failure in the row after it -- the 401 was covering this one.
+            C=$(oci_compartment)
+            [ -n "$C" ] || blind "cluster kubeconfig: could not resolve the compartment"
+            CID=$(oci ce cluster list --compartment-id "$C" --lifecycle-state ACTIVE \
+              --query "data[?name=='$NAME'].id | [0]" --raw-output 2>/dev/null) \
+              || blind "oci ce cluster list failed while resolving cluster '$NAME'"
+            if [ -z "$CID" ] || [ "$CID" = "null" ]; then
+              ACTIVE=$(oci ce cluster list --compartment-id "$C" --lifecycle-state ACTIVE \
+                --query 'data[].name' --raw-output 2>/dev/null | paste -sd, -)
+              blind "no ACTIVE cluster named '$NAME'; ACTIVE: ${ACTIVE:-none}"
+            fi
             # crew#292: `|| blind "create-kubeconfig failed"` threw away the only sentence that
             # said why. bin/idp-kube then took tail -1 of the combined output, which is this
             # line, so the CLI's ServiceError never reached the receipt: 7 of 7 verify-drill runs
@@ -541,11 +579,37 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             # stderr, so stderr is captured and travels in the blind line. stdout is discarded:
             # the kubeconfig goes to --file, and a token must never land in a log.
             if [ -n "$REGION" ]; then
-              why=$(oci ce cluster create-kubeconfig --cluster-id "$NAME" --file "$FILE" --region "$REGION" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT 2>&1 >/dev/null) \
-                || blind "oci ce cluster create-kubeconfig failed: $(oneline "$why")"
+              why=$(oci ce cluster create-kubeconfig --auth "$OCI_CLI_AUTH" --cluster-id "$CID" --file "$FILE" --region "$REGION" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT 2>&1 >/dev/null) \
+                || blind "oci ce cluster create-kubeconfig failed for $NAME ($CID): $(oneline "$why")"
             else
-              why=$(oci ce cluster create-kubeconfig --cluster-id "$NAME" --file "$FILE" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT 2>&1 >/dev/null) \
-                || blind "oci ce cluster create-kubeconfig failed: $(oneline "$why")"
+              why=$(oci ce cluster create-kubeconfig --auth "$OCI_CLI_AUTH" --cluster-id "$CID" --file "$FILE" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT 2>&1 >/dev/null) \
+                || blind "oci ce cluster create-kubeconfig failed for $NAME ($CID): $(oneline "$why")"
+            fi
+            # The exec plugin the CLI writes into the kubeconfig calls `oci ce cluster
+            # generate-token` with no --auth, so every kubectl against the minted file
+            # 401s exactly as the create did. Measured 2026-09-19: nodes read
+            # `Unauthorized` until the args were patched by hand. Fix it at the source.
+            if command -v python3 >/dev/null 2>&1 && [ -s "$FILE" ]; then
+              python3 - "$FILE" <<'PYEOF' || blind "kubeconfig written but its exec plugin could not be pinned to $OCI_CLI_AUTH"
+import os, sys
+try:
+    import yaml
+except ImportError:
+    sys.exit(0)  # no pyyaml: leave the file alone rather than corrupt it
+path = sys.argv[1]
+with open(path) as fh:
+    doc = yaml.safe_load(fh) or {}
+changed = False
+for entry in doc.get("users") or []:
+    ex = (entry.get("user") or {}).get("exec")
+    if not ex or "--auth" in (ex.get("args") or []):
+        continue
+    ex["args"] = ["--auth", os.environ.get("OCI_CLI_AUTH", "security_token")] + list(ex.get("args") or [])
+    changed = True
+if changed:
+    with open(path, "w") as fh:
+        yaml.safe_dump(doc, fh, default_flow_style=False)
+PYEOF
             fi
             ;;
           *) blind "unknown backend $BACKEND";;

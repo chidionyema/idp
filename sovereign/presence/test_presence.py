@@ -6,6 +6,7 @@ same guarantee a property test gives, with no dependency on hypothesis.
 
 Run:  python -m pytest sovereign/presence/test_presence.py -q
 """
+
 from __future__ import annotations
 
 import itertools
@@ -17,13 +18,23 @@ from sovereign.presence import chat, fsm, receipt, state as state_mod
 
 ACT = fsm.FounderAct(kind="message", by="founder")
 STATES: list[fsm.Presence] = [
-    fsm.Ghost(), *(fsm.Haptic(p) for p in fsm.Pattern),
-    fsm.Spatial(cause="founder_click"), fsm.Spatial(cause="catastrophe"),
-    fsm.Converse(initiated_by=ACT), fsm.Converse(initiated_by=fsm.FounderAct(kind="dead_mans_switch_recovery", by="kernel")),
+    fsm.Ghost(),
+    *(fsm.Haptic(p) for p in fsm.Pattern),
+    fsm.Spatial(cause="founder_click"),
+    fsm.Spatial(cause="catastrophe"),
+    fsm.Converse(initiated_by=ACT),
+    fsm.Converse(
+        initiated_by=fsm.FounderAct(kind="dead_mans_switch_recovery", by="kernel")
+    ),
 ]
 EVENTS: list[fsm.SystemEvent] = [
-    fsm.StateCommit("s"), fsm.BoundaryApproaching("s"), fsm.HaltRequired("s"),
-    *(fsm.Catastrophe(kind=k) for k in ("integrity_failure", "lockdown", "dead_mans_switch")),
+    fsm.StateCommit("s"),
+    fsm.BoundaryApproaching("s"),
+    fsm.HaltRequired("s"),
+    *(
+        fsm.Catastrophe(kind=k)
+        for k in ("integrity_failure", "lockdown", "dead_mans_switch")
+    ),
 ]
 
 
@@ -33,11 +44,17 @@ def test_property_system_events_never_enter_converse() -> None:
     for state, event in itertools.product(STATES, EVENTS):
         after = fsm.apply(state, event)
         assert isinstance(after, fsm.Converse) == isinstance(state, fsm.Converse)
-        assert isinstance(fsm.on_system_event(event), (fsm.Ghost, fsm.Haptic, fsm.Spatial))
-        assert not isinstance(fsm.settle(after), fsm.Converse) or isinstance(state, fsm.Converse)
+        assert isinstance(
+            fsm.on_system_event(event), (fsm.Ghost, fsm.Haptic, fsm.Spatial)
+        )
+        assert not isinstance(fsm.settle(after), fsm.Converse) or isinstance(
+            state, fsm.Converse
+        )
     for state in STATES:
         assert isinstance(fsm.on_founder(state, ACT), fsm.Converse)
-        assert fsm.on_founder(state, fsm.FounderClick(by="founder")) == fsm.Spatial(cause="founder_click")
+        assert fsm.on_founder(state, fsm.FounderClick(by="founder")) == fsm.Spatial(
+            cause="founder_click"
+        )
         assert fsm.leave(state) == fsm.Ghost()
 
 
@@ -50,15 +67,35 @@ def test_property_ghost_and_haptic_share_one_dot_colour() -> None:
         assert isinstance(state_mod.as_dict(state)["state"], str)
 
 
-_ADVERSARIAL = ["", "plain", "a\nb", "x | y", "with:colon", " spaced  out ", "\t\r\n", string.punctuation, "é✓"]
+_ADVERSARIAL = [
+    "",
+    "plain",
+    "a\nb",
+    "x | y",
+    "with:colon",
+    " spaced  out ",
+    "\t\r\n",
+    string.punctuation,
+    "é✓",
+]
 
 
 def test_property_receipt_is_one_line_with_hash_budget_and_state() -> None:
     """R5: whatever a caller puts in a field, the receipt is one line and
     carries hash, budget delta and state."""
-    for op, file, hash_, state, tag in itertools.product(_ADVERSARIAL, _ADVERSARIAL, _ADVERSARIAL, _ADVERSARIAL, _ADVERSARIAL[:4]):
+    for op, file, hash_, state, tag in itertools.product(
+        _ADVERSARIAL, _ADVERSARIAL, _ADVERSARIAL, _ADVERSARIAL, _ADVERSARIAL[:4]
+    ):
         for delta in (-1200, -50, 0, 340, 50000):
-            line = receipt.format_line(ok=True, op=op or "op", hash=hash_, budget_delta=delta, state=state, file=file or None, tags=(tag,) if tag else ())
+            line = receipt.format_line(
+                ok=True,
+                op=op or "op",
+                hash=hash_,
+                budget_delta=delta,
+                state=state,
+                file=file or None,
+                tags=(tag,) if tag else (),
+            )
             assert "\n" not in line and "\r" not in line
             assert "hash:" in line and "budget:" in line and "state:" in line
             assert f"budget:{receipt.humanize_delta(delta)}" in line

@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+"""Prove the fleet room renders, by driving a real browser. Run it, do not ask.
+
+WHY THIS EXISTS. Four times in one session a claim was made about the page from a
+terminal and was wrong -- a curl says the API answers and says nothing about what a
+person sees. Then a probe that read the DOM said the agent list was on the page when it
+was invisible, and another said it was hidden when it was not. The only instrument that
+has never lied about this page is a screenshot and a pixel count.
+
+So this drives Chrome, loads /fleet, waits for the build, and asserts eight things a
+person would notice. It exits non-zero on any failure, so it can be run after every change
+without asking anyone to reload a page by hand.
+
+WHAT IT ASSERTS, and each is a defect that actually happened:
+  * the canvas exists                                        -- it once measured 1168x0
+  * it has real height                                       -- 100% of a parent with no height
+  * it is visible without scrolling                          -- it once began at y=380
+  * it has drawn pixels                                      -- a blank canvas passes a DOM check
+  * no page errors                                           -- 'useRef is not defined' rendered blank
+  * the accessible list exists                               -- the fleet as text, for a screen reader
+  * the accessible list OCCUPIES NO SPACE                    -- it once ran 24 visible lines down the page
+  * real agents reached it                                   -- 24, from the API, not seeded stubs
+
+Usage:  bin/idp-room-prove            # exits 0 when the room renders, 1 when it does not
+        bin/idp-room-prove --json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+PORTAL = os.environ.get("PORTAL_URL", "http://localhost:3100")
+# The bundle takes about 15s to compile on a cold start and the page needs a moment to draw.
+# 14s was the guest-wall settle, and it alone was half the budget. The wall clears in about 8s
+# when the estate is up, so 9 gives the same proof with 5 seconds of headroom for a slower machine
+# -- and a machine that needs longer has a different problem than this script can report.
+SETTLE_MS = int(os.environ.get("ROOM_SETTLE_MS", "4000"))
+
+SCRIPT = r"""
+import { chromium } from 'playwright-core';
+const PORTAL = process.env.PORTAL_URL;
+const SETTLE = Number(process.env.ROOM_SETTLE_MS);
+
+// ATTACH TO THE LONG-LIVED BROWSER when one is up, instead of launching a new one.
+//
+// A cold Chrome launch plus guest sign-in plus first paint was measured at about ten seconds --
+// for ONE look. The 30-second ceiling is a ceiling, not a budget, and a proof that costs ten
+// seconds is a proof that gets run once and then trusted. bin/room-eye keeps a browser alive on
+// :9222, so this attaches and the whole check runs in about two.
+const CDP = process.env.ROOM_EYE_PORT || '9222';
+const b = await (async () => {
+  try {
+    return await chromium.connectOverCDP(`http://127.0.0.1:${CDP}`);
+  } catch {
+    return await chromium.launch({
+      executablePath: process.env.CHROME_PATH,
+      headless: true,
+    });
+  }
+})();
+// REUSE THE PAGE IF ONE IS ALREADY ON THE ROOM. Connecting over CDP gives back the browser, and
+// asking it for a NEW page opens a blank tab -- which is why eight checks reported "no canvas" and
+// took 13 seconds doing it while the room was open in the tab next door. The first page that is
+// not `about:blank` is the room; otherwise make one.
+const pages = b.contexts().flatMap((c) => c.pages());
+const existing = pages.find((x) => x.url().includes('/fleet'));
+const p = existing ?? await b.newPage({ viewport: { width: 1440, height: 900 } });
+await p.setViewportSize({ width: 1440, height: 900 }).catch(() => {});
+const errs = [];
+p.on('pageerror', e => errs.push(e.message.slice(0, 160)));
+p.on('console', m => {
+  if (m.type() === 'error' && !/findDOMNode|401|DevTools/.test(m.text())) errs.push(m.text().slice(0, 160));
+});
+
+const out = { checks: [], errors: errs };
+const ok = (name, pass, detail) => out.checks.push({ name, pass: !!pass, detail: String(detail) });
+
+try {
+  // EVERY WAIT HERE IS BOUNDED, and the 30-second ceiling is a CEILING, NOT A BUDGET.
+  //
+  // Measured 2026-09-19: this sequence was 12s navigation + 4s settle + 9s wall = 25 seconds
+  // before the first of eight checks had run, and the subprocess was allowed 24, so it was killed
+  // mid-proof. That is a script which technically obeys a 30s limit while spending the founder's
+  // clock to the last drop -- and the founder's correction was exact: "i said no command may
+  // exceed 30s, big difference."
+  //
+  // So the waits are now sized to what the work ACTUALLY takes rather than to how long we might
+  // get away with. domcontentloaded on a warm dev server is ~2s; the guest wall clears in ~2s.
+  // Waiting is only useful up to the point the page is ready, and past that it is just delay.
+  // `commit`, NOT `domcontentloaded`. Identical to the fix in bin/room-eye, and found the same way:
+  // webpack-dev-server serves the HTML instantly and then compiles the bundle, so the document is
+  // not "loaded" while the build runs and a 6s wait on that event times out against a page that
+  // curl fetches in 1.7ms. Readiness is the canvas, asserted below, not a lifecycle event.
+  await p.goto(`${PORTAL}/fleet`, { waitUntil: 'commit', timeout: 8000 });
+  // WAIT FOR THE ROOM, NOT FOR A CLOCK. When this attaches to a browser whose page is already on
+  // /fleet, the navigation is a no-op and a fixed 1.5s sleep is a guess -- which is how the run
+  // above reported "no canvas element" against a page that had one. The canvas IS the readiness
+  // signal; waiting for it is both faster when the page is warm and correct when it is cold.
+  await p.waitForSelector('canvas', { timeout: 8000 }).catch(() => {});
+  await p.waitForTimeout(600);
+  // The estate signs a guest in on the way through; if the wall is up, press it once.
+  const wall = await p.$('button:has-text("Enter")');
+  if (wall) {
+    await wall.click();
+    // ONLY PAY THE SETTLE WHEN THERE WAS A WALL. The profile bin/room-eye keeps is already signed
+    // in, so the wall is usually absent -- and sleeping 4s for it anyway was most of this script's
+    // runtime. Wait for the canvas instead, which is the thing the checks actually need.
+    await p.waitForSelector('canvas', { timeout: Math.min(SETTLE, 5000) }).catch(() => {});
+  }
+
+  const cv = await p.evaluate(() => {
+    const c = document.querySelector('canvas');
+    if (!c) return null;
+    const b = c.getBoundingClientRect();
+    return { w: Math.round(b.width), h: Math.round(b.height), y: Math.round(b.y) };
+  });
+  ok('canvas exists', !!cv, cv ? JSON.stringify(cv) : 'no canvas element');
+  ok('canvas has real height', cv && cv.h > 300, cv ? `${cv.h}px` : 'n/a');
+  ok('canvas visible without scrolling', cv && cv.y < 900, cv ? `y=${cv.y}` : 'n/a');
+
+  const lit = await p.evaluate(() => {
+    const c = document.querySelector('canvas');
+    if (!c) return 0;
+    const ctx = c.getContext('2d');
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4 * 53) if (d[i] > 12) n++;
+    return n;
+  });
+  ok('canvas has drawn pixels', lit > 500, `${lit} lit samples`);
+
+  const list = await p.evaluate(() => {
+    const ul = document.querySelector('[data-testid="room-agents"]');
+    if (!ul) return null;
+    const items = Array.from(ul.querySelectorAll('li'));
+    const sized = items.filter(li => {
+      const b = li.getBoundingClientRect();
+      return b.width > 4 && b.height > 4;
+    });
+    return { items: items.length, sizedVisible: sized.length };
+  });
+  ok('accessible list present', !!list, list ? JSON.stringify(list) : 'absent');
+  ok('accessible list takes no space', list && list.sizedVisible === 0,
+     list ? `${list.sizedVisible} items occupy space` : 'n/a');
+  ok('real agents reached it', list && list.items >= 20, list ? `${list.items} items` : 'n/a');
+  ok('no page errors', errs.length === 0, errs.slice(0, 2).join(' | ') || 'none');
+} catch (e) {
+  ok('browser drive completed', false, String(e).slice(0, 200));
+}
+out.ok = out.checks.every(c => c.pass);
+console.log(JSON.stringify(out));
+await b.close();
+"""
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args()
+
+    if not Path(CHROME).exists():
+        print(f"BLIND room-prove  no Chrome at {CHROME}", file=sys.stderr)
+        return 2
+    # playwright-core resolves from the app package, and the script must live where it can.
+    # playwright-core is hoisted to the workspace root (backstage/node_modules), not installed
+    # per-package -- so the check looks where it actually is. A guard that checks the wrong path
+    # reports BLIND on a machine where the tool is present, which trains a reader to ignore BLIND.
+    app = ROOT / "backstage" / "packages" / "app"
+    have_pw = (ROOT / "backstage" / "node_modules" / "playwright-core").exists() or (
+        app / "node_modules" / "playwright-core"
+    ).exists()
+    if not have_pw:
+        print("BLIND room-prove  playwright-core is not installed under backstage/", file=sys.stderr)
+        return 2
+
+    with tempfile.NamedTemporaryFile("w", suffix=".mjs", dir=str(app), delete=False) as fh:
+        fh.write(SCRIPT)
+        script = fh.name
+    try:
+        proc = subprocess.run(
+            ["node", str(Path(script).relative_to(app))],
+            cwd=str(app),
+            capture_output=True,
+            text=True,
+            timeout=20,  # ceiling, not a budget; this proof should finish in ~6s
+            env={
+                **os.environ,
+                "PORTAL_URL": PORTAL,
+                "CHROME_PATH": CHROME,
+                "ROOM_SETTLE_MS": str(SETTLE_MS),
+            },
+        )
+    finally:
+        shutil.move(script, "/dev/null") if False else Path(script).unlink(missing_ok=True)
+
+    line = (proc.stdout or "").strip().splitlines()[-1] if proc.stdout.strip() else ""
+    try:
+        result = json.loads(line)
+    except ValueError:
+        print(f"BLIND room-prove  the driver produced no result\n{proc.stdout[-300:]}\n{proc.stderr[-300:]}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        for c in result["checks"]:
+            print(f"  {'PASS' if c['pass'] else 'FAIL'}  {c['name']:<36} {c['detail']}")
+        passed = sum(1 for c in result["checks"] if c["pass"])
+        total = len(result["checks"])
+        print(f"\n{'ok' if result['ok'] else 'FAIL'}    room-prove  {passed}/{total} checks")
+    return 0 if result["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

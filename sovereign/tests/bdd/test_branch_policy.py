@@ -5,6 +5,7 @@ Proved both ways in one run. The rule itself is a pure function
 is checked by running pytest on the pending_unclaimed fixture directory
 with and without SB_BDD_STRICT, which is exactly what ci.yml does.
 """
+
 from __future__ import annotations
 
 import os
@@ -27,7 +28,9 @@ def test_named_owner_skips_on_dev_and_fails_on_main(owner: str) -> None:
 
 
 @pytest.mark.parametrize("owner", [None, "", UNCLAIMED])
-def test_missing_or_unclaimed_owner_fails_on_main_for_the_owner_reason(owner: str | None) -> None:
+def test_missing_or_unclaimed_owner_fails_on_main_for_the_owner_reason(
+    owner: str | None,
+) -> None:
     kwargs = {} if owner is None else {"owner": owner}
     mark = pytest.mark.pending("R0", **kwargs).mark
     assert pending_verdict(mark, strict=False)[0] == "skip"
@@ -42,7 +45,11 @@ def _run_fixture(strict: bool) -> subprocess.CompletedProcess[str]:
     env["PYTHONPATH"] = str(REPO_ROOT)
     return subprocess.run(
         [sys.executable, "-m", "pytest", str(FIXTURE), "-q", "-p", "no:cacheprovider"],
-        cwd=str(REPO_ROOT), env=env, capture_output=True, text=True, timeout=120,
+        cwd=str(REPO_ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
 
 

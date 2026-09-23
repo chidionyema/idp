@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fleetview-voice.fullname" . }}-worker
+  labels:
+    {{- include "fleetview-voice.worker.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "fleetview-voice.worker.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: Recreate  # SQLite WAL needs exclusive access; only one worker at a time
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "fleetview-voice.worker.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "fleetview-voice.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "fleetview-voice.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.worker.podSecurityContext | nindent 8 }}
+      containers:
+        - name: worker
+          securityContext:
+            {{- toYaml .Values.worker.securityContext | nindent 12 }}
+          image: {{ include "fleetview-voice.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - python
+            - -m
+            - outbox
+            - --worker
+          envFrom:
+            - configMapRef:
+                name: {{ include "fleetview-voice.fullname" . }}-config
+          env:
+            # Outbox database path - persistent volume
+            - name: OUTBOX_DB_PATH
+              value: /data/outbox.db
+            # Kafka secrets (when applicable)
+            {{- if and (eq .Values.eventBus.type "kafka") .Values.eventBus.kafka.sasl.enabled .Values.eventBus.kafka.sasl.passwordSecretRef.name }}
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.eventBus.kafka.sasl.passwordSecretRef.name }}
+                  key: {{ .Values.eventBus.kafka.sasl.passwordSecretRef.key }}
+            {{- end }}
+            {{- with .Values.worker.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: outbox-data
+              mountPath: /data
+            {{- if and (eq .Values.eventBus.type "kafka") .Values.eventBus.kafka.tls.enabled .Values.eventBus.kafka.tls.caSecretRef.name }}
+            - name: kafka-ca
+              mountPath: /etc/ssl/kafka
+              readOnly: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+      volumes:
+        - name: outbox-data
+          {{- if .Values.worker.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.worker.persistence.existingClaim | default (printf "%s-worker-data" (include "fleetview-voice.fullname" .)) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if and (eq .Values.eventBus.type "kafka") .Values.eventBus.kafka.tls.enabled .Values.eventBus.kafka.tls.caSecretRef.name }}
+        - name: kafka-ca
+          secret:
+            secretName: {{ .Values.eventBus.kafka.tls.caSecretRef.name }}
+        {{- end }}
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+{{- if and .Values.worker.persistence.enabled (not .Values.worker.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "fleetview-voice.fullname" . }}-worker-data
+  labels:
+    {{- include "fleetview-voice.worker.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.worker.persistence.accessModes | nindent 4 }}
+  {{- if .Values.worker.persistence.storageClass }}
+  storageClassName: {{ .Values.worker.persistence.storageClass }}
+  {{- else if .Values.global.storageClass }}
+  storageClassName: {{ .Values.global.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.worker.persistence.size }}
+{{- end }}

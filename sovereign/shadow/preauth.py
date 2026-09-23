@@ -24,6 +24,7 @@ trust any number built on fewer decisions than that. A fine-tuned local
 model can replace `confidence()` later without touching the type
 guarantee, which is the point of keeping them apart.
 """
+
 from __future__ import annotations
 
 import math
@@ -40,7 +41,7 @@ _OP_NAME_RE = re.compile(r"[^a-z0-9]+")
 
 
 def normalize_op(name: str) -> str:
-    """"git push --force" and "git_push_force" are the same op. The op
+    """ "git push --force" and "git_push_force" are the same op. The op
     table is keyed by the underscore form, so the free-text form a step
     asks with is folded onto it before lookup."""
     return _OP_NAME_RE.sub("_", str(name).strip().lower()).strip("_")
@@ -93,7 +94,9 @@ class Boundary:
     op: Op
     remaining: int
     predicted_costs: tuple[int, ...]
-    hit_at_step: int  # 1-based index of the first predicted step the budget cannot cover
+    hit_at_step: (
+        int  # 1-based index of the first predicted step the budget cannot cover
+    )
     refill: int  # tokens that cover the whole predicted trajectory, rounded up
     steps_covered: int  # how many predicted steps the refill covers -- all of them
 
@@ -107,7 +110,11 @@ class Boundary:
         )
 
 
-def predict(remaining: int, predicted_costs: list[int] | tuple[int, ...], horizon: int | None = None) -> Boundary | None:
+def predict(
+    remaining: int,
+    predicted_costs: list[int] | tuple[int, ...],
+    horizon: int | None = None,
+) -> Boundary | None:
     """Simulate the next `horizon` steps' spend. Returns the Boundary the
     trajectory hits, or None when the budget covers every step in the
     horizon. The op behind a budget boundary is the refill itself, which
@@ -203,7 +210,9 @@ class ShadowAuth:
         if not isinstance(self.op, NonDestructiveOp):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise TypeError("the shadow-founder never authorizes a destructive op")
         if ops.classify(self.op.name).destructive:
-            raise TypeError(f"{self.op.name!r} is destructive in the ops table; ShadowAuth refused")
+            raise TypeError(
+                f"{self.op.name!r} is destructive in the ops table; ShadowAuth refused"
+            )
 
 
 @dataclass(frozen=True)
@@ -216,7 +225,9 @@ class Ask:
 Verdict = Union[ShadowAuth, Ask]
 
 
-def decide(boundary: Boundary, conf: float, min_confidence: float | None = None) -> Verdict:
+def decide(
+    boundary: Boundary, conf: float, min_confidence: float | None = None
+) -> Verdict:
     """Spec 3.4: confidence > threshold AND inside policy -> ShadowAuth;
     otherwise the founder is asked. The destructive branch does not look
     at the confidence at all -- 100 past approvals do not make a force
@@ -224,7 +235,11 @@ def decide(boundary: Boundary, conf: float, min_confidence: float | None = None)
     op = boundary.op
     if isinstance(op, DestructiveOp):
         return Ask(boundary, boundary.card_text, op.classification)
-    threshold = float(min_confidence if min_confidence is not None else config.get("shadow.min_confidence").value)
+    threshold = float(
+        min_confidence
+        if min_confidence is not None
+        else config.get("shadow.min_confidence").value
+    )
     if conf >= threshold:
         return ShadowAuth(boundary, op, conf)
     return Ask(boundary, boundary.card_text, "low_confidence")
@@ -234,7 +249,9 @@ def receipt_for(auth: ShadowAuth, session_id: str, step: int) -> dict[str, Any]:
     """Only a ShadowAuth can be turned into a shadow_auth receipt, so a
     destructive op can never produce one: there is no value of that type
     to pass in."""
-    line = str(ck.get("shadow.receipt_line_format")).format(boundary=auth.boundary.kind, confidence=auth.confidence)
+    line = str(ck.get("shadow.receipt_line_format")).format(
+        boundary=auth.boundary.kind, confidence=auth.confidence
+    )
     return receipts_mod.append(
         {
             "session_id": session_id,
@@ -279,9 +296,13 @@ class Session:
         if op is not None:
             classified = classify(op)
             boundary = Boundary(
-                kind=normalize_op(op), op=classified, remaining=self.remaining,
-                predicted_costs=tuple(self.predicted_costs), hit_at_step=1,
-                refill=0, steps_covered=len(self.predicted_costs),
+                kind=normalize_op(op),
+                op=classified,
+                remaining=self.remaining,
+                predicted_costs=tuple(self.predicted_costs),
+                hit_at_step=1,
+                refill=0,
+                steps_covered=len(self.predicted_costs),
             )
         else:
             predicted = predict(self.remaining, self.predicted_costs)

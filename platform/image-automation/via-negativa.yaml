@@ -58,3 +58,33 @@ spec:
   policy:
     numerical:
       order: asc
+---
+# The redteam promoter's image rolls the same way: build-multiarch pushes
+# ghcr.io/chidionyema/redteam_promoter:main-<run>-<sha>, this policy picks the highest run, and
+# the one shared ImageUpdateAutomation (backstage.yaml, path ./) writes it into the
+# platform/via-negativa/kustomization.yaml row whose marker names this policy.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: redteam-promoter
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/redteam_promoter
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: redteam-promoter
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: redteam-promoter
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

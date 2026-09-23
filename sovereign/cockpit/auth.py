@@ -14,6 +14,7 @@ loopback (laptop use, CONTRACT.md "Cockpit" section). Everyone else is 401.
 Never log the bot token or the initData string. Every error raised here carries
 a fixed, secret-free message.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -44,9 +45,11 @@ def _bot_token() -> str:
 def _allowed_ids() -> set[str]:
     raw = ""
     if config is not None:
-        raw = getattr(config, "TELEGRAM_ALLOWED_USER_IDS", None) or getattr(
-            config, "TELEGRAM_ALLOWED_USERS", None
-        ) or ""
+        raw = (
+            getattr(config, "TELEGRAM_ALLOWED_USER_IDS", None)
+            or getattr(config, "TELEGRAM_ALLOWED_USERS", None)
+            or ""
+        )
     if not raw:
         raw = os.environ.get("TELEGRAM_ALLOWED_USER_IDS") or os.environ.get(
             "TELEGRAM_ALLOWED_USERS", ""

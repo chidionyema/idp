@@ -340,6 +340,22 @@ patches:
             # the new ReplicaSet outright, the old Pod kept serving, so the container never even
             # crash-looped into view.
             - {name: FLEETVIEW_EXECUTOR_KEY_FILE, value: /run/secrets/fleetview-executor/FLEETVIEW_EXECUTOR_KEY}
+            # THE BOARD'S OWN BACKEND WAS NOT ON THE BUS.
+            #
+            # `serve.py` refuses to start without ESTATE_DB but treats NATS_URL as optional and
+            # says so at boot -- "live bus off (NATS_URL unset) -- /stream will say so, not
+            # pretend". Honest, and it has been unset here since this sidecar was added: every
+            # other publisher in the estate carries this value (platform/otto-gateway,
+            # platform/router-events/publisher.yaml, platform/epistemic-fabric/ingest.yaml) and
+            # the one surface whose whole job is to SHOW the fleet did not, so the board's /stream
+            # has been a poll of the local store rather than the live bus.
+            #
+            # Same literal every one of those uses -- the chart's in-cluster Service, not a
+            # hostname invented here. Voice is what made it matter: an utterance is published as
+            # an `estate.agent.event` kind=steer row (see voice_media.py), and with this unset the
+            # publish reports `{"published": false, "reason": "NATS_URL is unset"}` truthfully and
+            # forever.
+            - {name: NATS_URL, value: "nats://nats.event-bus.svc:4222"}
           volumeMounts:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
             - {name: estate, mountPath: /estate, readOnly: true}

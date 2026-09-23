@@ -5,6 +5,7 @@ Run:
 Never opens maestro's real database -- every test builds its own
 disposable sqlite3 file, same pattern as test_dualread.py.
 """
+
 from __future__ import annotations
 
 import json
@@ -44,26 +45,37 @@ class ConsensusTestBase(unittest.TestCase):
             p = patch.object(config, name, val)
             p.start()
             self.addCleanup(p.stop)
-        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
+        p = patch.object(
+            receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file")
+        )
         p.start()
         self.addCleanup(p.stop)
 
         self.db_path = root / "legacy.db"
         self.conn = sqlite3.connect(str(self.db_path))
-        self.conn.execute("CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)")
+        self.conn.execute(
+            "CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)"
+        )
         self.conn.commit()
         self.addCleanup(self.conn.close)
         self.sc = sidecar_core.attach(self.conn, "episodes", dag_dir=self.dag_dir)
 
     def _insert(self, row_id: str, lane: str, note: str) -> int:
-        cur = self.conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)", (row_id, lane, note))
+        cur = self.conn.execute(
+            "INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)",
+            (row_id, lane, note),
+        )
         self.conn.commit()
         return cur.lastrowid
 
     def _inbox_lines(self) -> list[dict]:
         if not self.inbox_path.exists():
             return []
-        return [json.loads(line) for line in self.inbox_path.read_text().splitlines() if line.strip()]
+        return [
+            json.loads(line)
+            for line in self.inbox_path.read_text().splitlines()
+            if line.strip()
+        ]
 
 
 class ConsensusPropertyTest(ConsensusTestBase):
@@ -75,13 +87,19 @@ class ConsensusPropertyTest(ConsensusTestBase):
             dualread.read(self.conn, "episodes", rowid, dag_dir=self.dag_dir)
         for i in range(3):
             rowid = self._insert(f"ep-miss-{i}", "ops", f"x{i}")
-            dualread.read(self.conn, "episodes", rowid, dag_dir=self.dag_dir)  # never drained -> mismatch
+            dualread.read(
+                self.conn, "episodes", rowid, dag_dir=self.dag_dir
+            )  # never drained -> mismatch
 
         result = dualread.summary()
-        self.assertEqual(result, {"reads": 10, "matches": 7, "mismatches": 3, "rate": 0.7})
+        self.assertEqual(
+            result, {"reads": 10, "matches": 7, "mismatches": 3, "rate": 0.7}
+        )
 
     def test_summary_on_zero_reads_is_a_vacuous_rate_of_one(self) -> None:
-        self.assertEqual(dualread.summary(), {"reads": 0, "matches": 0, "mismatches": 0, "rate": 1.0})
+        self.assertEqual(
+            dualread.summary(), {"reads": 0, "matches": 0, "mismatches": 0, "rate": 1.0}
+        )
 
     def test_a_match_writes_no_alert(self) -> None:
         rowid = self._insert("ep-ok", "ops", "fine")
@@ -99,9 +117,13 @@ class ConsensusIncidentTest(ConsensusTestBase):
         # or otherwise behave like a stopped service.
         rowid = self._insert("ep-undrained", "ops", "not drained yet")
 
-        result = dualread.read(self.conn, "episodes", rowid, dag_dir=self.dag_dir)  # must not raise
+        result = dualread.read(
+            self.conn, "episodes", rowid, dag_dir=self.dag_dir
+        )  # must not raise
 
-        self.assertIsNotNone(result["row"], "the legacy answer is still returned to the caller")
+        self.assertIsNotNone(
+            result["row"], "the legacy answer is still returned to the caller"
+        )
         self.assertFalse(result["match"])
 
         alerts = self._inbox_lines()

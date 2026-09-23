@@ -1,0 +1,35 @@
+# The ACG gateway image rolls on every main build of chidionyema/acg, same mechanism as
+# fleetview-backend.yaml in this directory: image-reflector lists tags, the policy picks the
+# highest run number, and the one ImageUpdateAutomation named "backstage" (path: ./, whole
+# checkout) rewrites any $imagepolicy marker it finds -- this needs no second automation, only a
+# second ImageRepository/ImagePolicy pair. The marker lives in platform/acg/workload.yaml on the
+# gateway container's image.
+#
+# The acg repo's build-multiarch.yml pushes `main-<run>-<sha>` for both linux/amd64 and
+# linux/arm64 (R24), cosign-signed by digest, so the tag this policy selects is the signed
+# manifest list and not one arch.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: acg
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/acg
+  interval: 1m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: acg
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: acg
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

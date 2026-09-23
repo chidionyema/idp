@@ -109,6 +109,12 @@ spec:
             # a door that answers 404, and routed there and not set here is a 404 the other
             # way round.
             - {name: JIT_PUBLIC_PREFIX, value: /jit}
+            # The estate's age PUBLIC recipient, for /enroll (ADR 0032). It is a public key, not
+            # a secret: the broker only ever agrees a key with it to check root trust, and the
+            # matching secret exists on the workstations and nowhere in this cluster. Flux
+            # substitutes ESTATE_AGE_RECIPIENT from clusters/oke/estate-config.yaml -- one copy,
+            # in git, and no vendor secret minted for it (LAW 46, R52).
+            - {name: JIT_AGE_RECIPIENT, value: "${ESTATE_AGE_RECIPIENT}"}
             # The four secret values are NOT here. A secret in an env var is printed by every
             # crash dump, `kubectl describe pod`, and any library that logs its environment on
             # start -- which is why kyverno's secrets-not-from-env-vars refuses it. They arrive

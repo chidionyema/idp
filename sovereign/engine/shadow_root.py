@@ -15,6 +15,7 @@ filename, and prev_node_hash must resolve to a node that exists, all the
 way to GENESIS_NODE_HASH. A broken link, a missing node file, or a cycle
 all fail closed (verified=False), never a silent pass.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -39,7 +40,9 @@ def head_path(name: str | None = None) -> Path:
     return dag_mod.head_path(name or config.SHADOW_HEAD_FILENAME)
 
 
-def update_head(node_hash: str, dag_dir: Path, head_path_override: Path | None = None) -> None:
+def update_head(
+    node_hash: str, dag_dir: Path, head_path_override: Path | None = None
+) -> None:
     """Called by cp8's DBSidecar right after it writes a DAG node --
     the same "never blocks the legacy write" contract applies here: this
     runs during drain(), after the legacy write already committed, so a
@@ -59,7 +62,11 @@ def update_head(node_hash: str, dag_dir: Path, head_path_override: Path | None =
     file (a sibling of shadow_main under shadow.heads_dir) so a fork's
     writes advance that fork's root, never shadow_main's. The write still
     goes through dag.write_head() by name, so the R15 guard covers forks."""
-    name = head_path_override.name if head_path_override is not None else config.SHADOW_HEAD_FILENAME
+    name = (
+        head_path_override.name
+        if head_path_override is not None
+        else config.SHADOW_HEAD_FILENAME
+    )
     dag_mod.write_head(name, node_hash, dag_dir)
 
 

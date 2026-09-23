@@ -134,7 +134,6 @@ rules:
       - http.keda.sh
       - spire.spiffe.io
       - tailscale.com
-      - chaos-mesh.org
       - core.k8sgpt.ai
       - holmesgpt.dev
       - externaldns.k8s.io

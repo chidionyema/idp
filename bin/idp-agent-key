@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# Put this Mac's agent key in place, in one governed run, with one browser login.
+#
+# WHAT THIS IS. The three-step road `bin/idp-oci-session` already prints at its own end, wrapped
+# into one command that refuses to skip a step and ends on a measured receipt:
+#
+#     1. a live OCI session on this Mac        (bin/idp-oci-session: a browser login, no secret)
+#     2. the vault read                       (bin/idp-cloud, using that session)
+#     3. delivery of JIT_AGENT_KEY to disk    (bin/idp-mac-secret-deliver, the R52/LAW 54 tool)
+#
+# After it returns, `bin/idp-jit identity` answers and `bin/idp-jit-device-renew` keeps the
+# read-only token fresh every 10 minutes. This is what makes the Mac able to read the cluster
+# without the founder's OCI principal (WJ.1).
+#
+# WHAT IT IS NOT, and will not become:
+#   * It does not mint a credential. Step 1 is the OCI CLI asking the tenancy owner to sign in in
+#     a browser; there is no key for an agent to hold. This script only sequences the road.
+#   * It never prints a secret. The delivery tool prints a path and a SHA-256 prefix; this passes
+#     that through unchanged and adds nothing.
+#   * It does not bypass the delivery tool's refusal to run from an agent session. That refusal is
+#     the design (see bin/idp-mac-secret-deliver, "never from an agent session"). A human runs
+#     this; if it is run where there is no cloud identity, step 2 fails loudly and nothing is
+#     written. That is the correct outcome, not an error to work around.
+#
+# The producer/consumer contract it satisfies (do not change one without the other):
+#   bin/idp-jit:_agent_key() reads $JIT_AGENT_KEY, else $XDG_STATE_HOME/idp/agent-key
+#   (default ~/.local/state/idp/agent-key), mode 600, value on one line.
+#   bin/idp-workstation-bootstrap checks exactly that path at Level 3.
+# The write path itself belongs to bin/idp-mac-secret-deliver; this does not re-implement it.
+#
+# Usage:
+#   bin/idp-agent-key                      # the whole road; opens the browser if needed
+#   bin/idp-agent-key --check              # is the key here and does it still work? changes nothing
+#   bin/idp-agent-key --region uk-london-1 --tenancy chidionyema
+#
+# Config (LAW 46): OCI_REGION, OCI_TENANCY_NAME, OCI_PROFILE (passed through to idp-oci-session).
+set -uo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+SESSION="$IDP/bin/idp-oci-session"
+CLOUD="$IDP/bin/idp-cloud"
+DELIVER="$IDP/bin/idp-mac-secret-deliver"
+JIT="$IDP/bin/idp-jit"
+
+ENTRY="jit-broker"
+KEY="JIT_AGENT_KEY"
+OUT="$HOME/.local/state/idp/agent-key"
+SERVICE="local"
+
+REGION="${OCI_REGION:-}"
+TENANCY="${OCI_TENANCY_NAME:-}"
+CHECK=0
+QUIET=0
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--region)
+		REGION="${2:?--region needs a value}"
+		shift 2
+		;;
+	--tenancy)
+		TENANCY="${2:?--tenancy needs a value}"
+		shift 2
+		;;
+	--profile)
+		export OCI_PROFILE="${2:?--profile needs a value}"
+		shift 2
+		;;
+	--check)
+		CHECK=1
+		shift
+		;;
+	--quiet)
+		QUIET=1
+		shift
+		;;
+	--self-test)
+		echo "ok      idp-agent-key  --self-test"
+		exit 0
+		;;
+	*) echo "unknown argument: $1" >&2; exit 2 ;;
+	esac
+done
+
+say() { printf '%-7s %-14s %s\n' "$1" "$2" "$3"; }
+fail() {
+	say FAIL "$1" "$2"
+	exit 1
+}
+
+for tool in "$SESSION" "$CLOUD" "$DELIVER" "$JIT"; do
+	[ -x "$tool" ] || fail missing "$(basename "$tool") is not executable at $tool"
+done
+
+# --- check: measure what is here, change nothing -----------------------------------------------
+if [ "$CHECK" = 1 ]; then
+	if [ ! -e "$OUT" ]; then
+		say BLIND agent-key "no key at $OUT"
+		say cause agent-key "a device is authorized once, by its owner"
+		say fix agent-key "run bin/idp-agent-key (one browser login, then it delivers itself)"
+		exit 2
+	fi
+	mode=$(stat -f '%Lp' "$OUT" 2>/dev/null || stat -c '%a' "$OUT" 2>/dev/null)
+	say ok agent-key "key present at $OUT (mode ${mode:-unknown})"
+	if id_out="$("$JIT" identity 2>&1)"; then
+		printf '%s\n' "$id_out" | sed 's/^/        /'
+	else
+		printf '%s\n' "$id_out" | sed 's/^/        /'
+		say BLIND agent-key "key is on disk but the broker did not confirm it; check tailnet, then bin/idp-jit status"
+		exit 2
+	fi
+	exit 0
+fi
+
+# --- step 1: a live OCI session (a browser login; no secret crosses this script) ----------------
+# idp-oci-session is idempotent: if a session is already live it returns without a browser.
+args=()
+[ -n "$REGION" ] && args+=(--region "$REGION")
+[ -n "$TENANCY" ] && args+=(--tenancy "$TENANCY")
+if ! "$SESSION" ${args[@]+"${args[@]}"}; then
+	fail session "no live OCI session and the browser sign-in did not complete (see the lines above)"
+fi
+
+# --- step 2 + 3: prove the identity, then deliver through the governed tool ---------------------
+if ! "$CLOUD" whoami >/dev/null 2>&1; then
+	fail cloud "the session is live but idp-cloud cannot use it; run bin/idp-cloud whoami to see why"
+fi
+say ok cloud "session identity works (bin/idp-cloud whoami)"
+
+deliver_out="$("$DELIVER" --entry "$ENTRY" --key "$KEY" --out "$OUT" --service "$SERVICE" 2>&1)"
+deliver_rc=$?
+if [ "$deliver_rc" -ne 0 ]; then
+	printf '%s\n' "$deliver_out" | sed 's/^/        /' >&2
+	fail "$ENTRY" "delivery failed (exit $deliver_rc); the vault entry was not written"
+fi
+[ "$QUIET" = 1 ] || printf '%s\n' "$deliver_out"
+
+# --- receipt: the device's own identity, from the broker, not from us ---------------------------
+if id_out="$("$JIT" identity 2>&1)"; then
+	printf '%s\n' "$id_out" | sed 's/^/        /'
+	say ok agent-key "authorized -- this device can read the cluster and renews itself every 10 minutes"
+	exit 0
+fi
+printf '%s\n' "$id_out" | sed 's/^/        /' >&2
+fail verify "key was delivered, but bin/idp-jit identity did not confirm it; run bin/idp-jit status"

@@ -11,3 +11,11 @@
 /bin/                   @chidionyema
 /tests/                 @chidionyema
 /.github/               @chidionyema
+
+# The gateway verifies everyone else; it cannot verify itself. verifier.yml, its engine,
+# and the spec that defines it require the founder's review so an agent cannot weaken the
+# gate in the same PR that needs weakening. (docs/specs/2026-09-22-cryptographic-ci-gateway.md §3)
+/.github/workflows/verifier.yml       @chidionyema
+/sovereign/verifier.py                @chidionyema
+/bin/idp-ci-verify                    @chidionyema
+/docs/specs/2026-09-22-cryptographic-ci-gateway.md  @chidionyema

@@ -10,6 +10,7 @@ R17 is deliberately not a second log: the signed chain in
 engine/receipts.py stays the source of truth and this directory is the
 spec's 3.1 view of it, so there is nothing to keep in step.
 """
+
 from __future__ import annotations
 
 import json
@@ -38,13 +39,17 @@ class InterventionsTestBase(unittest.TestCase):
             p = patch.object(config, name, val)
             p.start()
             self.addCleanup(p.stop)
-        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
+        p = patch.object(
+            receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file")
+        )
         p.start()
         self.addCleanup(p.stop)
 
 
 class InterventionsPropertyTest(InterventionsTestBase):
-    def test_property_every_file_is_named_for_its_line_and_matches_it_byte_for_byte(self) -> None:
+    def test_property_every_file_is_named_for_its_line_and_matches_it_byte_for_byte(
+        self,
+    ) -> None:
         kinds = list(config.INTERVENTIONS_KINDS)
         for i, kind in enumerate(kinds * 3):
             interventions.record(kind, by="founder", text=f"n{i}")
@@ -55,9 +60,13 @@ class InterventionsPropertyTest(InterventionsTestBase):
         self.assertEqual(len(rows), len(kinds) * 3)
         by_counter = {int(r["counter"]): r for r in receipts.read_all()}
         for row in rows:
-            path = interventions.directory() / interventions.filename_for(int(row["counter"]), str(row["hash"]))
+            path = interventions.directory() / interventions.filename_for(
+                int(row["counter"]), str(row["hash"])
+            )
             self.assertTrue(path.exists())
-            self.assertEqual(json.loads(path.read_text()), by_counter[int(row["counter"])])
+            self.assertEqual(
+                json.loads(path.read_text()), by_counter[int(row["counter"])]
+            )
         self.assertTrue(interventions.verify()["ok"])
         self.assertEqual(interventions.verify()["entries"], len(kinds) * 3)
 

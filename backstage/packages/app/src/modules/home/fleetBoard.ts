@@ -17,6 +17,22 @@ export type Session = {
   runtime: string;
   task: string;
   state: 'running' | 'paused' | 'stopped' | 'failed' | 'unknown';
+  /**
+   * The four states the interface draws, derived server-side from evidence (recency plus the body
+   * of work behind the row -- `sessions.py`'s `_activity_from_evidence`).
+   *
+   * NOT the same thing as `state`. `state` is running/paused/stopped from elapsed time alone, and
+   * elapsed time is identical for an agent thinking hard and an agent wedged -- which is why the
+   * board drew 22 of 23 agents as one amber dot. This is what tells them apart.
+   *
+   * Optional, and absent means `unknown`: a session row from an older backend must not silently
+   * render as `thinking`, because a node that breathes when nobody knows whether it is alive is
+   * the same lie as a green dot.
+   */
+  activity?: 'thinking' | 'waiting' | 'stuck' | 'finished' | 'unknown' | null;
+  /** How many events the session has emitted. Surfaced because it is what separates `waiting`
+   *  from `stuck`, so a reader can see the evidence rather than trust the label. */
+  event_count?: number | null;
   repo?: string | null;
   step?: number | null;
   updated_at?: string | null;
@@ -100,6 +116,13 @@ export type Signal = {
   ok: boolean;
   error: string | null;
   created_at: string;
+  /** When the session's own hook consumed the directive; null while still unread.
+   *  Distinct from `ok`, which describes the WRITE. A signal can be `ok: true` (the channel
+   *  accepted the dispatch) and `acknowledged: false` (nobody has read it yet) -- and before
+   *  2026-09-18 that combination was rendered on the board as "steered". */
+  read_at: string | null;
+  /** The two-part verdict: true once the agent has provably read it. */
+  acknowledged: boolean;
 };
 
 export type TimelineEntry =
@@ -111,6 +134,8 @@ export type TimelineEntry =
       text: string;
       ok: boolean;
       error: string | null;
+      acknowledged: boolean;
+      read_at: string | null;
     };
 
 /** Notes and signals merged into one chronological read of what happened to a session, oldest
@@ -131,9 +156,40 @@ export function timelineFor(notes: Note[], signals: Signal[]): TimelineEntry[] {
       text: s.text,
       ok: s.ok,
       error: s.error,
+      acknowledged: Boolean(s.acknowledged),
+      read_at: s.read_at ?? null,
     })),
   ];
   return entries.sort((a, b) => a.created_at.localeCompare(b.created_at));
+}
+
+/**
+ * The word for one signal, in the two-part vocabulary the audit table can actually prove.
+ *
+ * SPEC CP8's done-condition is "a steer reaches a live session ... each ACKNOWLEDGES it". Before
+ * this, the board had one word for two different states, and the state it showed was the
+ * optimistic one: a written directive file read as "delivered".
+ *
+ *   failed       the channel refused the dispatch (ok=false) -- nothing was attempted or it erred
+ *   read         the agent consumed it (read_at set)              -- provable, the loop closed
+ *   not yet read the dispatch succeeded and no hook has consumed it -- the honest middle state
+ *
+ * There is deliberately no fourth word: the tables cannot distinguish "the agent read it and
+ * disagreed" from "the agent read it", and inventing that would be a claim, not a measurement.
+ */
+export type SignalWord = 'failed' | 'read' | 'not yet read';
+
+export function signalWord(s: Pick<Signal, 'ok' | 'acknowledged'>): SignalWord {
+  if (!s.ok) return 'failed';
+  return s.acknowledged ? 'read' : 'not yet read';
+}
+
+/** The sentence a reader gets, naming what was proven rather than what was hoped. */
+export function signalSentence(s: Signal): string {
+  const word = signalWord(s);
+  if (word === 'failed') return `${s.kind} failed: ${s.error ?? 'the channel refused it'}`;
+  if (word === 'read') return `${s.kind} ${s.by} sent, read by the session`;
+  return `${s.kind} ${s.by} sent, not yet read`;
 }
 
 const CORRELATION_WINDOW_MINUTES = 15;

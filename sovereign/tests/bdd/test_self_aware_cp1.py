@@ -4,6 +4,7 @@ Rung 4 glue over the real plugin's pure builder. "Running behind Agentgateway" i
 the in-process equivalent: one call to build_inventory with the same config the
 container gets from env; the transport is not under test here (bin/idp-mcp-drill is).
 """
+
 from __future__ import annotations
 
 import ast
@@ -23,8 +24,18 @@ import estate_inventory as ei  # noqa: E402  (sys.path set by _self_aware)
 scenarios("features/self-aware-platform/cp1_inventory_tool.feature")
 
 ENTITIES = [
-    {"kind": "Component", "name": "app-x", "owner": "group:default/platform", "repo": "chidionyema/app-x"},
-    {"kind": "Resource", "name": "db-y", "owner": "group:default/data", "repo": "chidionyema/db-y"},
+    {
+        "kind": "Component",
+        "name": "app-x",
+        "owner": "group:default/platform",
+        "repo": "chidionyema/app-x",
+    },
+    {
+        "kind": "Resource",
+        "name": "db-y",
+        "owner": "group:default/data",
+        "repo": "chidionyema/db-y",
+    },
 ]
 
 
@@ -33,9 +44,16 @@ def ctx(tmp_path: Path) -> dict[str, Any]:
     cat, st = tmp_path / "catalog-info.yaml", tmp_path / "STATE.md"
     sa.write_catalog(cat, ENTITIES)
     sa.write_state_md(st, sa.NOW - dt.timedelta(minutes=5))
-    return {"cfg": {"catalog_path": str(cat), "state_md_path": str(st),
-                    "byte_ceiling": 8000, "stale_minutes": 90},
-            "state_md": st, "calls": 0}
+    return {
+        "cfg": {
+            "catalog_path": str(cat),
+            "state_md_path": str(st),
+            "byte_ceiling": 8000,
+            "stale_minutes": 90,
+        },
+        "state_md": st,
+        "calls": 0,
+    }
 
 
 @given("the estate MCP server is running behind Agentgateway")
@@ -85,20 +103,37 @@ def _no_shell(source: str):
             names = [a.name for a in node.names] + [getattr(node, "module", None) or ""]
             assert "subprocess" not in names, ast.dump(node)
         if isinstance(node, ast.Attribute):
-            assert node.attr not in {"system", "popen", "spawn", "run", "Popen"} or not (
-                isinstance(node.value, ast.Name) and node.value.id in {"os", "subprocess"}), ast.dump(node)
+            assert node.attr not in {
+                "system",
+                "popen",
+                "spawn",
+                "run",
+                "Popen",
+            } or not (
+                isinstance(node.value, ast.Name)
+                and node.value.id in {"os", "subprocess"}
+            ), ast.dump(node)
         if isinstance(node, ast.keyword) and node.arg == "shell":
             raise AssertionError("shell= keyword present")
 
 
-@then("every fact in its response traces to crew/STATE.md or the Backstage catalog API, not a fresh probe of a running process")
+@then(
+    "every fact in its response traces to crew/STATE.md or the Backstage catalog API, not a fresh probe of a running process"
+)
 def _traces(source: str):
     # the only OS reads are the two open() calls on the configured files
     tree = ast.parse(source)
-    opens = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
-             and isinstance(n.func, ast.Name) and n.func.id == "open"]
+    opens = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "open"
+    ]
     assert len(opens) == 2, len(opens)
-    mods = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+    mods = {
+        a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names
+    }
     assert not mods & {"psutil", "socket", "http", "urllib", "requests"}, mods
 
 

@@ -70,6 +70,17 @@ jobs:
           bin/idp-cloud object get --bucket estate-drill-receipts --name state/cluster > "$RUNNER_TEMP/cluster.txt" \
             || { echo "BLIND cluster receipt not read (exit $?)"; : > "$RUNNER_TEMP/cluster.txt"; }
           head -c 160 "$RUNNER_TEMP/cluster.txt"; echo
+      # CP5 (docs/specs/backstage-as-a-product.md): the founder-surface entities now carry a
+      # `kustomize.toolkit.fluxcd.io/name=<kustomization>` selector, and the page only draws live
+      # state if that kustomization is really in the cluster. Grade each stamped surface against
+      # the receipt's own flux table from a runner -- never a laptop, never a guess. BLIND (exit
+      # 2) is not a pass: it prints and the run continues, because a receipt that was not read is
+      # not evidence the selectors are wrong.
+      - name: prove the CP5 founder-surface selectors resolve (bin/idp-surface-liveness)
+        run: |
+          set -uo pipefail
+          bin/idp-surface-liveness --catalog backstage/founder/catalog-info.yaml --receipt "$RUNNER_TEMP/cluster.txt" \
+            | tee -a "$GITHUB_STEP_SUMMARY" || echo "surface-liveness: NOT all stamped surfaces resolved (see row above)"
       - name: feed from the state branch, fall back to bucket (crew#786)
         env:
           RCLONE_S3_PROVIDER: Cloudflare
@@ -110,10 +121,11 @@ jobs:
               | jq -c --arg repo "${repo#chidionyema/}" '.[]|{repo:$repo,workflow:.workflowName,conclusion,created_at:.createdAt}' >> "$RUNNER_TEMP/runs.ndjson" || echo "BLIND runs of $repo not read"
           done
           jq -s . "$RUNNER_TEMP/runs.ndjson" > "$RUNNER_TEMP/runs.json"
-          drill=$(gh run list -R chidionyema/idp -w login-drill.yml -L 1 --status completed --json databaseId,updatedAt --jq '.[0]')
-          echo "$drill" | jq -r .updatedAt > "$RUNNER_TEMP/drill.at"
-          gh run view "$(echo "$drill" | jq -r .databaseId)" -R chidionyema/idp --log 2>/dev/null | grep -E "(sso|paths|FAIL) +login-drill" | sed -E 's/^[^Z]*Z //' > "$RUNNER_TEMP/drill.log" || echo "BLIND drill log not read"
-          echo "issues $(jq length "$RUNNER_TEMP/issues.json") runs $(jq length "$RUNNER_TEMP/runs.json") drill rows $(wc -l < "$RUNNER_TEMP/drill.log")"
+          # The login drill is deleted (founder 2026-09-21). An empty drill.at / drill.log keeps
+          # the snapshot's shape for every downstream reader rather than leaving it undefined.
+          : > "$RUNNER_TEMP/drill.at"
+          : > "$RUNNER_TEMP/drill.log"
+          echo "issues $(jq length "$RUNNER_TEMP/issues.json") runs $(jq length "$RUNNER_TEMP/runs.json") drill rows 0"
       # version 2 (founder 2026-09-03, docs/founder/estate-snapshot-is-mandatory.md): what moved and
       # what waits. Every source is a file; a source that cannot be read is a BLIND line and an
       # empty or UNKNOWN field, never a green row.
@@ -158,7 +170,7 @@ jobs:
           echo "prs $(jq length "$RUNNER_TEMP/prs.json") changes $(jq length "$RUNNER_TEMP/changes.json") decisions $(jq length "$RUNNER_TEMP/decisions.json") incidents $(jq length "$RUNNER_TEMP/incidents.json" 2>/dev/null || echo 0)"
       - name: router lanes, one measured call of one token per lane (bin/idp-router-lanes)
         env:
-          LITELLM_API_KEY: ${{ secrets.SEED_HERMES_LITELLM_API_KEY }}   # the virtual key conscience-ask.yml already uses
+          LITELLM_API_KEY: ${{ secrets.SEED_HERMES_LITELLM_API_KEY }}
         run: |
           set -uo pipefail
           bin/idp-router-lanes --config platform/llm/config.yaml --zone-from clusters/oke/estate-config.yaml --out "$RUNNER_TEMP/lanes.json" | tee -a "$GITHUB_STEP_SUMMARY"

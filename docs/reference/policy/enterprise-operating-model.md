@@ -65,6 +65,84 @@ First step (crew#286 CP7): GitHub App tokens per lane replace the personal token
 credential stores. Target: SPIFFE SVIDs per session (`spiffe://estate.local/session/<id>`,
 crew#227 CP4); a rogue session is revoked by rotating its SVID.
 
+### 6. Headroom Is Guarded, Not Discovered (HGC)
+
+Every resource class the platform can exhaust has a declared ceiling, a live count, and a gate
+that refuses growth past it. A limit that is only discovered when it blocks a deploy is an
+outage with a schedule.
+
+Incident, measured 2026-09-18: OKE's `oke-resource-leak-protection` webhook refused every create
+because the cluster held **2,650 Secrets against a 2,000 limit**. Thirty Flux objects went
+NotReady -- Backstage, Crossplane, commerce, otto-gateway, prospector, via-negativa among them --
+and nothing in the estate reported the count until Crossplane stopped deploying. The sprawl was
+ordinary rather than stupid, which is the point: 2 declared Secret manifests, ~2,648 created
+dynamically (Helm revisions, cert-manager renewals, ExternalSecret materialisations), with
+`maxHistory` set on no HelmRelease and nothing pruning. (The field is `spec.maxHistory`;
+the name `history-max` appears nowhere in the CRD, and an earlier draft of this standard
+used it -- read the field, do not remember it.)
+
+Three obligations, each with a gate:
+
+1. **A ceiling is declared.** `platform/estate-defaults.yaml` carries the limit OKE enforces, so
+the number is in the repo rather than in a vendor dashboard.
+2. **The count is read and published.** A `secrets` row in `bin/idp-cluster-state`, rendered on
+the portal's capacity tile. Absence of the row is FAIL, never clean -- the same rule the
+`capacity` row already follows (crew#584).
+3. **Growth is bounded at the source.** Every HelmRelease declares `spec.maxHistory: 3`; a release
+without one is refused by the gate. Default 3 (the estate keeps three revisions, which is what
+a rollback needs; ten is Helm's default and is pure sprawl at this fleet size).
+
+Gate: `rule=secret_headroom` in `policy/operating_model.rego`. Proof: `bin/idp-rules run --only
+operating-model-policy` with cases `hgc-ok` (count under ceiling, every release bounded) and
+`hgc-over-ceiling` (refuse, naming the count and the ceiling).
+
+### 7. One Click To A Device, Nothing By Hand (OCD)
+
+A new device reaches production through **one browser sign-in**. Every step after it is
+automatic, and no step requires a terminal, a vault read, or a second script.
+
+**Production already satisfies this and must not be "fixed".** CI exchanges its GitHub OIDC
+token for a one-hour OCI session and acts as `estate-ci`; no OCI API key exists on that path
+(`oke-check.yml` header, crew#227 CP2). No standing keys. That is the enterprise pattern and it
+is the reference for the laptop path below it.
+
+Incident, measured 2026-09-18: the laptop path read the vault **before** authenticating, so
+`idp-oci-login` rendered `~/.oci/config` from files that no longer exist (commit `76ba8be` moved
+the estate's dev secrets into OCI Vault), and reading OCI Vault needs an OCI identity. Three
+scripts each re-created the circle, and each one's only advice was another one that could not
+help. `idp-oci-bootstrap` exited **100 with no output at all**.
+
+**This is a bootstrap bug, not a security feature.** The trust root is correct and stays: one
+key per device, mints `agent-reader`, dies on its own. What was wrong is the ORDER, and the
+distinction the model draws is:
+
+| | identity | needs |
+|---|---|---|
+| `oci session authenticate` | a browser login | a **region** and a **tenancy name** -- identifiers, public in every console URL |
+| vault access | the secret store | an OCI identity, which is what the login just produced |
+
+So the login must never be gated behind a vault read. It is not: `bin/idp-oci-session` takes the
+identifiers from the environment, falls back to the vault only when readable, and otherwise says
+exactly what to type. **Nothing on the path that matters reads a secret.**
+
+The three obligations:
+
+1. **The road is a line, not a circle.** `bin/idp-oci-session` -> `idp-cloud` ->
+   `idp-mac-secret-deliver` -> agent key -> reads. Each step's only input is the previous one's
+   output; no step's input is its own output.
+2. **A script that cannot proceed says why, in one line, and exits non-zero.** Silence is the
+defect (`idp-oci-bootstrap`, exit 100). A missing vault file and a decryption failure are
+different facts and read differently.
+3. **Renewal is none of the human's business.** The agent token lives one hour and
+   `bin/idp-jit-device-renew` re-mints it on a ten-minute timer. There is deliberately no Renew
+   button, because re-minting `agent-reader` is not a decision -- the broker's own words:
+   "agent-reader holds reads and nothing else ... so there is nothing to approve."
+
+The ONE action a human owns is putting the agent key on a device that has never had one. It is
+offered as a portal button that opens the local handoff (`idp-device://`), never as a command.
+Gate on that: `no_gui_actions` above already refuses a PR that instructs a browser step; this
+standard adds the converse, that the founder's ONE browser action is not replaced by a terminal.
+
 ## The operating model
 
 | Before (friction) | After (enterprise) |
@@ -74,6 +152,8 @@ crew#227 CP4); a rogue session is revoked by rotating its SVID.
 | "4/24 or 2/12 node pool?" | policy `auto-scale-when-free-full`: PR with the cost estimate, `APPROVE: scale` or `DENY: stay-free` (crew#289) |
 | "Push or delete AwesomeProject?" | policy `stale-repo-auto-delete-after-7d` (estate-defaults.yaml `policy.stale_repos`): deletion staged, `APPROVE: delete` or `DENY: keep` |
 | "Review mumchimp.com vs Medusa" | a recon agent posts the screenshot diff; `APPROVE: A` or `APPROVE: B` |
+| "Run `bin/idp-oci-login`, then `idp-mac-secret-deliver`, then `idp-jit identity`" | **one click** on the portal's Device access tile, then a browser sign-in; the agent runs the rest |
+| "The cluster is refusing new resources?" | the capacity tile shows `2,650 / 2,000` before anything breaks; the platform prunes and the gate refuses unbounded growth |
 
 The approval word is optional in the PR body (`Approval-word:`) and is only a handle for his veto;
 since 2026-08-27 (crew#473) nothing waits for `APPROVE:`. `STAGED:` handoffs (crew#281) keep their timer; the reply words are

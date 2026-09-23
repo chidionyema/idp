@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""voice-models -- fetch the CPU-quantized models this pipeline runs on.
+
+WHY A FETCHER RATHER THAN A DOCKERFILE LINE. The models are ~90MB of quantized weights that are
+the same on every host, so they belong in a cache directory that survives a rebuild rather than in
+the image, which would re-download them on every deploy. The fetcher is idempotent: an existing
+file of the right size is left alone, so a restart costs nothing.
+
+  bin/voice-models            # fetch anything missing
+  bin/voice-models --check    # report what is present; download nothing
+
+The ASR model (faster-whisper tiny.en int8, ~40MB) is fetched from HuggingFace by
+`faster_whisper` itself on first use, so only Kokoro is downloaded here.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import urllib.request
+from pathlib import Path
+
+CACHE = Path(os.environ.get("VOICE_MODEL_CACHE") or Path.home() / ".cache" / "sovereign-voice")
+
+# int8 ONNX: the quantisation IS the architecture. The blueprint's argument is that a 4-core CPU
+# reaches conversational latency through quantized weights, not through hardware, and this file
+# is where that claim is either true or not.
+FILES = {
+    "kokoro-v1.0.int8.onnx": (
+        "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/"
+        "kokoro-v1.0.int8.onnx",
+        92_000_000,  # roughly; used only as a sanity floor, not an exact expectation
+    ),
+    "voices-v1.0.bin": (
+        "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/"
+        "voices-v1.0.bin",
+        20_000_000,
+    ),
+}
+
+
+def have(path: Path, floor: int) -> bool:
+    return path.exists() and path.stat().st_size >= floor
+
+
+def main() -> int:
+    check_only = "--check" in sys.argv
+    CACHE.mkdir(parents=True, exist_ok=True)
+    missing = []
+
+    for name, (url, floor) in FILES.items():
+        target = CACHE / name
+        if have(target, floor):
+            print(f"  have   {name:28} {target.stat().st_size / 1e6:.1f}MB")
+            continue
+        missing.append(name)
+        if check_only:
+            print(f"  MISS   {name}")
+            continue
+        print(f"  fetch  {name} …", flush=True)
+        tmp = target.with_suffix(target.suffix + ".part")
+        try:
+            with urllib.request.urlopen(url, timeout=120) as resp, open(tmp, "wb") as out:
+                while True:
+                    chunk = resp.read(1 << 20)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+            tmp.rename(target)
+            print(f"  got    {name:28} {target.stat().st_size / 1e6:.1f}MB")
+        except Exception as exc:  # noqa: BLE001 -- a failed download says so and leaves no partial
+            tmp.unlink(missing_ok=True)
+            print(f"  FAIL   {name}: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+            return 1
+
+    if check_only and missing:
+        print(f"\n{len(missing)} file(s) missing in {CACHE}")
+        return 1
+    print(f"\ncache: {CACHE}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

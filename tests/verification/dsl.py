@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Thin scenario DSL for agent verification. ~200 lines, no framework."""
 
+# Defer annotation evaluation so PEP 604 unions below (`int | None`) do not raise on Python 3.9,
+# where a dataclass evaluates its field annotations at class-creation and a builtin `int` has no
+# `__or__`. With this, the annotations are strings and never evaluated; on 3.10+ the behaviour is
+# unchanged. Without it, every test whose import chain reaches this module fails at collection.
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Callable, Any
 

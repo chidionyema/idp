@@ -1,6 +1,7 @@
 """Binds features/sovereign-bus/cp0c_kini_finish_workflow.feature (crew#396 step 3).
 Rung 2 (classify over real pytest exits) and rung 4 (the retry and heal paths on a local
 Temporal, skipped where the `temporal` CLI is absent)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -61,7 +62,10 @@ def _unbound(state: dict, tmp_path: Path) -> None:
 @given("a checkpoint whose conftest cannot import")
 def _fault(state: dict, tmp_path: Path) -> None:
     state["inp"] = _bound(
-        tmp_path, "fault", "def test_x():\n    assert True\n", conftest="raise RuntimeError('platform gone')\n"
+        tmp_path,
+        "fault",
+        "def test_x():\n    assert True\n",
+        conftest="raise RuntimeError('platform gone')\n",
     )
 
 
@@ -78,7 +82,9 @@ def _is_fail(state: dict) -> None:
 @then("the checkpoint activity returns unbound")
 def _is_unbound(state: dict) -> None:
     assert _run(state["inp"])["verdict"] == kini.UNBOUND
-    missing = _run({"cp": 4, "cwd": state["inp"]["cwd"], "tests": ["nope/test_nope.py"]})
+    missing = _run(
+        {"cp": 4, "cwd": state["inp"]["cwd"], "tests": ["nope/test_nope.py"]}
+    )
     assert missing["verdict"] == kini.UNBOUND, missing
 
 
@@ -87,10 +93,14 @@ def _is_fault(state: dict) -> None:
     r = _run(state["inp"])
     assert r["verdict"] == kini.PLATFORM_FAULT, r
     assert kini.classify(None, config.KINI_PYTEST_EXIT_NO_TESTS) == kini.PLATFORM_FAULT
-    assert kini.classify(0, config.KINI_PYTEST_EXIT_NO_TESTS, timed_out=True) == kini.PLATFORM_FAULT
+    assert (
+        kini.classify(0, config.KINI_PYTEST_EXIT_NO_TESTS, timed_out=True)
+        == kini.PLATFORM_FAULT
+    )
 
 
 # --- the retry and heal paths on a local Temporal -------------------------------------------
+
 
 @given("a worker on a local Temporal with a checkpoint that fails once and then passes")
 def _flaky(state: dict) -> None:
@@ -105,7 +115,11 @@ def _flaky(state: dict) -> None:
         if cp == 1 and calls[cp] == 1:
             raise ApplicationError("flake: the activity itself blew up")
         if cp == 2 and calls[cp] == 1:
-            return {"cp": cp, "verdict": kini.PLATFORM_FAULT, "detail": "temporal-frontend unreachable"}
+            return {
+                "cp": cp,
+                "verdict": kini.PLATFORM_FAULT,
+                "detail": "temporal-frontend unreachable",
+            }
         return {"cp": cp, "verdict": kini.PASS}
 
     @activity.defn(name=kini.CLUSTER_READY)
@@ -118,7 +132,11 @@ def _flaky(state: dict) -> None:
 
 @given("a checkpoint that reports a platform fault once and then passes")
 def _faulting(state: dict) -> None:
-    state["params"] = {**config.kini_workflow_params(), "checkpoints": [1, 2, 3], "heal_poll_s": 0}
+    state["params"] = {
+        **config.kini_workflow_params(),
+        "checkpoints": [1, 2, 3],
+        "heal_poll_s": 0,
+    }
 
 
 @when("KiniFinishWorkflow runs")
@@ -127,9 +145,17 @@ def _runs(state: dict) -> None:
         cli = shutil.which(str(ck.get("temporal.cli_binary")))
         env = await WorkflowEnvironment.start_local(dev_server_existing_path=cli)
         try:
-            async with Worker(env.client, task_queue="kini-test", workflows=kini.WORKFLOWS, activities=state["activities"]):
+            async with Worker(
+                env.client,
+                task_queue="kini-test",
+                workflows=kini.WORKFLOWS,
+                activities=state["activities"],
+            ):
                 return await env.client.execute_workflow(
-                    kini.WORKFLOW, state["params"], id="kini-test-run", task_queue="kini-test"
+                    kini.WORKFLOW,
+                    state["params"],
+                    id="kini-test-run",
+                    task_queue="kini-test",
                 )
         finally:
             await env.shutdown()
@@ -158,7 +184,10 @@ def _healed(state: dict) -> None:
 
 # --- registration and the trigger ----------------------------------------------------------
 
-@then("sovereign.engine.worker registers KiniFinishWorkflow, kini_run_checkpoint and kini_cluster_ready")
+
+@then(
+    "sovereign.engine.worker registers KiniFinishWorkflow, kini_run_checkpoint and kini_cluster_ready"
+)
 def _registered() -> None:
     assert kini.KiniFinishWorkflow in worker.WORKFLOWS
     names = {a.__temporal_activity_definition.name for a in worker.ACTIVITIES}
@@ -170,28 +199,64 @@ def _cli() -> None:
     assert (IDP / "bin/idp-kini").stat().st_mode & 0o111
     src = (IDP / "sovereign/cli.py").read_text()
     assert "id=config.KINI_WORKFLOW_ID" in src and "kini.WORKFLOW" in src
-    r = subprocess.run([str(IDP / "bin/idp-kini"), "finish", "--help"], capture_output=True, text=True)
+    r = subprocess.run(
+        [str(IDP / "bin/idp-kini"), "finish", "--help"], capture_output=True, text=True
+    )
     assert r.returncode == 0 and "--wait" in r.stdout, r.stderr
 
 
 @then("the worker Deployment can read nodes through its own ServiceAccount")
 def _rbac() -> None:
-    r = subprocess.run(["kubectl", "kustomize", str(IDP / "platform/temporal")], capture_output=True, text=True)
+    r = subprocess.run(
+        ["kubectl", "kustomize", str(IDP / "platform/temporal")],
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stderr
     docs = [d for d in yaml.safe_load_all(r.stdout) if d]
-    dep = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "sovereign-worker")
+    dep = next(
+        d
+        for d in docs
+        if d["kind"] == "Deployment" and d["metadata"]["name"] == "sovereign-worker"
+    )
     sa = dep["spec"]["template"]["spec"]["serviceAccountName"]
-    assert any(d["kind"] == "ServiceAccount" and d["metadata"]["name"] == sa for d in docs), sa
-    role = next(d for d in docs if d["kind"] == "ClusterRole" and d["metadata"]["name"] == "sovereign-worker-nodes")
-    assert any("nodes" in rule["resources"] and {"get", "list"} <= set(rule["verbs"]) for rule in role["rules"]), role
-    crb = next(d for d in docs if d["kind"] == "ClusterRoleBinding" and d["metadata"]["name"] == "sovereign-worker-nodes")
+    assert any(
+        d["kind"] == "ServiceAccount" and d["metadata"]["name"] == sa for d in docs
+    ), sa
+    role = next(
+        d
+        for d in docs
+        if d["kind"] == "ClusterRole"
+        and d["metadata"]["name"] == "sovereign-worker-nodes"
+    )
+    assert any(
+        "nodes" in rule["resources"] and {"get", "list"} <= set(rule["verbs"])
+        for rule in role["rules"]
+    ), role
+    crb = next(
+        d
+        for d in docs
+        if d["kind"] == "ClusterRoleBinding"
+        and d["metadata"]["name"] == "sovereign-worker-nodes"
+    )
     assert crb["roleRef"]["name"] == "sovereign-worker-nodes"
-    assert any(s["kind"] == "ServiceAccount" and s["name"] == sa and s["namespace"] == "temporal" for s in crb["subjects"]), crb
+    assert any(
+        s["kind"] == "ServiceAccount"
+        and s["name"] == sa
+        and s["namespace"] == "temporal"
+        for s in crb["subjects"]
+    ), crb
 
 
 @then("the worker image carries pytest-bdd and features/ so a checkpoint can run there")
 def _image() -> None:
-    df = [l.strip() for l in (IDP / "sovereign-worker.Dockerfile").read_text().splitlines() if l.strip() and not l.startswith("#")]
+    df = [
+        l.strip()
+        for l in (IDP / "sovereign-worker.Dockerfile").read_text().splitlines()
+        if l.strip() and not l.startswith("#")
+    ]
     assert any(l.startswith("RUN ") and "requirements-dev.txt" in l for l in df), df
-    assert "COPY features /app/features" in df and "COPY sovereign /app/sovereign" in df, df
+    assert (
+        "COPY features /app/features" in df and "COPY sovereign /app/sovereign" in df
+    ), df
     assert "pytest-bdd" in (IDP / "sovereign/requirements-dev.txt").read_text()

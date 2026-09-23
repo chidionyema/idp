@@ -4,6 +4,7 @@
 Never opens maestro's real database -- every test builds its own
 disposable sqlite3 file, same pattern as sovereign/sidecar/test_sidecar.py.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,20 +42,26 @@ class ShadowRootTestBase(unittest.TestCase):
             p = patch.object(config, name, val)
             p.start()
             self.addCleanup(p.stop)
-        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
+        p = patch.object(
+            receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file")
+        )
         p.start()
         self.addCleanup(p.stop)
 
         self.db_path = root / "legacy.db"
         self.conn = sqlite3.connect(str(self.db_path))
-        self.conn.execute("CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)")
+        self.conn.execute(
+            "CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)"
+        )
         self.conn.commit()
         self.addCleanup(self.conn.close)
         self.sc = sidecar_core.attach(self.conn, "episodes", dag_dir=self.dag_dir)
 
 
 class ShadowRootPropertyTest(ShadowRootTestBase):
-    def test_property_root_advances_once_per_write_and_walk_reproduces_the_legacy_db(self) -> None:
+    def test_property_root_advances_once_per_write_and_walk_reproduces_the_legacy_db(
+        self,
+    ) -> None:
         rng = random.Random(20260825)
         roots_seen: list[str] = []
         expected: dict[str, tuple] = {}
@@ -62,7 +69,10 @@ class ShadowRootPropertyTest(ShadowRootTestBase):
             row_id = f"ep-{i}"
             lane = rng.choice(["build", "research", "ops"])
             note = f"note-{i}"
-            self.conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)", (row_id, lane, note))
+            self.conn.execute(
+                "INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)",
+                (row_id, lane, note),
+            )
             self.conn.commit()
             processed = self.sc.drain()
             self.assertEqual(processed, 1, "one write drained per iteration")
@@ -71,12 +81,18 @@ class ShadowRootPropertyTest(ShadowRootTestBase):
             expected[row_id] = (row_id, lane, note)
 
         self.assertEqual(len(roots_seen), 30, "shadow_main changed once per write")
-        self.assertEqual(len(set(roots_seen)), 30, "every advance is to a distinct root")
+        self.assertEqual(
+            len(set(roots_seen)), 30, "every advance is to a distinct root"
+        )
 
         result = shadow_root.verify()
         self.assertTrue(result["verified"])
         self.assertEqual(result["root"], roots_seen[-1])
-        self.assertEqual(result["nodes"], 30, "walking genesis to shadow_main crosses every node once")
+        self.assertEqual(
+            result["nodes"],
+            30,
+            "walking genesis to shadow_main crosses every node once",
+        )
 
         # Walking the DAG from genesis to shadow_main reproduces the
         # legacy DB exactly: replay every INSERT node in chain order.
@@ -91,14 +107,17 @@ class ShadowRootPropertyTest(ShadowRootTestBase):
 
     def test_no_head_file_fails_closed(self) -> None:
         result = shadow_root.verify()
-        self.assertEqual(result, {"root": None, "parent": None, "nodes": 0, "verified": False})
+        self.assertEqual(
+            result, {"root": None, "parent": None, "nodes": 0, "verified": False}
+        )
 
 
 class ShadowRootTamperTest(ShadowRootTestBase):
     def test_incident_cp9_a_deleted_node_breaks_verify_not_a_silent_pass(self) -> None:
         for i in range(3):
             self.conn.execute(
-                "INSERT INTO episodes (id, lane, note) VALUES (?, 'ops', ?)", (f"ep-{i}", f"n{i}")
+                "INSERT INTO episodes (id, lane, note) VALUES (?, 'ops', ?)",
+                (f"ep-{i}", f"n{i}"),
             )
             self.conn.commit()
             self.sc.drain()
@@ -115,7 +134,9 @@ class ShadowRootTamperTest(ShadowRootTestBase):
         (self.dag_dir / f"{middle_hash}.json").unlink()
 
         result = shadow_root.verify()
-        self.assertFalse(result["verified"], "a missing node must fail closed, never a silent pass")
+        self.assertFalse(
+            result["verified"], "a missing node must fail closed, never a silent pass"
+        )
 
 
 if __name__ == "__main__":

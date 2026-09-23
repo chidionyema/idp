@@ -12,6 +12,7 @@ sovereign.cli's discovery loop.
         running, waiting and burn counts and the sentence Siri speaks
         (spec 2.6). `status` on its own is sovereign.attach's command.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,7 +22,12 @@ import sys
 from pathlib import Path
 
 from sovereign import config
-from sovereign.presence import config_keys, digest as digest_mod, state as state_mod, status as status_mod
+from sovereign.presence import (
+    config_keys,
+    digest as digest_mod,
+    state as state_mod,
+    status as status_mod,
+)
 
 
 def _emit(obj: object, as_json: bool, text: str | None = None) -> None:
@@ -88,15 +94,30 @@ def cmd_presence(args: argparse.Namespace) -> int:
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser("digest", help="R13 -- the signed daily digest, at most six lines")
+    p = subparsers.add_parser(
+        "digest", help="R13 -- the signed daily digest, at most six lines"
+    )
     p.add_argument("--json", action="store_true")
-    p.add_argument("--send", action="store_true", help="also send it to the founder chat, as the scheduled job does")
-    p.add_argument("--launchd", action="store_true", help="print the launchd plist for the scheduled digest")
+    p.add_argument(
+        "--send",
+        action="store_true",
+        help="also send it to the founder chat, as the scheduled job does",
+    )
+    p.add_argument(
+        "--launchd",
+        action="store_true",
+        help="print the launchd plist for the scheduled digest",
+    )
     p.set_defaults(func=cmd_digest)
 
-    p = subparsers.add_parser("presence", help="R2, R3, R14 -- the presence state, the dot colour, and what Siri speaks")
+    p = subparsers.add_parser(
+        "presence",
+        help="R2, R3, R14 -- the presence state, the dot colour, and what Siri speaks",
+    )
     p.add_argument("--json", action="store_true")
     presence_sub = p.add_subparsers(dest="presence_command")
-    p_status = presence_sub.add_parser("status", help="running, waiting and burn counts; the Siri sentence")
+    p_status = presence_sub.add_parser(
+        "status", help="running, waiting and burn counts; the Siri sentence"
+    )
     p_status.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_presence)

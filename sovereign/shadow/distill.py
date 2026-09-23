@@ -25,6 +25,7 @@ and a grade that could not read its own dataset would be exactly that),
 and the acceptance suite has to be able to assert an item exists without
 a Langfuse server.
 """
+
 from __future__ import annotations
 
 import json
@@ -104,7 +105,10 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def is_frontier(model: str) -> bool:
     name = str(model).strip().lower()
-    return any(name == f or name.startswith(f) for f in (str(x).lower() for x in ck.get("distill.frontier_models")))
+    return any(
+        name == f or name.startswith(f)
+        for f in (str(x).lower() for x in ck.get("distill.frontier_models"))
+    )
 
 
 def _push_to_langfuse(item: dict[str, Any]) -> bool:
@@ -157,7 +161,14 @@ def capture(step: dict[str, Any]) -> dict[str, Any] | None:
             "context": step.get("context", ""),
         },
     }
-    _append_jsonl(queue_path(), {"item_id": item["id"], "task_class": task_class, "session_id": step.get("session_id")})
+    _append_jsonl(
+        queue_path(),
+        {
+            "item_id": item["id"],
+            "task_class": task_class,
+            "session_id": step.get("session_id"),
+        },
+    )
     item["langfuse"] = _push_to_langfuse(item)
     _append_jsonl(dataset_path(), item)
     return item
@@ -204,11 +215,19 @@ def train_command(task_class: str) -> list[str]:
     if trainer == "axolotl":
         cfg = _write_axolotl_config(task_class, dataset)
         template = str(ck.get("distill.axolotl_command"))
-        return shlex.split(template.format(config=cfg, dataset=dataset, model=model, task_class=task_class))
+        return shlex.split(
+            template.format(
+                config=cfg, dataset=dataset, model=model, task_class=task_class
+            )
+        )
     if trainer == "ollama":
         modelfile = _write_ollama_modelfile(task_class, dataset)
         template = str(ck.get("distill.ollama_command"))
-        return shlex.split(template.format(model=model, modelfile=modelfile, dataset=dataset, task_class=task_class))
+        return shlex.split(
+            template.format(
+                model=model, modelfile=modelfile, dataset=dataset, task_class=task_class
+            )
+        )
     raise ValueError(f"distill.trainer must be ollama or axolotl, not {trainer!r}")
 
 
@@ -216,7 +235,12 @@ def train(task_class: str) -> dict[str, Any]:
     """Run the local LoRA job through the configured tool. The command is
     the whole contract: swapping trainers is a config change."""
     argv = train_command(task_class)
-    proc = subprocess.run(argv, capture_output=True, text=True, timeout=int(ck.get("distill.train_timeout_s")))
+    proc = subprocess.run(
+        argv,
+        capture_output=True,
+        text=True,
+        timeout=int(ck.get("distill.train_timeout_s")),
+    )
     return {
         "trainer": str(ck.get("distill.trainer")),
         "command": argv,
@@ -239,14 +263,29 @@ def local_completer(model: str | None = None) -> Completer:
     """One completion against the local model through LiteLLM."""
     model_name = model or str(ck.get("distill.local_model"))
     if not config.LITELLM_BASE_URL:
-        raise RuntimeError("LITELLM_BASE_URL is not configured; the local model cannot be graded")
+        raise RuntimeError(
+            "LITELLM_BASE_URL is not configured; the local model cannot be graded"
+        )
     url = str(config.LITELLM_BASE_URL) + config.LITELLM_CHAT_COMPLETIONS_PATH
-    headers = {"Authorization": f"Bearer {config.LITELLM_API_KEY}"} if config.LITELLM_API_KEY else {}
+    headers = (
+        {"Authorization": f"Bearer {config.LITELLM_API_KEY}"}
+        if config.LITELLM_API_KEY
+        else {}
+    )
 
     def _complete(prompt: str) -> str:
-        body = {"model": model_name, "temperature": 0, "max_tokens": int(ck.get("distill.grade_max_tokens")),
-                "messages": [{"role": "user", "content": prompt}]}
-        resp = httpx.post(url, json=body, headers=headers, timeout=float(ck.get("distill.grade_timeout_s")))
+        body = {
+            "model": model_name,
+            "temperature": 0,
+            "max_tokens": int(ck.get("distill.grade_max_tokens")),
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        resp = httpx.post(
+            url,
+            json=body,
+            headers=headers,
+            timeout=float(ck.get("distill.grade_timeout_s")),
+        )
         resp.raise_for_status()
         choices = resp.json().get("choices") or [{}]
         return str((choices[0].get("message") or {}).get("content") or "")
@@ -261,8 +300,14 @@ def grade(task_class: str, complete: Completer) -> dict[str, Any]:
     rows = items(task_class)
     minimum = int(ck.get("distill.min_items"))
     if len(rows) < minimum:
-        return {"task_class": task_class, "items": len(rows), "min_items": minimum, "measured": False,
-                "correct": 0, "local_accuracy": None}
+        return {
+            "task_class": task_class,
+            "items": len(rows),
+            "min_items": minimum,
+            "measured": False,
+            "correct": 0,
+            "local_accuracy": None,
+        }
     correct = 0
     for row in rows:
         try:
@@ -271,8 +316,14 @@ def grade(task_class: str, complete: Completer) -> dict[str, Any]:
             answer = ""
         if normalize(answer) == normalize(str(row.get("expected_output", ""))):
             correct += 1
-    return {"task_class": task_class, "items": len(rows), "min_items": minimum, "measured": True,
-            "correct": correct, "local_accuracy": correct / len(rows)}
+    return {
+        "task_class": task_class,
+        "items": len(rows),
+        "min_items": minimum,
+        "measured": True,
+        "correct": correct,
+        "local_accuracy": correct / len(rows),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +349,9 @@ def _write_routes(table: dict[str, str]) -> None:
     os.replace(tmp, p)
 
 
-def route(task_class: str, graded: dict[str, Any], frontier_model: str | None = None) -> dict[str, Any]:
+def route(
+    task_class: str, graded: dict[str, Any], frontier_model: str | None = None
+) -> dict[str, Any]:
     """Flip the route only on a measured number at or above the
     threshold. Every call writes a receipt, flip or not, so a class that
     stays on the frontier has evidence of why."""
@@ -307,13 +360,19 @@ def route(task_class: str, graded: dict[str, Any], frontier_model: str | None = 
     table = routes()
     accuracy = graded.get("local_accuracy")
     current = table.get(task_class, frontier_model or "")
-    flipped = graded.get("measured", False) and accuracy is not None and float(accuracy) >= threshold
+    flipped = (
+        graded.get("measured", False)
+        and accuracy is not None
+        and float(accuracy) >= threshold
+    )
     model = local if flipped else current
     if flipped:
         table[task_class] = local
         _write_routes(table)
     line = str(ck.get("distill.receipt_line_format")).format(
-        task_class=task_class, accuracy=float(accuracy or 0.0), model=model or "frontier"
+        task_class=task_class,
+        accuracy=float(accuracy or 0.0),
+        model=model or "frontier",
     )
     receipt = receipts_mod.append(
         {
@@ -331,11 +390,20 @@ def route(task_class: str, graded: dict[str, Any], frontier_model: str | None = 
             "flipped": bool(flipped),
         }
     )
-    return {"task_class": task_class, "local_accuracy": accuracy, "threshold": threshold, "routing": model or None,
-            "flipped": bool(flipped), "receipt": receipt, "text": line}
+    return {
+        "task_class": task_class,
+        "local_accuracy": accuracy,
+        "threshold": threshold,
+        "routing": model or None,
+        "flipped": bool(flipped),
+        "receipt": receipt,
+        "text": line,
+    }
 
 
-def run(task_class: str, complete: Completer | None = None, *, do_train: bool = True) -> dict[str, Any]:
+def run(
+    task_class: str, complete: Completer | None = None, *, do_train: bool = True
+) -> dict[str, Any]:
     """`sb distill --task-class X`: train, grade, route, receipt."""
     out: dict[str, Any] = {"task_class": task_class, "items": len(items(task_class))}
     if out["items"] < int(ck.get("distill.min_items")):
@@ -347,8 +415,17 @@ def run(task_class: str, complete: Completer | None = None, *, do_train: bool = 
     if do_train:
         out["train"] = train(task_class)
     graded = grade(task_class, complete or local_completer())
-    out.update({k: graded[k] for k in ("measured", "correct", "local_accuracy", "min_items")})
+    out.update(
+        {k: graded[k] for k in ("measured", "correct", "local_accuracy", "min_items")}
+    )
     routed = route(task_class, graded)
-    out.update({"routing": routed["routing"], "flipped": routed["flipped"], "receipt": routed["receipt"],
-                "text": routed["text"], "threshold": routed["threshold"]})
+    out.update(
+        {
+            "routing": routed["routing"],
+            "flipped": routed["flipped"],
+            "receipt": routed["receipt"],
+            "text": routed["text"],
+            "threshold": routed["threshold"],
+        }
+    )
     return out

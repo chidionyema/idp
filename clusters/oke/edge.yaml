@@ -244,3 +244,41 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
+---
+# The ACG inference gateway: one door to every free inference lane, so a product holds no vendor
+# key of its own. It attaches to the shared Gateway (prospector-edge) with an HTTPRoute naming
+# acg.${ESTATE_ZONE}, so it needs the edge row first, and the acg-secrets ExternalSecret it mounts
+# needs the secret store before the ExternalSecret CRD can be satisfied (crew#488 CP5).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: acg
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  dependsOn:
+    - name: edge
+    - name: external-secrets
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/acg
+  prune: true
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: gateway
+      namespace: acg
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: redis
+      namespace: acg
+  postBuild:
+    substituteFrom:
+      # The HTTPRoute names acg.${ESTATE_ZONE}; a row with no substitution would publish the
+      # literal string as a hostname (the flux-webhook note above, same trap).
+      - kind: ConfigMap
+        name: estate-config

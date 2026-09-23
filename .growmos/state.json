@@ -1,0 +1,154 @@
+{
+  "counters": {
+    "extractions": 12,
+    "profiles": 0,
+    "queries": 0,
+    "resolutions": 0
+  },
+  "created": "2026-09-22T18:15:24Z",
+  "last_eval": null,
+  "last_run": "2026-09-22T21:01:40Z",
+  "last_sample": null,
+  "pending_resummarize": [],
+  "runs": [
+    {
+      "entities": 8,
+      "kind": "extraction",
+      "relations": 6,
+      "source": "src_e47d00dce9c1",
+      "ts": "2026-09-22T18:21:02Z"
+    },
+    {
+      "entities": 10,
+      "kind": "extraction",
+      "relations": 9,
+      "source": "src_b79d14e53611",
+      "ts": "2026-09-22T18:21:40Z"
+    },
+    {
+      "entities": 14,
+      "kind": "extraction",
+      "relations": 12,
+      "source": "src_b79d14e53611",
+      "ts": "2026-09-22T18:22:58Z"
+    },
+    {
+      "entities": 7,
+      "kind": "extraction",
+      "relations": 3,
+      "source": "src_b79d14e53611",
+      "ts": "2026-09-22T18:23:34Z"
+    },
+    {
+      "entities": 0,
+      "kind": "extraction",
+      "relations": 0,
+      "source": "src_b79d14e53611",
+      "ts": "2026-09-22T18:23:45Z"
+    },
+    {
+      "entities": 10,
+      "kind": "extraction",
+      "relations": 7,
+      "source": "src_d4c960e37231",
+      "ts": "2026-09-22T18:24:07Z"
+    },
+    {
+      "entities": 6,
+      "kind": "extraction",
+      "relations": 4,
+      "source": "src_4993196abe46",
+      "ts": "2026-09-22T18:24:22Z"
+    },
+    {
+      "entities": 8,
+      "kind": "extraction",
+      "relations": 7,
+      "source": "src_fafa172f45e6",
+      "ts": "2026-09-22T18:24:43Z"
+    },
+    {
+      "entities": 13,
+      "kind": "extraction",
+      "relations": 14,
+      "source": "src_fafa172f45e6",
+      "ts": "2026-09-22T18:26:13Z"
+    },
+    {
+      "entities": 0,
+      "kind": "extraction",
+      "relations": 0,
+      "source": "src_fafa172f45e6",
+      "ts": "2026-09-22T18:26:25Z"
+    },
+    {
+      "entities": 19,
+      "kind": "extraction",
+      "relations": 15,
+      "source": "src_b33563055168",
+      "ts": "2026-09-22T18:26:49Z"
+    },
+    {
+      "entities": 7,
+      "kind": "extraction",
+      "relations": 6,
+      "source": "src_807d937ec251",
+      "ts": "2026-09-22T18:27:08Z"
+    },
+    {
+      "entity": "component/estate-agent-jetstream-stream",
+      "kind": "remember",
+      "ts": "2026-09-22T19:53:37Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_2997995f8d69",
+      "ts": "2026-09-22T19:53:43Z"
+    },
+    {
+      "entity": "artifact/adversarial-qa-audit-2026-09-22",
+      "kind": "remember",
+      "ts": "2026-09-22T20:03:46Z"
+    },
+    {
+      "entity": "feature/code-mutation-gate-gap",
+      "kind": "remember",
+      "ts": "2026-09-22T20:03:46Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_dcedd9a217fc",
+      "ts": "2026-09-22T20:03:52Z"
+    },
+    {
+      "entity": "spec/voice-2100-architecture",
+      "kind": "remember",
+      "ts": "2026-09-22T21:01:11Z"
+    },
+    {
+      "entity": "feature/voice-speculate-endpoint",
+      "kind": "remember",
+      "ts": "2026-09-22T21:01:19Z"
+    },
+    {
+      "entity": "feature/voice-clarify-handshake",
+      "kind": "remember",
+      "ts": "2026-09-22T21:01:20Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_103840ce90d0",
+      "ts": "2026-09-22T21:01:31Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_2706d1621077",
+      "ts": "2026-09-22T21:01:31Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_103840ce90d0",
+      "ts": "2026-09-22T21:01:40Z"
+    }
+  ]
+}

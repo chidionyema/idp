@@ -9,8 +9,14 @@
 # WHAT IT GRADES. The unified diff of the PR branch against origin/main — the same
 # bytes bin/idp-prepush-verify would propose to the daemon on a local push.
 #
-# BLIND is exit 2. An empty diff (docs-only PRs, bot image-update PRs) exits 2;
-# the job still reports success so downstream jobs are not blocked by a BLIND.
+# BLIND and FAIL are the same verdict here: an unproven diff does not pass. There is
+# no bot exemption (agents are the reason this gate exists, not an exception to it) and
+# no empty-diff free pass (an empty diff against origin/main is a PR with no merge base,
+# which is itself the anomaly). Exit 1 and exit 2 both fail the job closed.
+#
+# No sigstore fast-path yet: the verifier's sign/verify code is real, but a fast-path
+# needs a repo-committed public key and cosign on the runner. Until both exist, every
+# PR pays the three stages. See docs/specs/2026-09-22-cryptographic-ci-gateway.md §4.
 name: verifier
 on:
   workflow_call:
@@ -23,26 +29,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: bot exemption
-        id: actor
-        env:
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          ACTOR: ${{ github.actor }}
-        run: |
-          case "${PR_AUTHOR:-$ACTOR}" in
-            *'[bot]'|estate-agent*) echo "bot=1" >> "$GITHUB_OUTPUT"; echo "bot/agent author: verifier skipped";;
-            *) echo "bot=0" >> "$GITHUB_OUTPUT";;
-          esac
-
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        if: steps.actor.outputs.bot != '1'
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: sovereign/requirements*.txt
 
       - name: install verifier deps
-        if: steps.actor.outputs.bot != '1'
         run: |
           pip install -q \
             cryptography>=42 \
@@ -51,17 +44,15 @@ jobs:
             pyyaml
 
       - name: run verifier gauntlet
-        if: steps.actor.outputs.bot != '1'
         run: |
           base=$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1)
           diff_out=$(git diff "$base"...HEAD)
           if [ -z "$diff_out" ]; then
-            echo "BLIND verifier: empty diff — nothing to grade"
-            exit 0
+            echo "BLIND verifier: empty diff — no merge base, refusing to pass unproven"
+            exit 1
           fi
-          echo "$diff_out" | python3 bin/idp-ci-verify || {
+          if ! echo "$diff_out" | python3 bin/idp-ci-verify; then
             rc=$?
-            # BLIND (exit 2) is not a failure — CI passes, downstream jobs run.
-            [ "$rc" -eq 2 ] && exit 0
+            echo "verifier verdict: FAIL (exit $rc) — an unproven diff does not pass"
             exit "$rc"
-          }
+          fi

@@ -14,14 +14,28 @@
 
   RunAtLoad brings it back after a reboot. KeepAlive restarts it if it dies, which is correct here
   and was correct to omit from ai.estate.idp: this process does NOT fork and exit; it serves, so
-  a non-zero exit really is a death.
+  a non-zero exit really is a death. Both were PROVEN 2026-09-20: kill -9 the daemon and launchd
+  brought it back with a new pid inside 6s, socket and door working again.
 
-  What makes the boundary real is ownership: the agent must not be able to edit this file or the
+  WHY ProgramArguments NAMES python3 AND NOT bin/exec-daemon. MEASURED 2026-09-20 on macOS 13.7.5:
+  pointing launchd at the bash wrapper dies with exit 126
+  `bash: .../bin/exec-daemon: Operation not permitted`. That is TCC refusing a launchd-spawned
+  PROCESS EXECUTION of a file under ~/Documents -- it is not a property of this plist and not
+  something a plist key can grant. The same launchd job running `python3 <daemon.py>` in the same
+  directory works, because the exec target is /usr/local/bin/python3 and the protected path is
+  only an argument. So the interpreter is named here and the daemon is named as its argument.
+
+  This means the plist must be regenerated when the checkout moves: ${IDP} is substituted at
+  install time by bin/idp-executor-agent. That is the price of naming an absolute path, and the
+  alternative (a symlink the agent can retarget) trades a rebuild for a boundary hole.
+
+  WHAT MAKES THE BOUNDARY REAL is ownership: the agent must not be able to edit this file or the
   daemon it names. It runs as the same uid today, so this is the half that can be built now, and
   `bin/idp-executor-status` reports which half is actually in place rather than leaving a
-  half-boundary to read as a whole one.
+  half-boundary to read as a whole one. The other half is bin/idp-executor-install (a separate
+  uid, a root LaunchDaemon, sudo, LAWS 54) -- NOT required for the daemon to run and serve.
 
-  Install:    bin/idp-executor-install
+  Install:    bin/idp-executor-agent
   Remove:     launchctl bootout gui/$(id -u)/ai.estate.executor
   Check:      bin/idp-executor-status
 -->
@@ -30,7 +44,7 @@
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>PATH</key>
-		<string>${PATH}</string>
+		<string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
 		<key>HOME</key>
 		<string>${HOME}</string>
 	</dict>
@@ -40,10 +54,15 @@
 	<true/>
 	<key>Nice</key>
 	<integer>5</integer>
+	<!-- /usr/local/bin/python3, NOT bin/exec-daemon. See the TCC note above: naming the bash
+	     wrapper here is exit 126 on macOS 13. -->
 	<key>ProgramArguments</key>
 	<array>
-		<string>${IDP}/bin/exec-daemon</string>
+		<string>${PYTHON}</string>
+		<string>${IDP}/platform/executor/daemon.py</string>
 	</array>
+	<key>WorkingDirectory</key>
+	<string>${IDP}</string>
 	<key>RunAtLoad</key>
 	<true/>
 	<!-- This process serves rather than forks, so a death is a death. -->

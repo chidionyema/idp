@@ -2,7 +2,10 @@
 # access is not a workload anyone should be able to get a prompt inside.
 FROM python:3.12-slim AS build
 WORKDIR /w
-RUN pip install --no-cache-dir --target=/deps pyyaml==6.0.2
+# cryptography verifies the Ed25519 signature a first-time device makes with the estate age
+# identity (ADR 0032). It is the same library the estate already trusts for TLS; the wheel is
+# manylinux, so distroless picks it up without a build toolchain.
+RUN pip install --no-cache-dir --target=/deps pyyaml==6.0.2 cryptography==42.0.5
 
 FROM gcr.io/distroless/python3-debian12:nonroot
 COPY --from=build /deps /app

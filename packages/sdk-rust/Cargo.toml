@@ -1,0 +1,23 @@
+[package]
+name = "fleetview-voice"
+version = "0.1.0"
+edition = "2021"
+description = "FleetView Voice SDK for Rust - Voice events over NATS"
+license = "MIT"
+repository = "https://github.com/chidionyema/idp"
+readme = "README.md"
+keywords = ["fleetview", "voice", "nats", "sdk"]
+categories = ["api-bindings", "asynchronous"]
+
+[dependencies]
+async-nats = "0.38"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tokio-test = "0.4"

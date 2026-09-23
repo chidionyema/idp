@@ -35,6 +35,11 @@ metadata:
   name: metrics-server
   namespace: metrics-server
 spec:
+  # Bounded per HGC (docs/reference/policy/enterprise-operating-model.md, standard 6): Helm
+  # keeps one Secret per revision and this estate declared the field on no release, which is
+  # how the cluster reached its 2,000-secret ceiling and stalled 18 Flux objects. 3
+  # covers a rollback of a rollback; Flux's default of 5 is accumulation at this size.
+  maxHistory: 3
   interval: 10m
   chart:
     spec:

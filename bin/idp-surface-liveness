@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Prove the CP5 founder-surface selectors target something the cluster actually runs.
+
+docs/specs/backstage-as-a-product.md CP5 gives the 20 "GitHub manifest link only" founder-surface
+entities a `backstage.io/kubernetes-label-selector` and the shared layer card, so a click lands on
+a live read instead of a GitHub link. The selector's value is
+`kustomize.toolkit.fluxcd.io/name=<kustomization>` -- the label Flux stamps on every object it
+renders -- so the claim "this page draws live cluster state" is only honest if a Kustomization of
+that name is really in the cluster.
+
+This reads the cluster's own state receipt (state/cluster in the drill-receipts bucket, written
+every 15 minutes by platform/state/cluster-state.yaml from inside the cluster) and checks each
+surface's `estate/flux-kustomization` against the receipt's FULL flux table -- every Kustomization
+and HelmRelease, ready or not. It never signs in to a cluster and never guesses: a surface whose
+kustomization the receipt does not name is a FAIL row, and a receipt that could not be read is a
+BLIND row (exit 2), because "could not check" is not "checked and fine".
+
+    bin/idp-surface-liveness --catalog backstage/founder/catalog-info.yaml --receipt FILE
+
+Exit 0 when every stamped surface resolves. Exit 1 when one does not (each named). Exit 2 when
+the receipt was not read.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - the CI runner installs pyyaml
+    sys.stderr.write("BLIND   surface-liveness  pyyaml is not installed\n")
+    sys.exit(2)
+
+# The label Flux stamps on everything a Kustomization renders. The selector value is this plus
+# the kustomization's name; the annotation `estate/flux-kustomization` holds that same name.
+FLUX_KUSTOMIZATION = "estate/flux-kustomization"
+SELECTOR = "backstage.io/kubernetes-label-selector"
+
+
+def surfaces(path: str) -> list[dict]:
+    """Every founder-surface Component that carries a flux kustomization annotation."""
+    out = []
+    with open(path, encoding="utf-8") as fh:
+        for doc in yaml.safe_load_all(fh):
+            if not isinstance(doc, dict):
+                continue
+            if doc.get("kind") != "Component":
+                continue
+            spec = doc.get("spec") or {}
+            if spec.get("type") != "founder-surface":
+                continue
+            md = doc.get("metadata") or {}
+            ann = md.get("annotations") or {}
+            kust = ann.get(FLUX_KUSTOMIZATION)
+            if not kust:
+                continue
+            out.append(
+                {
+                    "name": str(md.get("name", "")),
+                    "kust": str(kust),
+                    "selector": str(ann.get(SELECTOR, "")),
+                }
+            )
+    return out
+
+
+def flux_names(receipt_text: str) -> tuple[set[str], str]:
+    """The set of Kustomization/HelmRelease names the receipt's flux table holds, and the
+    receipt's own verdict word (ok/FAIL/BLIND). The body is the JSON after the head line."""
+    head, _, body = receipt_text.partition("\n")
+    verdict = head.split(" ", 1)[0] if head.strip() else ""
+    try:
+        doc = json.loads(body.strip() or "{}")
+    except json.JSONDecodeError:
+        return set(), verdict
+    names = {
+        str(r.get("name", ""))
+        for r in (doc.get("flux") or [])
+        if r.get("kind") in ("Kustomization", "HelmRelease")
+    }
+    return names, verdict
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--self-test", action="store_true", help="prove the script runs and exits 0")
+    ap.add_argument("--catalog", help="the founder catalog-info.yaml")
+    ap.add_argument("--receipt", help="the cluster receipt file (state/cluster)")
+    args = ap.parse_args(argv)
+
+    if args.self_test:
+        # A tiny in-memory proof: one surface, one flux name, both directions.
+        names, _ = flux_names('ok cluster-state at 2026-01-01T00:00:00Z\n{"flux":[{"kind":"Kustomization","name":"edge","ready":true}]}')
+        assert names == {"edge"}, names
+        print("ok      bin/idp-surface-liveness --self-test")
+        return 0
+
+    if not args.catalog or not args.receipt:
+        ap.error("--catalog and --receipt are required (or pass --self-test)")
+
+    try:
+        with open(args.receipt, encoding="utf-8", errors="replace") as fh:
+            receipt_text = fh.read()
+    except OSError as e:
+        print(f"BLIND   surface-liveness  receipt not read: {e}")
+        return 2
+    if not receipt_text.strip():
+        print("BLIND   surface-liveness  receipt is empty (the cluster-state job has not written it)")
+        return 2
+
+    names, verdict = flux_names(receipt_text)
+    if not names:
+        print(
+            f"BLIND   surface-liveness  the receipt ({verdict or 'unknown'}) names no flux object; "
+            "nothing could be checked"
+        )
+        return 2
+
+    rows = surfaces(args.catalog)
+    if not rows:
+        print("ok      surface-liveness  no founder-surface carries a flux kustomization yet")
+        return 0
+
+    unresolved = []
+    for r in rows:
+        if r["kust"] not in names:
+            unresolved.append(r)
+
+    stamped = ", ".join(f"{r['name']}={r['kust']}" for r in rows)
+    if unresolved:
+        print(
+            f"FAIL    surface-liveness  {len(unresolved)} of {len(rows)} stamped surfaces name a "
+            "kustomization the cluster does not hold (the page would draw nothing):"
+        )
+        for r in unresolved:
+            print(f"          {r['name']} -> {r['kust']} (selector {r['selector'] or 'missing'})")
+        print(f"        cluster holds {len(names)} flux objects; stamped: {stamped}")
+        return 1
+
+    print(
+        f"ok      surface-liveness  {len(rows)} founder surfaces resolve to flux objects the "
+        f"cluster holds (receipt {verdict or 'ok'})"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

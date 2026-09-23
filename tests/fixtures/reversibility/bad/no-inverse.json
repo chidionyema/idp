@@ -1,0 +1,8 @@
+{
+  "mutation_id": "mut-no-inverse-0002",
+  "target": "pvc/postgres-data",
+  "forward": {
+    "action": "delete_pvc",
+    "parameters": { "name": "postgres-data" }
+  }
+}

@@ -156,13 +156,7 @@ spec:
           kubernetes.io/metadata.name: cert-manager
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: chaos-mesh
-    - namespaceSelector:
-        matchLabels:
           kubernetes.io/metadata.name: commerce
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: cross-node-drill
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: crossplane-system

@@ -14,6 +14,7 @@ the binary timing out, JSON that will not parse: all of them are `allowed:
 False` with a reason, never a pass. A policy engine that cannot be
 reached has not said yes.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,43 +62,71 @@ def evaluate(command: str, destructive: bool = True) -> dict[str, Any]:
     binary = str(ck.get("consensus.policy_binary"))
     resolved = shutil.which(binary)
     if resolved is None:
-        return {"allowed": False, "reason": "policy_engine_missing",
-                "violations": [f"{binary} is not on PATH"], "engine": binary}
+        return {
+            "allowed": False,
+            "reason": "policy_engine_missing",
+            "violations": [f"{binary} is not on PATH"],
+            "engine": binary,
+        }
     directory = policy_dir()
     if not directory.is_dir():
-        return {"allowed": False, "reason": "policy_missing",
-                "violations": [f"no policy directory at {directory}"], "engine": binary}
+        return {
+            "allowed": False,
+            "reason": "policy_missing",
+            "violations": [f"no policy directory at {directory}"],
+            "engine": binary,
+        }
 
     document = {"command": command, "destructive": bool(destructive)}
     with tempfile.TemporaryDirectory() as tmp:
         doc_path = Path(tmp) / (Path(tmp).name + _JSON_SUFFIX)
         doc_path.write_text(json.dumps(document))
         cmd = [
-            resolved, "test",
-            _PARSER_FLAG, _OUTPUT_FORMAT,
-            _NAMESPACE_FLAG, str(ck.get("consensus.policy_namespace")),
-            _POLICY_FLAG, str(directory),
-            _OUTPUT_FLAG, _OUTPUT_FORMAT,
+            resolved,
+            "test",
+            _PARSER_FLAG,
+            _OUTPUT_FORMAT,
+            _NAMESPACE_FLAG,
+            str(ck.get("consensus.policy_namespace")),
+            _POLICY_FLAG,
+            str(directory),
+            _OUTPUT_FLAG,
+            _OUTPUT_FORMAT,
             str(doc_path),
         ]
         try:
             proc = subprocess.run(
-                cmd, capture_output=True, text=True,
+                cmd,
+                capture_output=True,
+                text=True,
                 timeout=float(ck.get("consensus.policy_timeout_s")),
             )
         except (OSError, subprocess.SubprocessError) as exc:
-            return {"allowed": False, "reason": "policy_engine_error",
-                    "violations": [str(exc)], "engine": binary}
+            return {
+                "allowed": False,
+                "reason": "policy_engine_error",
+                "violations": [str(exc)],
+                "engine": binary,
+            }
 
     violations = _failures(proc.stdout)
     if proc.returncode == 0 and not violations:
         return {"allowed": True, "reason": None, "violations": [], "engine": binary}
     if violations:
-        return {"allowed": False, "reason": "policy", "violations": violations, "engine": binary}
+        return {
+            "allowed": False,
+            "reason": "policy",
+            "violations": violations,
+            "engine": binary,
+        }
     # Non-zero with nothing parseable to show for it: an engine problem,
     # not a policy refusal, and still not a pass.
-    return {"allowed": False, "reason": "policy_engine_error",
-            "violations": [proc.stderr.strip() or proc.stdout.strip()], "engine": binary}
+    return {
+        "allowed": False,
+        "reason": "policy_engine_error",
+        "violations": [proc.stderr.strip() or proc.stdout.strip()],
+        "engine": binary,
+    }
 
 
 def _failures(stdout: str) -> list[str]:
@@ -107,7 +136,7 @@ def _failures(stdout: str) -> list[str]:
         return []
     out: list[str] = []
     for result in results if isinstance(results, list) else []:
-        for failure in (result.get("failures") or []):
+        for failure in result.get("failures") or []:
             message = failure.get("msg") if isinstance(failure, dict) else str(failure)
             if message:
                 out.append(str(message))

@@ -5,6 +5,7 @@ the notification path the cockpit's /api/inbox and the phone already
 tail. Nothing here touches the chat: a haptic pattern has no ChatMessage
 type, so chat.send cannot carry it.
 """
+
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -35,7 +36,9 @@ def pattern_for(event: SystemEvent) -> Pattern:
     raise TypeError(f"not a system event: {event!r}")
 
 
-def send(event: SystemEvent, inbox_append: InboxAppend = config.append_alert) -> Pattern:
+def send(
+    event: SystemEvent, inbox_append: InboxAppend = config.append_alert
+) -> Pattern:
     pattern = pattern_for(event)
     inbox_append(
         {

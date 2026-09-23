@@ -10,6 +10,7 @@ message from it.
 `integrity_failure` is the catastrophe path: one CatastropheAlert to the
 chat, the session halted, Spatial raised with cause "catastrophe".
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,7 +18,14 @@ from typing import Any, Callable
 
 from sovereign import config
 from sovereign.presence import chat, config_keys, haptic, state as state_mod
-from sovereign.presence.fsm import Catastrophe, Ghost, Presence, StateCommit, apply, settle
+from sovereign.presence.fsm import (
+    Catastrophe,
+    Ghost,
+    Presence,
+    StateCommit,
+    apply,
+    settle,
+)
 from sovereign.presence.receipt import from_record
 
 InboxAppend = Callable[[dict[str, Any]], None]
@@ -34,7 +42,9 @@ def _default_card_edit(row: dict[str, Any]) -> Any:
 def _default_halt(session_id: str) -> Any:
     from sovereign.engine import client as engine_client
 
-    return asyncio.run(engine_client.signal(session_id, "stop", "presence", "integrity failure"))
+    return asyncio.run(
+        engine_client.signal(session_id, "stop", "presence", "integrity failure")
+    )
 
 
 def on_state_change(
@@ -78,7 +88,12 @@ def integrity_failure(
     """The receipt chain no longer matches. One message, then halt."""
     if verdict.get("ok"):
         raise ValueError("integrity_failure called with a verdict that passed")
-    found = detected_hash or str(verdict.get("hash") or verdict.get("first_broken_counter") or verdict.get("reason") or "")
+    found = detected_hash or str(
+        verdict.get("hash")
+        or verdict.get("first_broken_counter")
+        or verdict.get("reason")
+        or ""
+    )
     alert = chat.CatastropheAlert(
         cause="integrity_failure",
         hash=found,
@@ -88,6 +103,9 @@ def integrity_failure(
     chat.send(sink, alert)
     if session_id:
         halt(session_id)
-    after = apply(current if current is not None else Ghost(), Catastrophe(kind="integrity_failure", session_id=session_id))
+    after = apply(
+        current if current is not None else Ghost(),
+        Catastrophe(kind="integrity_failure", session_id=session_id),
+    )
     state_mod.write(after)
     return after

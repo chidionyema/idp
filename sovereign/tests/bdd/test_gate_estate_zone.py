@@ -1,5 +1,6 @@
 """Binds features/gates/estate-zone.feature (crew#269, crew#297). Steps run bin/estate-zone-gate
 for real over tests/fixtures/estate-zone/{good,bad} and an empty root."""
+
 import os
 import subprocess
 import sys
@@ -15,8 +16,12 @@ FIX = IDP / "tests" / "fixtures" / "estate-zone"
 
 
 def _gate(root: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, str(IDP / "bin" / "estate-zone-gate"), *args],
-                          env={**os.environ, "ESTATE_ZONE_ROOT": str(root)}, capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, str(IDP / "bin" / "estate-zone-gate"), *args],
+        env={**os.environ, "ESTATE_ZONE_ROOT": str(root)},
+        capture_output=True,
+        text=True,
+    )
 
 
 @pytest.fixture
@@ -33,7 +38,10 @@ def _declares(state: dict) -> None:
 @given("platform/edge/route.yaml lists the hostname catalogue.<zone> spelled out")
 def _literal(state: dict) -> None:
     state["root"] = FIX / "bad"
-    assert "${ESTATE_ZONE}" not in (state["root"] / "platform" / "edge" / "route.yaml").read_text()
+    assert (
+        "${ESTATE_ZONE}"
+        not in (state["root"] / "platform" / "edge" / "route.yaml").read_text()
+    )
 
 
 @given("the same config")
@@ -45,7 +53,10 @@ def _same(state: dict) -> None:
 @given("platform/edge/route.yaml lists the hostname catalogue.${ESTATE_ZONE}")
 def _subst(state: dict) -> None:
     state["root"] = FIX / "good"
-    assert "${ESTATE_ZONE}" in (state["root"] / "platform" / "edge" / "route.yaml").read_text()
+    assert (
+        "${ESTATE_ZONE}"
+        in (state["root"] / "platform" / "edge" / "route.yaml").read_text()
+    )
 
 
 @given("a diff that adds the hostname catalogue.<zone> spelled out")
@@ -79,7 +90,9 @@ def _run(state: dict) -> None:
 @then("it exits 1 and prints that file and line")
 def _one(state: dict) -> None:
     r = state["run"]
-    assert r.returncode == 1 and "platform/edge/route.yaml:" in r.stdout, r.stdout + r.stderr
+    assert r.returncode == 1 and "platform/edge/route.yaml:" in r.stdout, (
+        r.stdout + r.stderr
+    )
 
 
 @then("it exits 0")

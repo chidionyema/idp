@@ -11,9 +11,6 @@ still_outside_dagster:
 - job: .github/workflows/catalog-render.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'
-- job: .github/workflows/conscience.yml
-  kind: GitHub Actions cron
-  fold: 'pending: to be declared as a Dagster schedule'
 - job: .github/workflows/demo-sandbox.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'

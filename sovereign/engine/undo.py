@@ -21,6 +21,7 @@ carries the receipt hash walked to, the commit reverted, and the commit
 the repository now sits on, so `sb audit --at <its hash>` answers what
 was undone and by whom.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -37,7 +38,9 @@ class NothingToUndo(ValueError):
     hash is not on the chain."""
 
 
-def walk_back(session_id: str | None = None, receipt_hash: str | None = None) -> dict[str, Any] | None:
+def walk_back(
+    session_id: str | None = None, receipt_hash: str | None = None
+) -> dict[str, Any] | None:
     """Walk the receipt chain from its tail toward genesis and return the
     first line that matches. With `receipt_hash` the match is that exact
     line; without it, the newest line for `session_id` that carries a
@@ -72,12 +75,16 @@ def undo(session_id: str, by: str, receipt_hash: str | None = None) -> dict[str,
     repo = target.get("repo")
     commit = str(target.get("commit") or "")
     if not commit or not gitops.is_repo(repo):
-        raise NothingToUndo(f"receipt {target.get('hash')!r} names no commit in a git repository")
+        raise NothingToUndo(
+            f"receipt {target.get('hash')!r} names no commit in a git repository"
+        )
     if not gitops.commit_exists(repo, commit):
         raise NothingToUndo(f"commit {commit!r} does not exist in {repo}")
     parent = gitops.parent_of(repo, commit)
     if parent is None:
-        raise NothingToUndo(f"commit {commit!r} is a root commit and has no parent to undo to")
+        raise NothingToUndo(
+            f"commit {commit!r} is a root commit and has no parent to undo to"
+        )
     if not gitops.reset_hard(repo, parent):
         raise RuntimeError(f"git reset --hard {parent} failed in {repo}")
     line = interventions_mod.record(

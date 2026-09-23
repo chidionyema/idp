@@ -231,18 +231,6 @@ features:
         switches: []
     default: lean
 
-  - name: chaos-drills
-    title: Chaos and recovery drills
-    why: "recovery is proven on a schedule, not assumed"
-    tiers:
-      - name: enterprise
-        what: Chaos Mesh experiments + the hourly drill dispatcher
-        switches: [chaos-mesh, chaos, drills]
-      - name: lean
-        what: "drill dispatcher only (CI-run drills, no in-cluster fault injection)"
-        switches: [drills]
-    default: enterprise
-
   - name: science
     title: Science department (evidence ledgers)
     tiers:

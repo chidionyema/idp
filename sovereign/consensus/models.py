@@ -23,6 +23,7 @@ code fences, prefix a shell prompt, and pad whitespace; none of that
 changes the command. Nothing else is touched -- case is significant in a
 shell, so it is left alone.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -61,7 +62,11 @@ def is_destructive(op: str) -> bool:
     """Classify an op when the caller did not. Over-classifies by design --
     see the help text on consensus.destructive_markers."""
     lowered = (op or _EMPTY).lower()
-    markers = [m.strip().lower() for m in str(ck.get("consensus.destructive_markers")).split(",") if m.strip()]
+    markers = [
+        m.strip().lower()
+        for m in str(ck.get("consensus.destructive_markers")).split(",")
+        if m.strip()
+    ]
     return any(marker in lowered for marker in markers)
 
 
@@ -73,13 +78,53 @@ def _models(destructive: bool) -> list[str]:
     return list(config.SB_MODEL_CONSENSUS)
 
 
-async def _one_vote(client: httpx.AsyncClient, model: str, op: str, index: int) -> dict[str, Any]:
+async def _jev_prescreen(op: str, destructive: bool) -> tuple[bool, float]:
+    """Gate the consensus fan-out with Jev noul (ADR 0030 T1).
+
+    Asks: "Is consensus likely to be reached on this operation without timeout?"
+
+    Returns (proceed_to_fanout: bool, confidence: float).
+    proceed_to_fanout=True  -> run full consensus (3-model vote).
+    proceed_to_fanout=False -> consensus is likely, use cheap model.
+
+    When Jev is unavailable or confidence < floor, runs the full fan-out
+    and logs jev_low_confidence / jev_unavailable."""
+    if not destructive:
+        return (True, 0.0)
+    try:
+        from mcp.plugins.jev import jev_noul
+
+        threshold = float(config.get("jev.default_confidence_floor").value or 0.7)
+        result = jev_noul(
+            repo="sovereign",
+            layer="consensus",
+            decision_id="consensus_pre_screen",
+            context={"operation": op, "destructive": destructive},
+            question="Is consensus likely to be reached on this operation without timeout?",
+            threshold=threshold,
+        )
+        confidence = result.get("confidence")
+        escalated = result.get("escalated", True)
+        if escalated or confidence is None:
+            return (True, confidence or 0.0)
+        return (False, confidence)
+    except Exception:
+        return (True, 0.0)
+
+
+async def _one_vote(
+    client: httpx.AsyncClient, model: str, op: str, index: int
+) -> dict[str, Any]:
     """One model's proposal. Never raises: a model that errors is a vote
     that did not arrive, which is exactly how a timeout is treated, and a
     quorum that cannot be reached must fail on the quorum rule rather than
     on an exception escaping from one provider."""
     started = time.monotonic()
-    headers = {"Authorization": f"Bearer {config.LITELLM_API_KEY}"} if config.LITELLM_API_KEY else {}
+    headers = (
+        {"Authorization": f"Bearer {config.LITELLM_API_KEY}"}
+        if config.LITELLM_API_KEY
+        else {}
+    )
     body = {
         "model": model,
         "temperature": float(ck.get("consensus.temperature")),
@@ -90,49 +135,99 @@ async def _one_vote(client: httpx.AsyncClient, model: str, op: str, index: int) 
         ],
     }
     url = str(config.LITELLM_BASE_URL) + config.LITELLM_CHAT_COMPLETIONS_PATH
-    vote: dict[str, Any] = {"model": model, "index": index, "proposal": _EMPTY, "error": None}
+    vote: dict[str, Any] = {
+        "model": model,
+        "index": index,
+        "proposal": _EMPTY,
+        "error": None,
+    }
     try:
         resp = await client.post(url, json=body, headers=headers)
         resp.raise_for_status()
         data = resp.json()
         choices = data.get("choices") or [{}]
-        vote["proposal"] = normalize_tool_call((choices[0].get("message") or {}).get("content"))
+        vote["proposal"] = normalize_tool_call(
+            (choices[0].get("message") or {}).get("content")
+        )
     except Exception as exc:
         vote["error"] = str(exc)
     vote["elapsed_s"] = time.monotonic() - started
     return vote
 
 
-async def collect(op: str, destructive: bool, deadline_s: float | None = None) -> list[dict[str, Any]]:
+async def collect(
+    op: str, destructive: bool, deadline_s: float | None = None
+) -> list[dict[str, Any]]:
     """Every vote, each tagged `stale` if it arrived past the deadline.
 
     The deadline is enforced here rather than left to httpx's own timeout,
     because "the proxy answered in 29.9s and the fan-out started 5s ago"
     and "the proxy answered in 31s" have to be told apart -- one is a
-    counted vote and the other is discarded."""
-    deadline_s = deadline_s if deadline_s is not None else float(config.get("consensus.timeout_s").value)
+    counted vote and the other is discarded.
+
+    Jev pre-screen (ADR 0030 T1): for destructive ops, a Jev noul gate asks
+    "Is consensus likely?" before running the 3-model fan-out. If confidence
+    >= floor, uses the cheap model instead. Falls back to full fan-out when
+    Jev is unavailable or confidence < floor."""
+    deadline_s = (
+        deadline_s
+        if deadline_s is not None
+        else float(config.get("consensus.timeout_s").value)
+    )
+
+    jev_confidence: float | None = None
+    if destructive:
+        proceed_to_fanout, jev_confidence = await _jev_prescreen(op, destructive)
+        if not proceed_to_fanout:
+            return [
+                {
+                    "model": str(ck.get("consensus.cheap_model")),
+                    "index": 0,
+                    "proposal": _EMPTY,
+                    "stale": False,
+                    "error": None,
+                    "elapsed_s": 0.0,
+                    "jev_skip": True,
+                    "jev_confidence": jev_confidence,
+                }
+            ]
+
     models = _models(destructive)
     if not config.LITELLM_BASE_URL:
         return [
-            {"model": m, "index": i, "proposal": _EMPTY, "stale": False,
-             "error": "LITELLM_BASE_URL not configured", "elapsed_s": 0.0}
+            {
+                "model": m,
+                "index": i,
+                "proposal": _EMPTY,
+                "stale": False,
+                "error": "LITELLM_BASE_URL not configured",
+                "elapsed_s": 0.0,
+            }
             for i, m in enumerate(models)
         ]
     started = time.monotonic()
     timeout = float(ck.get("consensus.request_timeout_s"))
     async with httpx.AsyncClient(timeout=timeout) as client:
-        tasks = [asyncio.create_task(_one_vote(client, m, op, i)) for i, m in enumerate(models)]
+        tasks = [
+            asyncio.create_task(_one_vote(client, m, op, i))
+            for i, m in enumerate(models)
+        ]
         done, pending = await asyncio.wait(tasks, timeout=deadline_s)
         for task in pending:
             task.cancel()
         votes = [t.result() for t in tasks if t in done]
-        for task, model, index in zip(tasks, models, range(len(models))):
+        for task, model, index in zip(tasks, models, range(len(models)), strict=False):  # noqa: B905 — internal-only
             if task in pending:
-                votes.append({
-                    "model": model, "index": index, "proposal": _EMPTY, "stale": True,
-                    "error": "no answer before the consensus deadline",
-                    "elapsed_s": time.monotonic() - started,
-                })
+                votes.append(
+                    {
+                        "model": model,
+                        "index": index,
+                        "proposal": _EMPTY,
+                        "stale": True,
+                        "error": "no answer before the consensus deadline",
+                        "elapsed_s": time.monotonic() - started,
+                    }
+                )
     for vote in votes:
         vote.setdefault("stale", float(vote.get("elapsed_s", 0)) > deadline_s)
     return sorted(votes, key=lambda v: int(v["index"]))
@@ -147,7 +242,11 @@ def tally(votes: list[dict[str, Any]], quorum: str | None = None) -> dict[str, A
     quorum = quorum or str(config.get("consensus.quorum").value)
     needed_s, _, of_s = quorum.partition(str(ck.get("consensus.quorum_separator")))
     needed, of = int(needed_s), int(of_s)
-    fresh = [v for v in votes if not v.get("stale") and not v.get("error") and v.get("proposal")]
+    fresh = [
+        v
+        for v in votes
+        if not v.get("stale") and not v.get("error") and v.get("proposal")
+    ]
     counts: dict[str, int] = {}
     for vote in fresh:
         proposal = str(vote["proposal"])

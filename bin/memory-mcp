@@ -1,0 +1,3 @@
+#!/bin/bash
+# Launch the Graphiti memory MCP server
+exec "$(dirname "$0")/../.memory/.venv/bin/python" "$(dirname "$0")/../.memory/mcp_server.py" "$@"

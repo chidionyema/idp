@@ -39,6 +39,18 @@ model_list:
     model_info:
       max_input_tokens: 131072
 
+  - model_name: deepseek
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+      timeout: 300
+      max_tokens: 8192
+      # DeepSeek V3 pricing: $0.14/M input, $0.28/M output (platform.deepseek.com, 2026-09)
+      input_cost_per_token: 0.00000014
+      output_cost_per_token: 0.00000028
+    model_info:
+      max_input_tokens: 65536
+
   # --- the moat's cheap primary --------------------------------------------------------
   # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
   # with an explicit api_base rather than a provider prefix.
@@ -498,17 +510,26 @@ model_list:
       model: anthropic/claude-opus-4-5
       timeout: 600
 
-  # Sonnet passthrough (same rules as claude-opus above).
+  # Every Claude model, not only opus (founder, 2026-09-22). Same rows as the cluster router
+  # carries, because tests/test_llm_row.py diffs the two files model for model and a hosted
+  # lane that exists on one side only is the drift that check is there to catch. The named
+  # rows are what `/v1/models` enumerates and therefore what a key can be granted; the
+  # wildcard is what carries a real client, which sends the exact dated id it was built
+  # against rather than the alias.
   - model_name: claude-sonnet
     litellm_params:
-      model: anthropic/claude-sonnet-4-6
+      model: anthropic/claude-sonnet-4-5
       timeout: 600
 
-  # Haiku passthrough (same rules as claude-opus above).
   - model_name: claude-haiku
     litellm_params:
       model: anthropic/claude-haiku-4-5
-      timeout: 300
+      timeout: 600
+
+  - model_name: "claude-*"
+    litellm_params:
+      model: "anthropic/claude-*"
+      timeout: 600
 
 router_settings:
   # The chain prospector's `noncritical_operator:` already declares, expressed once here
@@ -522,6 +543,8 @@ router_settings:
     # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
     # job aliases) but sit in no chain while the account is unfunded: a hop that always
     # answers 402 is latency, not redundancy.
+    # claude-opus passthrough has no API key; it falls back to the same pool as default/fast
+    - claude-opus: [default, fast, deepseek, gemini, minimax, groq]
     # DeepSeek answered 401 from inside the router pod on 2026-09-04 21:5xZ (the key is revoked
     # at the vendor; prospector's byte-identical copy fails the same way), which is why Gemini
     # sits in this chain: a hop that always refuses is latency, not redundancy. That sentence
@@ -613,7 +636,9 @@ router_settings:
 
 litellm_settings:
   # Traces to the collector that already runs. No second store.
-  callbacks: ["otel"]
+  # The efficiency gateway runs the 9 token-optimisation mechanisms on every call.
+  # See platform/llm/efficiency_gateway.py for what each one does.
+  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance"]
   drop_params: true
   # Never log the prompt or the completion body. Spans carry model, latency, tokens and
   # cost — which is what an audit trail needs — and not the content of a customer's

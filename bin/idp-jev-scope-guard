@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""Scope guard: block direct TypeSafeClient calls outside mcp/plugins/jev.py.
+
+Part of the JevLayer forcing function (ADR 0030). Every Jev call must go through the
+MCP plugin so that:
+  1. Every decision is written to estate.db jev_decisions
+  2. The TYPESAFE_API_KEY lives in one place (estate secrets, not scattered)
+  3. Fallback/escalation logic is consistent
+
+This guard is run in CI and as a pre-push check. It scans Python files for
+TypeSafeClient imports and calls, and fails if any are found outside the
+allowed locations.
+
+Exit codes:
+  0  — clean (no violations)
+  1  — violations found
+  2  — usage error
+
+Usage:
+  bin/idp-jev-scope-guard [paths...]
+
+  With no paths, scans: sovereign/ hermes/ estate/ prospector/ verdict/
+                        agent-foundry/ agent-workforce/ agent-guard/
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import sys
+from pathlib import Path
+
+ALLOWED = frozenset((
+    "mcp/plugins/jev.py",
+    "mcp/plugins/jev_test.py",
+    "sovereign/tests/bdd/test_jev_layer.py",  # test mocks
+    "sovereign/tests/bdd/test_jev_consensus.py",  # test mocks
+))
+
+SEARCH_DIRS = [
+    "sovereign",
+    "hermes",
+    "estate",
+    "prospector",
+    "verdict",
+    "agent-foundry",
+    "agent-workforce",
+    "agent-guard",
+    "mcp",
+]
+
+PATTERN = re.compile(
+    r"""
+    TypeSafeClient              # class name
+    |from\s+typesafe_sdk\s+import   # import from
+    |import\s+typesafe_sdk      # import module
+    """,
+    re.VERBOSE,
+)
+
+
+def scan_file(path: Path, root: Path) -> list[tuple[int, str]]:
+    """Return list of (line_number, line) for violations."""
+    violations = []
+    rel = str(path.relative_to(root))
+    if rel in ALLOWED:
+        return []
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return []
+    for i, line in enumerate(text.splitlines(), 1):
+        if PATTERN.search(line):
+            violations.append((i, line.strip()))
+    return violations
+
+
+def main(args: list[str]) -> int:
+    root = Path(__file__).resolve().parent.parent
+    os.chdir(root)
+
+    if args and args[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0
+
+    dirs = args if args else SEARCH_DIRS
+    all_violations: dict[str, list[tuple[int, str]]] = {}
+
+    for d in dirs:
+        dpath = root / d
+        if not dpath.is_dir():
+            continue
+        for pyfile in dpath.rglob("*.py"):
+            violations = scan_file(pyfile, root)
+            if violations:
+                rel = str(pyfile.relative_to(root))
+                all_violations[rel] = violations
+
+    if not all_violations:
+        print("✓ No direct TypeSafeClient usage outside allowed locations")
+        return 0
+
+    print("✗ Direct TypeSafeClient usage found (violates ADR 0030 JevLayer scope):")
+    print()
+    for path, violations in sorted(all_violations.items()):
+        print(f"  {path}:")
+        for line_no, line in violations:
+            print(f"    L{line_no}: {line[:80]}")
+        print()
+    print("Fix: Route Jev calls through mcp/plugins/jev.py (jev_choice, jev_score, jev_noul)")
+    print("Spec: docs/decisions/0030-jevlayer-unified-confidence-and-decision-service.md")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

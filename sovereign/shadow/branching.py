@@ -6,6 +6,7 @@ sovereign.config; the workflow module never imports it.
 same params to a Temporal test environment worker, and `sb start
 --branches N` hands them to the estate's own server.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -30,14 +31,48 @@ def params(
     budget: int,
     count: int | None = None,
     parent_id: str | None = None,
+    tier: str | None = None,
+    time_box_s: int | None = None,
+    step_s: float | None = None,
+    cost_per_candidate_usd: float | None = None,
 ) -> dict[str, Any]:
+    """idp#3525 CP5, ORCH-02: `tier` is optional and purely additive --
+    omitted (the default), candidate count is exactly what it always
+    was (`count` or config branch.count). Given, and `count` is not
+    also given, candidate volume is resolved by
+    sovereign.engine.tier_budget instead: time-boxed on a flat-rate
+    tier, budget_pct is the wrong shape there; dollar-budgeted on a
+    metered one. Requires time_box_s and step_s in that case -- no
+    default is invented for either, since a wrong default silently
+    picked would be a worse failure than an explicit ValueError."""
+    resolved_count = count
+    if resolved_count is None and tier is not None:
+        if time_box_s is None or step_s is None:
+            raise ValueError(
+                "tier requires time_box_s and step_s to resolve candidate volume (ORCH-02)"
+            )
+        from sovereign.engine import tier_budget
+
+        decision = tier_budget.resolve_candidate_volume(
+            tier,
+            time_box_s=int(time_box_s),
+            step_s=float(step_s),
+            budget_usd=float(budget),
+            budget_pct=int(config.get("branch.budget_pct").value),
+            cost_per_candidate_usd=float(cost_per_candidate_usd or 0),
+        )
+        resolved_count = decision.candidate_volume
     return {
         "parent_id": parent_id or new_parent_id(),
         "task": task,
         "runner": runner,
         "repo": repo,
         "budget": int(budget),
-        "count": int(count if count is not None else config.get("branch.count").value),
+        "count": int(
+            resolved_count
+            if resolved_count is not None
+            else config.get("branch.count").value
+        ),
         "budget_pct": int(config.get("branch.budget_pct").value),
         "branch_prefix": str(ck.get("branch.name_prefix")),
         "child_id_sep": str(ck.get("branch.child_id_sep")),
@@ -56,16 +91,28 @@ def child_ids(parent_id: str, count: int) -> list[str]:
     return [f"{parent_id}{sep}{i}" for i in range(1, int(count) + 1)]
 
 
-async def start(client: Client, p: dict[str, Any], task_queue: str | None = None) -> dict[str, Any]:
+async def start(
+    client: Client, p: dict[str, Any], task_queue: str | None = None
+) -> dict[str, Any]:
     handle = await client.start_workflow(
         BranchParentWorkflow.run,
         p,
         id=p["parent_id"],
         task_queue=task_queue or config.TEMPORAL_TASK_QUEUE,
     )
-    return {"session_id": handle.id, "children": child_ids(p["parent_id"], p["count"]), "branches": p["count"]}
+    return {
+        "session_id": handle.id,
+        "children": child_ids(p["parent_id"], p["count"]),
+        "branches": p["count"],
+    }
 
 
-async def start_on_estate(task: str, *, runner: str, repo: str | None, budget: int, count: int | None) -> dict[str, Any]:
-    client = await Client.connect(config.TEMPORAL_ADDRESS, namespace=config.TEMPORAL_NAMESPACE)
-    return await start(client, params(task, runner=runner, repo=repo, budget=budget, count=count))
+async def start_on_estate(
+    task: str, *, runner: str, repo: str | None, budget: int, count: int | None
+) -> dict[str, Any]:
+    client = await Client.connect(
+        config.TEMPORAL_ADDRESS, namespace=config.TEMPORAL_NAMESPACE
+    )
+    return await start(
+        client, params(task, runner=runner, repo=repo, budget=budget, count=count)
+    )

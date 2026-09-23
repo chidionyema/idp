@@ -20,7 +20,7 @@ next name somebody picks. A gate that only removes today's harm is a fix; a gate
 condition is a guard (LAW 45).
 
 The rule is the property, not the name: a directory under the repository root that is not tracked
-by git, is not ignored by git, and carries the markers of a checkout (`.git`, `CLAUDE.md`,
+by git, is not ignored by git, and carries the markers of a checkout (`.git`,
 `AGENTS.md`, `bin/idp-ci` or a `tests/fixtures` tree) is a stray checkout.
 
 Usage:
@@ -44,7 +44,7 @@ import sys
 GIT = shutil.which("git")
 
 # A directory holding any of these is a checkout of this repository, not a data directory.
-CHECKOUT_MARKERS = (".git", "CLAUDE.md", "AGENTS.md", "bin/idp-ci", "tests/fixtures")
+CHECKOUT_MARKERS = (".git", "AGENTS.md", "bin/idp-ci", "tests/fixtures")
 
 
 def _tracked_top(root: str) -> set[str] | None:

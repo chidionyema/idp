@@ -3,9 +3,7 @@ agents
 backstage
 calico-system
 cert-manager
-chaos-mesh
 commerce
-cross-node-drill
 crossplane-system
 dagster
 default

@@ -28,6 +28,11 @@ silence the XRD sitting next to it, and the XRD is the one file in that director
 provider-blind (it is the agent's absolute limit, ADR 0026 / Diamond Standard). The marker only
 ever covers the one file that declares it.
 """
+
+# The system python on a macOS workstation is 3.9 (3.9.6 measured 2026-09-21), where a PEP 604
+# `X | None` annotation is evaluated at def time and raises TypeError. This makes every annotation
+# in this file lazy, so the modern syntax stays and the file runs on 3.9 as well as on CI's 3.12.
+from __future__ import annotations
 import os
 import pathlib
 import re

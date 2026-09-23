@@ -1,0 +1,6 @@
+# The promoter touches Redis (the banned set), Postgres (the ledger) and NATS (the defeated
+# feed). asyncpg for the ledger, redis for the set -- the same two the RCA worker already
+# requires, and no NATS client because the consume loop speaks the wire protocol by hand
+# (platform/router-events publishes the same way).
+asyncpg==0.30.0
+redis==5.1.1
