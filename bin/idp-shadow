@@ -36,6 +36,7 @@ absent from the inventory and fails; a workload that never became Ready fails; s
   bin/idp-shadow verify --head <sha> [--path platform/x ...]
   bin/idp-shadow down
 """
+
 import argparse
 import json
 import os
@@ -57,16 +58,24 @@ WORKLOAD_KINDS = ("Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob")
 
 
 def sh(argv, check=True, timeout=600, env=None):
-    p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                       env=env or os.environ.copy())
+    p = subprocess.run(
+        argv,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        env=env or os.environ.copy(),
+    )
     if check and p.returncode != 0:
-        raise RuntimeError(f"{' '.join(argv[:5])}... exited {p.returncode}\n"
-                           f"{(p.stderr or p.stdout).strip()[-800:]}")
+        raise RuntimeError(
+            f"{' '.join(argv[:5])}... exited {p.returncode}\n"
+            f"{(p.stderr or p.stdout).strip()[-800:]}"
+        )
     return p
 
 
 def have(tool):
     from shutil import which
+
     return which(tool) is not None
 
 
@@ -75,6 +84,7 @@ def kube(argv, check=True, timeout=300):
 
 
 # ---------------------------------------------------------------- up
+
 
 def up():
     """Create the throwaway cluster and install the environment into it."""
@@ -94,25 +104,61 @@ def up():
     else:
         # A single node, no traefik, no servicelb: the same shape platform/k3d/estate.yaml
         # argues for, minus the fixed host port, because this one is disposable and parallel.
-        sh(["k3d", "cluster", "create", CLUSTER,
-            "--servers", "1", "--agents", "0",
-            "--no-lb",
-            "--k3s-arg", "--disable=traefik@server:*",
-            "--k3s-arg", "--disable=servicelb@server:*",
-            "--k3s-arg", "--disable=metrics-server@server:*",
-            "--wait", "--timeout", "300s"], timeout=600)
-        print(f"ok      shadow  cluster {CLUSTER} created (throwaway; no estate credential involved)")
+        sh(
+            [
+                "k3d",
+                "cluster",
+                "create",
+                CLUSTER,
+                "--servers",
+                "1",
+                "--agents",
+                "0",
+                "--no-lb",
+                "--k3s-arg",
+                "--disable=traefik@server:*",
+                "--k3s-arg",
+                "--disable=servicelb@server:*",
+                "--k3s-arg",
+                "--disable=metrics-server@server:*",
+                "--wait",
+                "--timeout",
+                "300s",
+            ],
+            timeout=600,
+        )
+        print(
+            f"ok      shadow  cluster {CLUSTER} created (throwaway; no estate credential involved)"
+        )
 
-    sh(["k3d", "kubeconfig", "merge", CLUSTER, "--kubeconfig-merge-default",
-        "--kubeconfig-switch-context"])
+    sh(
+        [
+            "k3d",
+            "kubeconfig",
+            "merge",
+            CLUSTER,
+            "--kubeconfig-merge-default",
+            "--kubeconfig-switch-context",
+        ]
+    )
     # The environment itself. Production runs these same controllers.
-    sh(["flux", "install", "--components",
-        "source-controller,kustomize-controller,helm-controller"], timeout=600)
-    print("ok      shadow  flux installed -- from here the environment deploys, not this process")
+    sh(
+        [
+            "flux",
+            "install",
+            "--components",
+            "source-controller,kustomize-controller,helm-controller",
+        ],
+        timeout=600,
+    )
+    print(
+        "ok      shadow  flux installed -- from here the environment deploys, not this process"
+    )
     return 0, []
 
 
 # ---------------------------------------------------------------- verify
+
 
 def serve_tree():
     """Serve this working tree read-only on loopback so Flux can clone the commit under test.
@@ -126,32 +172,129 @@ def serve_tree():
     # scheme stops working. This binds the bridge for the lifetime of one verify() call on an
     # ephemeral CI runner and is torn down in the finally: below. It is a real exception to R20,
     # named here rather than taken quietly; bin/bind-audit will see it if it runs on a laptop.
+    # HTTP, NOT `git daemon`. The first version of this ran `git daemon` and pointed the
+    # GitRepository at `git://host.k3d.internal:PORT/idp`. Flux REJECTS the git:// scheme at
+    # admission -- measured 2026-09-23, the only two runs this check has ever had:
+    #
+    #   The GitRepository "shadow" is invalid: spec.url: Invalid value:
+    #   "git://host.k3d.internal:9418/idp": spec.url in body should match '^(http|https|ssh)://.*$'
+    #
+    # So the check could NEVER pass, on any commit, and it is on the required list. `git
+    # http-backend` is the same read-only service over a scheme Flux accepts, and it ships with
+    # git (no new dependency). One process, one port, torn down in the finally: below.
     parent = os.path.dirname(REPO)
+    backend = (
+        subprocess.check_output(["git", "--exec-path"], text=True).strip()
+        + "/git-http-backend"
+    )
     daemon = subprocess.Popen(
-        ["git", "daemon", f"--base-path={parent}", "--export-all", "--reuseaddr",
-         f"--port={GIT_PORT}", "--listen=0.0.0.0", REPO],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        [sys.executable, "-c", _HTTP_GIT_SERVER, backend, parent, str(GIT_PORT)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     time.sleep(2)
     if daemon.poll() is not None:
-        raise RuntimeError(f"git daemon exited immediately (port {GIT_PORT} taken?)")
+        raise RuntimeError(
+            f"git http-backend server exited immediately (port {GIT_PORT} taken?)"
+        )
     return daemon
 
 
+# The smallest HTTP wrapper that speaks `git http-backend`'s CGI contract for a READ-ONLY,
+# unauthenticated, single-purpose export of one repo. No upload-pack write path is reachable:
+# the only service advertised is git-upload-pack, and the child gets GIT_HTTP_EXPORT_ALL off so
+# a path outside the base is refused. This is a test harness on an ephemeral runner.
+_HTTP_GIT_SERVER = r"""
+import os, subprocess, sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+BACKEND, BASE, PORT = sys.argv[1], sys.argv[2], int(sys.argv[3])
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self._backend("GET")
+
+    def do_POST(self):
+        self._backend("POST")
+
+    def _backend(self, method):
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length) if length else b""
+        path, _, query = self.path.partition("?")
+        env = dict(os.environ)
+        env.update({
+            "GIT_PROJECT_ROOT": BASE,
+            "GIT_HTTP_EXPORT_ALL": "1",
+            "REQUEST_METHOD": method,
+            "PATH_INFO": path,
+            "QUERY_STRING": query,
+            "CONTENT_TYPE": self.headers.get("Content-Type", ""),
+            "CONTENT_LENGTH": str(len(body)),
+            "GATEWAY_INTERFACE": "CGI/1.1",
+            "SERVER_PROTOCOL": "HTTP/1.1",
+        })
+        p = subprocess.run([BACKEND], input=body, capture_output=True, env=env)
+        # CGI output is `headers \r\n\r\n body`. The first version unpacked these the other way
+        # round, so the HEADERS were written as the body and the BODY parsed as headers --
+        # measured as "Header without colon" from git's client. Name them for what they are.
+        head, _, payload = p.stdout.partition(b"\r\n\r\n")
+        status = 200
+        out_headers: list[tuple[str, str]] = []
+        for line in head.decode(errors="replace").split("\r\n"):
+            if ":" not in line:
+                continue
+            k, _, v = line.partition(":")
+            k, v = k.strip(), v.strip()
+            # `Status: 404 Not Found` is CGI's way of setting the HTTP status; it is not a
+            # header to forward. Everything else passes through verbatim.
+            if k.lower() == "status":
+                status = int(v.split()[0]) if v.split() else 200
+            else:
+                out_headers.append((k, v))
+        self.send_response(status)
+        for k, v in out_headers:
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *a):
+        pass
+
+
+ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+"""
+
+
 def flux_source(head):
-    url = f"git://{GIT_HOST}:{GIT_PORT}/{os.path.basename(REPO)}"
+    # http:// -- the ONE scheme Flux admits among the three it allows (see serve_tree's note).
+    url = f"http://{GIT_HOST}:{GIT_PORT}/{os.path.basename(REPO)}"
     src = {
         "apiVersion": "source.toolkit.fluxcd.io/v1",
         "kind": "GitRepository",
         "metadata": {"name": "shadow", "namespace": "flux-system"},
         # Pinned to the commit, never a branch: the thing proved is the thing the agent wrote.
-        "spec": {"interval": "1m", "url": url, "ref": {"commit": head},
-                 "ignore": ".git/\n"},
+        "spec": {
+            "interval": "1m",
+            "url": url,
+            "ref": {"commit": head},
+            "ignore": ".git/\n",
+        },
     }
-    p = subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps(src),
-                       capture_output=True, text=True)
+    p = subprocess.run(
+        ["kubectl", "apply", "-f", "-"],
+        input=json.dumps(src),
+        capture_output=True,
+        text=True,
+    )
     if p.returncode != 0:
-        raise RuntimeError(f"could not create the shadow source: {p.stderr.strip()[-400:]}")
-    sh(["flux", "reconcile", "source", "git", "shadow", "-n", "flux-system"], timeout=300)
+        raise RuntimeError(
+            f"could not create the shadow source: {p.stderr.strip()[-400:]}"
+        )
+    sh(
+        ["flux", "reconcile", "source", "git", "shadow", "-n", "flux-system"],
+        timeout=300,
+    )
 
 
 def flux_kustomization(name, path):
@@ -160,19 +303,29 @@ def flux_kustomization(name, path):
         "kind": "Kustomization",
         "metadata": {"name": name, "namespace": "flux-system"},
         "spec": {
-            "interval": "5m", "path": path, "prune": True,
+            "interval": "5m",
+            "path": path,
+            "prune": True,
             "sourceRef": {"kind": "GitRepository", "name": "shadow"},
             # wait: true is the environment doing the verifying. Flux blocks until every
             # applied object reports healthy, or it fails the Kustomization itself.
-            "wait": True, "timeout": "5m", "force": True,
+            "wait": True,
+            "timeout": "5m",
+            "force": True,
         },
     }
-    subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps(ks),
-                   capture_output=True, text=True)
+    subprocess.run(
+        ["kubectl", "apply", "-f", "-"],
+        input=json.dumps(ks),
+        capture_output=True,
+        text=True,
+    )
 
 
 def ks_status(name):
-    p = kube(["get", "kustomization", name, "-n", "flux-system", "-o", "json"], check=False)
+    p = kube(
+        ["get", "kustomization", name, "-n", "flux-system", "-o", "json"], check=False
+    )
     if p.returncode != 0:
         return None
     return json.loads(p.stdout)
@@ -184,16 +337,24 @@ def wait_ks(name, deadline):
     while time.time() < deadline:
         obj = ks_status(name)
         if obj:
-            conds = {c["type"]: c for c in (obj.get("status", {}).get("conditions") or [])}
+            conds = {
+                c["type"]: c for c in (obj.get("status", {}).get("conditions") or [])
+            }
             ready = conds.get("Ready")
             if ready:
                 last = ready.get("message", "")
                 if ready.get("status") == "True":
-                    inv = (obj.get("status", {}).get("inventory") or {}).get("entries") or []
+                    inv = (obj.get("status", {}).get("inventory") or {}).get(
+                        "entries"
+                    ) or []
                     return True, last, inv
-                if ready.get("status") == "False" and \
-                        ready.get("reason") not in ("Progressing", "ReconciliationSucceeded"):
-                    inv = (obj.get("status", {}).get("inventory") or {}).get("entries") or []
+                if ready.get("status") == "False" and ready.get("reason") not in (
+                    "Progressing",
+                    "ReconciliationSucceeded",
+                ):
+                    inv = (obj.get("status", {}).get("inventory") or {}).get(
+                        "entries"
+                    ) or []
                     return False, last, inv
         time.sleep(5)
     return False, f"timed out waiting for Flux: {last}", []
@@ -213,17 +374,33 @@ def observe(kind, ns, name):
         req = int(spec.get("replicas", 1))
         avail = int(st.get("availableReplicas") or 0)
         readyc = int(st.get("readyReplicas") or 0)
-        obs.update({"requiredReplicas": req, "availableReplicas": avail,
-                    "readyReplicas": readyc, "ready": avail >= req and readyc >= req})
+        obs.update(
+            {
+                "requiredReplicas": req,
+                "availableReplicas": avail,
+                "readyReplicas": readyc,
+                "ready": avail >= req and readyc >= req,
+            }
+        )
     elif kind == "DaemonSet":
         req = int(st.get("desiredNumberScheduled") or 0)
         avail = int(st.get("numberAvailable") or 0)
         readyc = int(st.get("numberReady") or 0)
-        obs.update({"requiredReplicas": req, "availableReplicas": avail,
-                    "readyReplicas": readyc, "ready": avail >= req and readyc >= req})
+        obs.update(
+            {
+                "requiredReplicas": req,
+                "availableReplicas": avail,
+                "readyReplicas": readyc,
+                "ready": avail >= req and readyc >= req,
+            }
+        )
     elif kind == "Job":
-        obs.update({"succeeded": int(st.get("succeeded") or 0) > 0,
-                    "ready": int(st.get("succeeded") or 0) > 0})
+        obs.update(
+            {
+                "succeeded": int(st.get("succeeded") or 0) > 0,
+                "ready": int(st.get("succeeded") or 0) > 0,
+            }
+        )
     elif kind == "CronJob":
         obs.update({"succeeded": True, "ready": True})
 
@@ -251,7 +428,7 @@ def pod_probes(ns, owner):
     probes = {}
     for pod in pods:
         pname = pod["metadata"]["name"]
-        for cs in (pod.get("status", {}).get("containerStatuses") or []):
+        for cs in pod.get("status", {}).get("containerStatuses") or []:
             probes[f"{pname}/{cs['name']}"] = "pass" if cs.get("ready") else "fail"
         if not (pod.get("status", {}).get("containerStatuses") or []):
             probes[pname] = "fail"
@@ -262,6 +439,7 @@ def grade_all(observations):
     """Grade every observation with the estate's fail-closed judge. One FAIL fails the run."""
     sys.path.insert(0, HERE)
     import importlib.util
+
     spec = importlib.util.spec_from_file_location("shadow_verify", VERIFY)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -282,7 +460,9 @@ def grade_all(observations):
 
 def verify(head, paths):
     if not head:
-        return 2, ["--head is required: a shadow run proves one commit, or it proves nothing"]
+        return 2, [
+            "--head is required: a shadow run proves one commit, or it proves nothing"
+        ]
     for tool in ("k3d", "kubectl", "flux"):
         if not have(tool):
             return 2, [f"{tool} is not installed; this run proves nothing"]
@@ -306,7 +486,9 @@ def verify(head, paths):
                 hard.append(f"{path}: the environment refused to converge it -- {msg}")
                 print(f"FAIL    shadow  flux could not reconcile {path}: {msg}")
                 continue
-            print(f"ok      shadow  flux reconciled {path} ({len(inv)} objects applied by the environment)")
+            print(
+                f"ok      shadow  flux reconciled {path} ({len(inv)} objects applied by the environment)"
+            )
             for entry in inv:
                 # Flux inventory ids are ns_name_group_kind
                 parts = (entry.get("id") or "").split("_")
@@ -319,13 +501,17 @@ def verify(head, paths):
         if hard:
             return 1, hard
         if not observations:
-            return 1, ["the reconcile created no workload; a shadow that deployed nothing "
-                       "has proved nothing"]
+            return 1, [
+                "the reconcile created no workload; a shadow that deployed nothing "
+                "has proved nothing"
+            ]
         failed = grade_all(observations)
         if failed:
             return 1, [f"{w}: {'; '.join(rs)}" for w, rs in failed]
-        print(f"ok      shadow-verify  {len(observations)} workload(s) converged on head {head} "
-              f"under flux (shadow-verify SUCCESS)")
+        print(
+            f"ok      shadow-verify  {len(observations)} workload(s) converged on head {head} "
+            f"under flux (shadow-verify SUCCESS)"
+        )
         return 0, []
     finally:
         daemon.terminate()
@@ -336,6 +522,7 @@ def verify(head, paths):
 
 
 # ---------------------------------------------------------------- down
+
 
 def down():
     if not have("k3d"):
@@ -349,8 +536,12 @@ def main(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["up", "verify", "down"])
     ap.add_argument("--head", help="the commit under test (verify)")
-    ap.add_argument("--path", action="append", default=[],
-                    help="a directory Flux should reconcile; repeatable")
+    ap.add_argument(
+        "--path",
+        action="append",
+        default=[],
+        help="a directory Flux should reconcile; repeatable",
+    )
     a = ap.parse_args(argv)
 
     if a.cmd == "up":
