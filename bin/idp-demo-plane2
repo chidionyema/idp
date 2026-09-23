@@ -3,6 +3,7 @@
 
 Usage: bin/idp-demo-plane2 [--json]
 """
+
 from __future__ import annotations
 
 import json
@@ -34,30 +35,69 @@ def compose() -> dict:
     steps.append({"step": "setup", "ok": True, "detail": f"runs={runs}"})
 
     sm_tx = _daemon._get_or_load_replica("p2-tx")
-    sm_tx.add(action="transcript::t1", result="tool_call tool_call args result",
-              takeaway="worker transcript", symbol="transcript")
-    _daemon._persist_triplet("p2-tx", "transcript::t1",
-                             "tool_call tool_call args result", "worker transcript", "transcript")
-    steps.append({"step": "seed_transcript", "ok": True, "detail": "1 transcript triplet"})
+    sm_tx.add(
+        action="transcript::t1",
+        result="tool_call tool_call args result",
+        takeaway="worker transcript",
+        symbol="transcript",
+    )
+    _daemon._persist_triplet(
+        "p2-tx",
+        "transcript::t1",
+        "tool_call tool_call args result",
+        "worker transcript",
+        "transcript",
+    )
+    steps.append(
+        {"step": "seed_transcript", "ok": True, "detail": "1 transcript triplet"}
+    )
 
-    judge = _daemon.Handler.__new__(_daemon.Handler)._judge_score({"replica_id": "p2-tx"})
-    steps.append({"step": "judge_scores", "ok": judge.get("ok") and judge.get("scored", 0) > 0,
-                  "detail": f"scored={judge.get('scored')}"})
+    judge = _daemon.Handler.__new__(_daemon.Handler)._judge_score(
+        {"replica_id": "p2-tx"}
+    )
+    steps.append(
+        {
+            "step": "judge_scores",
+            "ok": judge.get("ok") and judge.get("scored", 0) > 0,
+            "detail": f"scored={judge.get('scored')}",
+        }
+    )
 
     verdicts = _daemon._get_or_load_replica("judge").top_k(symbol="verdict", k=8)
-    steps.append({"step": "verdict_written", "ok": len(verdicts) > 0,
-                  "detail": f"verdict triplets={len(verdicts)}"})
+    steps.append(
+        {
+            "step": "verdict_written",
+            "ok": len(verdicts) > 0,
+            "detail": f"verdict triplets={len(verdicts)}",
+        }
+    )
 
     sm_code = _daemon._get_or_load_replica("p2-code")
-    sm_code.add(action="code::auth.py", result="def login(u,p): return check(u,p)",
-               takeaway="auth code", symbol="code")
-    _daemon._persist_triplet("p2-code", "code::auth.py",
-                             "def login(u,p): return check(u,p)", "auth code", "code")
+    sm_code.add(
+        action="code::auth.py",
+        result="def login(u,p): return check(u,p)",
+        takeaway="auth code",
+        symbol="code",
+    )
+    _daemon._persist_triplet(
+        "p2-code",
+        "code::auth.py",
+        "def login(u,p): return check(u,p)",
+        "auth code",
+        "code",
+    )
     steps.append({"step": "seed_code", "ok": True, "detail": "1 code triplet"})
 
-    redteam = _daemon.Handler.__new__(_daemon.Handler)._redteam_defeat({"replica_id": "p2-code"})
-    steps.append({"step": "redteam_defeats", "ok": redteam.get("ok") and redteam.get("defeated", 0) > 0,
-                  "detail": f"defeated={redteam.get('defeated')}"})
+    redteam = _daemon.Handler.__new__(_daemon.Handler)._redteam_defeat(
+        {"replica_id": "p2-code"}
+    )
+    steps.append(
+        {
+            "step": "redteam_defeats",
+            "ok": redteam.get("ok") and redteam.get("defeated", 0) > 0,
+            "detail": f"defeated={redteam.get('defeated')}",
+        }
+    )
 
     shutil.rmtree(runs, ignore_errors=True)
     overall = all(s["ok"] for s in steps)

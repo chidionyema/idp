@@ -15,6 +15,7 @@ Usage:
     bin/idp-demo-compose --keep       # leave state on disk for inspection
     bin/idp-demo-compose --json       # machine-readable output
 """
+
 from __future__ import annotations
 
 import json
@@ -69,9 +70,17 @@ def compose() -> dict:
 
     replica = "compose-worker-1"
     target_file = runs / "auth.py"
-    target_file.write_text("def login(u, p):\n    return u == 'admin' and p == 'secret'\n")
+    target_file.write_text(
+        "def login(u, p):\n    return u == 'admin' and p == 'secret'\n"
+    )
 
-    steps.append(_step("setup", True, f"runs={runs}, replica={replica}, sandbox={_sandbox.detect_backend()}"))
+    steps.append(
+        _step(
+            "setup",
+            True,
+            f"runs={runs}, replica={replica}, sandbox={_sandbox.detect_backend()}",
+        )
+    )
 
     sample_content = (
         "def login(username, password):\n"
@@ -80,21 +89,46 @@ def compose() -> dict:
         "    return username == 'admin' and password == 'secret'\n"
     )
 
-    steps.append(_step("put_triplet(code)", True, f"queued code mutation for {target_file}"))
+    steps.append(
+        _step("put_triplet(code)", True, f"queued code mutation for {target_file}")
+    )
 
     sm = _daemon._get_or_load_replica(replica)
-    sm.add(action=f"code::{target_file}", result=sample_content, takeaway="login refactor", symbol="code")
-    _daemon._persist_triplet(replica, f"code::{target_file}", sample_content, "login refactor", "code")
+    sm.add(
+        action=f"code::{target_file}",
+        result=sample_content,
+        takeaway="login refactor",
+        symbol="code",
+    )
+    _daemon._persist_triplet(
+        replica, f"code::{target_file}", sample_content, "login refactor", "code"
+    )
 
-    steps.append(_step("math_sieve_fold", True, f"backend={_sandbox.detect_backend()}, gauntlet ran"))
+    steps.append(
+        _step(
+            "math_sieve_fold",
+            True,
+            f"backend={_sandbox.detect_backend()}, gauntlet ran",
+        )
+    )
 
-    _daemon._verifier_fold_one(replica_id=replica, action=f"code::{target_file}",
-                                result=sample_content, takeaway="login refactor", symbol="code")
+    _daemon._verifier_fold_one(
+        replica_id=replica,
+        action=f"code::{target_file}",
+        result=sample_content,
+        takeaway="login refactor",
+        symbol="code",
+    )
 
     passed = _daemon._get_or_load_replica("verifier").top_k(symbol="verifier_pass", k=8)
     failed = _daemon._get_or_load_replica("verifier").top_k(symbol="verifier_fail", k=8)
-    steps.append(_step("verifier_wrote_verdict", bool(passed or failed),
-                       f"verifier_pass={len(passed)}, verifier_fail={len(failed)}"))
+    steps.append(
+        _step(
+            "verifier_wrote_verdict",
+            bool(passed or failed),
+            f"verifier_pass={len(passed)}, verifier_fail={len(failed)}",
+        )
+    )
 
     _daemon._get_or_load_replica("transcript").add(
         action="transcript::login_refactor",
@@ -102,29 +136,61 @@ def compose() -> dict:
         takeaway="worker transcript",
         symbol="transcript",
     )
-    _daemon._persist_triplet("transcript", "transcript::login_refactor",
-                             "tool_call tool_call", "worker transcript", "transcript")
-    judge = _daemon.Handler.__new__(_daemon.Handler)._judge_score({"replica_id": "transcript"})
-    steps.append(_step("judge_scored_transcript",
-                       judge.get("ok") and judge.get("scored", 0) > 0,
-                       f"scored={judge.get('scored')}"))
+    _daemon._persist_triplet(
+        "transcript",
+        "transcript::login_refactor",
+        "tool_call tool_call",
+        "worker transcript",
+        "transcript",
+    )
+    judge = _daemon.Handler.__new__(_daemon.Handler)._judge_score(
+        {"replica_id": "transcript"}
+    )
+    steps.append(
+        _step(
+            "judge_scored_transcript",
+            judge.get("ok") and judge.get("scored", 0) > 0,
+            f"scored={judge.get('scored')}",
+        )
+    )
 
-    redteam = _daemon.Handler.__new__(_daemon.Handler)._redteam_defeat({"replica_id": replica})
-    steps.append(_step("redteam_defeated_payloads", redteam.get("ok"),
-                       f"defeated={redteam.get('defeated')}"))
+    redteam = _daemon.Handler.__new__(_daemon.Handler)._redteam_defeat(
+        {"replica_id": replica}
+    )
+    steps.append(
+        _step(
+            "redteam_defeated_payloads",
+            redteam.get("ok"),
+            f"defeated={redteam.get('defeated')}",
+        )
+    )
 
     put_resp = _daemon.put_tuple("test", {"path": "test_login.py"}, role="qa")
-    steps.append(_step("put_tuple(test, qa)", put_resp.get("ok"),
-                       f"tuple_id={put_resp.get('tuple_id')}"))
+    steps.append(
+        _step(
+            "put_tuple(test, qa)",
+            put_resp.get("ok"),
+            f"tuple_id={put_resp.get('tuple_id')}",
+        )
+    )
 
     take_resp = _daemon.take_tuple("test", role="engine")
-    steps.append(_step("take_tuple(test, engine)",
-                       take_resp.get("ok") and take_resp.get("tuple") is not None,
-                       f"tuple_id={take_resp.get('tuple', {}).get('tuple_id')}"))
+    steps.append(
+        _step(
+            "take_tuple(test, engine)",
+            take_resp.get("ok") and take_resp.get("tuple") is not None,
+            f"tuple_id={take_resp.get('tuple', {}).get('tuple_id')}",
+        )
+    )
 
     take_blocked = _daemon.take_tuple("test", role="coder")
-    steps.append(_step("role_gate_blocks_coder_from_test", not take_blocked.get("ok"),
-                       take_blocked.get("error", "")))
+    steps.append(
+        _step(
+            "role_gate_blocks_coder_from_test",
+            not take_blocked.get("ok"),
+            take_blocked.get("error", ""),
+        )
+    )
 
     sandbox_status = _sandbox.status()
     sandbox_test = _sandbox.run_in_sandbox(
@@ -132,8 +198,13 @@ def compose() -> dict:
         str(runs),
         timeout_sec=10,
     )
-    steps.append(_step("sandbox_dispatch", sandbox_test[0] == 0,
-                       f"backend={sandbox_status['backend']}, exit={sandbox_test[0]}"))
+    steps.append(
+        _step(
+            "sandbox_dispatch",
+            sandbox_test[0] == 0,
+            f"backend={sandbox_status['backend']}, exit={sandbox_test[0]}",
+        )
+    )
 
     _daemon._trace_event("compose_end", {"replica_id": replica}, {"ok": True})
 
@@ -151,10 +222,16 @@ def compose() -> dict:
         "trace_tail": trace,
         "system_status": {
             "sandbox": status.get("sandbox", {}).get("backend"),
-            "verifier_passed": status.get("verifier", {}).get("stats", {}).get("passed"),
-            "verifier_failed": status.get("verifier", {}).get("stats", {}).get("failed"),
+            "verifier_passed": status.get("verifier", {})
+            .get("stats", {})
+            .get("passed"),
+            "verifier_failed": status.get("verifier", {})
+            .get("stats", {})
+            .get("failed"),
             "judge_scored": status.get("judge", {}).get("stats", {}).get("scored"),
-            "redteam_defeated": status.get("redteam", {}).get("stats", {}).get("defeated"),
+            "redteam_defeated": status.get("redteam", {})
+            .get("stats", {})
+            .get("defeated"),
             "replica_count": status.get("shadow", {}).get("replica_count"),
             "total_triplets": status.get("shadow", {}).get("total_triplets"),
         },

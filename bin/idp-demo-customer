@@ -13,6 +13,7 @@ Usage:
 
 Runs in-process (no daemon, no cluster, no network). Under 30 seconds.
 """
+
 from __future__ import annotations
 
 import json
@@ -82,48 +83,75 @@ def demo() -> dict:
     log.append("QA agent writes a failing test into the tuple space…")
     test_tuple = _daemon.put_tuple(
         "test",
-        {"path": "test_login.py", "content": "def test_empty_pw(): assert login('admin','') is False"},
+        {
+            "path": "test_login.py",
+            "content": "def test_empty_pw(): assert login('admin','') is False",
+        },
         role="qa",
     )
-    log.append(f"  put_tuple(test, qa) → {test_tuple.get('tuple_id')} (queue_depth={test_tuple.get('queue_depth')})")
+    log.append(
+        f"  put_tuple(test, qa) → {test_tuple.get('tuple_id')} (queue_depth={test_tuple.get('queue_depth')})"
+    )
 
     log.append("Coder agent takes the test…")
     taken = _daemon.take_tuple("test", role="engine")
-    log.append(f"  take_tuple(test, engine) → {'matched' if taken.get('tuple') else 'empty'}")
+    log.append(
+        f"  take_tuple(test, engine) → {'matched' if taken.get('tuple') else 'empty'}"
+    )
 
     log.append("Coder writes the fix into shadow memory…")
     sm = _daemon._get_or_load_replica("coder-1")
-    sm.add(action="code::auth.py", result=FIXED_CODE, takeaway="empty-password fix", symbol="code")
-    _daemon._persist_triplet("coder-1", "code::auth.py", FIXED_CODE, "empty-password fix", "code")
+    sm.add(
+        action="code::auth.py",
+        result=FIXED_CODE,
+        takeaway="empty-password fix",
+        symbol="code",
+    )
+    _daemon._persist_triplet(
+        "coder-1", "code::auth.py", FIXED_CODE, "empty-password fix", "code"
+    )
     log.append("  put_triplet(coder-1, code::auth.py, symbol=code)")
 
     log.append("")
     log.append("── PLANE 2 · Adversarial Crucible ──")
     log.append("Judge scores the transcript…")
     _daemon._get_or_load_replica("tx").add(
-        action="transcript::fix", result="tool_call fs_commit args result ok",
-        takeaway="worker run", symbol="transcript",
+        action="transcript::fix",
+        result="tool_call fs_commit args result ok",
+        takeaway="worker run",
+        symbol="transcript",
     )
-    _daemon._persist_triplet("tx", "transcript::fix",
-                             "tool_call fs_commit args result ok", "worker run", "transcript")
+    _daemon._persist_triplet(
+        "tx",
+        "transcript::fix",
+        "tool_call fs_commit args result ok",
+        "worker run",
+        "transcript",
+    )
     judge = _daemon.Handler.__new__(_daemon.Handler)._judge_score({"replica_id": "tx"})
     log.append(f"  judge_score(transcript) → scored={judge.get('scored')}")
 
     log.append("RedTeam defeats payloads…")
-    redteam = _daemon.Handler.__new__(_daemon.Handler)._redteam_defeat({"replica_id": "coder-1"})
+    redteam = _daemon.Handler.__new__(_daemon.Handler)._redteam_defeat(
+        {"replica_id": "coder-1"}
+    )
     log.append(f"  redteam_defeat → defeated={redteam.get('defeated')} payloads")
 
     log.append("")
     log.append("── PLANE 3 · Physics Engine ──")
     backend = _sandbox.detect_backend()
     log.append(f"  sandbox backend: {backend}")
-    _daemon._verifier_fold_one("coder-1", "code::auth.py", FIXED_CODE, "empty-password fix", "code")
+    _daemon._verifier_fold_one(
+        "coder-1", "code::auth.py", FIXED_CODE, "empty-password fix", "code"
+    )
     passed = _daemon._get_or_load_replica("verifier").top_k(symbol="verifier_pass", k=4)
     failed = _daemon._get_or_load_replica("verifier").top_k(symbol="verifier_fail", k=4)
     if passed:
         log.append("  math sieve → VERIFIER_PASS (attested, reversible)")
     else:
-        log.append(f"  math sieve → VERIFIER_FAIL ({len(failed)} refusal — gauntlet refused)")
+        log.append(
+            f"  math sieve → VERIFIER_FAIL ({len(failed)} refusal — gauntlet refused)"
+        )
         try:
             detail = json.loads(failed[0].result).get("claim_verdict", "")
             log.append(f"    claim_verdict={detail}")
@@ -138,7 +166,9 @@ def demo() -> dict:
     log.append("")
     log.append(f"── Done in {elapsed:.1f}s ──")
     log.append(f"  triplets: {status.get('shadow', {}).get('total_triplets')}")
-    log.append(f"  verifier passed/failed: {metrics.get('verifier_passed_total')}/{metrics.get('verifier_failed_total')}")
+    log.append(
+        f"  verifier passed/failed: {metrics.get('verifier_passed_total')}/{metrics.get('verifier_failed_total')}"
+    )
     log.append(f"  judge scored: {metrics.get('judge_scored_total')}")
     log.append(f"  redteam defeated: {metrics.get('redteam_defeated_total')}")
     log.append(f"  trace events: {len(trace)} (hash-chained)")
