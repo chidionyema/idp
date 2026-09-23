@@ -1,5 +1,155 @@
 [
  {
+  "feature": "features/battalion/cp1-cost-spend-governance.feature",
+  "title": "Cost & spend governance \u2014 hard breaker, hardware-signed activation, breakeven-gated ladder, graded costs",
+  "scenarios": [
+   "COST-01 \u2014 the router budget breaker severs traffic at breach, it does not warn",
+   "COST-02 \u2014 provisioning paid compute requires a hardware-rooted signature, not just budget",
+   "COST-03 \u2014 Rung 2 flat-rate rental activates only above the computed breakeven band",
+   "COST-04 \u2014 every hosting tier row carries a receipt grade, or it fails schema"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fcf",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp10-p0-prerequisites.feature",
+  "title": "The three P0 prerequisites gate every other claim in the Battalion",
+  "scenarios": [
+   "P0-01 \u2014 the breaker severs, or every COST-01-dependent claim in the spec is fiction",
+   "P0-02 \u2014 the CFG-01 config document exists, or every axis is a code-level toggle, not a product capability",
+   "P0-03 \u2014 the UX-02 edge-case suite is green, or \"reliable as electricity\" is marketing"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fcf",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp2-jit-provisioning.feature",
+  "title": "Compute provisioning is point-of-use, honoring each tier's real activation floor",
+  "scenarios": [
+   "JIT-01 \u2014 Apple Silicon and GPU tiers are not treated as interchangeable on activation floor",
+   "JIT-02 \u2014 a cold start beyond the latency budget degrades to the next lane, marked in-trace"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fcf",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp3-routing-escalation.feature",
+  "title": "Routing and escalation \u2014 one router, an independently toggleable matrix, verifier-driven escalation, local floor",
+  "scenarios": [
+   "ROUTE-01 \u2014 all model calls traverse the standardized router, direct calls are rogue",
+   "ROUTE-02 \u2014 resource tier, candidate volume, selection method and escalation pattern are independent config axes",
+   "ROUTE-03 \u2014 verifier-driven escalation makes misroute risk zero by construction",
+   "ROUTE-04 \u2014 NL-judgment escalation is signaled by disagreement between two cheap models",
+   "ROUTE-05 \u2014 semantic intent routing is a named gap, present as a toggleable axis, default off",
+   "ROUTE-06 \u2014 the fallback chain terminates at the always-on local model, never at a paid pool"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fcf",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp4-verification-selection.feature",
+  "title": "Verification and selection \u2014 the gauntlet, strategy-slotted selection, claim-graph as NL verifier, capped volume",
+  "scenarios": [
+   "VER-01 \u2014 attestation stays bound to the SHA-256 of verified bytes",
+   "VER-02 \u2014 weighted voting or multi-verifier is used where a real verifier exists, plain best-of-N is disallowed there",
+   "VER-03 \u2014 the claim-graph (DoD v3) is reused as the NL verifier for NL output candidates",
+   "VER-04 \u2014 candidate volume is capped for tasks with no real verifier, regardless of config"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fcf",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp5-offload-grind-darwin-orchestration.feature",
+  "title": "Offload, grind, darwin and orchestration \u2014 no tokens on deterministic ops, unkillable grind, confirmed darwin loop, Temporal only",
+  "scenarios": [
+   "OFF-01 \u2014 deterministic operations never execute as a model call",
+   "OFF-02 \u2014 the CPU-sandbox execute_python tool excludes offloadable raw data from the prompt, when built",
+   "GRIND-01 \u2014 the overnight grind worker cannot terminate before its test passes or the 4h wall-clock limit",
+   "DARWIN-01 \u2014 the weekly meta-optimizer loop is confirmed against the repo, or recorded as a gap",
+   "ORCH-01 \u2014 orchestration reuses Temporal child workflows, no second framework",
+   "ORCH-02 \u2014 flat-rate tiers are governed by a time budget, metered tiers by a dollar budget",
+   "ORCH-03 \u2014 every routed call carries a config_id, answerable as a Langfuse query"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fcf",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp6-free-lunch-invariants.feature",
+  "title": "Free-lunch invariants \u2014 the only leverage claims allowed to call themselves free of downside",
+  "scenarios": [
+   "FL-01 \u2014 speculative decoding never changes the output distribution",
+   "FL-02 \u2014 the exact-match cache keeps its safeguards, or it forfeits the free-lunch claim",
+   "FL-03 \u2014 config_id trace tagging is pure information gain on already-paid infrastructure",
+   "FL-04 \u2014 weighted verifier voting on Z3-scored branches costs the same as unweighted selection",
+   "Any other free-lunch claim is rejected at intake unless its tradeoff is named"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fcf",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp7-config-surface.feature",
+  "title": "One hot-reloadable config document is the single point of control for every axis",
+  "scenarios": [
+   "CFG-01 \u2014 a config diff toggling any axis takes effect on the next request, no restart",
+   "CFG-02 \u2014 the config schema is generated from the spec's own REQ list, and a mismatch fails CI"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fcf",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp8-observability-delivery.feature",
+  "title": "Observability and delivery \u2014 generated catalog entities, the estate's own board, no laptop dependency, destructive-class spend",
+  "scenarios": [
+   "OBS-01 \u2014 the hosting matrix and the CFG-01 surface are generated catalog entities",
+   "OBS-02 \u2014 founder-facing deliverables render on the estate's own board",
+   "GOV-01 \u2014 zero laptop dependency in the production routing path",
+   "GOV-02 \u2014 autonomous money-spending actions inherit the destructive capability class"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fcf",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp9-ux-reliability-bar.feature",
+  "title": "UX and reliability \u2014 as seamless and reliable as electricity",
+  "scenarios": [
+   "UX-01 \u2014 every tier/model/axis switch is invisible to the requester on the success path",
+   "UX-02 \u2014 every enumerated edge case has a named, tested degradation path",
+   "UX-03 \u2014 CFG-01 rejects any write that would leave zero enabled lanes reachable"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fcf",
+  "pr": null,
+  "ticket": null
+ },
+ {
   "feature": "features/chaos/chaos-target-namespace-labelled.feature",
   "title": "A chaos experiment targets a namespace Chaos Mesh is allowed to inject into",
   "scenarios": [
@@ -7,7 +157,7 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "44f1883c",
+  "added_in": "44f1883c3",
   "pr": 190,
   "ticket": "crew#292"
  },
@@ -20,7 +170,7 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "141b68f7",
+  "added_in": "141b68f7e",
   "pr": null,
   "ticket": null
  },
@@ -34,7 +184,7 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "141b68f7",
+  "added_in": "141b68f7e",
   "pr": null,
   "ticket": null
  },
@@ -48,7 +198,7 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "141b68f7",
+  "added_in": "141b68f7e",
   "pr": null,
   "ticket": null
  },
@@ -62,7 +212,7 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "141b68f7",
+  "added_in": "141b68f7e",
   "pr": null,
   "ticket": null
  },
@@ -76,7 +226,7 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "141b68f7",
+  "added_in": "141b68f7e",
   "pr": null,
   "ticket": null
  },
@@ -90,7 +240,7 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "141b68f7",
+  "added_in": "141b68f7e",
   "pr": null,
   "ticket": null
  },
@@ -104,7 +254,7 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "141b68f7",
+  "added_in": "141b68f7e",
   "pr": null,
   "ticket": null
  },
@@ -118,42 +268,9 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "141b68f7",
+  "added_in": "141b68f7e",
   "pr": null,
   "ticket": null
- },
- {
-  "feature": "features/drills/chaos-drill.feature",
-  "title": "The weekly pod-kill experiment is graded from outside the cluster",
-  "scenarios": [
-   "A Task pod is admitted without probes, a long-running pod is not"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "772db8c9",
-  "pr": 191,
-  "ticket": "crew#292"
- },
- {
-  "feature": "features/drills/cluster-state.feature",
-  "title": "The cluster reports its own state and a runner grades it without a laptop",
-  "scenarios": [
-   "The receipt pod is admitted as a Job pod and refused as a long-running one",
-   "A fresh receipt with every node Ready grades ok",
-   "A stale receipt grades FAIL",
-   "A node that is not Ready grades FAIL",
-   "A Flux object that is not Ready grades FAIL",
-   "A receipt from a collector that predates the Flux rows grades FAIL, never clean",
-   "A DaemonSet short of its desired count grades FAIL",
-   "A receipt from a collector that predates the DaemonSet row grades FAIL, never clean",
-   "A receipt from a collector that predates the monitoring row grades FAIL, never clean",
-   "An ExternalSecret that is Ready but has not refreshed in twice its interval grades FAIL"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "3d1d0b9d",
-  "pr": 267,
-  "ticket": "crew#345"
  },
  {
   "feature": "features/estate-rebuild/rebuild-and-gates.feature",
@@ -168,7 +285,7 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "d06bc6bd",
+  "added_in": "d06bc6bd5",
   "pr": 123,
   "ticket": null
  },
@@ -181,7 +298,7 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "7bce6f5c",
+  "added_in": "7bce6f5c8",
   "pr": 2619,
   "ticket": null
  },
@@ -194,7 +311,7 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "7bce6f5c",
+  "added_in": "7bce6f5c8",
   "pr": 2619,
   "ticket": null
  },
@@ -208,7 +325,7 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "7bce6f5c",
+  "added_in": "7bce6f5c8",
   "pr": 2619,
   "ticket": null
  },
@@ -222,7 +339,7 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "23ebcbad",
+  "added_in": "23ebcbad6",
   "pr": 3717,
   "ticket": null
  },
@@ -238,1551 +355,23 @@
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "23ebcbad",
+  "added_in": "23ebcbad6",
   "pr": 3717,
   "ticket": null
  },
  {
-  "feature": "features/portal-product/cp1-showcase-live.feature",
-  "title": "the showcase page reads live state, never a markdown file",
+  "feature": "features/gates/ci-cryptographic-gateway.feature",
+  "title": "Cryptographic CI Gateway and Zero-Trust Agent Enforcement",
   "scenarios": [
-   "the showcase page answers with data read on this load, not a stored file",
-   "every system on the showcase page carries a live health value",
-   "the five Otto capabilities are read from their proof file, not retyped"
+   "An AI agent submits a Pull Request",
+   "The verifier tooling is unavailable or crashes",
+   "An agent submits a pre-verified, cryptographically sealed patch",
+   "An agent submits an unsealed patch (Hallucination/Bypass attempt)",
+   "A human submits an unsealed patch"
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "79b0318d",
-  "pr": 1918,
-  "ticket": null
- },
- {
-  "feature": "features/portal-product/cp2-sandbox-launch-countdown.feature",
-  "title": "a person launches the buyer sandbox from the showcase page, and watches it expire",
-  "scenarios": [
-   "the launch button dispatches the documented command, unchanged",
-   "the countdown reflects the Kustomization's own TTL label",
-   "after expiry the showcase page shows the sandbox is gone, not stale",
-   "no new agent capability is created"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "79b0318d",
-  "pr": 1918,
-  "ticket": null
- },
- {
-  "feature": "features/portal-product/cp3-vendor-proxies.feature",
-  "title": "the vendor dashboards show one live fact on the card, not only a link",
-  "scenarios": [
-   "a Langfuse proxy exists and answers",
-   "a SigNoz proxy exists and answers",
-   "a Superset proxy exists and answers",
-   "a proxy failure is shown, not hidden"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "79b0318d",
-  "pr": 1918,
-  "ticket": null
- },
- {
-  "feature": "features/portal-product/cp4-platform-layer-card.feature",
-  "title": "every platform layer's entity page draws its own live state",
-  "scenarios": [
-   "the layer card is one component reused by every platform layer",
-   "the layer card's Ready state matches the cluster, not the manifest",
-   "adding the card to one layer adds it to all"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "79b0318d",
-  "pr": 1918,
-  "ticket": null
- },
- {
-  "feature": "features/portal-product/cp5-no-link-only-founder-surfaces.feature",
-  "title": "no founder-surface entity ships with zero live content",
-  "scenarios": [
-   "every founder-surface entity carries a kubernetes-label-selector",
-   "the previously link-only entities render the layer card"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "79b0318d",
-  "pr": 1918,
-  "ticket": null
- },
- {
-  "feature": "features/portal-product/cp6-agent-door-status-pill.feature",
-  "title": "the agent doors show a live status pill, not a manifest link",
-  "scenarios": [
-   "the Otto door's pill reflects its own healthz answer",
-   "the MCP gateway's pill is read through a proxy, never a hardcoded host"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "79b0318d",
-  "pr": 1918,
-  "ticket": null
- },
- {
-  "feature": "features/portal-product/cp7-drills-and-board-live-counts.feature",
-  "title": "drills and the crew board show live counts, not bare links",
-  "scenarios": [
-   "the drills card shows the last verdict per drill",
-   "the crew board card shows live issue counts"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "79b0318d",
-  "pr": 1918,
-  "ticket": null
- },
- {
-  "feature": "features/portal-product/cp8-screenshot-evidence-in-login-drill.feature",
-  "title": "the hourly login drill is the standing screenshot evidence for this spec",
-  "scenarios": [
-   "the scheduled login drill captures the showcase, tools and ops pages",
-   "a red login drill is a red Demo gate"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "79b0318d",
-  "pr": 1918,
-  "ticket": null
- },
- {
-  "feature": "features/sovereign-bus/cp10_dual_read.feature",
-  "title": "Dual-read router \u2014 every read runs twice, legacy and DAG, and is compared",
-  "scenarios": [
-   "Both paths execute",
-   "Reads never slow the caller past the key"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp11_consensus_check.feature",
-  "title": "Consensus check \u2014 a legacy/DAG mismatch is an alert, never a freeze",
-  "scenarios": [
-   "Mismatch is surfaced to the HUD",
-   "Match rate is measured"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp12_ai_sandbox.feature",
-  "title": "AI sandbox and zero-cost forks \u2014 agents query a copy-on-write fork, production untouched",
-  "scenarios": [
-   "Fork under a second",
-   "Agent writes land on the fork only",
-   "Switch and drop",
-   "The cap is a key"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp13_the_flip.feature",
-  "title": "The flip \u2014 the DAG becomes primary; the legacy DB becomes a read-only archive with a rollback path",
-  "scenarios": [
-   "Zero-downtime cutover",
-   "Rollback path"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp14_projection_views.feature",
-  "title": "Projection views \u2014 hot SQLite/Redis stores compiled from the immutable DAG",
-  "scenarios": [
-   "Views are rebuilt from the DAG after a crash",
-   "Boot check"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp15_cross_stack_root.feature",
-  "title": "Cross-stack root \u2014 one Merkle root over code, DB, policy and AI policy",
-  "scenarios": [
-   "One root, four children"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp16_orchestrator_commit.feature",
-  "title": "Orchestrator agent \u2014 one atomic commit across UI, API, schema and policy",
-  "scenarios": [
-   "A cross-stack change is one commit"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp17_global_cas_api.feature",
-  "title": "Global CAS API \u2014 one local blob router for frontend, backend and agents",
-  "scenarios": [
-   "Put and get by hash",
-   "No literal endpoints"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp18_budget_wall.feature",
-  "title": "Budget wall \u2014 the phase-1 exit test",
-  "scenarios": [
-   "An agent burns its budget and is halted",
-   "No session starts without a budget",
-   "A signed refill resumes from the same step"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp19_signed_receipt_chain.feature",
-  "title": "Receipts are a signed hash chain, not a JSON file",
-  "scenarios": [
-   "The chain verifies",
-   "A tampered line is detected",
-   "A deleted halt is detected",
-   "The signing key never leaves the keystore"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp1_durable_session.feature",
-  "title": "Durable session \u2014 a session outlives the process that runs it",
-  "scenarios": [
-   "A session survives its worker being killed",
-   "A session id is stable and listable"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp20_cross_platform.feature",
-  "title": "Cross-platform \u2014 macOS and Windows, one trust anchor, one presence gateway",
-  "scenarios": [
-   "One trust anchor, three backends",
-   "No OS branching outside the boundary",
-   "Windows paths do not change hashes",
-   "The engine runs on Windows"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp21_estate_attach.feature",
-  "title": "Estate attach \u2014 point the OS at any repo, directory or workspace",
-  "scenarios": [
-   "Attach a fresh repo",
-   "The scaffolded policy is conservative",
-   "Sessions run inside the attached estate",
-   "Global commands"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp22_everything_configurable.feature",
-  "title": "Everything is configurable \u2014 one config, defaults in one place, no literal in code",
-  "scenarios": [
-   "The whole config is listable, with its source",
-   "File overrides default, env overrides file, flag overrides env",
-   "No magic numbers outside config.py",
-   "Every spec threshold is a key",
-   "Setting a key is a command, and a receipt"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp2_stop_signal.feature",
-  "title": "Stop \u2014 the founder's \ud83d\uded1 lands even when nothing is awake to hear it",
-  "scenarios": [
-   "Stop while the worker is alive",
-   "Stop while the worker is dead"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp3_approval_gate.feature",
-  "title": "Approval gate \u2014 a session that needs the founder waits for him, durably",
-  "scenarios": [
-   "Deny ends the session with a receipt",
-   "Approve lets the session continue",
-   "Silence is not consent"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp3_worker_registry.feature",
-  "title": "The live worker serves every workflow the CLI can start",
-  "scenarios": [
-   "Branch workflows are registered on the live worker",
-   "A real fork and merge runs on the registered worker"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "6b12d3e9",
-  "pr": 169,
-  "ticket": "crew#284"
- },
- {
-  "feature": "features/sovereign-bus/cp4_otto_card.feature",
-  "title": "Otto's card \u2014 the chat is a status line, edited in place, never appended",
-  "scenarios": [
-   "One pinned card, edited not re-sent",
-   "One message per live session, collapsed when it ends",
-   "The card never carries alerts"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp5_digest_schedule.feature",
-  "title": "The daily digest is a job on the estate scheduler",
-  "scenarios": [
-   "The digest job exists and fires at the configured hour"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "9e80d04c",
-  "pr": 171,
-  "ticket": "crew#284"
- },
- {
-  "feature": "features/sovereign-bus/cp5_receipts_and_learning.feature",
-  "title": "Receipts and learning \u2014 every founder touch is recorded so Otto can learn from it",
-  "scenarios": [
-   "Every signal is a receipt",
-   "Every session is a Langfuse trace",
-   "Failure episodes are queryable"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp6_self_termination.feature",
-  "title": "Auto-termination acts, it does not only report",
-  "scenarios": [
-   "Langfuse unreachable for more than blind.halt_after_min minutes halts",
-   "Confidence below terminate.min_confidence for low_confidence_steps steps soft-halts",
-   "More than alerts.digest_over_per_hour alerts in an hour compresses to a signed digest",
-   "Enforcement stops running sessions on halt and nothing on continue",
-   "The check is a row on the estate scheduler",
-   "A critical session survives self-termination"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "94b8c341",
-  "pr": 174,
-  "ticket": "crew#284"
- },
- {
-  "feature": "features/sovereign-bus/cp7_cockpit.feature",
-  "title": "Cockpit \u2014 a screen, not a command list, on the phone and the laptop",
-  "scenarios": [
-   "The cockpit serves the truth from Temporal",
-   "A tap is a signal",
-   "The Inbox is on the screen, not in the chat",
-   "The menu button opens the cockpit"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp8_db_sidecar.feature",
-  "title": "DB sidecar \u2014 every legacy write is diffed, hashed, and passed through untouched",
-  "scenarios": [
-   "The legacy DB is named before anything is built",
-   "A write is mirrored, not altered",
-   "Sidecar failure never blocks the legacy write"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/sovereign-bus/cp9_shadow_root.feature",
-  "title": "Shadow root \u2014 a branch pointer that tracks legacy state one to one",
-  "scenarios": [
-   "Root advances with every write",
-   "Root is verifiable"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
-  "feature": "features/gates/deterministic-verifier.feature",
-  "title": "Deterministic Verifier and Zero-Trust Agent Governance",
-  "scenarios": [
-   "The agent attempts to directly write to the active worktree",
-   "The agent successfully queues a change for verification",
-   "A proposed patch contains structural, symbolic, or execution flaws",
-   "A proposed patch achieves mathematical and execution correctness",
-   "An unverified payload attempts to bypass the Verifier and enter the estate",
-   "A mechanically verified payload enters the estate"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_deterministic_verifier.py"
-  ],
-  "status": "PENDING",
-  "added_in": "65588127",
-  "pr": 3376,
-  "ticket": null
- },
- {
-  "feature": "sovereign/tests/fixtures/bdd/pending_unclaimed/pending_unclaimed.feature",
-  "title": "A pending feature nobody has claimed",
-  "scenarios": [
-   "Steps that were never written"
-  ],
-  "bound_by": [
-   "sovereign/tests/fixtures/bdd/pending_unclaimed/test_pending_unclaimed.py"
-  ],
-  "status": "PENDING",
-  "added_in": "a85623f2",
-  "pr": null,
-  "ticket": null
- },
- {
-  "feature": "docs/prose/capacity-cap-rollout.feature",
-  "title": "paid capacity reaches the running node from GitHub",
-  "scenarios": [
-   "the STAGED node-pool change is applied from GitHub, never from a laptop",
-   "a shape change reaches the running node, not only the pool template (incident 2026-08-26, crew#289)"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "8f7267e0",
-  "pr": 209,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/catalogue-links-product.feature",
-  "title": "A product's UIs enter the catalogue from the product's own repository",
-  "scenarios": [
-   "A product's UIs enter the catalogue from the product's own repository"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "08873aa3",
-  "pr": 205,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/chaos-daemon-runtime.feature",
-  "title": "The chaos daemon speaks the container runtime the node actually runs",
-  "scenarios": [
-   "The daemon's runtime matches the node's containerRuntimeVersion",
-   "A runtime value that names a socket the node does not have is a red row, not a quiet one"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "b4e9172a",
-  "pr": 215,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/chaos-drill-live.feature",
-  "title": "The weekly pod-kill experiment leaves a receipt and the runner grades it",
-  "scenarios": [
-   "A finished experiment leaves a receipt",
-   "The runner grades the receipt's age",
-   "A missing or stale receipt is a red row"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "7fd1ba4d",
-  "pr": 217,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/chaos-live.feature",
-  "title": "A chaos experiment injects for real on the cluster",
-  "scenarios": [
-   "The first run is a receipt, not a promise"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "b4e9172a",
-  "pr": 215,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/cloud-agnostic-drills.feature",
-  "title": "Disposable compute, universal state: the migration drills",
-  "scenarios": [
-   "Bring-your-own-Kubernetes hydration",
-   "Cross-cloud secret portability",
-   "Stateless compute disaster recovery",
-   "Agnostic ingress routing"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "30a84548",
-  "pr": 206,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/drill-catalogue-live.feature",
-  "title": "The drills row of bin/idp-verify grades the live run history",
-  "scenarios": [
-   "A drill ran inside its window",
-   "Every graded drill is green",
-   "A drill has gone stale",
-   "A drill has never run at all",
-   "A pending drill is named but never graded",
-   "Freshness cannot be measured",
-   "The catalogue is missing or empty",
-   "The catalogue names a workflow that was retired",
-   "login-drill is graded, not pending",
-   "The check names a policy statement that is in git but not live"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "b4e9172a",
-  "pr": 215,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/estate-gates-online.feature",
-  "title": "Every active estate repository runs the same merge-blocking gates",
-  "scenarios": [
-   "A leaked secret cannot reach main in any active repository",
-   "The rollout is one command, run once",
-   "A required check that cannot report never blocks a repository",
-   "The architecture diagram is drawn from the catalogue, never by hand",
-   "The live architecture page reaches main on a schedule, through a pull request",
-   "The npm audit gate is about what ships",
-   "The pip-audit gate reports an advisory, never a broken build environment"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "0a8807c2",
-  "pr": 207,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/estate-rebuild-live.feature",
-  "title": "The estate rebuilds from an empty tenancy and every incident is a gate",
-  "scenarios": [
-   "Every component of the estate is covered, or a command says which is not",
-   "A full rebuild from an empty tenancy, started from the phone",
-   "The rebuild is rehearsed on a schedule",
-   "A broken workload is reported to the founder within ten minutes",
-   "Every past incident is a gate proved both ways",
-   "A deploy cannot point at an image nobody builds",
-   "Improvement is measured, not felt"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "726ecdc0",
-  "pr": 219,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/fortress/cp1_data.feature",
-  "title": "Data \u2014 the catalog database is green before any governance layer is judged",
-  "scenarios": [
-   "idp-verify passes clean"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/fortress/cp2_litellm.feature",
-  "title": "Model routing \u2014 LiteLLM is the universal API layer",
-  "scenarios": [
-   "The proxy is up with a real fallback chain",
-   "Every non-CLI agent's base URL points at the proxy"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/fortress/cp3_langfuse.feature",
-  "title": "Observability and audit \u2014 OTel GenAI traces reach Langfuse",
-  "scenarios": [
-   "The primary receiver answers",
-   "A real agent run produces a queryable, complete trace"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/fortress/cp4_spiffe_on_k3d.feature",
-  "title": "Agent identity \u2014 SPIRE runs on the estate cluster and issues short-lived SVIDs",
-  "scenarios": [
-   "The SPIRE server has attested the node agent",
-   "A workload in the catalogue namespace receives an SVID from the Workload API"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/fortress/cp4_spiffe_on_oke.feature",
-  "title": "Agent identity \u2014 SPIRE runs on the estate cluster through Flux and issues short-lived SVIDs",
-  "scenarios": [
-   "The cluster carries the SPIRE row and Flux waits for it to be healthy",
-   "The cluster-state receipt shows the identity issuer running"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "731c6057",
-  "pr": 292,
-  "ticket": "crew#227"
- },
- {
-  "feature": "docs/prose/fortress/cp5_mcp_agentgateway.feature",
-  "title": "Protocols \u2014 official MCP SDK replaces the proprietary board schema, fronted by Agentgateway",
-  "scenarios": [
-   "The board and estate.db are MCP tools, not a proprietary schema",
-   "Every MCP call passes through Agentgateway"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/fortress/cp6_agents_md.feature",
-  "title": "Living specs \u2014 AGENTS.md is the version-controlled boundary for this repo",
-  "scenarios": [
-   "AGENTS.md is a committed file, not a convention in someone's head",
-   "A gate reads it both ways"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/front-door-login-drill-live.feature",
-  "title": "A drill signs in at the front door and sees the catalogue",
-  "scenarios": [
-   "The drill signs in and the catalogue renders",
-   "The password is wrong",
-   "The domain demands a password change on first login",
-   "The domain asks the drill user to consent to the front door",
-   "A later apply never overwrites the live drill password",
-   "The JWKS the door validates against is private",
-   "The drill credential is never on a laptop and never in a log",
-   "The door is green but Backstage shows its own guest sign-in page",
-   "The door's identity reaches Backstage's auth provider",
-   "The refresh endpoint is asked at Backstage's real path",
-   "The drill reads the catalogue and sees no error, not only a shell",
-   "A door request with a user name and no email still signs in",
-   "Every published path answers (crew#307)"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "ceb7345b",
-  "pr": 218,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/front-door-login-live.feature",
-  "title": "The live front door redirects to the identity domain and holds no password",
-  "scenarios": [
-   "An unauthenticated request is sent to the identity domain",
-   "The identity domain's signing keys are readable by the relying party",
-   "The signing keys are private",
-   "The door answers anything else",
-   "No zone is configured",
-   "The secrets reach the pod as one mounted file, never as environment variables",
-   "the login row refuses a placeholder client id (idp#149 review, 2026-08-26)"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "f4cfb540",
-  "pr": 212,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/front-door-oidc-rollout.feature",
-  "title": "the front door OIDC client is applied by Terraform and used by the founder (crew#269, crew#281)",
-  "scenarios": [
-   "the identity module is valid and writes the two vault secrets the pod reads",
-   "the apply refuses a domain mismatch",
-   "the founder signs in with the identity he already has"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "49403c30",
-  "pr": 210,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/github-app-online.feature",
-  "title": "The GitHub App manifest and the identity gh acts as",
-  "scenarios": [
-   "The manifest is a one-tap page with no webhook and no public listing",
-   "A session on a personal token is a FAIL"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "397e4a52",
-  "pr": 211,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/golden-path-cp2a-python-golden-path.feature",
-  "title": "Python golden path scaffolding",
-  "scenarios": [
-   "Provisioning a Python service produces a compliant repo"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "805afb0e",
-  "pr": 930,
-  "ticket": "crew#627"
- },
- {
-  "feature": "docs/prose/golden-path-cp2b-dotnet-golden-path.feature",
-  "title": ".NET golden path scaffolding",
-  "scenarios": [
-   "Provisioning a .NET service produces a compliant repo"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "805afb0e",
-  "pr": 930,
-  "ticket": "crew#627"
- },
- {
-  "feature": "docs/prose/golden-path-cp2c-node-golden-path.feature",
-  "title": "Node golden path scaffolding",
-  "scenarios": [
-   "Provisioning a Node service produces a compliant repo"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "805afb0e",
-  "pr": 930,
-  "ticket": "crew#627"
- },
- {
-  "feature": "docs/prose/golden-path-cp2d-template-opens-infra-pr.feature",
-  "title": "Template opens the platform infra pull request",
-  "scenarios": [
-   "A scaffolder run opens a pull request touching only the new service's platform folder"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "805afb0e",
-  "pr": 930,
-  "ticket": "crew#627"
- },
- {
-  "feature": "docs/prose/golden-path-cp2e-flux-reconciles-service.feature",
-  "title": "Flux reconciles a template-created service",
-  "scenarios": [
-   "Merging the platform pull request brings the service up"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "805afb0e",
-  "pr": 930,
-  "ticket": "crew#627"
- },
- {
-  "feature": "docs/prose/golden-path-cp2f-proof-drill.feature",
-  "title": "End-to-end proof drill for self-service golden paths",
-  "scenarios": [
-   "Provision, sign in, and tear down a throwaway service"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "805afb0e",
-  "pr": 930,
-  "ticket": "crew#627"
- },
- {
-  "feature": "docs/prose/icm-cp1_gateway_auth.feature",
-  "title": "Gateway auth at the edge",
-  "scenarios": [
-   "Traefik ForwardAuth calls the identity primitive before any backend is reached",
-   "An invalid JWT is rejected at the edge",
-   "A lapsed subscriber is rejected at the edge",
-   "Spoofed trust headers from the internet are stripped"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "ad12f38a",
-  "pr": null,
-  "ticket": "crew#263"
- },
- {
-  "feature": "docs/prose/icm-cp2_identity_primitive.feature",
-  "title": "Headless identity primitive",
-  "scenarios": [
-   "Kratos mints a JWT for a valid login",
-   "A password reset does not touch application code",
-   "User metadata and tier live only behind universal protocols"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "ad12f38a",
-  "pr": null,
-  "ticket": "crew#263"
- },
- {
-  "feature": "docs/prose/icm-cp3_billing_primitive.feature",
-  "title": "Headless billing primitive",
-  "scenarios": [
-   "A successful payment upgrades the tier in identity",
-   "A lapsed payment revokes Pro without app code"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "ad12f38a",
-  "pr": null,
-  "ticket": "crew#263"
- },
- {
-  "feature": "docs/prose/icm-cp4_prospector_store_headers_only.feature",
-  "title": "Prospector Store.Api reads trusted headers only",
-  "scenarios": [
-   "Store.Api has zero JWT, Stripe SDK or password-hashing references",
-   "Store.Api authorizes purely from trusted headers",
-   "A differential replay agrees between the old and new auth paths",
-   "Store subscriptions work changes coordinate through the storefront sync"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "ad12f38a",
-  "pr": null,
-  "ticket": "crew#263"
- },
- {
-  "feature": "docs/prose/icm-cp5_new_startup_rule.feature",
-  "title": "New-startup rule",
-  "scenarios": [
-   "A 50-line Python API gets auth and tiering for free on day 1",
-   "The new API ships with a demo and an onboarding doc"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "ad12f38a",
-  "pr": null,
-  "ticket": "crew#263"
- },
- {
-  "feature": "docs/prose/icm-cp6_nervous_system.feature",
-  "title": "The nervous system sees the tier",
-  "scenarios": [
-   "Gateway spans carry the subscription tier",
-   "Free-vs-Pro request counts are visible with no app code"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "ad12f38a",
-  "pr": null,
-  "ticket": "crew#263"
- },
- {
-  "feature": "docs/prose/langfuse-traces-live.feature",
-  "title": "Agent sessions trace to the live Langfuse, tagged with their crew issue",
-  "scenarios": [
-   "The seed secrets have no human author",
-   "A tag query returns the session"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "a124088a",
-  "pr": 214,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/litellm-up.feature",
-  "title": "bin/litellm-up brings the proxy up on the config that is on disk",
-  "scenarios": [
-   "The proxy is restarted when config.yaml changed after it started",
-   "The proxy is left alone when it already runs the config on disk"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "535b6e3e",
-  "pr": 220,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/messaging-cp1.feature",
-  "title": "the messaging day-0 design is accepted before any code",
-  "scenarios": [
-   "the specification is the founder's document, saved to the estate standard",
-   "MiniMax builds only against a scenario, never against prose"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp10.feature",
-  "title": "the founder used it",
-  "scenarios": [
-   "one button on the portal runs the demo"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp2.feature",
-  "title": "the broker is on and admitted",
-  "scenarios": [
-   "JetStream answers from inside the cluster",
-   "every pod passes admission before it is applied",
-   "R3 is one values change when the pool has three nodes"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp3.feature",
-  "title": "the contracts are gated, not reviewed",
-  "scenarios": [
-   "a subject that breaks the grammar cannot be published",
-   "a breaking schema change fails CI (\u00a711 test 7)",
-   "the first stream exists with the locked values"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp4.feature",
-  "title": "the relay is the only writer and it never duplicates",
-  "scenarios": [
-   "the outbox row and the state change are one transaction (\u00a711 test 1)",
-   "a relay crash mid-batch leaves no duplicates and no gaps (\u00a711 test 2)",
-   "the relay is measurable"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp5.feature",
-  "title": "a consumer has exactly-once effect",
-  "scenarios": [
-   "a consumer killed between commit and ack does not repeat its effect (\u00a711 test 4)",
-   "long work heartbeats and permanent failure terminates",
-   "the library defaults are the spec's"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp6.feature",
-  "title": "permissions make the outbox the only path",
-  "scenarios": [
-   "an app credential cannot publish a business event (\u00a711 test 6)",
-   "the relay credential is narrow"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp7.feature",
-  "title": "dead letters are captured, alerted and replayed by hand",
-  "scenarios": [
-   "a poison message lands in DLQ with its headers (\u00a711 test 5)",
-   "replay is a manual audited action"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp8.feature",
-  "title": "the bus is observed in the estate collector, never by scanning files",
-  "scenarios": [
-   "every messaging workload is seen by the backend (LAW 50)",
-   "one trace spans request, commit, publish and consumer",
-   "the seven alerts route to alertmanager"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp9.feature",
-  "title": "the platform is accepted, backed up and demoed",
-  "scenarios": [
-   "the eight acceptance tests are green on the throwaway cluster",
-   "node loss is survived and two-node loss halts cleanly (\u00a711 test 3)",
-   "a stream backup restores and replays with correct dedupe (\u00a711 test 8)",
-   "the demo and the onboarding exist"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/operating-model-gate-callers.feature",
-  "title": "Every active estate repo runs the one operating-model gate",
-  "scenarios": [
-   "Every active estate repo runs the one gate, with the policy in one place"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "75b90aae",
-  "pr": 216,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp10_urgency.feature",
-  "title": "Urgency \u2014 open decision, default is never interrupt",
-  "scenarios": [
-   "An urgent phone message during an active session changes nothing about it",
-   "An urgent card is flagged, once confirmed"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp11_persistence.feature",
-  "title": "Persistence \u2014 the platform holds the record, not vendor chat",
-  "scenarios": [
-   "A draft survives losing the Telegram conversation"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp12_provider_agnostic.feature",
-  "title": "Provider agnostic \u2014 the model and the transport are both swappable",
-  "scenarios": [
-   "The flow's logic carries no vendor-specific import"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp1_continuity.feature",
-  "title": "Continuity \u2014 an active laptop session is never touched by the phone flow",
-  "scenarios": [
-   "An active session finishes on its own after he leaves",
-   "A phone message during the session injects nothing into it"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp2_phone_ingress.feature",
-  "title": "Phone ingress \u2014 hermes-v2 never touches the active laptop session",
-  "scenarios": [
-   "hermes-v2 and the active session are separate processes"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp3_preflight_dedup.feature",
-  "title": "Pre-flight dedup \u2014 hermes-v2 checks the board before drafting",
-  "scenarios": [
-   "A matching card already exists",
-   "No match exists"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp4_mode_detection.feature",
-  "title": "Mode detection \u2014 exploring stays talk, building drafts a feature",
-  "scenarios": [
-   "Exploratory phrasing enters sounding-board mode",
-   "Build phrasing enters PM mode"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp5_confirmation_gate.feature",
-  "title": "Confirmation gate \u2014 hermes-v2 never writes to the board unannounced",
-  "scenarios": [
-   "A draft is shown before any board write",
-   "The board write matches the button tapped",
-   "Drop writes nothing"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp6_icebox.feature",
-  "title": "Icebox \u2014 kept ideas do not enter the work queue",
-  "scenarios": [
-   "An Icebox card is never claimed"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp7_dispatch.feature",
-  "title": "Dispatch \u2014 the watched column starts work when the laptop is awake",
-  "scenarios": [
-   "A card starts within one poll cycle while awake",
-   "A card waits while the laptop sleeps"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp8_welcome_back.feature",
-  "title": "Welcome back \u2014 the two branches never conflict",
-  "scenarios": [
-   "Both branches coexist without conflict"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp9_later_activation.feature",
-  "title": "Later activation \u2014 an Icebox idea becomes work, still gated",
-  "scenarios": [
-   "Activating an Icebox card drafts a feature file",
-   "The move still requires the confirmation gate"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/self-aware-platform/cp4_get_catalog_drift.feature",
-  "title": "get_catalog_drift \u2014 dark matter is visible, on the laptop substrate",
-  "scenarios": [
-   "A launchd job with no catalog entity is reported as drift",
-   "A colima container with no catalog entity is reported as drift",
-   "A port bound outside catalog/ports.yaml is reported as drift",
-   "Everything cataloged and running is not flagged",
-   "Drift detection reads typed annotations, never string-greps"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/self-aware-platform/cp5_event_aggregation.feature",
-  "title": "Event aggregation behind Temporal \u2014 a storm becomes one event",
-  "scenarios": [
-   "50 crashes in 10 seconds collapse to one event",
-   "Events outside the window are not merged",
-   "Storm test proves the collapse ratio",
-   "Aggregation does not drop information, only delivery count"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/self-aware-platform/cp6_propose_execute_state_hash.feature",
-  "title": "propose_action / execute_action carry a state hash, refuse on TOCTOU",
-  "scenarios": [
-   "A proposal carries the state hash it was computed against",
-   "Execute succeeds when state has not changed",
-   "Execute refuses when state changed between propose and approve \u2014 TOCTOU",
-   "A stale approval never mutates anything"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/self-aware-platform/cp7_token_receipt.feature",
-  "title": "Token receipt \u2014 the waste the founder named, measured before and after",
-  "scenarios": [
-   "The script defines three recurring questions",
-   "Before numbers are measured, not remembered",
-   "After numbers are measured against the new MCP surface",
-   "The receipt is the number, not a claim",
-   "The laptop path renders no key"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/self-aware-platform/cp8_k8s_adapter.feature",
-  "title": "k8s adapter \u2014 the same desired-vs-actual interface, deferred until a cluster exists",
-  "scenarios": [
-   "Desired-vs-actual is read through one interface, not two code paths",
-   "A k8s implementation of the interface can be registered without",
-   "The adapter is not activated against a live cluster yet"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "15a7f0df",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/verification-identity-live.feature",
-  "title": "The platform verifies its own health every hour with no person logged in",
-  "scenarios": [
-   "A runner grades the cluster's own verdict on the machine identity",
-   "Twenty-four hours with nobody awake"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "f0a72688",
-  "pr": 269,
-  "ticket": "crew#345"
- },
- {
-  "feature": "features/assurance/estate-next.feature",
-  "title": "What is planned, what is blocking, when (crew#403 CP6)",
-  "scenarios": [
-   "An open checkpoint with no Expect line is a red row",
-   "An open checkpoint named on a lane's red line is BLOCKING and dated",
-   "A handoff older than the lane window does not make a checkpoint ACTIVE"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_estate_next.py"
-  ],
-  "status": "BOUND",
-  "added_in": "a5d2421a",
-  "pr": 402,
-  "ticket": "crew#403"
- },
- {
-  "feature": "features/assurance/trace-matrix.feature",
-  "title": "Every scenario traces to the test that runs it",
-  "scenarios": [
-   "A feature nothing runs is listed first and counted as a finding",
-   "A repository where every feature is bound passes the check",
-   "A feature under docs/prose is counted as PROSE, never as a finding"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_trace_matrix.py"
-  ],
-  "status": "BOUND",
-  "added_in": "99d29396",
-  "pr": 389,
-  "ticket": "crew#495"
- },
- {
-  "feature": "features/cloud-agnostic/disposable-compute-universal-state.feature",
-  "title": "Disposable compute, universal state",
-  "scenarios": [
-   "No provider-specific service or annotation in the platform"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_cloud_agnostic.py"
-  ],
-  "status": "BOUND",
-  "added_in": "4f833833",
-  "pr": 124,
-  "ticket": null
- },
- {
-  "feature": "features/drills/drill-catalogue.feature",
-  "title": "Every scheduled drill has run recently, and the catalogue says which drills exist",
-  "scenarios": [
-   "The catalogue names only drills that are really scheduled"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_drill_catalogue.py"
-  ],
-  "status": "BOUND",
-  "added_in": "fd8c75fa",
-  "pr": 178,
-  "ticket": "crew#292"
- },
- {
-  "feature": "features/drills/vault-seed.feature",
-  "title": "the estate vault is seeded by the machine identity, never from a laptop (crew#284, crew#248)",
-  "scenarios": [
-   "every key the vault entries need arrives as a SEED_ secret",
-   "no value can reach the log",
-   "the git-writer credential never holds the LLM (crew#284)",
-   "secret-store carries only the store (crew#284)"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_vault_seed.py"
-  ],
-  "status": "BOUND",
-  "added_in": "d2ae3603",
-  "pr": 243,
-  "ticket": "crew#284"
- },
- {
-  "feature": "features/fleetview/cp1_contract.feature",
-  "title": "CP1 the session contract",
-  "scenarios": [
-   "the backend lists sessions from the sovereign engine",
-   "the stream sends a change",
-   "the route answers the spec's done-command",
-   "a catalogue that cannot be read leaves the rest of the board live"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_fleetview_cp1.py"
-  ],
-  "status": "BOUND",
-  "added_in": "7bce6f5c",
-  "pr": 2619,
-  "ticket": null
- },
- {
-  "feature": "features/fleetview/cp2_board.feature",
-  "title": "CP2 the board",
-  "scenarios": [
-   "a running session is on the board",
-   "the board updates itself"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_fleetview_cp2.py"
-  ],
-  "status": "BOUND",
-  "added_in": "7bce6f5c",
-  "pr": 2619,
-  "ticket": null
- },
- {
-  "feature": "features/gates/budget-governor.feature",
-  "title": "A reasoning run is halted the instant a ceiling trips, and the best-so-far plan survives",
-  "scenarios": [
-   "A run repeats tool calls past the per-goal branch budget",
-   "A run finishes its declared plan inside its budget",
-   "The transcript cannot be read"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_budget_governor.py"
-  ],
-  "status": "BOUND",
-  "added_in": "b44756c8",
-  "pr": 3464,
-  "ticket": null
- },
- {
-  "feature": "features/gates/capacity-cap.feature",
-  "title": "paid capacity is auto-defaulted up to the founder's cap and refused above it",
-  "scenarios": [
-   "a node pool under the cap is STAGED, never asked",
-   "a node pool over the cap is a paid billing authorisation",
-   "a missing price row or cap is BLIND, not zero"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_capacity_cap.py"
-  ],
-  "status": "BOUND",
-  "added_in": "834b06aa",
-  "pr": 160,
-  "ticket": "crew#289"
- },
- {
-  "feature": "features/gates/catalogue-links.feature",
-  "title": "Every Component in the catalogue carries a URL a person can open",
-  "scenarios": [
-   "The clean inventory yields a catalogue where every Component has a URL",
-   "A checkout with no remote is refused",
-   "No catalogue on this machine"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_catalogue_links.py"
-  ],
-  "status": "BOUND",
-  "added_in": "c5984576",
-  "pr": 145,
-  "ticket": "crew#269"
- },
- {
-  "feature": "features/gates/compiled-helm-published.feature",
-  "title": "the compiled estate is published and read on the portal",
-  "scenarios": [
-   "CI compiles the estate on every pull request",
-   "the compiled document reaches the portal",
-   "a disagreement between a claim and a rendered value is visible"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_compiled_helm_published.py"
-  ],
-  "status": "BOUND",
-  "added_in": "4f4a09f6",
-  "pr": 3284,
-  "ticket": null
- },
- {
-  "feature": "features/gates/compiled-helm.feature",
-  "title": "the estate is compiled from git before its numbers are believed",
-  "scenarios": [
-   "a rendered workload declares the resources the estate intends",
-   "every release renders, so no chart is a blind spot"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_compiled_helm.py"
-  ],
-  "status": "BOUND",
-  "added_in": "4f4a09f6",
-  "pr": 3284,
-  "ticket": null
- },
- {
-  "feature": "features/gates/contract-executor.feature",
-  "title": "A tool call's post-condition is checked by a deterministic script, not the agent",
-  "scenarios": [
-   "The post-condition never holds by its deadline",
-   "Both conditions hold",
-   "A subject has no observation at all",
-   "The contract file cannot be read"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_contract_executor.py"
-  ],
-  "status": "BOUND",
-  "added_in": "22268b89",
+  "added_in": "89c068fb1",
   "pr": null,
   "ticket": null
  },
@@ -1804,11 +393,9 @@
    "A recent assistant turn is not condensed",
    "A realistic session with drift, duplicates, long history, and verbose tools is optimised"
   ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_efficiency_gateway_bdd.py"
-  ],
-  "status": "BOUND",
-  "added_in": "fd519c9b",
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "fd519c9bd",
   "pr": 3703,
   "ticket": null
  },
@@ -1823,12 +410,1453 @@
    "A non-exempt namespace has no allow-egress rule to vendor endpoints",
    "Policy manifest is valid YAML and passes structural schema check"
   ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "fd519c9bd",
+  "pr": 3703,
+  "ticket": null
+ },
+ {
+  "feature": "features/gates/front-door-login.feature",
+  "title": "The front door is a federated login with no local password",
+  "scenarios": [
+   "No manifest holds a user database"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79ff26c51",
+  "pr": 144,
+  "ticket": "crew#269"
+ },
+ {
+  "feature": "features/gates/placement-published.feature",
+  "title": "placement is measured, published and read on the portal",
+  "scenarios": [
+   "the cluster publishes its placement receipt",
+   "the render carries the placement document forward",
+   "the portal reads it through the proxy it already has",
+   "a cluster at its request ceiling is explained, never just reported"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "d0ffce9fb",
+  "pr": 3254,
+  "ticket": null
+ },
+ {
+  "feature": "features/portal-product/cp1-showcase-live.feature",
+  "title": "the showcase page reads live state, never a markdown file",
+  "scenarios": [
+   "the showcase page answers with data read on this load, not a stored file",
+   "every system on the showcase page carries a live health value",
+   "the five Otto capabilities are read from their proof file, not retyped"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318df",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
+  "feature": "features/portal-product/cp2-sandbox-launch-countdown.feature",
+  "title": "a person launches the buyer sandbox from the showcase page, and watches it expire",
+  "scenarios": [
+   "the launch button dispatches the documented command, unchanged",
+   "the countdown reflects the Kustomization's own TTL label",
+   "after expiry the showcase page shows the sandbox is gone, not stale",
+   "no new agent capability is created"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318df",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
+  "feature": "features/portal-product/cp3-vendor-proxies.feature",
+  "title": "the vendor dashboards show one live fact on the card, not only a link",
+  "scenarios": [
+   "a Langfuse proxy exists and answers",
+   "a SigNoz proxy exists and answers",
+   "a Superset proxy exists and answers",
+   "a proxy failure is shown, not hidden"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318df",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
+  "feature": "features/portal-product/cp4-platform-layer-card.feature",
+  "title": "every platform layer's entity page draws its own live state",
+  "scenarios": [
+   "the layer card is one component reused by every platform layer",
+   "the layer card's Ready state matches the cluster, not the manifest",
+   "adding the card to one layer adds it to all"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318df",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
+  "feature": "features/portal-product/cp5-no-link-only-founder-surfaces.feature",
+  "title": "no founder-surface entity ships with zero live content",
+  "scenarios": [
+   "every founder-surface entity carries a kubernetes-label-selector",
+   "the previously link-only entities render the layer card"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318df",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
+  "feature": "features/portal-product/cp6-agent-door-status-pill.feature",
+  "title": "the agent doors show a live status pill, not a manifest link",
+  "scenarios": [
+   "the Otto door's pill reflects its own healthz answer",
+   "the MCP gateway's pill is read through a proxy, never a hardcoded host"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79b0318df",
+  "pr": 1918,
+  "ticket": null
+ },
+ {
+  "feature": "features/sovereign-bus/cp10_dual_read.feature",
+  "title": "Dual-read router \u2014 every read runs twice, legacy and DAG, and is compared",
+  "scenarios": [
+   "Both paths execute",
+   "Reads never slow the caller past the key"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp11_consensus_check.feature",
+  "title": "Consensus check \u2014 a legacy/DAG mismatch is an alert, never a freeze",
+  "scenarios": [
+   "Mismatch is surfaced to the HUD",
+   "Match rate is measured"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp12_ai_sandbox.feature",
+  "title": "AI sandbox and zero-cost forks \u2014 agents query a copy-on-write fork, production untouched",
+  "scenarios": [
+   "Fork under a second",
+   "Agent writes land on the fork only",
+   "Switch and drop",
+   "The cap is a key"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp13_the_flip.feature",
+  "title": "The flip \u2014 the DAG becomes primary; the legacy DB becomes a read-only archive with a rollback path",
+  "scenarios": [
+   "Zero-downtime cutover",
+   "Rollback path"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp14_projection_views.feature",
+  "title": "Projection views \u2014 hot SQLite/Redis stores compiled from the immutable DAG",
+  "scenarios": [
+   "Views are rebuilt from the DAG after a crash",
+   "Boot check"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp15_cross_stack_root.feature",
+  "title": "Cross-stack root \u2014 one Merkle root over code, DB, policy and AI policy",
+  "scenarios": [
+   "One root, four children"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp16_orchestrator_commit.feature",
+  "title": "Orchestrator agent \u2014 one atomic commit across UI, API, schema and policy",
+  "scenarios": [
+   "A cross-stack change is one commit"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp17_global_cas_api.feature",
+  "title": "Global CAS API \u2014 one local blob router for frontend, backend and agents",
+  "scenarios": [
+   "Put and get by hash",
+   "No literal endpoints"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp18_budget_wall.feature",
+  "title": "Budget wall \u2014 the phase-1 exit test",
+  "scenarios": [
+   "An agent burns its budget and is halted",
+   "No session starts without a budget",
+   "A signed refill resumes from the same step"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp19_signed_receipt_chain.feature",
+  "title": "Receipts are a signed hash chain, not a JSON file",
+  "scenarios": [
+   "The chain verifies",
+   "A tampered line is detected",
+   "A deleted halt is detected",
+   "The signing key never leaves the keystore"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp1_durable_session.feature",
+  "title": "Durable session \u2014 a session outlives the process that runs it",
+  "scenarios": [
+   "A session survives its worker being killed",
+   "A session id is stable and listable"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp20_cross_platform.feature",
+  "title": "Cross-platform \u2014 macOS and Windows, one trust anchor, one presence gateway",
+  "scenarios": [
+   "One trust anchor, three backends",
+   "No OS branching outside the boundary",
+   "Windows paths do not change hashes",
+   "The engine runs on Windows"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp21_estate_attach.feature",
+  "title": "Estate attach \u2014 point the OS at any repo, directory or workspace",
+  "scenarios": [
+   "Attach a fresh repo",
+   "The scaffolded policy is conservative",
+   "Sessions run inside the attached estate",
+   "Global commands"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp22_everything_configurable.feature",
+  "title": "Everything is configurable \u2014 one config, defaults in one place, no literal in code",
+  "scenarios": [
+   "The whole config is listable, with its source",
+   "File overrides default, env overrides file, flag overrides env",
+   "No magic numbers outside config.py",
+   "Every spec threshold is a key",
+   "Setting a key is a command, and a receipt"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp2_stop_signal.feature",
+  "title": "Stop \u2014 the founder's \ud83d\uded1 lands even when nothing is awake to hear it",
+  "scenarios": [
+   "Stop while the worker is alive",
+   "Stop while the worker is dead"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp3_approval_gate.feature",
+  "title": "Approval gate \u2014 a session that needs the founder waits for him, durably",
+  "scenarios": [
+   "Deny ends the session with a receipt",
+   "Approve lets the session continue",
+   "Silence is not consent"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp3_worker_registry.feature",
+  "title": "The live worker serves every workflow the CLI can start",
+  "scenarios": [
+   "Branch workflows are registered on the live worker",
+   "A real fork and merge runs on the registered worker"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "6b12d3e9e",
+  "pr": 169,
+  "ticket": "crew#284"
+ },
+ {
+  "feature": "features/sovereign-bus/cp4_otto_card.feature",
+  "title": "Otto's card \u2014 the chat is a status line, edited in place, never appended",
+  "scenarios": [
+   "One pinned card, edited not re-sent",
+   "One message per live session, collapsed when it ends",
+   "The card never carries alerts"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp5_digest_schedule.feature",
+  "title": "The daily digest is a job on the estate scheduler",
+  "scenarios": [
+   "The digest job exists and fires at the configured hour"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "9e80d04c1",
+  "pr": 171,
+  "ticket": "crew#284"
+ },
+ {
+  "feature": "features/sovereign-bus/cp5_receipts_and_learning.feature",
+  "title": "Receipts and learning \u2014 every founder touch is recorded so Otto can learn from it",
+  "scenarios": [
+   "Every signal is a receipt",
+   "Every session is a Langfuse trace",
+   "Failure episodes are queryable"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp6_provider_agnostic.feature",
+  "title": "Provider agnostic \u2014 the runner and the model are configuration, never code",
+  "scenarios": [
+   "The engine runs a step with no vendor present",
+   "No vendor import in the engine",
+   "No hardcoded home, host or checkout",
+   "A new provider is one registry entry, not a code change"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp6_self_termination.feature",
+  "title": "Auto-termination acts, it does not only report",
+  "scenarios": [
+   "Langfuse unreachable for more than blind.halt_after_min minutes halts",
+   "Confidence below terminate.min_confidence for low_confidence_steps steps soft-halts",
+   "More than alerts.digest_over_per_hour alerts in an hour compresses to a signed digest",
+   "Enforcement stops running sessions on halt and nothing on continue",
+   "The check is a row on the estate scheduler",
+   "A critical session survives self-termination"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "94b8c341d",
+  "pr": 174,
+  "ticket": "crew#284"
+ },
+ {
+  "feature": "features/sovereign-bus/cp7_cockpit.feature",
+  "title": "Cockpit \u2014 a screen, not a command list, on the phone and the laptop",
+  "scenarios": [
+   "The cockpit serves the truth from Temporal",
+   "A tap is a signal",
+   "The Inbox is on the screen, not in the chat",
+   "The menu button opens the cockpit"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp8_db_sidecar.feature",
+  "title": "DB sidecar \u2014 every legacy write is diffed, hashed, and passed through untouched",
+  "scenarios": [
+   "The legacy DB is named before anything is built",
+   "A write is mirrored, not altered",
+   "Sidecar failure never blocks the legacy write"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp9_shadow_root.feature",
+  "title": "Shadow root \u2014 a branch pointer that tracks legacy state one to one",
+  "scenarios": [
+   "Root advances with every write",
+   "Root is verifiable"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f81",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/gates/deterministic-verifier.feature",
+  "title": "Deterministic Verifier and Zero-Trust Agent Governance",
+  "scenarios": [
+   "The agent attempts to directly write to the active worktree",
+   "The agent successfully queues a change for verification",
+   "A proposed patch contains structural, symbolic, or execution flaws",
+   "A proposed patch achieves mathematical and execution correctness",
+   "An unverified payload attempts to bypass the Verifier and enter the estate",
+   "A mechanically verified payload enters the estate"
+  ],
   "bound_by": [
-   "sovereign/tests/bdd/test_egress_block_bdd.py"
+   "sovereign/tests/bdd/test_deterministic_verifier.py"
+  ],
+  "status": "PENDING",
+  "added_in": "65588127d",
+  "pr": 3376,
+  "ticket": null
+ },
+ {
+  "feature": "sovereign/tests/fixtures/bdd/pending_unclaimed/pending_unclaimed.feature",
+  "title": "A pending feature nobody has claimed",
+  "scenarios": [
+   "Steps that were never written"
+  ],
+  "bound_by": [
+   "sovereign/tests/fixtures/bdd/pending_unclaimed/test_pending_unclaimed.py"
+  ],
+  "status": "PENDING",
+  "added_in": "a85623f2f",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "docs/prose/capacity-cap-rollout.feature",
+  "title": "paid capacity reaches the running node from GitHub",
+  "scenarios": [
+   "the STAGED node-pool change is applied from GitHub, never from a laptop",
+   "a shape change reaches the running node, not only the pool template (incident 2026-08-26, crew#289)"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "8f7267e00",
+  "pr": 209,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/catalogue-links-product.feature",
+  "title": "A product's UIs enter the catalogue from the product's own repository",
+  "scenarios": [
+   "A product's UIs enter the catalogue from the product's own repository"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "08873aa3e",
+  "pr": 205,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/chaos-daemon-runtime.feature",
+  "title": "The chaos daemon speaks the container runtime the node actually runs",
+  "scenarios": [
+   "The daemon's runtime matches the node's containerRuntimeVersion",
+   "A runtime value that names a socket the node does not have is a red row, not a quiet one"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "b4e9172ad",
+  "pr": 215,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/chaos-live.feature",
+  "title": "A chaos experiment injects for real on the cluster",
+  "scenarios": [
+   "The first run is a receipt, not a promise"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "b4e9172ad",
+  "pr": 215,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/estate-gates-online.feature",
+  "title": "Every active estate repository runs the same merge-blocking gates",
+  "scenarios": [
+   "A leaked secret cannot reach main in any active repository",
+   "The rollout is one command, run once",
+   "A required check that cannot report never blocks a repository",
+   "The architecture diagram is drawn from the catalogue, never by hand",
+   "The live architecture page reaches main on a schedule, through a pull request",
+   "The npm audit gate is about what ships",
+   "The pip-audit gate reports an advisory, never a broken build environment"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "0a8807c2a",
+  "pr": 207,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/estate-rebuild-live.feature",
+  "title": "The estate rebuilds from an empty tenancy and every incident is a gate",
+  "scenarios": [
+   "Every component of the estate is covered, or a command says which is not",
+   "A full rebuild from an empty tenancy, started from the phone",
+   "The rebuild is rehearsed on a schedule",
+   "A broken workload is reported to the founder within ten minutes",
+   "Every past incident is a gate proved both ways",
+   "A deploy cannot point at an image nobody builds",
+   "Improvement is measured, not felt"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "726ecdc02",
+  "pr": 219,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/fortress/cp1_data.feature",
+  "title": "Data \u2014 the catalog database is green before any governance layer is judged",
+  "scenarios": [
+   "idp-verify passes clean"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/fortress/cp2_litellm.feature",
+  "title": "Model routing \u2014 LiteLLM is the universal API layer",
+  "scenarios": [
+   "The proxy is up with a real fallback chain",
+   "Every non-CLI agent's base URL points at the proxy"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/fortress/cp3_langfuse.feature",
+  "title": "Observability and audit \u2014 OTel GenAI traces reach Langfuse",
+  "scenarios": [
+   "The primary receiver answers",
+   "A real agent run produces a queryable, complete trace"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/fortress/cp4_spiffe_on_k3d.feature",
+  "title": "Agent identity \u2014 SPIRE runs on the estate cluster and issues short-lived SVIDs",
+  "scenarios": [
+   "The SPIRE server has attested the node agent",
+   "A workload in the catalogue namespace receives an SVID from the Workload API"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/fortress/cp4_spiffe_on_oke.feature",
+  "title": "Agent identity \u2014 SPIRE runs on the estate cluster through Flux and issues short-lived SVIDs",
+  "scenarios": [
+   "The cluster carries the SPIRE row and Flux waits for it to be healthy",
+   "The cluster-state receipt shows the identity issuer running"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "731c6057f",
+  "pr": 292,
+  "ticket": "crew#227"
+ },
+ {
+  "feature": "docs/prose/fortress/cp5_mcp_agentgateway.feature",
+  "title": "Protocols \u2014 official MCP SDK replaces the proprietary board schema, fronted by Agentgateway",
+  "scenarios": [
+   "The board and estate.db are MCP tools, not a proprietary schema",
+   "Every MCP call passes through Agentgateway"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/fortress/cp6_agents_md.feature",
+  "title": "Living specs \u2014 AGENTS.md is the version-controlled boundary for this repo",
+  "scenarios": [
+   "AGENTS.md is a committed file, not a convention in someone's head",
+   "A gate reads it both ways"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/front-door-login-live.feature",
+  "title": "The live front door redirects to the identity domain and holds no password",
+  "scenarios": [
+   "An unauthenticated request is sent to the identity domain",
+   "The identity domain's signing keys are readable by the relying party",
+   "The signing keys are private",
+   "The door answers anything else",
+   "No zone is configured",
+   "The secrets reach the pod as one mounted file, never as environment variables",
+   "the login row refuses a placeholder client id (idp#149 review, 2026-08-26)"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "f4cfb540f",
+  "pr": 212,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/front-door-oidc-rollout.feature",
+  "title": "the front door OIDC client is applied by Terraform and used by the founder (crew#269, crew#281)",
+  "scenarios": [
+   "the identity module is valid and writes the two vault secrets the pod reads",
+   "the apply refuses a domain mismatch",
+   "the founder signs in with the identity he already has"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "49403c306",
+  "pr": 210,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/github-app-online.feature",
+  "title": "The GitHub App manifest and the identity gh acts as",
+  "scenarios": [
+   "The manifest is a one-tap page with no webhook and no public listing",
+   "A session on a personal token is a FAIL"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "397e4a52e",
+  "pr": 211,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/golden-path-cp2a-python-golden-path.feature",
+  "title": "Python golden path scaffolding",
+  "scenarios": [
+   "Provisioning a Python service produces a compliant repo"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "805afb0ea",
+  "pr": 930,
+  "ticket": "crew#627"
+ },
+ {
+  "feature": "docs/prose/golden-path-cp2b-dotnet-golden-path.feature",
+  "title": ".NET golden path scaffolding",
+  "scenarios": [
+   "Provisioning a .NET service produces a compliant repo"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "805afb0ea",
+  "pr": 930,
+  "ticket": "crew#627"
+ },
+ {
+  "feature": "docs/prose/golden-path-cp2c-node-golden-path.feature",
+  "title": "Node golden path scaffolding",
+  "scenarios": [
+   "Provisioning a Node service produces a compliant repo"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "805afb0ea",
+  "pr": 930,
+  "ticket": "crew#627"
+ },
+ {
+  "feature": "docs/prose/golden-path-cp2d-template-opens-infra-pr.feature",
+  "title": "Template opens the platform infra pull request",
+  "scenarios": [
+   "A scaffolder run opens a pull request touching only the new service's platform folder"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "805afb0ea",
+  "pr": 930,
+  "ticket": "crew#627"
+ },
+ {
+  "feature": "docs/prose/golden-path-cp2e-flux-reconciles-service.feature",
+  "title": "Flux reconciles a template-created service",
+  "scenarios": [
+   "Merging the platform pull request brings the service up"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "805afb0ea",
+  "pr": 930,
+  "ticket": "crew#627"
+ },
+ {
+  "feature": "docs/prose/icm-cp1_gateway_auth.feature",
+  "title": "Gateway auth at the edge",
+  "scenarios": [
+   "Traefik ForwardAuth calls the identity primitive before any backend is reached",
+   "An invalid JWT is rejected at the edge",
+   "A lapsed subscriber is rejected at the edge",
+   "Spoofed trust headers from the internet are stripped"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "ad12f38a1",
+  "pr": null,
+  "ticket": "crew#263"
+ },
+ {
+  "feature": "docs/prose/icm-cp2_identity_primitive.feature",
+  "title": "Headless identity primitive",
+  "scenarios": [
+   "Kratos mints a JWT for a valid login",
+   "A password reset does not touch application code",
+   "User metadata and tier live only behind universal protocols"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "ad12f38a1",
+  "pr": null,
+  "ticket": "crew#263"
+ },
+ {
+  "feature": "docs/prose/icm-cp3_billing_primitive.feature",
+  "title": "Headless billing primitive",
+  "scenarios": [
+   "A successful payment upgrades the tier in identity",
+   "A lapsed payment revokes Pro without app code"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "ad12f38a1",
+  "pr": null,
+  "ticket": "crew#263"
+ },
+ {
+  "feature": "docs/prose/icm-cp4_prospector_store_headers_only.feature",
+  "title": "Prospector Store.Api reads trusted headers only",
+  "scenarios": [
+   "Store.Api has zero JWT, Stripe SDK or password-hashing references",
+   "Store.Api authorizes purely from trusted headers",
+   "A differential replay agrees between the old and new auth paths",
+   "Store subscriptions work changes coordinate through the storefront sync"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "ad12f38a1",
+  "pr": null,
+  "ticket": "crew#263"
+ },
+ {
+  "feature": "docs/prose/icm-cp5_new_startup_rule.feature",
+  "title": "New-startup rule",
+  "scenarios": [
+   "A 50-line Python API gets auth and tiering for free on day 1",
+   "The new API ships with a demo and an onboarding doc"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "ad12f38a1",
+  "pr": null,
+  "ticket": "crew#263"
+ },
+ {
+  "feature": "docs/prose/icm-cp6_nervous_system.feature",
+  "title": "The nervous system sees the tier",
+  "scenarios": [
+   "Gateway spans carry the subscription tier",
+   "Free-vs-Pro request counts are visible with no app code"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "ad12f38a1",
+  "pr": null,
+  "ticket": "crew#263"
+ },
+ {
+  "feature": "docs/prose/langfuse-traces-live.feature",
+  "title": "Agent sessions trace to the live Langfuse, tagged with their crew issue",
+  "scenarios": [
+   "The seed secrets have no human author",
+   "A tag query returns the session"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "a124088ac",
+  "pr": 214,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/litellm-up.feature",
+  "title": "bin/litellm-up brings the proxy up on the config that is on disk",
+  "scenarios": [
+   "The proxy is restarted when config.yaml changed after it started",
+   "The proxy is left alone when it already runs the config on disk"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "535b6e3ed",
+  "pr": 220,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/messaging-cp1.feature",
+  "title": "the messaging day-0 design is accepted before any code",
+  "scenarios": [
+   "the specification is the founder's document, saved to the estate standard",
+   "MiniMax builds only against a scenario, never against prose"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "dda3f64a3",
+  "pr": 838,
+  "ticket": "crew#639"
+ },
+ {
+  "feature": "docs/prose/messaging-cp10.feature",
+  "title": "the founder used it",
+  "scenarios": [
+   "one button on the portal runs the demo"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "dda3f64a3",
+  "pr": 838,
+  "ticket": "crew#639"
+ },
+ {
+  "feature": "docs/prose/messaging-cp2.feature",
+  "title": "the broker is on and admitted",
+  "scenarios": [
+   "JetStream answers from inside the cluster",
+   "every pod passes admission before it is applied",
+   "R3 is one values change when the pool has three nodes"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "dda3f64a3",
+  "pr": 838,
+  "ticket": "crew#639"
+ },
+ {
+  "feature": "docs/prose/messaging-cp3.feature",
+  "title": "the contracts are gated, not reviewed",
+  "scenarios": [
+   "a subject that breaks the grammar cannot be published",
+   "a breaking schema change fails CI (\u00a711 test 7)",
+   "the first stream exists with the locked values"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "dda3f64a3",
+  "pr": 838,
+  "ticket": "crew#639"
+ },
+ {
+  "feature": "docs/prose/messaging-cp4.feature",
+  "title": "the relay is the only writer and it never duplicates",
+  "scenarios": [
+   "the outbox row and the state change are one transaction (\u00a711 test 1)",
+   "a relay crash mid-batch leaves no duplicates and no gaps (\u00a711 test 2)",
+   "the relay is measurable"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "dda3f64a3",
+  "pr": 838,
+  "ticket": "crew#639"
+ },
+ {
+  "feature": "docs/prose/messaging-cp5.feature",
+  "title": "a consumer has exactly-once effect",
+  "scenarios": [
+   "a consumer killed between commit and ack does not repeat its effect (\u00a711 test 4)",
+   "long work heartbeats and permanent failure terminates",
+   "the library defaults are the spec's"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "dda3f64a3",
+  "pr": 838,
+  "ticket": "crew#639"
+ },
+ {
+  "feature": "docs/prose/messaging-cp6.feature",
+  "title": "permissions make the outbox the only path",
+  "scenarios": [
+   "an app credential cannot publish a business event (\u00a711 test 6)",
+   "the relay credential is narrow"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "dda3f64a3",
+  "pr": 838,
+  "ticket": "crew#639"
+ },
+ {
+  "feature": "docs/prose/messaging-cp7.feature",
+  "title": "dead letters are captured, alerted and replayed by hand",
+  "scenarios": [
+   "a poison message lands in DLQ with its headers (\u00a711 test 5)",
+   "replay is a manual audited action"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "dda3f64a3",
+  "pr": 838,
+  "ticket": "crew#639"
+ },
+ {
+  "feature": "docs/prose/messaging-cp8.feature",
+  "title": "the bus is observed in the estate collector, never by scanning files",
+  "scenarios": [
+   "every messaging workload is seen by the backend (LAW 50)",
+   "one trace spans request, commit, publish and consumer",
+   "the seven alerts route to alertmanager"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "dda3f64a3",
+  "pr": 838,
+  "ticket": "crew#639"
+ },
+ {
+  "feature": "docs/prose/messaging-cp9.feature",
+  "title": "the platform is accepted, backed up and demoed",
+  "scenarios": [
+   "the eight acceptance tests are green on the throwaway cluster",
+   "node loss is survived and two-node loss halts cleanly (\u00a711 test 3)",
+   "a stream backup restores and replays with correct dedupe (\u00a711 test 8)",
+   "the demo and the onboarding exist"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "dda3f64a3",
+  "pr": 838,
+  "ticket": "crew#639"
+ },
+ {
+  "feature": "docs/prose/operating-model-gate-callers.feature",
+  "title": "Every active estate repo runs the one operating-model gate",
+  "scenarios": [
+   "Every active estate repo runs the one gate, with the policy in one place"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "75b90aaea",
+  "pr": 216,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp10_urgency.feature",
+  "title": "Urgency \u2014 open decision, default is never interrupt",
+  "scenarios": [
+   "An urgent phone message during an active session changes nothing about it",
+   "An urgent card is flagged, once confirmed"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp11_persistence.feature",
+  "title": "Persistence \u2014 the platform holds the record, not vendor chat",
+  "scenarios": [
+   "A draft survives losing the Telegram conversation"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp12_provider_agnostic.feature",
+  "title": "Provider agnostic \u2014 the model and the transport are both swappable",
+  "scenarios": [
+   "The flow's logic carries no vendor-specific import"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp1_continuity.feature",
+  "title": "Continuity \u2014 an active laptop session is never touched by the phone flow",
+  "scenarios": [
+   "An active session finishes on its own after he leaves",
+   "A phone message during the session injects nothing into it"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp2_phone_ingress.feature",
+  "title": "Phone ingress \u2014 hermes-v2 never touches the active laptop session",
+  "scenarios": [
+   "hermes-v2 and the active session are separate processes"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp3_preflight_dedup.feature",
+  "title": "Pre-flight dedup \u2014 hermes-v2 checks the board before drafting",
+  "scenarios": [
+   "A matching card already exists",
+   "No match exists"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp4_mode_detection.feature",
+  "title": "Mode detection \u2014 exploring stays talk, building drafts a feature",
+  "scenarios": [
+   "Exploratory phrasing enters sounding-board mode",
+   "Build phrasing enters PM mode"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp5_confirmation_gate.feature",
+  "title": "Confirmation gate \u2014 hermes-v2 never writes to the board unannounced",
+  "scenarios": [
+   "A draft is shown before any board write",
+   "The board write matches the button tapped",
+   "Drop writes nothing"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp6_icebox.feature",
+  "title": "Icebox \u2014 kept ideas do not enter the work queue",
+  "scenarios": [
+   "An Icebox card is never claimed"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp7_dispatch.feature",
+  "title": "Dispatch \u2014 the watched column starts work when the laptop is awake",
+  "scenarios": [
+   "A card starts within one poll cycle while awake",
+   "A card waits while the laptop sleeps"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp8_welcome_back.feature",
+  "title": "Welcome back \u2014 the two branches never conflict",
+  "scenarios": [
+   "Both branches coexist without conflict"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp9_later_activation.feature",
+  "title": "Later activation \u2014 an Icebox idea becomes work, still gated",
+  "scenarios": [
+   "Activating an Icebox card drafts a feature file",
+   "The move still requires the confirmation gate"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/self-aware-platform/cp4_get_catalog_drift.feature",
+  "title": "get_catalog_drift \u2014 dark matter is visible, on the laptop substrate",
+  "scenarios": [
+   "A launchd job with no catalog entity is reported as drift",
+   "A colima container with no catalog entity is reported as drift",
+   "A port bound outside catalog/ports.yaml is reported as drift",
+   "Everything cataloged and running is not flagged",
+   "Drift detection reads typed annotations, never string-greps"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/self-aware-platform/cp5_event_aggregation.feature",
+  "title": "Event aggregation behind Temporal \u2014 a storm becomes one event",
+  "scenarios": [
+   "50 crashes in 10 seconds collapse to one event",
+   "Events outside the window are not merged",
+   "Storm test proves the collapse ratio",
+   "Aggregation does not drop information, only delivery count"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/self-aware-platform/cp6_propose_execute_state_hash.feature",
+  "title": "propose_action / execute_action carry a state hash, refuse on TOCTOU",
+  "scenarios": [
+   "A proposal carries the state hash it was computed against",
+   "Execute succeeds when state has not changed",
+   "Execute refuses when state changed between propose and approve \u2014 TOCTOU",
+   "A stale approval never mutates anything"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/self-aware-platform/cp7_token_receipt.feature",
+  "title": "Token receipt \u2014 the waste the founder named, measured before and after",
+  "scenarios": [
+   "The script defines three recurring questions",
+   "Before numbers are measured, not remembered",
+   "After numbers are measured against the new MCP surface",
+   "The receipt is the number, not a claim",
+   "The laptop path renders no key"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/self-aware-platform/cp8_k8s_adapter.feature",
+  "title": "k8s adapter \u2014 the same desired-vs-actual interface, deferred until a cluster exists",
+  "scenarios": [
+   "Desired-vs-actual is read through one interface, not two code paths",
+   "A k8s implementation of the interface can be registered without",
+   "The adapter is not activated against a live cluster yet"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0df4",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/verification-identity-live.feature",
+  "title": "The platform verifies its own health every hour with no person logged in",
+  "scenarios": [
+   "A runner grades the cluster's own verdict on the machine identity",
+   "Twenty-four hours with nobody awake"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "f0a726884",
+  "pr": 269,
+  "ticket": "crew#345"
+ },
+ {
+  "feature": "features/assurance/estate-next.feature",
+  "title": "What is planned, what is blocking, when (crew#403 CP6)",
+  "scenarios": [
+   "An open checkpoint with no Expect line is a red row",
+   "An open checkpoint named on a lane's red line is BLOCKING and dated",
+   "A handoff older than the lane window does not make a checkpoint ACTIVE"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_gate_estate_next.py"
   ],
   "status": "BOUND",
-  "added_in": "fd519c9b",
-  "pr": 3703,
+  "added_in": "a5d2421a7",
+  "pr": 402,
+  "ticket": "crew#403"
+ },
+ {
+  "feature": "features/assurance/trace-matrix.feature",
+  "title": "Every scenario traces to the test that runs it",
+  "scenarios": [
+   "A feature nothing runs is listed first and counted as a finding",
+   "A repository where every feature is bound passes the check",
+   "A feature under docs/prose is counted as PROSE, never as a finding"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_gate_trace_matrix.py"
+  ],
+  "status": "BOUND",
+  "added_in": "99d293969",
+  "pr": 389,
+  "ticket": "crew#495"
+ },
+ {
+  "feature": "features/cloud-agnostic/disposable-compute-universal-state.feature",
+  "title": "Disposable compute, universal state",
+  "scenarios": [
+   "No provider-specific service or annotation in the platform"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_gate_cloud_agnostic.py"
+  ],
+  "status": "BOUND",
+  "added_in": "4f833833b",
+  "pr": 124,
+  "ticket": null
+ },
+ {
+  "feature": "features/fleetview/cp1_contract.feature",
+  "title": "CP1 the session contract",
+  "scenarios": [
+   "the backend lists sessions from the sovereign engine",
+   "the stream sends a change",
+   "the route answers the spec's done-command",
+   "a catalogue that cannot be read leaves the rest of the board live"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_fleetview_cp1.py"
+  ],
+  "status": "BOUND",
+  "added_in": "7bce6f5c8",
+  "pr": 2619,
+  "ticket": null
+ },
+ {
+  "feature": "features/fleetview/cp2_board.feature",
+  "title": "CP2 the board",
+  "scenarios": [
+   "a running session is on the board",
+   "the board updates itself"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_fleetview_cp2.py"
+  ],
+  "status": "BOUND",
+  "added_in": "7bce6f5c8",
+  "pr": 2619,
+  "ticket": null
+ },
+ {
+  "feature": "features/gates/budget-governor.feature",
+  "title": "A reasoning run is halted the instant a ceiling trips, and the best-so-far plan survives",
+  "scenarios": [
+   "A run repeats tool calls past the per-goal branch budget",
+   "A run finishes its declared plan inside its budget",
+   "The transcript cannot be read"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_budget_governor.py"
+  ],
+  "status": "BOUND",
+  "added_in": "b44756c88",
+  "pr": 3464,
+  "ticket": null
+ },
+ {
+  "feature": "features/gates/capacity-cap.feature",
+  "title": "paid capacity is auto-defaulted up to the founder's cap and refused above it",
+  "scenarios": [
+   "a node pool under the cap is STAGED, never asked",
+   "a node pool over the cap is a paid billing authorisation",
+   "a missing price row or cap is BLIND, not zero"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_gate_capacity_cap.py"
+  ],
+  "status": "BOUND",
+  "added_in": "834b06aa1",
+  "pr": 160,
+  "ticket": "crew#289"
+ },
+ {
+  "feature": "features/gates/catalogue-links.feature",
+  "title": "Every Component in the catalogue carries a URL a person can open",
+  "scenarios": [
+   "The clean inventory yields a catalogue where every Component has a URL",
+   "A checkout with no remote is refused",
+   "No catalogue on this machine"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_gate_catalogue_links.py"
+  ],
+  "status": "BOUND",
+  "added_in": "c5984576c",
+  "pr": 145,
+  "ticket": "crew#269"
+ },
+ {
+  "feature": "features/gates/compiled-helm-published.feature",
+  "title": "the compiled estate is published and read on the portal",
+  "scenarios": [
+   "CI compiles the estate on every pull request",
+   "the compiled document reaches the portal",
+   "a disagreement between a claim and a rendered value is visible"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_compiled_helm_published.py"
+  ],
+  "status": "BOUND",
+  "added_in": "4f4a09f6c",
+  "pr": 3284,
+  "ticket": null
+ },
+ {
+  "feature": "features/gates/compiled-helm.feature",
+  "title": "the estate is compiled from git before its numbers are believed",
+  "scenarios": [
+   "a rendered workload declares the resources the estate intends",
+   "every release renders, so no chart is a blind spot"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_compiled_helm.py"
+  ],
+  "status": "BOUND",
+  "added_in": "4f4a09f6c",
+  "pr": 3284,
+  "ticket": null
+ },
+ {
+  "feature": "features/gates/contract-executor.feature",
+  "title": "A tool call's post-condition is checked by a deterministic script, not the agent",
+  "scenarios": [
+   "The post-condition never holds by its deadline",
+   "Both conditions hold",
+   "A subject has no observation at all",
+   "The contract file cannot be read"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_contract_executor.py"
+  ],
+  "status": "BOUND",
+  "added_in": "22268b893",
+  "pr": null,
   "ticket": null
  },
  {
@@ -1851,7 +1879,7 @@
    "sovereign/tests/bdd/test_epistemic_and_trajectory.py"
   ],
   "status": "BOUND",
-  "added_in": "e48c6919",
+  "added_in": "e48c69194",
   "pr": 3243,
   "ticket": null
  },
@@ -1869,7 +1897,7 @@
    "sovereign/tests/bdd/test_gate_estate_zone.py"
   ],
   "status": "BOUND",
-  "added_in": "014b997d",
+  "added_in": "014b997de",
   "pr": 140,
   "ticket": null
  },
@@ -1893,23 +1921,9 @@
    "sovereign/tests/bdd/test_forge_guard_bdd.py"
   ],
   "status": "BOUND",
-  "added_in": "fd519c9b",
+  "added_in": "fd519c9bd",
   "pr": 3703,
   "ticket": null
- },
- {
-  "feature": "features/gates/front-door-login.feature",
-  "title": "The front door is a federated login with no local password",
-  "scenarios": [
-   "No manifest holds a user database"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_front_door_login.py"
-  ],
-  "status": "BOUND",
-  "added_in": "79ff26c5",
-  "pr": 144,
-  "ticket": "crew#269"
  },
  {
   "feature": "features/gates/github-app-per-lane.feature",
@@ -1922,7 +1936,7 @@
    "sovereign/tests/bdd/test_gate_github_app.py"
   ],
   "status": "BOUND",
-  "added_in": "b1e4c0c4",
+  "added_in": "b1e4c0c43",
   "pr": 168,
   "ticket": "crew#286"
  },
@@ -1943,7 +1957,7 @@
    "sovereign/tests/bdd/test_judge_drift_bdd.py"
   ],
   "status": "BOUND",
-  "added_in": "fd519c9b",
+  "added_in": "fd519c9bd",
   "pr": 3703,
   "ticket": null
  },
@@ -1957,7 +1971,7 @@
    "sovereign/tests/bdd/test_gate_langfuse_render.py"
   ],
   "status": "BOUND",
-  "added_in": "b4bb6576",
+  "added_in": "b4bb65765",
   "pr": 162,
   "ticket": "crew#286"
  },
@@ -1972,7 +1986,7 @@
    "sovereign/tests/bdd/test_gate_llm_admission.py"
   ],
   "status": "BOUND",
-  "added_in": "73640ff4",
+  "added_in": "73640ff49",
   "pr": 253,
   "ticket": "crew#284"
  },
@@ -1989,7 +2003,7 @@
    "sovereign/tests/bdd/test_gate_model_routing_bdd.py"
   ],
   "status": "BOUND",
-  "added_in": "da950638",
+  "added_in": "da950638e",
   "pr": 225,
   "ticket": "crew#284"
  },
@@ -2010,25 +2024,8 @@
    "sovereign/tests/bdd/test_orchestrator_routing_bdd.py"
   ],
   "status": "BOUND",
-  "added_in": "fd519c9b",
+  "added_in": "fd519c9bd",
   "pr": 3703,
-  "ticket": null
- },
- {
-  "feature": "features/gates/placement-published.feature",
-  "title": "placement is measured, published and read on the portal",
-  "scenarios": [
-   "the cluster publishes its placement receipt",
-   "the render carries the placement document forward",
-   "the portal reads it through the proxy it already has",
-   "a cluster at its request ceiling is explained, never just reported"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_placement_published.py"
-  ],
-  "status": "BOUND",
-  "added_in": "d0ffce9f",
-  "pr": 3254,
   "ticket": null
  },
  {
@@ -2041,7 +2038,7 @@
    "sovereign/tests/bdd/test_gate_plist_gate.py"
   ],
   "status": "BOUND",
-  "added_in": "0a8807c2",
+  "added_in": "0a8807c2a",
   "pr": 207,
   "ticket": "crew#297"
  },
@@ -2057,7 +2054,7 @@
    "sovereign/tests/bdd/test_reasoning_gateway.py"
   ],
   "status": "BOUND",
-  "added_in": "b44756c8",
+  "added_in": "b44756c88",
   "pr": 3464,
   "ticket": null
  },
@@ -2078,7 +2075,7 @@
    "sovereign/tests/bdd/test_shadow_verify_bdd.py"
   ],
   "status": "BOUND",
-  "added_in": "fd519c9b",
+  "added_in": "fd519c9bd",
   "pr": 3703,
   "ticket": null
  },
@@ -2092,13 +2089,18 @@
    "The SQL domain fails while code and the manifest are sound",
    "The agent calls seal_mutation before verify_mutation ever passed",
    "An unattested bundle attempts to be admitted",
-   "A validly attested bundle is admitted to a new branch, never main"
+   "A validly attested bundle is admitted to a new branch, never main",
+   "A proposal arrives with no reversibility envelope",
+   "A proposal carries an inverse that merely echoes the forward action",
+   "A proposal claims an irreversible exemption with a forged token",
+   "A proposal carries a deterministic inverse with a state probe",
+   "The inverse's probe is run against state the forward created"
   ],
   "bound_by": [
    "sovereign/tests/bdd/test_typed_multidomain_mutation_ledger.py"
   ],
   "status": "BOUND",
-  "added_in": "56f087a6",
+  "added_in": "56f087a6f",
   "pr": 3500,
   "ticket": null
  },
@@ -2113,7 +2115,7 @@
    "sovereign/tests/bdd/test_identity_front_door.py"
   ],
   "status": "BOUND",
-  "added_in": "464007c4",
+  "added_in": "464007c44",
   "pr": 163,
   "ticket": "crew#269"
  },
@@ -2129,7 +2131,7 @@
    "sovereign/tests/bdd/test_self_aware_cp1.py"
   ],
   "status": "BOUND",
-  "added_in": "db879973",
+  "added_in": "db879973b",
   "pr": 74,
   "ticket": "crew#216"
  },
@@ -2145,7 +2147,7 @@
    "sovereign/tests/bdd/test_self_aware_cp2.py"
   ],
   "status": "BOUND",
-  "added_in": "db879973",
+  "added_in": "db879973b",
   "pr": 74,
   "ticket": "crew#216"
  },
@@ -2161,7 +2163,7 @@
    "sovereign/tests/bdd/test_self_aware_cp3.py"
   ],
   "status": "BOUND",
-  "added_in": "db879973",
+  "added_in": "db879973b",
   "pr": 74,
   "ticket": "crew#216"
  },
@@ -2177,7 +2179,7 @@
    "sovereign/tests/bdd/test_cp0_temporal_in_cluster.py"
   ],
   "status": "BOUND",
-  "added_in": "c2733b99",
+  "added_in": "c2733b992",
   "pr": 271,
   "ticket": "crew#396"
  },
@@ -2193,39 +2195,8 @@
    "sovereign/tests/bdd/test_cp0b_worker_in_cluster.py"
   ],
   "status": "BOUND",
-  "added_in": "c2733b99",
+  "added_in": "c2733b992",
   "pr": 271,
-  "ticket": "crew#396"
- },
- {
-  "feature": "features/sovereign-bus/cp0c_kini_finish_workflow.feature",
-  "title": "The KINI checkpoints finish as one durable workflow",
-  "scenarios": [
-   "Every checkpoint verdict comes from pytest's exit, and the unknown branch is never silent",
-   "A checkpoint that flakes is retried and a platform fault is healed, not failed",
-   "The workflow and both activities are on the worker the cluster runs"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_cp0c_kini_finish_workflow.py"
-  ],
-  "status": "BOUND",
-  "added_in": "41324566",
-  "pr": 277,
-  "ticket": "crew#396"
- },
- {
-  "feature": "features/sovereign-bus/cp0d_kini_finish_trigger.feature",
-  "title": "CP0d \"Finish KINI\" is one word, and the answer is a receipt (crew#396 step 4)",
-  "scenarios": [
-   "the receipt head is total and the reader grades every branch both ways",
-   "the trigger is wired end to end in git"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_cp0d_kini_finish_trigger.py"
-  ],
-  "status": "BOUND",
-  "added_in": "164f0b75",
-  "pr": 280,
   "ticket": "crew#396"
  },
  {
@@ -2240,7 +2211,7 @@
    "sovereign/tests/bdd/test_cp23.py"
   ],
   "status": "BOUND",
-  "added_in": "2f0123f8",
+  "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
  },
@@ -2255,7 +2226,7 @@
    "sovereign/tests/bdd/test_cp24.py"
   ],
   "status": "BOUND",
-  "added_in": "2f0123f8",
+  "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
  },
@@ -2270,7 +2241,7 @@
    "sovereign/tests/bdd/test_cp25.py"
   ],
   "status": "BOUND",
-  "added_in": "2f0123f8",
+  "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
  },
@@ -2286,7 +2257,7 @@
    "sovereign/tests/bdd/test_cp26.py"
   ],
   "status": "BOUND",
-  "added_in": "2f0123f8",
+  "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
  },
@@ -2302,7 +2273,7 @@
    "sovereign/tests/bdd/test_cp27.py"
   ],
   "status": "BOUND",
-  "added_in": "2f0123f8",
+  "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
  },
@@ -2317,7 +2288,7 @@
    "sovereign/tests/bdd/test_cp28.py"
   ],
   "status": "BOUND",
-  "added_in": "2f0123f8",
+  "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
  },
@@ -2333,7 +2304,7 @@
    "sovereign/tests/bdd/test_cp29.py"
   ],
   "status": "BOUND",
-  "added_in": "2f0123f8",
+  "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
  },
@@ -2349,7 +2320,7 @@
    "sovereign/tests/bdd/test_cp2_litellm_real.py"
   ],
   "status": "BOUND",
-  "added_in": "39fce30f",
+  "added_in": "39fce30fc",
   "pr": 179,
   "ticket": "crew#284"
  },
@@ -2368,7 +2339,7 @@
    "sovereign/tests/bdd/test_cp30.py"
   ],
   "status": "BOUND",
-  "added_in": "2f0123f8",
+  "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
  },
@@ -2386,7 +2357,7 @@
    "sovereign/tests/bdd/test_cp31.py"
   ],
   "status": "BOUND",
-  "added_in": "2f0123f8",
+  "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
  },
@@ -2403,7 +2374,7 @@
    "sovereign/tests/bdd/test_cp32.py"
   ],
   "status": "BOUND",
-  "added_in": "2f0123f8",
+  "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
  },
@@ -2417,7 +2388,7 @@
    "sovereign/tests/bdd/test_cp33.py"
   ],
   "status": "BOUND",
-  "added_in": "2f0123f8",
+  "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
  },
@@ -2431,7 +2402,7 @@
    "sovereign/tests/bdd/test_cp34.py"
   ],
   "status": "BOUND",
-  "added_in": "2f0123f8",
+  "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
  },
@@ -2445,7 +2416,7 @@
    "sovereign/tests/bdd/test_cp35.py"
   ],
   "status": "BOUND",
-  "added_in": "2f0123f8",
+  "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
  },
@@ -2462,7 +2433,7 @@
    "sovereign/tests/bdd/test_cp36.py"
   ],
   "status": "BOUND",
-  "added_in": "e364d5f0",
+  "added_in": "e364d5f0c",
   "pr": 157,
   "ticket": "crew#284"
  },
@@ -2477,26 +2448,9 @@
    "sovereign/tests/bdd/test_cp37.py"
   ],
   "status": "BOUND",
-  "added_in": "fa6feec2",
+  "added_in": "fa6feec2b",
   "pr": 158,
   "ticket": "crew#284"
- },
- {
-  "feature": "features/sovereign-bus/cp6_provider_agnostic.feature",
-  "title": "Provider agnostic \u2014 the runner and the model are configuration, never code",
-  "scenarios": [
-   "The engine runs a step with no vendor present",
-   "No vendor import in the engine",
-   "No hardcoded home, host or checkout",
-   "A new provider is one registry entry, not a code change"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_cp6_provider_agnostic.py"
-  ],
-  "status": "BOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
  },
  {
   "feature": "features/stale_pr.feature",
@@ -2511,7 +2465,7 @@
    "sovereign/tests/bdd/test_stale_pr.py"
   ],
   "status": "BOUND",
-  "added_in": "370bdb2d",
+  "added_in": "370bdb2dc",
   "pr": 194,
   "ticket": "crew#299"
  },
@@ -2523,7 +2477,6 @@
    "A deployment scaled to zero is dead, not absent",
    "A capability stranded on a branch is visible",
    "A branch that only edits existing files is not stranded",
-   "The twin and the catalogue generator cannot disagree",
    "A stopped emitter is visible as stale, not as healthy",
    "Replaying the same events changes nothing",
    "The twin adds no second store, bus or server"
@@ -2532,7 +2485,7 @@
    "sovereign/tests/bdd/test_estate_twin.py"
   ],
   "status": "BOUND",
-  "added_in": "8bc42d1a",
+  "added_in": "8bc42d1a4",
   "pr": 3364,
   "ticket": null
  },
@@ -2551,7 +2504,7 @@
    "sovereign/tests/bdd/test_harness.py"
   ],
   "status": "BOUND",
-  "added_in": "d1ea142d",
+  "added_in": "d1ea142d9",
   "pr": null,
   "ticket": "crew#219"
  },
@@ -2565,7 +2518,7 @@
    "sovereign/tests/fixtures/bdd/unbound/test_unbound.py"
   ],
   "status": "BOUND",
-  "added_in": "d1ea142d",
+  "added_in": "d1ea142d9",
   "pr": null,
   "ticket": "crew#219"
  }
