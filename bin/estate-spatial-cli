@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""CP6 spatial steering: turn a voice phrase like 'the one on the left' into a
+real session_id from the live fleet.
+
+The chain:
+  voice phrase  ->  bin/estate-spatial-cli  ->  lib/estate_spatial.resolve
+                                           ->  mcp/plugins/deploy_journeys
+                                           ->  sha (or named miss)
+
+This is the smallest piece of CP6 that ships end-to-end. The voice service
+(backstage/plugins/fleetview-backend/src/voice.py) can call this as a fast-path
+when the user's intent is spatial rather than named: skip the LLM, return the
+resolved sha with a one-line spoken acknowledgement, and let the action happen
+elsewhere (CP6 routing is read-only here).
+
+Usage:
+  bin/estate-spatial-cli "<phrase>" [--limit N]
+  echo '<phrase>' | bin/estate-spatial-cli
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "lib"))
+sys.path.insert(0, str(ROOT / "mcp" / "plugins"))
+
+import deploy_journeys as _plugin  # noqa: E402
+import estate_spatial as _spatial  # noqa: E402
+
+
+def _live_comets(limit: int) -> list[str]:
+    """The comet list the user is looking at, in started_at order (oldest first
+    so 'leftmost' = oldest). When the river is BLIND we fall back to the last N
+    merged journeys so the resolver still has something concrete to point at."""
+    env = _plugin.list_deploy_journeys(limit=limit)
+    if not env["available"]:
+        return []
+    shas = [j["sha"] for j in (env.get("journeys") or [])]
+    return list(reversed(shas))  # oldest -> leftmost
+
+
+def route(phrase: str, limit: int = 8) -> dict:
+    """The full CP6 chain. Returns one envelope:
+        {"available": bool, "sha": ..., "rule": ..., "error": ...}
+    Never invents a session. BLIND on empty comet list with a named reason."""
+    comets = _live_comets(limit)
+    resolved = _spatial.resolve(phrase, comets)
+    if not resolved["available"]:
+        return resolved
+    if resolved.get("sha") is None:
+        return resolved
+    return {
+        "available": True,
+        "sha": resolved["sha"],
+        "rule": resolved.get("rule"),
+        "phrase": phrase,
+        "comet_count": len(comets),
+    }
+
+
+def main():
+    p = argparse.ArgumentParser(description="CP6 spatial steering")
+    p.add_argument(
+        "phrase",
+        nargs="?",
+        default="",
+        help="spatial intent phrase (e.g. 'the one on the left')",
+    )
+    p.add_argument(
+        "--limit", type=int, default=8, help="max comets to consider (default 8)"
+    )
+    p.add_argument("--json-pretty", action="store_true")
+    args = p.parse_args()
+    phrase = args.phrase or sys.stdin.read().strip()
+    result = route(phrase, limit=args.limit)
+    if args.json_pretty:
+        print(json.dumps(result, indent=2))
+    else:
+        print(json.dumps(result))
+
+
+if __name__ == "__main__":
+    main()
