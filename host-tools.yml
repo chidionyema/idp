@@ -1,0 +1,75 @@
+# The declared host tool set -- what must exist on a machine that runs this estate.
+#
+# Read by `bin/idp-host-drift`, which measures this list against what is actually present and
+# reports three counters: missing (declared, absent), shadowed (present twice, PATH resolving
+# to the undeclared one), and undeclared (present and working, but no row here names it).
+#
+# WHY A FILE. Before this, the declared set lived in `bin/idp-install-deps` as local shell
+# variables -- a list that KNOWS what should exist and is never compared against what does.
+# The 2026-09-23 audit found eight hand-installed items on the founder's Mac, three of them
+# load-bearing for gates that pass: ruff (the gate's own checker), jsonschema (a runtime
+# import of voice_media.py), and /usr/local/bin/timeout (the executor's wrapper).
+#
+# `paths` is tried in order; the first existing file wins. `version_command` is run only when
+# present, and its failure is reported, never raised -- a broken binary is a finding, not an
+# exception.
+tools:
+  - name: ruff
+    paths:
+      - ~/Library/Python/3.9/bin/ruff
+      - ~/.cache/estate-tools/ruff
+    version: "0.15.18"
+    version_command: [python3, -m, ruff, --version]
+    why: bin/idp-ruff and the pre-push gate both invoke it as a module.
+
+  - name: jsonschema
+    paths: []
+    version: "4.26.0"
+    version_command: [python3, -c, "import jsonschema; print(jsonschema.__version__)"]
+    why: runtime import of backstage/plugins/fleetview-backend/src/voice_media.py.
+
+  - name: kyverno
+    paths: [~/.cache/estate-tools/kyverno]
+    version: "1.19.0"
+    version_command: [~/.cache/estate-tools/kyverno, version]
+    why: policy admission render, pinned by bin/idp-install-deps.
+
+  - name: conftest
+    paths:
+      - ~/.cache/estate-tools/conftest
+      - ~/.local/bin/conftest
+    version: "0.62.0"
+    version_command: [~/.cache/estate-tools/conftest, --version]
+    why: policy tests. Two copies present on 2026-09-23 -- the shadowed case.
+
+  - name: helm
+    paths:
+      - ~/.cache/estate-tools/helm
+      - ~/.rd/bin/helm
+    version: "3.19.0"
+    version_command: [~/.cache/estate-tools/helm, version, --short]
+    why: manifest render. Rancher Desktop ships its own; PATH may resolve to it.
+
+  - name: flux
+    paths: [~/.cache/estate-tools/flux]
+    version: "2.9.4"
+    version_command: [~/.cache/estate-tools/flux, --version]
+    why: Flux CLI, pinned by bin/idp-install-deps.
+
+  - name: kustomize
+    paths: [~/.cache/estate-tools/kustomize]
+    version: "5.7.1"
+    version_command: [~/.cache/estate-tools/kustomize, version]
+    why: Kustomization build, pinned by bin/idp-install-deps.
+
+  - name: kubeconform
+    paths: [~/.cache/estate-tools/kubeconform]
+    version: "0.8.0"
+    version_command: [~/.cache/estate-tools/kubeconform, -v]
+    why: schema validation, pinned by bin/idp-install-deps.
+
+  - name: timeout
+    paths: [/usr/local/bin/timeout, /opt/homebrew/bin/gtimeout]
+    why: >-
+      the executor daemon's 60s wrapper. Its absence stops EVERY command capability --
+      measured 2026-09-23, when it reported ECONNREFUSED-adjacent 127 errors on every job.

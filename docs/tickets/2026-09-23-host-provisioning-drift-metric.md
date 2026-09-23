@@ -79,17 +79,28 @@ estate_host_drift_undeclared_total
 
 ## The work
 
-1. **Declare.** The host tool set becomes a file, not a script's local variables: what must exist,
-   at which version, at which path, for which interpreter. `bin/idp-install-deps` reads it, so
-   there is one list rather than a script and a document that drift apart.
-2. **Measure.** A `bin/idp-host-drift` that compares declared to present and emits the three
-   counters. Follows `bin/estate-drift-reconciler`'s shape: deterministic, model-free, **reports
-   only, never installs or deletes** (the suggest-only boundary).
-3. **Surface.** Publish the counters to the existing metric layer (`platform/telemetry/` →
-   the collector that already runs). No new store, no new endpoint.
-4. **Gate.** `--check` exits non-zero on drift, for a preflight — but as a **WARN** on a host that
-   cannot yet satisfy the declaration, never a refusal, until the declaration and the bootstrap
-   agree (LAW 38: a fence a correct machine cannot satisfy is an outage).
+**STEP 1 OF 4 IS LANDED. THE REMAINING THREE ARE THIS TICKET.**
+
+1. ✅ **Declare.** `host-tools.yml` at the repo root names what must exist, at which version, at
+   which path, and why each matters. This is the declaration; it is not yet read by
+   `bin/idp-install-deps`, which still carries its own local list of six pinned versions.
+2. ✅ **Measure (partial).** `bin/idp-host-drift` compares declared to present and reports
+   `missing` / `shadowed` / `undeclared`. The `undeclared` counter is **not yet real**: it is a
+   placeholder that returns 0, because computing it requires the installer's own known-tool list
+   to compare against, and that list still lives in shell variables. **This is the first thing to
+   finish**, since `undeclared` is the counter that catches a hand-install.
+3. ⬜ **Surface — the only step that makes this not theatre.** The counters must reach a surface
+   the founder reads. The estate's Definition of Done is explicit: Telegram, crew#102, or
+   mumchimp.com, and *a JSONL ledger or a TechDocs page is ghost code*. The natural surface is
+   **`bin/idp-status`** ("what is serving right now, one line per fact, each from a probe") — add
+   one probe row there, and/or publish to the collector `platform/telemetry/` already feeds.
+   Until this step is done, `bin/idp-host-drift` is a tool nobody runs, which is the same as not
+   existing.
+4. ⬜ **Wire into bootstrap.** `bin/idp-install-deps` reads `host-tools.yml` instead of its own
+   variables, so the declaration and the installer cannot drift apart. Then, and only then, a
+   `--check` preflight — as a **WARN** on a host that cannot yet satisfy the declaration, never a
+   refusal, until a fresh host reaches green by the declared path alone (LAW 38: a fence a correct
+   machine cannot satisfy is an outage).
 
 ## Acceptance
 
