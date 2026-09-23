@@ -172,7 +172,6 @@ Core platform functionality, administration, and operational commands.
 | `idp-session-gate` | Gate session operations |
 | `idp-set-root` | Set founder's root provider (crew#66) |
 | `idp-shadow` | Shadow mode operations |
-| `idp-shadow-run` | Run in shadow mode |
 | `idp-shadow-sync` | Sync shadow state |
 | `idp-shadow-verify` | Verify shadow mode |
 | `idp-shop-backup` | Backup shop database (crew#713 CP3) |
