@@ -270,6 +270,16 @@ else
   fail=1
 fi
 
+# 4a-validator. Layer 1 Prevention: validate catalog data integrity before merge.
+# Catches invalid URLs, missing fields, broken references -- the corruption that
+# caused silent Backstage failures (crew#911 2026-09-16).
+if python3 "$IDP/bin/idp-catalog-validator" --strict "$IDP/backstage/platform/catalog-info.yaml" >/dev/null 2>&1; then
+  say "ok    catalog   all link URLs valid, required fields present, no self-references"
+else
+  say "FAIL  catalog   catalog data validation failed (run: bin/idp-catalog-validator --strict backstage/platform/catalog-info.yaml)"
+  fail=1
+fi
+
 # 4a. Ports: the catalog is the port registry. catalog-gen must refuse an
 #     inventory where two things claim one port and pass one where they do not.
 #     3200 went to the scheduler UI while an ssh forward held it (2026-08-24).
