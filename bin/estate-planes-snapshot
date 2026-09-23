@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""CP5 Observatory snapshot: the three rings' data, one frame.
+
+Ring 1 (Jev):    jev_decisions, last N
+Ring 2 (judges): assets of type=redteam / payload, last N
+Ring 3 (Physics): assets of type=seal / aevum / crystal, last N
+
+The rings render this; the snapshot is a single sqlite read joined by plane.
+"""
+
+from __future__ import annotations
+
+import importlib.machinery
+import importlib.util
+import json
+import os
+import sqlite3
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "mcp" / "plugins"))
+
+import deploy_journeys as _plugin  # noqa: E402
+
+
+def _connect():
+    return sqlite3.connect(_plugin._db_path())
+
+
+def _ring_jev(limit: int) -> list[dict]:
+    con = _connect()
+    try:
+        rows = con.execute(
+            "SELECT id, layer, decision_id, question, answer, confidence,"
+            " probabilities, escalated, latency_ms, created_at"
+            " FROM jev_decisions ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    con.close()
+    return [
+        {
+            "id": r[0],
+            "layer": r[1],
+            "decision_id": r[2],
+            "question": r[3],
+            "answer": r[4],
+            "confidence": r[5],
+            "probabilities": r[6],
+            "escalated": bool(r[7]),
+            "latency_ms": r[8],
+            "created_at": r[9],
+        }
+        for r in rows
+    ]
+
+
+def _ring_judges(limit: int) -> list[dict]:
+    con = _connect()
+    try:
+        rows = con.execute(
+            "SELECT id, name, plane, type, verdict, why, licence_file FROM assets"
+            " WHERE type IN ('redteam','payload','judge','mutation')"
+            " ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    con.close()
+    return [
+        {
+            "id": r[0],
+            "name": r[1],
+            "plane": r[2],
+            "type": r[3],
+            "verdict": r[4],
+            "why": r[5],
+            "licence_file": r[6],
+        }
+        for r in rows
+    ]
+
+
+def _ring_physics(limit: int) -> list[dict]:
+    con = _connect()
+    try:
+        rows = con.execute(
+            "SELECT id, name, plane, type, verdict, why, licence_file FROM assets"
+            " WHERE type IN ('seal','aevum','crystal','z3','attestation')"
+            " ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    con.close()
+    return [
+        {
+            "id": r[0],
+            "name": r[1],
+            "plane": r[2],
+            "type": r[3],
+            "verdict": r[4],
+            "why": r[5],
+            "licence_file": r[6],
+        }
+        for r in rows
+    ]
+
+
+def snapshot(limit: int = 25) -> dict:
+    if not Path(_plugin._db_path()).exists():
+        return {"available": False, "rings": {}, "error": "ledger missing"}
+    return {
+        "available": True,
+        "rings": {
+            "jev": _ring_jev(limit),
+            "judges": _ring_judges(limit),
+            "physics": _ring_physics(limit),
+        },
+    }
+
+
+def main():
+    if "--json-pretty" in sys.argv:
+        print(json.dumps(snapshot(), indent=2))
+    else:
+        print(json.dumps(snapshot()))
+
+
+if __name__ == "__main__":
+    main()
