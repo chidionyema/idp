@@ -24,6 +24,10 @@ import sys
 import tempfile
 
 RULES = "E9,F,B,S"
+# S603/S607 fire on every list-form subprocess call; they are not defects. Kept as its own name
+# because the rung passes it to both the per-file check and the --fix pass, and a literal in two
+# places is a divergence waiting to happen.
+IGNORE = "S603,S607"
 # TEST-CODE EXEMPTIONS. The globs here are `ruff`'s, and `tests/*` matches only a DIRECT child
 # of tests/ -- it never matched `sovereign/tests/bdd/...`, which is why 24 test files failed this
 # rung on 2026-09-23 after the 318-branch consolidation. `**/tests/**` covers nested suites.
