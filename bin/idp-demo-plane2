@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Plane 2 demo (Crucible): proves judge scoring + red team defeating work.
+
+Usage: bin/idp-demo-plane2 [--json]
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "platform" / "executor"))
+
+import daemon as _daemon  # noqa: E402
+
+
+def compose() -> dict:
+    steps = []
+    runs = Path(tempfile.mkdtemp(prefix="idp-plane2-"))
+    os.environ["IDP_EXECUTOR_RUNS"] = str(runs)
+    with _daemon._REPLICAS_LOCK:
+        _daemon._REPLICAS.clear()
+    _daemon._JUDGE_STATS.update({"scored": 0, "errors": 0})
+    _daemon._REDTEAM_STATS.update({"defeated": 0, "errors": 0})
+    with _daemon._JUDGE_LOCK:
+        _daemon._JUDGE_SEEN.clear()
+    with _daemon._REDTEAM_LOCK:
+        _daemon._REDTEAM_SEEN.clear()
+
+    steps.append({"step": "setup", "ok": True, "detail": f"runs={runs}"})
+
+    sm_tx = _daemon._get_or_load_replica("p2-tx")
+    sm_tx.add(
+        action="transcript::t1",
+        result="tool_call tool_call args result",
+        takeaway="worker transcript",
+        symbol="transcript",
+    )
+    _daemon._persist_triplet(
+        "p2-tx",
+        "transcript::t1",
+        "tool_call tool_call args result",
+        "worker transcript",
+        "transcript",
+    )
+    steps.append(
+        {"step": "seed_transcript", "ok": True, "detail": "1 transcript triplet"}
+    )
+
+    judge = _daemon.Handler.__new__(_daemon.Handler)._judge_score(
+        {"replica_id": "p2-tx"}
+    )
+    steps.append(
+        {
+            "step": "judge_scores",
+            "ok": judge.get("ok") and judge.get("scored", 0) > 0,
+            "detail": f"scored={judge.get('scored')}",
+        }
+    )
+
+    verdicts = _daemon._get_or_load_replica("judge").top_k(symbol="verdict", k=8)
+    steps.append(
+        {
+            "step": "verdict_written",
+            "ok": len(verdicts) > 0,
+            "detail": f"verdict triplets={len(verdicts)}",
+        }
+    )
+
+    sm_code = _daemon._get_or_load_replica("p2-code")
+    sm_code.add(
+        action="code::auth.py",
+        result="def login(u,p): return check(u,p)",
+        takeaway="auth code",
+        symbol="code",
+    )
+    _daemon._persist_triplet(
+        "p2-code",
+        "code::auth.py",
+        "def login(u,p): return check(u,p)",
+        "auth code",
+        "code",
+    )
+    steps.append({"step": "seed_code", "ok": True, "detail": "1 code triplet"})
+
+    redteam = _daemon.Handler.__new__(_daemon.Handler)._redteam_defeat(
+        {"replica_id": "p2-code"}
+    )
+    steps.append(
+        {
+            "step": "redteam_defeats",
+            "ok": redteam.get("ok") and redteam.get("defeated", 0) > 0,
+            "detail": f"defeated={redteam.get('defeated')}",
+        }
+    )
+
+    shutil.rmtree(runs, ignore_errors=True)
+    overall = all(s["ok"] for s in steps)
+    return {"ok": overall, "plane": 2, "steps": steps}
+
+
+def main() -> int:
+    as_json = "--json" in sys.argv
+    result = compose()
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        print("=== Plane 2 (Crucible) ===")
+        print(f"overall: {'PASS' if result['ok'] else 'FAIL'}")
+        for s in result["steps"]:
+            mark = "OK  " if s["ok"] else "FAIL"
+            print(f"[{mark}] {s['step']:<24}  {s['detail']}")
+    return 0 if result["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
