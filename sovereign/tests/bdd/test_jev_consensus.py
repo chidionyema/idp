@@ -10,6 +10,7 @@ The critical behavior (skip vs fan-out) is tested by checking the length of
 the result and the jev_skip flag. The number of _one_vote calls is verified
 in separate integration tests that run against a real httpx mock.
 """
+
 from __future__ import annotations
 
 import asyncio

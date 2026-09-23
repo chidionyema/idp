@@ -5,6 +5,7 @@ Never opens maestro's real database -- every test builds its own
 disposable sqlite3 file and points config.SIDECAR_TARGET at that, same
 pattern as sovereign/sidecar/test_sidecar.py and test_dualread.py.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,19 +42,26 @@ class ForkTestBase(unittest.TestCase):
             p = patch.object(config, name, val)
             p.start()
             self.addCleanup(p.stop)
-        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
+        p = patch.object(
+            receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file")
+        )
         p.start()
         self.addCleanup(p.stop)
 
         self.conn = sqlite3.connect(str(self.db_path))
-        self.conn.execute("CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)")
+        self.conn.execute(
+            "CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)"
+        )
         self.conn.commit()
         self.addCleanup(self.conn.close)
         self.prod_dag_dir = root / "dag"
         self.sc = sidecar_core.attach(self.conn, "episodes", dag_dir=self.prod_dag_dir)
         # establish a real, non-genesis production root before any test
         # forks from it
-        self.conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)", ("seed", "ops", "n"))
+        self.conn.execute(
+            "INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)",
+            ("seed", "ops", "n"),
+        )
         self.conn.commit()
         self.sc.drain()
 
@@ -67,18 +75,28 @@ class ForkTestBase(unittest.TestCase):
 
 
 class ForkCreationPropertyTest(ForkTestBase):
-    def test_property_fork_creation_is_fast_matches_prod_root_and_never_touches_legacy(self) -> None:
+    def test_property_fork_creation_is_fast_matches_prod_root_and_never_touches_legacy(
+        self,
+    ) -> None:
         legacy_mtime_before = self.db_path.stat().st_mtime_ns
         prod_root = self._prod_root()
         for i in range(30):
             name = f"fork-{i}"
             result = fork.create(name)
-            self.assertLess(result["elapsed_ms"], config.FORK_MAX_MS, "fork under a second")
+            self.assertLess(
+                result["elapsed_ms"], config.FORK_MAX_MS, "fork under a second"
+            )
             self.assertEqual(result["root"], prod_root)
             on_disk = json.loads(fork.fork_head_path(name).read_text())
-            self.assertEqual(on_disk["root"], prod_root, ".estate/heads/<name> equals the current root")
+            self.assertEqual(
+                on_disk["root"],
+                prod_root,
+                ".estate/heads/<name> equals the current root",
+            )
         self.assertEqual(
-            self.db_path.stat().st_mtime_ns, legacy_mtime_before, "no file under the legacy DB changed"
+            self.db_path.stat().st_mtime_ns,
+            legacy_mtime_before,
+            "no file under the legacy DB changed",
         )
 
     def test_property_storage_flips_to_disk_exactly_at_the_cap(self) -> None:
@@ -87,21 +105,34 @@ class ForkCreationPropertyTest(ForkTestBase):
             with patch.object(config, "FORK_MAX_PARALLEL", cap):
                 for i in range(cap):
                     r = fork.create(f"f{cap}-{i}")
-                    self.assertEqual(r["storage"], "memory", f"fork {i} under cap {cap} must be memory")
+                    self.assertEqual(
+                        r["storage"],
+                        "memory",
+                        f"fork {i} under cap {cap} must be memory",
+                    )
                 over = fork.create(f"f{cap}-over")
-                self.assertEqual(over["storage"], "disk", "the cap is a key: crossing it flips storage")
+                self.assertEqual(
+                    over["storage"],
+                    "disk",
+                    "the cap is a key: crossing it flips storage",
+                )
 
 
 class ForkSwitchDropTest(ForkTestBase):
     def test_switch_and_drop_moves_pointer_and_archives_dag_nodes(self) -> None:
         fork.create("staging")
         conn, sc = fork.attach_sidecar("staging", "episodes")
-        conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)", ("s1", "ops", "note"))
+        conn.execute(
+            "INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)",
+            ("s1", "ops", "note"),
+        )
         conn.commit()
         sc.drain()
         conn.close()
 
-        dag_files_before = sorted(p.name for p in fork.fork_dag_dir("staging").glob("*.json"))
+        dag_files_before = sorted(
+            p.name for p in fork.fork_dag_dir("staging").glob("*.json")
+        )
         self.assertTrue(dag_files_before)
 
         fork.switch("staging")
@@ -109,10 +140,20 @@ class ForkSwitchDropTest(ForkTestBase):
 
         fork.drop("staging")
         self.assertNotIn("staging", fork.list_forks(), "the branch is gone from heads/")
-        self.assertEqual(fork.current(), config.SHADOW_HEAD_FILENAME, "drop switches back to production")
+        self.assertEqual(
+            fork.current(),
+            config.SHADOW_HEAD_FILENAME,
+            "drop switches back to production",
+        )
 
-        dag_files_after = sorted(p.name for p in fork.fork_dag_dir("staging").glob("*.json"))
-        self.assertEqual(dag_files_after, dag_files_before, "its DAG nodes remain, archived, never deleted")
+        dag_files_after = sorted(
+            p.name for p in fork.fork_dag_dir("staging").glob("*.json")
+        )
+        self.assertEqual(
+            dag_files_after,
+            dag_files_before,
+            "its DAG nodes remain, archived, never deleted",
+        )
 
     def test_switch_refuses_an_unknown_name(self) -> None:
         with self.assertRaises(fork.UnknownForkError):
@@ -124,7 +165,9 @@ class ForkSwitchDropTest(ForkTestBase):
 
 
 class ForkIncidentTest(ForkTestBase):
-    def test_incident_cp12_fork_writes_never_reach_production_receipts_or_root(self) -> None:
+    def test_incident_cp12_fork_writes_never_reach_production_receipts_or_root(
+        self,
+    ) -> None:
         """cp12's exact bar (features/sovereign-bus/cp12_ai_sandbox.feature,
         "Agent writes land on the fork only"): ten writes against a fork
         must leave production's root and receipts file untouched, and
@@ -136,26 +179,43 @@ class ForkIncidentTest(ForkTestBase):
         fork.create("staging")
         conn, sc = fork.attach_sidecar("staging", "episodes")
         for i in range(10):
-            conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)", (f"fk-{i}", "ops", "n"))
+            conn.execute(
+                "INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)",
+                (f"fk-{i}", "ops", "n"),
+            )
             conn.commit()
         processed = sc.drain()
         conn.close()
 
         self.assertEqual(processed, 10)
-        self.assertEqual(self._prod_root(), prod_root_before, "production's root is unchanged")
         self.assertEqual(
-            len(receipts.read_all()), prod_receipts_before, "production's receipts file gained no rows"
+            self._prod_root(), prod_root_before, "production's root is unchanged"
+        )
+        self.assertEqual(
+            len(receipts.read_all()),
+            prod_receipts_before,
+            "production's receipts file gained no rows",
         )
 
         fork_receipts_path, fork_head_path = fork.fork_receipts_paths("staging")
-        write_receipts = [r for r in receipts.read_all(fork_receipts_path) if r.get("kind") == "sidecar_write"]
-        self.assertEqual(len(write_receipts), 10, "staging's receipts chained separately, ten entries")
+        write_receipts = [
+            r
+            for r in receipts.read_all(fork_receipts_path)
+            if r.get("kind") == "sidecar_write"
+        ]
+        self.assertEqual(
+            len(write_receipts),
+            10,
+            "staging's receipts chained separately, ten entries",
+        )
 
         staging_root = json.loads(fork.fork_head_path("staging").read_text())["root"]
         self.assertNotEqual(staging_root, prod_root_before, "staging's root advanced")
 
         result = receipts.verify(fork_receipts_path, fork_head_path)
-        self.assertTrue(result["ok"], "the fork's own chain verifies on its own signed head anchor")
+        self.assertTrue(
+            result["ok"], "the fork's own chain verifies on its own signed head anchor"
+        )
 
 
 if __name__ == "__main__":

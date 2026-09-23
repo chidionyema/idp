@@ -2,6 +2,7 @@
     ESTATE_HOME=<scratch> PYTHONPATH=<idp> \
       sovereign/.venv/bin/python -m unittest sovereign.attach.test_attach -v
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -27,14 +28,21 @@ class PolicyClassificationTest(unittest.TestCase):
     def test_writes_require_a_receipt_commit(self) -> None:
         self.assertEqual(classify("edit file.py"), "write")
         self.assertTrue(requires_receipt_commit(classify("edit file.py")))
-        self.assertFalse(requires_quorum_and_hardware_signature(classify("edit file.py")))
+        self.assertFalse(
+            requires_quorum_and_hardware_signature(classify("edit file.py"))
+        )
 
     def test_git_writes_require_a_receipt_commit(self) -> None:
         self.assertEqual(classify("git commit -m x"), "git_write")
         self.assertTrue(requires_receipt_commit(classify("git commit -m x")))
 
     def test_destructive_requires_quorum_and_hardware_signature(self) -> None:
-        for cmd in ("rm -rf /", "git push --force origin main", "git reset --hard", "DROP TABLE users"):
+        for cmd in (
+            "rm -rf /",
+            "git push --force origin main",
+            "git reset --hard",
+            "DROP TABLE users",
+        ):
             classification = classify(cmd)
             self.assertEqual(classification, "destructive", cmd)
             self.assertTrue(requires_quorum_and_hardware_signature(classification))
@@ -56,7 +64,9 @@ class PolicyClassificationTest(unittest.TestCase):
 class NodeCountingAndHashTest(unittest.TestCase):
     def _init_git_repo(self, tmp: Path) -> Path:
         subprocess.run(["git", "init", "-q"], cwd=tmp, check=True)
-        subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "t@example.com"], cwd=tmp, check=True
+        )
         subprocess.run(["git", "config", "user.name", "t"], cwd=tmp, check=True)
         (tmp / "a.py").write_text("x = 1\n")
         (tmp / "b.py").write_text("y = 2\n")
@@ -70,7 +80,10 @@ class NodeCountingAndHashTest(unittest.TestCase):
             nodes1 = core.list_nodes(root)
             nodes2 = core.list_nodes(root)
             self.assertEqual(nodes1, nodes2)
-            self.assertEqual(core.compute_root_hash(root, nodes1), core.compute_root_hash(root, nodes2))
+            self.assertEqual(
+                core.compute_root_hash(root, nodes1),
+                core.compute_root_hash(root, nodes2),
+            )
 
     def test_root_hash_changes_when_a_tracked_file_changes(self) -> None:
         with tempfile.TemporaryDirectory() as d:

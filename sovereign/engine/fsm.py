@@ -20,6 +20,7 @@ repeated fsm.max_cycles times is suspicious, so the machine pauses BEFORE
 the next one begins -- pause before the 6th at the default of 5, not
 after it, which is the difference between catching a loop and logging it.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -32,7 +33,11 @@ TERMINAL = config.FSM_TERMINAL_STATE
 CYCLE_PATH: tuple[str, ...] = tuple(config.FSM_CYCLE_PATH)
 STATES: tuple[str, ...] = (INIT,) + CYCLE_PATH + (TERMINAL,)
 
-ALIASES: dict[str, str] = {"executing": "tool_use", "verifying": "synthesis", "done": TERMINAL}
+ALIASES: dict[str, str] = {
+    "executing": "tool_use",
+    "verifying": "synthesis",
+    "done": TERMINAL,
+}
 
 # Forward edges along the spec's line, plus the one back edge the spec
 # names explicitly (synthesis -> planning, the loop cycle detection
@@ -119,7 +124,9 @@ class FSM:
             raise IllegalTransition(f"{self.state!r} cannot move to {target!r}")
         if self.would_exceed_cycles(target):
             self.paused = True
-            raise CyclePause(f"{self.cycles} cycles completed; refusing cycle {self.cycles + 1}")
+            raise CyclePause(
+                f"{self.cycles} cycles completed; refusing cycle {self.cycles + 1}"
+            )
         if CYCLE_PATH and self.state == CYCLE_PATH[-1] and target == CYCLE_PATH[0]:
             self.cycles += 1
         self.state = target
@@ -141,7 +148,12 @@ class FSM:
         return self.transition(TERMINAL)
 
     def as_dict(self) -> dict:
-        return {"state": self.state, "cycles": self.cycles, "paused": self.paused, "max_cycles": self.max_cycles}
+        return {
+            "state": self.state,
+            "cycles": self.cycles,
+            "paused": self.paused,
+            "max_cycles": self.max_cycles,
+        }
 
 
 def replay(states: Iterable[str], max_cycles: int | None = None) -> FSM:

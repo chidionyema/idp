@@ -7,6 +7,7 @@ including concurrent ones from real threads) and one incident case (a
 spend larger than the balance halts at exactly zero instead of going
 negative).
 """
+
 from __future__ import annotations
 
 import random
@@ -45,7 +46,9 @@ class BudgetPropertyTest(BudgetTestBase):
                 self.assertEqual(res.remaining, start - taken)
             self.assertEqual(budget.read(sid).remaining, max(start - taken, 0))
 
-    def test_property_two_threads_spending_at_once_lose_nothing_and_invent_nothing(self) -> None:
+    def test_property_two_threads_spending_at_once_lose_nothing_and_invent_nothing(
+        self,
+    ) -> None:
         """Optimistic locking is only interesting under contention: two
         writers reading the same version, one of them losing the swap and
         retrying. Without the retry loop this test double-spends."""
@@ -61,7 +64,9 @@ class BudgetPropertyTest(BudgetTestBase):
                 with lock:
                     results.append(r)
 
-            threads = [threading.Thread(target=worker, args=(a,)) for a in (300, 400, 250, 200)]
+            threads = [
+                threading.Thread(target=worker, args=(a,)) for a in (300, 400, 250, 200)
+            ]
             for t in threads:
                 t.start()
             for t in threads:
@@ -78,7 +83,9 @@ class BudgetIncidentTest(BudgetTestBase):
         res = budget.spend("s", 999)
         self.assertEqual(res.spent, 10)
         self.assertEqual(res.remaining, 0)
-        self.assertTrue(res.halted, "hard halt at zero is the spec's word, not a warning")
+        self.assertTrue(
+            res.halted, "hard halt at zero is the spec's word, not a warning"
+        )
         again = budget.spend("s", 1)
         self.assertEqual(again.spent, 0)
         self.assertEqual(again.remaining, 0)

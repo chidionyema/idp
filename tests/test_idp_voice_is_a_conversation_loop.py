@@ -318,7 +318,9 @@ def test_transcribe_reads_sibling_txt(idp, tmp_path, no_faster_whisper):
     assert idp.transcribe(str(wav)) == "hello there"
 
 
-def test_transcribe_blind_without_whisper_or_txt(idp, tmp_path, monkeypatch, no_faster_whisper):
+def test_transcribe_blind_without_whisper_or_txt(
+    idp, tmp_path, monkeypatch, no_faster_whisper
+):
     monkeypatch.delenv("WHISPER_CMD", raising=False)
     wav = tmp_path / "utterance.wav"
     wav.write_bytes(b"")
@@ -392,4 +394,3 @@ def test_cli_ask(idp, monkeypatch, capsys):
 def test_cli_requires_a_mode(idp):
     with pytest.raises(SystemExit):
         idp.main([])
-

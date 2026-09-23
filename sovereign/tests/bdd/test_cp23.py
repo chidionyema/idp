@@ -6,6 +6,7 @@ the real file, and the only fake is the Telegram boundary (MessageSink,
 plus the otto card's two Telegram calls routed into it so that any send
 the card attempted would be visible as a chat message).
 """
+
 from __future__ import annotations
 
 import json
@@ -21,7 +22,9 @@ scenarios("features/sovereign-bus/cp23_presence_ghost.feature")
 
 
 @pytest.fixture
-def telegram_into_sink(monkeypatch: pytest.MonkeyPatch, messages: MessageSink, context: dict[str, Any]):
+def telegram_into_sink(
+    monkeypatch: pytest.MonkeyPatch, messages: MessageSink, context: dict[str, Any]
+):
     """Every Telegram call sovereign/ can make lands in the sink. A send is
     a new chat message; an edit is recorded separately (an edit is not a
     message, spec 2.2)."""
@@ -34,8 +37,18 @@ def telegram_into_sink(monkeypatch: pytest.MonkeyPatch, messages: MessageSink, c
     # would be a send, and routine work sends nothing.
     context["card_id"] = 1
     monkeypatch.setenv("SB_ADOPT_CARD_ID", str(context["card_id"]))
-    monkeypatch.setattr(card, "_send", lambda chat_id, text, keyboard=None: messages.send("telegram", text).text and 1)
-    monkeypatch.setattr(card, "_edit", lambda chat_id, mid, text, keyboard=None: context["edits"].append((mid, text)) or True)
+    monkeypatch.setattr(
+        card,
+        "_send",
+        lambda chat_id, text, keyboard=None: messages.send("telegram", text).text and 1,
+    )
+    monkeypatch.setattr(
+        card,
+        "_edit",
+        lambda chat_id, mid, text, keyboard=None: (
+            context["edits"].append((mid, text)) or True
+        ),
+    )
     monkeypatch.setattr(card, "_pin", lambda chat_id, mid: None)
     return messages
 
@@ -62,7 +75,9 @@ def _row(i: int, status: str = "done") -> dict[str, Any]:
 
 
 @given("three sessions run to done within budget")
-def _three_done(config, telegram_into_sink: MessageSink, context: dict[str, Any]) -> None:
+def _three_done(
+    config, telegram_into_sink: MessageSink, context: dict[str, Any]
+) -> None:
     from sovereign.presence import router
 
     context["rows"] = [_row(i) for i in range(1, 4)]
@@ -73,7 +88,10 @@ def _three_done(config, telegram_into_sink: MessageSink, context: dict[str, Any]
 @then("the Otto card was edited")
 def _card_edited(context: dict[str, Any]) -> None:
     edited = {mid for mid, _text in context["edits"]}
-    assert edited == {context["card_id"], *(row["line_message_id"] for row in context["rows"])}, context["edits"]
+    assert edited == {
+        context["card_id"],
+        *(row["line_message_id"] for row in context["rows"]),
+    }, context["edits"]
 
 
 @then("zero new messages were sent to the chat")
@@ -85,9 +103,19 @@ def _silent(messages: MessageSink) -> None:
 def _inbox_has_receipts(config, context: dict[str, Any]) -> None:
     from sovereign.presence import config_keys
 
-    lines = [json.loads(l) for l in Path(config.ESTATE_ALERT_INBOX).read_text().splitlines() if l.strip()]
-    receipts = [l for l in lines if l.get("kind") == config_keys.resolve("presence.receipt_kind")]
-    assert [r["session_id"] for r in receipts] == [row["session_id"] for row in context["rows"]]
+    lines = [
+        json.loads(l)
+        for l in Path(config.ESTATE_ALERT_INBOX).read_text().splitlines()
+        if l.strip()
+    ]
+    receipts = [
+        l
+        for l in lines
+        if l.get("kind") == config_keys.resolve("presence.receipt_kind")
+    ]
+    assert [r["session_id"] for r in receipts] == [
+        row["session_id"] for row in context["rows"]
+    ]
     for r in receipts:
         assert "\n" not in r["line"] and "hash:" in r["line"] and "budget:" in r["line"]
 
@@ -99,7 +127,9 @@ def _inbox_has_receipts(config, context: dict[str, Any]) -> None:
 def _tampered_chain(receipts_path: Path, context: dict[str, Any]) -> None:
     from sovereign.engine import receipts as receipts_mod
 
-    row = receipts_mod.append({**_row(7, status="running"), "by": "worker", "text": "commit"})
+    row = receipts_mod.append(
+        {**_row(7, status="running"), "by": "worker", "text": "commit"}
+    )
     context["session_id"] = row["session_id"]
     context["hash"] = row["hash"]
     lines = receipts_path.read_text().splitlines()
@@ -118,7 +148,11 @@ def _verify_fails(messages: MessageSink, context: dict[str, Any]) -> None:
     assert verdict["ok"] is False, verdict
     context["halted"] = []
     context["after"] = router.integrity_failure(
-        verdict, context["session_id"], sink=messages, halt=context["halted"].append, detected_hash=context["hash"]
+        verdict,
+        context["session_id"],
+        sink=messages,
+        halt=context["halted"].append,
+        detected_hash=context["hash"],
     )
 
 

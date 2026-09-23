@@ -6,6 +6,7 @@ role that can only read, and the founder entities say which workloads they show.
 
 Incident test (rung 4). Three assertions on the rendered OKE overlay and the config, and
 the refuse case: a write verb on the role fails."""
+
 import pathlib
 import subprocess
 
@@ -18,8 +19,17 @@ WRITE_VERBS = {"create", "update", "patch", "delete", "deletecollection", "*"}
 
 def _rendered():
     out = subprocess.run(
-        ["kubectl", "kustomize", "--load-restrictor", "LoadRestrictionsNone", str(OVERLAY)],
-        capture_output=True, text=True, check=True).stdout
+        [
+            "kubectl",
+            "kustomize",
+            "--load-restrictor",
+            "LoadRestrictionsNone",
+            str(OVERLAY),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
     return [d for d in yaml.safe_load_all(out) if d]
 
 
@@ -29,16 +39,22 @@ def _by_kind(docs, kind):
 
 def test_catalogue_pod_reads_the_cluster_with_its_own_read_only_role():
     docs = _rendered()
-    dep = next(d for d in _by_kind(docs, "Deployment") if d["metadata"]["name"] == "catalogue")
+    dep = next(
+        d for d in _by_kind(docs, "Deployment") if d["metadata"]["name"] == "catalogue"
+    )
     spec = dep["spec"]["template"]["spec"]
     assert spec["serviceAccountName"] == "catalogue"
     assert spec.get("automountServiceAccountToken") is True
     (role,) = _by_kind(docs, "ClusterRole")
     verbs = {v for r in role["rules"] for v in r["verbs"]}
-    assert verbs and not verbs & WRITE_VERBS, f"write verb on the portal's role: {verbs & WRITE_VERBS}"
+    assert verbs and not verbs & WRITE_VERBS, (
+        f"write verb on the portal's role: {verbs & WRITE_VERBS}"
+    )
     (binding,) = _by_kind(docs, "ClusterRoleBinding")
     assert binding["roleRef"]["name"] == role["metadata"]["name"]
-    assert binding["subjects"] == [{"kind": "ServiceAccount", "name": "catalogue", "namespace": "backstage"}]
+    assert binding["subjects"] == [
+        {"kind": "ServiceAccount", "name": "catalogue", "namespace": "backstage"}
+    ]
 
 
 def test_a_write_verb_on_the_role_is_refused():
@@ -55,10 +71,26 @@ def test_plugin_reads_in_cluster_with_the_pod_token_and_the_founder_entities_sel
     assert cluster["url"] == "https://kubernetes.default.svc"
     assert cluster["authProvider"] == "serviceAccount"
     assert cluster["skipTLSVerify"] is False
-    assert "serviceAccountToken" not in cluster, "a pasted token is a secret in git; the pod's mount is the token"
+    assert "serviceAccountToken" not in cluster, (
+        "a pasted token is a secret in git; the pod's mount is the token"
+    )
     dev = yaml.safe_load((ROOT / "backstage" / "app-config.yaml").read_text())
-    assert not (dev.get("kubernetes") or {}), "the compose run has no cluster; the block lives in the container config"
-    ents = {e["metadata"]["name"]: e for e in yaml.safe_load_all((ROOT / "backstage" / "founder" / "catalog-info.yaml").read_text()) if e}
+    assert not (dev.get("kubernetes") or {}), (
+        "the compose run has no cluster; the block lives in the container config"
+    )
+    ents = {
+        e["metadata"]["name"]: e
+        for e in yaml.safe_load_all(
+            (ROOT / "backstage" / "founder" / "catalog-info.yaml").read_text()
+        )
+        if e
+    }
     sel = "backstage.io/kubernetes-label-selector"
-    assert ents["founder-catalogue"]["metadata"]["annotations"][sel] == "app.kubernetes.io/part-of=idp"
-    assert ents["founder-model-router"]["metadata"]["annotations"][sel] == "app.kubernetes.io/name=litellm"
+    assert (
+        ents["founder-catalogue"]["metadata"]["annotations"][sel]
+        == "app.kubernetes.io/part-of=idp"
+    )
+    assert (
+        ents["founder-model-router"]["metadata"]["annotations"][sel]
+        == "app.kubernetes.io/name=litellm"
+    )

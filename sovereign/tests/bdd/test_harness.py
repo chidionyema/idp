@@ -4,6 +4,7 @@ This module is also the worked example the other five builders copy: a
 `scenarios(...)` call naming the feature by its repository path, steps that
 drive real code, and state carried in `context`.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -34,7 +35,9 @@ def _dag_root_empty(dag_root: Path) -> None:
 
 @then("the receipts path is inside the temporary estate")
 def _receipts_inside(receipts_path: Path, estate_home: Path) -> None:
-    assert estate_home in receipts_path.parents, f"{receipts_path} escaped {estate_home}"
+    assert estate_home in receipts_path.parents, (
+        f"{receipts_path} escaped {estate_home}"
+    )
 
 
 @then('"sovereign.config" resolves "estate.home" to the temporary estate')
@@ -104,7 +107,9 @@ def _concurrent_spend(session_budget: FakeBudget, context: dict) -> None:
 
 @then("the balance is 0")
 def _balance_zero(session_budget: FakeBudget, context: dict) -> None:
-    assert context["errors"] == [], f"a spend inside budget was refused: {context['errors']!r}"
+    assert context["errors"] == [], (
+        f"a spend inside budget was refused: {context['errors']!r}"
+    )
     assert session_budget.balance == 0
     assert session_budget.spent == 2000
 
@@ -166,11 +171,19 @@ def _repo(scratch_repo: Path) -> Path:
 @then("HEAD names a commit that exists in the repo")
 def _head_exists(repo: Path) -> None:
     head = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     assert len(head) == 40
     kind = subprocess.run(
-        ["git", "cat-file", "-t", head], cwd=repo, capture_output=True, text=True, check=True
+        ["git", "cat-file", "-t", head],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     assert kind == "commit"
 

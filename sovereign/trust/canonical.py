@@ -7,6 +7,7 @@ both separators to POSIX ("/") before anything is hashed, so the same
 logical file never produces two different hashes depending on which OS
 walked it.
 """
+
 from __future__ import annotations
 
 from sovereign.trust import config_keys as ck
@@ -23,7 +24,11 @@ def _to_posix_parts(value: str) -> list[str]:
     # so both are normalized here rather than trusting pathlib's PurePath
     # for "the" OS -- there is no single OS to trust.
     normalized = value.replace(_WINDOWS_SEP, _POSIX_SEP)
-    return [part for part in normalized.split(_POSIX_SEP) if part not in (_EMPTY, _CURRENT_DIR)]
+    return [
+        part
+        for part in normalized.split(_POSIX_SEP)
+        if part not in (_EMPTY, _CURRENT_DIR)
+    ]
 
 
 def canonical_relpath(root: str, path: str) -> str:
@@ -34,7 +39,7 @@ def canonical_relpath(root: str, path: str) -> str:
     root_parts = _to_posix_parts(root)
     path_parts = _to_posix_parts(path)
     if root_parts and path_parts[: len(root_parts)] == root_parts:
-        rel_parts = path_parts[len(root_parts):]
+        rel_parts = path_parts[len(root_parts) :]
     else:
         rel_parts = path_parts
     return _POSIX_SEP.join(rel_parts)

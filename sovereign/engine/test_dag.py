@@ -18,6 +18,7 @@ Rungs (AGENTS.md "How to test"):
 Every test builds its own disposable estate; none reads or writes the
 founder's real ~/.estate.
 """
+
 from __future__ import annotations
 
 import json
@@ -55,11 +56,15 @@ class DagTestBase(unittest.TestCase):
             p = patch.object(config, name, val)
             p.start()
             self.addCleanup(p.stop)
-        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
+        p = patch.object(
+            receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file")
+        )
         p.start()
         self.addCleanup(p.stop)
 
-    def _node(self, diff: dict, parent: str = dag.GENESIS, dag_dir: Path | None = None) -> str:
+    def _node(
+        self, diff: dict, parent: str = dag.GENESIS, dag_dir: Path | None = None
+    ) -> str:
         return dag.write_node(diff, parent, timestamp=0, dag_dir=dag_dir)[0]
 
 
@@ -90,7 +95,11 @@ class DagPropertyTest(DagTestBase):
             self.assertEqual(dag.materialize(parent), expected)
             body = dag.read_node(parent)
             assert body is not None
-            self.assertEqual(body["diff"], last_diff, "a node stores the diff it was given, never the folded state")
+            self.assertEqual(
+                body["diff"],
+                last_diff,
+                "a node stores the diff it was given, never the folded state",
+            )
 
     def test_property_a_node_is_named_by_its_body_and_nothing_else(self) -> None:
         rng = random.Random(4242)
@@ -103,12 +112,16 @@ class DagPropertyTest(DagTestBase):
             assert body is not None
             self.assertEqual(h, dag.node_hash_of(body))
             if h in seen:
-                self.assertEqual(seen[h], body, "two different bodies must not share a name")
+                self.assertEqual(
+                    seen[h], body, "two different bodies must not share a name"
+                )
             seen[h] = body
 
 
 class HeadGuardIncidentTest(DagTestBase):
-    def test_incident_head_outside_the_dag_root_is_refused_and_inside_it_is_written(self) -> None:
+    def test_incident_head_outside_the_dag_root_is_refused_and_inside_it_is_written(
+        self,
+    ) -> None:
         """The incident: ~/.estate/.estate/heads/shadow_main pointed at
         /var/folders/.../T/tmp59q5f9jp/dag, a unittest temp dir the OS had
         already reaped, so the estate's shadow root named history that no
@@ -120,17 +133,29 @@ class HeadGuardIncidentTest(DagTestBase):
         h_out = self._node({"a": 1}, dag_dir=self.outside)
         with self.assertRaises(dag.HeadOutsideDagRootError):
             dag.write_head("shadow_main", h_out, self.outside)
-        self.assertEqual(dag.list_heads(), [], "the refused write must leave no head behind")
+        self.assertEqual(
+            dag.list_heads(), [], "the refused write must leave no head behind"
+        )
 
         h_in = self._node({"a": 1})
         written = dag.write_head("shadow_main", h_in, self.dag_dir)
-        self.assertTrue(written.is_file(), "the guard must still permit a head inside the root (LAW 38)")
-        self.assertEqual(dag.read_head("shadow_main"), {"root": h_in, "dag_dir": str(self.dag_dir)})
+        self.assertTrue(
+            written.is_file(),
+            "the guard must still permit a head inside the root (LAW 38)",
+        )
+        self.assertEqual(
+            dag.read_head("shadow_main"), {"root": h_in, "dag_dir": str(self.dag_dir)}
+        )
 
         default = dag.write_head("main", h_in)
-        self.assertTrue(default.is_file(), "omitting dag_dir means the configured root, which is always inside itself")
+        self.assertTrue(
+            default.is_file(),
+            "omitting dag_dir means the configured root, which is always inside itself",
+        )
 
-    def test_incident_a_sidecar_on_a_foreign_dag_dir_cannot_move_the_estate_head(self) -> None:
+    def test_incident_a_sidecar_on_a_foreign_dag_dir_cannot_move_the_estate_head(
+        self,
+    ) -> None:
         """The same defect at the place it actually happened: sidecar
         drain() -> _write_node -> update_head with the test's own dag_dir.
         The refusal is recorded as a receipt, because a guard that fires
@@ -156,7 +181,12 @@ class HeadGuardIncidentTest(DagTestBase):
         ever removes a broken pointer."""
         self.heads_dir.mkdir(parents=True)
         (self.heads_dir / "shadow_main").write_text(
-            json.dumps({"root": "e" * config.RECEIPTS_HASH_HEX_LEN, "dag_dir": str(self.outside)})
+            json.dumps(
+                {
+                    "root": "e" * config.RECEIPTS_HASH_HEX_LEN,
+                    "dag_dir": str(self.outside),
+                }
+            )
         )
         report = dag.scan_heads()
         self.assertEqual(report["count"], 1)
@@ -200,15 +230,21 @@ class HeadWriterStaticGuardTest(unittest.TestCase):
             text = path.read_text()
             if "SHADOW_HEADS_DIR" in text or "heads_dir()" in text:
                 offenders.append(str(path))
-        self.assertEqual(offenders, [], "these modules must go through dag.write_head instead")
+        self.assertEqual(
+            offenders, [], "these modules must go through dag.write_head instead"
+        )
 
     def test_the_guard_would_notice(self) -> None:
         """Proves the scan can fail -- a guard whose failing branch has
         never run is a guard nobody has tested."""
         with tempfile.TemporaryDirectory() as tmp:
             bad = Path(tmp) / "rogue.py"
-            bad.write_text("from sovereign import config\nconfig.SHADOW_HEADS_DIR.mkdir()\n")
-            with patch.object(HeadWriterStaticGuardTest, "_sources", lambda self: [bad]):
+            bad.write_text(
+                "from sovereign import config\nconfig.SHADOW_HEADS_DIR.mkdir()\n"
+            )
+            with patch.object(
+                HeadWriterStaticGuardTest, "_sources", lambda self: [bad]
+            ):
                 with self.assertRaises(AssertionError):
                     self.test_only_dag_py_touches_the_heads_directory()
 

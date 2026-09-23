@@ -6,6 +6,7 @@ every test builds its own disposable sqlite3 file for db_root and
 patches subprocess for code_root, same isolation pattern as
 sovereign/engine/test_flip.py and sovereign/engine/test_projection.py.
 """
+
 from __future__ import annotations
 
 import os
@@ -26,6 +27,7 @@ _FIXED_KEY = b"\x0f" * 32
 def _fake_run(sha: str):
     def run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 0, stdout=f"{sha}\n", stderr="")
+
     return run
 
 
@@ -43,13 +45,17 @@ class CrossStackTestBase(unittest.TestCase):
             p = patch.object(config, name, val)
             p.start()
             self.addCleanup(p.stop)
-        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
+        p = patch.object(
+            receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file")
+        )
         p.start()
         self.addCleanup(p.stop)
 
         self.db_path = root / "legacy.db"
         self.conn = sqlite3.connect(str(self.db_path))
-        self.conn.execute("CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)")
+        self.conn.execute(
+            "CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)"
+        )
         self.conn.commit()
         self.addCleanup(self.conn.close)
         self.sc = sidecar_core.attach(self.conn, "episodes")
@@ -59,7 +65,9 @@ class CrossStackTestBase(unittest.TestCase):
         self.addCleanup(self._git_patch.stop)
 
     def _drain_one_row(self, row_id: str) -> None:
-        self.conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, 'ops', 'n')", (row_id,))
+        self.conn.execute(
+            "INSERT INTO episodes (id, lane, note) VALUES (?, 'ops', 'n')", (row_id,)
+        )
         self.conn.commit()
         self.sc.drain()
 
@@ -118,8 +126,14 @@ class CrossStackIncidentTest(CrossStackTestBase):
         before = cross_stack.root()
         self._drain_one_row("b")
         after = cross_stack.root()
-        self.assertNotEqual(before["db_root"], after["db_root"], "precondition: the DB actually advanced")
-        self.assertNotEqual(before["root"], after["root"], "the composite root must move with db_root")
+        self.assertNotEqual(
+            before["db_root"],
+            after["db_root"],
+            "precondition: the DB actually advanced",
+        )
+        self.assertNotEqual(
+            before["root"], after["root"], "the composite root must move with db_root"
+        )
 
 
 if __name__ == "__main__":

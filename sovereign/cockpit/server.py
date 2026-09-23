@@ -21,6 +21,7 @@ liveness probe and the Mini App shell always load; /api/* is gated by
 sovereign.cockpit.auth.authorize on every call, including from loopback,
 whenever an X-Telegram-Init-Data header is present.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,7 +41,9 @@ except Exception:  # pragma: no cover - importable before A lands sovereign/conf
 
 try:
     from sovereign.engine import client as engine_client
-except Exception:  # pragma: no cover - importable before A lands sovereign/engine/client.py
+except (
+    Exception
+):  # pragma: no cover - importable before A lands sovereign/engine/client.py
     engine_client = None
 
 log = logging.getLogger("sovereign.cockpit")
@@ -204,7 +207,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(_HTTP_OK, _run(engine_client.list_sessions()))
             return
         if path == _ROUTE_API_INBOX:
-            self._send_json(_HTTP_OK, _tail_inbox(int(config_keys.resolve("cockpit.inbox_tail", config))))
+            self._send_json(
+                _HTTP_OK,
+                _tail_inbox(int(config_keys.resolve("cockpit.inbox_tail", config))),
+            )
             return
         if path in (_ROUTE_API_STATUS, _ROUTE_API_SPATIAL):
             if engine_client is None:
@@ -269,7 +275,6 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send_json(_HTTP_OK, result)
 
-
     def _start_session(self) -> None:
         """POST /api/sessions {task, budget?} -> 201 {session_id}. The Start form.
 
@@ -295,10 +300,15 @@ class Handler(BaseHTTPRequestHandler):
         task = str(body.get("task") or "").strip()
         max_chars = int(config_keys.resolve("cockpit.start_task_max_chars", config))
         if not task or len(task) > max_chars:
-            self._send_json(_HTTP_BAD_REQUEST, {"error": f"task must be 1..{max_chars} characters"})
+            self._send_json(
+                _HTTP_BAD_REQUEST, {"error": f"task must be 1..{max_chars} characters"}
+            )
             return
         try:
-            budget = int(body.get("budget") or config_keys.resolve("cockpit.start_budget_default", config))
+            budget = int(
+                body.get("budget")
+                or config_keys.resolve("cockpit.start_budget_default", config)
+            )
         except (TypeError, ValueError):
             self._send_json(_HTTP_BAD_REQUEST, {"error": "budget must be an integer"})
             return
@@ -308,7 +318,11 @@ class Handler(BaseHTTPRequestHandler):
         runner = str(config_keys.resolve("cockpit.start_runner", config))
         by = str(body.get("by") or "founder")
         try:
-            result = _run(engine_client.start(task, runner=runner, repo=None, by=by, budget=budget))
+            result = _run(
+                engine_client.start(
+                    task, runner=runner, repo=None, by=by, budget=budget
+                )
+            )
         except Exception as exc:
             self._send_json(_HTTP_UNAVAILABLE, {"error": str(exc)})
             return
@@ -331,7 +345,9 @@ def _resolve_bind(bind: str) -> str:
     return socket.gethostbyname("localhost")
 
 
-def build_server(port: int | None = None, bind: str | None = None) -> ThreadingHTTPServer:
+def build_server(
+    port: int | None = None, bind: str | None = None
+) -> ThreadingHTTPServer:
     """Construct (but do not run) the cockpit's ThreadingHTTPServer. Split out
     from serve() so a test can bind an ephemeral port (0) and drive it with
     real HTTP requests in a background thread instead of parsing serve()'s

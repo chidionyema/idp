@@ -15,6 +15,7 @@ already uses (sovereign/engine/test_flip.py, sovereign/sidecar/
 test_sidecar.py): patch.object the relevant config.* paths, never a
 parallel set of override parameters.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -32,7 +33,9 @@ def store_path() -> Path:
     return config.PROJECTION_STORE_PATH
 
 
-def _walk_nodes_oldest_first(dag_dir: Path, root: str | None) -> list[dict[str, Any]] | None:
+def _walk_nodes_oldest_first(
+    dag_dir: Path, root: str | None
+) -> list[dict[str, Any]] | None:
     """Mirrors shadow_root.verify()'s backward walk (head to genesis) but
     collects and returns every node body, oldest first, for replay.
     Returns None (fail closed, never a partial or wrong-order replay) on
@@ -105,11 +108,20 @@ def rebuild(by: str = "boot") -> dict[str, Any]:
     os.replace(tmp, path)
 
     text = config.REBUILD_RECEIPT_TEMPLATE.format(root=root)
-    receipts_mod.append({
-        "session_id": "-", "kind": "rebuild", "by": by, "text": text,
-        "step": 0, "status": "rebuilt", "task": "", "runner": "",
-        "root": root, "rows": result["rows"],
-    })
+    receipts_mod.append(
+        {
+            "session_id": "-",
+            "kind": "rebuild",
+            "by": by,
+            "text": text,
+            "step": 0,
+            "status": "rebuilt",
+            "task": "",
+            "runner": "",
+            "root": root,
+            "rows": result["rows"],
+        }
+    )
     return result
 
 

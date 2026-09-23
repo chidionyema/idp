@@ -65,7 +65,9 @@ def index():
     from pathlib import Path
 
     page = Path(__file__).parent / "client.html"
-    return HTMLResponse(page.read_text() if page.exists() else "<h1>client.html missing</h1>")
+    return HTMLResponse(
+        page.read_text() if page.exists() else "<h1>client.html missing</h1>"
+    )
 
 
 @app.websocket("/voice/stream")
@@ -150,7 +152,9 @@ async def voice_stream(websocket: WebSocket):
 
             started = time.time()
             loop = asyncio.get_running_loop()
-            transcript, asr_seconds = await loop.run_in_executor(None, engine.transcribe, pcm)
+            transcript, asr_seconds = await loop.run_in_executor(
+                None, engine.transcribe, pcm
+            )
             if not transcript:
                 await send_json({"type": "empty"})
                 continue

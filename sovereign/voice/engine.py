@@ -61,7 +61,9 @@ MODEL_CACHE = os.environ.get("VOICE_MODEL_CACHE") or str(
 KOKORO_MODEL = os.environ.get("VOICE_KOKORO_MODEL") or str(
     __import__("pathlib").Path(MODEL_CACHE) / "kokoro-v1.0.onnx"
 )
-KOKORO_MODEL_INT8 = str(__import__("pathlib").Path(MODEL_CACHE) / "kokoro-v1.0.int8.onnx")
+KOKORO_MODEL_INT8 = str(
+    __import__("pathlib").Path(MODEL_CACHE) / "kokoro-v1.0.int8.onnx"
+)
 KOKORO_VOICES = os.environ.get("VOICE_KOKORO_VOICES") or str(
     __import__("pathlib").Path(MODEL_CACHE) / "voices-v1.0.bin"
 )
@@ -84,6 +86,7 @@ SYSTEM_PROMPT = os.environ.get(
 
 
 # --------------------------------------------------------------------------- model loading
+
 
 @dataclass
 class Models:
@@ -143,7 +146,11 @@ def load_models() -> Models:
             #
             # Set VOICE_ALLOW_INT8=1 to try the small model anyway -- useful the day a runtime ships
             # the kernel, since int8 would then be the faster option.
-            candidates = (KOKORO_MODEL, KOKORO_MODEL_INT8) if os.environ.get("VOICE_ALLOW_INT8") else (KOKORO_MODEL,)
+            candidates = (
+                (KOKORO_MODEL, KOKORO_MODEL_INT8)
+                if os.environ.get("VOICE_ALLOW_INT8")
+                else (KOKORO_MODEL,)
+            )
             for candidate in candidates:
                 if not os.path.exists(candidate):
                     continue
@@ -152,7 +159,9 @@ def load_models() -> Models:
                     m.tts_model = os.path.basename(candidate)
                     break
                 except Exception as exc:  # noqa: BLE001 - try the next candidate
-                    m.errors.append(f"tts({os.path.basename(candidate)}): {exc.__class__.__name__}")
+                    m.errors.append(
+                        f"tts({os.path.basename(candidate)}): {exc.__class__.__name__}"
+                    )
             if m.tts is None:
                 m.errors.append(
                     f"tts: no Kokoro model loaded from {MODEL_CACHE}; run bin/voice-models"
@@ -170,6 +179,7 @@ def models() -> Models:
 
 
 # --------------------------------------------------------------------------- the loop
+
 
 def transcribe(pcm: bytes) -> tuple[str, float]:
     """16kHz float32 PCM in, text out, with how long it took.
@@ -235,11 +245,17 @@ def fleet_summary() -> str:
 
     counts: dict[str, int] = {}
     for sess in sessions:
-        counts[sess.get("activity") or "unknown"] = counts.get(sess.get("activity") or "unknown", 0) + 1
-    head = ", ".join(f"{n} {k}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+        counts[sess.get("activity") or "unknown"] = (
+            counts.get(sess.get("activity") or "unknown", 0) + 1
+        )
+    head = ", ".join(
+        f"{n} {k}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1])
+    )
 
     rows = []
-    for sess in sessions[:20]:  # capped: a prompt that grows with the fleet grows the latency too
+    for sess in sessions[
+        :20
+    ]:  # capped: a prompt that grows with the fleet grows the latency too
         sid = str(sess.get("session_id") or "")[-8:]
         rows.append(
             f"- {sid} {sess.get('runtime')} {sess.get('activity')} "
@@ -309,7 +325,9 @@ async def llm_clauses(question: str, history: list[dict[str, str]] | None = None
                         chunk = json.loads(body)
                     except json.JSONDecodeError:
                         continue
-                    delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content") or ""
+                    delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get(
+                        "content"
+                    ) or ""
                     if not delta:
                         continue
                     buffer += delta
@@ -317,7 +335,9 @@ async def llm_clauses(question: str, history: list[dict[str, str]] | None = None
                     for clause in ready:
                         loop.call_soon_threadsafe(queue.put_nowait, ("clause", clause))
                 if buffer.strip():
-                    loop.call_soon_threadsafe(queue.put_nowait, ("clause", buffer.strip()))
+                    loop.call_soon_threadsafe(
+                        queue.put_nowait, ("clause", buffer.strip())
+                    )
         except Exception as exc:  # noqa: BLE001 -- a router failure is spoken, not crashed
             loop.call_soon_threadsafe(
                 queue.put_nowait, ("error", f"The router could not be reached: {exc}")

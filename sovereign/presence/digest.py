@@ -10,6 +10,7 @@ not a second one.
 Scheduling is launchd's job (`sb digest --launchd` prints the plist);
 this module never sleeps or loops.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -74,7 +75,11 @@ def build(now: float | None = None, path: Path | None = None) -> Digest:
     halted = sum(1 for r in sessions.values() if str(r.get("status")) in _TERMINAL_BAD)
     running = len(sessions) - done - halted
     verdict = receipts_mod.verify(path)
-    chain = "ok" if verdict.get("ok") else f"BROKEN at counter {verdict.get('first_broken_counter')}"
+    chain = (
+        "ok"
+        if verdict.get("ok")
+        else f"BROKEN at counter {verdict.get('first_broken_counter')}"
+    )
     file_hash = receipts_file_hash(path)
     day = time.strftime("%Y-%m-%d", time.localtime(now))
     lines = (

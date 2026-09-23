@@ -1,5 +1,6 @@
 """Binds features/cloud-agnostic/disposable-compute-universal-state.feature (crew#250 R36, crew#297).
 Steps run bin/cloud-agnostic-gate for real over tests/fixtures/cloud-agnostic/{good,bad}."""
+
 import os
 import subprocess
 import sys
@@ -15,7 +16,12 @@ FIX = IDP / "tests" / "fixtures" / "cloud-agnostic"
 
 
 def _gate(root: Path) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, str(IDP / "bin" / "cloud-agnostic-gate")], env={**os.environ, "CLOUD_AGNOSTIC_ROOT": str(root)}, capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, str(IDP / "bin" / "cloud-agnostic-gate")],
+        env={**os.environ, "CLOUD_AGNOSTIC_ROOT": str(root)},
+        capture_output=True,
+        text=True,
+    )
 
 
 @pytest.fixture
@@ -23,26 +29,34 @@ def state() -> dict:
     return {}
 
 
-@given("a platform tree with no provider-specific reference outside platform/oci, platform/secret-store and clusters/")
+@given(
+    "a platform tree with no provider-specific reference outside platform/oci, platform/secret-store and clusters/"
+)
 def _good(state: dict) -> None:
-    assert (FIX / "good" / "platform").is_dir(); state["root"] = FIX / "good"
+    assert (FIX / "good" / "platform").is_dir()
+    state["root"] = FIX / "good"
 
 
-@when("bin/cloud-agnostic-gate counts provider-specific annotations, services and API groups")
+@when(
+    "bin/cloud-agnostic-gate counts provider-specific annotations, services and API groups"
+)
 def _count(state: dict) -> None:
     state["run"] = _gate(state["root"])
 
 
 @then("the count is zero and it exits 0")
 def _zero(state: dict) -> None:
-    r = state["run"]; assert r.returncode == 0, r.stdout + r.stderr
+    r = state["run"]
+    assert r.returncode == 0, r.stdout + r.stderr
 
 
 @then("a tree that adds one is refused with the file and line that introduced it")
 def _bad(state: dict, tmp_path: Path) -> None:
     r = _gate(FIX / "bad")
     assert r.returncode == 1, r.stdout + r.stderr
-    assert any(":" in line and "platform/" in line for line in r.stdout.splitlines()), r.stdout
+    assert any(":" in line and "platform/" in line for line in r.stdout.splitlines()), (
+        r.stdout
+    )
 
 
 @then("a root that cannot be read is BLIND, never zero")

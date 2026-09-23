@@ -6,6 +6,7 @@ refreshed the Secret, `/v1/models` listed `groq`, and a completion still answere
 and nothing restarted it. Rung 4, both ways: main has no Reloader row and no opt-in annotation,
 so every test here fails on main; with the row, the chart passes the estate policy set clean.
 """
+
 from __future__ import annotations
 
 import os
@@ -49,10 +50,15 @@ def test_flux_applies_the_reloader_row_after_the_secret_store_and_waits_on_it() 
     # (bin/idp-flux-wait-brake, incident 2026-09-10).
     assert spec["path"] == "./platform/reloader" and "wait" not in spec
     assert {"name": "secret-store"} in spec["dependsOn"], spec["dependsOn"]
-    assert any(h["kind"] == "Deployment" and h["name"] == "reloader" for h in spec["healthChecks"])
+    assert any(
+        h["kind"] == "Deployment" and h["name"] == "reloader"
+        for h in spec["healthChecks"]
+    )
 
 
-def test_rendered_chart_passes_the_estate_policy_set_without_an_exception(tmp_path) -> None:
+def test_rendered_chart_passes_the_estate_policy_set_without_an_exception(
+    tmp_path,
+) -> None:
     for tool in ("kyverno", "helm", "kubectl"):
         if not shutil.which(tool):
             pytest.skip(f"BLIND: {tool} not on PATH")
@@ -60,24 +66,54 @@ def test_rendered_chart_passes_the_estate_policy_set_without_an_exception(tmp_pa
         pytest.skip(f"BLIND: policy set not at {POLICIES}")
     docs = _docs(ROW)
     hr = _one(docs, "HelmRelease", "reloader")
-    repo = _one(docs, "HelmRepository", hr["spec"]["chart"]["spec"]["sourceRef"]["name"])
+    repo = _one(
+        docs, "HelmRepository", hr["spec"]["chart"]["spec"]["sourceRef"]["name"]
+    )
     values = tmp_path / "values.yaml"
     values.write_text(yaml.safe_dump(hr["spec"]["values"]))
     spec = hr["spec"]["chart"]["spec"]
-    r = subprocess.run(["helm", "template", "reloader", spec["chart"], "--repo", repo["spec"]["url"],
-                        "--version", str(spec["version"]), "-n", hr["metadata"]["namespace"], "-f", str(values)],
-                       capture_output=True, text=True)
+    r = subprocess.run(
+        [
+            "helm",
+            "template",
+            "reloader",
+            spec["chart"],
+            "--repo",
+            repo["spec"]["url"],
+            "--version",
+            str(spec["version"]),
+            "-n",
+            hr["metadata"]["namespace"],
+            "-f",
+            str(values),
+        ],
+        capture_output=True,
+        text=True,
+    )
     if r.returncode:
         pytest.skip(f"BLIND: helm template failed (offline?): {r.stderr[-300:]}")
     rendered = tmp_path / "reloader.yaml"
     rendered.write_text(r.stdout)
     policies = tmp_path / "policies.yaml"
-    policies.write_text(subprocess.run(["kubectl", "kustomize", str(POLICIES)], check=True,
-                                       capture_output=True, text=True).stdout)
-    out = subprocess.run(["kyverno", "apply", str(policies), "--resource", str(rendered)],
-                         capture_output=True, text=True).stdout
+    policies.write_text(
+        subprocess.run(
+            ["kubectl", "kustomize", str(POLICIES)],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    )
+    out = subprocess.run(
+        ["kyverno", "apply", str(policies), "--resource", str(rendered)],
+        capture_output=True,
+        text=True,
+    ).stdout
     summary = [line for line in out.splitlines() if line.startswith("pass:")]
     assert summary, out
-    counts = {k.strip(): int(v) for k, v in (kv.split(": ") for kv in summary[-1].split(","))}
+    counts = {
+        k.strip(): int(v) for k, v in (kv.split(": ") for kv in summary[-1].split(","))
+    }
     failing = set(re.findall(r"policy ([a-z0-9-]+) -> resource \S+ failed", out))
-    assert counts["fail"] == 0 and not failing, f"policy failures {sorted(failing)}: {out[-600:]}"
+    assert counts["fail"] == 0 and not failing, (
+        f"policy failures {sorted(failing)}: {out[-600:]}"
+    )

@@ -7,6 +7,7 @@ temporary estate conftest.py builds. The only stand-in is the model: runner
 file" performs the commit the runner would have made and then goes through
 the same HEAD-before/HEAD-after path activities.run_step uses.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,8 +34,14 @@ def software_trust(estate_home: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def _git(repo: Path, *args: str) -> str:
-    env = {**os.environ, "GIT_CONFIG_GLOBAL": str(repo.parent / "gitconfig"), "GIT_CONFIG_SYSTEM": os.devnull}
-    return subprocess.run(["git", *args], cwd=repo, env=env, check=True, capture_output=True, text=True).stdout.strip()
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": str(repo.parent / "gitconfig"),
+        "GIT_CONFIG_SYSTEM": os.devnull,
+    }
+    return subprocess.run(
+        ["git", *args], cwd=repo, env=env, check=True, capture_output=True, text=True
+    ).stdout.strip()
 
 
 def _commit_step(context: dict[str, Any]) -> dict[str, Any]:
@@ -93,7 +100,9 @@ def _step_commits(context: dict[str, Any]) -> None:
 def _one_line(context: dict[str, Any]) -> None:
     from sovereign.engine import receipts
 
-    rows = [r for r in receipts.read_all() if r.get("session_id") == context["session_id"]]
+    rows = [
+        r for r in receipts.read_all() if r.get("session_id") == context["session_id"]
+    ]
     assert len(rows) == 1, rows
 
 
@@ -141,7 +150,11 @@ def _head_is_parent(context: dict[str, Any]) -> None:
 def _undo_receipt(context: dict[str, Any], kind: str) -> None:
     from sovereign.engine import interventions, receipts
 
-    rows = [r for r in receipts.read_all() if r.get("kind") == kind and r.get("session_id") == context["session_id"]]
+    rows = [
+        r
+        for r in receipts.read_all()
+        if r.get("kind") == kind and r.get("session_id") == context["session_id"]
+    ]
     assert len(rows) == 1, rows
     assert rows[0]["undone_receipt"] == context["receipt"]["hash"]
     # R17: an undo is an intervention, so it is mirrored into the signed log.

@@ -5,6 +5,7 @@ SwiftBar plugin (swiftbar/estate-presence.5s.sh) reads it and prints a
 coloured dot. SwiftBar runs the script on its own schedule, so there is
 no daemon here and no polling loop.
 """
+
 from __future__ import annotations
 
 import json
@@ -13,14 +14,24 @@ from pathlib import Path
 from typing import Any
 
 from sovereign.presence import config_keys
-from sovereign.presence.fsm import Converse, Presence, Spatial, is_ghost_equivalent, name
+from sovereign.presence.fsm import (
+    Converse,
+    Presence,
+    Spatial,
+    is_ghost_equivalent,
+    name,
+)
 
 
 def dot_colour(state: Presence) -> str:
     if is_ghost_equivalent(state):
         return str(config_keys.resolve("presence.dot_ghost"))
     if isinstance(state, Spatial):
-        key = "presence.dot_catastrophe" if state.cause == "catastrophe" else "presence.dot_spatial"
+        key = (
+            "presence.dot_catastrophe"
+            if state.cause == "catastrophe"
+            else "presence.dot_spatial"
+        )
         return str(config_keys.resolve(key))
     if isinstance(state, Converse):
         return str(config_keys.resolve("presence.dot_converse"))
@@ -36,7 +47,10 @@ def as_dict(state: Presence) -> dict[str, Any]:
     if isinstance(state, Spatial):
         detail["cause"] = state.cause
     if isinstance(state, Converse):
-        detail["initiated_by"] = {"kind": state.initiated_by.kind, "by": state.initiated_by.by}
+        detail["initiated_by"] = {
+            "kind": state.initiated_by.kind,
+            "by": state.initiated_by.by,
+        }
     pattern = getattr(state, "pattern", None)
     if pattern is not None:
         detail["pattern"] = pattern.value
@@ -55,7 +69,11 @@ def write(state: Presence) -> Path:
 def read() -> dict[str, Any]:
     path = state_path()
     if not path.exists():
-        return {"state": "ghost", "dot": str(config_keys.resolve("presence.dot_ghost")), "ts": None}
+        return {
+            "state": "ghost",
+            "dot": str(config_keys.resolve("presence.dot_ghost")),
+            "ts": None,
+        }
     return json.loads(path.read_text())
 
 

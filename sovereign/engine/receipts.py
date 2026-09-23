@@ -29,6 +29,7 @@ Secure Enclave exposes no monotonic counter to userspace on this
 machine, so this is the spec's fallback shape, signed under the same
 estate key and recorded as such rather than claimed as hardware.
 """
+
 from __future__ import annotations
 
 import fcntl
@@ -61,12 +62,17 @@ def _keychain_read() -> str | None:
     try:
         out = subprocess.run(
             [
-                "security", "find-generic-password",
-                "-a", config.RECEIPTS_KEYCHAIN_ACCOUNT,
-                "-s", config.RECEIPTS_KEYCHAIN_SERVICE,
+                "security",
+                "find-generic-password",
+                "-a",
+                config.RECEIPTS_KEYCHAIN_ACCOUNT,
+                "-s",
+                config.RECEIPTS_KEYCHAIN_SERVICE,
                 "-w",
             ],
-            capture_output=True, text=True, timeout=config.RECEIPTS_KEYCHAIN_TIMEOUT_S,
+            capture_output=True,
+            text=True,
+            timeout=config.RECEIPTS_KEYCHAIN_TIMEOUT_S,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -79,13 +85,19 @@ def _keychain_write(hex_key: str) -> bool:
     try:
         out = subprocess.run(
             [
-                "security", "add-generic-password",
-                "-a", config.RECEIPTS_KEYCHAIN_ACCOUNT,
-                "-s", config.RECEIPTS_KEYCHAIN_SERVICE,
-                "-w", hex_key,
+                "security",
+                "add-generic-password",
+                "-a",
+                config.RECEIPTS_KEYCHAIN_ACCOUNT,
+                "-s",
+                config.RECEIPTS_KEYCHAIN_SERVICE,
+                "-w",
+                hex_key,
                 "-U",
             ],
-            capture_output=True, text=True, timeout=config.RECEIPTS_KEYCHAIN_TIMEOUT_S,
+            capture_output=True,
+            text=True,
+            timeout=config.RECEIPTS_KEYCHAIN_TIMEOUT_S,
         )
     except (OSError, subprocess.SubprocessError):
         return False
@@ -160,7 +172,10 @@ def _read_head_anchor(head_path: Path | None = None) -> dict[str, Any] | None:
 
 def _watermark_body(counter: int, key: bytes) -> dict[str, Any]:
     body = {"counter": counter}
-    return {"counter": counter, "sig": hmac.new(key, _canonical(body), hashlib.sha256).hexdigest()}
+    return {
+        "counter": counter,
+        "sig": hmac.new(key, _canonical(body), hashlib.sha256).hexdigest(),
+    }
 
 
 def read_watermark(key: bytes) -> int:
@@ -194,8 +209,9 @@ def _write_watermark(counter: int, key: bytes) -> None:
     os.replace(tmp, config.RECEIPTS_COUNTER)
 
 
-def next_counter(key: bytes, receipts_path: Path | None = None,
-                 head_path: Path | None = None) -> int:
+def next_counter(
+    key: bytes, receipts_path: Path | None = None, head_path: Path | None = None
+) -> int:
     """The next counter to issue: one past the highest of the three
     sources. Exposed (not private) because test_receipts.py asserts the
     monotonicity property directly against it."""
@@ -262,7 +278,9 @@ def append(
             line_hash = hashlib.sha256(_canonical(body)).hexdigest()
             line["hash"] = line_hash
             if record.get("signed"):
-                line["hw_sig"], line["hw_backend"] = HardwareTrustAnchor().sign(line_hash)
+                line["hw_sig"], line["hw_backend"] = HardwareTrustAnchor().sign(
+                    line_hash
+                )
             line["sig"] = hmac.new(key, line_hash.encode(), hashlib.sha256).hexdigest()
             with open(rp, "a") as out:
                 out.write(json.dumps(line, sort_keys=True) + "\n")
@@ -323,7 +341,12 @@ def verify(path: Path | None = None, head_path: Path | None = None) -> dict[str,
     if not rows:
         anchor = _read_head_anchor()
         if anchor is not None:
-            return {"ok": False, "count": 0, "first_broken_counter": None, "reason": "truncated"}
+            return {
+                "ok": False,
+                "count": 0,
+                "first_broken_counter": None,
+                "reason": "truncated",
+            }
         return {"ok": True, "count": 0, "first_broken_counter": None, "reason": None}
     key, _backend = get_or_create_key()
     expected_prev = GENESIS_HASH
@@ -336,28 +359,72 @@ def verify(path: Path | None = None, head_path: Path | None = None) -> dict[str,
         expected_counter += 1
         counter = row.get("counter")
         if counter != expected_counter:
-            return {"ok": False, "count": len(rows), "first_broken_counter": expected_counter, "reason": "broken"}
+            return {
+                "ok": False,
+                "count": len(rows),
+                "first_broken_counter": expected_counter,
+                "reason": "broken",
+            }
         if row.get("prev_hash") != expected_prev:
-            return {"ok": False, "count": len(rows), "first_broken_counter": counter, "reason": "broken"}
+            return {
+                "ok": False,
+                "count": len(rows),
+                "first_broken_counter": counter,
+                "reason": "broken",
+            }
         body = {k: v for k, v in row.items() if k not in UNHASHED_FIELDS}
         recomputed = hashlib.sha256(_canonical(body)).hexdigest()
         if recomputed != row.get("hash"):
-            return {"ok": False, "count": len(rows), "first_broken_counter": counter, "reason": "broken"}
+            return {
+                "ok": False,
+                "count": len(rows),
+                "first_broken_counter": counter,
+                "reason": "broken",
+            }
         expected_sig = hmac.new(key, recomputed.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected_sig, str(row.get("sig", ""))):
-            return {"ok": False, "count": len(rows), "first_broken_counter": counter, "reason": "broken"}
+            return {
+                "ok": False,
+                "count": len(rows),
+                "first_broken_counter": counter,
+                "reason": "broken",
+            }
         expected_prev = row["hash"]
 
     last = rows[-1]
     anchor = _read_head_anchor(head_path)
     if anchor is None:
-        return {"ok": False, "count": len(rows), "first_broken_counter": None, "reason": "no_anchor"}
-    expected_anchor = _head_anchor(int(last.get("counter", 0)), str(last.get("hash", "")), key)
+        return {
+            "ok": False,
+            "count": len(rows),
+            "first_broken_counter": None,
+            "reason": "no_anchor",
+        }
+    expected_anchor = _head_anchor(
+        int(last.get("counter", 0)), str(last.get("hash", "")), key
+    )
     if not hmac.compare_digest(str(anchor.get("sig", "")), expected_anchor["sig"]):
         # the anchor file itself was edited (or belongs to a different
         # chain/key) -- indistinguishable from tail-truncation to a reader
         # who only has this file, so it fails the same way, not silently.
-        return {"ok": False, "count": len(rows), "first_broken_counter": None, "reason": "truncated"}
-    if anchor.get("counter") != last.get("counter") or anchor.get("hash") != last.get("hash"):
-        return {"ok": False, "count": len(rows), "first_broken_counter": None, "reason": "truncated"}
-    return {"ok": True, "count": len(rows), "first_broken_counter": None, "reason": None}
+        return {
+            "ok": False,
+            "count": len(rows),
+            "first_broken_counter": None,
+            "reason": "truncated",
+        }
+    if anchor.get("counter") != last.get("counter") or anchor.get("hash") != last.get(
+        "hash"
+    ):
+        return {
+            "ok": False,
+            "count": len(rows),
+            "first_broken_counter": None,
+            "reason": "truncated",
+        }
+    return {
+        "ok": True,
+        "count": len(rows),
+        "first_broken_counter": None,
+        "reason": None,
+    }
