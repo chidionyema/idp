@@ -46,7 +46,14 @@
 brew "jq",    version: "1.7.1"
 brew "yq",    version: "4.40.5"
 brew "gh",    version: "2.50.0"
-brew "kubectl", version: "1.30.0"
+# NOT a `brew` row: there is no `kubectl` formula AND no `kubernetes-cli` formula in
+# homebrew-core (`curl https://formulae.brew.sh/api/formula.json`, filtered for either name,
+# returns neither; cask.json returns nothing either). This row was impossible from the day it
+# was written and nothing noticed, because the file died earlier on `spire` -- one failure
+# hid the next. kubectl arrives with the container runtime on this estate: Rancher Desktop
+# provides /usr/local/bin/kubectl via ~/.rd/bin, which is where `which kubectl` resolves on
+# the machine this file provisions. Installing a second copy from a package manager is the
+# "one of each layer" defect with a binary as the layer.
 brew "helm",  version: "3.14.0"
 brew "flux",  version: "2.3.0"   # fluxcd/tap -- the formula name carries the tap
 brew "sops",  version: "3.8.1"
@@ -58,11 +65,24 @@ brew "actionlint", version: "1.6.27"
 
 # --- SPIRE / SPIFFE primary ---
 # The cluster SPIRE control plane + agent run in the cluster (platform/spire);
-# the Workload API socket + JWT-SVID minting runs on this Mac via this row.
-# Built from the upstream GitHub source because the official homebrew-core
-# formula is the server+agent both; we want the agent pinned to the same
-# version as the cluster's helmrelease.
-brew "spire", version: "1.15.3"
+# the Workload API socket + JWT-SVID minting runs on this Mac.
+#
+# NOT a `brew` row, and this is measured rather than assumed: there is NO `spire` formula in
+# homebrew-core (`curl https://formulae.brew.sh/api/formula.json | jq '[.[]|select(.name|test("spire"))]'`
+# returns nothing). `brew "spire"` therefore failed the whole file on main at 20:13:43Z
+# (mac-provision-test run 35914524439) with `brew bundle failed! 1 Brewfile dependency failed
+# to install`, which is why the comment above used to describe a source build while the line
+# below asked Homebrew for a formula that does not exist.
+#
+# The agent is built from Go source at the version the cluster's HelmRelease pins, exactly as
+# bin/idp-mac-provision:111 already instructs the operator when the binary is absent:
+#
+#   GOBIN=/opt/homebrew/bin go install github.com/spiffe/spire/cmd/spire-agent@v1.15.3
+#
+# `go` is the Brewfile row that makes that instruction executable, so the installer is declared
+# here and the artefact is built by the provisioner. One version, named once: SPIRE_AGENT_VERSION
+# in bin/idp-mac-provision.
+brew "go"
 
 # --- GUI / system-extension casks ---
 # Tailscale installs the daemon (`tailscaled`) plus the Mac system extension that
