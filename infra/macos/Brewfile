@@ -30,28 +30,31 @@
 
 # --- Taps ---
 # No `tap` line. `brew "flux"` names the tap itself (flux is not in homebrew/core), and
-# homebrew auto-taps a fully-qualified formula on install. A bare `tap "fluxcd/tap"` made
-# `brew bundle` refuse the whole file:
+# homebrew auto-taps a formula on install.
+
+# --- CLI formulae, pinned ---
+#
+# The version is an OPTION, not a second positional argument. `brew "jq", "1.7.1"` (Brewfile v1
+# shape) makes the DSL read the String as an options hash and refuse the entire file:
 #
 #   Invalid Brewfile: brew options must be a Hash
 #
-# (mac-provision-test, run 35905107203, 2026-09-23). Nothing after that line was evaluated, so
-# every formula this file pins -- jq, helm, sops, kitchen sink -- was unverified by a green
-# lane that had never once parsed the file.
-
-# --- CLI formulae, pinned ---
-brew "jq",    "1.7.1"
-brew "yq",    "4.40.5"
-brew "gh",    "2.50.0"
-brew "kubectl", "1.30.0"
-brew "helm",  "3.14.0"
-brew "flux",  "2.3.0"   # fluxcd/tap -- the formula name carries the tap
-brew "sops",  "3.8.1"
-brew "age",   "1.2.1"
-brew "mas",   "1.8.7"   # Mac App Store CLI for App Store casks
-brew "shellcheck", "0.9.0"
-brew "shfmt",      "3.7.0"
-brew "actionlint", "1.6.27"
+# (mac-provision-test, runs 35905107203 and 35905402616, 2026-09-23). That error was first blamed
+# on the `tap` line above; removing the tap line did NOT clear it, which is what proved the real
+# cause and is why the comment that used to sit here was wrong. Nothing after the first bad entry
+# is evaluated, so no formula in this file had ever been read by the lane that installs them.
+brew "jq",    version: "1.7.1"
+brew "yq",    version: "4.40.5"
+brew "gh",    version: "2.50.0"
+brew "kubectl", version: "1.30.0"
+brew "helm",  version: "3.14.0"
+brew "flux",  version: "2.3.0"   # fluxcd/tap -- the formula name carries the tap
+brew "sops",  version: "3.8.1"
+brew "age",   version: "1.2.1"
+brew "mas",   version: "1.8.7"   # Mac App Store CLI for App Store casks
+brew "shellcheck", version: "0.9.0"
+brew "shfmt",      version: "3.7.0"
+brew "actionlint", version: "1.6.27"
 
 # --- SPIRE / SPIFFE primary ---
 # The cluster SPIRE control plane + agent run in the cluster (platform/spire);
@@ -59,7 +62,7 @@ brew "actionlint", "1.6.27"
 # Built from the upstream GitHub source because the official homebrew-core
 # formula is the server+agent both; we want the agent pinned to the same
 # version as the cluster's helmrelease.
-brew "spire", "1.15.3"
+brew "spire", version: "1.15.3"
 
 # --- GUI / system-extension casks ---
 # Tailscale installs the daemon (`tailscaled`) plus the Mac system extension that
