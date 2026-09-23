@@ -65,17 +65,24 @@ jobs:
         # status and renders a green/red row per component.
         run: |
           json=$(bin/idp-mac-provision status)
-          echo "$json" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-required = ['brew', 'tailscale', 'spire', 'executor', 'renew']
-for k in required:
-    assert k in d, f'missing component: {k}'
-    assert 'installed' in d[k], f'missing installed field on {k}'
-    assert 'status' in d[k], f'missing status field on {k}'
-    assert isinstance(d[k]['installed'], int), f'installed must be int on {k}'
-print('OK status contract holds for', len(d), 'components')
-"
+          # A quoted python -c "..." with the script at column 0 is NOT valid inside a YAML
+          # block scalar: the block's indentation ends at the first unindented line, so the
+          # parser saw `import json, sys` as a new top-level key and refused the whole file --
+          #   could not find expected ':' at line 69, column 1
+          # -- which is what made bin/idp-ci's multiarch rung report this workflow as
+          # `unparseable workflow (ScannerError)` on 2026-09-23. A heredoc is indented with the
+          # block and keeps the script readable.
+          python3 - "$json" <<'PY'
+          import json, sys
+          d = json.loads(sys.argv[1])
+          required = ['brew', 'tailscale', 'spire', 'executor', 'renew']
+          for k in required:
+              assert k in d, f'missing component: {k}'
+              assert 'installed' in d[k], f'missing installed field on {k}'
+              assert 'status' in d[k], f'missing status field on {k}'
+              assert isinstance(d[k]['installed'], int), f'installed must be int on {k}'
+          print('OK status contract holds for', len(d), 'components')
+          PY
 
       - name: bin/idp-mac-provision uninstall + install re-runs converge (idempotency)
         # The whole point of declarative provisioning: install → uninstall →

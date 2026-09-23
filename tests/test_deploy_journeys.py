@@ -80,6 +80,13 @@ CHECK_RUNS = {
 def _stub_runner(args: list[str]):
     if args[:2] == ["pr", "list"]:
         return [PR]
+    # The recorder resolves `owner/name` once and uses it in the check-runs path (fixed
+    # 2026-09-23: the call used to send the LITERAL string `repos/{repo}/...`, which gh 404s
+    # for a script -- and because gh exits 0 on a 404 body, `.get("check_runs", [])` returned
+    # [] and EVERY journey recorded no gates while looking like a successful read). The stub
+    # answers that lookup so these tests grade the recorder, not the GitHub API.
+    if args[:2] == ["repo", "view"]:
+        return "chidionyema/idp"
     if args[0] == "api" and "check-runs" in args[1]:
         return CHECK_RUNS
     raise rec.BlindError(f"unexpected gh call: {args}")

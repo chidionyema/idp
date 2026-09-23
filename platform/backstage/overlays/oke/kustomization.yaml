@@ -9,7 +9,6 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
-  - availability.yaml
   - backstage-external-secret.yaml
   # The portal's GitHub App token (installation token, backstage lane of lanes.json).
   - github-token.yaml
@@ -56,6 +55,29 @@ images:
     # fleetview-backend.yaml); the marker is how it finds the line.
     newTag: main-11997-c0924912b71494c800a28b6d5e5ea91734bdd700 # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
 patches:
+  # The catalogue's PodDisruptionBudget lives in ../../base/catalogue.yaml. This overlay used to
+  # declare a second one as a resource, which made kustomize refuse the entire render; it is an
+  # inline JSON6902 patch now, so the id is registered once and the maxUnavailable intent from
+  # crew#539 still applies. (An earlier attempt kept it in availability.yaml with a `path:`
+  # reference and kustomize parsed the file's leading comments as the patch document --
+  # "must specify a target for patch # The catalogue survives...". Comments belong here.)
+  #
+  # maxUnavailable, deliberately, and never minAvailable: a PDB whose floor equals the replica
+  # count refuses every drain forever -- exactly what the clickhouse PDB did during the
+  # 2026-08-28 drain. The base declares minAvailable: 2; against replicas: 3 both shapes leave
+  # one drainable pod, and the one with the incident behind it wins.
+  - target:
+      group: policy
+      version: v1
+      kind: PodDisruptionBudget
+      name: catalogue
+      namespace: backstage
+    patch: |
+      - op: remove
+        path: /spec/minAvailable
+      - op: add
+        path: /spec/maxUnavailable
+        value: 1
   # The catalogue's database is the one estate Postgres (platform/estate-db), not the server
   # bundled in base -- base keeps that one because compose and k3d have nothing else to talk to.
   - target:
