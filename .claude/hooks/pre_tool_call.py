@@ -5,6 +5,7 @@ from pathlib import Path
 MAX_LINES = 50
 LOG_DIR = Path.home() / ".pi/agent/state"
 
+
 def main():
     inp = json.loads(sys.stdin.read())
     if inp.get("tool_name") != "Bash":
@@ -16,7 +17,20 @@ def main():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log = LOG_DIR / "last_exec.log"
     w = f'__out=$({cmd} 2>&1); echo "$__out" > {log}; __l=$(echo "$__out" | wc -l); if [ "$__l" -gt {MAX_LINES} ]; then echo "$__out" | head -n 25; echo "[... $(($__l - {MAX_LINES})) lines truncated ...]"; echo "$__out" | tail -n 25; else echo "$__out"; fi'
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": {"command": w, "description": ti.get("description", "")}}}))
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "updatedInput": {
+                        "command": w,
+                        "description": ti.get("description", ""),
+                    },
+                }
+            }
+        )
+    )
+
 
 if __name__ == "__main__":
     main()
