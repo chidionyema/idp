@@ -1,0 +1,269 @@
+#!/usr/bin/env python3
+"""Deploy-journey narrator (crew#973 CP3, docs/specs/2026-09-23-deploy-river.md).
+
+WHAT THIS IS. Deterministic text over the ledger. No LLM, no model call, no chrome —
+just templates that read deploy_journey_events rows and emit one or two sentences.
+The voice service speaks them; the River scene subtitles them. The contract:
+
+  * story mode: "This deploy. Pushed 08:12; two gates failed first; merged 08:47;
+    signed; rolled in ninety seconds; serving now." -- one paragraph per journey.
+  * live commentary: one line per transition, never anything between.
+  * unknown stages render as "unknown" verbatim, never guessed.
+  * sha with no recorded journey is BLIND (named error), never a fabricated story.
+
+WHY THIS IS A BIN, NOT A LIB. The narrator must run from cron and from the voice
+router with the same arguments; a CLI is the lowest common denominator. The MCP
+plugin (mcp/plugins/deploy_journeys.py) is the read seam; this file calls it, never
+duplicates its SQL.
+
+CONFIG (LAW 46):
+  ESTATE_DB   the catalogue database (default /data/estate.db; platform/mcp/estate-mcp.yaml
+              wires the production path)
+
+Usage:
+  bin/estate-deploy-narrator <sha>            # story mode for one sha
+  bin/estate-deploy-narrator --list           # live-commentary lines for every recent sha
+  bin/estate-deploy-narrator --sha <sha> --json   # machine-readable envelope
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import sys
+from importlib import util as _il_util
+from pathlib import Path
+
+# Load the MCP plugin as a module (it has no .py dependency on datasette at runtime;
+# the try/except hookimpl in the plugin handles the offline CI case).
+_PLUGIN = (
+    Path(__file__).resolve().parent.parent / "mcp" / "plugins" / "deploy_journeys.py"
+)
+_spec = _il_util.spec_from_file_location("deploy_journeys", _PLUGIN)
+_plugin = _il_util.module_from_spec(_spec)
+assert _spec.loader is not None
+sys.modules["deploy_journeys"] = _plugin
+_spec.loader.exec_module(_plugin)
+
+# The gate stages named in the spec, in the order they appear on the river. Stages not
+# in this list are passed through verbatim from the ledger row (no LLM, no
+# re-ordering, no inference).
+_GATE_NAMES = (
+    "pr_opened",
+    "auto_pr",
+    "fast_gate",
+    "bdd",
+    "security_scan",
+    "merge",
+    "build_multiarch",
+    "trivy",
+    "cosign",
+    "flux_reflector",
+    "image_automation",
+    "deploy_when_green",
+    "reconcile",
+    "pod_ready",
+    "first_log_line",
+)
+
+
+def _parse_ts(ts: str | None) -> dt.datetime | None:
+    """ISO-8601 with a Z suffix is the only shape the ledger carries. Anything else
+    (None, malformed, naive with offset) is treated as 'unknown ts' rather than
+    guessed -- the narrator never invents a time."""
+    if not ts:
+        return None
+    try:
+        # "2026-09-23T08:01:00Z" -> datetime with tzinfo=UTC
+        return dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _fmt_ts(ts: dt.datetime | None) -> str:
+    """HH:MM is the spoken form. UTC throughout; the founder runs in UTC and the
+    formatter does not localise. Missing ts renders as 'unknown', never as 00:00."""
+    if ts is None:
+        return "unknown"
+    return ts.strftime("%H:%M")
+
+
+def _stage_label(stage: str) -> str:
+    """A ledger row's stage is one of: 'pr_opened', 'check:<name>', 'merged',
+    'reconcile', or anything a flux feed names. For the narrative we want clean
+    names without the 'check:' prefix."""
+    if stage.startswith("check:"):
+        return stage[len("check:") :].replace("-", " ")
+    return stage.replace("-", " ")
+
+
+def story(journey: dict) -> str:
+    """Story-mode narration for one journey. ONE or TWO sentences max -- the voice
+    service spec (backstage/plugins/fleetview-backend/src/voice.py SYSTEM) says no
+    markdown, no lists, plain words, spoken aloud. Every token is a real timestamp
+    or a real stage name from the ledger; nothing is interpolated."""
+    events = journey.get("events") or []
+    if not events:
+        return (
+            f"Journey for {journey.get('sha') or 'unknown sha'} has no recorded stages."
+        )
+
+    opened = next((e for e in events if e["stage"] == "pr_opened"), None)
+    opened_ts = _parse_ts(opened.get("ts")) if opened else None
+    merged = next((e for e in events if e["stage"] == "merged"), None)
+    merged_ts = _parse_ts(merged.get("ts")) if merged else None
+    failed = [e for e in events if e.get("status") == "fail"]
+    tail = next(
+        (
+            e
+            for e in events
+            if e["stage"] in ("reconcile", "pod_ready", "first_log_line")
+        ),
+        None,
+    )
+
+    head = f"Pushed at {_fmt_ts(opened_ts)}"
+    if merged_ts is not None:
+        head += f", merged at {_fmt_ts(merged_ts)}"
+
+    tail_clause = ""
+    if failed:
+        names = " and ".join(_stage_label(e["stage"]) for e in failed)
+        tail_clause = (
+            f"{len(failed)} gate{'s' if len(failed) != 1 else ''} failed ({names})"
+        )
+    elif tail:
+        tail_status = tail.get("status") or "unknown"
+        tail_clause = f"{_stage_label(tail['stage'])} {tail_status}"
+    elif merged_ts is None:
+        tail_clause = "not merged yet"
+
+    if tail_clause:
+        return f"{head}; {tail_clause}."
+    return f"{head}."
+
+
+def commentary_line(prev: dict | None, curr: dict) -> str | None:
+    """Live commentary: one line per transition, nothing between. A transition is a
+    status change for the same stage, or the appearance of a new stage. Returns None
+    when nothing changed."""
+    if prev is None:
+        return f"Stage {_stage_label(curr['stage'])} recorded as {curr.get('status') or 'unknown'}."
+    if prev["stage"] != curr["stage"]:
+        return f"Now {_stage_label(curr['stage'])}: {curr.get('status') or 'unknown'}."
+    if prev.get("status") != curr.get("status"):
+        return f"{_stage_label(curr['stage'])} changed to {curr.get('status') or 'unknown'}."
+    return None
+
+
+def render_story(sha: str) -> dict:
+    """Public entry: the envelope, BLIND-aware. The MCP reader already returns the
+    right envelope; the narrator is a thin renderer on top of it."""
+    env = _plugin.get_deploy_journey(sha)
+    if not env["available"]:
+        return {
+            "available": False,
+            "mode": "story",
+            "sha": sha,
+            "text": None,
+            "error": env.get("error"),
+        }
+    if env["journey"] is None:
+        return {
+            "available": True,
+            "mode": "story",
+            "sha": sha,
+            "text": None,
+            "error": env.get("error") or f"no journey recorded for {sha!r}",
+        }
+    return {
+        "available": True,
+        "mode": "story",
+        "sha": sha,
+        "text": story(env["journey"]),
+        "error": None,
+    }
+
+
+def render_commentary(limit: int = 20) -> dict:
+    """Live commentary across recent journeys: one line per stage transition in
+    seq order, newest-first. The renderer never invents lines between transitions."""
+    env = _plugin.list_deploy_journeys(limit=limit)
+    if not env["available"]:
+        return {
+            "available": False,
+            "mode": "commentary",
+            "lines": [],
+            "error": env.get("error"),
+        }
+    lines: list[dict] = []
+    for j in env["journeys"]:
+        prev = None
+        for e in j.get("events") or []:
+            line = commentary_line(prev, e)
+            if line is not None:
+                lines.append(
+                    {
+                        "sha": j["sha"],
+                        "stage": e["stage"],
+                        "status": e.get("status"),
+                        "ts": e.get("ts"),
+                        "line": line,
+                    }
+                )
+            prev = e
+    return {"available": True, "mode": "commentary", "lines": lines, "error": None}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="deploy-journey narrator")
+    ap.add_argument(
+        "sha_pos", nargs="?", default=None, help="story mode for this sha (positional)"
+    )
+    ap.add_argument("--sha", default=None)
+    ap.add_argument(
+        "--list", action="store_true", help="live-commentary lines for recent journeys"
+    )
+    ap.add_argument("--limit", type=int, default=20)
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args()
+
+    if args.list:
+        env = render_commentary(args.limit)
+        if args.json:
+            print(json.dumps(env, indent=2))
+        else:
+            if not env["available"]:
+                print(f"BLIND estate-deploy-narrator: {env['error']}", file=sys.stderr)
+                return 2
+            for entry in env["lines"]:
+                print(
+                    f"{entry['ts'] or 'unknown':>20}  {(entry['sha'] or '')[:9]}  {entry['line']}"
+                )
+        return 0
+
+    sha = args.sha or args.sha_pos
+    if not sha:
+        print(
+            "usage: estate-deploy-narrator <sha> | --sha <sha> | --list",
+            file=sys.stderr,
+        )
+        return 2
+    env = render_story(sha)
+    if args.json:
+        print(json.dumps(env, indent=2))
+    else:
+        if not env["available"]:
+            print(f"BLIND estate-deploy-narrator: {env['error']}", file=sys.stderr)
+            return 2
+        if env.get("text") is None:
+            print(env["error"], file=sys.stderr)
+            return 1
+        print(env["text"])
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
