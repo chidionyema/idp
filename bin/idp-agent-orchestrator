@@ -201,6 +201,15 @@ submit() {
   # but if it did, refuse.
   if [ "$DRY_RUN" != "1" ]; then
     cd "$wt"
+    # The pre-push hook on this repo (bin/idp-install-hooks wired it) needs a
+    # per-worktree secret at .git/worktrees/<id>/idp-hook-secret. Lay it
+    # before commit so the hook doesn't REFUSE the push for an absent secret.
+    local hook_secret_src hook_secret_dst
+    hook_secret_src="$(git rev-parse --git-common-dir)/idp-hook-secret"
+    hook_secret_dst="$(git rev-parse --git-dir)/idp-hook-secret"
+    if [ -f "$hook_secret_src" ] && [ ! -f "$hook_secret_dst" ]; then
+      cp "$hook_secret_src" "$hook_secret_dst"
+    fi
     local ahead behind
     ahead="$(git rev-list --count "origin/$BASE_BRANCH..HEAD" 2>/dev/null || echo 0)"
     behind="$(git rev-list --count "HEAD..origin/$BASE_BRANCH" 2>/dev/null || echo 0)"
