@@ -51,3 +51,4 @@ export const catalogModuleEstateProjectionEntityProvider = createBackendModule({
 
 export { EstateProjectionEntityProvider } from './EstateProjectionEntityProvider';
 export { estateProjectionResponseToEntities } from './mapping';
+export default catalogModuleEstateProjectionEntityProvider;

@@ -50,6 +50,7 @@
     "app": "link:../app",
     "better-sqlite3": "^12.0.0",
     "catalog-backend-module-dagster-entity-provider": "workspace:*",
+    "catalog-backend-module-estate-projection": "workspace:*",
     "node-gyp": "^10.0.0",
     "pg": "^8.11.3"
   },

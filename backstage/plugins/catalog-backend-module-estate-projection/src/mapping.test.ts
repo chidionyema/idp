@@ -1,5 +1,7 @@
 import { estateProjectionResponseToEntities } from '../src/mapping';
-import response from './__fixtures__/projection-response.json';
+import response from '../__fixtures__/projection-response.json';
+
+type EstateSpec = { type: string; owner: string; lifecycle?: string; dependsOn: string[] };
 
 describe('estateProjectionResponseToEntities', () => {
   it('maps every projection node to a Backstage Entity with owner set', () => {
@@ -9,8 +11,9 @@ describe('estateProjectionResponseToEntities', () => {
     expect(entities).toHaveLength(response.length);
     for (const entity of entities) {
       expect(entity.metadata.owner).toBe('group:default/platform');
-      expect(entity.spec.dependsOn).toBeDefined();
-      expect(entity.spec.owner).toBe('group:default/platform');
+      const spec = entity.spec as unknown as EstateSpec;
+      expect(spec.dependsOn).toBeDefined();
+      expect(spec.owner).toBe('group:default/platform');
     }
   });
 
@@ -19,12 +22,12 @@ describe('estateProjectionResponseToEntities', () => {
       fallbackOwner: 'group:default/platform',
     });
     const alpha = entities.find(e => e.metadata.name === 'alpha');
-    expect(alpha?.spec.dependsOn).toEqual([
+    const gamma = entities.find(e => e.metadata.name === 'gamma');
+    expect((alpha?.spec as unknown as EstateSpec | undefined)?.dependsOn).toEqual([
       'component:default/beta',
       'component:default/gamma',
     ]);
-    const gamma = entities.find(e => e.metadata.name === 'gamma');
-    expect(gamma?.spec.dependsOn).toEqual([]);
+    expect((gamma?.spec as unknown as EstateSpec | undefined)?.dependsOn).toEqual([]);
   });
 
   it('falls back to experimental lifecycle when the projection omits it', () => {
@@ -32,6 +35,6 @@ describe('estateProjectionResponseToEntities', () => {
     const entities = estateProjectionResponseToEntities(node, {
       fallbackOwner: 'group:default/platform',
     });
-    expect(entities[0].spec.lifecycle).toBe('experimental');
+    expect((entities[0].spec as unknown as EstateSpec).lifecycle).toBe('experimental');
   });
 });
