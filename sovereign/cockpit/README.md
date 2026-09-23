@@ -6,10 +6,9 @@ cockpit/menu/tunnel` (`cli.py`), every literal named once in
 `cp22_everything_configurable.feature`.
 ## Run
 ```
-bin/sb up       # temporal dev server + worker, if not already running
+bin/sb up       # starts temporal + worker on the OKE cluster, not the laptop
 bin/sb cockpit  # serves $COCKPIT_PORT (default 8788), loopback
 ```
-launchd: `bin/idp-install-launchd` loads `ai.estate.cockpit.plist.tmpl` (KeepAlive true; blocks forever, unlike the one-shot jobs).
 ## Prove it (cp7 / cp22)
 ```
 curl -s localhost:$COCKPIT_PORT/healthz          # -> ok

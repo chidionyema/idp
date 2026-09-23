@@ -10,7 +10,7 @@ Deps: temporalio, httpx, langfuse (optional, guarded import). Nothing else.
 - `sovereign/cockpit/` (owner: builder C)  cockpit http server (stdlib http.server or aiohttp? -> stdlib only) + Mini App page + menu button
 - `bin/sb`             (owner: A) bash shim: ensures venv, `exec sovereign/.venv/bin/python -m sovereign.cli "$@"`
 - `sovereign/cli.py`   (owner: A) argparse; core subcommands; then `for m in (sovereign.otto.cli, sovereign.cockpit.cli): try import m; m.register(subparsers)`
-- `launchd/ai.estate.temporal.plist.tmpl`, `launchd/ai.estate.sovereign-worker.plist.tmpl`, `launchd/ai.estate.cockpit.plist.tmpl` (A, A, C) — use `${IDP}` `${HOME}` `${PATH}` only, installed by `bin/idp-install-launchd`.
+- `platform/temporal/`  (owner: A)  the cluster-resident Temporal engine (`temporal.yaml`, `worker.yaml`), exposed to the mesh via `tailscale-service.yaml` — the laptop carries no local bus plists anymore.
 
 ## Config (LAW 46 + cp22: EVERYTHING configurable; no literal of any kind outside config.py)
 All keys live in `sovereign/config.py` as one table {key: (default, type, env_name, help)}; resolution order default < `$ESTATE_HOME/estate.toml` < env < CLI flag; `sb config`/`sb config set`/`sb config --lint` (A owns). Every timeout, threshold, count, model alias, path, surface toggle is a key. Secrets print as set/unset.
