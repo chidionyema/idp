@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Plane 1 demo (Swarm): proves typed tuple coordination + CRDT shadow memory work.
+
+Usage: bin/idp-demo-plane1 [--json]
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "platform" / "executor"))
+
+import daemon as _daemon  # noqa: E402
+
+
+def compose() -> dict:
+    steps = []
+    runs = Path(tempfile.mkdtemp(prefix="idp-plane1-"))
+    os.environ["IDP_EXECUTOR_RUNS"] = str(runs)
+    with _daemon._REPLICAS_LOCK:
+        _daemon._REPLICAS.clear()
+    with _daemon._TUPLES_LOCK:
+        _daemon._TUPLES.clear()
+
+    steps.append({"step": "setup", "ok": True, "detail": f"runs={runs}"})
+
+    put_ok = _daemon.put_tuple("test", {"path": "test_login.py"}, role="qa")
+    steps.append({"step": "qa_puts_test", "ok": put_ok.get("ok", False),
+                  "detail": f"tuple_id={put_ok.get('tuple_id')}"})
+
+    take_ok = _daemon.take_tuple("test", role="engine")
+    steps.append({"step": "engine_takes_test", "ok": take_ok.get("ok") and take_ok.get("tuple") is not None,
+                  "detail": f"tuple_id={take_ok.get('tuple', {}).get('tuple_id')}"})
+
+    take_blocked = _daemon.take_tuple("test", role="coder")
+    steps.append({"step": "coder_blocked_from_test", "ok": not take_blocked.get("ok"),
+                  "detail": take_blocked.get("error", "")})
+
+    sm_a = _daemon._get_or_load_replica("p1-a")
+    sm_a.add(action="edit auth", result="added login", takeaway="ok", symbol="auth")
+    _daemon._persist_triplet("p1-a", "edit auth", "added login", "ok", "auth")
+    sm_b = _daemon._get_or_load_replica("p1-b")
+    sm_b.add(action="edit auth", result="added logout", takeaway="ok", symbol="auth")
+    _daemon._persist_triplet("p1-b", "edit auth", "added logout", "ok", "auth")
+    steps.append({"step": "two_replicas_put", "ok": True, "detail": "p1-a and p1-b each added 1 triplet"})
+
+    merge = _daemon.Handler.__new__(_daemon.Handler)._merge_replica(
+        {"replica_id": "p1-shared", "from_replica_id": "p1-a"}
+    )
+    merge2 = _daemon.Handler.__new__(_daemon.Handler)._merge_replica(
+        {"replica_id": "p1-shared", "from_replica_id": "p1-b"}
+    )
+    steps.append({"step": "merge_converges", "ok": merge.get("ok") and merge2.get("ok"),
+                  "detail": f"merged_count={merge2.get('merged_count')}"})
+
+    sm = _daemon._get_or_load_replica("p1-shared")
+    triplets = sm.top_k(symbol="auth", k=8)
+    steps.append({"step": "shared_sees_both", "ok": len(triplets) == 2,
+                  "detail": f"top_k(auth) returned {len(triplets)}"})
+
+    shutil.rmtree(runs, ignore_errors=True)
+    overall = all(s["ok"] for s in steps)
+    return {"ok": overall, "plane": 1, "steps": steps}
+
+
+def main() -> int:
+    as_json = "--json" in sys.argv
+    result = compose()
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        print("=== Plane 1 (Swarm) ===")
+        print(f"overall: {'PASS' if result['ok'] else 'FAIL'}")
+        for s in result["steps"]:
+            mark = "OK  " if s["ok"] else "FAIL"
+            print(f"[{mark}] {s['step']:<28}  {s['detail']}")
+    return 0 if result["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

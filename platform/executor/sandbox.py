@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 
@@ -36,7 +37,7 @@ def detect_backend() -> str:
                 ["docker", "info"],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=3,
             )
             if r.returncode == 0:
                 return "docker"
@@ -120,10 +121,8 @@ def _run_docker(
     memory are bounded. Same isolation guarantees the Firecracker lane provides,
     just implemented with what this machine has.
     """
-    import uuid as _uuid
-
     abs_sandbox = os.path.abspath(sandbox_path)
-    container_name = f"idp-sandbox-{_uuid.uuid4().hex[:8]}"
+    container_name = f"idp-sandbox-{uuid.uuid4().hex[:8]}"
     docker_cmd = ["docker", "run", "--rm", "--name", container_name]
     if runtime:
         docker_cmd += ["--runtime", runtime]
@@ -139,6 +138,12 @@ def _run_docker(
         image,
         *command,
     ]
+
+    def _decode(b):
+        return (
+            b.decode("utf-8", errors="replace") if isinstance(b, bytes) else (b or "")
+        )
+
     try:
         result = subprocess.run(
             docker_cmd,
@@ -151,8 +156,8 @@ def _run_docker(
     except subprocess.TimeoutExpired as exc:
         return (
             124,
-            exc.stdout or "",
-            (exc.stderr or "") + f"\n[sandbox timeout after {timeout_sec}s]",
+            _decode(exc.stdout),
+            _decode(exc.stderr) + f"\n[sandbox timeout after {timeout_sec}s]",
         )
 
 
@@ -165,6 +170,12 @@ def _run_temp_tree(
         "HOME": str(sandbox_path),
         "PYTHONDONTWRITEBYTECODE": "1",
     }
+
+    def _decode(b):
+        return (
+            b.decode("utf-8", errors="replace") if isinstance(b, bytes) else (b or "")
+        )
+
     try:
         result = subprocess.run(
             command,
@@ -179,8 +190,8 @@ def _run_temp_tree(
     except subprocess.TimeoutExpired as exc:
         return (
             124,
-            exc.stdout or "",
-            (exc.stderr or "") + f"\n[host timeout after {timeout_sec}s]",
+            _decode(exc.stdout),
+            _decode(exc.stderr) + f"\n[host timeout after {timeout_sec}s]",
         )
 
 

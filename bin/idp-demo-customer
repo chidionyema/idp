@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""Customer demo: the AI Operating System end-to-end in one command.
+
+Narrative: a customer files a bug report. Watch the Three Planes solve it.
+
+  Plane 1 (Swarm):    QA writes a failing test → tuple space coordinates
+  Plane 2 (Crucible): Judge scores · RedTeam defeats · Reverifier proves rollback
+  Plane 3 (Physics):  Math sieve folds the fix · Sigstore seals it · metrics prove it
+
+Usage:
+    bin/idp-demo-customer           # human-readable story
+    bin/idp-demo-customer --json    # machine-readable result
+
+Runs in-process (no daemon, no cluster, no network). Under 30 seconds.
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "platform" / "executor"))
+sys.path.insert(0, str(REPO / "sovereign"))
+
+import daemon as _daemon  # noqa: E402
+import sandbox as _sandbox  # noqa: E402
+
+BUG_REPORT = (
+    "login() returns True for empty password. "
+    "Expected: return False when password is empty."
+)
+BROKEN_CODE = (
+    "def login(username, password):\n"
+    "    if not username:\n"
+    "        return False\n"
+    "    return username == 'admin'\n"
+)
+FIXED_CODE = (
+    "def login(username, password):\n"
+    "    if not username or not password:\n"
+    "        return False\n"
+    "    return username == 'admin' and password == 'secret'\n"
+)
+
+
+def _reset() -> None:
+    with _daemon._REPLICAS_LOCK:
+        _daemon._REPLICAS.clear()
+    with _daemon._TUPLES_LOCK:
+        _daemon._TUPLES.clear()
+    _daemon._VERIFIER_STATS.update({"folded": 0, "passed": 0, "failed": 0, "errors": 0})
+    _daemon._JUDGE_STATS.update({"scored": 0, "errors": 0})
+    _daemon._REDTEAM_STATS.update({"defeated": 0, "errors": 0})
+    with _daemon._VERIFIER_SEEN_LOCK:
+        _daemon._VERIFIER_SEEN_KEYS.clear()
+    with _daemon._JUDGE_LOCK:
+        _daemon._JUDGE_SEEN.clear()
+    with _daemon._REDTEAM_LOCK:
+        _daemon._REDTEAM_SEEN.clear()
+    _daemon._TRACE_BUFFER.clear()
+    _daemon._TRACE_LAST_HASH = ""
+
+
+def demo() -> dict:
+    t0 = time.time()
+    log: list[str] = []
+    runs = Path(tempfile.mkdtemp(prefix="idp-customer-"))
+    os.environ["IDP_EXECUTOR_RUNS"] = str(runs)
+    _reset()
+
+    log.append("CUSTOMER DEMO — the AI Operating System")
+    log.append("")
+    log.append(f"Bug report: {BUG_REPORT}")
+    log.append("")
+
+    log.append("── PLANE 1 · Generative Swarm ──")
+    log.append("QA agent writes a failing test into the tuple space…")
+    test_tuple = _daemon.put_tuple(
+        "test",
+        {"path": "test_login.py", "content": "def test_empty_pw(): assert login('admin','') is False"},
+        role="qa",
+    )
+    log.append(f"  put_tuple(test, qa) → {test_tuple.get('tuple_id')} (queue_depth={test_tuple.get('queue_depth')})")
+
+    log.append("Coder agent takes the test…")
+    taken = _daemon.take_tuple("test", role="engine")
+    log.append(f"  take_tuple(test, engine) → {'matched' if taken.get('tuple') else 'empty'}")
+
+    log.append("Coder writes the fix into shadow memory…")
+    sm = _daemon._get_or_load_replica("coder-1")
+    sm.add(action="code::auth.py", result=FIXED_CODE, takeaway="empty-password fix", symbol="code")
+    _daemon._persist_triplet("coder-1", "code::auth.py", FIXED_CODE, "empty-password fix", "code")
+    log.append("  put_triplet(coder-1, code::auth.py, symbol=code)")
+
+    log.append("")
+    log.append("── PLANE 2 · Adversarial Crucible ──")
+    log.append("Judge scores the transcript…")
+    _daemon._get_or_load_replica("tx").add(
+        action="transcript::fix", result="tool_call fs_commit args result ok",
+        takeaway="worker run", symbol="transcript",
+    )
+    _daemon._persist_triplet("tx", "transcript::fix",
+                             "tool_call fs_commit args result ok", "worker run", "transcript")
+    judge = _daemon.Handler.__new__(_daemon.Handler)._judge_score({"replica_id": "tx"})
+    log.append(f"  judge_score(transcript) → scored={judge.get('scored')}")
+
+    log.append("RedTeam defeats payloads…")
+    redteam = _daemon.Handler.__new__(_daemon.Handler)._redteam_defeat({"replica_id": "coder-1"})
+    log.append(f"  redteam_defeat → defeated={redteam.get('defeated')} payloads")
+
+    log.append("")
+    log.append("── PLANE 3 · Physics Engine ──")
+    backend = _sandbox.detect_backend()
+    log.append(f"  sandbox backend: {backend}")
+    _daemon._verifier_fold_one("coder-1", "code::auth.py", FIXED_CODE, "empty-password fix", "code")
+    passed = _daemon._get_or_load_replica("verifier").top_k(symbol="verifier_pass", k=4)
+    failed = _daemon._get_or_load_replica("verifier").top_k(symbol="verifier_fail", k=4)
+    if passed:
+        log.append("  math sieve → VERIFIER_PASS (attested, reversible)")
+    else:
+        log.append(f"  math sieve → VERIFIER_FAIL ({len(failed)} refusal — gauntlet refused)")
+        try:
+            detail = json.loads(failed[0].result).get("claim_verdict", "")
+            log.append(f"    claim_verdict={detail}")
+        except (ValueError, IndexError):
+            pass
+
+    elapsed = time.time() - t0
+    metrics = _daemon.Handler.__new__(_daemon.Handler)._metrics({}).get("metrics", {})
+    status = _daemon.Handler.__new__(_daemon.Handler)._system_status({})
+    trace = _daemon._trace_tail(10)
+
+    log.append("")
+    log.append(f"── Done in {elapsed:.1f}s ──")
+    log.append(f"  triplets: {status.get('shadow', {}).get('total_triplets')}")
+    log.append(f"  verifier passed/failed: {metrics.get('verifier_passed_total')}/{metrics.get('verifier_failed_total')}")
+    log.append(f"  judge scored: {metrics.get('judge_scored_total')}")
+    log.append(f"  redteam defeated: {metrics.get('redteam_defeated_total')}")
+    log.append(f"  trace events: {len(trace)} (hash-chained)")
+
+    shutil.rmtree(runs, ignore_errors=True)
+    return {
+        "ok": True,
+        "elapsed_s": round(elapsed, 2),
+        "sandbox": backend,
+        "verifier_pass": len(passed),
+        "verifier_fail": len(failed),
+        "judge_scored": metrics.get("judge_scored_total"),
+        "redteam_defeated": metrics.get("redteam_defeated_total"),
+        "story": log,
+    }
+
+
+def main() -> int:
+    as_json = "--json" in sys.argv
+    result = demo()
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        for line in result["story"]:
+            print(line)
+    return 0 if result["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
