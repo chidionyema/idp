@@ -1,0 +1,300 @@
+diff --git a/.github/workflows/verify-drill.yml b/.github/workflows/verify-drill.yml
+new file mode 100644
+index 000000000..23d8c3318
+--- /dev/null
++++ b/.github/workflows/verify-drill.yml
+@@ -0,0 +1,65 @@
++# crew#345: the platform proves its own health every hour on a machine identity, with no person
++# logged in anywhere. The job exchanges its GitHub OIDC token for a one-hour OCI session that
++# impersonates the service user estate-ci (the identity oke-check.yml already runs on) and runs
++# bin/idp-verify-drill: identity, cluster, and the cluster's own receipt (bin/idp-cluster-state). 24 consecutive
++# green scheduled runs is the ticket's acceptance criterion, measured by crew's estate snapshot
++# and by the drills row of bin/idp-verify (drills/catalogue.yaml, max_age_hours 3).
++name: verify-drill
++on:
++  schedule:
++    - cron: "23 * * * *"   # hourly; the in-cluster receipt (platform/state) lands every 15 minutes
++  workflow_dispatch: {}
++  push:
++    branches: [main]
++    paths:
++      - platform/state/**
++      - bin/idp-verify-drill
++      - bin/idp-cluster-state
++      - .github/workflows/verify-drill.yml
++permissions:
++  id-token: write   # the OIDC token this job trades for OCI access
++  contents: read
++  issues: write
++concurrency:
++  group: verify-drill
++  cancel-in-progress: false
++jobs:
++  verify-drill:
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
++      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
++        with: { python-version: "3.12" }
++      - name: oci cli
++        run: pip install -q oci-cli
++      - name: OCI session token from the GitHub OIDC token
++        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
++        with:
++          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
++          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
++          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
++          oci_region: ${{ vars.OCI_REGION }}
++      - name: bin/idp-verify-drill
++        env:
++          OCI_CLI_AUTH: security_token   # every oci call in the run uses the exchanged session token
++          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
++          OCI_REGION: ${{ vars.OCI_REGION }}
++          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
++        run: |
++          set -o pipefail
++          bin/idp-verify-drill 2>&1 | tee drill.out
++      - name: the verdict is on the run summary, pass or fail
++        if: always()
++        run: |
++          printf '### verify-drill\n```\n%s\n```\n' "$(cat drill.out 2>/dev/null || echo 'no verdict: the drill died before printing one')" >> "$GITHUB_STEP_SUMMARY"
++      - name: a failed drill is an open P1 on this repository, never a badge nobody reads
++        if: failure()
++        env:
++          GH_TOKEN: ${{ github.token }}
++        run: |
++          line=$(grep -E '^FAIL' drill.out | tail -1 || true)
++          line=${line:-"verify-drill died before printing a verdict"}
++          body=$(printf '%s\nrun: %s/%s/actions/runs/%s\nboard: https://github.com/chidionyema/crew/issues/345\n' "$line" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
++          n=$(gh issue list --state open --search 'in:title "P1: verify drill failed"' --json number -q '.[0].number')
++          if [ -n "$n" ]; then gh issue comment "$n" --body "$body"; else gh label create P1 --color D93F0B --description "a platform row is not proving itself" --force >/dev/null; gh issue create --title "P1: verify drill failed" --label P1 --body "$body"; fi
+diff --git a/bin/idp-verify-drill b/bin/idp-verify-drill
+new file mode 100755
+index 000000000..30da6d9ad
+--- /dev/null
++++ b/bin/idp-verify-drill
+@@ -0,0 +1,78 @@
++#!/usr/bin/env bash
++# crew#345: live verification on a machine identity, never on a person's browser session.
++#
++# On 2026-08-26 live cluster verification stopped at least five times because the laptop's OCI
++# session had expired. Measured, not guessed: a browser session token is a 60-minute JWT
++# (exp - iat), refreshable to 24 h from the login and then dead; a `--no-browser` token-exchange
++# session has sess_exp == exp and cannot be refreshed at all. A platform whose health check
++# needs a person awake every hour is not durable (crew#250 R35).
++#
++# This drill runs from .github/workflows/verify-drill.yml every hour, holding only the OCI
++# session the job exchanged its GitHub OIDC token for (service user estate-ci, trust
++# github-actions-estate, bin/idp-oci-bootstrap). Three rows, then one verdict line:
++#
++#   ok      identity     session subject is service user estate-ci (token exchange, no login)
++#   ok      cluster      1 cluster ACTIVE, 1/1 node pool(s) ACTIVE
++#   ok      receipt      ok cluster-state ... nodes=1 ready=1 ... (12 min ago)
++#   ok      verify-drill 3/3 rows green
++#
++# The receipt row is the cluster's own word, written every 15 minutes from inside by
++# platform/state/cluster-state.yaml on the node's instance principal and graded by
++# bin/idp-cluster-state (idp#267); a runner has no kube path and this is the door it reads through.
++# FAIL when any row is red, BLIND (exit 2) when a row cannot be measured. Never asks anything.
++set -uo pipefail
++COMP="${OCI_COMPARTMENT_OCID:?OCI_COMPARTMENT_OCID}"
++EXPECT_USER="${ESTATE_CI_USER:-estate-ci}"
++red=0; blind=0
++say()  { printf '%-7s %-12s %s\n' "$1" "$2" "$3"; }
++fail() { say FAIL "$1" "$2"; red=$((red+1)); }
++bl()   { say BLIND "$1" "$2"; blind=$((blind+1)); }
++command -v oci >/dev/null || { say BLIND verify-drill "oci CLI is not installed"; exit 2; }
++command -v python3 >/dev/null || { say BLIND verify-drill "python3 is not installed"; exit 2; }
++[ "${OCI_CLI_AUTH:-}" = security_token ] || { say BLIND verify-drill "OCI_CLI_AUTH is '${OCI_CLI_AUTH:-}', not security_token: no exchanged session in this environment"; exit 2; }
++
++# --- identity: whose session is this? A person's OCID here is the incident, not a pass. ------
++tok=$(awk -F'[ =]+' '/^security_token_file/{print $2; exit}' "${OCI_CLI_CONFIG_FILE:-$HOME/.oci/config}" 2>/dev/null)
++if [ -z "$tok" ] || [ ! -r "$tok" ]; then bl identity "no security_token_file in the oci config: the token exchange step did not run"
++else
++  claims=$(python3 - "$tok" <<'PY'
++import base64, json, sys
++seg = open(sys.argv[1]).read().strip().split(".")[1]
++c = json.loads(base64.urlsafe_b64decode(seg + "=" * (-len(seg) % 4)))
++print(c.get("sub", ""), c.get("ttype", ""), (c.get("exp", 0) - c.get("iat", 0)) // 60)
++PY
++  )
++  sub=${claims%% *}; rest=${claims#* }; ttype=${rest%% *}; ttl=${rest#* }
++  name=$(oci iam user get --user-id "$sub" --query 'data.name' --raw-output 2>/dev/null || true)
++  if [ -z "$name" ]; then bl identity "session subject ${sub:0:24}... (ttype=$ttype, ${ttl} min): iam user get refused, cannot name it"
++  elif [ "$name" != "$EXPECT_USER" ]; then fail identity "session subject is $name, expected service user $EXPECT_USER: a person's login is running the platform check"
++  elif [ "$ttype" != te ]; then fail identity "session subject is $name but ttype=$ttype is not a token exchange (te): a browser login, not the machine identity"
++  else say ok identity "session subject is service user $name (token exchange, ${ttl} min, no login)"; fi
++fi
++
++# --- cluster: the control plane and node pools answer through the OCI API ------------------
++cl=$(oci ce cluster list --compartment-id "$COMP" --lifecycle-state ACTIVE --query 'data[].{n:name,id:id}' --output json 2>&1)
++if ! printf '%s' "$cl" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if isinstance(d,list) else 1)' 2>/dev/null; then bl cluster "oci ce cluster list failed: $(printf '%s' "$cl" | tail -1 | cut -c1-160)"
++else
++  n_cl=$(printf '%s' "$cl" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
++  if [ "$n_cl" -lt 1 ]; then fail cluster "no ACTIVE cluster in the compartment"
++  else
++    np=$(oci ce node-pool list --compartment-id "$COMP" --query 'data[].{n:name,s:"lifecycle-state"}' --output json 2>/dev/null || echo '[]')
++    read -r n_all n_ok < <(printf '%s' "$np" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d), sum(1 for p in d if p["s"]=="ACTIVE"))')
++    if [ "$n_all" -lt 1 ] || [ "$n_ok" != "$n_all" ]; then fail cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE"
++    else say ok cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE"; fi
++  fi
++fi
++
++# --- receipt: the cluster's own verdict, written every 15 min by platform/state (idp#267) and
++# graded by bin/idp-cluster-state for freshness and Ready. One writer, one reader, reused here.
++line=$("$(dirname "$0")/idp-cluster-state" 2>&1 | tail -1)
++case "$line" in
++  ok*)    say ok receipt "$(printf '%s' "$line" | sed -E 's/^ok +cluster-state +//')";;
++  FAIL*)  fail receipt "$(printf '%s' "$line" | sed -E 's/^FAIL +cluster-state +//')";;
++  *)      bl receipt "$(printf '%s' "$line" | sed -E 's/^BLIND +cluster-state +//')";;
++esac
++
++if [ "$red" -gt 0 ]; then say FAIL verify-drill "$red row(s) red, $blind blind"; exit 1; fi
++if [ "$blind" -gt 0 ]; then say BLIND verify-drill "$blind row(s) not measured"; exit 2; fi
++say ok verify-drill "3/3 rows green on the machine identity"
+diff --git a/docs/how-to/check-the-cluster-from-github.md b/docs/how-to/check-the-cluster-from-github.md
+index f72d80f59..47f8c1248 100644
+--- a/docs/how-to/check-the-cluster-from-github.md
++++ b/docs/how-to/check-the-cluster-from-github.md
+@@ -25,3 +25,18 @@ What a runner cannot see: it is outside `control_plane_allowed_cidrs`, so the `f
+ 
+ Residual static credentials on this path: the OIDC client secret and the S3 key pair, both GitHub
+ repository secrets. `bin/static-secret-gate` counts them (idp#102).
++
++## Hourly, with nobody logged in (crew#345)
++
++Demo: `gh workflow run verify-drill.yml -R chidionyema/idp && gh run watch -R chidionyema/idp`
++
++A laptop's OCI browser session is a 60-minute JWT, refreshable to 24 h from the login and then
++dead; a `--no-browser` token-exchange session cannot be refreshed at all (measured 2026-08-26,
++crew#345). So no scheduled verification runs from a laptop. `verify-drill.yml` runs every hour
++on the same `estate-ci` identity as above and `bin/idp-verify-drill` prints three rows: the
++session subject is `estate-ci` and a token exchange (a person's OCID or a browser login is a
++red row), the cluster and node pools are ACTIVE, and the cluster's own receipt `state/cluster`
++grades green through `bin/idp-cluster-state` (fresh, every node Ready). That receipt is written
++from inside every 15 minutes by the CronJob `cluster-state` (`platform/state/`, idp#267) on the
++worker node's instance principal. The proof of the ticket is 24 consecutive green scheduled
++runs, counted by crew's estate snapshot.
+diff --git a/docs/prose/verification-identity-live.feature b/docs/prose/verification-identity-live.feature
+new file mode 100644
+index 000000000..99ed8225b
+--- /dev/null
++++ b/docs/prose/verification-identity-live.feature
+@@ -0,0 +1,14 @@
++# Prose until the drill runs them: these need the cluster, Object Storage and the runner OIDC session (crew#345).
++Feature: The platform verifies its own health every hour with no person logged in
++  Scenario: A runner grades the cluster's own verdict on the machine identity
++    Given the CronJob cluster-state (platform/state, idp#267) wrote state/cluster from the worker node's instance principal within the last hour
++    And the verify-drill job holds an OCI session exchanged from its GitHub OIDC token and no key
++    When bin/idp-verify-drill runs at minute 23 of every hour
++    Then the identity row names service user estate-ci with ttype te, never a person's OCID or a browser login
++    And the cluster row counts the ACTIVE cluster and node pools through the OCI API
++    And the receipt row is the verdict of bin/idp-cluster-state: fresh, every node Ready
++
++  Scenario: Twenty-four hours with nobody awake
++    Given no oci session authenticate ran anywhere for 24 hours
++    When crew's estate snapshot counts the scheduled verify-drill runs of the last 24 hours
++    Then every one of them succeeded and the row reads GREEN, which is crew#345's acceptance criterion
+diff --git a/drills/catalogue.yaml b/drills/catalogue.yaml
+index f2d3b874a..f91c478a5 100644
+--- a/drills/catalogue.yaml
++++ b/drills/catalogue.yaml
+@@ -83,3 +83,14 @@ drills:
+       The cluster wrote its own state receipt (nodes, pods not Ready) to Object Storage from the
+       node's identity within the last hour and a runner with no kube path and no laptop session
+       token read it back through OIDC (crew#345: bin/idp-cluster-state grades freshness and Ready).
++  - name: verify-drill
++    workflow: verify-drill.yml
++    job: verify-drill
++    schedule: "23 * * * *"
++    max_age_hours: 3
++    proves: >-
++      In the last hour a runner holding no key, on the estate-ci machine identity, named its own
++      session subject as that service user, saw the cluster and node pools ACTIVE through the OCI
++      API, and graded the cluster's own state/cluster receipt (platform/state, bin/idp-cluster-state)
++      written from inside on the node's instance principal. Twenty-four green rows in a row is crew#345's acceptance
++      criterion: live verification with nobody logged in.
+diff --git a/tests/test_incident_crew345_verification_runs_on_a_machine_identity.py b/tests/test_incident_crew345_verification_runs_on_a_machine_identity.py
+new file mode 100644
+index 000000000..df55f1810
+--- /dev/null
++++ b/tests/test_incident_crew345_verification_runs_on_a_machine_identity.py
+@@ -0,0 +1,77 @@
++"""Incident crew#345, 2026-08-26: live cluster verification stopped at least five times in one
++night because the laptop's OCI browser session had expired. Measured: a browser session token is
++a 60-minute JWT (exp - iat), refreshable to 24 h from the login; a `--no-browser` token-exchange
++session has sess_exp == exp and cannot be refreshed at all. The rule (rung 4, incident test):
++the platform's hourly health verification runs on the estate-ci machine identity from a runner,
++the kube read happens inside the cluster on the node's instance principal (platform/state, idp#267), and no scheduled path
++anywhere in this repository asks a person to log in."""
++import re
++from pathlib import Path
++
++import yaml
++
++ROOT = Path(__file__).resolve().parents[1]
++WF = ROOT / ".github" / "workflows"
++TOKEN_EXCHANGE = "gtrevorrow/oci-token-exchange-action"
++
++
++def _docs(path: Path) -> list[dict]:
++    return [d for d in yaml.safe_load_all(path.read_text()) if d]
++
++
++def test_verify_drill_runs_hourly_on_the_exchanged_oidc_session_and_no_key() -> None:
++    wf = yaml.safe_load((WF / "verify-drill.yml").read_text())
++    crons = [s["cron"] for s in wf[True]["schedule"]]
++    assert crons == ["23 * * * *"], crons
++    assert wf["permissions"]["id-token"] == "write"
++    steps = wf["jobs"]["verify-drill"]["steps"]
++    assert any(TOKEN_EXCHANGE in s.get("uses", "") for s in steps), "no token exchange step"
++    drill = next(s for s in steps if "bin/idp-verify-drill" in s.get("run", ""))
++    assert drill["env"]["OCI_CLI_AUTH"] == "security_token"
++    # identifiers only: no OCI API key, fingerprint, private key or password reaches the job
++    text = (WF / "verify-drill.yml").read_text()
++    assert not re.search(r"OCI_(API|PRIVATE)_KEY|FINGERPRINT|PASSWORD", text), "a static credential on the verification path"
++
++
++def test_verify_drill_is_catalogued_with_its_own_cron_verbatim() -> None:
++    drills = {d["name"]: d for d in yaml.safe_load((ROOT / "drills" / "catalogue.yaml").read_text())["drills"]}
++    row = drills["verify-drill"]
++    assert row["workflow"] == "verify-drill.yml"
++    wf = yaml.safe_load((WF / row["workflow"]).read_text())
++    assert row["schedule"] == wf[True]["schedule"][0]["cron"]
++    assert row["max_age_hours"] <= 3, "an hourly drill older than three hours is a dead drill"
++
++
++def test_the_drill_script_refuses_a_person_and_a_browser_login_as_the_subject() -> None:
++    script = (ROOT / "bin" / "idp-verify-drill").read_text()
++    assert 'EXPECT_USER="${ESTATE_CI_USER:-estate-ci}"' in script
++    assert "oci iam user get --user-id" in script, "the subject is named through the API, not assumed"
++    assert '[ "$ttype" != te ]' in script, "a browser login (ttype=login) must be a red identity row"
++    assert "oci session authenticate" not in script
++    assert not re.search(r"ocid1\.[a-z]+\.oc1\.[a-z0-9.-]*\.[a-z0-9]{20,}", script), "an OCID literal (LAW 46)"
++
++
++def test_the_receipt_row_reuses_the_one_in_cluster_writer_and_its_reader() -> None:
++    """One writer (platform/state, idp#267), one reader (bin/idp-cluster-state). A second CronJob
++    or a second bucket reader for the same fact is the stitching the headline forbids."""
++    script = (ROOT / "bin" / "idp-verify-drill").read_text()
++    assert 'idp-cluster-state' in script and "oci os object" not in script
++    assert not (ROOT / "platform" / "health").exists(), "a second health CronJob next to platform/state"
++    rows = _docs(ROOT / "clusters" / "oke" / "platform.yaml")
++    state = next(d for d in rows if d["kind"] == "Kustomization" and d["metadata"]["name"] == "cluster-state")
++    assert state["spec"]["path"] == "./platform/state"
++    wf = (WF / "verify-drill.yml").read_text()
++    assert "platform/state/**" in wf and "bin/idp-cluster-state" in wf
++
++
++def test_no_scheduled_workflow_asks_a_person_to_log_in() -> None:
++    """Every scheduled workflow that touches OCI holds the exchanged session and nothing else."""
++    for f in sorted(WF.glob("*.yml")):
++        wf = yaml.safe_load(f.read_text())
++        text = f.read_text()
++        if "schedule" not in (wf.get(True) or {}) or "OCI_CLI_AUTH" not in text:
++            continue
++        assert TOKEN_EXCHANGE in text, f"{f.name} is scheduled, talks to OCI, and exchanges no OIDC token"
++        # graded on what runs, not on comments: oke-check.yml names the command it replaces (idp#267)
++        code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
++        assert "oci session authenticate" not in code, f"{f.name} asks for a browser login"

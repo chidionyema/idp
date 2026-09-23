@@ -1,0 +1,9 @@
+backstage/app-config.container.yaml
+backstage/app-config.yaml
+backstage/node_modules
+backstage/org/catalog-info.yaml
+backstage/org/kustomization.yaml
+backstage/platform/catalog-info.yaml
+bin/catalog-platform
+platform/backstage/overlays/oke/kustomization.yaml
+tests/test_incident_crew459_a_catalogue_file_in_git_is_not_in_the_pod.py

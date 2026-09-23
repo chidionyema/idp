@@ -1,0 +1,761 @@
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index 4236a5f27..a51c1412f 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -7,6 +7,8 @@
+ # last 100 CI runs, 2 of them a wall-clock fixture since fixed, 11 real reds that a laptop could have
+ # refused in seconds -- offline-gate/bdd (the tests) 40 of 55 failed jobs, the PR-body gates 9.
+ # Mean 8 commits per merged PR, 7.2 min per CI run. This hook runs, in order:
++#   0. bin/idp-main-green-gate  on a new branch: refuses if main CI is red (founder 2026-09-17)
++#      bin/idp-wip-gate         on a new branch: refuses if >= 3 PRs are already failing (founder 2026-09-17)
+ #   1. bin/idp-push-on-green   refuses a push to a branch whose PR is already green (2.2s measured)
+ #   2. bin/pr-report           gitleaks over the lines this push adds, the estate-zone literals
+ #                              among them, and the five content rules of policy/operating_model.rego.
+@@ -22,6 +24,30 @@ IDP="$(cd "$(dirname "$0")/.." && pwd)"
+ # throwaway repo (git init in tmp) committed into THIS branch when run from here -- five junk commits, one
+ # of them 841 files deleted (crew#584). The tests run in a clean git environment, always.
+ for v in $(compgen -e | grep '^GIT_' || true); do unset "$v"; done
++# Founder 2026-09-17 (Andon cord): every branch drawn from a broken main inherits its failures,
++# and agents that open new PRs while existing ones are red compound the pile-up. These two gates
++# fire ONLY on the first push of a new branch (remote sha = 000...000) so they never block a fix
++# being pushed onto an existing branch. BLIND (no gh / no network) exits 2 and does NOT refuse.
++new_branch=false
++while read -r _local_ref _local_sha remote_ref _remote_sha; do
++    if [ "$_remote_sha" = "0000000000000000000000000000000000000000" ]; then
++        new_branch=true
++    fi
++done
++if [ "$new_branch" = true ]; then
++    set +e
++    main_rc=0
++    main_out=$("$IDP/bin/idp-main-green-gate" 2>&1); main_rc=$?
++    set -e
++    echo "$main_out"
++    [ "$main_rc" = 1 ] && exit 1
++    set +e
++    wip_rc=0
++    wip_out=$("$IDP/bin/idp-wip-gate" 2>&1); wip_rc=$?
++    set -e
++    echo "$wip_out"
++    [ "$wip_rc" = 1 ] && exit 1
++fi
+ # crew#584 (idp#628, 2026-08-28): a green PR is merged, not pushed to -- three re-pushes turned a
+ # 7-minute PR into 21 minutes. Runs first: it is instant and it is the only rung that refuses work.
+ "$IDP/bin/idp-push-on-green"
+diff --git a/AGENTS.md b/AGENTS.md
+index 1260e1fd9..808f22c4f 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -42,6 +42,35 @@ every entity reference in it must resolve to an entity something defines
+ Adding a rule: add a row to `rules.yaml`, add both fixtures, run `bin/idp-rules render-agents-md`
+ and `bin/idp-ci`. No new rung, no new gate script.
+ 
++## Andon cord: main must be green; never more than 3 red PRs (2026-09-17)
++
++**Estate-wide. Applies to every agent, every tool, every workflow.**
++
++Toyota's Stop-the-Line principle, applied to this repository:
++
++1. **main must never fail CI.** A broken main hands its failures to every branch
++   drawn from it. If main is red, that is the only valid task until it is green.
++   No new feature work. No new PRs. Fix main.
++
++2. **Never more than 3 failing PRs open at once.** At the cap the pre-push hook
++   refuses any new branch push. Agents must fix a red PR before opening another.
++
++Both rules are machine-enforced at push time by `bin/idp-main-green-gate` and
++`bin/idp-wip-gate`, wired into `.githooks/pre-push` (new-branch pushes only).
++BLIND (no network / no `gh`) does not refuse the push — LAW 38: a fence a correct
++machine cannot satisfy is an outage.
++
++**Emergency overrides (typed deliberately, never scripted):**
++```
++IDP_MAIN_GREEN_GATE=0 git push   # you are the fix for main
++IDP_WIP_GATE=0        git push   # genuine emergency past the cap
++```
++
++**The reason these rules exist:** Five agent sessions, one after another, each
++opened new PRs while existing ones were red and while main itself was failing.
++The pile-up made it impossible to tell whether any new code was broken or was
++just inheriting the baseline. This is the structural fix.
++
+ ## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
+ 
+ **Mandate: On any fresh checkout, run `bin/idp-install-hooks` before your first commit.**
+diff --git a/backstage/platform/catalog-info.yaml b/backstage/platform/catalog-info.yaml
+index 0461250d2..6d82c6fd0 100644
+--- a/backstage/platform/catalog-info.yaml
++++ b/backstage/platform/catalog-info.yaml
+@@ -137,7 +137,7 @@ spec:
+   dependsOn:
+     - component:default/layer-scheduling
+     - component:default/layer-secret-store
+-    - component:default/layer-alerts-github
++    - component:default/layer-github-app-creds
+     - component:default/layer-llm
+ ---
+ apiVersion: backstage.io/v1alpha1
+@@ -185,6 +185,7 @@ spec:
+   system: observability
+   dependsOn:
+     - component:default/layer-secret-store
++    - component:default/layer-github-app-creds
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: Component
+@@ -260,7 +261,7 @@ spec:
+     - component:default/layer-secret-store
+     - component:default/layer-edge
+     - component:default/layer-estate-db-migrate
+-    - component:default/layer-alerts-github
++    - component:default/layer-github-app-creds
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: API
+@@ -672,7 +673,7 @@ spec:
+   owner: group:default/platform
+   system: resilience
+   dependsOn:
+-    - component:default/layer-alerts-github
++    - component:default/layer-github-app-creds
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: Component
+@@ -722,7 +723,7 @@ spec:
+   dependsOn:
+     - component:default/layer-secret-store
+     - component:default/layer-event-bus
+-    - component:default/layer-alerts-github
++    - component:default/layer-github-app-creds
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: Component
+@@ -945,6 +946,29 @@ spec:
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: Component
++metadata:
++  name: layer-github-app-creds
++  title: 'GitHub App credentials'
++  description: 'The GitHub App ExternalSecret in isolation; eight rows depend on this Secret for postBuild substitution.'
++  annotations:
++    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=github-app-creds'
++    estate/flux-kustomization: 'github-app-creds'
++    estate/path: './platform/github-app-creds'
++    estate/cluster: 'oke'
++  tags: [platform, security]
++  links:
++    - url: https://signoz.${ESTATE_ZONE}
++      title: 'Live logs and metrics'
++spec:
++  type: platform-layer
++  lifecycle: production
++  owner: group:default/platform
++  system: security
++  dependsOn:
++    - component:default/layer-secret-store
++---
++apiVersion: backstage.io/v1alpha1
++kind: Component
+ metadata:
+   name: layer-guacamole
+   title: 'Remote hands'
+@@ -1145,7 +1169,7 @@ spec:
+   dependsOn:
+     - component:default/layer-scheduling
+     - component:default/layer-secret-store
+-    - component:default/layer-alerts-github
++    - component:default/layer-github-app-creds
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: Component
+@@ -1284,7 +1308,7 @@ spec:
+   dependsOn:
+     - component:default/layer-scheduling
+     - component:default/layer-secret-store
+-    - component:default/layer-alerts-github
++    - component:default/layer-github-app-creds
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: Component
+@@ -1462,7 +1486,7 @@ spec:
+     - component:default/layer-scheduling
+     - component:default/layer-edge
+     - component:default/layer-secret-store
+-    - component:default/layer-alerts-github
++    - component:default/layer-github-app-creds
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: API
+@@ -1715,7 +1739,7 @@ spec:
+     - component:default/layer-secret-store
+     - component:default/layer-edge
+     - component:default/layer-event-bus
+-    - component:default/layer-alerts-github
++    - component:default/layer-github-app-creds
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: API
+diff --git a/bin/catalog-platform b/bin/catalog-platform
+index 99a44e3cf..524755f72 100755
+--- a/bin/catalog-platform
++++ b/bin/catalog-platform
+@@ -487,6 +487,12 @@ LAYERS = {
+         "Opens an issue for every page, so nothing fires into the void.",
+         "group:default/platform",
+     ),
++    "github-app-creds": (
++        "security",
++        "GitHub App credentials",
++        "The GitHub App ExternalSecret in isolation; eight rows depend on this Secret for postBuild substitution.",
++        "group:default/platform",
++    ),
+     "science": (
+         "observability",
+         "Science",
+diff --git a/bin/idp-main-green-gate b/bin/idp-main-green-gate
+new file mode 100755
+index 000000000..6c6b8d325
+--- /dev/null
++++ b/bin/idp-main-green-gate
+@@ -0,0 +1,99 @@
++#!/usr/bin/env python3
++"""idp-main-green-gate -- refuse a new branch when main's last CI run is red.
++
++Incident class (founder 2026-09-17): every branch drawn from a broken main
++inherits its failures. Agents then chase test reds that have nothing to do with
++their own change, waste CI minutes, and pile on PRs that can never go green until
++main itself is fixed. The Andon cord: pull it before branching, not after the PR
++is open.
++
++Exit codes
++----------
++0   main is green (or BLIND -- the push is not refused by an instrument that cannot see)
++1   main is RED -- fix main before opening a new branch
++2   BLIND -- no gh / no network / cannot determine main's state; push proceeds
++
++The caller (the pre-push hook) treats exit 2 as ok and exit 1 as a hard refuse.
++
++Override: IDP_MAIN_GREEN_GATE=0 skips the check (an agent that IS fixing main
++          must be able to push its fix onto main itself).
++"""
++from __future__ import annotations
++
++import os
++import subprocess
++import sys
++
++REPO = "chidionyema/idp"
++BRANCH = "main"
++
++if os.environ.get("IDP_MAIN_GREEN_GATE", "1") == "0":
++    print("ok    main-green-gate: IDP_MAIN_GREEN_GATE=0, skipped")
++    sys.exit(0)
++
++
++def _gh(*args: str) -> tuple[int, str]:
++    r = subprocess.run(
++        ["gh", *args], capture_output=True, text=True, timeout=15
++    )
++    return r.returncode, r.stdout.strip()
++
++
++def _blind(reason: str) -> None:
++    print(f"BLIND main-green-gate: {reason}; new branch allowed (LAW 38)")
++    sys.exit(2)
++
++
++# Check gh is available
++rc, _ = _gh("--version")
++if rc != 0:
++    _blind("gh CLI not installed or not authenticated")
++
++# Fetch the latest check-runs for main's HEAD
++rc, out = _gh(
++    "api",
++    f"repos/{REPO}/commits/{BRANCH}/check-runs",
++    "--jq",
++    "[.check_runs[] | {name: .name, conclusion: .conclusion, status: .status}]",
++)
++if rc != 0:
++    _blind(f"cannot read main's check runs: {out[:120]}")
++
++try:
++    import json
++    runs = json.loads(out)
++except Exception:
++    _blind("cannot parse check-run response")
++
++if not runs:
++    _blind("main has no check runs yet")
++
++# Any run still in progress → BLIND (GitHub hasn't decided yet)
++in_progress = [r for r in runs if r.get("status") not in ("completed",)]
++if in_progress:
++    names = ", ".join(r["name"] for r in in_progress[:3])
++    _blind(f"main CI still running ({names}...)")
++
++# Red = failed/action_required/cancelled/timed_out; neutral/skipped/success are fine
++FAIL_CONCLUSIONS = {"failure", "action_required", "cancelled", "timed_out"}
++red = [r for r in runs if r.get("conclusion") in FAIL_CONCLUSIONS]
++if not red:
++    print(f"ok    main-green-gate: main is green ({len(runs)} check(s) passed)")
++    sys.exit(0)
++
++names = ", ".join(r["name"] for r in red[:5])
++print(f"""FAIL  main-green-gate: main is RED -- {len(red)} check(s) failing: {names}
++
++      Opening a new branch from a broken main hands the failures to every PR drawn
++      from it. The Andon cord: fix main first, then branch.
++
++      To see what is failing on main:
++        gh run list --branch main --limit 5
++        gh run view <run-id> --log-failed
++
++      Once main is green, retry your push.
++
++      If you ARE the fix for main, skip this gate:
++        IDP_MAIN_GREEN_GATE=0 git push
++""")
++sys.exit(1)
+diff --git a/bin/idp-wip-gate b/bin/idp-wip-gate
+new file mode 100755
+index 000000000..2e47b76d0
+--- /dev/null
++++ b/bin/idp-wip-gate
+@@ -0,0 +1,109 @@
++#!/usr/bin/env python3
++"""idp-wip-gate -- refuse a new PR when 3 or more PRs are already failing CI.
++
++WIP cap (founder 2026-09-17): AI agents are relentless and lack inherent common
++sense. Without a hard ceiling on in-flight broken work, they happily open new PRs
++while existing ones stay red, compounding the pile-up. The rule is Toyota's Andon
++cord at the PR boundary: finish what you started before you start something new.
++
++The cap is 3 red PRs. At 3 the gate refuses any new branch push. Agents must fix
++at least one red PR to unblock themselves -- which is the whole point.
++
++Exit codes
++----------
++0   fewer than MAX_RED PRs are currently failing CI (or BLIND)
++1   MAX_RED or more PRs are red -- fix a red PR before opening a new one
++2   BLIND -- no gh / no network / cannot determine PR state; push proceeds
++
++Override: IDP_WIP_GATE=0 skips the check (emergency override, typed deliberately).
++"""
++from __future__ import annotations
++
++import json
++import os
++import subprocess
++import sys
++
++REPO = "chidionyema/idp"
++MAX_RED = 3  # refuse when this many PRs are failing
++
++if os.environ.get("IDP_WIP_GATE", "1") == "0":
++    print("ok    wip-gate: IDP_WIP_GATE=0, skipped")
++    sys.exit(0)
++
++
++def _gh(*args: str) -> tuple[int, str]:
++    r = subprocess.run(
++        ["gh", *args], capture_output=True, text=True, timeout=30
++    )
++    return r.returncode, r.stdout.strip()
++
++
++def _blind(reason: str) -> None:
++    print(f"BLIND wip-gate: {reason}; new branch allowed (LAW 38)")
++    sys.exit(2)
++
++
++rc, _ = _gh("--version")
++if rc != 0:
++    _blind("gh CLI not installed or not authenticated")
++
++# List all open PRs with their check rollup
++rc, out = _gh(
++    "pr", "list",
++    "--repo", REPO,
++    "--state", "open",
++    "--json", "number,headRefName,statusCheckRollup,title",
++    "--limit", "50",
++)
++if rc != 0:
++    _blind(f"cannot list PRs: {out[:120]}")
++
++try:
++    prs = json.loads(out)
++except Exception:
++    _blind("cannot parse PR list")
++
++FAIL_CONCLUSIONS = {"FAILURE", "ACTION_REQUIRED", "CANCELLED", "TIMED_OUT", "ERROR"}
++
++red_prs: list[dict] = []
++for pr in prs:
++    checks = pr.get("statusCheckRollup") or []
++    if not checks:
++        continue
++    # All completed and at least one failed
++    all_done = all(
++        c.get("status", "").upper() in ("COMPLETED", "")
++        for c in checks
++    )
++    has_red = any(
++        c.get("conclusion", "").upper() in FAIL_CONCLUSIONS
++        for c in checks
++    )
++    if all_done and has_red:
++        red_prs.append(pr)
++
++n = len(red_prs)
++if n < MAX_RED:
++    print(f"ok    wip-gate: {n} red PR(s) open (cap is {MAX_RED}); new branch allowed")
++    sys.exit(0)
++
++lines = "\n".join(
++    f"      #{p['number']} {p['headRefName']}: {p['title'][:60]}"
++    for p in red_prs[:6]
++)
++print(f"""FAIL  wip-gate: {n} red PR(s) open -- at the cap of {MAX_RED}. Fix a red PR before opening a new one.
++
++      Red PRs:
++{lines}
++
++      Fix workflow:
++        gh pr checkout <number>          # switch to the red branch
++        <fix the failure>
++        git push                         # re-run CI
++        gh pr merge --squash --auto      # arm the merge when green
++
++      Once fewer than {MAX_RED} PRs are red, retry your push.
++      Emergency override (typed on purpose): IDP_WIP_GATE=0 git push
++""")
++sys.exit(1)
+diff --git a/clusters/oke/alerts.yaml b/clusters/oke/alerts.yaml
+index 313986c79..924a4ee1e 100644
+--- a/clusters/oke/alerts.yaml
++++ b/clusters/oke/alerts.yaml
+@@ -64,6 +64,28 @@ spec:
+ # with pods; there is nothing here for `wait` to usefully block on. Apply-and-prune, same as the
+ # CronJob rows below that carry no readiness of their own -- the App Secret's actual content is
+ # a separate concern for whoever owns the vault-side github-app onboarding.
++# github-app-creds: the github-app ExternalSecret in isolation. No health check on unrelated
++# objects. Eight rows (otto-gateway, hermes-agent, epistemic-fabric, idp-agent, mcp,
++# agent-workforce, drills, backstage) depend on this for the github-app Secret's postBuild
++# substitution — they now depend on this row, not on alerts-github, so alerts-github's
++# health never blocks the Telegram critical path (T009).
++apiVersion: kustomize.toolkit.fluxcd.io/v1
++kind: Kustomization
++metadata:
++  name: github-app-creds
++  namespace: flux-system
++spec:
++  interval: 10m
++  dependsOn:
++    - name: secret-store
++  sourceRef:
++    kind: GitRepository
++    name: flux-system
++  path: ./platform/github-app-creds
++  prune: true
++  wait: false
++  timeout: 10m
++---
+ apiVersion: kustomize.toolkit.fluxcd.io/v1
+ kind: Kustomization
+ metadata:
+@@ -73,6 +95,7 @@ spec:
+   interval: 10m
+   dependsOn:
+     - name: secret-store
++    - name: github-app-creds
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+diff --git a/clusters/oke/platform.yaml b/clusters/oke/platform.yaml
+index ee86f016a..3c743d808 100644
+--- a/clusters/oke/platform.yaml
++++ b/clusters/oke/platform.yaml
+@@ -79,7 +79,7 @@ spec:
+     # github-token.yaml substitutes ${githubAppIDQuoted}/${githubAppInstallationIDQuoted}
+     # from the flux-system/github-app Secret; strict envsubst fails the row until the
+     # alerts-github row has rendered it.
+-    - name: alerts-github
++    - name: github-app-creds
+   postBuild:
+     substituteFrom:
+       # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
+@@ -430,7 +430,7 @@ spec:
+     - name: secret-store
+     - name: event-bus
+     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
+-    - name: alerts-github
++    - name: github-app-creds
+   timeout: 5m
+   healthChecks:
+     - apiVersion: apps/v1
+@@ -466,7 +466,7 @@ spec:
+     - name: scheduling
+     - name: secret-store
+     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
+-    - name: alerts-github
++    - name: github-app-creds
+   timeout: 10m
+   healthChecks:
+     - apiVersion: apps/v1
+@@ -501,7 +501,7 @@ spec:
+     - name: scheduling
+     - name: secret-store
+     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
+-    - name: alerts-github
++    - name: github-app-creds
+   timeout: 10m
+   healthChecks:
+     - apiVersion: apps/v1
+@@ -611,7 +611,7 @@ spec:
+     - name: edge
+     - name: event-bus
+     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
+-    - name: alerts-github
++    - name: github-app-creds
+     # estate-db-migrate is deliberately absent. It guarded a one-time copy of this
+     # gateway's Postgres data onto the estate cluster, because this row is what deletes the
+     # old server and the data would have been pruned ahead of being moved. That copy has
+@@ -666,7 +666,7 @@ spec:
+     - name: edge
+     - name: secret-store
+     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
+-    - name: alerts-github
++    - name: github-app-creds
+   timeout: 10m
+   healthChecks:
+     - apiVersion: apps/v1
+@@ -721,7 +721,7 @@ spec:
+   dependsOn:
+     - name: scheduling
+     - name: secret-store
+-    - name: alerts-github
++    - name: github-app-creds
+     - name: llm
+   wait: true
+   timeout: 10m
+@@ -1359,7 +1359,7 @@ spec:
+   # crew#488 CP5: alerts-github owns the App Secret and itself waits on secret-store; naming
+   # secret-store here twice over made this row read as a vault casualty on a cluster with none.
+   dependsOn:
+-    - name: alerts-github
++    - name: github-app-creds
+   wait: true
+   timeout: 10m
+   postBuild:
+diff --git a/docs/policy/rules-table.md b/docs/policy/rules-table.md
+index b018d84e7..d778c9710 100644
+--- a/docs/policy/rules-table.md
++++ b/docs/policy/rules-table.md
+@@ -79,6 +79,8 @@ still grades it every run via `bin/idp-rules render-agents-md --check`.
+ | A pull request that changes a file deciding what the estate SPENDS carries a cost-proof block naming a before, an after and the command that took both -- a number with no way to re-take it is a remembered number, and a change that says caching-enabled without the measured pair is an assertion, not a proof. A change outside the cost paths is never refused. | LAW 2 | `python3 bin/idp-cost-proof` | — | — |
+ | Every platform layer's Backstage Component and API carries a real owner group in bin/catalog-platform's own LAYERS dict, checked at generation time -- not a single hardcoded literal emitted regardless of what LAYERS says, and not left to a pre-commit hook a --no-verify commit, a clone with hooks not installed, or a GitHub-web merge can all skip. | incident 2026-09-15, via-negativa merged with no catalog owner or description until hand-fixed | `python3 bin/catalog-platform` | tests/fixtures/catalog-platform-owner/bad.py | tests/fixtures/catalog-platform-owner/good.py |
+ | Every workflow the founder can dispatch carries a '# button:' title and a '# founder:' sentence, and the portal template on disk matches the workflow that generated it. A feature with no door is not finished, and a door nobody regenerated opens onto something else. | LAW 32 | `python3 bin/idp-portal-buttons` | tests/fixtures/founder-door/bad.yml | .github/workflows/catalog-render.yml |
++| A new branch is never pushed when main CI is red: every branch drawn from a broken main inherits its failures, and agents that continue opening PRs compound the pile-up rather than fixing the root cause. The gate is BLIND (exit 2, not exit 1) when the GitHub API is unreachable -- a fence a correct machine cannot satisfy is an outage (LAW 38). | founder 2026-09-17 | `python3 bin/idp-main-green-gate` | None | None |
++| No new branch is pushed when 3 or more PRs are already failing CI (the WIP cap). Agents that open new PRs while existing ones are red compound the pile-up. At the cap the only valid task is to fix a red PR. BLIND (no GitHub API) does not refuse -- LAW 38. | founder 2026-09-17 | `python3 bin/idp-wip-gate` | None | None |
+ | No untracked, unignored checkout of this repository is nested under its own root: a gate that walks the tree reads the nested copy's own tests/fixtures/*/bad.yaml or Dockerfile and reports it as a defect in the branch under test | LAW 45, incident 2026-09-10 | `python3 bin/idp-stray-checkout` | tests/fixtures/stray-checkout/bad/nested-checkout | tests/fixtures/stray-checkout/good/plain-data |
+ | An agent's first-person claim of completed work is refused unless THREE INDEPENDENT pieces of evidence back it: independence is judged on the transcript's own tool calls (distinct tool:target pairs), never on a declaration the agent writes, and at least one piece must read state the agent did not author in the session. Hallucination is graded deterministically rather than asked of a larger model | founder 2026-09-13 "i said 3 there u go again alterning ny words" | `python3 bin/idp-epistemic` | tests/fixtures/epistemic/one-source-three-times/session.jsonl | tests/fixtures/epistemic/three-independent/session.jsonl |
+ | An agent's action is refused when it serves no goal the agent itself declared: cognitive drift is bounded by a per-goal budget and a context reset, not by asking the model to stay on topic | founder 2026-09-12, the Teleological Firewall | `python3 bin/idp-trajectory` | tests/fixtures/trajectory/bad/session.jsonl | tests/fixtures/trajectory/good/session.jsonl |
+diff --git a/platform/alerts-github/kustomization.yaml b/platform/alerts-github/kustomization.yaml
+index 3209c42c7..f2855debf 100644
+--- a/platform/alerts-github/kustomization.yaml
++++ b/platform/alerts-github/kustomization.yaml
+@@ -1,6 +1,5 @@
+ apiVersion: kustomize.config.k8s.io/v1beta1
+ kind: Kustomization
+ resources:
+-  - github-app.yaml
+   - provider-github.yaml
+   - alert.yaml
+diff --git a/platform/github-app-creds/github-app.yaml b/platform/github-app-creds/github-app.yaml
+new file mode 100644
+index 000000000..1615fcf69
+--- /dev/null
++++ b/platform/github-app-creds/github-app.yaml
+@@ -0,0 +1,43 @@
++# The github-app Secret, split out of platform/alerts-github so that any row
++# that needs the Secret (otto-gateway postBuild substitution, the GithubAccessToken
++# generators) can declare a tight dependency on just this resource rather than on
++# alerts-github's health check, which watches the backstage catalogue Deployment.
++# That health check caused alerts-github to be NOT READY whenever backstage degraded,
++# blocking otto-gateway and every other row that substitutes ${githubAppIDQuoted} --
++# even though the Secret itself was in the cluster and ready to be read.
++#
++# This Kustomization depends only on secret-store. alerts-github depends on this
++# Kustomization. otto-gateway, agent-workforce and any other postBuild substituter
++# depend on this Kustomization, not on alerts-github.
++#
++# Incident 2026-08-26 (crew#325): platform/alerts/provider-github.yaml named secretRef github-app,
++# and nothing created that Secret in the cluster (the App lives only in the vault, written by
++# bin/idp-github-app convert + installation). The Provider never became Ready, the reconcile
++# ledger posted zero repository_dispatch events in 24h, and a session with no kube path had no
++# way to read why langfuse-web was not serving. Flux's githubdispatch provider authenticates as
++# the App with these three keys (notification-controller >= v1.5).
++apiVersion: external-secrets.io/v1
++kind: ExternalSecret
++metadata:
++  name: github-app
++  namespace: flux-system
++spec:
++  refreshInterval: 10m
++  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
++  target:
++    name: github-app
++    creationPolicy: Owner
++    template:
++      engineVersion: v2
++      data:
++        githubAppID: "{{ .app_id }}"
++        githubAppInstallationID: "{{ .installation_id }}"
++        # Incident run 33339964930: kustomize build drops YAML quotes around ${githubAppID}, and
++        # Flux envsubst then types the bare numeral as an int -- the API server refuses the
++        # GithubAccessToken (spec.appID expected string). The quotes must ride IN the value:
++        # these keys carry the id already double-quoted, so the substituted text parses as a string.
++        githubAppIDQuoted: '{{ .app_id | quote }}'
++        githubAppInstallationIDQuoted: '{{ .installation_id | quote }}'
++        githubAppPrivateKey: "{{ .pem_b64 | b64dec }}"
++  dataFrom:
++    - extract: { key: github-app }
+diff --git a/platform/github-app-creds/kustomization.yaml b/platform/github-app-creds/kustomization.yaml
+new file mode 100644
+index 000000000..a26ac50ce
+--- /dev/null
++++ b/platform/github-app-creds/kustomization.yaml
+@@ -0,0 +1,7 @@
++apiVersion: kustomize.config.k8s.io/v1beta1
++kind: Kustomization
++# The github-app ExternalSecret in isolation. No health check, no unrelated
++# dependencies, no backstage coupling. One Secret, ready when the vault entry
++# exists and the store is reachable.
++resources:
++  - github-app.yaml
+diff --git a/platform/otto-gateway/OWNER.yaml b/platform/otto-gateway/OWNER.yaml
+new file mode 100644
+index 000000000..f66791244
+--- /dev/null
++++ b/platform/otto-gateway/OWNER.yaml
+@@ -0,0 +1,66 @@
++# Telegram Bot Singleton — Single Writer Declaration (T001, Phase 0)
++#
++# Telegram allows exactly one registered webhook URL per bot token and exactly one
++# reader. Any process that calls setWebhook or deleteWebhook steals the channel from
++# the rightful owner for up to 5 minutes (until the next reconciler run).
++#
++# OWNER: otto-gateway (namespace otto-gateway, this directory)
++#
++# What this means in practice:
++#   - otto-gateway/registration-reconciler.yaml is the ONLY process allowed to call
++#     setWebhook. It runs every 5 minutes and repairs any divergence.
++#   - hermes-agent has TELEGRAM_BOT_TOKEN removed from its ExternalSecret (the rename
++#     to DISABLED_TELEGRAM_BOT_TOKEN was the interim workaround; the key must be
++#     absent from the spec entirely, not renamed).
++#   - jit-broker must never call setWebhook, deleteWebhook, or getUpdates against
++#     the Telegram Bot API. It receives a copy of every inbound POST via the Traefik
++#     mirror in telegram-mirror.yaml and must operate on that copy only.
++#   - otto-golden/httproute.yaml serves GET /healthz only. POST /telegram-webhook is
++#     removed. otto-golden does not receive Telegram messages.
++#   - Any future process wanting Telegram access reads through otto-gateway's internal
++#     HTTP API or subscribes to the NATS otto.ingress subject. It never touches the
++#     Bot API directly.
++#
++# To transfer ownership: update this file, update registration-reconciler.yaml, update
++# otto-golden and hermes-agent ExternalSecrets. Never transfer by race.
++#
++# Enforcement: bin/idp-rules (rule: telegram-single-writer). Verifies:
++#   1. grep -rn "setWebhook\|deleteWebhook" clusters/ returns exactly one hit
++#      (registration-reconciler.yaml).
++#   2. The TELEGRAM_BOT_TOKEN key is absent from hermes-agent's ExternalSecret spec.
++#   3. otto-golden/httproute.yaml contains no /telegram-webhook path.
++#
++# This is a machine-readable declaration used by the rule gate.
++kind: SingletonOwnerDeclaration
++apiVersion: idp.estate/v1
++metadata:
++  name: telegram-bot
++  annotations:
++    idp.estate/singleton: "telegram-bot-token"
++    idp.estate/owner: "otto-gateway"
++    idp.estate/owner-namespace: "otto-gateway"
++    idp.estate/owner-manifest: "platform/otto-gateway/registration-reconciler.yaml"
++    idp.estate/declared: "2026-09-16"
++spec:
++  singleton:
++    name: Telegram Bot
++    description: >
++      The estate's one Telegram bot (@Ottototbot). One webhook URL, one reader,
++      one setWebhook caller. Owner is the registration reconciler in otto-gateway.
++  writer:
++    kustomization: otto-gateway
++    namespace: otto-gateway
++    resource: CronJob/otto-registration-reconciler
++    operation: setWebhook
++  readers:
++    - kustomization: otto-gateway
++      resource: Deployment/otto-gateway
++      description: Receives inbound POSTs at /webhook/telegram via HTTPRoute
++    - kustomization: jit
++      resource: Deployment/jit-broker
++      description: Receives a Traefik mirror copy of inbound Telegram POSTs; never touches Bot API
++  prohibited:
++    - any call to setWebhook outside of CronJob/otto-registration-reconciler
++    - any call to deleteWebhook from any process
++    - any call to getUpdates while a webhook is registered
++    - TELEGRAM_BOT_TOKEN in any ExternalSecret other than otto-gateway-channels
+diff --git a/rules.yaml b/rules.yaml
+index 1fe290b99..d11d8ecec 100644
+--- a/rules.yaml
++++ b/rules.yaml
+@@ -2107,6 +2107,46 @@ rules:
+     note: the workflows and portal templates actually committed
+   ok: every dispatchable workflow has a founder-facing button; the gate is proved both ways
+   fail: a workflow the founder can dispatch has no button, or the gate is not discriminating
++- id: main-green-gate
++  fast: true
++  label: main-green-gate
++  statement: 'A new branch is never pushed when main CI is red: every branch drawn from a broken main inherits its failures, and agents that continue opening PRs compound the pile-up rather than fixing the root cause. The gate is BLIND (exit 2, not exit 1) when the GitHub API is unreachable -- a fence a correct machine cannot satisfy is an outage (LAW 38).'
++  law: founder 2026-09-17
++  origin: 'Five agent sessions each opened new PRs while main was failing and while existing PRs were red. The pile-up made it impossible to tell whether new code was broken or just inheriting baseline failures. The fix is the Andon cord: pull before branching, not after the PR is open.'
++  planes:
++  - session
++  run:
++  - python3
++  - bin/idp-main-green-gate
++  cluster:
++    policy: null
++    why: the subject is GitHub CI state, which no admission controller sees
++  fixtures:
++    must_fail: null
++    must_pass: null
++  live_elsewhere: '.githooks/pre-push -- on every new-branch push (remote sha = 000...) this gate fires; BLIND does not refuse (LAW 38); IDP_MAIN_GREEN_GATE=0 skips for the agent that IS fixing main'
++  ok: main is green -- new branch allowed
++  fail: main is RED -- fix main before opening a new branch
++- id: wip-gate
++  fast: true
++  label: wip-gate
++  statement: 'No new branch is pushed when 3 or more PRs are already failing CI (the WIP cap). Agents that open new PRs while existing ones are red compound the pile-up. At the cap the only valid task is to fix a red PR. BLIND (no GitHub API) does not refuse -- LAW 38.'
++  law: founder 2026-09-17
++  origin: 'Same incident class as main-green-gate: the WIP cap is the structural fix. Toyota Stop-the-Line applied to the PR queue. Three is the hard ceiling; below it the agent has room to work in parallel without losing track of what is actually broken.'
++  planes:
++  - session
++  run:
++  - python3
++  - bin/idp-wip-gate
++  cluster:
++    policy: null
++    why: the subject is the open PR list on GitHub, which no admission controller sees
++  fixtures:
++    must_fail: null
++    must_pass: null
++  live_elsewhere: '.githooks/pre-push -- fires on every new-branch push alongside main-green-gate; IDP_WIP_GATE=0 skips for genuine emergencies'
++  ok: fewer than 3 red PRs open -- new branch allowed
++  fail: 3 or more PRs are failing CI -- fix a red PR before opening a new one
+ - id: stray-checkout
+   label: stray
+   statement: 'No untracked, unignored checkout of this repository is nested under its own root: a gate that walks the tree reads the nested copy''s own tests/fixtures/*/bad.yaml or Dockerfile and reports it as a defect in the branch under test'

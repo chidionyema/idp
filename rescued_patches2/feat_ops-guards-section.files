@@ -1,0 +1,13 @@
+AGENTS.md
+backstage/app-config.container.yaml
+backstage/packages/app/src/modules/home/Ops.test.tsx
+backstage/packages/app/src/modules/home/Ops.tsx
+backstage/packages/app/src/modules/home/guards.ts
+backstage/packages/app/src/modules/home/useGuards.ts
+bin/idp-oci-login
+bin/idp-sleep-ban
+bin/idp-verify
+mcp/plugins/estate_guards.py
+rules.yaml
+tests/fixtures/sleep-ban/bad.sh
+tests/fixtures/sleep-ban/good.sh

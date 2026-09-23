@@ -1,0 +1,4 @@
+backstage/node_modules
+backstage/packages/app/node_modules
+backstage/packages/backend/node_modules
+platform/observability/superset.yaml

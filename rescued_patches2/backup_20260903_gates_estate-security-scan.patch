@@ -1,0 +1,206 @@
+diff --git a/bin/estate-security-scan b/bin/estate-security-scan
+new file mode 100755
+index 000000000..f7d14a2d9
+--- /dev/null
++++ b/bin/estate-security-scan
+@@ -0,0 +1,78 @@
++#!/usr/bin/env bash
++# estate-security-scan: the "Security passes" evidence named by the Definition
++# of Done v2.1 (docs/policy/definition-of-done.md, Gate 3 and section 3.3).
++#
++# Three questions, each answered by a mature tool rather than by this file:
++#
++#   1. Static secrets in the codebase = 0     gitleaks   (git history, so every
++#                                                          tracked byte ever committed)
++#   2. Unaudited dependencies = 0             pip-audit  (every requirements*.txt)
++#   3. Policy contradiction = 0               bin/security-policy-gate (every control
++#                                                          row names a proof that exists)
++#
++# Output is the receipt: a header with the UTC timestamp and the commit hash, one
++# line per check, and a last line SECURITY-SCAN PASS|FAIL|BLIND. Exit 0 on PASS,
++# 1 on FAIL, 3 on BLIND. BLIND means a tool is missing so the check could not run;
++# a guard that loses its evidence reports BLIND, never a verdict (LAW 45). CI
++# installs the tools, so BLIND there is a broken job, and non-zero blocks merge.
++#
++# Untracked files (llm/.env and friends) are not the codebase and are not scanned
++# here: they are git-ignored and never leave the machine. `gitleaks protect
++# --staged` is the pre-commit fence for what is about to become the codebase.
++#
++#   estate-security-scan            run all three, print the receipt
++#   estate-security-scan --quiet    receipt only, no tool chatter
++set -uo pipefail
++IDP="$(cd "$(dirname "$0")/.." && pwd)"
++cd "$IDP" || exit 3
++quiet=0; [ "${1:-}" = "--quiet" ] && quiet=1
++fail=0; blind=0
++say() { printf '%s\n' "$*"; }
++
++say "SECURITY-SCAN $(date -u +%Y-%m-%dT%H:%M:%SZ) commit=$(git rev-parse HEAD) tree=$(git status --porcelain | wc -l | tr -d ' ')-dirty-paths"
++
++# 1. secrets, over git history: every tracked byte in every commit.
++if command -v gitleaks >/dev/null; then
++  if out=$(gitleaks detect --source . --redact --no-banner --exit-code 1 2>&1); then
++    say "ok    secrets   gitleaks $(gitleaks version): no leaks in git history"
++  else
++    say "FAIL  secrets   gitleaks found leaks in git history"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -20 | sed 's/^/      /'; fail=1
++  fi
++else
++  say "BLIND secrets   gitleaks not on PATH (brew install gitleaks)"; blind=1
++fi
++
++# 2. dependencies: every requirements file, one pip-audit run each.
++PA=""
++if command -v pip-audit >/dev/null; then PA="pip-audit";
++elif command -v uvx >/dev/null; then PA="uvx pip-audit"; fi
++reqs=$(git ls-files | grep -E '(^|/)requirements[^/]*\.txt$')
++if [ -z "$PA" ]; then
++  say "BLIND deps      pip-audit not on PATH (pipx install pip-audit, or uv)"; blind=1
++elif [ -z "$reqs" ]; then
++  say "ok    deps      no requirements*.txt tracked"
++else
++  # one resolver run over every file: per-file runs each re-resolve the tree
++  # and the three together exceeded five minutes on the founder machine.
++  args=(); for r in $reqs; do args+=(-r "$r"); done
++  # shellcheck disable=SC2086  # $PA is "pip-audit" or "uvx pip-audit": two words on purpose
++  out=$(timeout 240 $PA "${args[@]}" --progress-spinner off 2>&1); rc=$?
++  if [ $rc = 0 ]; then
++    say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files: no known vulnerabilities"
++  elif [ $rc = 124 ]; then
++    say "BLIND deps      pip-audit exceeded 240s (network); rerun"; blind=1
++  else
++    say "FAIL  deps      pip-audit"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'; fail=1
++  fi
++fi
++
++# 3. policy: every control row on the security policy page names a proof that exists.
++if out=$(python3 bin/security-policy-gate 2>&1); then
++  say "ok    policy    security-policy-gate: every control row has a proof"
++else
++  say "FAIL  policy    security-policy-gate"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -10 | sed 's/^/      /'; fail=1
++fi
++
++if [ $fail = 1 ]; then say "SECURITY-SCAN FAIL commit=$(git rev-parse --short HEAD)"; exit 1; fi
++if [ $blind = 1 ]; then say "SECURITY-SCAN BLIND commit=$(git rev-parse --short HEAD)"; exit 3; fi
++say "SECURITY-SCAN PASS commit=$(git rev-parse --short HEAD)"
+diff --git a/docs/demo/estate-security-scan.md b/docs/demo/estate-security-scan.md
+new file mode 100644
+index 000000000..4bf597582
+--- /dev/null
++++ b/docs/demo/estate-security-scan.md
+@@ -0,0 +1,42 @@
++# Demo: estate-security-scan
++
++`bin/estate-security-scan` is the "Security passes" receipt named by the
++Definition of Done v2.1 (`docs/policy/definition-of-done.md`, Gate 3 and
++section 3.3). It answers three questions with three mature tools and prints
++one receipt: the UTC timestamp, the commit hash, one line per check, and a
++verdict line.
++
++Run on this checkout (founder machine, 2026-08-25):
++
++```
++$ bin/estate-security-scan --quiet
++SECURITY-SCAN 2026-08-25T18:50:49Z commit=d434e499843abd74ff672cdb1ac37da82b415dce tree=6-dirty-paths
++ok    secrets   gitleaks 8.30.1: no leaks in git history
++ok    deps      pip-audit over 2 requirements files: no known vulnerabilities
++ok    policy    security-policy-gate: every control row has a proof
++SECURITY-SCAN PASS commit=d434e49
++```
++
++To see a failure, commit a fake key on a throwaway branch and run it again:
++
++```
++$ git checkout -b scratch/leak
++$ echo 'AWS_SECRET_ACCESS_KEY=AKIAIOSFODNN7EXAMPLEwJalrXUtnFEMI/K7MDENG' > leak.txt
++$ git add leak.txt && git commit -qm leak
++$ bin/estate-security-scan --quiet
++SECURITY-SCAN ... commit=...
++FAIL  secrets   gitleaks found leaks in git history
++ok    deps      pip-audit over 2 requirements files: no known vulnerabilities
++ok    policy    security-policy-gate: every control row has a proof
++SECURITY-SCAN FAIL commit=...
++$ git checkout - && git branch -D scratch/leak
++```
++
++Exit codes: 0 PASS, 1 FAIL, 3 BLIND. BLIND means a tool was missing so a
++check could not run; a guard that loses its evidence reports BLIND, never a
++verdict. In CI the `security-scan` job installs both tools, so BLIND there is
++a broken job, and any non-zero exit blocks merge.
++
++Untracked files such as `llm/.env` are not scanned: they are git-ignored and
++never enter the codebase. `gitleaks protect --staged` is the fence for what is
++about to.
+diff --git a/docs/onboarding/estate-security-scan.md b/docs/onboarding/estate-security-scan.md
+new file mode 100644
+index 000000000..d9ab2eb8d
+--- /dev/null
++++ b/docs/onboarding/estate-security-scan.md
+@@ -0,0 +1,48 @@
++# Onboarding: estate-security-scan
++
++## What it is
++
++`bin/estate-security-scan [--quiet]` runs three checks and prints one receipt
++with a timestamp and commit hash:
++
++1. **Secrets in the codebase = 0.** `gitleaks detect` over the whole git
++   history, so every tracked byte ever committed.
++2. **Unaudited dependencies = 0.** `pip-audit` over every tracked
++   `requirements*.txt`, in one resolver run.
++3. **Policy contradiction = 0.** `bin/security-policy-gate`: every control row
++   on the security policy page names a proof command that exists.
++
++The last line is `SECURITY-SCAN PASS`, `FAIL` or `BLIND` (exit 0, 1, 3).
++
++## Why it exists
++
++The founder's Definition of Done v2.1 (2026-08-25) says a "Security passes"
++claim needs `bin/estate-security-scan` output with a timestamp and commit
++hash, and that any non-zero security metric blocks merge. Before this script
++the three tools existed separately and nothing printed a receipt a buyer's
++engineer could check against a commit.
++
++## When it runs
++
++- By hand, before claiming security passes: paste the output as the evidence.
++- In CI, the `security-scan` job in `.github/workflows/ci.yml` runs it on
++  every pull request and on pushes to `main`; a failure blocks merge.
++
++## What you need on a laptop
++
++```
++brew install gitleaks          # 8.30.1 is what CI pins
++pipx install pip-audit         # or have uv on PATH; uvx pip-audit is used then
++```
++
++Without one of them the check prints `BLIND` and exits 3 rather than guessing.
++
++## Related files
++
++```
++bin/estate-security-scan                  the receipt
++bin/security-policy-gate                  check 3
++bin/supply-chain                          SBOM and licence policy (syft, grype, opa), the wider audit
++docs/policy/definition-of-done.md         the policy that names this command
++.github/workflows/ci.yml                  the security-scan job
++```
+diff --git a/mkdocs.yml b/mkdocs.yml
+index 66203d6c8..0c01c7a5f 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -41,6 +41,7 @@ nav:
+       - EU AI Act: demo/ai-act.md
+       - LAW 32 gate: demo/law32.md
+       - Actions pinned: demo/actions-pinned.md
++      - Estate security scan: demo/estate-security-scan.md
+       - owner-account: demo/owner-account.md
+       - static-secret: demo/static-secret.md
+       - Bind audit: demo/bind-audit.md
+@@ -75,6 +76,7 @@ nav:
+       - EU AI Act: onboarding/ai-act.md
+       - LAW 32 gate: onboarding/law32.md
+       - Actions pinned: onboarding/actions-pinned.md
++      - Estate security scan: onboarding/estate-security-scan.md
+       - owner-account: onboarding/owner-account.md
+       - static-secret: onboarding/static-secret.md
+       - Bind audit: onboarding/bind-audit.md

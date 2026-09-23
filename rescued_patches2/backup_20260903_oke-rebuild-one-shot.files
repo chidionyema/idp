@@ -1,0 +1,11 @@
+.github/workflows/oke-check.yml
+.gitignore
+bin/idp-oci-bootstrap
+bin/idp-oci-login
+bin/idp-oke-rebuild
+docs/how-to/check-the-cluster-from-github.md
+platform/oci/.terraform.lock.hcl
+platform/oci/clusters/estate.env
+platform/oci/main.tf
+platform/oci/variables.tf
+platform/oci/versions.tf

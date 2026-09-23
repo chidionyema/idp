@@ -1,0 +1,133 @@
+diff --git a/bin/idp-flux-bootstrap b/bin/idp-flux-bootstrap
+index f905fee21..f7f28ba6e 100755
+--- a/bin/idp-flux-bootstrap
++++ b/bin/idp-flux-bootstrap
+@@ -19,8 +19,9 @@ oci ce cluster create-kubeconfig --cluster-id "$CLUSTER" --file "$KUBECONFIG" --
+ chmod 600 "$KUBECONFIG"
+ kubectl get --raw /readyz >/dev/null && echo "ok      apiserver ready"
+ kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+-kubectl -n flux-system create secret generic sops-age --from-file=age.agekey="$SOPS_AGE_KEY_FILE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+-echo "ok      sops-age secret in flux-system"
++# crew#227 CP3, 2026-08-25: the last sops file left platform/ (idp#120); workload secrets come from
++# OCI Vault through External Secrets. The age key never enters the cluster again.
++kubectl -n flux-system delete secret sops-age --ignore-not-found >/dev/null && echo "ok      no sops-age secret in flux-system (secrets come from OCI Vault)"
+ # crew#227 CP3: the ClusterSecretStore (platform/secret-store) reads the vault OCID and region from
+ # this ConfigMap through Flux postBuild substitution, so no tenancy identifier is typed in git.
+ VAULT_ID=$(cd "$IDP/platform/oci" && tofu output -raw vault_id 2>/dev/null || true)
+diff --git a/clusters/oke/edge.yaml b/clusters/oke/edge.yaml
+index de99978a2..b56d5d4ee 100644
+--- a/clusters/oke/edge.yaml
++++ b/clusters/oke/edge.yaml
+@@ -63,10 +63,6 @@ spec:
+   path: ./platform/prospector
+   prune: true
+   wait: true
+-  decryption:
+-    provider: sops
+-    secretRef:
+-      name: sops-age
+ ---
+ apiVersion: source.toolkit.fluxcd.io/v1
+ kind: GitRepository
+diff --git a/clusters/oke/platform.yaml b/clusters/oke/platform.yaml
+index 7e9d9244c..162d2e2da 100644
+--- a/clusters/oke/platform.yaml
++++ b/clusters/oke/platform.yaml
+@@ -1,6 +1,6 @@
+ # ADR 0004 step 3. `flux bootstrap github --path clusters/oke` writes flux-system/ beside this
+-# file; everything below is what Flux then reconciles. Secrets are sops+age files decrypted in
+-# cluster by the `sops-age` Secret that bin/idp-flux-bootstrap creates from the vault key.
++# file; everything below is what Flux then reconciles. Secrets reach the
++# cluster from OCI Vault through External Secrets (platform/secret-store); no sops key in cluster.
+ apiVersion: kustomize.toolkit.fluxcd.io/v1
+ kind: Kustomization
+ metadata:
+@@ -15,10 +15,6 @@ spec:
+   prune: true
+   wait: true
+   timeout: 5m
+-  decryption:
+-    provider: sops
+-    secretRef:
+-      name: sops-age
+   healthChecks:
+     - apiVersion: apps/v1
+       kind: Deployment
+diff --git a/clusters/oke/secrets.yaml b/clusters/oke/secrets.yaml
+index 76beff370..add3491b2 100644
+--- a/clusters/oke/secrets.yaml
++++ b/clusters/oke/secrets.yaml
+@@ -1,6 +1,6 @@
+ # Secrets row (crew#227 CP3). The operator first, then the store once its CRDs exist. Nothing
+-# depends on this row yet; workloads move over one ExternalSecret at a time, and the sops-age
+-# key is deleted when the last sops file is gone.
++# depends on this row: every workload secret is an ExternalSecret, and the sops-age key is gone
++# (idp#120, 2026-08-25).
+ apiVersion: kustomize.toolkit.fluxcd.io/v1
+ kind: Kustomization
+ metadata:
+diff --git a/docs/demo/oke.md b/docs/demo/oke.md
+index fa73207f5..73538ad07 100644
+--- a/docs/demo/oke.md
++++ b/docs/demo/oke.md
+@@ -3,7 +3,7 @@
+ ```
+ bin/idp-oci-login                       # ok    oci     identity estate-tofu answers in uk-london-1; ...
+ (cd platform/oci && tofu apply)         # Plan: 60 to add ... Apply complete
+-bin/idp-flux-bootstrap                  # ok apiserver ready / ok sops-age secret / flux get kustomizations
++bin/idp-flux-bootstrap                  # ok apiserver ready / ok no sops-age secret / flux get kustomizations
+ bin/idp-catalog-push                    # ok      estate-catalog pushed, revision <sha>@<utc>
+ ```
+ 
+diff --git a/docs/onboarding/oke.md b/docs/onboarding/oke.md
+index f0fd42788..8186ffd7b 100644
+--- a/docs/onboarding/oke.md
++++ b/docs/onboarding/oke.md
+@@ -5,17 +5,17 @@
+ | path | what |
+ |---|---|
+ | `platform/oci/` | OpenTofu: OKE Basic cluster, one A1 worker pool (step 2) |
+-| `clusters/oke/platform.yaml` | Flux Kustomizations for Backstage and Chaos Mesh, sops decryption |
++| `clusters/oke/platform.yaml` | Flux Kustomizations for Backstage and Chaos Mesh |
+ | `clusters/oke/catalog.yaml` | Flux `OCIRepository` pulling the estate catalog artifact |
+-| `platform/backstage/overlays/oke/` | base + image override + `backstage-env.sops.yaml` |
+-| `bin/idp-flux-bootstrap` | `flux bootstrap github` against the cluster, creates the `sops-age` secret |
++| `platform/backstage/overlays/oke/` | base + image override + `backstage-external-secret.yaml` (OCI Vault) |
++| `bin/idp-flux-bootstrap` | `flux bootstrap github` against the cluster, writes the estate-vars ConfigMap for the secret store |
+ | `bin/idp-catalog-push` | `flux push artifact` of the generated catalog to ghcr |
+ 
+ ## Order
+ 
+ 1. `bin/idp-oci-login` (identity from the vault; step 1).
+ 2. `cd platform/oci && tofu apply` (step 2; ~15 min for OKE).
+-3. `bin/idp-flux-bootstrap` (this page): kubeconfig, `sops-age`, Flux.
++3. `bin/idp-flux-bootstrap` (this page): kubeconfig, estate-vars, Flux.
+ 4. `bin/idp-catalog-push` whenever `bin/catalog-gen` has run; Backstage rolls on the new digest.
+ 
+ ## Why the catalog is an artifact, not a git file
+diff --git a/platform/secrets/external-secrets.yaml b/platform/secrets/external-secrets.yaml
+index 378ceddf9..e477f539b 100644
+--- a/platform/secrets/external-secrets.yaml
++++ b/platform/secrets/external-secrets.yaml
+@@ -1,5 +1,5 @@
+ # External Secrets Operator: reads OCI Vault as the node's instance principal and writes
+-# Kubernetes Secrets. Replaces the sops-age key that lives in flux-system (crew#227 CP3).
++# Kubernetes Secrets. Replaced the sops-age key that lived in flux-system (crew#227 CP3).
+ # Chart pinned; the release tag was helm-chart-2.9.0 on 2026-08-25
+ # (api.github.com/repos/external-secrets/external-secrets/releases/latest).
+ apiVersion: source.toolkit.fluxcd.io/v1
+diff --git a/tests/test_incident_eso_controller_without_probes.py b/tests/test_incident_eso_controller_without_probes.py
+index dd0aa15e5..f40aad03a 100644
+--- a/tests/test_incident_eso_controller_without_probes.py
++++ b/tests/test_incident_eso_controller_without_probes.py
+@@ -39,3 +39,10 @@ def test_every_platform_external_secret_uses_oci_vault() -> None:
+         d = yaml.safe_load(f.read_text())
+         assert d["kind"] == "ExternalSecret", f
+         assert d["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "oci-vault"}, f
++
++def test_no_flux_kustomization_decrypts_with_sops() -> None:
++    # crew#227 CP3: with no sops files left, a decryption block is a dangling key reference.
++    for f in ROOT.glob("clusters/oke/*.yaml"):
++        for d in yaml.safe_load_all(f.read_text()):
++            if d and d.get("kind") == "Kustomization":
++                assert "decryption" not in d["spec"], f
