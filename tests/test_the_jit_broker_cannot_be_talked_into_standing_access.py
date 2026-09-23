@@ -813,7 +813,7 @@ def test_the_agent_client_says_the_broker_is_unreachable_instead_of_raising(
 # refused. The 2026-09-07 regression they close is a broker that polled instead, took otto's
 # webhook away at every start, and then answered 409 forever.
 
-SECRET_TOKEN = "the-token-telegram-was-registered-with"
+SECRET_TOKEN = "the-token-telegram-was-registered-with"  # noqa: S105 — a fixture value, not a credential
 
 
 def _door(broker, phone, secret_token=SECRET_TOKEN, public_prefix=""):
@@ -903,7 +903,7 @@ def test_a_delivery_with_the_wrong_secret_token_is_refused(tmp_path):
     req = _asked(broker)
     httpd = _door(broker, Phone("t", "42", broker))
     try:
-        assert _deliver(httpd, _tap(broker, req, 42), token="not-it") == 401
+        assert _deliver(httpd, _tap(broker, req, 42), token="not-it") == 401  # noqa: S106 — a fixture value, not a credential
     finally:
         httpd.shutdown()
     assert req.state == "pending"
@@ -1336,7 +1336,9 @@ def _derive_age_key():
         serialization.Encoding.Raw, serialization.PublicFormat.Raw
     )
     hexed = priv.private_bytes(
-        serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()
+        serialization.Encoding.Raw,
+        serialization.PrivateFormat.Raw,
+        serialization.NoEncryption(),
     ).hex()
     return hexed, pub
 
@@ -1388,7 +1390,9 @@ def _nonce_over_http(httpd, path="/enroll/nonce"):
 def _enroll_over_http(httpd, payload, path="/enroll"):
     host, port = httpd.server_address[0], httpd.server_address[1]
     conn = http.client.HTTPConnection(host, port, timeout=5)
-    conn.request("POST", path, json.dumps(payload), {"Content-Type": "application/json"})
+    conn.request(
+        "POST", path, json.dumps(payload), {"Content-Type": "application/json"}
+    )
     res = conn.getresponse()
     body = json.loads(res.read() or b"{}")
     code = res.status
@@ -1422,7 +1426,9 @@ def test_a_fresh_device_enrolls_and_gets_a_key_of_its_own(tmp_path):
     try:
         code, nonce = _nonce_over_http(httpd, path="/jit/enroll/nonce")
         assert code == 200, nonce
-        code, body = _enroll_over_http(httpd, _prove(nonce, _age_secret()), path="/jit/enroll")
+        code, body = _enroll_over_http(
+            httpd, _prove(nonce, _age_secret()), path="/jit/enroll"
+        )
     finally:
         httpd.shutdown()
     assert code == 200, body
@@ -1449,7 +1455,9 @@ def test_the_ledger_records_the_enrollment_by_fingerprint_and_not_by_key(tmp_pat
     assert line["event"] == "enrolled"
     assert line["device_fingerprint"] == body["fingerprint"]
     assert line["proof"] == "age-recipient"
-    assert body["key"] not in raw, "the ledger is not a second copy of the key it recorded"
+    assert body["key"] not in raw, (
+        "the ledger is not a second copy of the key it recorded"
+    )
     assert proof["mac"] not in raw
     assert nonce["nonce"] not in raw
 
@@ -1512,7 +1520,9 @@ def test_a_caller_that_does_not_hold_the_age_secret_is_refused(tmp_path):
             "ephemeral": impostor.public_key()
             .public_bytes(Encoding.Raw, PublicFormat.Raw)
             .hex(),
-            "mac": _hmac.new(shared, nonce["nonce"].encode(), hashlib.sha256).hexdigest(),
+            "mac": _hmac.new(
+                shared, nonce["nonce"].encode(), hashlib.sha256
+            ).hexdigest(),
         }
         code, _ = _enroll_over_http(httpd, payload)
     finally:
@@ -1535,7 +1545,9 @@ def test_enrollment_is_closed_when_the_broker_holds_no_age_recipient(tmp_path):
     assert enroll == 401
 
 
-def test_the_client_enrolls_from_the_age_identity_and_writes_its_own_key(tmp_path, monkeypatch):
+def test_the_client_enrolls_from_the_age_identity_and_writes_its_own_key(
+    tmp_path, monkeypatch
+):
     """bin/idp-jit enroll, over a real socket, against a real broker. The device holds the estate
     age secret and no broker key; it must walk away with a key where _agent_key reads, mode 600."""
     broker = make(tmp_path, age_recipient=AGE_RECIPIENT)
@@ -1546,7 +1558,7 @@ def test_the_client_enrolls_from_the_age_identity_and_writes_its_own_key(tmp_pat
     age_file = tmp_path / "age-key.txt"
     age_file.write_text(
         "# created: test\n"
-        '# public key: ' + AGE_RECIPIENT + "\n"
+        "# public key: " + AGE_RECIPIENT + "\n"
         "AGE-SECRET-KEY-1" + _age_secret_bech32() + "\n"
     )
     state = tmp_path / "state"
@@ -1566,7 +1578,9 @@ def test_the_client_enrolls_from_the_age_identity_and_writes_its_own_key(tmp_pat
     broker.authenticate(written)  # the broker accepts the key the client wrote
 
 
-def test_the_client_enroll_refuses_cleanly_when_it_holds_no_age_identity(tmp_path, monkeypatch):
+def test_the_client_enroll_refuses_cleanly_when_it_holds_no_age_identity(
+    tmp_path, monkeypatch
+):
     """No age identity is Level 1 of the bootstrap, and the one failure the person still owns.
     It must refuse with a reason, not a traceback, and write no key."""
     broker = make(tmp_path, age_recipient=AGE_RECIPIENT)

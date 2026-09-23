@@ -46,6 +46,7 @@ def _write_rows(path: Path, rows: list[dict]) -> None:
 # session_id splitting
 # ---------------------------------------------------------------------------
 
+
 def test_raw_session_id_strips_repo_prefix(ledger):
     assert ledger._raw_session_id("myrepo:abc-123") == "abc-123"
 
@@ -62,6 +63,7 @@ def test_raw_session_id_splits_on_last_colon(ledger):
 # Missing directory / empty state
 # ---------------------------------------------------------------------------
 
+
 def test_missing_ledger_dir_returns_empty_list(ledger, monkeypatch, tmp_path):
     monkeypatch.setenv("ESTATE_STATE_PATH_PREFIX", str(tmp_path / "does-not-exist"))
     result = ledger.ledger_tail("repo:uuid-1")
@@ -76,11 +78,22 @@ def test_blank_session_id_returns_empty_list(ledger):
 # Basic row extraction
 # ---------------------------------------------------------------------------
 
+
 def test_rows_matching_uuid_are_returned(ledger, tmp_path, monkeypatch):
     monkeypatch.setenv("ESTATE_STATE_PATH_PREFIX", str(tmp_path))
     rows = [
-        {"session": "uuid-abc", "ts": "2026-09-09T10:00:00Z", "source": "user", "text": "hi"},
-        {"session": "other-uuid", "ts": "2026-09-09T10:00:01Z", "source": "user", "text": "other"},
+        {
+            "session": "uuid-abc",
+            "ts": "2026-09-09T10:00:00Z",
+            "source": "user",
+            "text": "hi",
+        },
+        {
+            "session": "other-uuid",
+            "ts": "2026-09-09T10:00:01Z",
+            "source": "user",
+            "text": "other",
+        },
     ]
     _write_rows(tmp_path / "project.jsonl", rows)
     result = ledger.ledger_tail("project:uuid-abc")
@@ -92,7 +105,14 @@ def test_rows_matching_uuid_are_returned(ledger, tmp_path, monkeypatch):
 def test_text_is_trimmed_to_500_chars(ledger, tmp_path, monkeypatch):
     monkeypatch.setenv("ESTATE_STATE_PATH_PREFIX", str(tmp_path))
     long_text = "x" * 1000
-    rows = [{"session": "u1", "ts": "2026-09-09T10:00:00Z", "source": "assistant", "text": long_text}]
+    rows = [
+        {
+            "session": "u1",
+            "ts": "2026-09-09T10:00:00Z",
+            "source": "assistant",
+            "text": long_text,
+        }
+    ]
     _write_rows(tmp_path / "p.jsonl", rows)
     result = ledger.ledger_tail("repo:u1")
     assert len(result[0]["text"]) == 500
@@ -101,7 +121,12 @@ def test_text_is_trimmed_to_500_chars(ledger, tmp_path, monkeypatch):
 def test_last_n_rows_returned(ledger, tmp_path, monkeypatch):
     monkeypatch.setenv("ESTATE_STATE_PATH_PREFIX", str(tmp_path))
     rows = [
-        {"session": "uid", "ts": f"2026-09-09T10:00:0{i}Z", "source": "user", "text": f"msg{i}"}
+        {
+            "session": "uid",
+            "ts": f"2026-09-09T10:00:0{i}Z",
+            "source": "user",
+            "text": f"msg{i}",
+        }
         for i in range(10)
     ]
     _write_rows(tmp_path / "p.jsonl", rows)
@@ -112,12 +137,28 @@ def test_last_n_rows_returned(ledger, tmp_path, monkeypatch):
 
 def test_rows_from_multiple_files_are_combined(ledger, tmp_path, monkeypatch):
     monkeypatch.setenv("ESTATE_STATE_PATH_PREFIX", str(tmp_path))
-    _write_rows(tmp_path / "a.jsonl", [
-        {"session": "uid", "ts": "2026-09-09T10:00:00Z", "source": "user", "text": "from-a"},
-    ])
-    _write_rows(tmp_path / "b.jsonl", [
-        {"session": "uid", "ts": "2026-09-09T10:00:01Z", "source": "assistant", "text": "from-b"},
-    ])
+    _write_rows(
+        tmp_path / "a.jsonl",
+        [
+            {
+                "session": "uid",
+                "ts": "2026-09-09T10:00:00Z",
+                "source": "user",
+                "text": "from-a",
+            },
+        ],
+    )
+    _write_rows(
+        tmp_path / "b.jsonl",
+        [
+            {
+                "session": "uid",
+                "ts": "2026-09-09T10:00:01Z",
+                "source": "assistant",
+                "text": "from-b",
+            },
+        ],
+    )
     result = ledger.ledger_tail("repo:uid", n=20)
     texts = {r["text"] for r in result}
     assert "from-a" in texts
@@ -128,7 +169,17 @@ def test_malformed_lines_are_skipped(ledger, tmp_path, monkeypatch):
     monkeypatch.setenv("ESTATE_STATE_PATH_PREFIX", str(tmp_path))
     with (tmp_path / "p.jsonl").open("w") as fh:
         fh.write("not-json\n")
-        fh.write(json.dumps({"session": "uid", "ts": "2026-09-09T10:00:00Z", "source": "user", "text": "ok"}) + "\n")
+        fh.write(
+            json.dumps(
+                {
+                    "session": "uid",
+                    "ts": "2026-09-09T10:00:00Z",
+                    "source": "user",
+                    "text": "ok",
+                }
+            )
+            + "\n"
+        )
     result = ledger.ledger_tail("repo:uid")
     assert len(result) == 1
     assert result[0]["text"] == "ok"
@@ -137,6 +188,7 @@ def test_malformed_lines_are_skipped(ledger, tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # routes.py envelope
 # ---------------------------------------------------------------------------
+
 
 def test_ledger_route_always_returns_200(monkeypatch, tmp_path):
     monkeypatch.setenv("ESTATE_STATE_PATH_PREFIX", str(tmp_path))
@@ -148,7 +200,14 @@ def test_ledger_route_always_returns_200(monkeypatch, tmp_path):
 
 def test_ledger_route_returns_rows_when_present(monkeypatch, tmp_path):
     monkeypatch.setenv("ESTATE_STATE_PATH_PREFIX", str(tmp_path))
-    rows = [{"session": "sid", "ts": "2026-09-09T10:00:00Z", "source": "user", "text": "hello"}]
+    rows = [
+        {
+            "session": "sid",
+            "ts": "2026-09-09T10:00:00Z",
+            "source": "user",
+            "text": "hello",
+        }
+    ]
     _write_rows(tmp_path / "proj.jsonl", rows)
     routes = _load(ROUTES_MODULE, "fleetview_routes_ledger_rows_test")
     body, status = routes.ledger_tail_envelope("proj:sid")

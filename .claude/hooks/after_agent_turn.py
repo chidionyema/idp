@@ -58,7 +58,7 @@ def _save_state(session_id: str, state: dict) -> None:
     try:
         with open(path, "w") as f:
             json.dump(state, f)
-    except Exception:
+    except Exception:  # noqa: S110 — deliberate: a hook must never break the turn
         pass
 
 
@@ -79,7 +79,7 @@ def _measure_transcript(transcript_path: str, state: dict) -> dict:
                 continue
             try:
                 entry = json.loads(line)
-            except Exception:
+            except Exception:  # noqa: S110, S112 — a malformed ledger line is skipped, not fatal
                 continue
 
             etype = entry.get("type", "")
@@ -100,7 +100,9 @@ def _measure_transcript(transcript_path: str, state: dict) -> dict:
             usage = entry.get("usage") or {}
             if usage:
                 state["total_input_tokens"] += int(usage.get("input_tokens", 0))
-                state["total_cache_read"] += int(usage.get("cache_read_input_tokens", 0))
+                state["total_cache_read"] += int(
+                    usage.get("cache_read_input_tokens", 0)
+                )
 
             # Compaction markers
             if etype == "system" and "compacted" in str(entry).lower():
@@ -109,10 +111,13 @@ def _measure_transcript(transcript_path: str, state: dict) -> dict:
             # Proxy refused calls (402/400 from the ceiling — message contains "estate's ceiling")
             if etype in ("tool_result", "error"):
                 content = str(entry.get("content", "") or entry.get("error", ""))
-                if "estate's ceiling" in content or "Refused before it was sent" in content:
+                if (
+                    "estate's ceiling" in content
+                    or "Refused before it was sent" in content
+                ):
                     state["proxy_refused"] += 1
 
-    except Exception:
+    except Exception:  # noqa: S110 — deliberate: a hook must never break the turn
         pass
 
     return state
@@ -140,7 +145,7 @@ def _format_report(state: dict, session_id: str) -> str:
     ceiling_line = (
         f"128K hard limit (model-agnostic) | {refused} call(s) refused this session"
         if refused
-        else f"128K hard limit (model-agnostic) | 0 calls refused"
+        else "128K hard limit (model-agnostic) | 0 calls refused"
     )
 
     lines = [
@@ -151,8 +156,8 @@ def _format_report(state: dict, session_id: str) -> str:
         f"         bash_calls={bash}  idp_exec={idp_exec}  raw={raw_bash}",
         f"  [4] Compactions:       {state['compactions']}",
         f"  [5] MCP calls:         {state['mcp_calls']}",
-        f"  [6-8] Dynamic pruning/compaction/gisting: session-shape enforcement",
-        f"        via context-guard-hook.py (UserPromptSubmit+PreToolUse)",
+        "  [6-8] Dynamic pruning/compaction/gisting: session-shape enforcement",
+        "        via context-guard-hook.py (UserPromptSubmit+PreToolUse)",
     ]
     return "\n".join(lines)
 
@@ -177,7 +182,7 @@ def main() -> None:
         os.makedirs(STATE_DIR, exist_ok=True)
         with open(os.path.join(STATE_DIR, "efficiency-latest.txt"), "w") as f:
             f.write(report + "\n")
-    except Exception:
+    except Exception:  # noqa: S110 — deliberate: a hook must never break the turn
         pass
 
     print(report)

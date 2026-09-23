@@ -142,7 +142,9 @@ def test_dispatch_steer_claude_code_writes_correct_json(signals, tmp_path, monke
     ledger.mkdir()
     monkeypatch.setenv("ESTATE_STATE_PATH_PREFIX", str(ledger) + "/")
 
-    error = signals._dispatch_steer_claude_code("idp:s-xyz", "founder", "check the signals")
+    error = signals._dispatch_steer_claude_code(
+        "idp:s-xyz", "founder", "check the signals"
+    )
     assert error is None
 
     import json as _json
@@ -176,7 +178,9 @@ def test_nudge_with_claude_code_runtime_succeeds(signals, tmp_path, monkeypatch)
 # ---------------------------------------------------------------------------
 
 
-def test_dispatch_steer_cyrus_without_api_key_returns_error_not_raise(signals, monkeypatch):
+def test_dispatch_steer_cyrus_without_api_key_returns_error_not_raise(
+    signals, monkeypatch
+):
     """_dispatch_steer_cyrus with no LINEAR_API_KEY returns an error string -- never raises."""
     monkeypatch.delenv("LINEAR_API_KEY", raising=False)
     monkeypatch.delenv("LINEAR_API_KEY_FILE", raising=False)
