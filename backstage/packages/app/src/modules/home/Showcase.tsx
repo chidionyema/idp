@@ -30,7 +30,7 @@ import {
   formatRemaining,
   progressionSentence,
 } from './showcaseDocs';
-import { CountdownBar, StateDonut, SystemBars, donutSentence } from './visuals';
+import { StateDonut, SystemBars, donutSentence } from './visuals';
 
 /** Scaffolder template the demo-sandbox workflow dispatches (CP2). */
 const SANDBOX_TEMPLATE = '/create/templates/default/run-demo-sandbox';
@@ -276,14 +276,10 @@ export const Showcase = () => {
           </>
         )}
         {sandbox.state === 'countdown' && (
-          <>
-            <Summary testId="showcase-sandbox-sentence">
-              A sandbox is live: <Name>{formatRemaining(sandbox.remainingMs)}</Name>{' '}
-              before it removes itself.
-            </Summary>
-            {/* CP2 (spec line 111): the hold drawn as a shrinking bar, not only a sentence. */}
-            <CountdownBar remainingMs={sandbox.remainingMs} ttlMs={sandbox.ttlMs} />
-          </>
+          <Summary testId="showcase-sandbox-sentence">
+            A sandbox is live: <Name>{formatRemaining(sandbox.remainingMs)}</Name>{' '}
+            before it removes itself.
+          </Summary>
         )}
         {sandbox.state === 'expired' && (
           <Summary testId="showcase-sandbox-sentence">

@@ -121,14 +121,11 @@ def test_no_false_partial_results():
     span1.sequence_num = 1
     result.transcript.spans = [span1]
 
-    # If output claims multiple steps, transcript should have evidence.
-    # Derived value (not a free parameter), so checked with if/raise not assert —
-    # the symbolic stage proves assert-guards hold for ALL inputs of a free variable,
-    # which is wrong here (len is always >= 0; the issue is whether it's >= 1 for
-    # THIS specific test setup).
+    # If output claims multiple steps, transcript should have evidence
     steps_claimed = 2
-    if len(result.transcript.spans) < 1:
-        raise AssertionError(
-            f"Agent claimed {steps_claimed} steps but has "
-            f"{len(result.transcript.spans)} in transcript"
-        )
+    steps_in_transcript = len(result.transcript.spans)
+
+    # At minimum, must have attempted what was claimed
+    assert steps_in_transcript >= 1, (
+        f"Agent claimed {steps_claimed} steps but has {steps_in_transcript} in transcript"
+    )

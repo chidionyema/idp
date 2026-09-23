@@ -8,7 +8,9 @@ resources:
 - agents.yaml
 - backstage.yaml
 - cert-manager.yaml
+- chaos-mesh.yaml
 - commerce.yaml
+- cross-node-drill.yaml
 - crossplane-system.yaml
 - dagster.yaml
 - demo-sandbox.yaml

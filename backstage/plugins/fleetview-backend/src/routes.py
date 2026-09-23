@@ -68,12 +68,6 @@ from pathlib import Path
 _SESSIONS_MODULE = Path(__file__).resolve().parent / "sessions.py"
 _NOTES_MODULE = Path(__file__).resolve().parent / "notes.py"
 _SIGNALS_MODULE = Path(__file__).resolve().parent / "signals.py"
-# The Observer lives in platform/intent/, NOT beside this file: it is a producer of contracts that
-# the backend merely reads, and the voice service is its peer, not its parent. Resolved from the
-# module's own location so it does not depend on the process's working directory.
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-_OBSERVER_MODULE = _REPO_ROOT / "platform" / "intent" / "observer.py"
-_VOICE_MEDIA_MODULE = Path(__file__).resolve().parent / "voice_media.py"
 _BLAST_MODULE = Path(__file__).resolve().parent / "blast.py"
 _GRAPH_MODULE = Path(__file__).resolve().parent / "graph.py"
 _EVALS_MODULE = Path(__file__).resolve().parent / "evals.py"
@@ -81,8 +75,6 @@ _MUTATIONS_MODULE = Path(__file__).resolve().parent / "mutations.py"
 _EXECUTOR_LINK_MODULE = Path(__file__).resolve().parent / "executor_link.py"
 _TRACE_MODULE = Path(__file__).resolve().parent / "trace.py"
 _LEDGER_TAIL_MODULE = Path(__file__).resolve().parent / "ledger_tail.py"
-_DEVICE_ACCESS_MODULE = Path(__file__).resolve().parent / "device_access.py"
-_HANDOFF_MODULE = Path(__file__).resolve().parent / "handoff.py"
 
 
 def _load(path: Path, name: str):
@@ -104,127 +96,8 @@ def _notes():
     return _load(_NOTES_MODULE, "fleetview_notes_impl")
 
 
-def newest_event_seq() -> int:
-    """The highest `session_events.id`, or 0.
-
-    THE LIVE SIGNAL ON A MACHINE WITH NO BUS. `session_events` gains a row every time a session
-    writes; its AUTOINCREMENT id only ever rises, so one indexed `MAX(id)` answers "has anything
-    happened since I last looked". One query per second, no dependency, no cluster -- and it is
-    what makes the stream live rather than a heartbeat.
-    """
-    import sqlite3 as _sqlite3
-
-    path = os.environ.get("ESTATE_DB")
-    if not path:
-        root = Path(__file__).resolve().parents[4]
-        path = str(root / "catalog" / "estate.db")
-    if not Path(path).is_file():
-        return 0
-    try:
-        con = _sqlite3.connect(path)
-        try:
-            row = con.execute(
-                "SELECT COALESCE(MAX(id), 0) FROM session_events"
-            ).fetchone()
-            return int(row[0]) if row else 0
-        finally:
-            con.close()
-    except _sqlite3.Error:
-        return 0
-
-
-def _history():
-    return _load(
-        Path(__file__).resolve().parent / "history.py", "fleetview_history_impl"
-    )
-
-
-def history_envelope(
-    session_id: str, since: str = "", until: str = "", limit: int = 500
-) -> tuple[dict, int]:
-    """One session's events over time. The raw material a trail is drawn from.
-
-    `limit` IS PLUMBED THROUGH, and was not. The board asks for `?limit=40` on a 15-second poll;
-    the route did not accept the parameter, so `history()`'s default of **500** applied and each
-    open page transferred roughly nine times the rows it renders. `history.py` already clamped the
-    value to 1..5000; only the two call sites in between dropped it.
-    """
-    body = _history().history(session_id, since or None, until or None, limit=limit)
-    if body.get("error") and body.get("count", 0) == 0:
-        return body, 400 if "required" in str(body.get("error")) else 503
-    return body, 200
-
-
-def query_envelope(directive: str) -> tuple[dict, int]:
-    """The fleet over time, in four speakable verbs: stuck, slow, cost, history <id>."""
-    body = _history().query(directive)
-    if body.get("kind") == "blind":
-        return body, 503
-    return body, 200
-
-
-def _voice():
-    return _load(Path(__file__).resolve().parent / "voice.py", "fleetview_voice_impl")
-
-
-def ask_voice(body: dict, sessions: list) -> tuple[dict, int]:
-    """Ask the fleet a question in words. The sessions are passed in from the SAME list /sessions
-    serves, so the answer cannot describe a fleet the reader is not looking at."""
-    return _voice().ask(body.get("question", ""), sessions, body.get("history"))
-
-
-def stream_voice(body: dict, sessions: list):
-    """Clause-by-clause server-sent events. The browser speaks each one as it lands, so the first
-    words arrive while the model is still writing the rest."""
-    return _voice().stream_ask(body.get("question", ""), sessions, body.get("history"))
-
-
-def voice_media():
-    """`voice_media.py` -- hearing, speaking, and the bus rows a voice turn puts on it.
-
-    CACHED IN `sys.modules`, unlike its `_load`-by-path neighbours, for the same reason
-    `_executor_link` is: this module holds process-wide state. It imports `sovereign.voice.engine`,
-    whose loaded ASR model and currently-selected voice live in module globals -- a second copy
-    would mean a 90-second model load per request and a voice chosen on one route that another
-    route does not speak with.
-
-    Returned as a module rather than wrapped in envelope functions like the routes above, because
-    every entry point on it is `async` (transcription and synthesis run in a thread pool, and the
-    bus publish awaits NATS). A sync wrapper here could only re-enter the event loop.
-    """
-    import sys
-
-    name = "fleetview_voice_media_impl"
-    cached = sys.modules.get(name)
-    if cached is not None:
-        return cached
-    spec = importlib.util.spec_from_file_location(name, _VOICE_MEDIA_MODULE)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load module at {_VOICE_MEDIA_MODULE}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def voice_static_dir() -> Path:
-    """Where the VAD and onnxruntime bundles live: one copy, in the package that owns them."""
-    return _REPO_ROOT / "sovereign" / "voice" / "static"
-
-
 def _signals():
     return _load(_SIGNALS_MODULE, "fleetview_signals_impl")
-
-
-def _observer():
-    """The Observer, loaded by path exactly as every other sibling module here is.
-
-    WHY BY PATH. `routes.py` is executed by `serve.py` through `importlib.util.spec_from_file_location`
-    (see `_load_routes`), so it is NOT a package and a relative import would fail at runtime. Every
-    neighbour -- `_signals`, `_graph`, `_blast` -- is reached the same way, and the fixed
-    `sys.modules` name is what makes two callers share one module instance instead of two.
-    """
-    return _load(_OBSERVER_MODULE, "idp_intent_observer")
 
 
 def _blast():
@@ -249,20 +122,6 @@ def _trace():
 
 def _ledger_tail():
     return _load(_LEDGER_TAIL_MODULE, "fleetview_ledger_tail_impl")
-
-
-def _device_access():
-    """`device_access.py` -- what this device's read-only identity is, if anything.
-
-    Path-loaded like every other module here rather than imported as a package, because these
-    files are loaded by importlib path and a relative import is unavailable to them.
-    """
-    return _load(_DEVICE_ACCESS_MODULE, "fleetview_device_access_impl")
-
-
-def _handoff():
-    """`handoff.py` -- the challenge the portal mints and the check that it carries no secret."""
-    return _load(_HANDOFF_MODULE, "fleetview_handoff_impl")
 
 
 def _executor_link():
@@ -303,51 +162,7 @@ SESSIONS_PATH = "/sessions"
 STREAM_PATH = "/stream"
 NOTES_PATH = "/notes"
 NUDGE_PATH = "/nudge"
-STOP_PATH = "/stop"
-APPROVE_PATH = "/approve"
-DENY_PATH = "/deny"
 SIGNALS_PATH = "/signals"
-# THE CONTRACTS CHANNEL. The Reactor's `requestAnimationFrame` loop polls this to render a node per
-# spoken request. Its own path rather than a filter on /signals, because a contract has a lifecycle
-# (PENDING -> RUNNING -> COMPLETED) and a signal is a moment; merging them would make the board
-# re-derive "is this still running" from a list of moments, which is the ticket-board shape the
-# founder's spec replaces.
-CONTRACTS_PATH = "/contracts"
-REPLIES_PATH = "/replies"
-WORK_PATH = "/work"
-KILL_PATH = "/kill"
-
-# The channel table the UI must not guess. `SIGNAL_RUNTIMES` in signals.py is the ONLY source of
-# truth for which verb a runtime can actually receive; a front end that hard-codes a second copy
-# will offer a button that the backend refuses, and the person pressing it learns that the board
-# lies. Measured 2026-09-19: the radial menu offered Stop on a `pi` session, which has no stop
-# channel, so the button was enabled for an action that could only ever 422.
-CHANNELS_PATH = "/channels"
-VOICE_PATH = "/voice"
-VOICE_STREAM_PATH = "/voice/stream"
-
-# THE VOICE MEDIA LEG, which used to be a WebSocket to 127.0.0.1:8899 and therefore could not
-# exist in the cluster. These are plain HTTP, so the Backstage proxy carries them exactly as it
-# carries /sessions, and the microphone reaches the estate's own models from a portal served
-# anywhere. `voice_media.py`'s docstring has the full account of what moved and why.
-VOICE_HEAR_PATH = "/voice/hear"
-VOICE_SAY_PATH = "/voice/say"
-VOICE_STEER_PATH = "/voice/steer"
-VOICE_SPECULATE_PATH = "/voice/speculate"
-VOICE_DONE_PATH = "/voice/done"
-VOICE_VOICES_PATH = "/voice/voices"
-VOICE_SELECT_PATH = "/voice/select"
-VOICE_PREVIEW_PATH = "/voice/preview"
-VOICE_LOG_PATH = "/voice/log"
-VOICE_LOG_SUMMARY_PATH = "/voice/log/summary"
-# The VAD and onnxruntime bundles the browser needs before it can hear anything. Served from this
-# process as a fallback for a caller that is not the Backstage app; the app itself serves them at
-# its own origin (the bytes live in backstage/packages/app/public/voice, and sovereign/voice/static
-# is a symlink to them), because a `<script src>` and an AudioWorklet cannot carry the proxy's
-# Authorization header.
-VOICE_STATIC_PATH = "/voice/static"
-HISTORY_PATH = "/history"
-QUERY_PATH = "/query"
 BLAST_RADIUS_PATH = "/blast-radius"
 GRAPH_PATH = "/graph"
 CHECK_RECEIPTS_PATH = "/check-receipts"
@@ -356,8 +171,6 @@ MUTATIONS_APPROVE_PATH = "/mutations/approve"
 MUTATIONS_REJECT_PATH = "/mutations/reject"
 TRACE_PATH = "/trace"
 LEDGER_PATH = "/ledger"
-DEVICE_STATUS_PATH = "/device-status"
-DEVICE_AUTHORIZE_PATH = "/device-authorize"
 
 
 def sessions_envelope() -> tuple[dict[str, Any], int]:
@@ -451,114 +264,6 @@ def add_nudge(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     return record, 200
 
 
-def add_stop(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
-    impl = _signals()
-    try:
-        record = impl.stop(
-            session_id=body.get("session_id", ""),
-            runtime=body.get("runtime", ""),
-            by=body.get("by", ""),
-        )
-    except impl.InvalidSignal as exc:
-        return {"error": str(exc)}, 400
-    except impl.UnsupportedRuntime as exc:
-        return {"error": str(exc)}, 422
-    return record, 502 if not record["ok"] else 200
-
-
-def add_approve(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
-    impl = _signals()
-    try:
-        record = impl.approve(
-            session_id=body.get("session_id", ""),
-            runtime=body.get("runtime", ""),
-            by=body.get("by", ""),
-            text=body.get("text", ""),
-        )
-    except impl.InvalidSignal as exc:
-        return {"error": str(exc)}, 400
-    except impl.UnsupportedRuntime as exc:
-        return {"error": str(exc)}, 422
-    return record, 502 if not record["ok"] else 200
-
-
-def add_deny(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
-    impl = _signals()
-    try:
-        record = impl.deny(
-            session_id=body.get("session_id", ""),
-            runtime=body.get("runtime", ""),
-            by=body.get("by", ""),
-            text=body.get("text", ""),
-        )
-    except impl.InvalidSignal as exc:
-        return {"error": str(exc)}, 400
-    except impl.UnsupportedRuntime as exc:
-        return {"error": str(exc)}, 422
-    return record, 502 if not record["ok"] else 200
-
-
-def device_status_envelope() -> tuple[dict[str, Any], int]:
-    """The body and status for `GET /api/fleetview/device-status`.
-
-    A thin passthrough to `device_access.py` so every route in this file has the same shape:
-    the route function owns the HTTP contract, the impl module owns the logic and holds no
-    response codes of its own. `device_access.py` already answers with a `state` field in both
-    the 200 and the 503 case, which is why this does not need to synthesise one.
-    """
-    impl = _device_access()
-    return impl.device_status_envelope()
-
-
-def device_authorize_envelope() -> tuple[dict[str, Any], int]:
-    """The body and status for `POST /api/fleetview/device-authorize`.
-
-    Mints a single-use challenge and returns the LOCAL handoff URL. It deliberately does not
-    deliver anything: per the founder's ruling (2026-09-18), key delivery stays out of the
-    portal, which holds no vault credentials and must never see a key or a token. The browser
-    opens `idp-device://`, the device's own helper performs the delivery, and the only thing
-    that crossed between them is the nonce.
-
-    The payload is built by `handoff.handoff_payload`, which runs `assert_no_secret` before
-    returning it -- so this route cannot emit a credential even if a future edit tries to.
-    """
-    handoff = _handoff()
-    challenge = handoff.new_challenge()
-    try:
-        body = handoff.handoff_payload(challenge, state="awaiting_helper")
-        body["url"] = handoff.handoff_url(challenge)
-        body["scheme"] = "idp-device"
-        # Re-check with the two fields added, so the URL itself is proven clean rather than
-        # assumed to be because its inputs were.
-        handoff.assert_no_secret(body, where="device-authorize")
-    except handoff.SecretLeak as exc:
-        # A leak here is a programming error, and it must fail loudly rather than return a
-        # redacted payload nobody notices is redacted.
-        return {"state": "error", "error": f"refusing to emit: {exc}"}, 500
-    return body, 200
-
-
-def channels_envelope() -> tuple[dict[str, Any], int]:
-    """Which signal each runtime has a live path for, read from signals.py itself.
-
-    Served rather than duplicated so the front end cannot drift from the gate. A runtime absent
-    from a verb's list means the backend will refuse that verb for it -- and the UI should say so
-    before the press, not after.
-    """
-    mod = _signals()
-    table = getattr(mod, "SIGNAL_RUNTIMES", {})
-    return (
-        {
-            "signals": {verb: sorted(runtimes) for verb, runtimes in table.items()},
-            "note": (
-                "A runtime missing from a verb's list has no channel for it; the backend refuses "
-                "that verb for that runtime with 422 and the reason."
-            ),
-        },
-        200,
-    )
-
-
 def signals_envelope(session_id: str) -> tuple[dict[str, Any], int]:
     """The body and status for `GET /api/fleetview/signals?session_id=...`.
 
@@ -568,38 +273,6 @@ def signals_envelope(session_id: str) -> tuple[dict[str, Any], int]:
     """
     impl = _signals()
     return {"signals": impl.signals_for(session_id)}, 200
-
-
-def reply_envelope(session_id: str, limit: int = 20) -> tuple[dict[str, Any], int]:
-    """`GET /api/fleetview/replies?session_id=...` -- what the sessions said back.
-
-    THE READ HALF OF THE REPLY CHANNEL. Empty `session_id` returns the fleet-wide feed, which is
-    what a board shows when the reader is not looking at any one agent; a session id narrows it to
-    that conversation. Always 200 with a possibly-empty list, like `signals_envelope`: an agent
-    that has not spoken yet is not an error.
-    """
-    impl = _signals()
-    return {"replies": impl.replies_for(session_id, limit=limit)}, 200
-
-
-def post_reply(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
-    """`POST /api/fleetview/replies` -- a session (or a person) records what was said.
-
-    A blank session_id or text is 400 (`InvalidSignal`, the same distinction signals draw between
-    'never reached a session' and 'reached it and failed'). Anything else is recorded.
-    """
-    impl = _signals()
-    try:
-        row = impl.reply(
-            session_id=str(body.get("session_id") or ""),
-            runtime=str(body.get("runtime") or "unknown"),
-            text=str(body.get("text") or ""),
-            author=str(body.get("author") or "agent"),
-            in_reply_to=body.get("in_reply_to"),
-        )
-    except impl.InvalidSignal as exc:
-        return {"error": str(exc)}, 400
-    return {"reply": row}, 201
 
 
 def blast_radius_envelope(node_id: str) -> tuple[dict[str, Any], int]:
@@ -770,81 +443,7 @@ def ledger_tail_envelope(session_id: str) -> tuple[dict[str, Any], int]:
         return {"rows": [], "error": str(exc)}, 200
 
 
-def contracts_envelope(limit: int = 10) -> tuple[dict[str, Any], int]:
-    """`GET /api/fleetview/contracts` -- the action contracts a person is currently watching.
-
-    ALWAYS 200 WITH A POSSIBLY-EMPTY LIST, the rule `signals_envelope` and `notes_envelope` follow:
-    nobody having asked for anything yet is not an error, and a board that showed an error there
-    would train its reader to ignore the error.
-
-    THE READ IS SOFT. The Observer commits contracts from its own process, so a database that is
-    mid-migration, or absent because nothing has ever been asked, must not take down the HUD. On
-    any failure the rows are empty AND the reason is carried in the body -- an empty list and an
-    unreadable database look identical to a page, so the reason is the difference between a quiet
-    fleet and a broken one. That distinction is not optional (AGENTS.md section 8).
-    """
-    impl = _observer()
-    try:
-        rows = impl.contracts_for(limit)
-        return {"contracts": rows}, 200
-    except Exception as exc:  # noqa: BLE001 -- soft read; see the docstring
-        return {"contracts": [], "error": str(exc)}, 200
-
-
 def _now() -> str:
     import datetime as dt
 
     return dt.datetime.now(dt.timezone.utc).isoformat()
-
-
-def work_envelope() -> tuple[dict[str, Any], int]:
-    """`GET /api/fleetview/work` -- what each session is working on: branch and current step.
-
-    Keyed by session id so the board can merge it into rows it already has, rather than a list the
-    reader has to join by hand. Always 200 with a possibly-empty map.
-    """
-    impl = _signals()
-    return {"work": impl.work_for()}, 200
-
-
-def post_work(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
-    """`POST /api/fleetview/work` -- a session reports its branch and step.
-
-    One row per session, upserted: "what is it working on" has one answer at a time, and a log of
-    forty steps would make the reader choose between them.
-    """
-    impl = _signals()
-    try:
-        row = impl.record_work(
-            session_id=str(body.get("session_id") or ""),
-            runtime=str(body.get("runtime") or "unknown"),
-            branch=str(body.get("branch") or ""),
-            step=str(body.get("step") or ""),
-            # The pid is its own field. Encoded as `step = "pid 1234"` it survived exactly until
-            # the agent ran its first tool, which overwrote the step -- a kill that stops working
-            # the moment the agent starts working.
-            pid=body.get("pid") if isinstance(body.get("pid"), int) else None,
-        )
-    except impl.InvalidSignal as exc:
-        return {"error": str(exc)}, 400
-    return {"work": row}, 201
-
-
-def kill_envelope(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
-    """`POST /api/fleetview/kill` -- SIGTERM a session's process.
-
-    Separate from `/stop`, which is a cooperative marker. This is the rogue-agent path: the process
-    itself, addressed by the PID the session volunteered. A session with no reported PID is a 502
-    with that reason, not a silent success -- there was nothing to signal.
-    """
-    impl = _signals()
-    try:
-        row = impl.kill(
-            session_id=str(body.get("session_id") or ""),
-            runtime=str(body.get("runtime") or ""),
-            by=str(body.get("by") or "reactor"),
-            force=bool(body.get("force")),
-        )
-    except impl.InvalidSignal as exc:
-        return {"error": str(exc)}, 400
-    return row, (200 if row.get("ok") else 502)

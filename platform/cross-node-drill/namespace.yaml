@@ -1,0 +1,27 @@
+# The 504 epidemic of 2026-09-03..10 was one iptables rule, on the node, that only ever hurt
+# traffic BETWEEN nodes. Dead flannel had left a masquerade rule behind that rewrote every
+# Calico pod-to-pod packet's source address to the node's physical IP. The destination's
+# NetworkPolicy whitelists pod IPs, so it saw a stranger and dropped the packet in silence.
+#
+# It survived a week of "fixed" because nothing in this estate ever sent a packet from a pod on
+# one node to a pod on the other. Every gate here reads files. Every health check we trusted was
+# same-node or synthetic, and all of them said fine while the estate was exactly this broken.
+#
+# This namespace exists so that can never be true again. It holds two pods, one pinned to each
+# node, inside a generated fence -- the same default-deny-plus-allow-same-namespace shape that
+# every other namespace carries, which is to say the exact configuration that failed. The drill
+# dials them at each other in both directions. If the estate is ever in that state again, this
+# is the thing that is red first.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cross-node-drill
+  annotations:
+    # A namespace this Flux row prunes is a namespace a file move can destroy (incident
+    # 2026-08-29, catalogue 404). The mark is the estate's floor for every namespace manifest,
+    # and platform/edge/protect-namespaces.yaml refuses a DELETE of anything carrying it.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

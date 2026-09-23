@@ -11,18 +11,15 @@ import { Entity } from '@backstage/catalog-model';
 import { useApi } from '@backstage/frontend-plugin-api';
 import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
 import { Card, CardContent, Typography } from '@material-ui/core';
-import { StateIcon } from '../home/visuals';
 import {
   DeploymentObject,
   FluxObject,
   LAYER_ANNOTATION,
   LayerState,
   Live,
-  heldSinceAgo,
   layerName,
   layerState,
 } from '../home/estate';
-import { STATE_WORD } from '../theme/tokens';
 
 const FLUX_KINDS = '/apis/kustomize.toolkit.fluxcd.io/v1/kustomizations';
 const DEPLOYMENTS = '/apis/apps/v1/deployments';
@@ -138,32 +135,14 @@ export function layerSentence(s: LayerState): string {
 }
 
 /** The rendered card. Names itself in plain English and is never silent-green. */
-export function LayerOnCluster({ entity, now }: { entity: Entity; now?: number }) {
+export function LayerOnCluster({ entity }: { entity: Entity }) {
   const read = useLayerLive(entity);
-  const resolved = layerStateLine(read);
-  const sentence = layerSentence(resolved);
-  // How long this verdict has held: the object's own Flux last-transition when it records one,
-  // else the door's last-checked time, else nothing (rule 13: never invent an age). The card's
-  // third fact beside Ready-state and pod count, so a click sees WHEN, not just WHAT.
-  const since = heldSinceAgo(entity, resolved, now ?? Date.now());
+  const sentence = layerSentence(layerStateLine(read));
   return (
     <Card variant="outlined" data-testid="layer-on-cluster">
       <CardContent>
         <Typography variant="overline">On the cluster</Typography>
-        {/* The same dot + word the home page draws for this state, so a click speaks the
-            estate's six words rather than a bare colour (DESIGN-RULES 24: never colour alone). */}
-        <div className="estate-state-pill" data-state={resolved.state}>
-          <StateIcon state={resolved.state} />
-          <span className="estate-state-pill-word">
-            {STATE_WORD[resolved.state]}
-          </span>
-        </div>
         <Typography variant="body2">{sentence}</Typography>
-        {since && (
-          <Typography variant="caption" color="textSecondary" display="block">
-            {since}
-          </Typography>
-        )}
       </CardContent>
     </Card>
   );

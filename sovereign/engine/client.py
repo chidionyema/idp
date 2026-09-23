@@ -2,7 +2,6 @@
 plain dicts in and out -- no Temporal types cross this boundary (contract
 sovereign/CONTRACT.md, "Engine API").
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -20,17 +19,14 @@ WORKFLOW = "SessionWorkflow"
 
 async def get_client() -> Any:
     from temporalio.client import Client
-
     global _client
     if _client is None:
-        _client = await Client.connect(
-            config.TEMPORAL_ADDRESS, namespace=config.TEMPORAL_NAMESPACE
-        )
+        _client = await Client.connect(config.TEMPORAL_ADDRESS, namespace=config.TEMPORAL_NAMESPACE)
     return _client
 
 
 def _new_session_id() -> str:
-    return f"sb-{uuid.uuid4().hex[: config.SESSION_ID_HEX_LEN]}"
+    return f"sb-{uuid.uuid4().hex[:config.SESSION_ID_HEX_LEN]}"
 
 
 async def start(
@@ -127,9 +123,7 @@ def _to_row(state: dict[str, Any] | None, session_id: str) -> dict[str, Any]:
             "critical": False,
         }
     row = dict(state)
-    row["last_output"] = (row.get("last_output") or "")[
-        : config.SESSION_LAST_OUTPUT_MAX_CHARS
-    ]
+    row["last_output"] = (row.get("last_output") or "")[: config.SESSION_LAST_OUTPUT_MAX_CHARS]
     return row
 
 

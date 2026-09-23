@@ -2,7 +2,6 @@
 task queue for SessionWorkflow tasks and its activities. Restarting
 this process (or SIGKILL-ing it) never loses a session -- cp1, cp2.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -38,8 +37,7 @@ class _RedactBotTokenFilter(logging.Filter):
             record.msg = _BOT_TOKEN_RE.sub("bot<redacted>", record.msg)
         if record.args:
             record.args = tuple(
-                _BOT_TOKEN_RE.sub("bot<redacted>", a) if isinstance(a, str) else a
-                for a in record.args
+                _BOT_TOKEN_RE.sub("bot<redacted>", a) if isinstance(a, str) else a for a in record.args
             )
         return True
 
@@ -48,12 +46,7 @@ class _RedactBotTokenFilter(logging.Filter):
 # here, or the start succeeds and the run sits unpicked forever (crew#284 CP3:
 # `sb run --branches 3` started BranchParentWorkflow while the worker only
 # served SessionWorkflow). tests/bdd/test_cp3_worker_registry.py holds the rule.
-WORKFLOWS = [
-    SessionWorkflow,
-    BranchParentWorkflow,
-    BranchChildWorkflow,
-    *kini.WORKFLOWS,
-]
+WORKFLOWS = [SessionWorkflow, BranchParentWorkflow, BranchChildWorkflow, *kini.WORKFLOWS]
 ACTIVITIES = [
     activities.run_step,
     activities.append_receipt,
@@ -65,9 +58,7 @@ ACTIVITIES = [
 
 
 async def run_worker() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     redact = _RedactBotTokenFilter()
     for handler in logging.getLogger().handlers:
         handler.addFilter(redact)
@@ -79,9 +70,7 @@ async def run_worker() -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     config.ensure_dirs()
-    client = await Client.connect(
-        config.TEMPORAL_ADDRESS, namespace=config.TEMPORAL_NAMESPACE
-    )
+    client = await Client.connect(config.TEMPORAL_ADDRESS, namespace=config.TEMPORAL_NAMESPACE)
     worker = Worker(
         client,
         task_queue=config.TEMPORAL_TASK_QUEUE,
@@ -108,9 +97,7 @@ async def run_worker() -> None:
         # The Deployment's probes (platform/temporal/worker.yaml) test this file: it
         # exists only while the Worker is polling. Written after the connect above,
         # so a worker that cannot reach the frontend is never reported ready.
-        ready.write_text(
-            f"{config.TEMPORAL_ADDRESS} {config.TEMPORAL_NAMESPACE} {config.TEMPORAL_TASK_QUEUE}\n"
-        )
+        ready.write_text(f"{config.TEMPORAL_ADDRESS} {config.TEMPORAL_NAMESPACE} {config.TEMPORAL_TASK_QUEUE}\n")
         try:
             await stop_event.wait()
         finally:

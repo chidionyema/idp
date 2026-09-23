@@ -3,7 +3,6 @@ no-op that logs once to stderr and never raises -- a missing trace backend
 must never take a session down (cp5 wants the trace when Langfuse is
 configured; cp1-cp3 must pass with it entirely absent).
 """
-
 from __future__ import annotations
 
 import hashlib
@@ -76,11 +75,7 @@ _ANCHOR_FIELDS = ("session_id", "merkle_root", "receipt_hash", "status")
 
 
 def configured() -> bool:
-    return bool(
-        config.LANGFUSE_HOST
-        and config.LANGFUSE_PUBLIC_KEY
-        and config.LANGFUSE_SECRET_KEY
-    )
+    return bool(config.LANGFUSE_HOST and config.LANGFUSE_PUBLIC_KEY and config.LANGFUSE_SECRET_KEY)
 
 
 def last_ok_path() -> Path:
@@ -141,9 +136,7 @@ def anchor(session_id: str, status: str) -> dict[str, Any]:
         from sovereign.engine import receipts as receipts_mod
 
         key, _backend = receipts_mod.get_or_create_key()
-        signature = hmac.new(
-            key, config.canonical_json(body), hashlib.sha256
-        ).hexdigest()
+        signature = hmac.new(key, config.canonical_json(body), hashlib.sha256).hexdigest()
     except Exception:  # pragma: no cover - an unsigned anchor is still honest
         signature = ""
     return {**body, str(ck.get("trace.signature_field")): signature}
@@ -170,37 +163,21 @@ def verify(entry: dict[str, Any]) -> bool:
     return hmac.compare_digest(expected, claimed)
 
 
-def trace_session(
-    session_id: str,
-    task: str,
-    runner: str,
-    status: str,
-    extra: dict[str, Any] | None = None,
-    config_id: str | None = None,
-) -> None:
+def trace_session(session_id: str, task: str, runner: str, status: str, extra: dict[str, Any] | None = None) -> None:
     """Best-effort: record one trace/event per session state change. Never
     raises -- a trace backend outage must not touch a session's status.
 
     Every entry carries anchor(): the session Merkle root, the receipt
-    chain head, and a signature over both (R33).
-
-    `config_id` (idp#3525 CP5, ORCH-03): when a caller names the routing
-    config a call was made under, this trace carries it as an extra tag
-    (f"config_id:{config_id}"), so sovereign.engine.config_experiment can
-    later filter traces by it through Langfuse's own tags= containment
-    filter -- no new store, no new dashboard."""
+    chain head, and a signature over both (R33)."""
     client = _get_client()
     if client is None:
         return
     entry_anchor = anchor(session_id, status)
-    tags = [session_id, f"runner:{runner}", f"status:{status}"]
-    if config_id:
-        tags.append(f"config_id:{config_id}")
     try:
         client.trace(
             name="sovereign-session",
             id=session_id,
-            tags=tags,
+            tags=[session_id, f"runner:{runner}", f"status:{status}"],
             input={"task": task, "runner": runner},
             output={"status": status, **(extra or {})},
             metadata=entry_anchor,

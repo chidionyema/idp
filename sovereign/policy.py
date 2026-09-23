@@ -25,7 +25,6 @@ already in sovereign/requirements.txt). PyYAML was rejected: it would be a
 second config syntax next to estate.toml and a dependency the runtime
 does not otherwise carry.
 """
-
 from __future__ import annotations
 
 import os
@@ -93,11 +92,7 @@ def fenced_toml(text: str) -> str:
     body: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
-        if (
-            not inside
-            and stripped.startswith(FENCE)
-            and stripped[len(FENCE) :].strip().split()[:1] == [FENCE_LANG]
-        ):
+        if not inside and stripped.startswith(FENCE) and stripped[len(FENCE):].strip().split() [:1] == [FENCE_LANG]:
             inside = True
             continue
         if inside and stripped == FENCE:
@@ -121,34 +116,18 @@ class Policy:
     routing: Mapping[str, Any] = field(default_factory=dict)
     merge: Mapping[str, Any] = field(default_factory=dict)
     invariants: Mapping[str, Any] = field(default_factory=dict)
-    jev: Mapping[str, Any] = field(default_factory=dict)
 
     def monthly_spend_usd(self) -> float:
         """What the per-day defaults add up to over the contract month."""
-        return float(sum(float(v) for v in self.budget_usd_per_day.values())) * float(
-            self.cost["days_per_month"]
-        )
+        return float(sum(float(v) for v in self.budget_usd_per_day.values())) * float(self.cost["days_per_month"])
 
     def within_cost_contract(self) -> bool:
         """Spec section 8: direct costs $0 to $150 a month."""
         spend = self.monthly_spend_usd()
-        return (
-            float(self.cost["contract_min_usd_month"])
-            <= spend
-            <= float(self.cost["contract_max_usd_month"])
-        )
+        return float(self.cost["contract_min_usd_month"]) <= spend <= float(self.cost["contract_max_usd_month"])
 
 
-REQUIRED_SECTIONS = (
-    "capabilities",
-    "fsm",
-    "budget",
-    "cost",
-    "routing",
-    "merge",
-    "invariants",
-    "jev",
-)
+REQUIRED_SECTIONS = ("capabilities", "fsm", "budget", "cost", "routing", "merge", "invariants")
 
 
 def load(path: Path | None = None) -> Policy:
@@ -176,7 +155,6 @@ def load(path: Path | None = None) -> Policy:
         routing=dict(data["routing"]),
         merge=dict(data["merge"]),
         invariants=dict(data["invariants"]),
-        jev=dict(data["jev"]),
     )
 
 
@@ -216,9 +194,7 @@ def drift(defaults: Mapping[str, Any], policy: Policy | None = None) -> list[str
             out.append(f"{key}: AGENTS.md names it, config.py has no such key")
             continue
         if _normalize(defaults[key]) != _normalize(doc_value):
-            out.append(
-                f"{key}: config.py default {defaults[key]!r} != AGENTS.md {doc_value!r}"
-            )
+            out.append(f"{key}: config.py default {defaults[key]!r} != AGENTS.md {doc_value!r}")
     return out
 
 

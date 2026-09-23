@@ -1,0 +1,94 @@
+# The first run of the backstage-pod-kill Schedule, on the day it is applied instead of the
+# first Monday after. A Chaos Mesh Schedule has no "run now"; a Workflow runs once when it is
+# admitted. Its spec is the Schedule's spec.workflow, byte for byte:
+# tests/test_incident_crew488_chaos_first_run_matches_schedule.py fails the moment they differ.
+# Until this ran, bin/idp-chaos-drill graded FAIL for a calendar reason (LAW 38), from
+# 2026-08-26 to the first tick on 2026-08-31 (crew#483 residual).
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  name: backstage-pod-kill-first-run
+  namespace: backstage
+spec:
+  entry: entry
+  templates:
+  - name: entry
+    templateType: Serial
+    deadline: 240s
+    children:
+    - experiment
+    - receipt
+  - name: experiment
+    templateType: Parallel
+    deadline: 90s
+    children:
+    - steady-state
+    - kill-one
+  - name: steady-state
+    templateType: StatusCheck
+    deadline: 90s
+    abortWithStatusCheck: true
+    statusCheck:
+      mode: Continuous
+      type: HTTP
+      intervalSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+      successThreshold: 1
+      http:
+        url: http://backstage.backstage.svc:7007/healthcheck
+        method: GET
+        criteria:
+          statusCode: '200'
+  - name: kill-one
+    templateType: PodChaos
+    deadline: 60s
+    podChaos:
+      action: pod-kill
+      mode: one
+      selector:
+        namespaces:
+        - backstage
+        labelSelectors:
+          app.kubernetes.io/name: backstage
+  - name: receipt
+    templateType: Task
+    deadline: 120s
+    task:
+      container:
+        name: receipt
+        image: ghcr.io/oracle/oci-cli:20260826
+        command:
+        - /bin/sh
+        - -c
+        args:
+        - "set -eu\nprintf 'ok backstage-pod-kill accomplished at %s\\n' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"\
+          \ > /tmp/receipt\noci --auth instance_principal os object put --bucket-name estate-drill-receipts\
+          \ \\\n  --name chaos/backstage-pod-kill --file /tmp/receipt --content-type text/plain --force\n"
+        env:
+        - name: HOME
+          value: /tmp
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}

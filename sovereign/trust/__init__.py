@@ -1,7 +1,6 @@
 """sovereign/trust/ -- HardwareTrustAnchor (cp20), owner: builder D.
 See sovereign/trust/README.md.
 """
-
 from __future__ import annotations
 
 from sovereign.trust.anchor import BACKENDS, HardwareTrustAnchor

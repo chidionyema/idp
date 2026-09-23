@@ -11,7 +11,6 @@ silently, one receipt line goes back to the thread that asked, and the
 presence state is never moved to Converse by intake itself. Intake reads the
 state before and after and refuses to report success if it changed.
 """
-
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable

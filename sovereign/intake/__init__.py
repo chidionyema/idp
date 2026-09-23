@@ -11,7 +11,6 @@ The stable call for an adapter that lives outside this repository (hermes-v2)
 is `sovereign.intake.from_phone`. Its signature is the contract; the pipeline
 behind it can change.
 """
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -90,14 +89,8 @@ def from_phone(
     from sovereign.intake.pipeline import IntakeRequest, intake
 
     req = IntakeRequest(
-        image=image,
-        caption=caption,
-        repo=Path(repo),
-        source=str(ck.get("intake.phone_source_name")),
-        channel=chat_id,
-        session_id=session_id,
-        budget_remaining=budget_remaining,
-        mime=mime,
+        image=image, caption=caption, repo=Path(repo), source=str(ck.get("intake.phone_source_name")),
+        channel=chat_id, session_id=session_id, budget_remaining=budget_remaining, mime=mime,
     )
     return intake(req, vision=vision, reply=reply, presence=presence)
 
@@ -119,14 +112,8 @@ def from_chat(
     from sovereign.intake.pipeline import IntakeRequest, intake
 
     req = IntakeRequest(
-        image=image,
-        caption=caption,
-        repo=Path(repo),
-        source=str(ck.get("intake.chat_source_name")),
-        channel=thread,
-        session_id=session_id,
-        budget_remaining=budget_remaining,
-        mime=mime,
+        image=image, caption=caption, repo=Path(repo), source=str(ck.get("intake.chat_source_name")),
+        channel=thread, session_id=session_id, budget_remaining=budget_remaining, mime=mime,
     )
     return intake(req, vision=vision, reply=reply, presence=presence)
 
@@ -148,13 +135,9 @@ def from_laptop(
     from sovereign.intake.pipeline import IntakeRequest, intake
 
     req = IntakeRequest(
-        image=image,
-        caption=caption,
-        repo=Path(repo),
-        source=str(ck.get("intake.laptop_source_name")),
-        channel=str(ck.get("intake.cli_channel")),
-        session_id=session_id,
-        budget_remaining=budget_remaining,
-        mime=mime,
+        image=image, caption=caption, repo=Path(repo), source=str(ck.get("intake.laptop_source_name")),
+        channel=str(ck.get("intake.cli_channel")), session_id=session_id,
+        budget_remaining=budget_remaining, mime=mime,
     )
     return intake(req, vision=vision, reply=reply, presence=presence)
+

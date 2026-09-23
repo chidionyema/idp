@@ -2,7 +2,6 @@
 
 Run:  sovereign/.venv/bin/python -m unittest sovereign.cockpit.test_config_keys -v
 """
-
 from __future__ import annotations
 
 import os

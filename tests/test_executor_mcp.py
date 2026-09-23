@@ -44,19 +44,7 @@ ex = _load()
 
 @pytest.fixture()
 def executor():
-    """The in-process runner, which is what this module has always meant by "a stub".
-
-    `Executor` used to mint jobs in this process. bd7666f80 ("the door runs commands again")
-    made the base class the REAL one -- its `submit` opens the daemon's UNIX socket -- and moved
-    the in-process mint to `LocalExecutor`. This fixture was never moved with it, so every test
-    that expects an accepted job was grading a `ConnectionRefusedError` against a daemon that is
-    not running in CI: `execute_command` returned `{"accepted": False}` and ten tests failed on
-    `assert False is True` / `KeyError: 'job_id'`.
-
-    `LocalExecutor.submit` mints a `Job` under the same lock and starts nothing, so the module
-    docstring's promise above still holds: no subprocess, no shell, no socket.
-    """
-    return ex.LocalExecutor()
+    return ex.Executor()
 
 
 # --- THE CEILING: 60 is the max, and it is not expressible above in any spelling ---
@@ -199,10 +187,7 @@ def test_the_twin_agrees_with_the_door_both_ways():
     world does not do."""
     for command in ["git status", "timeout 150 x", "sleep 900", "timeout 60 make"]:
         proposal = ex.simulate_command(command)
-        # LocalExecutor for the same reason as the `executor` fixture above: the base class now
-        # reaches the daemon over its socket, so with no daemon every command would "disagree" --
-        # grading the daemon's absence rather than the twin's agreement with the door.
-        executed = ex.execute_command(command, executor=ex.LocalExecutor())
+        executed = ex.execute_command(command, executor=ex.Executor())
         assert proposal["would_accept"] == executed["accepted"], (
             f"{command!r} disagrees"
         )

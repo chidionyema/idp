@@ -24,7 +24,6 @@ Temporal is `sb down` and `sb up`, and cli.py wraps these calls in them;
 this module has no subprocess and no clock, so every function is testable
 against a temporary estate.
 """
-
 from __future__ import annotations
 
 import json
@@ -92,9 +91,7 @@ def main_root() -> str:
 
 def rewind(target: str, by: str, *, signed: bool) -> dict[str, Any]:
     if target != dag.GENESIS and not dag.verify(target)["verified"]:
-        raise UnknownRoot(
-            f"{target!r} is not a node that walks to genesis under {dag.root()}"
-        )
+        raise UnknownRoot(f"{target!r} is not a node that walks to genesis under {dag.root()}")
     previous = main_root()
     nodes_before = _count_nodes()
     dag.write_head(dag.main_head_name(), target)
@@ -190,11 +187,7 @@ def sweep_torn_writes() -> list[str]:
         if not d.is_dir():
             continue
         for p in d.iterdir():
-            if (
-                p.is_file()
-                and p.name.endswith(".tmp")
-                and (d != dag.root() or p.name.endswith(tmp_suffix))
-            ):
+            if p.is_file() and p.name.endswith(".tmp") and (d != dag.root() or p.name.endswith(tmp_suffix)):
                 try:
                     p.unlink()
                     removed.append(str(p))
@@ -276,12 +269,7 @@ def audit_at(receipt_hash: str) -> dict[str, Any] | None:
             "hash": receipt_hash,
             "counter": row.get("counter"),
             "who": row.get("by"),
-            "what": {
-                "kind": kind,
-                "text": row.get("text", ""),
-                "session_id": row.get("session_id"),
-                "step": row.get("step"),
-            },
+            "what": {"kind": kind, "text": row.get("text", ""), "session_id": row.get("session_id"), "step": row.get("step")},
             "when": row.get("ts"),
             "policy": {
                 "op_class": spec.classification,

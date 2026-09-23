@@ -1,0 +1,3 @@
+tenets:
+  - {name: a, ethos: fixture, measure: "true", reads: exit, green: "== 0", pr_rule: r, mode: warn}
+  - {name: b, ethos: fixture, measure: "echo 0", reads: stdout, green: ">= 1", pr_rule: r, mode: warn}
